@@ -32,7 +32,7 @@
 
 ## 기술 스택
 
-- **Next.js 15** (App Router) + **TypeScript**
+- **Next.js 16** (App Router) + **TypeScript**
 - **Tailwind CSS v4**
 - **FastAPI** 백엔드와 REST 연동
 - **Vercel** 배포
@@ -51,5 +51,5 @@ npm run dev
 ```bash
 npm run build       # 프로덕션 빌드
 npm run lint        # ESLint
-npm run typecheck   # TypeScript 타입 체크
+npm run typecheck   # TypeScript 타입 체크 (tsc --noEmit)
 ```

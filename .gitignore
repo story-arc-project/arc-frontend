@@ -38,4 +38,4 @@ yarn-error.log*
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
+# next-env.d.ts is auto-generated but committed for CI compatibility

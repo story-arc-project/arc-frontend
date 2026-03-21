@@ -23,30 +23,29 @@ ARC는 **포트폴리오 아카이빙 및 AI 연계 자동화 플랫폼**이다.
 ## 폴더 구조
 
 ```
-src/
-├── app/                        # App Router 페이지
-│   ├── (auth)/                 # 로그인·회원가입 등 인증 관련 라우트
-│   ├── (main)/                 # 로그인 후 메인 앱 레이아웃
-│   │   ├── dashboard/          # 커리어 대시보드 (6번)
-│   │   ├── archive/            # 커리어 아카이브 — 기록·입력 (2번)
-│   │   ├── analysis/           # 커리어 분석 (3번)
-│   │   ├── strategy/           # 전략 및 설계 / 진로 로드맵 (4번)
-│   │   └── export/             # 익스포트 — 이력서·자소서 생성 (5번)
-│   ├── landing/                # 서비스 소개 랜딩 페이지 (0번)
-│   └── layout.tsx
-├── components/
-│   ├── ui/                     # 공통 원자 컴포넌트 (버튼, 인풋, 카드 등)
-│   ├── layout/                 # 사이드바, 헤더, 네비게이션
-│   └── features/               # 기능별 복합 컴포넌트
-│       ├── archive/
-│       ├── analysis/
-│       ├── strategy/
-│       ├── export/
-│       └── dashboard/
-├── lib/                        # 유틸리티, API 클라이언트, 헬퍼
-├── hooks/                      # 커스텀 React 훅
-├── types/                      # 전역 TypeScript 타입 정의
-└── styles/                     # 글로벌 CSS
+app/                            # App Router 페이지 (프로젝트 루트 기준)
+├── (auth)/                     # 로그인·회원가입 등 인증 관련 라우트
+├── (main)/                     # 로그인 후 메인 앱 레이아웃
+│   ├── dashboard/              # 커리어 대시보드 (6번)
+│   ├── archive/                # 커리어 아카이브 — 기록·입력 (2번)
+│   ├── analysis/               # 커리어 분석 (3번)
+│   ├── strategy/               # 전략 및 설계 / 진로 로드맵 (4번)
+│   └── export/                 # 익스포트 — 이력서·자소서 생성 (5번)
+├── landing/                    # 서비스 소개 랜딩 페이지 (0번)
+└── layout.tsx
+components/
+├── ui/                         # 공통 원자 컴포넌트 (버튼, 인풋, 카드 등)
+├── layout/                     # 사이드바, 헤더, 네비게이션
+└── features/                   # 기능별 복합 컴포넌트
+    ├── archive/
+    ├── analysis/
+    ├── strategy/
+    ├── export/
+    └── dashboard/
+lib/                            # 유틸리티, API 클라이언트, 헬퍼
+hooks/                          # 커스텀 React 훅
+types/                          # 전역 TypeScript 타입 정의
+styles/                         # 글로벌 CSS
 ```
 
 ## 서비스 구조 (Phase)
