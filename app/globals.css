@@ -17,6 +17,9 @@
   --gray-100: #e5e8eb;
   --gray-50:  #f2f4f6;
   --gray-25:  #f9fafb;
+
+  /* ── Font ─────────────────────────────────────────────────── */
+  --font-sans: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 /* ── Tailwind v4 theme extension ──────────────────────────── */
@@ -95,8 +98,8 @@ html {
 }
 
 body {
-  font-family: var(--font-sans, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
-  font-size: 15px;
+  font-family: var(--font-sans);
+  font-size: 16px;
   line-height: 1.5;
   color: var(--color-text-primary);
   background-color: var(--color-surface);
