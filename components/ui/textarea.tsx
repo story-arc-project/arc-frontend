@@ -14,9 +14,12 @@ function autoResize(el: HTMLTextAreaElement) {
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ label, hint, error, className = "", id, onChange, ...props }, ref) => {
+  ({ label, hint, error, className = "", id, onChange, value, ...props }, ref) => {
     const innerRef = useRef<HTMLTextAreaElement>(null);
     const textareaId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
+    const hintId = textareaId ? `${textareaId}-hint` : undefined;
+    const errorId = textareaId ? `${textareaId}-error` : undefined;
+    const describedBy = error ? errorId : hint ? hintId : undefined;
 
     // Sync forwarded ref + inner ref
     const setRef = useCallback(
@@ -33,6 +36,11 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       if (innerRef.current) autoResize(innerRef.current);
     }, []);
 
+    // Resize when controlled value changes externally
+    useEffect(() => {
+      if (innerRef.current) autoResize(innerRef.current);
+    }, [value]);
+
     return (
       <div className="flex flex-col gap-1.5">
         {label && (
@@ -43,14 +51,17 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         <textarea
           ref={setRef}
           id={textareaId}
+          value={value}
           rows={1}
+          aria-invalid={!!error}
+          aria-describedby={describedBy}
           onChange={(e) => {
             autoResize(e.currentTarget);
             onChange?.(e);
           }}
           className={[
             "w-full rounded-md border bg-surface px-4 py-3",
-            "text-[15px] text-text-primary placeholder:text-text-tertiary leading-[1.6]",
+            "text-body text-text-primary placeholder:text-text-tertiary leading-[1.6]",
             "outline-none transition-colors duration-150 resize-none overflow-hidden",
             "min-h-[48px]",
             error
@@ -64,9 +75,9 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           {...props}
         />
         {error ? (
-          <p className="text-[13px] text-error">{error}</p>
+          <p id={errorId} className="text-body-sm text-error">{error}</p>
         ) : hint ? (
-          <p className="text-caption">{hint}</p>
+          <p id={hintId} className="text-caption">{hint}</p>
         ) : null}
       </div>
     );

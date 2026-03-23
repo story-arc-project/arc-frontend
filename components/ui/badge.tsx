@@ -9,9 +9,9 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 const variantClasses: Record<BadgeVariant, string> = {
   default: "bg-surface-tertiary text-text-secondary",
   brand:   "bg-surface-brand text-brand-dark",
-  success: "bg-[#e8faf3] text-success",
-  warning: "bg-[#fff8e6] text-warning",
-  error:   "bg-[#fef0f1] text-error",
+  success: "bg-surface-success text-success",
+  warning: "bg-surface-warning text-warning",
+  error:   "bg-surface-error text-error",
   outline: "bg-transparent border border-border text-text-secondary",
 };
 

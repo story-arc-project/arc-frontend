@@ -1,5 +1,4 @@
 export { Button } from "./button";
-export type { } from "./button";
 
 export { Card, CardHeader, CardTitle, CardDescription, CardFooter } from "./card";
 

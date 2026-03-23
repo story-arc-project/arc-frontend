@@ -17,64 +17,40 @@
   --gray-100: #e5e8eb;
   --gray-50:  #f2f4f6;
   --gray-25:  #f9fafb;
+}
 
-  /* ── Brand (placeholder — fill in later) ─────────────────── */
-  --color-brand:       #3182f6; /* TODO: replace with final brand color */
+/* ── Tailwind v4 theme extension ──────────────────────────── */
+@theme inline {
+  /* Brand (TODO: replace with final brand color) */
+  --color-brand:       #3182f6;
   --color-brand-light: #e8f3ff;
   --color-brand-dark:  #1b64da;
 
-  /* ── Semantic text ────────────────────────────────────────── */
+  /* Text */
   --color-text-primary:   var(--gray-950);
   --color-text-secondary: var(--gray-500);
   --color-text-tertiary:  var(--gray-300);
   --color-text-disabled:  var(--gray-300);
   --color-text-on-brand:  #ffffff;
 
-  /* ── Semantic surface ─────────────────────────────────────── */
+  /* Surfaces */
   --color-surface:           #ffffff;
   --color-surface-secondary: var(--gray-25);
   --color-surface-tertiary:  var(--gray-50);
-  --color-surface-brand:     var(--color-brand-light);
+  --color-surface-brand:     #e8f3ff;
+  --color-surface-success:   #e8faf3;
+  --color-surface-warning:   #fff8e6;
+  --color-surface-error:     #fef0f1;
 
-  /* ── Semantic border ──────────────────────────────────────── */
-  --color-border:       var(--gray-100);
+  /* Borders */
+  --color-border:        var(--gray-100);
   --color-border-strong: var(--gray-200);
 
-  /* ── Status colors ────────────────────────────────────────── */
+  /* Status */
   --color-error:   #f04452;
   --color-success: #03b26c;
   --color-warning: #fe9800;
-  --color-info:    var(--color-brand);
-
-  /* ── Font ─────────────────────────────────────────────────── */
-  --font-sans: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-/* ── Tailwind v4 theme extension ──────────────────────────── */
-@theme inline {
-  /* Colors */
-  --color-brand:             var(--color-brand);
-  --color-brand-light:       var(--color-brand-light);
-  --color-brand-dark:        var(--color-brand-dark);
-
-  --color-text-primary:      var(--color-text-primary);
-  --color-text-secondary:    var(--color-text-secondary);
-  --color-text-tertiary:     var(--color-text-tertiary);
-  --color-text-disabled:     var(--color-text-disabled);
-  --color-text-on-brand:     var(--color-text-on-brand);
-
-  --color-surface:           var(--color-surface);
-  --color-surface-secondary: var(--color-surface-secondary);
-  --color-surface-tertiary:  var(--color-surface-tertiary);
-  --color-surface-brand:     var(--color-surface-brand);
-
-  --color-border:            var(--color-border);
-  --color-border-strong:     var(--color-border-strong);
-
-  --color-error:             var(--color-error);
-  --color-success:           var(--color-success);
-  --color-warning:           var(--color-warning);
-  --color-info:              var(--color-info);
+  --color-info:    #3182f6;
 
   /* Gray scale */
   --color-gray-950: var(--gray-950);
@@ -87,9 +63,6 @@
   --color-gray-100: var(--gray-100);
   --color-gray-50:  var(--gray-50);
   --color-gray-25:  var(--gray-25);
-
-  /* Font */
-  --font-sans: var(--font-sans);
 
   /* Border radius */
   --radius-xs:   4px;
@@ -122,8 +95,8 @@ html {
 }
 
 body {
-  font-family: var(--font-sans);
-  font-size: 16px;
+  font-family: var(--font-sans, "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: 15px;
   line-height: 1.5;
   color: var(--color-text-primary);
   background-color: var(--color-surface);
