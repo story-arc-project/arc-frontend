@@ -38,15 +38,17 @@ ARC의 UI는 **Editorial Minimal** 스타일을 기반으로 한다.
 
 ### 브랜드 컬러
 
-> **TODO**: 최종 브랜드 컬러 확정 후 `app/globals.css`의 `:root`에서 아래 세 변수를 교체한다.
-
 ```css
---color-brand:       #3182f6;  /* 메인 브랜드 (현재 임시값) */
---color-brand-light: #e8f3ff;  /* 브랜드 배경, 뱃지 배경 */
---color-brand-dark:  #1b64da;  /* 호버, 눌림 상태 */
+--color-brand:       #fb8408;  /* 메인 브랜드 — amber orange */
+--color-brand-light: #fff3e6;  /* 브랜드 배경, 뱃지 배경 */
+--color-brand-dark:  #d46a00;  /* 호버, 눌림 상태 */
+--gradient-brand: linear-gradient(to right, #fb8408 0%, #ffc940e8 100%); /* 주요 CTA 그라디언트 */
 ```
 
 Tailwind 클래스: `bg-brand`, `text-brand`, `border-brand`, `bg-brand-light`, `bg-brand-dark`
+
+그라디언트 사용: `style={{ backgroundImage: "var(--gradient-brand)" }}`
+→ 랜딩 페이지 히어로 텍스트 하이라이트, 주요 CTA 버튼에 적용
 
 ---
 
@@ -126,7 +128,14 @@ Tailwind 클래스: `bg-brand`, `text-brand`, `border-brand`, `bg-brand-light`, 
 
 ### 폰트
 
-**Noto Sans KR** — 한국어 최적화, 4가지 웨이트 사용
+**Apple SD Gothic Neo** (Apple 기기 시스템 폰트) + **Pretendard** (비 Apple 기기 fallback)
+
+```
+font-family: "Apple SD Gothic Neo", "Pretendard", -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif
+```
+
+Pretendard는 jsDelivr CDN dynamic subset으로 로드 (app/layout.tsx `<link>`).
+Noto Sans KR 의존성은 제거됨.
 
 ```
 400 Regular   — 본문, 설명
