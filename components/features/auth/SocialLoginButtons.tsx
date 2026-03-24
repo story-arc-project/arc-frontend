@@ -57,7 +57,7 @@ const PROVIDERS: ProviderConfig[] = [
 
 export function SocialLoginButtons({ onLogin, action }: SocialLoginButtonsProps) {
   return (
-    <div className="grid grid-cols-2 gap-2.5">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
       {PROVIDERS.map((p) => (
         <button
           key={p.id}

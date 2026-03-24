@@ -101,7 +101,7 @@ export default function SignupPage() {
   const isOnboarding = onboardingIndex >= 0;
 
   return (
-    <div className="w-2/3 min-w-80 max-w-lg">
+    <div className="w-full sm:w-2/3 sm:min-w-80 max-w-lg">
       {/* Back */}
       <div className="h-8 mb-3 flex items-center">
         {step !== "start" && (
@@ -135,7 +135,7 @@ export default function SignupPage() {
       <motion.div
         layout
         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-        className="bg-surface border border-border rounded-xl px-10 py-10 shadow-sm overflow-hidden"
+        className="bg-surface border border-border rounded-xl px-6 py-8 sm:px-10 sm:py-10 shadow-sm overflow-hidden"
       >
         <AnimatePresence mode="wait" custom={dir}>
           <motion.div

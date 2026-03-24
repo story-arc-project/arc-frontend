@@ -31,9 +31,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="w-2/3 min-w-80 max-w-lg">
+    <div className="w-full sm:w-2/3 sm:min-w-80 max-w-lg">
       <div className="h-8 mb-3" />
-      <div className="bg-surface border border-border rounded-xl px-10 py-10 shadow-sm">
+      <div className="bg-surface border border-border rounded-xl px-6 py-8 sm:px-10 sm:py-10 shadow-sm">
         <motion.div
           variants={container}
           initial="hidden"
