@@ -57,7 +57,7 @@ const PROVIDERS: ProviderConfig[] = [
 
 export function SocialLoginButtons({ onLogin, action }: SocialLoginButtonsProps) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+    <div className="grid grid-cols-2 gap-2.5">
       {PROVIDERS.map((p) => (
         <button
           key={p.id}
@@ -71,7 +71,8 @@ export function SocialLoginButtons({ onLogin, action }: SocialLoginButtonsProps)
           ].join(" ")}
         >
           {p.icon}
-          {action ? `${p.labelPrefix} ${action}` : p.name}
+          <span className="sm:hidden">{p.name}</span>
+          <span className="hidden sm:inline">{action ? `${p.labelPrefix} ${action}` : p.name}</span>
         </button>
       ))}
     </div>

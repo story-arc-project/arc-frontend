@@ -31,9 +31,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="w-full sm:w-2/3 sm:min-w-80 max-w-lg">
+    <div className="w-full max-w-lg">
       <div className="h-8 mb-3" />
-      <div className="bg-surface border border-border rounded-xl px-6 py-8 sm:px-10 sm:py-10 shadow-sm">
+      <div className="sm:bg-surface sm:border sm:border-border sm:rounded-xl sm:shadow-sm px-0 py-0 sm:px-10 sm:py-10">
         <motion.div
           variants={container}
           initial="hidden"
@@ -41,7 +41,7 @@ export default function LoginPage() {
           className="flex flex-col gap-0"
         >
           <motion.div variants={item} className="mb-8 text-center">
-            <h1 className="text-heading-2 text-text-primary mb-1">다시 만나요</h1>
+            <h1 className="text-heading-2 text-text-primary mb-1">반가워요</h1>
             <p className="text-body text-text-secondary">이메일로 로그인하세요</p>
           </motion.div>
 
