@@ -73,6 +73,11 @@ Tailwind 클래스: `bg-brand`, `text-brand`, `border-brand`, `bg-brand-light`, 
 
 직접 헥스를 쓰지 않는다. **반드시 시맨틱 토큰을 사용한다.**
 
+> **예외 — 외부 소셜 로그인 브랜드 컬러**
+> Kakao(`#FEE500`), Naver(`#03C75A`), Apple(흑/백), Google(흰 배경) 등 외부 서비스의 공식 브랜드 컬러는
+> 해당 제공자의 아이덴티티 가이드라인을 따르므로 인라인 스타일·하드코딩 hex를 허용한다.
+> 단, 앱 내부 컴포넌트의 컬러에는 절대 적용하지 않는다.
+
 #### 텍스트
 
 | 토큰 | Tailwind | 사용처 |
@@ -106,7 +111,7 @@ Tailwind 클래스: `bg-brand`, `text-brand`, `border-brand`, `bg-brand-light`, 
 | `error` | `#f04452` | `text-error`, `bg-error` | 오류, 경고 메시지 |
 | `success` | `#03b26c` | `text-success` | 완료, 체크 |
 | `warning` | `#fe9800` | `text-warning` | 주의 사항 |
-| `info` | brand 동일 | `text-info` | 안내 메시지 |
+| `info` | `#3182f6` | `text-info` | 안내 메시지 (브랜드 컬러와 별도 유지) |
 
 ---
 

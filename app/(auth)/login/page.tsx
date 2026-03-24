@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Button, Input } from "@/components/ui";
@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const pwInputRef = useRef<HTMLInputElement>(null);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -46,17 +47,18 @@ export default function LoginPage() {
           </motion.div>
 
           <motion.div variants={item} className="flex flex-col gap-4">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <Input
               label="이메일"
               type="email"
               placeholder="name@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && (document.getElementById("pw-input") as HTMLInputElement)?.focus()}
+              onKeyDown={(e) => e.key === "Enter" && pwInputRef.current?.focus()}
             />
             <div className="relative">
               <Input
-                id="pw-input"
+                ref={pwInputRef}
                 label="비밀번호"
                 type={showPw ? "text" : "password"}
                 placeholder="비밀번호 입력"
@@ -74,10 +76,11 @@ export default function LoginPage() {
               </button>
             </div>
             <div className="mt-1">
-              <Button type="button" size="lg" fullWidth onClick={handleSubmit}>
+              <Button type="submit" size="lg" fullWidth>
                 로그인
               </Button>
             </div>
+            </form>
           </motion.div>
 
           <motion.div variants={item} className="my-6 flex items-center gap-3">

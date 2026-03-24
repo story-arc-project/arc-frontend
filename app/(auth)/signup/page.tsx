@@ -15,7 +15,8 @@ const ONBOARDING_STEPS: Step[] = ["profile", "nickname", "q1", "q2"];
 const Q1_OPTIONS = ["진로", "스펙", "아직 모름"] as const;
 const EDUCATION_OPTIONS = ["고등학생", "대학생", "대학원생", "졸업생"] as const;
 
-const YEARS = Array.from({ length: 30 }, (_, i) => 2009 - i);
+const CURRENT_YEAR = new Date().getFullYear();
+const YEARS = Array.from({ length: 30 }, (_, i) => CURRENT_YEAR - i);
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
@@ -195,7 +196,7 @@ export default function SignupPage() {
                     />
                   )}
                   <Button
-                    onClick={() => goTo("password")}
+                    onClick={() => goTo(inputMethod === "email" ? "password" : "profile")}
                     disabled={!(inputMethod === "email" ? email : phone)}
                   >
                     {inputMethod === "email" ? "이메일로 계속하기" : "전화번호로 계속하기"}
