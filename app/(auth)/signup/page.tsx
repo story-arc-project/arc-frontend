@@ -12,6 +12,8 @@ type Step = "start" | "password" | "verify" | "profile" | "nickname" | "q1" | "q
 type InputMethod = "email" | "phone";
 
 const ONBOARDING_STEPS: Step[] = ["profile", "nickname", "q1", "q2"];
+const EMAIL_ORDER: Step[] = ["start", "password", "verify", "profile", "nickname", "q1", "q2"];
+const PHONE_ORDER: Step[] = ["start", "profile", "nickname", "q1", "q2"];
 const Q1_OPTIONS = ["진로", "스펙", "아직 모름"] as const;
 const EDUCATION_OPTIONS = ["고등학생", "대학생", "대학원생", "졸업생"] as const;
 
@@ -68,8 +70,6 @@ export default function SignupPage() {
   const [q2, setQ2] = useState("");
 
   // Step order changes based on path
-  const EMAIL_ORDER: Step[] = ["start", "password", "verify", "profile", "nickname", "q1", "q2"];
-  const PHONE_ORDER: Step[] = ["start", "profile", "nickname", "q1", "q2"];
   const ORDER = inputMethod === "email" ? EMAIL_ORDER : PHONE_ORDER;
 
   function goTo(next: Step, direction = 1) {
@@ -83,7 +83,7 @@ export default function SignupPage() {
   }
 
   function handleSocial(provider: string) {
-    console.log("social:", provider); // API 연동 예정
+    // API 연동 예정
     goTo("profile");
   }
 

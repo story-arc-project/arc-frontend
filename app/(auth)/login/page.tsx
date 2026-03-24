@@ -28,7 +28,6 @@ export default function LoginPage() {
 
   function handleSocialLogin(provider: string) {
     // API 연동 예정
-    console.log("social login:", provider);
   }
 
   return (
