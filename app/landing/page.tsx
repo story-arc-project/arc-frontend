@@ -221,7 +221,12 @@ function Hero() {
           >
             경험을 기록하면<br />
             AI가 이야기로<br />
-            <span className="text-brand">만들어드립니다</span>
+            <span
+              className="bg-clip-text text-transparent"
+              style={{ backgroundImage: "var(--gradient-brand)" }}
+            >
+              만들어드립니다
+            </span>
           </motion.h1>
           <motion.p
             className="text-[17px] leading-[1.7] text-text-secondary mb-8 max-w-lg"
