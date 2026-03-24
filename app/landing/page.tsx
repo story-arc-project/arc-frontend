@@ -214,7 +214,7 @@ function Hero() {
             AI 커리어 아카이빙
           </motion.p>
           <motion.h1
-            className="text-[54px] leading-[1.12] font-bold tracking-[-0.025em] text-text-primary mb-6"
+            className="text-[36px] sm:text-[54px] leading-[1.12] font-bold tracking-[-0.025em] text-text-primary mb-6"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
@@ -238,7 +238,7 @@ function Hero() {
             AI가 패턴을 분석하고 이력서·자소서 초안까지 완성해줍니다.
           </motion.p>
           <motion.div
-            className="flex items-center gap-3"
+            className="flex flex-col sm:flex-row items-start sm:items-center gap-3"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
@@ -326,7 +326,7 @@ function FeatureRow({
           </p>
         </Reveal>
         <Reveal delay={0.08}>
-          <h2 className="text-[34px] font-bold tracking-[-0.015em] text-text-primary leading-[1.2] mb-4">
+          <h2 className="text-[26px] sm:text-[34px] font-bold tracking-[-0.015em] text-text-primary leading-[1.2] mb-4 whitespace-pre-line">
             {title}
           </h2>
         </Reveal>
@@ -413,7 +413,7 @@ function HowItWorks() {
           <p className="text-[12px] font-bold text-gray-500 uppercase tracking-widest mb-4">
             사용 방법
           </p>
-          <h2 className="text-[38px] font-bold tracking-[-0.02em] text-white">
+          <h2 className="text-[26px] sm:text-[38px] font-bold tracking-[-0.02em] text-white">
             3단계로 완성되는 커리어 서사
           </h2>
         </Reveal>
@@ -443,7 +443,7 @@ function Pricing() {
       <div className="max-w-5xl mx-auto">
         <Reveal className="mb-14">
           <p className="text-[12px] font-bold text-brand uppercase tracking-widest mb-4">요금</p>
-          <h2 className="text-[38px] font-bold tracking-[-0.02em] text-text-primary">
+          <h2 className="text-[26px] sm:text-[38px] font-bold tracking-[-0.02em] text-text-primary">
             무료로 시작, 필요할 때 업그레이드
           </h2>
         </Reveal>
@@ -544,7 +544,7 @@ function FinalCTA() {
           </p>
         </Reveal>
         <Reveal delay={0.1}>
-          <h2 className="text-[44px] font-bold tracking-[-0.025em] text-text-primary leading-[1.15] mb-5">
+          <h2 className="text-[30px] sm:text-[44px] font-bold tracking-[-0.025em] text-text-primary leading-[1.15] mb-5">
             당신의 경험에 숨어있는<br />흐름을 찾아드릴게요
           </h2>
         </Reveal>
