@@ -200,14 +200,23 @@ ARC는 **적응형 웹(Adaptive Web)** 을 기준으로 한다.
 
 ### 모바일 카드 처리
 
-모바일에서 **카드 컨테이너(border, rounded, shadow)는 제거**한다. 콘텐츠만 전체 너비로 표시되며, 데스크톱에서 카드 형태로 전환된다.
+**페이지 래퍼 카드** — 로그인·회원가입처럼 페이지 전체 콘텐츠를 하나의 카드로 감싸는 패턴은 모바일에서 제거한다. 데스크톱에서만 카드 형태로 표시되며, 모바일에서는 콘텐츠가 전체 너비로 플랫하게 표시된다.
 
 ```tsx
-// ✅ 적응형 카드 — 모바일: 플랫 / 데스크톱: 카드
+// ✅ 페이지 래퍼 카드 — 모바일: 플랫 / 데스크톱: 카드
 <div className="w-full max-w-lg">
   <div className="sm:bg-surface sm:border sm:border-border sm:rounded-xl sm:shadow-sm px-0 py-0 sm:px-10 sm:py-10">
     ...
   </div>
+</div>
+```
+
+**콘텐츠 카드** — 리스트 아이템, 정보 블록, 대시보드 위젯 등 UI 구성 요소로 쓰이는 카드는 모바일에서도 그대로 유지한다.
+
+```tsx
+// ✅ 콘텐츠 카드 — 모바일 포함 항상 카드 스타일 유지
+<div className="bg-surface border border-border rounded-lg p-5">
+  ...
 </div>
 ```
 
