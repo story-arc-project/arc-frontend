@@ -166,7 +166,7 @@ function ExportMockup() {
 function Navbar() {
   return (
     <motion.header
-      className="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-border"
+      className="sticky top-0 z-50 bg-surface/90 backdrop-blur-sm border-b border-border"
       initial={{ opacity: 0, y: -12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
@@ -593,7 +593,7 @@ function Footer() {
 /* ── Page ────────────────────────────────────────────────── */
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-surface">
       <Navbar />
       <main>
         <Hero />
