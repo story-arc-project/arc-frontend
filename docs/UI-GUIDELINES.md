@@ -10,13 +10,14 @@
 1. [디자인 철학](#1-디자인-철학)
 2. [색상](#2-색상)
 3. [타이포그래피](#3-타이포그래피)
-4. [간격 · 레이아웃](#4-간격--레이아웃)
-5. [Border Radius](#5-border-radius)
-6. [Shadow](#6-shadow)
-7. [컴포넌트](#7-컴포넌트)
-8. [애니메이션](#8-애니메이션)
-9. [아이콘](#9-아이콘)
-10. [해야 할 것 · 하지 말아야 할 것](#10-해야-할-것--하지-말아야-할-것)
+4. [적응형 · 모바일](#4-적응형--모바일)
+5. [간격 · 레이아웃](#5-간격--레이아웃)
+6. [Border Radius](#6-border-radius)
+7. [Shadow](#7-shadow)
+8. [컴포넌트](#8-컴포넌트)
+9. [애니메이션](#9-애니메이션)
+10. [아이콘](#10-아이콘)
+11. [해야 할 것 · 하지 말아야 할 것](#11-해야-할-것--하지-말아야-할-것)
 
 ---
 
@@ -38,15 +39,17 @@ ARC의 UI는 **Editorial Minimal** 스타일을 기반으로 한다.
 
 ### 브랜드 컬러
 
-> **TODO**: 최종 브랜드 컬러 확정 후 `app/globals.css`의 `:root`에서 아래 세 변수를 교체한다.
-
 ```css
---color-brand:       #3182f6;  /* 메인 브랜드 (현재 임시값) */
---color-brand-light: #e8f3ff;  /* 브랜드 배경, 뱃지 배경 */
---color-brand-dark:  #1b64da;  /* 호버, 눌림 상태 */
+--color-brand:       #fb8408;  /* 메인 브랜드 — amber orange */
+--color-brand-light: #fff3e6;  /* 브랜드 배경, 뱃지 배경 */
+--color-brand-dark:  #d46a00;  /* 호버, 눌림 상태 */
+--gradient-brand: linear-gradient(to right, #fb8408 0%, #ffc940e8 100%); /* 주요 CTA 그라디언트 */
 ```
 
 Tailwind 클래스: `bg-brand`, `text-brand`, `border-brand`, `bg-brand-light`, `bg-brand-dark`
+
+그라디언트 사용: `style={{ backgroundImage: "var(--gradient-brand)" }}`
+→ 랜딩 페이지 히어로 텍스트 하이라이트, 주요 CTA 버튼에 적용
 
 ---
 
@@ -70,6 +73,11 @@ Tailwind 클래스: `bg-brand`, `text-brand`, `border-brand`, `bg-brand-light`, 
 ### 시맨틱 컬러
 
 직접 헥스를 쓰지 않는다. **반드시 시맨틱 토큰을 사용한다.**
+
+> **예외 — 외부 소셜 로그인 브랜드 컬러**
+> Kakao(`#FEE500`), Naver(`#03C75A`), Apple(흑/백), Google(흰 배경) 등 외부 서비스의 공식 브랜드 컬러는
+> 해당 제공자의 아이덴티티 가이드라인을 따르므로 인라인 스타일·하드코딩 hex를 허용한다.
+> 단, 앱 내부 컴포넌트의 컬러에는 절대 적용하지 않는다.
 
 #### 텍스트
 
@@ -104,7 +112,7 @@ Tailwind 클래스: `bg-brand`, `text-brand`, `border-brand`, `bg-brand-light`, 
 | `error` | `#f04452` | `text-error`, `bg-error` | 오류, 경고 메시지 |
 | `success` | `#03b26c` | `text-success` | 완료, 체크 |
 | `warning` | `#fe9800` | `text-warning` | 주의 사항 |
-| `info` | brand 동일 | `text-info` | 안내 메시지 |
+| `info` | `#3182f6` | `text-info` | 안내 메시지 (브랜드 컬러와 별도 유지) |
 
 ---
 
@@ -126,7 +134,14 @@ Tailwind 클래스: `bg-brand`, `text-brand`, `border-brand`, `bg-brand-light`, 
 
 ### 폰트
 
-**Noto Sans KR** — 한국어 최적화, 4가지 웨이트 사용
+**Apple SD Gothic Neo** (Apple 기기 시스템 폰트) + **Pretendard** (비 Apple 기기 fallback)
+
+```
+font-family: "Apple SD Gothic Neo", "Pretendard", -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif
+```
+
+Pretendard는 jsDelivr CDN dynamic subset으로 로드 (app/layout.tsx `<link>`).
+Noto Sans KR 의존성은 제거됨.
 
 ```
 400 Regular   — 본문, 설명
@@ -168,7 +183,78 @@ Tailwind 클래스: `bg-brand`, `text-brand`, `border-brand`, `bg-brand-light`, 
 
 ---
 
-## 4. 간격 · 레이아웃
+## 4. 적응형 · 모바일
+
+ARC는 **적응형 웹(Adaptive Web)** 을 기준으로 한다.
+레이아웃이 유동적으로 변하는 반응형(Responsive)과 달리, 각 브레이크포인트에서 미리 정의된 고정 레이아웃으로 **스냅**된다.
+
+### 브레이크포인트
+
+| 접두사 | 기준 너비 | 대상 기기 |
+|--------|-----------|-----------|
+| (없음) | 0px~ | 모바일 |
+| `sm:` | 640px~ | 태블릿·소형 |
+| `md:` | 768px~ | 태블릿 가로 |
+| `lg:` | 1024px~ | 데스크톱 |
+| `xl:` | 1280px~ | 와이드 |
+
+### 모바일 카드 처리
+
+**페이지 래퍼 카드** — 로그인·회원가입처럼 페이지 전체 콘텐츠를 하나의 카드로 감싸는 패턴은 모바일에서 제거한다. 데스크톱에서만 카드 형태로 표시되며, 모바일에서는 콘텐츠가 전체 너비로 플랫하게 표시된다.
+
+```tsx
+// ✅ 페이지 래퍼 카드 — 모바일: 플랫 / 데스크톱: 카드
+<div className="w-full max-w-lg">
+  <div className="sm:bg-surface sm:border sm:border-border sm:rounded-xl sm:shadow-sm px-0 py-0 sm:px-10 sm:py-10">
+    ...
+  </div>
+</div>
+```
+
+**콘텐츠 카드** — 리스트 아이템, 정보 블록, 대시보드 위젯 등 UI 구성 요소로 쓰이는 카드는 모바일에서도 그대로 유지한다.
+
+```tsx
+// ✅ 콘텐츠 카드 — 모바일 포함 항상 카드 스타일 유지
+<div className="bg-surface border border-border rounded-lg p-5">
+  ...
+</div>
+```
+
+### 콘텐츠 너비
+
+```tsx
+// ✅ 모바일·데스크톱 모두 최대 너비 제한 + 가운데 정렬
+<div className="w-full max-w-lg">
+```
+
+유동적인 `%` 너비 대신 `max-w-*` 고정 상한을 사용한다.
+
+### 그리드
+
+그리드 열 수는 브레이크포인트마다 고정값으로 지정한다. 열 수가 유동적으로 변하지 않도록 한다.
+
+```tsx
+// ✅ 적응형 — 각 breakpoint에서 고정 열 수
+<div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+```
+
+### 텍스트 적응
+
+버튼 안 텍스트가 모바일에서 두 줄로 깨질 경우, **그리드 구조는 유지**하고 브레이크포인트별 텍스트를 분리한다.
+
+```tsx
+// ✅ 모바일: 짧은 텍스트 / 데스크톱: 전체 텍스트
+<span className="sm:hidden">Google</span>
+<span className="hidden sm:inline">Google로 계속하기</span>
+```
+
+### 터치 타겟
+
+모바일에서 탭 가능한 요소의 최소 높이는 **48px** (`h-12`). 버튼, 입력, 선택 요소 모두 이 기준을 따른다.
+
+---
+
+## 5. 간격 · 레이아웃
 
 ### 콘텐츠 최대 너비
 

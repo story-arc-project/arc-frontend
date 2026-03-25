@@ -2,7 +2,7 @@
 
 /* ============================================================
    ARC Design System — Editorial Minimal
-   Theme color: TODO — set --color-brand-* when finalized
+   Theme color: #fb8408 (amber orange)
    ============================================================ */
 
 /* ── Raw color palette (Toss gray scale) ─────────────────── */
@@ -19,15 +19,16 @@
   --gray-25:  #f9fafb;
 
   /* ── Font ─────────────────────────────────────────────────── */
-  --font-sans: "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: "Apple SD Gothic Neo", "Pretendard", -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif;
 }
 
 /* ── Tailwind v4 theme extension ──────────────────────────── */
 @theme inline {
-  /* Brand (TODO: replace with final brand color) */
-  --color-brand:       #3182f6;
-  --color-brand-light: #e8f3ff;
-  --color-brand-dark:  #1b64da;
+  /* Brand */
+  --color-brand:       #fb8408;
+  --color-brand-light: #fff3e6;
+  --color-brand-dark:  #d46a00;
+  --gradient-brand:    linear-gradient(to right, #fb8408 0%, #ffc940e8 100%);
 
   /* Text */
   --color-text-primary:   var(--gray-950);
@@ -40,7 +41,7 @@
   --color-surface:           #ffffff;
   --color-surface-secondary: var(--gray-25);
   --color-surface-tertiary:  var(--gray-50);
-  --color-surface-brand:     #e8f3ff;
+  --color-surface-brand:     #fff3e6;
   --color-surface-success:   #e8faf3;
   --color-surface-warning:   #fff8e6;
   --color-surface-error:     #fef0f1;
