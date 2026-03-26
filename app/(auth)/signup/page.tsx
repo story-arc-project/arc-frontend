@@ -3,17 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button, Input, Textarea } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 
 /* ── Types ───────────────────────────────────────────────── */
 type Step = "start" | "password" | "verify" | "profile" | "nickname" | "q1" | "q2";
-type InputMethod = "email" | "phone";
 
 const ONBOARDING_STEPS: Step[] = ["profile", "nickname", "q1", "q2"];
-const EMAIL_ORDER: Step[] = ["start", "password", "verify", "profile", "nickname", "q1", "q2"];
-const PHONE_ORDER: Step[] = ["start", "profile", "nickname", "q1", "q2"];
+const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "nickname", "q1", "q2"];
 const Q1_OPTIONS = ["진로", "스펙", "아직 모름"] as const;
 const EDUCATION_OPTIONS = ["고등학생", "대학생", "대학원생", "졸업생"] as const;
 
@@ -21,6 +20,8 @@ const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 30 }, (_, i) => CURRENT_YEAR - i);
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /* ── Animation ───────────────────────────────────────────── */
 const stepVariants = {
@@ -38,9 +39,7 @@ export default function SignupPage() {
   const [dir, setDir] = useState(1);
 
   // Auth fields
-  const [inputMethod, setInputMethod] = useState<InputMethod>("email");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -53,6 +52,7 @@ export default function SignupPage() {
   const [education, setEducation] = useState<string | null>(null);
   const [school, setSchool] = useState("");
   const [department, setDepartment] = useState("");
+  const [phone, setPhone] = useState("");
   const needsSchool = education === "대학생" || education === "대학원생" || education === "졸업생";
 
   // Password strength
@@ -69,8 +69,14 @@ export default function SignupPage() {
   const [q1, setQ1] = useState<string | null>(null);
   const [q2, setQ2] = useState("");
 
-  // Step order changes based on path
-  const ORDER = inputMethod === "email" ? EMAIL_ORDER : PHONE_ORDER;
+  // Verify fields
+  const [verifyCode, setVerifyCode] = useState("");
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  // UI state
+  const [isLoading, setIsLoading] = useState(false);
+  const [signupError, setSignupError] = useState<string | null>(null);
+  const [socialError, setSocialError] = useState<string | null>(null);
 
   function goTo(next: Step, direction = 1) {
     setDir(direction);
@@ -78,20 +84,101 @@ export default function SignupPage() {
   }
 
   function goBack() {
-    const idx = ORDER.indexOf(step);
-    if (idx > 0) goTo(ORDER[idx - 1], -1);
+    const idx = STEP_ORDER.indexOf(step);
+    if (idx > 0) goTo(STEP_ORDER[idx - 1], -1);
   }
 
-  function handleSocial(provider: string) {
-    // API 연동 예정
-    goTo("profile");
+  async function handleSignup() {
+    setIsLoading(true);
+    setSignupError(null);
+
+    try {
+      // TODO: 백엔드 연동 시 실제 endpoint로 교체
+      const res = await fetch(`${API_URL}/auth/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) {
+        const { detail } = await res.json().catch(() => ({}));
+        setSignupError(detail ?? "이미 가입된 이메일이에요. Google로 로그인하셨나요?");
+        return;
+      }
+
+      goTo("verify");
+    } catch {
+      setSignupError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
-  function handleFinish() {
-    router.push("/dashboard"); // API 연동 예정
+  async function handleVerify() {
+    setIsLoading(true);
+    setVerifyError(null);
+
+    try {
+      const res = await fetch(`${API_URL}/auth/verify-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code: verifyCode }),
+      });
+
+      if (!res.ok) {
+        const { detail } = await res.json().catch(() => ({}));
+        setVerifyError(detail ?? "인증 코드가 올바르지 않아요");
+        return;
+      }
+
+      goTo("profile");
+    } catch {
+      setVerifyError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
-  const identifier = inputMethod === "email" ? email : phone;
+  async function handleResendCode() {
+    try {
+      await fetch(`${API_URL}/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+    } catch {
+      // silent fail — user can retry
+    }
+  }
+
+  async function handleSocial(provider: string) {
+    if (provider !== "google") {
+      setSocialError("곧 지원 예정이에요");
+      setTimeout(() => setSocialError(null), 3000);
+      return;
+    }
+    await signIn("google", { callbackUrl: "/dashboard" });
+  }
+
+  async function handleFinish() {
+    setIsLoading(true);
+
+    // TODO: 온보딩 데이터 저장 (엔드포인트 미정)
+    // await fetch(`${API_URL}/auth/onboarding`, { ... })
+
+    // Cookies were already set by FastAPI during handleSignup — pass email only
+    const result = await signIn("credentials", {
+      email,
+      redirect: false,
+    });
+
+    setIsLoading(false);
+
+    if (!result?.error) {
+      router.push("/dashboard");
+    }
+  }
+
   const birthComplete = birthYear && birthMonth && birthDay;
   const profileComplete =
     birthComplete &&
@@ -156,50 +243,20 @@ export default function SignupPage() {
                   이메일 또는 소셜 계정으로 가입해요
                 </p>
 
-                {/* Email / Phone tab */}
-                <div className="flex bg-surface-secondary rounded-lg p-1 mb-4">
-                  {(["email", "phone"] as InputMethod[]).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setInputMethod(m)}
-                      className={[
-                        "flex-1 h-9 rounded-md text-body-sm font-semibold transition-all duration-150 cursor-pointer",
-                        inputMethod === m
-                          ? "bg-surface text-text-primary shadow-xs"
-                          : "text-text-tertiary hover:text-text-secondary",
-                      ].join(" ")}
-                    >
-                      {m === "email" ? "이메일" : "전화번호"}
-                    </button>
-                  ))}
-                </div>
-
                 <div className="flex flex-col gap-3 mb-5">
-                  {inputMethod === "email" ? (
-                    <Input
-                      label="이메일"
-                      type="email"
-                      placeholder="name@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && email && goTo("password")}
-                    />
-                  ) : (
-                    <Input
-                      label="전화번호"
-                      type="tel"
-                      placeholder="010-0000-0000"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && phone && goTo("profile")}
-                    />
-                  )}
+                  <Input
+                    label="이메일"
+                    type="email"
+                    placeholder="name@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && email && goTo("password")}
+                  />
                   <Button
-                    onClick={() => goTo(inputMethod === "email" ? "password" : "profile")}
-                    disabled={!(inputMethod === "email" ? email : phone)}
+                    onClick={() => goTo("password")}
+                    disabled={!email}
                   >
-                    {inputMethod === "email" ? "이메일로 계속하기" : "전화번호로 계속하기"}
+                    이메일로 계속하기
                   </Button>
                 </div>
 
@@ -210,6 +267,9 @@ export default function SignupPage() {
                 </div>
 
                 <SocialLoginButtons onLogin={handleSocial} action="시작하기" />
+                {socialError && (
+                  <p className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
+                )}
 
                 <p className="mt-6 text-center text-body-sm text-text-secondary">
                   이미 계정이 있으신가요?{" "}
@@ -223,7 +283,7 @@ export default function SignupPage() {
             {/* ── password ─────────────────────────── */}
             {step === "password" && (
               <div>
-                <p className="text-caption text-text-tertiary mb-1 truncate">{identifier}</p>
+                <p className="text-caption text-text-tertiary mb-1 truncate">{email}</p>
                 <h1 className="text-heading-2 text-text-primary mb-1">비밀번호를 설정해주세요</h1>
                 <p className="text-body text-text-secondary mb-8">8자 이상이면 충분해요</p>
 
@@ -235,7 +295,6 @@ export default function SignupPage() {
                       placeholder="영문+숫자 8자 이상"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && pwValid && goTo("verify")}
                       className="pr-14"
                     />
                     <button
@@ -247,7 +306,6 @@ export default function SignupPage() {
                       {showPw ? "숨기기" : "보기"}
                     </button>
                   </div>
-                  {/* Password strength indicators */}
                   {password.length > 0 && (
                     <div className="flex gap-3">
                       {pwChecks.map((c) => (
@@ -266,7 +324,6 @@ export default function SignupPage() {
                       ))}
                     </div>
                   )}
-                  {/* Confirm password */}
                   <div className="relative">
                     <Input
                       label="비밀번호 확인"
@@ -274,7 +331,6 @@ export default function SignupPage() {
                       placeholder="비밀번호를 다시 입력해주세요"
                       value={confirmPw}
                       onChange={(e) => setConfirmPw(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && pwValid && goTo("verify")}
                       error={confirmPw.length > 0 && !pwMatch ? "비밀번호가 일치하지 않아요" : undefined}
                       className="pr-14"
                     />
@@ -287,8 +343,11 @@ export default function SignupPage() {
                       {showConfirmPw ? "숨기기" : "보기"}
                     </button>
                   </div>
-                  <Button onClick={() => goTo("verify")} disabled={!pwValid}>
-                    가입하기
+                  {signupError && (
+                    <p className="text-body-sm text-error">{signupError}</p>
+                  )}
+                  <Button onClick={handleSignup} disabled={!pwValid || isLoading}>
+                    {isLoading ? "처리 중..." : "가입하기"}
                   </Button>
                 </div>
               </div>
@@ -296,26 +355,35 @@ export default function SignupPage() {
 
             {/* ── verify ───────────────────────────── */}
             {step === "verify" && (
-              <div className="text-center py-2">
-                <div className="text-display mb-5 leading-none">✉️</div>
-                <h1 className="text-heading-2 text-text-primary mb-2">메일함을 확인해주세요</h1>
-                <p className="text-body text-text-secondary mb-1">
-                  <span className="font-medium text-text-primary">{identifier}</span>으로
+              <div>
+                <div className="text-display mb-5 leading-none text-center">✉️</div>
+                <h1 className="text-heading-2 text-text-primary mb-1">인증 코드를 입력해주세요</h1>
+                <p className="text-body text-text-secondary mb-8">
+                  <span className="font-medium text-text-primary">{email}</span>으로 코드를 보냈어요
                 </p>
-                <p className="text-body text-text-secondary mb-2">인증 링크를 보냈어요</p>
-                <p className="text-body-sm text-text-tertiary mb-8">
-                  인증 후 전체 기능을 사용할 수 있어요.<br />
-                  지금 바로 시작하고 나중에 인증해도 괜찮아요.
-                </p>
-                <div className="flex flex-col gap-2.5">
-                  <Button onClick={() => goTo("profile")}>일단 시작할게요</Button>
+
+                <div className="flex flex-col gap-3">
+                  <Input
+                    label="인증 코드"
+                    type="text"
+                    placeholder="코드 6자리 입력"
+                    value={verifyCode}
+                    onChange={(e) => setVerifyCode(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && verifyCode.trim() && handleVerify()}
+                  />
+                  {verifyError && (
+                    <p className="text-body-sm text-error">{verifyError}</p>
+                  )}
+                  <Button onClick={handleVerify} disabled={!verifyCode.trim() || isLoading}>
+                    {isLoading ? "확인 중..." : "확인"}
+                  </Button>
                   <button
                     type="button"
-                    onClick={() => {}} // API 연동 예정
+                    onClick={handleResendCode}
                     className="w-full h-12 rounded-md border border-border text-text-secondary
                                text-body font-medium hover:bg-surface-secondary transition-colors cursor-pointer"
                   >
-                    인증 메일 재발송
+                    코드 재발송
                   </button>
                 </div>
               </div>
@@ -396,7 +464,7 @@ export default function SignupPage() {
                   ))}
                 </div>
 
-                {/* School / department — revealed for university options */}
+                {/* 학교 / 학과 */}
                 <AnimatePresence>
                   {needsSchool && (
                     <motion.div
@@ -426,6 +494,17 @@ export default function SignupPage() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                {/* 전화번호 (선택) */}
+                <div className="mb-6">
+                  <Input
+                    label="전화번호 (선택)"
+                    type="tel"
+                    placeholder="010-0000-0000"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </div>
 
                 <Button onClick={() => goTo("nickname")} disabled={!profileComplete} fullWidth>
                   다음
@@ -515,8 +594,8 @@ export default function SignupPage() {
                     onChange={(e) => setQ2(e.target.value)}
                     rows={4}
                   />
-                  <Button onClick={handleFinish}>
-                    {q2.trim() ? "ARC 시작하기 🎉" : "나중에 채울게요 →"}
+                  <Button onClick={handleFinish} disabled={isLoading}>
+                    {isLoading ? "처리 중..." : q2.trim() ? "ARC 시작하기 🎉" : "나중에 채울게요 →"}
                   </Button>
                 </div>
               </div>

@@ -2,6 +2,8 @@
 
 import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
@@ -16,18 +18,62 @@ const item = {
 };
 
 export default function LoginPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [socialError, setSocialError] = useState<string | null>(null);
   const pwInputRef = useRef<HTMLInputElement>(null);
 
-  function handleSubmit(e: FormEvent) {
+  const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    // API 연동 예정
+    setIsLoading(true);
+    setError(null);
+
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+    // Step 1: Call FastAPI directly — browser receives httpOnly cookies (access + refresh token)
+    const loginRes = await fetch(`${API_URL}/auth/login`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!loginRes.ok) {
+      setIsLoading(false);
+      setError("이메일 또는 비밀번호가 올바르지 않아요");
+      return;
+    }
+
+    // Step 2: Create NextAuth session using the cookies already set
+    const result = await signIn("credentials", {
+      email,
+      redirect: false,
+    });
+
+    setIsLoading(false);
+
+    if (result?.error) {
+      setError("이메일 또는 비밀번호가 올바르지 않아요");
+    } else {
+      router.push(callbackUrl);
+    }
   }
 
-  function handleSocialLogin(provider: string) {
-    // API 연동 예정
+  async function handleSocialLogin(provider: string) {
+    if (provider !== "google") {
+      setSocialError("곧 지원 예정이에요");
+      setTimeout(() => setSocialError(null), 3000);
+      return;
+    }
+    await signIn("google", { callbackUrl });
   }
 
   return (
@@ -47,38 +93,41 @@ export default function LoginPage() {
 
           <motion.div variants={item} className="flex flex-col gap-4">
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <Input
-              label="이메일"
-              type="email"
-              placeholder="name@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && pwInputRef.current?.focus()}
-            />
-            <div className="relative">
               <Input
-                ref={pwInputRef}
-                label="비밀번호"
-                type={showPw ? "text" : "password"}
-                placeholder="비밀번호 입력"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="pr-14"
+                label="이메일"
+                type="email"
+                placeholder="name@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && pwInputRef.current?.focus()}
               />
-              <button
-                type="button"
-                onClick={() => setShowPw((v) => !v)}
-                className="absolute right-3 top-[38px] text-caption text-text-tertiary
-                           hover:text-text-secondary transition-colors cursor-pointer select-none"
-              >
-                {showPw ? "숨기기" : "보기"}
-              </button>
-            </div>
-            <div className="mt-1">
-              <Button type="submit" size="lg" fullWidth>
-                로그인
-              </Button>
-            </div>
+              <div className="relative">
+                <Input
+                  ref={pwInputRef}
+                  label="비밀번호"
+                  type={showPw ? "text" : "password"}
+                  placeholder="비밀번호 입력"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pr-14"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPw((v) => !v)}
+                  className="absolute right-3 top-[38px] text-caption text-text-tertiary
+                             hover:text-text-secondary transition-colors cursor-pointer select-none"
+                >
+                  {showPw ? "숨기기" : "보기"}
+                </button>
+              </div>
+              {error && (
+                <p className="text-body-sm text-error">{error}</p>
+              )}
+              <div className="mt-1">
+                <Button type="submit" size="lg" fullWidth disabled={isLoading || !email || !password}>
+                  {isLoading ? "로그인 중..." : "로그인"}
+                </Button>
+              </div>
             </form>
           </motion.div>
 
@@ -90,6 +139,9 @@ export default function LoginPage() {
 
           <motion.div variants={item}>
             <SocialLoginButtons onLogin={handleSocialLogin} action="계속하기" />
+            {socialError && (
+              <p className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
+            )}
           </motion.div>
 
           <motion.p variants={item} className="mt-6 text-center text-body-sm text-text-secondary">
