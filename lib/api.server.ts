@@ -1,6 +1,5 @@
-"use client";
-
-import { signOut } from "next-auth/react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -22,35 +21,28 @@ export class ApiError extends Error {
 // Core request
 // ──────────────────────────────────────────────
 
-async function tryRefresh(): Promise<boolean> {
-  const res = await fetch(`${API_URL}/auth/refresh`, {
-    method: "POST",
-    credentials: "include",
-  });
-  return res.ok;
-}
-
 async function request<T>(
   path: string,
-  options: RequestInit = {},
-  retry = true
+  options: RequestInit = {}
 ): Promise<T> {
+  const cookieStore = await cookies();
+  const cookieHeader = cookieStore
+    .getAll()
+    .map((c) => `${c.name}=${c.value}`)
+    .join("; ");
+
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
-    credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      Cookie: cookieHeader,
       ...options.headers,
     },
   });
 
-  if (res.status === 401 && retry) {
-    const refreshed = await tryRefresh();
-    if (refreshed) {
-      return request<T>(path, options, false);
-    }
-    await signOut({ callbackUrl: "/login" });
-    throw new ApiError(401, "인증이 만료되었어요. 다시 로그인해주세요.");
+  // 서버에서는 쿠키 갱신이 불가능하므로 401 즉시 리다이렉트
+  if (res.status === 401) {
+    redirect("/login");
   }
 
   if (!res.ok) {
