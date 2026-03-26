@@ -7,6 +7,7 @@ import { signIn } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button, Input, Textarea } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
+import { api, ApiError } from "@/lib/api";
 
 /* ── Types ───────────────────────────────────────────────── */
 type Step = "start" | "password" | "verify" | "profile" | "nickname" | "q1" | "q2";
@@ -20,8 +21,6 @@ const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 30 }, (_, i) => CURRENT_YEAR - i);
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /* ── Animation ───────────────────────────────────────────── */
 const stepVariants = {
@@ -93,22 +92,11 @@ export default function SignupPage() {
     setSignupError(null);
 
     try {
-      // TODO: 백엔드 연동 시 실제 endpoint로 교체
-      const res = await fetch(`${API_URL}/auth/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (!res.ok) {
-        const { detail } = await res.json().catch(() => ({}));
-        setSignupError(detail ?? "이미 가입된 이메일이에요. Google로 로그인하셨나요?");
-        return;
-      }
-
+      await api.post("/auth/signup", { email, password });
       goTo("verify");
-    } catch {
-      setSignupError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+    } catch (e) {
+      if (e instanceof ApiError) setSignupError(e.message);
+      else setSignupError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
     } finally {
       setIsLoading(false);
     }
@@ -119,21 +107,11 @@ export default function SignupPage() {
     setVerifyError(null);
 
     try {
-      const res = await fetch(`${API_URL}/auth/verify-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code: verifyCode }),
-      });
-
-      if (!res.ok) {
-        const { detail } = await res.json().catch(() => ({}));
-        setVerifyError(detail ?? "인증 코드가 올바르지 않아요");
-        return;
-      }
-
+      await api.post("/auth/verify-email", { email, code: verifyCode });
       goTo("profile");
-    } catch {
-      setVerifyError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+    } catch (e) {
+      if (e instanceof ApiError) setVerifyError(e.message);
+      else setVerifyError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
     } finally {
       setIsLoading(false);
     }
@@ -141,11 +119,7 @@ export default function SignupPage() {
 
   async function handleResendCode() {
     try {
-      await fetch(`${API_URL}/auth/resend-verification`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
+      await api.post("/auth/resend-verification", { email });
     } catch {
       // silent fail — user can retry
     }
