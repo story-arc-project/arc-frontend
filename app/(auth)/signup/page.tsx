@@ -10,16 +10,26 @@ import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButton
 import { api, ApiError } from "@/lib/api";
 
 /* ── Types ───────────────────────────────────────────────── */
-type Step = "start" | "password" | "verify" | "profile" | "nickname" | "q1" | "q2";
+type Step = "start" | "password" | "verify" | "profile" | "q1" | "q2";
 
-const ONBOARDING_STEPS: Step[] = ["profile", "nickname", "q1", "q2"];
-const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "nickname", "q1", "q2"];
-const Q1_OPTIONS = ["진로", "스펙", "아직 모름"] as const;
-const EDUCATION_OPTIONS = ["초중고", "대학생", "대학원", "졸업생"] as const;
-const INTEREST_OPTIONS = [
-  "개발/엔지니어링", "디자인/UX", "마케팅/콘텐츠", "기획/PM",
-  "데이터/AI", "창업/스타트업", "연구/학문", "아직 모름",
+const ONBOARDING_STEPS: Step[] = ["profile", "q1", "q2"];
+const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "q1", "q2"];
+const Q1_OPTIONS = [
+  "진로/방향성", "취업/인턴", "스펙/자격증",
+  "대학원/진학", "창업", "학업/성적", "아직 모름",
 ] as const;
+const INTEREST_OPTIONS = [
+  "개발/엔지니어링", "디자인/UX", "데이터/AI", "기획/PM",
+  "마케팅/콘텐츠", "경영/컨설팅", "금융/경제", "창업/스타트업",
+  "의료/헬스케어", "교육", "미디어/엔터", "법률/공공",
+  "연구/학문", "예술/문화", "환경/사회", "아직 모름",
+] as const;
+
+function formatPhone(digits: string): string {
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 30 }, (_, i) => CURRENT_YEAR - i);
@@ -53,11 +63,8 @@ export default function SignupPage() {
   const [birthYear, setBirthYear] = useState("");
   const [birthMonth, setBirthMonth] = useState("");
   const [birthDay, setBirthDay] = useState("");
-  const [education, setEducation] = useState<string | null>(null);
-  const [school, setSchool] = useState("");
-  const [department, setDepartment] = useState("");
+  const [education, setEducation] = useState("");
   const [phone, setPhone] = useState("");
-  const needsSchool = education === "대학생" || education === "대학원" || education === "졸업생";
 
   // Password strength
   const pwChecks = [
@@ -69,7 +76,7 @@ export default function SignupPage() {
   const pwValid = pwChecks.every((c) => c.pass) && pwMatch;
 
   // Onboarding fields
-  const [nickname, setNickname] = useState("");
+  const [name, setName] = useState("");
   const [q1, setQ1] = useState<string | null>(null);
   const [interests, setInterests] = useState<string[]>([]);
 
@@ -180,14 +187,12 @@ export default function SignupPage() {
     try {
       const birth = `${birthYear}-${String(birthMonth).padStart(2, "0")}-${String(birthDay).padStart(2, "0")}`;
       await api.post("/auth/onboarding", {
-        nickname,
+        nickname: name,
         birth,
-        education,
-        ...(needsSchool && school       && { school }),
-        ...(needsSchool && department   && { department }),
-        ...(phone                       && { phone }),
-        ...(q1                          && { worry: [q1] }),
-        ...(interests.length > 0        && { interest: interests }),
+        ...(education.trim() && { education }),
+        ...(phone            && { phone }),
+        ...(q1               && { worry: [q1] }),
+        ...(interests.length > 0 && { interest: interests }),
       });
     } catch {
       // 온보딩 실패 시 세션 생성은 계속 진행 (데이터는 나중에 재입력 가능)
@@ -195,7 +200,7 @@ export default function SignupPage() {
 
     const result = await signIn("credentials", {
       email,
-      name: nickname,
+      name,
       redirect: false,
     });
 
@@ -208,9 +213,9 @@ export default function SignupPage() {
 
   const birthComplete = birthYear && birthMonth && birthDay;
   const profileComplete =
+    name.trim().length > 0 &&
     birthComplete &&
-    !!education &&
-    (!needsSchool || (school.trim().length > 0 && department.trim().length > 0));
+    phone.length === 11;
   const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
   const isOnboarding = onboardingIndex >= 0;
 
@@ -427,6 +432,17 @@ export default function SignupPage() {
                   맞춤 경험을 제공하는 데 사용돼요
                 </p>
 
+                {/* 이름 */}
+                <div className="mb-6">
+                  <Input
+                    label="이름"
+                    type="text"
+                    placeholder="홍길동"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
+
                 {/* 생년월일 */}
                 <p className="text-label text-text-primary mb-2">생년월일</p>
                 <div className="grid grid-cols-3 gap-2 mb-6">
@@ -470,98 +486,32 @@ export default function SignupPage() {
                   ))}
                 </div>
 
-                {/* 학력 */}
-                <p className="text-label text-text-primary mb-2">학력</p>
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  {EDUCATION_OPTIONS.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => {
-                        setEducation(opt);
-                        if (opt === "초중고") { setSchool(""); setDepartment(""); }
-                      }}
-                      className={[
-                        "h-12 rounded-xl border-2 text-body font-semibold",
-                        "transition-all duration-150 cursor-pointer",
-                        education === opt
-                          ? "border-brand bg-surface-brand text-brand"
-                          : "border-border bg-surface text-text-primary hover:border-brand/40 hover:bg-surface-brand/30",
-                      ].join(" ")}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-
-                {/* 학교 / 학과 */}
-                <AnimatePresence>
-                  {needsSchool && (
-                    <motion.div
-                      key="school-fields"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-                      className="overflow-hidden"
-                    >
-                      <div className="flex flex-col gap-3 pt-1 pb-4">
-                        <Input
-                          label="학교명"
-                          type="text"
-                          placeholder="예) 서울대학교"
-                          value={school}
-                          onChange={(e) => setSchool(e.target.value)}
-                        />
-                        <Input
-                          label="학과 / 전공"
-                          type="text"
-                          placeholder="예) 컴퓨터공학과"
-                          value={department}
-                          onChange={(e) => setDepartment(e.target.value)}
-                        />
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* 전화번호 (선택) */}
+                {/* 소속 (선택) */}
                 <div className="mb-6">
                   <Input
-                    label="전화번호 (선택)"
+                    label="소속"
+                    type="text"
+                    placeholder="예) 서울대학교 컴퓨터공학과, 삼성전자 재직 중"
+                    value={education}
+                    onChange={(e) => setEducation(e.target.value)}
+                  />
+                  <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
+                </div>
+
+                {/* 전화번호 */}
+                <div className="mb-6">
+                  <Input
+                    label="전화번호"
                     type="tel"
                     placeholder="010-0000-0000"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    value={formatPhone(phone)}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
                   />
                 </div>
 
-                <Button onClick={() => goTo("nickname")} disabled={!profileComplete} fullWidth>
+                <Button onClick={() => goTo("q1")} disabled={!profileComplete} fullWidth>
                   다음
                 </Button>
-              </div>
-            )}
-
-            {/* ── nickname ─────────────────────────── */}
-            {step === "nickname" && (
-              <div>
-                <h1 className="text-heading-2 text-text-primary mb-1">어떻게 불러드릴까요?</h1>
-                <p className="text-body text-text-secondary mb-8">
-                  ARC 안에서 사용할 이름이에요
-                </p>
-                <div className="flex flex-col gap-3">
-                  <Input
-                    label="닉네임"
-                    type="text"
-                    placeholder="예) 지민, arc_user"
-                    value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && nickname.trim() && goTo("q1")}
-                  />
-                  <Button onClick={() => goTo("q1")} disabled={!nickname.trim()}>
-                    다음
-                  </Button>
-                </div>
               </div>
             )}
 
@@ -572,16 +522,16 @@ export default function SignupPage() {
                   요즘 가장 고민되는 게 뭐예요?
                 </h1>
                 <p className="text-body text-text-secondary mb-8">
-                  {nickname ? `${nickname}님, ` : ""}솔직하게 골라도 괜찮아요 😊
+                  솔직하게 골라도 괜찮아요 😊
                 </p>
-                <div className="flex flex-col gap-2.5 mb-6">
+                <div className="grid grid-cols-2 gap-2.5 mb-6">
                   {Q1_OPTIONS.map((opt) => (
                     <button
                       key={opt}
                       type="button"
                       onClick={() => setQ1(opt)}
                       className={[
-                        "w-full h-14 rounded-xl border-2 text-title font-semibold",
+                        "h-12 rounded-xl border-2 text-body font-semibold",
                         "transition-all duration-150 cursor-pointer",
                         q1 === opt
                           ? "border-brand bg-surface-brand text-brand"
