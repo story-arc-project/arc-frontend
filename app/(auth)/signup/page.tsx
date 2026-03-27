@@ -31,10 +31,11 @@ function formatPhone(digits: string): string {
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
 }
 
-const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 30 }, (_, i) => CURRENT_YEAR - i);
-const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
-const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+function formatBirth(digits: string): string {
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}. ${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}. ${digits.slice(4, 6)}. ${digits.slice(6)}`;
+}
 
 /* ── Animation ───────────────────────────────────────────── */
 const stepVariants = {
@@ -60,9 +61,7 @@ export default function SignupPage() {
   const [showConfirmPw, setShowConfirmPw] = useState(false);
 
   // Profile fields
-  const [birthYear, setBirthYear] = useState("");
-  const [birthMonth, setBirthMonth] = useState("");
-  const [birthDay, setBirthDay] = useState("");
+  const [birth, setBirth] = useState("");
   const [education, setEducation] = useState("");
   const [phone, setPhone] = useState("");
 
@@ -185,10 +184,10 @@ export default function SignupPage() {
     setIsLoading(true);
 
     try {
-      const birth = `${birthYear}-${String(birthMonth).padStart(2, "0")}-${String(birthDay).padStart(2, "0")}`;
+      const birthFormatted = `${birth.slice(0, 4)}-${birth.slice(4, 6)}-${birth.slice(6, 8)}`;
       await api.post("/auth/onboarding", {
-        nickname: name,
-        birth,
+        name,
+        birth: birthFormatted,
         ...(education.trim() && { education }),
         ...(phone            && { phone }),
         ...(q1               && { worry: [q1] }),
@@ -211,10 +210,10 @@ export default function SignupPage() {
     }
   }
 
-  const birthComplete = birthYear && birthMonth && birthDay;
+  const birthValid = birth.length === 8;
   const profileComplete =
     name.trim().length > 0 &&
-    birthComplete &&
+    birthValid &&
     phone.length === 11;
   const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
   const isOnboarding = onboardingIndex >= 0;
@@ -433,7 +432,7 @@ export default function SignupPage() {
                 </p>
 
                 {/* 이름 */}
-                <div className="mb-6">
+                <div className="mb-5">
                   <Input
                     label="이름"
                     type="text"
@@ -444,46 +443,26 @@ export default function SignupPage() {
                 </div>
 
                 {/* 생년월일 */}
-                <p className="text-label text-text-primary mb-2">생년월일</p>
-                <div className="grid grid-cols-3 gap-2 mb-6">
-                  {[
-                    {
-                      value: birthYear,
-                      setter: setBirthYear,
-                      placeholder: "년도",
-                      options: YEARS.map((y) => ({ value: String(y), label: `${y}년` })),
-                    },
-                    {
-                      value: birthMonth,
-                      setter: setBirthMonth,
-                      placeholder: "월",
-                      options: MONTHS.map((m) => ({ value: String(m), label: `${m}월` })),
-                    },
-                    {
-                      value: birthDay,
-                      setter: setBirthDay,
-                      placeholder: "일",
-                      options: DAYS.map((d) => ({ value: String(d), label: `${d}일` })),
-                    },
-                  ].map((sel) => (
-                    <select
-                      key={sel.placeholder}
-                      value={sel.value}
-                      onChange={(e) => sel.setter(e.target.value)}
-                      className={[
-                        "h-12 w-full rounded-md border px-3",
-                        "text-body outline-none transition-colors duration-150 bg-surface cursor-pointer",
-                        sel.value
-                          ? "border-border text-text-primary focus:border-brand focus:ring-2 focus:ring-brand/15"
-                          : "border-border text-text-tertiary focus:border-brand focus:ring-2 focus:ring-brand/15",
-                      ].join(" ")}
-                    >
-                      <option value="" disabled>{sel.placeholder}</option>
-                      {sel.options.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
-                  ))}
+                <div className="mb-5">
+                  <Input
+                    label="생년월일"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="YYYY. MM. DD"
+                    value={formatBirth(birth)}
+                    onChange={(e) => setBirth(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                  />
+                </div>
+
+                {/* 전화번호 */}
+                <div className="mb-5">
+                  <Input
+                    label="전화번호"
+                    type="tel"
+                    placeholder="010-0000-0000"
+                    value={formatPhone(phone)}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                  />
                 </div>
 
                 {/* 소속 (선택) */}
@@ -496,17 +475,6 @@ export default function SignupPage() {
                     onChange={(e) => setEducation(e.target.value)}
                   />
                   <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
-                </div>
-
-                {/* 전화번호 */}
-                <div className="mb-6">
-                  <Input
-                    label="전화번호"
-                    type="tel"
-                    placeholder="010-0000-0000"
-                    value={formatPhone(phone)}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
-                  />
                 </div>
 
                 <Button onClick={() => goTo("q1")} disabled={!profileComplete} fullWidth>
