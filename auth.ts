@@ -12,30 +12,26 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
     Credentials({
       credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
+        email: {},
+        name: {},
       },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
+      async authorize(credentials, req) {
+        if (!credentials?.email) return null;
 
         try {
-          const res = await fetch(`${API_URL}/auth/login`, {
+          // FastAPI 쿠키가 유효한지 /auth/refresh로 검증
+          const cookieHeader = (req as Request).headers.get("cookie") ?? "";
+          const res = await fetch(`${API_URL}/auth/refresh`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: credentials.email,
-              password: credentials.password,
-            }),
+            headers: { "Content-Type": "application/json", Cookie: cookieHeader },
           });
 
           if (!res.ok) return null;
 
-          const { data } = await res.json();
           return {
-            id: data.user_id ?? credentials.email,
-            name: data.name ?? "",
+            id: credentials.email as string,
+            name: (credentials.name as string) ?? "",
             email: credentials.email as string,
-            accessToken: data.access_token,
           };
         } catch {
           return null;

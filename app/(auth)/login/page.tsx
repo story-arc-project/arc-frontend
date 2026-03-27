@@ -47,21 +47,33 @@ export default function LoginPage() {
     });
 
     if (!loginRes.ok) {
+      const { detail } = await loginRes.json().catch(() => ({}));
       setIsLoading(false);
-      setError("이메일 또는 비밀번호가 올바르지 않아요");
+      if (detail === "ACCOUNT_LOCKED") {
+        setError("계정이 잠겼어요. 잠시 후 다시 시도해주세요.");
+      } else if (detail === "EMAIL_NOT_VERIFIED") {
+        router.push(`/signup?step=verify&email=${encodeURIComponent(email)}`);
+      } else {
+        setError("이메일 또는 비밀번호가 올바르지 않아요.");
+      }
       return;
     }
 
-    // Step 2: Create NextAuth session using the cookies already set
+    const { data } = await loginRes.json();
+
+    // Step 2: Create NextAuth session — pass name from login response
     const result = await signIn("credentials", {
       email,
+      name: data.user.nickname,
       redirect: false,
     });
 
     setIsLoading(false);
 
     if (result?.error) {
-      setError("이메일 또는 비밀번호가 올바르지 않아요");
+      setError("로그인 중 오류가 발생했어요. 다시 시도해주세요.");
+    } else if (!data.onboarded) {
+      router.push(`/signup?step=profile&email=${encodeURIComponent(email)}`);
     } else {
       router.push(callbackUrl);
     }

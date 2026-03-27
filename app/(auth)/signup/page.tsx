@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Button, Input, Textarea } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { api, ApiError } from "@/lib/api";
 
@@ -15,7 +15,11 @@ type Step = "start" | "password" | "verify" | "profile" | "nickname" | "q1" | "q
 const ONBOARDING_STEPS: Step[] = ["profile", "nickname", "q1", "q2"];
 const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "nickname", "q1", "q2"];
 const Q1_OPTIONS = ["진로", "스펙", "아직 모름"] as const;
-const EDUCATION_OPTIONS = ["고등학생", "대학생", "대학원생", "졸업생"] as const;
+const EDUCATION_OPTIONS = ["초중고", "대학생", "대학원", "졸업생"] as const;
+const INTEREST_OPTIONS = [
+  "개발/엔지니어링", "디자인/UX", "마케팅/콘텐츠", "기획/PM",
+  "데이터/AI", "창업/스타트업", "연구/학문", "아직 모름",
+] as const;
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 30 }, (_, i) => CURRENT_YEAR - i);
@@ -33,6 +37,7 @@ const stepTransition = { duration: 0.26, ease: [0.22, 1, 0.36, 1] as [number, nu
 /* ── Page ────────────────────────────────────────────────── */
 export default function SignupPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [step, setStep] = useState<Step>("start");
   const [dir, setDir] = useState(1);
@@ -52,7 +57,7 @@ export default function SignupPage() {
   const [school, setSchool] = useState("");
   const [department, setDepartment] = useState("");
   const [phone, setPhone] = useState("");
-  const needsSchool = education === "대학생" || education === "대학원생" || education === "졸업생";
+  const needsSchool = education === "대학생" || education === "대학원" || education === "졸업생";
 
   // Password strength
   const pwChecks = [
@@ -66,16 +71,31 @@ export default function SignupPage() {
   // Onboarding fields
   const [nickname, setNickname] = useState("");
   const [q1, setQ1] = useState<string | null>(null);
-  const [q2, setQ2] = useState("");
+  const [interests, setInterests] = useState<string[]>([]);
 
   // Verify fields
   const [verifyCode, setVerifyCode] = useState("");
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
   const [socialError, setSocialError] = useState<string | null>(null);
+
+  // 로그인 페이지에서 리다이렉트된 경우 URL 파라미터로 상태 복원
+  useEffect(() => {
+    const stepParam = searchParams.get("step") as Step | null;
+    const emailParam = searchParams.get("email");
+    if (emailParam) setEmail(decodeURIComponent(emailParam));
+    if (stepParam && STEP_ORDER.includes(stepParam)) setStep(stepParam);
+  }, []);
+
+  function toggleInterest(opt: string) {
+    setInterests((prev) =>
+      prev.includes(opt) ? prev.filter((i) => i !== opt) : [...prev, opt]
+    );
+  }
 
   function goTo(next: Step, direction = 1) {
     setDir(direction);
@@ -106,22 +126,42 @@ export default function SignupPage() {
     setIsLoading(true);
     setVerifyError(null);
 
+    interface VerifyEmailResponse {
+      status: string;
+      data: { user: { nickname: string; email: string }; onboarded: boolean; expire_at: string };
+    }
+
     try {
-      await api.post("/auth/verify-email", { email, code: verifyCode });
-      goTo("profile");
+      const result = await api.post<VerifyEmailResponse>("/auth/verify-email", { email, code: verifyCode });
+      if (result.data.onboarded) {
+        // 이미 온보딩 완료된 유저 (재인증 케이스) — 바로 세션 생성 후 대시보드
+        await signIn("credentials", { email, name: result.data.user.nickname, redirect: false });
+        router.push("/dashboard");
+      } else {
+        goTo("profile");
+      }
     } catch (e) {
-      if (e instanceof ApiError) setVerifyError(e.message);
-      else setVerifyError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+      if (e instanceof ApiError) {
+        if (e.status === 410) setVerifyError("인증 코드가 만료되었어요. 재발송 후 다시 시도해주세요.");
+        else setVerifyError(e.message);
+      } else {
+        setVerifyError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+      }
     } finally {
       setIsLoading(false);
     }
   }
 
   async function handleResendCode() {
+    setResendError(null);
     try {
       await api.post("/auth/resend-verification", { email });
-    } catch {
-      // silent fail — user can retry
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 429) setResendError("5분 후 재발송 가능해요.");
+        else if (e.status === 400) setResendError("이미 인증된 이메일이에요.");
+        else setResendError(e.message);
+      }
     }
   }
 
@@ -137,12 +177,25 @@ export default function SignupPage() {
   async function handleFinish() {
     setIsLoading(true);
 
-    // TODO: 온보딩 데이터 저장 (엔드포인트 미정)
-    // await fetch(`${API_URL}/auth/onboarding`, { ... })
+    try {
+      const birth = `${birthYear}-${String(birthMonth).padStart(2, "0")}-${String(birthDay).padStart(2, "0")}`;
+      await api.post("/auth/onboarding", {
+        nickname,
+        birth,
+        education,
+        ...(needsSchool && school       && { school }),
+        ...(needsSchool && department   && { department }),
+        ...(phone                       && { phone }),
+        ...(q1                          && { worry: [q1] }),
+        ...(interests.length > 0        && { interest: interests }),
+      });
+    } catch {
+      // 온보딩 실패 시 세션 생성은 계속 진행 (데이터는 나중에 재입력 가능)
+    }
 
-    // Cookies were already set by FastAPI during handleSignup — pass email only
     const result = await signIn("credentials", {
       email,
+      name: nickname,
       redirect: false,
     });
 
@@ -351,6 +404,9 @@ export default function SignupPage() {
                   <Button onClick={handleVerify} disabled={!verifyCode.trim() || isLoading}>
                     {isLoading ? "확인 중..." : "확인"}
                   </Button>
+                  {resendError && (
+                    <p className="text-body-sm text-error">{resendError}</p>
+                  )}
                   <button
                     type="button"
                     onClick={handleResendCode}
@@ -423,7 +479,7 @@ export default function SignupPage() {
                       type="button"
                       onClick={() => {
                         setEducation(opt);
-                        if (opt === "고등학생") { setSchool(""); setDepartment(""); }
+                        if (opt === "초중고") { setSchool(""); setDepartment(""); }
                       }}
                       className={[
                         "h-12 rounded-xl border-2 text-body font-semibold",
@@ -556,22 +612,32 @@ export default function SignupPage() {
             {step === "q2" && (
               <div>
                 <h1 className="text-heading-2 text-text-primary mb-1">
-                  가장 기억에 남는 활동이 있나요?
+                  관심 있는 분야를 골라보세요
                 </h1>
                 <p className="text-body text-text-secondary mb-8">
-                  짧게 적어도 괜찮아요 — 나중에 더 자세히 기록할 수 있어요
+                  복수 선택 가능해요
                 </p>
-                <div className="flex flex-col gap-3">
-                  <Textarea
-                    placeholder="예) 교내 UX 공모전에서 팀장을 맡아 앱을 기획했어요"
-                    value={q2}
-                    onChange={(e) => setQ2(e.target.value)}
-                    rows={4}
-                  />
-                  <Button onClick={handleFinish} disabled={isLoading}>
-                    {isLoading ? "처리 중..." : q2.trim() ? "ARC 시작하기 🎉" : "나중에 채울게요 →"}
-                  </Button>
+                <div className="grid grid-cols-2 gap-2.5 mb-6">
+                  {INTEREST_OPTIONS.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => toggleInterest(opt)}
+                      className={[
+                        "h-12 rounded-xl border-2 text-body font-semibold",
+                        "transition-all duration-150 cursor-pointer",
+                        interests.includes(opt)
+                          ? "border-brand bg-surface-brand text-brand"
+                          : "border-border bg-surface text-text-primary hover:border-brand/40 hover:bg-surface-brand/30",
+                      ].join(" ")}
+                    >
+                      {opt}
+                    </button>
+                  ))}
                 </div>
+                <Button onClick={handleFinish} disabled={isLoading} fullWidth>
+                  {isLoading ? "처리 중..." : interests.length > 0 ? "ARC 시작하기" : "나중에 채울게요 →"}
+                </Button>
               </div>
             )}
 
