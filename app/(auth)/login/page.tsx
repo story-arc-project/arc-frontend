@@ -88,9 +88,21 @@ function LoginForm() {
       setTimeout(() => setSocialError(null), 3000);
       return;
     }
-    // FastAPI가 Google OAuth 전체 플로우를 처리 → 쿠키 설정 후 /dashboard로 리다이렉트
-    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-    window.location.href = `${API_URL}/auth/google`;
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      setSocialError("Google 로그인을 사용할 수 없어요");
+      return;
+    }
+    const redirectUri = `${window.location.origin}/callback/google`;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      access_type: "offline",
+      prompt: "select_account",
+    });
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
   return (
