@@ -210,18 +210,21 @@ function SignupForm() {
       // 온보딩 실패 시 세션 생성은 계속 진행 (데이터는 나중에 재입력 가능)
     }
 
-    const result = await signIn("credentials", {
-      email,
-      name,
-      redirect: false,
-    });
-
-    setIsLoading(false);
-
-    if (result?.error) {
-      setSignupError("계정 연결에 실패했어요. 로그인 페이지에서 다시 시도해주세요.");
-    } else {
-      router.push("/dashboard");
+    try {
+      const result = await signIn("credentials", {
+        email,
+        name,
+        redirect: false,
+      });
+      if (result?.error) {
+        setSignupError("계정 연결에 실패했어요. 로그인 페이지에서 다시 시도해주세요.");
+      } else {
+        router.push("/dashboard");
+      }
+    } catch {
+      setSignupError("예기치 못한 오류가 발생했어요. 로그인 페이지에서 다시 시도해주세요.");
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -571,6 +574,9 @@ function SignupForm() {
                     </button>
                   ))}
                 </div>
+                {signupError && (
+                  <p className="text-body-sm text-error mb-2">{signupError}</p>
+                )}
                 <Button onClick={handleFinish} disabled={isLoading} fullWidth>
                   {isLoading ? "처리 중..." : interests.length > 0 ? "ARC 시작하기" : "나중에 채울게요 →"}
                 </Button>

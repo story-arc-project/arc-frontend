@@ -63,10 +63,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           });
 
           if (!res.ok) return false;
-
-          const { data } = await res.json();
-          // Attach accessToken to user object so jwt callback can pick it up
-          (user as Record<string, unknown>).accessToken = data.access_token;
         } catch {
           return false;
         }
@@ -77,7 +73,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.sub = user.id;
-        token.accessToken = (user as Record<string, unknown>).accessToken as string;
       }
       return token;
     },
