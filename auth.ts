@@ -28,15 +28,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           if (!res.ok) return null;
 
-          // refresh 응답에서 실제 유저 정보를 파싱해 세션 유저를 구성
-          // 백엔드 응답이 없거나 파싱 실패 시 credentials 값을 폴백으로 사용
+          // refresh 응답에서 실제 유저 정보를 파싱 — 백엔드 데이터가 없으면 세션 생성 거부
           const data = await res.json().catch(() => null);
           const backendUser = data?.user ?? data;
 
+          if (!backendUser?.id || !backendUser?.email) return null;
+
           return {
-            id: String(backendUser?.id ?? credentials.email),
-            name: backendUser?.nickname ?? backendUser?.name ?? (credentials.name as string) ?? "",
-            email: backendUser?.email ?? (credentials.email as string),
+            id: String(backendUser.id),
+            name: backendUser.nickname ?? backendUser.name ?? "",
+            email: backendUser.email,
           };
         } catch {
           return null;

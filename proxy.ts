@@ -5,9 +5,11 @@ export default auth((req) => {
   const { nextUrl, auth: session } = req;
   const isLoggedIn = !!session;
 
-  const isAuthPage = nextUrl.pathname.startsWith("/login") || nextUrl.pathname.startsWith("/signup");
+  const isLoginPage = nextUrl.pathname.startsWith("/login");
+  // /signup은 온보딩 중인 유저(step=profile 등)도 접근해야 하므로 온보딩 스텝이 없을 때만 차단
+  const isSignupStart = nextUrl.pathname.startsWith("/signup") && !nextUrl.searchParams.get("step");
 
-  if (isLoggedIn && isAuthPage) {
+  if (isLoggedIn && (isLoginPage || isSignupStart)) {
     return NextResponse.redirect(new URL("/dashboard", nextUrl));
   }
 });

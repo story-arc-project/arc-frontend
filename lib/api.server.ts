@@ -1,21 +1,10 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { ApiError } from "./api-error";
+
+export { ApiError } from "./api-error";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-// ──────────────────────────────────────────────
-// Error type
-// ──────────────────────────────────────────────
-
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
 
 // ──────────────────────────────────────────────
 // Core request

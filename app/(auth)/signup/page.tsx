@@ -12,6 +12,11 @@ import { api, ApiError } from "@/lib/api";
 /* ── Types ───────────────────────────────────────────────── */
 type Step = "start" | "password" | "verify" | "profile" | "q1" | "q2";
 
+interface VerifyEmailResponse {
+  status: string;
+  data: { user: { nickname: string; email: string }; onboarded: boolean; expire_at: string };
+}
+
 const ONBOARDING_STEPS: Step[] = ["profile", "q1", "q2"];
 const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "q1", "q2"];
 const Q1_OPTIONS = [
@@ -48,7 +53,7 @@ const stepTransition = { duration: 0.26, ease: [0.22, 1, 0.36, 1] as [number, nu
 /* ── Page ────────────────────────────────────────────────── */
 export default function SignupPage() {
   return (
-    <Suspense>
+    <Suspense fallback={null}>
       <SignupForm />
     </Suspense>
   );
@@ -127,7 +132,7 @@ function SignupForm() {
     setSignupError(null);
 
     try {
-      await api.post("/auth/signup", { email, password });
+      await api.post("/auth/signup", { email, password }, { auth: false });
       goTo("verify");
     } catch (e) {
       if (e instanceof ApiError) setSignupError(e.message);
@@ -141,13 +146,8 @@ function SignupForm() {
     setIsLoading(true);
     setVerifyError(null);
 
-    interface VerifyEmailResponse {
-      status: string;
-      data: { user: { nickname: string; email: string }; onboarded: boolean; expire_at: string };
-    }
-
     try {
-      const result = await api.post<VerifyEmailResponse>("/auth/verify-email", { email, code: verifyCode });
+      const result = await api.post<VerifyEmailResponse>("/auth/verify-email", { email, code: verifyCode }, { auth: false });
       if (result.data.onboarded) {
         // 이미 온보딩 완료된 유저 (재인증 케이스) — 바로 세션 생성 후 대시보드
         const signInResult = await signIn("credentials", { email, name: result.data.user.nickname, redirect: false });
@@ -174,7 +174,7 @@ function SignupForm() {
   async function handleResendCode() {
     setResendError(null);
     try {
-      await api.post("/auth/resend-verification", { email });
+      await api.post("/auth/resend-verification", { email }, { auth: false });
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.status === 429) setResendError("5분 후 재발송 가능해요.");
@@ -218,12 +218,17 @@ function SignupForm() {
 
     setIsLoading(false);
 
-    if (!result?.error) {
+    if (result?.error) {
+      setSignupError("계정 연결에 실패했어요. 로그인 페이지에서 다시 시도해주세요.");
+    } else {
       router.push("/dashboard");
     }
   }
 
-  const birthValid = birth.length === 8;
+  const birthValid =
+    birth.length === 8 &&
+    Number(birth.slice(4, 6)) >= 1 && Number(birth.slice(4, 6)) <= 12 &&
+    Number(birth.slice(6, 8)) >= 1 && Number(birth.slice(6, 8)) <= 31;
   const profileComplete =
     name.trim().length > 0 &&
     birthValid &&

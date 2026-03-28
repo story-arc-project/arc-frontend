@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, Suspense, useRef, useState } from "react";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
@@ -19,7 +21,7 @@ const item = {
 
 export default function LoginPage() {
   return (
-    <Suspense>
+    <Suspense fallback={null}>
       <LoginForm />
     </Suspense>
   );
@@ -45,8 +47,6 @@ function LoginForm() {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
-
-    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
     try {
       // Step 1: Call FastAPI directly — browser receives httpOnly cookies (access + refresh token)
