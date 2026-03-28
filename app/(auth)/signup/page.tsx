@@ -101,9 +101,10 @@ function SignupForm() {
   useEffect(() => {
     const stepParam = searchParams.get("step") as Step | null;
     const emailParam = searchParams.get("email");
-    if (emailParam) setEmail(decodeURIComponent(emailParam));
+    // URLSearchParams.get()은 이미 디코딩된 값을 반환하므로 decodeURIComponent 불필요
+    if (emailParam) setEmail(emailParam);
     if (stepParam && STEP_ORDER.includes(stepParam)) setStep(stepParam);
-  }, []);
+  }, [searchParams]);
 
   function toggleInterest(opt: string) {
     setInterests((prev) =>
@@ -149,7 +150,11 @@ function SignupForm() {
       const result = await api.post<VerifyEmailResponse>("/auth/verify-email", { email, code: verifyCode });
       if (result.data.onboarded) {
         // 이미 온보딩 완료된 유저 (재인증 케이스) — 바로 세션 생성 후 대시보드
-        await signIn("credentials", { email, name: result.data.user.nickname, redirect: false });
+        const signInResult = await signIn("credentials", { email, name: result.data.user.nickname, redirect: false });
+        if (signInResult?.error) {
+          setVerifyError("세션 생성에 실패했어요. 다시 시도해주세요.");
+          return;
+        }
         router.push("/dashboard");
       } else {
         goTo("profile");

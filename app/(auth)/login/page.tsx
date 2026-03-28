@@ -37,7 +37,9 @@ function LoginForm() {
   const [socialError, setSocialError] = useState<string | null>(null);
   const pwInputRef = useRef<HTMLInputElement>(null);
 
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+  // 오픈 리다이렉트 방지: 상대 경로만 허용
+  const rawCallback = searchParams.get("callbackUrl") ?? "/dashboard";
+  const callbackUrl = rawCallback.startsWith("/") && !rawCallback.startsWith("//") ? rawCallback : "/dashboard";
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -46,44 +48,47 @@ function LoginForm() {
 
     const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-    // Step 1: Call FastAPI directly — browser receives httpOnly cookies (access + refresh token)
-    const loginRes = await fetch(`${API_URL}/auth/login`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
+    try {
+      // Step 1: Call FastAPI directly — browser receives httpOnly cookies (access + refresh token)
+      const loginRes = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-    if (!loginRes.ok) {
-      const { detail } = await loginRes.json().catch(() => ({}));
-      setIsLoading(false);
-      if (detail === "ACCOUNT_LOCKED") {
-        setError("계정이 잠겼어요. 잠시 후 다시 시도해주세요.");
-      } else if (detail === "EMAIL_NOT_VERIFIED") {
-        router.push(`/signup?step=verify&email=${encodeURIComponent(email)}`);
-      } else {
-        setError("이메일 또는 비밀번호가 올바르지 않아요.");
+      if (!loginRes.ok) {
+        const { detail } = await loginRes.json().catch(() => ({}));
+        if (detail === "ACCOUNT_LOCKED") {
+          setError("계정이 잠겼어요. 잠시 후 다시 시도해주세요.");
+        } else if (detail === "EMAIL_NOT_VERIFIED") {
+          router.push(`/signup?step=verify&email=${encodeURIComponent(email)}`);
+        } else {
+          setError("이메일 또는 비밀번호가 올바르지 않아요.");
+        }
+        return;
       }
-      return;
-    }
 
-    const { data } = await loginRes.json();
+      const { data } = await loginRes.json();
 
-    // Step 2: Create NextAuth session — pass name from login response
-    const result = await signIn("credentials", {
-      email,
-      name: data.user.nickname,
-      redirect: false,
-    });
+      // Step 2: Create NextAuth session — pass name from login response
+      const result = await signIn("credentials", {
+        email,
+        name: data.user.nickname,
+        redirect: false,
+      });
 
-    setIsLoading(false);
-
-    if (result?.error) {
-      setError("로그인 중 오류가 발생했어요. 다시 시도해주세요.");
-    } else if (!data.onboarded) {
-      router.push(`/signup?step=profile&email=${encodeURIComponent(email)}`);
-    } else {
-      router.push(callbackUrl);
+      if (result?.error) {
+        setError("로그인 중 오류가 발생했어요. 다시 시도해주세요.");
+      } else if (!data.onboarded) {
+        router.push(`/signup?step=profile&email=${encodeURIComponent(email)}`);
+      } else {
+        router.push(callbackUrl);
+      }
+    } catch {
+      setError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setIsLoading(false);
     }
   }
 

@@ -22,6 +22,9 @@ export class ApiError extends Error {
 // Core request
 // ──────────────────────────────────────────────
 
+// `auth: false`를 넘기면 401 시 signOut을 하지 않음 (비인증 라우트 전용)
+type RequestOptions = RequestInit & { auth?: boolean };
+
 async function tryRefresh(): Promise<boolean> {
   const res = await fetch(`${API_URL}/auth/refresh`, {
     method: "POST",
@@ -32,16 +35,19 @@ async function tryRefresh(): Promise<boolean> {
 
 async function request<T>(
   path: string,
-  options: RequestInit = {},
+  options: RequestOptions = {},
   retry = true
 ): Promise<T> {
+  const { auth = true, ...fetchOptions } = options;
+  const isFormData = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
+
   const res = await fetch(`${API_URL}${path}`, {
-    ...options,
+    ...fetchOptions,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    // FormData는 브라우저가 Content-Type + boundary를 자동 설정하므로 강제하지 않음
+    headers: isFormData
+      ? fetchOptions.headers
+      : { "Content-Type": "application/json", ...fetchOptions.headers },
   });
 
   if (res.status === 401 && retry) {
@@ -49,7 +55,7 @@ async function request<T>(
     if (refreshed) {
       return request<T>(path, options, false);
     }
-    await signOut({ callbackUrl: "/login" });
+    if (auth) await signOut({ callbackUrl: "/login" });
     throw new ApiError(401, "인증이 만료되었어요. 다시 로그인해주세요.");
   }
 
@@ -69,11 +75,11 @@ async function request<T>(
 // ──────────────────────────────────────────────
 
 export const api = {
-  get<T>(path: string, options?: RequestInit) {
+  get<T>(path: string, options?: RequestOptions) {
     return request<T>(path, { ...options, method: "GET" });
   },
 
-  post<T>(path: string, body?: unknown, options?: RequestInit) {
+  post<T>(path: string, body?: unknown, options?: RequestOptions) {
     return request<T>(path, {
       ...options,
       method: "POST",
@@ -81,7 +87,7 @@ export const api = {
     });
   },
 
-  put<T>(path: string, body?: unknown, options?: RequestInit) {
+  put<T>(path: string, body?: unknown, options?: RequestOptions) {
     return request<T>(path, {
       ...options,
       method: "PUT",
@@ -89,7 +95,7 @@ export const api = {
     });
   },
 
-  patch<T>(path: string, body?: unknown, options?: RequestInit) {
+  patch<T>(path: string, body?: unknown, options?: RequestOptions) {
     return request<T>(path, {
       ...options,
       method: "PATCH",
@@ -97,7 +103,7 @@ export const api = {
     });
   },
 
-  delete<T>(path: string, options?: RequestInit) {
+  delete<T>(path: string, options?: RequestOptions) {
     return request<T>(path, { ...options, method: "DELETE" });
   },
 };

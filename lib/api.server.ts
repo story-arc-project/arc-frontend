@@ -33,6 +33,8 @@ async function request<T>(
 
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
+    // 사용자별 응답이 Next.js fetch 캐시에 저장되지 않도록 강제
+    cache: options.cache ?? "no-store",
     headers: {
       "Content-Type": "application/json",
       Cookie: cookieHeader,
