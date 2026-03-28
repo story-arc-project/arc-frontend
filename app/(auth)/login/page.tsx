@@ -3,7 +3,6 @@
 import { FormEvent, Suspense, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
@@ -71,16 +70,7 @@ function LoginForm() {
 
       const { data } = await loginRes.json();
 
-      // Step 2: Create NextAuth session — pass name from login response
-      const result = await signIn("credentials", {
-        email,
-        name: data.user.nickname,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        setError("로그인 중 오류가 발생했어요. 다시 시도해주세요.");
-      } else if (!data.onboarded) {
+      if (!data.onboarded) {
         router.push(`/signup?step=profile&email=${encodeURIComponent(email)}`);
       } else {
         router.push(callbackUrl);
@@ -92,13 +82,15 @@ function LoginForm() {
     }
   }
 
-  async function handleSocialLogin(provider: string) {
+  function handleSocialLogin(provider: string) {
     if (provider !== "google") {
       setSocialError("곧 지원 예정이에요");
       setTimeout(() => setSocialError(null), 3000);
       return;
     }
-    await signIn("google", { callbackUrl });
+    // FastAPI가 Google OAuth 전체 플로우를 처리 → 쿠키 설정 후 /dashboard로 리다이렉트
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    window.location.href = `${API_URL}/auth/google`;
   }
 
   return (

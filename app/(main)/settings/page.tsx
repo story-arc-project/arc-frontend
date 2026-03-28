@@ -1,12 +1,17 @@
 "use client";
 
 import Image from "next/image";
-import { signOut } from "next-auth/react";
 import { useAuth } from "@/hooks/useAuth";
+import { api } from "@/lib/api";
 import { Button, Badge } from "@/components/ui";
 
 export default function SettingsPage() {
   const { user, isLoading } = useAuth();
+
+  async function handleLogout() {
+    await api.post("/auth/logout").catch(() => {});
+    window.location.href = "/login";
+  }
 
   if (isLoading) {
     return (
@@ -51,11 +56,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <Button
-        variant="destructive"
-        fullWidth
-        onClick={() => signOut({ callbackUrl: "/" })}
-      >
+      <Button variant="destructive" fullWidth onClick={handleLogout}>
         로그아웃
       </Button>
     </div>

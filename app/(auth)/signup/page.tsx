@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signIn } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
@@ -149,12 +148,7 @@ function SignupForm() {
     try {
       const result = await api.post<VerifyEmailResponse>("/auth/verify-email", { email, code: verifyCode }, { auth: false });
       if (result.data.onboarded) {
-        // 이미 온보딩 완료된 유저 (재인증 케이스) — 바로 세션 생성 후 대시보드
-        const signInResult = await signIn("credentials", { email, name: result.data.user.nickname, redirect: false });
-        if (signInResult?.error) {
-          setVerifyError("세션 생성에 실패했어요. 다시 시도해주세요.");
-          return;
-        }
+        // 이미 온보딩 완료된 유저 (재인증 케이스) — FastAPI 쿠키가 이미 설정됨
         router.push("/dashboard");
       } else {
         goTo("profile");
@@ -184,13 +178,14 @@ function SignupForm() {
     }
   }
 
-  async function handleSocial(provider: string) {
+  function handleSocial(provider: string) {
     if (provider !== "google") {
       setSocialError("곧 지원 예정이에요");
       setTimeout(() => setSocialError(null), 3000);
       return;
     }
-    await signIn("google", { callbackUrl: "/dashboard" });
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    window.location.href = `${API_URL}/auth/google`;
   }
 
   async function handleFinish() {
@@ -210,22 +205,8 @@ function SignupForm() {
       // 온보딩 실패 시 세션 생성은 계속 진행 (데이터는 나중에 재입력 가능)
     }
 
-    try {
-      const result = await signIn("credentials", {
-        email,
-        name,
-        redirect: false,
-      });
-      if (result?.error) {
-        setSignupError("계정 연결에 실패했어요. 로그인 페이지에서 다시 시도해주세요.");
-      } else {
-        router.push("/dashboard");
-      }
-    } catch {
-      setSignupError("예기치 못한 오류가 발생했어요. 로그인 페이지에서 다시 시도해주세요.");
-    } finally {
-      setIsLoading(false);
-    }
+    router.push("/dashboard");
+    setIsLoading(false);
   }
 
   const birthValid =

@@ -1,6 +1,5 @@
 "use client";
 
-import { signOut } from "next-auth/react";
 import { ApiError } from "./api-error";
 
 export { ApiError } from "./api-error";
@@ -11,7 +10,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 // Core request
 // ──────────────────────────────────────────────
 
-// `auth: false`를 넘기면 401 시 signOut을 하지 않음 (비인증 라우트 전용)
+// `auth: false`를 넘기면 401 시 로그인 리다이렉트를 하지 않음 (비인증 라우트 전용)
 type RequestOptions = RequestInit & { auth?: boolean };
 
 async function tryRefresh(): Promise<boolean> {
@@ -33,7 +32,6 @@ async function request<T>(
   const res = await fetch(`${API_URL}${path}`, {
     ...fetchOptions,
     credentials: "include",
-    // FormData는 브라우저가 Content-Type + boundary를 자동 설정하므로 강제하지 않음
     headers: isFormData
       ? fetchOptions.headers
       : { "Content-Type": "application/json", ...fetchOptions.headers },
@@ -44,7 +42,7 @@ async function request<T>(
     if (refreshed) {
       return request<T>(path, options, false);
     }
-    if (auth) await signOut({ callbackUrl: "/login" });
+    if (auth) window.location.href = "/login";
     throw new ApiError(401, "인증이 만료되었어요. 다시 로그인해주세요.");
   }
 
@@ -53,7 +51,6 @@ async function request<T>(
     throw new ApiError(res.status, body.detail ?? "오류가 발생했어요.");
   }
 
-  // 204 No Content
   if (res.status === 204) return undefined as T;
 
   return res.json() as Promise<T>;
