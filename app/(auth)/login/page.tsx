@@ -35,12 +35,22 @@ function LoginForm() {
   const [showPw, setShowPw] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [socialError, setSocialError] = useState<string | null>(null);
   const pwInputRef = useRef<HTMLInputElement>(null);
 
   // 오픈 리다이렉트 방지: 상대 경로만 허용
   const rawCallback = searchParams.get("callbackUrl") ?? "/dashboard";
   const callbackUrl = rawCallback.startsWith("/") && !rawCallback.startsWith("//") ? rawCallback : "/dashboard";
+
+  // 소셜 로그인 콜백 에러 처리
+  const SOCIAL_ERROR_MESSAGES: Record<string, string> = {
+    social_cancelled: "Google 로그인이 취소됐어요.",
+    social_failed: "Google 로그인에 실패했어요. 다시 시도해주세요.",
+    already_exists: "이미 이메일로 가입된 계정이에요. 이메일로 로그인해주세요.",
+  };
+  const errorParam = searchParams.get("error") ?? "";
+  const [socialError, setSocialError] = useState<string | null>(
+    SOCIAL_ERROR_MESSAGES[errorParam] ?? null
+  );
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
