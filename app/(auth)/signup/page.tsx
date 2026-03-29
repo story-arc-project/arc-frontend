@@ -1,26 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Button, Input, Textarea } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
+import { api, ApiError } from "@/lib/api";
 
 /* ── Types ───────────────────────────────────────────────── */
-type Step = "start" | "password" | "verify" | "profile" | "nickname" | "q1" | "q2";
-type InputMethod = "email" | "phone";
+type Step = "start" | "password" | "verify" | "profile" | "q1" | "q2";
 
-const ONBOARDING_STEPS: Step[] = ["profile", "nickname", "q1", "q2"];
-const EMAIL_ORDER: Step[] = ["start", "password", "verify", "profile", "nickname", "q1", "q2"];
-const PHONE_ORDER: Step[] = ["start", "profile", "nickname", "q1", "q2"];
-const Q1_OPTIONS = ["진로", "스펙", "아직 모름"] as const;
-const EDUCATION_OPTIONS = ["고등학생", "대학생", "대학원생", "졸업생"] as const;
+interface VerifyEmailResponse {
+  status: string;
+  data: { user: { nickname: string; email: string }; onboarded: boolean; expire_at: string };
+}
 
-const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 30 }, (_, i) => CURRENT_YEAR - i);
-const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
-const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+const ONBOARDING_STEPS: Step[] = ["profile", "q1", "q2"];
+const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "q1", "q2"];
+const Q1_OPTIONS = [
+  "진로/방향성", "취업/인턴", "스펙/자격증",
+  "대학원/진학", "창업", "학업/성적", "아직 모름",
+] as const;
+const INTEREST_OPTIONS = [
+  "개발/엔지니어링", "디자인/UX", "데이터/AI", "기획/PM",
+  "마케팅/콘텐츠", "경영/컨설팅", "금융/경제", "창업/스타트업",
+  "의료/헬스케어", "교육", "미디어/엔터", "법률/공공",
+  "연구/학문", "예술/문화", "환경/사회", "아직 모름",
+] as const;
+
+function formatPhone(digits: string): string {
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
+function formatBirth(digits: string): string {
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}. ${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}. ${digits.slice(4, 6)}. ${digits.slice(6)}`;
+}
 
 /* ── Animation ───────────────────────────────────────────── */
 const stepVariants = {
@@ -32,28 +51,31 @@ const stepTransition = { duration: 0.26, ease: [0.22, 1, 0.36, 1] as [number, nu
 
 /* ── Page ────────────────────────────────────────────────── */
 export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [step, setStep] = useState<Step>("start");
   const [dir, setDir] = useState(1);
 
   // Auth fields
-  const [inputMethod, setInputMethod] = useState<InputMethod>("email");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [showConfirmPw, setShowConfirmPw] = useState(false);
 
   // Profile fields
-  const [birthYear, setBirthYear] = useState("");
-  const [birthMonth, setBirthMonth] = useState("");
-  const [birthDay, setBirthDay] = useState("");
-  const [education, setEducation] = useState<string | null>(null);
-  const [school, setSchool] = useState("");
-  const [department, setDepartment] = useState("");
-  const needsSchool = education === "대학생" || education === "대학원생" || education === "졸업생";
+  const [birth, setBirth] = useState("");
+  const [education, setEducation] = useState("");
+  const [phone, setPhone] = useState("");
 
   // Password strength
   const pwChecks = [
@@ -65,12 +87,34 @@ export default function SignupPage() {
   const pwValid = pwChecks.every((c) => c.pass) && pwMatch;
 
   // Onboarding fields
-  const [nickname, setNickname] = useState("");
+  const [name, setName] = useState("");
   const [q1, setQ1] = useState<string | null>(null);
-  const [q2, setQ2] = useState("");
+  const [interests, setInterests] = useState<string[]>([]);
 
-  // Step order changes based on path
-  const ORDER = inputMethod === "email" ? EMAIL_ORDER : PHONE_ORDER;
+  // Verify fields
+  const [verifyCode, setVerifyCode] = useState("");
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
+
+  // UI state
+  const [isLoading, setIsLoading] = useState(false);
+  const [signupError, setSignupError] = useState<string | null>(null);
+  const [socialError, setSocialError] = useState<string | null>(null);
+
+  // 로그인 페이지에서 리다이렉트된 경우 URL 파라미터로 상태 복원
+  useEffect(() => {
+    const stepParam = searchParams.get("step") as Step | null;
+    const emailParam = searchParams.get("email");
+    // URLSearchParams.get()은 이미 디코딩된 값을 반환하므로 decodeURIComponent 불필요
+    if (emailParam) setEmail(emailParam);
+    if (stepParam && STEP_ORDER.includes(stepParam)) setStep(stepParam);
+  }, [searchParams]);
+
+  function toggleInterest(opt: string) {
+    setInterests((prev) =>
+      prev.includes(opt) ? prev.filter((i) => i !== opt) : [...prev, opt]
+    );
+  }
 
   function goTo(next: Step, direction = 1) {
     setDir(direction);
@@ -78,25 +122,114 @@ export default function SignupPage() {
   }
 
   function goBack() {
-    const idx = ORDER.indexOf(step);
-    if (idx > 0) goTo(ORDER[idx - 1], -1);
+    const idx = STEP_ORDER.indexOf(step);
+    if (idx > 0) goTo(STEP_ORDER[idx - 1], -1);
+  }
+
+  async function handleSignup() {
+    setIsLoading(true);
+    setSignupError(null);
+
+    try {
+      await api.post("/auth/signup", { email, password }, { auth: false });
+      goTo("verify");
+    } catch (e) {
+      if (e instanceof ApiError) setSignupError(e.message);
+      else setSignupError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleVerify() {
+    setIsLoading(true);
+    setVerifyError(null);
+
+    try {
+      const result = await api.post<VerifyEmailResponse>("/auth/verify-email", { email, code: verifyCode }, { auth: false });
+      if (result.data.onboarded) {
+        // 이미 온보딩 완료된 유저 (재인증 케이스) — FastAPI 쿠키가 이미 설정됨
+        router.push("/dashboard");
+      } else {
+        goTo("profile");
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 410) setVerifyError("인증 코드가 만료되었어요. 재발송 후 다시 시도해주세요.");
+        else setVerifyError(e.message);
+      } else {
+        setVerifyError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleResendCode() {
+    setResendError(null);
+    try {
+      await api.post("/auth/resend-verification", { email }, { auth: false });
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 429) setResendError("5분 후 재발송 가능해요.");
+        else if (e.status === 400) setResendError("이미 인증된 이메일이에요.");
+        else setResendError(e.message);
+      }
+    }
   }
 
   function handleSocial(provider: string) {
-    // API 연동 예정
-    goTo("profile");
+    if (provider !== "google") {
+      setSocialError("곧 지원 예정이에요");
+      setTimeout(() => setSocialError(null), 3000);
+      return;
+    }
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      setSocialError("Google 로그인을 사용할 수 없어요");
+      return;
+    }
+    const redirectUri = `${window.location.origin}/callback/google`;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      access_type: "offline",
+      prompt: "select_account",
+    });
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
-  function handleFinish() {
-    router.push("/dashboard"); // API 연동 예정
+  async function handleFinish() {
+    setIsLoading(true);
+
+    try {
+      const birthFormatted = `${birth.slice(0, 4)}-${birth.slice(4, 6)}-${birth.slice(6, 8)}`;
+      await api.post("/auth/onboarding", {
+        name,
+        birth: birthFormatted,
+        ...(education.trim() && { education }),
+        ...(phone            && { phone }),
+        ...(q1               && { worry: [q1] }),
+        ...(interests.length > 0 && { interest: interests }),
+      });
+    } catch {
+      // 온보딩 실패 시 세션 생성은 계속 진행 (데이터는 나중에 재입력 가능)
+    }
+
+    router.push("/dashboard");
+    setIsLoading(false);
   }
 
-  const identifier = inputMethod === "email" ? email : phone;
-  const birthComplete = birthYear && birthMonth && birthDay;
+  const birthValid =
+    birth.length === 8 &&
+    Number(birth.slice(4, 6)) >= 1 && Number(birth.slice(4, 6)) <= 12 &&
+    Number(birth.slice(6, 8)) >= 1 && Number(birth.slice(6, 8)) <= 31;
   const profileComplete =
-    birthComplete &&
-    !!education &&
-    (!needsSchool || (school.trim().length > 0 && department.trim().length > 0));
+    name.trim().length > 0 &&
+    birthValid &&
+    phone.length === 11;
   const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
   const isOnboarding = onboardingIndex >= 0;
 
@@ -156,50 +289,20 @@ export default function SignupPage() {
                   이메일 또는 소셜 계정으로 가입해요
                 </p>
 
-                {/* Email / Phone tab */}
-                <div className="flex bg-surface-secondary rounded-lg p-1 mb-4">
-                  {(["email", "phone"] as InputMethod[]).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setInputMethod(m)}
-                      className={[
-                        "flex-1 h-9 rounded-md text-body-sm font-semibold transition-all duration-150 cursor-pointer",
-                        inputMethod === m
-                          ? "bg-surface text-text-primary shadow-xs"
-                          : "text-text-tertiary hover:text-text-secondary",
-                      ].join(" ")}
-                    >
-                      {m === "email" ? "이메일" : "전화번호"}
-                    </button>
-                  ))}
-                </div>
-
                 <div className="flex flex-col gap-3 mb-5">
-                  {inputMethod === "email" ? (
-                    <Input
-                      label="이메일"
-                      type="email"
-                      placeholder="name@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && email && goTo("password")}
-                    />
-                  ) : (
-                    <Input
-                      label="전화번호"
-                      type="tel"
-                      placeholder="010-0000-0000"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && phone && goTo("profile")}
-                    />
-                  )}
+                  <Input
+                    label="이메일"
+                    type="email"
+                    placeholder="name@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && email && goTo("password")}
+                  />
                   <Button
-                    onClick={() => goTo(inputMethod === "email" ? "password" : "profile")}
-                    disabled={!(inputMethod === "email" ? email : phone)}
+                    onClick={() => goTo("password")}
+                    disabled={!email}
                   >
-                    {inputMethod === "email" ? "이메일로 계속하기" : "전화번호로 계속하기"}
+                    이메일로 계속하기
                   </Button>
                 </div>
 
@@ -210,6 +313,9 @@ export default function SignupPage() {
                 </div>
 
                 <SocialLoginButtons onLogin={handleSocial} action="시작하기" />
+                {socialError && (
+                  <p className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
+                )}
 
                 <p className="mt-6 text-center text-body-sm text-text-secondary">
                   이미 계정이 있으신가요?{" "}
@@ -223,7 +329,7 @@ export default function SignupPage() {
             {/* ── password ─────────────────────────── */}
             {step === "password" && (
               <div>
-                <p className="text-caption text-text-tertiary mb-1 truncate">{identifier}</p>
+                <p className="text-caption text-text-tertiary mb-1 truncate">{email}</p>
                 <h1 className="text-heading-2 text-text-primary mb-1">비밀번호를 설정해주세요</h1>
                 <p className="text-body text-text-secondary mb-8">8자 이상이면 충분해요</p>
 
@@ -235,7 +341,6 @@ export default function SignupPage() {
                       placeholder="영문+숫자 8자 이상"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && pwValid && goTo("verify")}
                       className="pr-14"
                     />
                     <button
@@ -247,7 +352,6 @@ export default function SignupPage() {
                       {showPw ? "숨기기" : "보기"}
                     </button>
                   </div>
-                  {/* Password strength indicators */}
                   {password.length > 0 && (
                     <div className="flex gap-3">
                       {pwChecks.map((c) => (
@@ -266,7 +370,6 @@ export default function SignupPage() {
                       ))}
                     </div>
                   )}
-                  {/* Confirm password */}
                   <div className="relative">
                     <Input
                       label="비밀번호 확인"
@@ -274,7 +377,6 @@ export default function SignupPage() {
                       placeholder="비밀번호를 다시 입력해주세요"
                       value={confirmPw}
                       onChange={(e) => setConfirmPw(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && pwValid && goTo("verify")}
                       error={confirmPw.length > 0 && !pwMatch ? "비밀번호가 일치하지 않아요" : undefined}
                       className="pr-14"
                     />
@@ -287,8 +389,11 @@ export default function SignupPage() {
                       {showConfirmPw ? "숨기기" : "보기"}
                     </button>
                   </div>
-                  <Button onClick={() => goTo("verify")} disabled={!pwValid}>
-                    가입하기
+                  {signupError && (
+                    <p className="text-body-sm text-error">{signupError}</p>
+                  )}
+                  <Button onClick={handleSignup} disabled={!pwValid || isLoading}>
+                    {isLoading ? "처리 중..." : "가입하기"}
                   </Button>
                 </div>
               </div>
@@ -296,26 +401,38 @@ export default function SignupPage() {
 
             {/* ── verify ───────────────────────────── */}
             {step === "verify" && (
-              <div className="text-center py-2">
-                <div className="text-display mb-5 leading-none">✉️</div>
-                <h1 className="text-heading-2 text-text-primary mb-2">메일함을 확인해주세요</h1>
-                <p className="text-body text-text-secondary mb-1">
-                  <span className="font-medium text-text-primary">{identifier}</span>으로
+              <div>
+                <div className="text-display mb-5 leading-none text-center">✉️</div>
+                <h1 className="text-heading-2 text-text-primary mb-1">인증 코드를 입력해주세요</h1>
+                <p className="text-body text-text-secondary mb-8">
+                  <span className="font-medium text-text-primary">{email}</span>으로 코드를 보냈어요
                 </p>
-                <p className="text-body text-text-secondary mb-2">인증 링크를 보냈어요</p>
-                <p className="text-body-sm text-text-tertiary mb-8">
-                  인증 후 전체 기능을 사용할 수 있어요.<br />
-                  지금 바로 시작하고 나중에 인증해도 괜찮아요.
-                </p>
-                <div className="flex flex-col gap-2.5">
-                  <Button onClick={() => goTo("profile")}>일단 시작할게요</Button>
+
+                <div className="flex flex-col gap-3">
+                  <Input
+                    label="인증 코드"
+                    type="text"
+                    placeholder="코드 6자리 입력"
+                    value={verifyCode}
+                    onChange={(e) => setVerifyCode(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && verifyCode.trim() && handleVerify()}
+                  />
+                  {verifyError && (
+                    <p className="text-body-sm text-error">{verifyError}</p>
+                  )}
+                  <Button onClick={handleVerify} disabled={!verifyCode.trim() || isLoading}>
+                    {isLoading ? "확인 중..." : "확인"}
+                  </Button>
+                  {resendError && (
+                    <p className="text-body-sm text-error">{resendError}</p>
+                  )}
                   <button
                     type="button"
-                    onClick={() => {}} // API 연동 예정
+                    onClick={handleResendCode}
                     className="w-full h-12 rounded-md border border-border text-text-secondary
                                text-body font-medium hover:bg-surface-secondary transition-colors cursor-pointer"
                   >
-                    인증 메일 재발송
+                    코드 재발송
                   </button>
                 </div>
               </div>
@@ -329,130 +446,55 @@ export default function SignupPage() {
                   맞춤 경험을 제공하는 데 사용돼요
                 </p>
 
+                {/* 이름 */}
+                <div className="mb-5">
+                  <Input
+                    label="이름"
+                    type="text"
+                    placeholder="홍길동"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
+
                 {/* 생년월일 */}
-                <p className="text-label text-text-primary mb-2">생년월일</p>
-                <div className="grid grid-cols-3 gap-2 mb-6">
-                  {[
-                    {
-                      value: birthYear,
-                      setter: setBirthYear,
-                      placeholder: "년도",
-                      options: YEARS.map((y) => ({ value: String(y), label: `${y}년` })),
-                    },
-                    {
-                      value: birthMonth,
-                      setter: setBirthMonth,
-                      placeholder: "월",
-                      options: MONTHS.map((m) => ({ value: String(m), label: `${m}월` })),
-                    },
-                    {
-                      value: birthDay,
-                      setter: setBirthDay,
-                      placeholder: "일",
-                      options: DAYS.map((d) => ({ value: String(d), label: `${d}일` })),
-                    },
-                  ].map((sel) => (
-                    <select
-                      key={sel.placeholder}
-                      value={sel.value}
-                      onChange={(e) => sel.setter(e.target.value)}
-                      className={[
-                        "h-12 w-full rounded-md border px-3",
-                        "text-body outline-none transition-colors duration-150 bg-surface cursor-pointer",
-                        sel.value
-                          ? "border-border text-text-primary focus:border-brand focus:ring-2 focus:ring-brand/15"
-                          : "border-border text-text-tertiary focus:border-brand focus:ring-2 focus:ring-brand/15",
-                      ].join(" ")}
-                    >
-                      <option value="" disabled>{sel.placeholder}</option>
-                      {sel.options.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
-                  ))}
+                <div className="mb-5">
+                  <Input
+                    label="생년월일"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="YYYY. MM. DD"
+                    value={formatBirth(birth)}
+                    onChange={(e) => setBirth(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                  />
                 </div>
 
-                {/* 학력 */}
-                <p className="text-label text-text-primary mb-2">학력</p>
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  {EDUCATION_OPTIONS.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => {
-                        setEducation(opt);
-                        if (opt === "고등학생") { setSchool(""); setDepartment(""); }
-                      }}
-                      className={[
-                        "h-12 rounded-xl border-2 text-body font-semibold",
-                        "transition-all duration-150 cursor-pointer",
-                        education === opt
-                          ? "border-brand bg-surface-brand text-brand"
-                          : "border-border bg-surface text-text-primary hover:border-brand/40 hover:bg-surface-brand/30",
-                      ].join(" ")}
-                    >
-                      {opt}
-                    </button>
-                  ))}
+                {/* 전화번호 */}
+                <div className="mb-5">
+                  <Input
+                    label="전화번호"
+                    type="tel"
+                    placeholder="010-0000-0000"
+                    value={formatPhone(phone)}
+                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                  />
                 </div>
 
-                {/* School / department — revealed for university options */}
-                <AnimatePresence>
-                  {needsSchool && (
-                    <motion.div
-                      key="school-fields"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-                      className="overflow-hidden"
-                    >
-                      <div className="flex flex-col gap-3 pt-1 pb-4">
-                        <Input
-                          label="학교명"
-                          type="text"
-                          placeholder="예) 서울대학교"
-                          value={school}
-                          onChange={(e) => setSchool(e.target.value)}
-                        />
-                        <Input
-                          label="학과 / 전공"
-                          type="text"
-                          placeholder="예) 컴퓨터공학과"
-                          value={department}
-                          onChange={(e) => setDepartment(e.target.value)}
-                        />
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                {/* 소속 (선택) */}
+                <div className="mb-6">
+                  <Input
+                    label="소속"
+                    type="text"
+                    placeholder="예) 서울대학교 컴퓨터공학과, 삼성전자 재직 중"
+                    value={education}
+                    onChange={(e) => setEducation(e.target.value)}
+                  />
+                  <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
+                </div>
 
-                <Button onClick={() => goTo("nickname")} disabled={!profileComplete} fullWidth>
+                <Button onClick={() => goTo("q1")} disabled={!profileComplete} fullWidth>
                   다음
                 </Button>
-              </div>
-            )}
-
-            {/* ── nickname ─────────────────────────── */}
-            {step === "nickname" && (
-              <div>
-                <h1 className="text-heading-2 text-text-primary mb-1">어떻게 불러드릴까요?</h1>
-                <p className="text-body text-text-secondary mb-8">
-                  ARC 안에서 사용할 이름이에요
-                </p>
-                <div className="flex flex-col gap-3">
-                  <Input
-                    label="닉네임"
-                    type="text"
-                    placeholder="예) 지민, arc_user"
-                    value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && nickname.trim() && goTo("q1")}
-                  />
-                  <Button onClick={() => goTo("q1")} disabled={!nickname.trim()}>
-                    다음
-                  </Button>
-                </div>
               </div>
             )}
 
@@ -463,16 +505,16 @@ export default function SignupPage() {
                   요즘 가장 고민되는 게 뭐예요?
                 </h1>
                 <p className="text-body text-text-secondary mb-8">
-                  {nickname ? `${nickname}님, ` : ""}솔직하게 골라도 괜찮아요 😊
+                  솔직하게 골라도 괜찮아요 😊
                 </p>
-                <div className="flex flex-col gap-2.5 mb-6">
+                <div className="grid grid-cols-2 gap-2.5 mb-6">
                   {Q1_OPTIONS.map((opt) => (
                     <button
                       key={opt}
                       type="button"
                       onClick={() => setQ1(opt)}
                       className={[
-                        "w-full h-14 rounded-xl border-2 text-title font-semibold",
+                        "h-12 rounded-xl border-2 text-body font-semibold",
                         "transition-all duration-150 cursor-pointer",
                         q1 === opt
                           ? "border-brand bg-surface-brand text-brand"
@@ -503,22 +545,35 @@ export default function SignupPage() {
             {step === "q2" && (
               <div>
                 <h1 className="text-heading-2 text-text-primary mb-1">
-                  가장 기억에 남는 활동이 있나요?
+                  관심 있는 분야를 골라보세요
                 </h1>
                 <p className="text-body text-text-secondary mb-8">
-                  짧게 적어도 괜찮아요 — 나중에 더 자세히 기록할 수 있어요
+                  복수 선택 가능해요
                 </p>
-                <div className="flex flex-col gap-3">
-                  <Textarea
-                    placeholder="예) 교내 UX 공모전에서 팀장을 맡아 앱을 기획했어요"
-                    value={q2}
-                    onChange={(e) => setQ2(e.target.value)}
-                    rows={4}
-                  />
-                  <Button onClick={handleFinish}>
-                    {q2.trim() ? "ARC 시작하기 🎉" : "나중에 채울게요 →"}
-                  </Button>
+                <div className="grid grid-cols-2 gap-2.5 mb-6">
+                  {INTEREST_OPTIONS.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => toggleInterest(opt)}
+                      className={[
+                        "h-12 rounded-xl border-2 text-body font-semibold",
+                        "transition-all duration-150 cursor-pointer",
+                        interests.includes(opt)
+                          ? "border-brand bg-surface-brand text-brand"
+                          : "border-border bg-surface text-text-primary hover:border-brand/40 hover:bg-surface-brand/30",
+                      ].join(" ")}
+                    >
+                      {opt}
+                    </button>
+                  ))}
                 </div>
+                {signupError && (
+                  <p className="text-body-sm text-error mb-2">{signupError}</p>
+                )}
+                <Button onClick={handleFinish} disabled={isLoading} fullWidth>
+                  {isLoading ? "처리 중..." : interests.length > 0 ? "ARC 시작하기" : "나중에 채울게요 →"}
+                </Button>
               </div>
             )}
 
