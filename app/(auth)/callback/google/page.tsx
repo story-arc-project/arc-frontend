@@ -30,7 +30,7 @@ function GoogleCallbackHandler() {
     }
 
     api
-      .post<{ status: string }>("/auth/google/callback", { code }, { auth: false })
+      .post<{ status: string }>("/auth/social-login", { provider : "google", token : code }, { auth: false })
       .then(() => {
         router.replace("/dashboard");
       })
