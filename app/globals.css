@@ -85,6 +85,23 @@
   --shadow-xl:   0 16px 48px 0 rgba(0, 0, 0, 0.12);
 }
 
+/* ── Drag-and-drop: suppress text selection while dragging ── */
+body.dnd-dragging,
+body.dnd-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+body.dnd-dragging {
+  cursor: grabbing !important;
+}
+
+.draggable-item {
+  user-select: none;
+  -webkit-user-select: none; /* iOS Safari */
+}
+
+
 /* ── Base styles ──────────────────────────────────────────── */
 *,
 *::before,
