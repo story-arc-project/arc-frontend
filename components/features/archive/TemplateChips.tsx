@@ -1,5 +1,6 @@
 "use client";
 
+import { Chip } from "@/components/ui";
 import type { Template } from "@/types/archive";
 
 interface TemplateChipsProps {
@@ -12,12 +13,6 @@ export function TemplateChips({ templates, selectedId, onSelect }: TemplateChips
   const systemTemplates = templates.filter((t) => t.is_system);
   const customTemplates = templates.filter((t) => !t.is_system);
 
-  const chipBase =
-    "px-3 py-1 rounded-full text-label transition-all cursor-pointer";
-  const chipSelected = "bg-brand text-white border border-brand font-semibold";
-  const chipUnselected =
-    "text-text-secondary border border-border hover:border-brand hover:text-brand hover:bg-surface-brand";
-
   return (
     <div className="mb-7">
       <p className="text-caption text-text-tertiary uppercase tracking-widest font-semibold mb-2">
@@ -25,14 +20,13 @@ export function TemplateChips({ templates, selectedId, onSelect }: TemplateChips
       </p>
       <div className="flex flex-wrap gap-1.5 mb-3">
         {systemTemplates.map((t) => (
-          <button
+          <Chip
             key={t.id}
-            type="button"
+            selected={selectedId === t.id}
             onClick={() => onSelect(t)}
-            className={[chipBase, selectedId === t.id ? chipSelected : chipUnselected].join(" ")}
           >
             {t.label}
-          </button>
+          </Chip>
         ))}
       </div>
 
@@ -44,38 +38,21 @@ export function TemplateChips({ templates, selectedId, onSelect }: TemplateChips
           </p>
           <div className="flex flex-wrap gap-1.5">
             {customTemplates.map((t) => (
-              <button
+              <Chip
                 key={t.id}
-                type="button"
+                selected={selectedId === t.id}
                 onClick={() => onSelect(t)}
-                className={[chipBase, selectedId === t.id ? chipSelected : chipUnselected].join(
-                  " "
-                )}
               >
                 {t.label}
-              </button>
+              </Chip>
             ))}
-            <button
-              type="button"
-              disabled
-              title="준비 중"
-              className={`${chipBase} text-text-disabled border border-dashed border-border cursor-not-allowed`}
-            >
-              + 새 템플릿 만들기
-            </button>
+            <Chip disabled>+ 새 템플릿 만들기</Chip>
           </div>
         </>
       )}
 
       {customTemplates.length === 0 && (
-        <button
-          type="button"
-          disabled
-          title="준비 중"
-          className={`${chipBase} text-text-disabled border border-dashed border-border cursor-not-allowed`}
-        >
-          + 새 템플릿 만들기
-        </button>
+        <Chip disabled>+ 새 템플릿 만들기</Chip>
       )}
     </div>
   );

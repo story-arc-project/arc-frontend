@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Button } from "@/components/ui";
+import { Button, Chip } from "@/components/ui";
 import { ExperienceForm } from "./ExperienceForm";
 import type { Folder, Template, ExperienceWithFolder } from "@/types/archive";
 import { isQualitativeKey, isQualitativeTemplate } from "@/lib/templates";
@@ -63,7 +63,7 @@ export function ExperienceDetail({
     <div className="max-w-[640px] mx-auto px-5 py-6 lg:px-12 lg:py-10">
       {/* Header */}
       <div className="flex items-start justify-between mb-8 gap-4">
-        <Badge variant="brand">{template?.label ?? "이력"}</Badge>
+        <Chip selected>{template?.label ?? "이력"}</Chip>
         <div className="flex gap-2 flex-shrink-0">
           <Button variant="secondary" size="sm" onClick={onEdit}>
             수정
