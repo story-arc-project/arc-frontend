@@ -3,7 +3,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { Button } from "@/components/ui";
+import { ArrowLeft } from "lucide-react";
+import { Button, Dialog } from "@/components/ui";
 import { ArchiveSidebar } from "@/components/features/archive/ArchiveSidebar";
 import { RightPanel } from "@/components/features/archive/RightPanel";
 import type { Folder, ExperienceWithFolder, Template } from "@/types/archive";
@@ -275,9 +276,10 @@ export default function ArchivePage() {
               <div className="flex-shrink-0 flex items-center px-4 h-11 border-b border-border bg-surface">
                 <button
                   onClick={() => setMobileView("sidebar")}
+                  aria-label="목록으로 돌아가기"
                   className="flex items-center gap-1.5 text-label text-brand hover:text-brand-dark transition-colors"
                 >
-                  <span className="text-body">←</span>
+                  <ArrowLeft size={16} />
                   <span>목록으로</span>
                 </button>
               </div>
@@ -290,24 +292,20 @@ export default function ArchivePage() {
       </div>
 
       {/* ── Unsaved changes guard modal ───────────────────────────────── */}
-      {showGuardModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-surface rounded-xl shadow-lg p-6 max-w-sm w-full">
-            <h3 className="text-title text-text-primary mb-2">저장하지 않고 나갈까요?</h3>
-            <p className="text-body-sm text-text-secondary mb-6 leading-relaxed">
-              작성 중인 내용이 있어요. 나가면 사라져요.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="ghost" size="sm" onClick={() => setShowGuardModal(false)}>
-                취소
-              </Button>
-              <Button variant="destructive" size="sm" onClick={confirmDiscard}>
-                나가기
-              </Button>
-            </div>
-          </div>
+      <Dialog open={showGuardModal} onClose={() => setShowGuardModal(false)} ariaLabel="저장하지 않고 나갈까요?">
+        <h3 className="text-title text-text-primary mb-2">저장하지 않고 나갈까요?</h3>
+        <p className="text-body-sm text-text-secondary mb-6 leading-relaxed">
+          작성 중인 내용이 있어요. 나가면 사라져요.
+        </p>
+        <div className="flex gap-2 justify-end">
+          <Button variant="ghost" size="sm" onClick={() => setShowGuardModal(false)}>
+            취소
+          </Button>
+          <Button variant="destructive" size="sm" onClick={confirmDiscard}>
+            나가기
+          </Button>
         </div>
-      )}
+      </Dialog>
     </>
   );
 }

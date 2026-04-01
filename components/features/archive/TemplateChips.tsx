@@ -57,7 +57,9 @@ export function TemplateChips({ templates, selectedId, onSelect }: TemplateChips
             ))}
             <button
               type="button"
-              className={`${chipBase} text-text-tertiary border border-dashed border-border hover:border-brand hover:text-brand`}
+              disabled
+              title="준비 중"
+              className={`${chipBase} text-text-disabled border border-dashed border-border cursor-not-allowed`}
             >
               + 새 템플릿 만들기
             </button>
@@ -68,7 +70,9 @@ export function TemplateChips({ templates, selectedId, onSelect }: TemplateChips
       {customTemplates.length === 0 && (
         <button
           type="button"
-          className={`${chipBase} text-text-tertiary border border-dashed border-border hover:border-brand hover:text-brand`}
+          disabled
+          title="준비 중"
+          className={`${chipBase} text-text-disabled border border-dashed border-border cursor-not-allowed`}
         >
           + 새 템플릿 만들기
         </button>

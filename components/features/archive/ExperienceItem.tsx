@@ -36,8 +36,12 @@ export function ExperienceItem({
     <div
       ref={setNodeRef}
       style={style}
+      role="button"
+      tabIndex={0}
+      aria-selected={isActive}
       className={[
         "relative flex items-center gap-1 pl-6 pr-2.5 py-2 mx-1 rounded-md cursor-pointer transition-colors group/item",
+        "focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-[-2px]",
         isDragging ? "opacity-50" : "",
         isActive
           ? "bg-surface-brand before:absolute before:left-1 before:top-2 before:bottom-2 before:w-0.5 before:bg-brand before:rounded-full"
@@ -46,6 +50,12 @@ export function ExperienceItem({
         .filter(Boolean)
         .join(" ")}
       onClick={() => onClick(experience.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick(experience.id);
+        }
+      }}
     >
       {/* Drag handle — desktop only, shown on hover.
           onMouseDown: prevent the browser from starting a text-selection
@@ -53,7 +63,7 @@ export function ExperienceItem({
       <button
         {...attributes}
         {...listeners}
-        className="absolute left-0.5 top-1/2 -translate-y-1/2 hidden lg:flex w-5 h-5 items-center justify-center opacity-0 group-hover/item:opacity-100 text-text-disabled cursor-grab active:cursor-grabbing transition-opacity"
+        className="absolute left-[-6px] top-1/2 -translate-y-1/2 flex min-w-[44px] min-h-[44px] items-center justify-center opacity-100 xl:opacity-0 xl:group-hover/item:opacity-100 text-text-disabled cursor-grab active:cursor-grabbing transition-opacity"
         onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => e.stopPropagation()}
         aria-label="순서 변경"

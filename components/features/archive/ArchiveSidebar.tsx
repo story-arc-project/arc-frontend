@@ -13,9 +13,10 @@ import {
   DragStartEvent,
   DragCancelEvent,
 } from "@dnd-kit/core";
-import { Button } from "@/components/ui";
+import { Button, Dialog } from "@/components/ui";
 import { FolderGroup } from "./FolderGroup";
 import type { Folder, ExperienceWithFolder, Template } from "@/types/archive";
+import { getExperienceTitle } from "@/lib/templates";
 
 interface ArchiveSidebarProps {
   folders: Folder[];
@@ -125,8 +126,8 @@ export function ArchiveSidebar({
 
         <DragOverlay>
           {activeId ? (
-            <div className="px-4 py-2 rounded-md bg-surface border border-border shadow-md text-body-sm text-text-secondary opacity-90">
-              이동 중...
+            <div className="px-4 py-2 rounded-md bg-surface border border-border shadow-md text-body-sm text-text-primary opacity-90 max-w-[200px] truncate">
+              {getExperienceTitle(experiences.find((e) => e.id === activeId)?.raw_text ?? [])}
             </div>
           ) : null}
         </DragOverlay>
@@ -144,31 +145,27 @@ export function ArchiveSidebar({
       </div>
 
       {/* Delete folder confirm modal */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-surface rounded-xl shadow-lg p-6 max-w-sm w-full">
-            <h3 className="text-title text-text-primary mb-2">폴더를 삭제할까요?</h3>
-            <p className="text-body-sm text-text-secondary mb-6 leading-relaxed">
-              안의 이력은 <strong>미분류</strong>로 이동돼요.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(null)}>
-                취소
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => {
-                  onDeleteFolder(showDeleteConfirm);
-                  setShowDeleteConfirm(null);
-                }}
-              >
-                삭제
-              </Button>
-            </div>
-          </div>
+      <Dialog open={!!showDeleteConfirm} onClose={() => setShowDeleteConfirm(null)} ariaLabel="폴더를 삭제할까요?">
+        <h3 className="text-title text-text-primary mb-2">폴더를 삭제할까요?</h3>
+        <p className="text-body-sm text-text-secondary mb-6 leading-relaxed">
+          안의 이력은 <strong>미분류</strong>로 이동돼요.
+        </p>
+        <div className="flex gap-2 justify-end">
+          <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(null)}>
+            취소
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              if (showDeleteConfirm) onDeleteFolder(showDeleteConfirm);
+              setShowDeleteConfirm(null);
+            }}
+          >
+            삭제
+          </Button>
         </div>
-      )}
+      </Dialog>
     </aside>
   );
 }

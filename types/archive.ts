@@ -42,9 +42,12 @@ export interface Folder {
   isSystem: boolean
 }
 
+export type CustomFieldType = 'text' | 'textarea' | 'date' | 'file'
+
 export interface CustomField {
   id: string
   key: string
   label: string
   value: string
+  type: CustomFieldType
 }

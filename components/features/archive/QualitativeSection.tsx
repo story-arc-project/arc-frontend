@@ -38,7 +38,7 @@ export function QualitativeSection({
             value={motivation}
             onChange={(e) => onMotivationChange(e.target.value)}
             placeholder="처음엔 그냥 스펙 쌓으려고 지원했는데..."
-            className="min-h-[88px] bg-white/70 border-brand/20 focus:border-brand placeholder:text-brand-dark/30 placeholder:italic"
+            className="min-h-[88px] bg-surface/70 border-brand/20 focus:border-brand placeholder:text-brand-dark/30 placeholder:italic"
           />
         </div>
 
@@ -52,7 +52,7 @@ export function QualitativeSection({
             value={takeaway}
             onChange={(e) => onTakeawayChange(e.target.value)}
             placeholder="팀으로 일한다는 게 어떤 건지 처음 느꼈어요."
-            className="min-h-[88px] bg-white/70 border-brand/20 focus:border-brand placeholder:text-brand-dark/30 placeholder:italic"
+            className="min-h-[88px] bg-surface/70 border-brand/20 focus:border-brand placeholder:text-brand-dark/30 placeholder:italic"
           />
         </div>
       </div>

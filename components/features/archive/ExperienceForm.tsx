@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Button, Input, Textarea } from "@/components/ui";
+import { Button, Input, Textarea, DatePicker } from "@/components/ui";
 import { TemplateChips } from "./TemplateChips";
 import { QualitativeSection } from "./QualitativeSection";
 import { CustomFieldList } from "./CustomFieldList";
@@ -36,16 +36,21 @@ function PeriodField({
   onChange: (v: string) => void;
   label: string;
 }) {
-  const [start, setStart] = useState(() => value.split("~")[0]?.trim() ?? "");
+  // Convert stored "2023.03" format to "2023-03" for native month input
+  const toDash = (v: string) => v.replace(".", "-");
+  const toDot = (v: string) => v.replace("-", ".");
+
+  const [start, setStart] = useState(() => toDash(value.split("~")[0]?.trim() ?? ""));
   const [end, setEnd] = useState(() => {
     const e = value.split("~")[1]?.trim() ?? "";
-    return e === "현재" ? "" : e;
+    return e === "현재" ? "" : toDash(e);
   });
   const [isCurrent, setIsCurrent] = useState(() => value.includes("현재"));
 
   useEffect(() => {
-    const endPart = isCurrent ? "현재" : end;
-    onChange(start && (isCurrent || end) ? `${start} ~ ${endPart}` : start);
+    const startDot = toDot(start);
+    const endDot = isCurrent ? "현재" : toDot(end);
+    onChange(startDot && (isCurrent || end) ? `${startDot} ~ ${endDot}` : startDot);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [start, end, isCurrent]);
 
@@ -53,19 +58,19 @@ function PeriodField({
     <div className="flex flex-col gap-1.5">
       <label className="text-label text-text-primary">{label}</label>
       <div className="flex items-center gap-2">
-        <Input
+        <DatePicker
+          mode="month"
           value={start}
           onChange={(e) => setStart(e.target.value)}
-          placeholder="2023.03"
-          className="flex-1"
+          wrapperClassName="flex-1"
         />
         <span className="text-text-tertiary text-body flex-shrink-0">~</span>
-        <Input
+        <DatePicker
+          mode="month"
           value={isCurrent ? "" : end}
           onChange={(e) => setEnd(e.target.value)}
-          placeholder="2024.02"
           disabled={isCurrent}
-          className="flex-1"
+          wrapperClassName="flex-1"
         />
         <label className="flex items-center gap-1.5 text-label text-text-secondary cursor-pointer flex-shrink-0 whitespace-nowrap">
           <input
@@ -107,10 +112,12 @@ function DynamicField({
   }
 
   if (field.type === "select" && field.options) {
+    const selectId = `field-${field.key}`;
     return (
       <div className="flex flex-col gap-1.5">
-        <label className="text-label text-text-primary">{field.label}</label>
+        <label htmlFor={selectId} className="text-label text-text-primary">{field.label}</label>
         <select
+          id={selectId}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="h-12 w-full rounded-md border border-border bg-surface px-4 text-body text-text-primary outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/15"
@@ -167,12 +174,13 @@ export function ExperienceForm({
   const [takeaway, setTakeaway] = useState(
     () => initialExperience?.raw_text.find((f) => f.key === "takeaway")?.value ?? ""
   );
+  const [templateError, setTemplateError] = useState(false);
   const [customFields, setCustomFields] = useState<CustomField[]>(() => {
     if (!initialExperience || !selectedTemplate) return [];
     const schemaKeys = new Set(selectedTemplate.field_schema.map((f) => f.key));
     return initialExperience.raw_text
       .filter((f) => !schemaKeys.has(f.key))
-      .map((f) => ({ id: `cf-${f.key}`, key: f.key, label: f.label, value: f.value }));
+      .map((f) => ({ id: `cf-${f.key}`, key: f.key, label: f.label, value: f.value, type: ((f as unknown as Record<string, unknown>).fieldType as CustomField["type"]) ?? "textarea" }));
   });
 
   const showQualitative = selectedTemplate
@@ -193,6 +201,7 @@ export function ExperienceForm({
   const handleTemplateSelect = useCallback(
     (template: Template) => {
       setSelectedTemplate(template);
+      setTemplateError(false);
       setFormValues({});
       setMotivation("");
       setTakeaway("");
@@ -208,7 +217,7 @@ export function ExperienceForm({
 
   function handleSubmit() {
     if (!selectedTemplate) {
-      alert("유형을 선택해주세요.");
+      setTemplateError(true);
       return;
     }
 
@@ -232,10 +241,11 @@ export function ExperienceForm({
         ]
       : [];
 
-    const customRaw: RawTextField[] = customFields.map((f) => ({
+    const customRaw = customFields.map((f) => ({
       key: f.key,
       label: f.label,
       value: f.value,
+      fieldType: f.type,
     }));
 
     const now = new Date().toISOString();
@@ -274,11 +284,17 @@ export function ExperienceForm({
         selectedId={selectedTemplate?.id ?? null}
         onSelect={handleTemplateSelect}
       />
+      {templateError && (
+        <p className="text-body-sm text-error -mt-5 mb-5" role="alert">
+          유형을 선택해주세요.
+        </p>
+      )}
 
       {/* Folder selector */}
       <div className="flex flex-col gap-1.5 mb-6">
-        <label className="text-label text-text-tertiary font-semibold">저장할 폴더</label>
+        <label htmlFor="folder-select" className="text-label text-text-tertiary font-semibold">저장할 폴더</label>
         <select
+          id="folder-select"
           value={selectedFolderId}
           onChange={(e) => setSelectedFolderId(e.target.value)}
           className="h-12 w-full rounded-md border border-border bg-surface px-4 text-body text-text-primary outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/15"
