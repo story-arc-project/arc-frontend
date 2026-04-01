@@ -7,9 +7,10 @@ interface TemplateChipsProps {
   templates: Template[];
   selectedId: string | null;
   onSelect: (template: Template) => void;
+  disabled?: boolean;
 }
 
-export function TemplateChips({ templates, selectedId, onSelect }: TemplateChipsProps) {
+export function TemplateChips({ templates, selectedId, onSelect, disabled = false }: TemplateChipsProps) {
   const systemTemplates = templates.filter((t) => t.is_system);
   const customTemplates = templates.filter((t) => !t.is_system);
 
@@ -23,6 +24,7 @@ export function TemplateChips({ templates, selectedId, onSelect }: TemplateChips
           <Chip
             key={t.id}
             selected={selectedId === t.id}
+            disabled={disabled && selectedId !== t.id}
             onClick={() => onSelect(t)}
           >
             {t.label}
@@ -41,6 +43,7 @@ export function TemplateChips({ templates, selectedId, onSelect }: TemplateChips
               <Chip
                 key={t.id}
                 selected={selectedId === t.id}
+                disabled={disabled && selectedId !== t.id}
                 onClick={() => onSelect(t)}
               >
                 {t.label}
