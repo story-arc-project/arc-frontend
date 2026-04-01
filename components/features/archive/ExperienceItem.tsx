@@ -2,7 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Badge } from "@/components/ui";
 import type { ExperienceWithFolder, Template } from "@/types/archive";
 import { getExperienceTitle, getExperiencePeriod } from "@/lib/templates";
@@ -40,7 +40,7 @@ export function ExperienceItem({
       tabIndex={0}
       aria-selected={isActive}
       className={[
-        "relative flex items-center gap-1 pl-6 pr-2.5 py-2 mx-1 rounded-md cursor-pointer transition-colors group/item",
+        "relative flex items-center gap-1 pl-2.5 pr-2.5 py-2 mx-1 rounded-md cursor-pointer transition-colors group/item",
         "focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-[-2px]",
         isDragging ? "opacity-50" : "",
         isActive
@@ -57,20 +57,6 @@ export function ExperienceItem({
         }
       }}
     >
-      {/* Drag handle — desktop only, shown on hover.
-          onMouseDown: prevent the browser from starting a text-selection
-          drag before dnd-kit's activation distance is met. */}
-      <button
-        {...attributes}
-        {...listeners}
-        className="absolute left-[-6px] top-1/2 -translate-y-1/2 flex min-w-[44px] min-h-[44px] items-center justify-center opacity-100 xl:opacity-0 xl:group-hover/item:opacity-100 text-text-disabled cursor-grab active:cursor-grabbing transition-opacity"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={(e) => e.stopPropagation()}
-        aria-label="순서 변경"
-      >
-        <GripVertical size={12} />
-      </button>
-
       <div className="flex flex-col gap-0.5 min-w-0 flex-1">
         {templateLabel && (
           <Badge variant="brand" className="text-[10px] px-1.5 py-0 self-start mb-0.5">
@@ -89,6 +75,18 @@ export function ExperienceItem({
           <p className="text-caption text-text-tertiary truncate">{period}</p>
         )}
       </div>
+
+      {/* Drag handle */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="flex-shrink-0 flex items-center justify-center w-6 h-6 text-text-disabled cursor-grab active:cursor-grabbing"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={(e) => e.stopPropagation()}
+        aria-label="순서 변경"
+      >
+        <Menu size={14} />
+      </button>
     </div>
   );
 }
