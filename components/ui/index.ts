@@ -12,4 +12,6 @@ export { Textarea } from "./textarea";
 
 export { DatePicker } from "./date-picker";
 
+export { PeriodPicker } from "./period-picker";
+
 export { Dialog } from "./dialog";
