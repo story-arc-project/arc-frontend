@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useRef } from "react";
 import { Plus, X, Paperclip } from "lucide-react";
-import { Button, Input, Textarea, DatePicker } from "@/components/ui";
+import { Input, Textarea, DatePicker } from "@/components/ui";
 import type { CustomField, CustomFieldType } from "@/types/archive";
 
 const FIELD_TYPE_OPTIONS: { value: CustomFieldType; label: string }[] = [
@@ -15,12 +15,9 @@ const FIELD_TYPE_OPTIONS: { value: CustomFieldType; label: string }[] = [
 interface CustomFieldListProps {
   fields: CustomField[];
   onChange: (fields: CustomField[]) => void;
-  onSaveAsTemplate?: (name: string) => void;
 }
 
-export function CustomFieldList({ fields, onChange, onSaveAsTemplate }: CustomFieldListProps) {
-  const [showTemplateSave, setShowTemplateSave] = useState(false);
-  const [templateName, setTemplateName] = useState("");
+export function CustomFieldList({ fields, onChange }: CustomFieldListProps) {
 
   function addField() {
     onChange([
@@ -39,14 +36,6 @@ export function CustomFieldList({ fields, onChange, onSaveAsTemplate }: CustomFi
 
   function updateFieldType(id: string, type: CustomFieldType) {
     onChange(fields.map((f) => (f.id === id ? { ...f, type, value: "" } : f)));
-  }
-
-  function handleSaveTemplate() {
-    if (templateName.trim()) {
-      onSaveAsTemplate?.(templateName.trim());
-      setTemplateName("");
-      setShowTemplateSave(false);
-    }
   }
 
   return (
@@ -102,43 +91,6 @@ export function CustomFieldList({ fields, onChange, onSaveAsTemplate }: CustomFi
         <Plus size={14} />
         항목 추가
       </button>
-
-      {/* Save as template */}
-      {fields.length > 0 && (
-        <div className="mt-2">
-          {!showTemplateSave ? (
-            <button
-              type="button"
-              onClick={() => setShowTemplateSave(true)}
-              className="text-caption text-text-tertiary underline underline-offset-2 hover:text-brand transition-colors"
-            >
-              이 구성을 템플릿으로 저장
-            </button>
-          ) : (
-            <div className="flex gap-2 items-center mt-1">
-              <Input
-                value={templateName}
-                onChange={(e) => setTemplateName(e.target.value)}
-                placeholder="템플릿 이름"
-                className="flex-1 h-9"
-              />
-              <Button variant="secondary" size="sm" onClick={handleSaveTemplate}>
-                저장
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowTemplateSave(false);
-                  setTemplateName("");
-                }}
-              >
-                취소
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

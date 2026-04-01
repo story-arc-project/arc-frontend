@@ -7,9 +7,10 @@ interface DialogProps {
   onClose: () => void;
   ariaLabel: string;
   children: ReactNode;
+  className?: string;
 }
 
-export function Dialog({ open, onClose, ariaLabel, children }: DialogProps) {
+export function Dialog({ open, onClose, ariaLabel, children, className }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
 
@@ -79,7 +80,7 @@ export function Dialog({ open, onClose, ariaLabel, children }: DialogProps) {
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
-        className="bg-surface rounded-xl shadow-lg p-6 max-w-sm w-full"
+        className={`bg-surface rounded-xl shadow-lg p-6 w-full ${className ?? "max-w-sm"}`}
       >
         {children}
       </div>

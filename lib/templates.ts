@@ -14,6 +14,17 @@ export function isQualitativeKey(key: string): boolean {
   return (QUALITATIVE_KEYS as readonly string[]).includes(key)
 }
 
+/** Build qualitative RawTextField entries from motivation/takeaway values */
+export function buildQualitativeFields(
+  motivation: string,
+  takeaway: string,
+): RawTextField[] {
+  return [
+    { key: 'motivation', label: '왜 이 활동을 했나요?', value: motivation },
+    { key: 'takeaway', label: '무엇을 배웠나요?', value: takeaway },
+  ]
+}
+
 /** Derive title for sidebar display from raw_text */
 export function getExperienceTitle(rawText: RawTextField[]): string {
   return (
