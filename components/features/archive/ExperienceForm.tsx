@@ -290,23 +290,6 @@ export function ExperienceForm({
         </p>
       )}
 
-      {/* Folder selector */}
-      <div className="flex flex-col gap-1.5 mb-6">
-        <label htmlFor="folder-select" className="text-label text-text-tertiary font-semibold">저장할 폴더</label>
-        <select
-          id="folder-select"
-          value={selectedFolderId}
-          onChange={(e) => setSelectedFolderId(e.target.value)}
-          className="h-12 w-full rounded-md border border-border bg-surface px-4 text-body text-text-primary outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/15"
-        >
-          {folders.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
       {/* Dynamic fields */}
       {selectedTemplate && (
         <div className="flex flex-col gap-5">
@@ -318,6 +301,23 @@ export function ExperienceForm({
               onChange={(v) => handleFieldChange(field.key, v)}
             />
           ))}
+
+          {/* Folder selector */}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="folder-select" className="text-label text-text-tertiary font-semibold">저장할 폴더</label>
+            <select
+              id="folder-select"
+              value={selectedFolderId}
+              onChange={(e) => setSelectedFolderId(e.target.value)}
+              className="h-12 w-full rounded-md border border-border bg-surface px-4 text-body text-text-primary outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/15"
+            >
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       )}
 
