@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, Chip } from "@/components/ui";
+import { useState } from "react";
+import { Button, Chip, Dialog } from "@/components/ui";
 import { ExperienceForm } from "./ExperienceForm";
 import type { Folder, Template, ExperienceWithFolder } from "@/types/archive";
 import { isQualitativeKey, isQualitativeTemplate } from "@/lib/templates";
@@ -37,6 +38,8 @@ export function ExperienceDetail({
   onDelete,
   onUnsavedChange,
 }: ExperienceDetailProps) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   if (isEditing) {
     return (
       <ExperienceForm
@@ -71,7 +74,7 @@ export function ExperienceDetail({
           <Button
             variant="destructive"
             size="sm"
-            onClick={() => onDelete(experience.id)}
+            onClick={() => setShowDeleteConfirm(true)}
           >
             삭제
           </Button>
@@ -121,6 +124,37 @@ export function ExperienceDetail({
       <p className="text-caption text-text-disabled mt-6">
         마지막 수정: {formatDate(experience.updated_at)}
       </p>
+
+      {/* Delete confirmation modal */}
+      <Dialog
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        ariaLabel="이력 삭제 확인"
+      >
+        <div className="flex flex-col gap-4">
+          <div>
+            <h3 className="text-heading-4 text-text-primary">이력을 삭제할까요?</h3>
+            <p className="text-body-sm text-text-tertiary mt-1">
+              삭제된 이력은 복구할 수 없어요.
+            </p>
+          </div>
+          <div className="flex gap-2 justify-end pt-2 border-t border-border">
+            <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(false)}>
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                setShowDeleteConfirm(false);
+                onDelete(experience.id);
+              }}
+            >
+              삭제
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }
