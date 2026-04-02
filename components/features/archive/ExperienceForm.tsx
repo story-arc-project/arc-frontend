@@ -226,7 +226,7 @@ export function ExperienceForm({
   ) ?? [];
 
   return (
-    <div className="max-w-[640px] mx-auto px-5 py-6 lg:px-12 lg:py-10">
+    <div className="max-w-[640px] mx-auto px-5 py-6 md:px-12 md:py-10">
       {/* Header */}
       <div className="mb-7">
         <h2 className="text-heading-3 text-text-primary">

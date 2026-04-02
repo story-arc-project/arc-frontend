@@ -63,7 +63,7 @@ export function ExperienceDetail({
   const takeawayField = experience.raw_text.find((f) => f.key === "takeaway");
 
   return (
-    <div className="max-w-[640px] mx-auto px-5 py-6 lg:px-12 lg:py-10">
+    <div className="max-w-[640px] mx-auto px-5 py-6 md:px-12 md:py-10">
       {/* Header */}
       <div className="flex items-start justify-between mb-8 gap-4">
         <Chip selected>{template?.label ?? "이력"}</Chip>

@@ -1,8 +1,8 @@
 export default function ArchiveLoading() {
   return (
     <>
-      {/* Desktop skeleton (lg+) */}
-      <div className="hidden lg:flex h-[calc(100dvh-var(--gnb-h))] overflow-hidden animate-pulse">
+      {/* Desktop skeleton (md+) */}
+      <div className="hidden md:flex h-[calc(100dvh-var(--gnb-h))] overflow-hidden animate-pulse">
         <div className="w-60 flex-shrink-0 border-r border-border bg-surface-secondary flex flex-col gap-2 p-3">
           <div className="h-8 rounded-md bg-border" />
           <div className="h-px bg-border my-1" />
@@ -20,8 +20,8 @@ export default function ArchiveLoading() {
         </div>
       </div>
 
-      {/* Mobile skeleton (<lg) */}
-      <div className="lg:hidden h-[calc(100dvh-var(--gnb-h))] overflow-hidden animate-pulse bg-surface-secondary">
+      {/* Mobile skeleton (<md) */}
+      <div className="md:hidden h-[calc(100dvh-var(--gnb-h))] overflow-hidden animate-pulse bg-surface-secondary">
         <div className="px-2.5 pt-3 pb-2.5 border-b border-border">
           <div className="h-8 rounded-md bg-border" />
         </div>
