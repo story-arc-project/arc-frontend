@@ -59,20 +59,20 @@ export function ExperienceItem({
     >
       <div className="flex flex-col gap-0.5 min-w-0 flex-1">
         {templateLabel && (
-          <Badge variant="brand" className="text-[10px] px-1.5 py-0 self-start mb-0.5">
+          <Badge variant="brand" className="text-[10px] py-0 self-start mb-0.5">
             {templateLabel}
           </Badge>
         )}
         <p
           className={[
-            "text-body-sm font-medium truncate",
+            "text-body font-medium truncate",
             isActive ? "text-brand-dark" : "text-text-primary",
           ].join(" ")}
         >
           {title}
         </p>
         {period && (
-          <p className="text-caption text-text-tertiary truncate">{period}</p>
+          <p className="text-label text-text-tertiary truncate">{period}</p>
         )}
       </div>
 

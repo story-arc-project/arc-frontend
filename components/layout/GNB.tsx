@@ -18,8 +18,8 @@ export function GNB() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 h-[var(--gnb-h)] border-b border-border bg-surface/90 backdrop-blur-sm">
-      <div className="max-w-5xl mx-auto px-6 h-full flex items-center justify-between">
-        <Link href="/" className="text-title font-bold text-text-primary tracking-tight">
+      <div className="w-full mx-auto px-6 h-full flex items-center gap-6">
+        <Link href="/" className="text-heading-3 font-bold text-text-primary tracking-widest">
           ARC
         </Link>
 

@@ -78,8 +78,8 @@ function EmptyState({ onNewExperience }: { onNewExperience: () => void }) {
       <div className="w-12 h-12 rounded-xl bg-surface-secondary flex items-center justify-center text-2xl mb-1">
         📋
       </div>
-      <p className="text-title text-text-secondary">기록을 시작해보세요</p>
-      <p className="text-body-sm text-text-tertiary text-center leading-relaxed">
+      <p className="text-heading-3 text-text-secondary">기록을 시작해보세요</p>
+      <p className="text-body-lg text-text-tertiary text-center leading-relaxed">
         좌측에서 이력을 선택하거나{" "}
         <button
           onClick={onNewExperience}
