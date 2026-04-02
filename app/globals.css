@@ -18,6 +18,9 @@
   --gray-50:  #f2f4f6;
   --gray-25:  #f9fafb;
 
+  /* ── Layout ───────────────────────────────────────────────── */
+  --gnb-h: 72px;
+
   /* ── Font ─────────────────────────────────────────────────── */
   --font-sans: "Apple SD Gothic Neo", "Pretendard", -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif;
 }

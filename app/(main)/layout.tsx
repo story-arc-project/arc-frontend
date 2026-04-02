@@ -5,7 +5,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   return (
     <>
       <GNB />
-      <div className="pt-12">{children}</div>
+      <div className="pt-[var(--gnb-h)]">{children}</div>
     </>
   );
 }
