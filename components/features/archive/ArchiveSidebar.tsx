@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Plus } from "lucide-react";
 import {
   DndContext,
@@ -45,6 +45,8 @@ export function ArchiveSidebar({
 }: ArchiveSidebarProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+
+  const dndContextId = useId()
 
   // Fix 1: MouseSensor requires intentional movement before drag activates;
   // TouchSensor uses delay so a tap never accidentally starts a drag.
@@ -107,6 +109,7 @@ export function ArchiveSidebar({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={(_e: DragCancelEvent) => stopDrag()}
+        id={dndContextId}
       >
         <div className="flex-1 overflow-y-auto min-h-0 py-2">
           {folders.map((folder) => (
