@@ -30,7 +30,7 @@ export function FolderGroup({
   const [isOpen, setIsOpen] = useState(true);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(folder.name);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<DOMRect | null>(null);
 
   const { setNodeRef, isOver } = useDroppable({ id: folder.id });
 
@@ -54,9 +54,9 @@ export function FolderGroup({
     setIsRenaming(false);
   }
 
-  function openContextMenu(e: React.MouseEvent) {
+  function openContextMenu(e: React.MouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY });
+    setContextMenu(e.currentTarget.getBoundingClientRect());
   }
 
   return (
@@ -153,8 +153,7 @@ export function FolderGroup({
       {/* Context menu */}
       {contextMenu && (
         <FolderContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
+          anchorRect={contextMenu}
           onRename={startRename}
           onDelete={() => onConfirmDeleteFolder(folder.id)}
           onClose={() => setContextMenu(null)}
