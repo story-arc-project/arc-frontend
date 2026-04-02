@@ -18,6 +18,9 @@
   --gray-50:  #f2f4f6;
   --gray-25:  #f9fafb;
 
+  /* ── Layout ───────────────────────────────────────────────── */
+  --gnb-h: 72px;
+
   /* ── Font ─────────────────────────────────────────────────── */
   --font-sans: "Apple SD Gothic Neo", "Pretendard", -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif;
 }
@@ -34,7 +37,7 @@
   --color-text-primary:   var(--gray-950);
   --color-text-secondary: var(--gray-500);
   --color-text-tertiary:  var(--gray-300);
-  --color-text-disabled:  var(--gray-300);
+  --color-text-disabled:  var(--gray-200);
   --color-text-on-brand:  #ffffff;
 
   /* Surfaces */
@@ -84,6 +87,23 @@
   --shadow-lg:   0 8px 24px 0 rgba(0, 0, 0, 0.10);
   --shadow-xl:   0 16px 48px 0 rgba(0, 0, 0, 0.12);
 }
+
+/* ── Drag-and-drop: suppress text selection while dragging ── */
+body.dnd-dragging,
+body.dnd-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+body.dnd-dragging {
+  cursor: grabbing !important;
+}
+
+.draggable-item {
+  user-select: none;
+  -webkit-user-select: none; /* iOS Safari */
+}
+
 
 /* ── Base styles ──────────────────────────────────────────── */
 *,
@@ -170,4 +190,21 @@ body {
   font-size: 13px;
   font-weight: 500;
   line-height: 1.4;
+}
+
+input[type="date"]{
+  appearance:none ;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+@import "tailwindcss";
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }

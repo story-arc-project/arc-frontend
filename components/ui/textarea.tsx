@@ -52,7 +52,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           ref={setRef}
           id={textareaId}
           value={value}
-          rows={1}
+          rows={3}
           aria-invalid={!!error}
           aria-describedby={describedBy}
           onChange={(e) => {

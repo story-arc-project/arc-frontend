@@ -5,6 +5,18 @@ import { ApiError } from "./api-error";
 export { ApiError } from "./api-error";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const DEBUG = process.env.NEXT_PUBLIC_API_DEBUG === "true";
+
+function logRequest(method: string, path: string, body?: unknown) {
+  if (!DEBUG) return;
+  console.log(`[API →] ${method} ${path}`, body ?? "");
+}
+
+function logResponse(method: string, path: string, status: number, duration: number) {
+  if (!DEBUG) return;
+  const color = status < 400 ? "color:green" : "color:red";
+  console.log(`[API ←] %c${status}%c ${method} ${path} (${duration}ms)`, color, "");
+}
 
 // ──────────────────────────────────────────────
 // Core request
@@ -29,6 +41,10 @@ async function request<T>(
   const { auth = true, ...fetchOptions } = options;
   const isFormData = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
 
+  const method = fetchOptions.method ?? "GET";
+  logRequest(method, path, isFormData ? "[FormData]" : fetchOptions.body);
+  const start = performance.now();
+
   const res = await fetch(`${API_URL}${path}`, {
     ...fetchOptions,
     credentials: "include",
@@ -36,6 +52,8 @@ async function request<T>(
       ? fetchOptions.headers
       : { "Content-Type": "application/json", ...fetchOptions.headers },
   });
+
+  logResponse(method, path, res.status, Math.round(performance.now() - start));
 
   if (res.status === 401 && retry) {
     const refreshed = await tryRefresh();
