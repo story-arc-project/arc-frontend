@@ -93,12 +93,12 @@ export function FolderGroup({
                 if (e.key === "Escape") cancelRename();
               }}
               onClick={(e) => e.stopPropagation()}
-              className="text-label font-semibold text-text-secondary bg-transparent border-b border-brand outline-none w-full"
+              className="text-body-lg font-semibold text-text-secondary bg-transparent border-b border-brand outline-none w-full"
             />
           ) : (
             <span
               onDoubleClick={() => !folder.isSystem && startRename()}
-              className="text-label font-semibold text-text-secondary truncate"
+              className="text-body-lg font-semibold text-text-secondary truncate"
             >
               {folder.name}
             </span>

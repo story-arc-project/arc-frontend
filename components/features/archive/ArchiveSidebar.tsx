@@ -94,7 +94,7 @@ export function ArchiveSidebar({
       <div className="flex-shrink-0 px-2.5 pt-3 pb-2.5 border-b border-border">
         <button
           onClick={onNewExperience}
-          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-brand text-label font-medium hover:bg-surface-brand transition-colors"
+          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-brand text-body-large font-medium hover:bg-surface-brand transition-colors"
         >
           <span className="w-[14px] h-[14px] rounded-xs bg-brand text-white flex items-center justify-center flex-shrink-0">
             <Plus size={10} />
