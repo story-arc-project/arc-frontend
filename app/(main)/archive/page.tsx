@@ -188,7 +188,10 @@ export default function ArchivePage() {
           onRenameFolder={handleRenameFolder}
           onDeleteFolder={handleDeleteFolder}
         />
-        <RightPanel {...sharedProps} />
+        {/* pr-[25vw] mirrors the sidebar width so RightPanel content centers in the full viewport */}
+        <div className="flex-1 flex overflow-hidden bg-surface pr-[25vw]">
+          <RightPanel {...sharedProps} />
+        </div>
       </div>
 
       {/* ── Mobile layout (<lg) ──────────────────────────────────────── */}
