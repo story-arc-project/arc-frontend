@@ -89,7 +89,7 @@ export function ArchiveSidebar({
   }
 
   return (
-    <aside className="w-full lg:w-[25vw] lg:min-w-64 flex flex-col h-full overflow-hidden border-r border-border bg-surface-secondary">
+    <aside className="w-full md:w-[20vw] flex flex-col h-full overflow-hidden border-r border-border bg-surface-secondary">
       {/* Top: new experience button */}
       <div className="flex-shrink-0 px-2.5 pt-3 pb-2.5 border-b border-border">
         <button

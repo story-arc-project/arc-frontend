@@ -180,22 +180,22 @@ export default function ArchivePage() {
 
   return (
     <>
-      {/* ── Desktop layout (lg+) ─────────────────────────────────────── */}
-      <div className="hidden lg:flex h-[calc(100dvh-var(--gnb-h))] overflow-hidden">
+      {/* ── Desktop layout (md+) ─────────────────────────────────────── */}
+      <div className="hidden md:flex h-[calc(100dvh-var(--gnb-h))] overflow-hidden">
         <ArchiveSidebar
           {...sharedProps}
           onAddFolder={handleAddFolder}
           onRenameFolder={handleRenameFolder}
           onDeleteFolder={handleDeleteFolder}
         />
-        {/* pr-[25vw] mirrors the sidebar width so RightPanel content centers in the full viewport */}
-        <div className="flex-1 flex overflow-hidden bg-surface pr-[25vw]">
+        {/* pr-[20vw] mirrors the sidebar width so RightPanel content centers in the full viewport */}
+        <div className="flex-1 flex overflow-hidden bg-surface pr-[20vw]">
           <RightPanel {...sharedProps} />
         </div>
       </div>
 
-      {/* ── Mobile layout (<lg) ──────────────────────────────────────── */}
-      <div className="lg:hidden relative h-[calc(100dvh-var(--gnb-h))] overflow-hidden">
+      {/* ── Mobile layout (<md) ──────────────────────────────────────── */}
+      <div className="md:hidden relative h-[calc(100dvh-var(--gnb-h))] overflow-hidden">
         <AnimatePresence initial={false} mode="wait">
           {mobileView === "sidebar" ? (
             <motion.div
