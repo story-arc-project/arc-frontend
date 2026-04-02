@@ -38,7 +38,7 @@ export function RightPanel({
   onUnsavedChange,
 }: RightPanelProps) {
   return (
-    <div className="flex-1 h-full overflow-y-auto bg-surface">
+    <div className="flex-1 h-full overflow-y-auto bg-surface scrollbar-hide">
       {mode === "empty" && (
         <EmptyState onNewExperience={onNewExperience} />
       )}

@@ -197,3 +197,14 @@ input[type="date"]{
   -webkit-appearance: none;
   -moz-appearance: none;
 }
+
+@import "tailwindcss";
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
