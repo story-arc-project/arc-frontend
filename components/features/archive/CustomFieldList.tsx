@@ -20,9 +20,10 @@ interface CustomFieldListProps {
 export function CustomFieldList({ fields, onChange }: CustomFieldListProps) {
 
   function addField() {
+    const ts = Date.now();
     onChange([
       ...fields,
-      { id: `cf-${Date.now()}`, key: `custom_${Date.now()}`, label: "", value: "", type: "textarea" },
+      { id: `cf-${ts}`, key: `custom_${ts}`, label: "", value: "", type: "textarea" },
     ]);
   }
 

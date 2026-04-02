@@ -121,7 +121,6 @@ export function ArchiveSidebar({
               selectedId={selectedId}
               onSelectExperience={onSelectExperience}
               onRenameFolder={onRenameFolder}
-              onDeleteFolder={onDeleteFolder}
               onConfirmDeleteFolder={(id) => setShowDeleteConfirm(id)}
             />
           ))}

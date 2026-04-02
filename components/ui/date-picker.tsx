@@ -33,7 +33,7 @@ export const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(
           placeholder={mode === "month" ? "YYYY-MM" : "YYYY-MM-DD"}
           pattern={mode === "month" ? "\\d{4}-\\d{2}" : "\\d{4}-\\d{2}-\\d{2}"}
           className={[
-            "h-12 px-4 rounded-md border bg-surface min-width-0 box-border",
+            "h-12 px-4 rounded-md border bg-surface min-w-0 box-border",
             "text-body text-text-primary placeholder:text-text-tertiary",
             "outline-none transition-colors duration-150",
             error

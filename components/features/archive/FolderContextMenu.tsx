@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, type KeyboardEvent } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 
 interface FolderContextMenuProps {
@@ -42,7 +42,7 @@ export function FolderContextMenu({
     };
   }, [onClose]);
 
-  function handleKeyDown(e: React.KeyboardEvent) {
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
     const items = itemsRef.current;
     const current = items.findIndex((el) => el === document.activeElement);
 

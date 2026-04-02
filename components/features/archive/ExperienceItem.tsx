@@ -81,7 +81,6 @@ export function ExperienceItem({
         {...attributes}
         {...listeners}
         className="flex-shrink-0 flex items-center justify-center w-6 h-6 text-text-disabled cursor-grab active:cursor-grabbing"
-        onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => e.stopPropagation()}
         aria-label="순서 변경"
       >

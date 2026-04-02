@@ -15,7 +15,6 @@ interface FolderGroupProps {
   selectedId: string | null;
   onSelectExperience: (id: string) => void;
   onRenameFolder: (id: string, name: string) => void;
-  onDeleteFolder: (id: string) => void;
   onConfirmDeleteFolder: (id: string) => void;
 }
 
@@ -26,7 +25,6 @@ export function FolderGroup({
   selectedId,
   onSelectExperience,
   onRenameFolder,
-  onDeleteFolder: _onDeleteFolder,
   onConfirmDeleteFolder,
 }: FolderGroupProps) {
   const [isOpen, setIsOpen] = useState(true);

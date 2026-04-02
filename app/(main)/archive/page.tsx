@@ -8,7 +8,7 @@ import { Button, Dialog } from "@/components/ui";
 import { ArchiveSidebar } from "@/components/features/archive/ArchiveSidebar";
 import { RightPanel } from "@/components/features/archive/RightPanel";
 import type { Folder, ExperienceWithFolder, Template } from "@/types/archive";
-import { SYSTEM_TEMPLATES, getExperienceTitle, getExperiencePeriod } from "@/lib/templates";
+import { SYSTEM_TEMPLATES, getExperienceTitle } from "@/lib/templates";
 import { MOCK_FOLDERS, MOCK_EXPERIENCES } from "@/lib/mock-data";
 
 export type ArchiveMode = "empty" | "new" | "detail" | "edit";
@@ -45,17 +45,6 @@ export default function ArchivePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ── Guard helper ────────────────────────────────────────────────────────
-  function guardedNavigate(action: () => void) {
-    if (hasUnsaved) {
-      // store action target in pendingSelectId as a signal
-      setShowGuardModal(true);
-      return false;
-    }
-    action();
-    return true;
-  }
 
   // ── Selection ───────────────────────────────────────────────────────────
   const handleSelectExperience = useCallback(
