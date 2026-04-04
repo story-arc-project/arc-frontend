@@ -6,17 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-const container = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.07, delayChildren: 0.05 } },
-};
-const item = {
-  hidden: { opacity: 0, y: 16 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] } },
-};
+import { API_URL, SOCIAL_ERROR_MESSAGES, loginContainer, loginItem } from "../constants";
 
 export default function LoginPage() {
   return (
@@ -42,11 +32,6 @@ function LoginForm() {
   const callbackUrl = rawCallback.startsWith("/") && !rawCallback.startsWith("//") ? rawCallback : "/dashboard";
 
   // 소셜 로그인 콜백 에러 처리
-  const SOCIAL_ERROR_MESSAGES: Record<string, string> = {
-    social_cancelled: "Google 로그인이 취소됐어요.",
-    social_failed: "Google 로그인에 실패했어요. 다시 시도해주세요.",
-    already_exists: "이미 이메일로 가입된 계정이에요. 이메일로 로그인해주세요.",
-  };
   const errorParam = searchParams.get("error") ?? "";
   const [socialError, setSocialError] = useState<string | null>(
     SOCIAL_ERROR_MESSAGES[errorParam] ?? null
@@ -67,10 +52,10 @@ function LoginForm() {
       });
 
       if (!loginRes.ok) {
-        const { detail } = await loginRes.json().catch(() => ({}));
-        if (detail === "ACCOUNT_LOCKED") {
+        const { code } = await loginRes.json().catch(() => ({}));
+        if (code === "ACCOUNT_LOCKED") {
           setError("계정이 잠겼어요. 잠시 후 다시 시도해주세요.");
-        } else if (detail === "EMAIL_NOT_VERIFIED") {
+        } else if (code === "EMAIL_NOT_VERIFIED") {
           router.push(`/signup?step=verify&email=${encodeURIComponent(email)}`);
         } else {
           setError("이메일 또는 비밀번호가 올바르지 않아요.");
@@ -120,17 +105,17 @@ function LoginForm() {
       <div className="h-8 mb-3" />
       <div className="sm:bg-surface sm:border sm:border-border sm:rounded-xl sm:shadow-sm px-0 py-0 sm:px-10 sm:py-10">
         <motion.div
-          variants={container}
+          variants={loginContainer}
           initial="hidden"
           animate="show"
           className="flex flex-col gap-0"
         >
-          <motion.div variants={item} className="mb-8 text-center">
+          <motion.div variants={loginItem} className="mb-8 text-center">
             <h1 className="text-heading-2 text-text-primary mb-1">반가워요</h1>
             <p className="text-body text-text-secondary">이메일로 로그인하세요</p>
           </motion.div>
 
-          <motion.div variants={item} className="flex flex-col gap-4">
+          <motion.div variants={loginItem} className="flex flex-col gap-4">
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <Input
                 label="이메일"
@@ -170,20 +155,20 @@ function LoginForm() {
             </form>
           </motion.div>
 
-          <motion.div variants={item} className="my-6 flex items-center gap-3">
+          <motion.div variants={loginItem} className="my-6 flex items-center gap-3">
             <div className="flex-1 border-t border-border" />
             <span className="text-caption text-text-tertiary whitespace-nowrap">또는 소셜 계정으로 계속하기</span>
             <div className="flex-1 border-t border-border" />
           </motion.div>
 
-          <motion.div variants={item}>
+          <motion.div variants={loginItem}>
             <SocialLoginButtons onLogin={handleSocialLogin} action="계속하기" />
             {socialError && (
               <p className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
             )}
           </motion.div>
 
-          <motion.p variants={item} className="mt-6 text-center text-body-sm text-text-secondary">
+          <motion.p variants={loginItem} className="mt-6 text-center text-body-sm text-text-secondary">
             계정이 없으신가요?{" "}
             <Link href="/signup" className="text-brand font-medium hover:underline">
               회원가입

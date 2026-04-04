@@ -7,47 +7,18 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { api, ApiError } from "@/lib/api";
-
-/* ── Types ───────────────────────────────────────────────── */
-type Step = "start" | "password" | "verify" | "profile" | "q1" | "q2";
-
-interface VerifyEmailResponse {
-  status: string;
-  data: { user: { nickname: string; email: string }; onboarded: boolean; expire_at: string };
-}
-
-const ONBOARDING_STEPS: Step[] = ["profile", "q1", "q2"];
-const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "q1", "q2"];
-const Q1_OPTIONS = [
-  "진로/방향성", "취업/인턴", "스펙/자격증",
-  "대학원/진학", "창업", "학업/성적", "아직 모름",
-] as const;
-const INTEREST_OPTIONS = [
-  "개발/엔지니어링", "디자인/UX", "데이터/AI", "기획/PM",
-  "마케팅/콘텐츠", "경영/컨설팅", "금융/경제", "창업/스타트업",
-  "의료/헬스케어", "교육", "미디어/엔터", "법률/공공",
-  "연구/학문", "예술/문화", "환경/사회", "아직 모름",
-] as const;
-
-function formatPhone(digits: string): string {
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-}
-
-function formatBirth(digits: string): string {
-  if (digits.length <= 4) return digits;
-  if (digits.length <= 6) return `${digits.slice(0, 4)}. ${digits.slice(4)}`;
-  return `${digits.slice(0, 4)}. ${digits.slice(4, 6)}. ${digits.slice(6)}`;
-}
-
-/* ── Animation ───────────────────────────────────────────── */
-const stepVariants = {
-  enter: (dir: number) => ({ x: dir * 36, opacity: 0 }),
-  center: { x: 0, opacity: 1 },
-  exit: (dir: number) => ({ x: dir * -36, opacity: 0 }),
-};
-const stepTransition = { duration: 0.26, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] };
+import { VerifyEmailResponse } from "@/types/auth";
+import {
+  type Step,
+  ONBOARDING_STEPS,
+  STEP_ORDER,
+  Q1_OPTIONS,
+  INTEREST_OPTIONS,
+  stepVariants,
+  stepTransition,
+  formatPhone,
+  formatBirth,
+} from "../constants";
 
 /* ── Page ────────────────────────────────────────────────── */
 export default function SignupPage() {
@@ -134,7 +105,11 @@ function SignupForm() {
       await api.post("/auth/signup", { email, password }, { auth: false });
       goTo("verify");
     } catch (e) {
-      if (e instanceof ApiError) setSignupError(e.message);
+      if (e instanceof ApiError) {
+        if(e.code === "EMAIL_ALREADY_EXISTS") setSignupError("이미 존재하는 이메일이에요.")
+        else if(e.code === "WEAK_PASSWORD") setSignupError("더 강한 비밀번호를 시도해주세요.")
+        else setSignupError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+      }
       else setSignupError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
     } finally {
       setIsLoading(false);
