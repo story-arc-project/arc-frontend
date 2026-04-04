@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Button, Input } from "@/components/ui";
+import { Button, DatePicker, Input, toast, ToastContainer } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { api, ApiError } from "@/lib/api";
 import { VerifyEmailResponse } from "@/types/auth";
@@ -17,7 +17,6 @@ import {
   stepVariants,
   stepTransition,
   formatPhone,
-  formatBirth,
 } from "../constants";
 
 /* ── Page ────────────────────────────────────────────────── */
@@ -180,27 +179,38 @@ function SignupForm() {
     setIsLoading(true);
 
     try {
-      const birthFormatted = `${birth.slice(0, 4)}-${birth.slice(4, 6)}-${birth.slice(6, 8)}`;
       await api.post("/auth/onboarding", {
         name,
-        birth: birthFormatted,
+        birth,
         ...(education.trim() && { education }),
         ...(phone            && { phone }),
         ...(q1               && { worry: [q1] }),
         ...(interests.length > 0 && { interest: interests }),
-      });
-    } catch {
-      // 온보딩 실패 시 세션 생성은 계속 진행 (데이터는 나중에 재입력 가능)
+      }, { auth: false });
+      router.push("/dashboard");
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.code === "AUTH_TOKEN_EXPIRED") {
+          toast.error("세션이 만료되었어요. 다시 로그인해주세요.");
+        } else if (e.code === "AUTH_MISSING_COOKIES" || e.code === "AUTH_TOKEN_INVALID") {
+          toast.error("로그인 정보가 정확하지 않아요. 다시 로그인해주세요.")
+        } else if (e.code === "DUPLICATE_ONBOARDING") {
+          // 이미 온보딩 완료 — 대시보드로 이동
+          router.push("/dashboard");
+        } else if (e.code === "INVALID_INPUT") {
+          toast.error("입력 정보를 다시 확인해주세요.");
+        } else {
+          toast.error(e.message);
+        }
+      } else {
+        toast.error("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+      }
+    } finally {
+      setIsLoading(false);
     }
-
-    router.push("/dashboard");
-    setIsLoading(false);
   }
 
-  const birthValid =
-    birth.length === 8 &&
-    Number(birth.slice(4, 6)) >= 1 && Number(birth.slice(4, 6)) <= 12 &&
-    Number(birth.slice(6, 8)) >= 1 && Number(birth.slice(6, 8)) <= 31;
+  const birthValid = /^\d{4}-\d{2}-\d{2}$/.test(birth);
   const profileComplete =
     name.trim().length > 0 &&
     birthValid &&
@@ -210,6 +220,7 @@ function SignupForm() {
 
   return (
     <div className="w-full max-w-lg">
+      <ToastContainer />
       {/* Back */}
       <div className="h-8 mb-3 flex items-center">
         {step !== "start" && (
@@ -434,13 +445,10 @@ function SignupForm() {
 
                 {/* 생년월일 */}
                 <div className="mb-5">
-                  <Input
+                  <DatePicker
                     label="생년월일"
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="YYYY. MM. DD"
-                    value={formatBirth(birth)}
-                    onChange={(e) => setBirth(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    value={birth}
+                    onChange={(e) => setBirth(e.target.value)}
                   />
                 </div>
 
