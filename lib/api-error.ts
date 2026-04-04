@@ -1,14 +1,17 @@
 export class ApiError extends Error {
+  code: string | undefined;
   constructor(
     public readonly status: number,
-    message: string
+    message: string,
+    code?: string,
   ) {
     super(message);
     this.name = "ApiError";
+    this.code = code
   }
 
   toJSON() {
-    return { name: this.name, status: this.status, message: this.message };
+    return { name: this.name, status: this.status, message: this.message, code : this.code };
   }
 
   toString() {

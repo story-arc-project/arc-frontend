@@ -4,50 +4,20 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Button, Input } from "@/components/ui";
+import { Button, DatePicker, Input, toast, ToastContainer } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { api, ApiError } from "@/lib/api";
-
-/* ── Types ───────────────────────────────────────────────── */
-type Step = "start" | "password" | "verify" | "profile" | "q1" | "q2";
-
-interface VerifyEmailResponse {
-  status: string;
-  data: { user: { nickname: string; email: string }; onboarded: boolean; expire_at: string };
-}
-
-const ONBOARDING_STEPS: Step[] = ["profile", "q1", "q2"];
-const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "q1", "q2"];
-const Q1_OPTIONS = [
-  "진로/방향성", "취업/인턴", "스펙/자격증",
-  "대학원/진학", "창업", "학업/성적", "아직 모름",
-] as const;
-const INTEREST_OPTIONS = [
-  "개발/엔지니어링", "디자인/UX", "데이터/AI", "기획/PM",
-  "마케팅/콘텐츠", "경영/컨설팅", "금융/경제", "창업/스타트업",
-  "의료/헬스케어", "교육", "미디어/엔터", "법률/공공",
-  "연구/학문", "예술/문화", "환경/사회", "아직 모름",
-] as const;
-
-function formatPhone(digits: string): string {
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-}
-
-function formatBirth(digits: string): string {
-  if (digits.length <= 4) return digits;
-  if (digits.length <= 6) return `${digits.slice(0, 4)}. ${digits.slice(4)}`;
-  return `${digits.slice(0, 4)}. ${digits.slice(4, 6)}. ${digits.slice(6)}`;
-}
-
-/* ── Animation ───────────────────────────────────────────── */
-const stepVariants = {
-  enter: (dir: number) => ({ x: dir * 36, opacity: 0 }),
-  center: { x: 0, opacity: 1 },
-  exit: (dir: number) => ({ x: dir * -36, opacity: 0 }),
-};
-const stepTransition = { duration: 0.26, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] };
+import { VerifyEmailResponse } from "@/types/auth";
+import {
+  type Step,
+  ONBOARDING_STEPS,
+  STEP_ORDER,
+  Q1_OPTIONS,
+  INTEREST_OPTIONS,
+  stepVariants,
+  stepTransition,
+  formatPhone,
+} from "../constants";
 
 /* ── Page ────────────────────────────────────────────────── */
 export default function SignupPage() {
@@ -134,7 +104,11 @@ function SignupForm() {
       await api.post("/auth/signup", { email, password }, { auth: false });
       goTo("verify");
     } catch (e) {
-      if (e instanceof ApiError) setSignupError(e.message);
+      if (e instanceof ApiError) {
+        if(e.code === "EMAIL_ALREADY_EXISTS") setSignupError("이미 존재하는 이메일이에요.")
+        else if(e.code === "WEAK_PASSWORD") setSignupError("더 강한 비밀번호를 시도해주세요.")
+        else setSignupError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+      }
       else setSignupError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
     } finally {
       setIsLoading(false);
@@ -205,27 +179,38 @@ function SignupForm() {
     setIsLoading(true);
 
     try {
-      const birthFormatted = `${birth.slice(0, 4)}-${birth.slice(4, 6)}-${birth.slice(6, 8)}`;
       await api.post("/auth/onboarding", {
         name,
-        birth: birthFormatted,
+        birth,
         ...(education.trim() && { education }),
         ...(phone            && { phone }),
         ...(q1               && { worry: [q1] }),
         ...(interests.length > 0 && { interest: interests }),
-      });
-    } catch {
-      // 온보딩 실패 시 세션 생성은 계속 진행 (데이터는 나중에 재입력 가능)
+      }, { auth: false });
+      router.push("/dashboard");
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.code === "AUTH_TOKEN_EXPIRED") {
+          toast.error("세션이 만료되었어요. 다시 로그인해주세요.");
+        } else if (e.code === "AUTH_MISSING_COOKIES" || e.code === "AUTH_TOKEN_INVALID") {
+          toast.error("로그인 정보가 정확하지 않아요. 다시 로그인해주세요.")
+        } else if (e.code === "DUPLICATE_ONBOARDING") {
+          // 이미 온보딩 완료 — 대시보드로 이동
+          router.push("/dashboard");
+        } else if (e.code === "INVALID_INPUT") {
+          toast.error("입력 정보를 다시 확인해주세요.");
+        } else {
+          toast.error(e.message);
+        }
+      } else {
+        toast.error("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+      }
+    } finally {
+      setIsLoading(false);
     }
-
-    router.push("/dashboard");
-    setIsLoading(false);
   }
 
-  const birthValid =
-    birth.length === 8 &&
-    Number(birth.slice(4, 6)) >= 1 && Number(birth.slice(4, 6)) <= 12 &&
-    Number(birth.slice(6, 8)) >= 1 && Number(birth.slice(6, 8)) <= 31;
+  const birthValid = /^\d{4}-\d{2}-\d{2}$/.test(birth);
   const profileComplete =
     name.trim().length > 0 &&
     birthValid &&
@@ -235,6 +220,7 @@ function SignupForm() {
 
   return (
     <div className="w-full max-w-lg">
+      <ToastContainer />
       {/* Back */}
       <div className="h-8 mb-3 flex items-center">
         {step !== "start" && (
@@ -459,13 +445,10 @@ function SignupForm() {
 
                 {/* 생년월일 */}
                 <div className="mb-5">
-                  <Input
+                  <DatePicker
                     label="생년월일"
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="YYYY. MM. DD"
-                    value={formatBirth(birth)}
-                    onChange={(e) => setBirth(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    value={birth}
+                    onChange={(e) => setBirth(e.target.value)}
                   />
                 </div>
 

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
+import { AuthSuccessResult } from "@/types/auth";
 
 export default function GoogleCallbackPage() {
   return (
@@ -30,9 +31,13 @@ function GoogleCallbackHandler() {
     }
 
     api
-      .post<{ status: string }>("/auth/social-login", { provider : "google", token : code }, { auth: false })
-      .then(() => {
-        router.replace("/dashboard");
+      .post<AuthSuccessResult>("/auth/social-login", { provider : "google", token : code }, { auth: false })
+      .then((result) => {
+        if(result.onboarded) { 
+          router.replace("/dashboard"); 
+        } else {
+          router.push(`/signup?step=profile&email=${encodeURIComponent(result.data.user.email)}`);
+        }
       })
       .catch((e) => {
         const msg =

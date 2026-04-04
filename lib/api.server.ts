@@ -56,7 +56,7 @@ async function request<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.detail ?? "오류가 발생했어요.");
+    throw new ApiError(res.status, body.message ?? "오류가 발생했어요.", body.code);
   }
 
   // 204 No Content
