@@ -21,7 +21,7 @@ export const MOCK_LIBRARIES: Library[] = [
     id: 'lib-draft',
     name: '작성 중',
     color: '#f59e0b',
-    isSystem: false,
+    isSystem: true,
     experienceIds: ['exp-v2-2', 'exp-v2-3'],
   },
 ]

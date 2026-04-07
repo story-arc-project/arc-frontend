@@ -177,6 +177,10 @@ export default function ArchivePage() {
     setLibraries(prev => prev.map(l => (l.id === id ? { ...l, name } : l)))
   }, [])
 
+  const handleUpdateLibraryColor = useCallback((id: string, color: string) => {
+    setLibraries(prev => prev.map(l => (l.id === id ? { ...l, color } : l)))
+  }, [])
+
   const handleDeleteLibrary = useCallback((id: string) => {
     setLibraries(prev => prev.filter(l => l.id !== id))
     if (activeLibraryId === id) {
@@ -287,20 +291,18 @@ export default function ArchivePage() {
           onCreateLibrary={handleCreateLibrary}
           onRenameLibrary={handleRenameLibrary}
           onDeleteLibrary={handleDeleteLibrary}
+          onUpdateLibraryColor={handleUpdateLibraryColor}
           onNewExperience={handleNewExperience}
         />
         {/* Card list area */}
+        {!middleCollapsed &&
         <div
-          className={[
-            "md:ml-[20vw] border-r border-border bg-surface flex-shrink-0 overflow-hidden",
-            "transition-[width,min-width,opacity] duration-300 ease-in-out",
-            middleCollapsed
-              ? "w-0 min-w-0 border-r-0 opacity-0"
-              : "w-[340px] min-w-[280px] max-w-[400px] opacity-100",
-          ].join(" ")}
+          className=
+            "md:ml-[20vw] border-r border-border bg-surface flex-shrink-0 overflow-hidden transition-[width,min-width,opacity] duration-300 ease-in-out"
         >
           {listPanel}
         </div>
+        }
         {/* Detail panel */}
         <div className={[
           "flex-1 flex overflow-hidden bg-surface relative",

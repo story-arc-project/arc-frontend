@@ -5,6 +5,11 @@ import { Plus, FolderOpen, Trash2, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Library, ExperienceV2 } from "@/types/archive"
 
+const LIBRARY_COLORS = [
+  "#EF4444", "#F97316", "#EAB308", "#22C55E",
+  "#3B82F6", "#8B5CF6", "#EC4899", "#6B7280",
+]
+
 interface LibrarySidebarProps {
   libraries: Library[]
   activeLibraryId: string
@@ -13,6 +18,7 @@ interface LibrarySidebarProps {
   onCreateLibrary: (name: string) => void
   onRenameLibrary: (id: string, name: string) => void
   onDeleteLibrary: (id: string) => void
+  onUpdateLibraryColor: (id: string, color: string) => void
   onNewExperience: () => void
 }
 
@@ -29,10 +35,12 @@ export default function LibrarySidebar({
   onCreateLibrary,
   onRenameLibrary,
   onDeleteLibrary,
+  onUpdateLibraryColor,
   onNewExperience,
 }: LibrarySidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
+  const [colorPickerId, setColorPickerId] = useState<string | null>(null)
 
   function startRename(lib: Library) {
     setEditingId(lib.id)
@@ -85,11 +93,40 @@ export default function LibrarySidebar({
                   ].join(" ")}
                   aria-selected={isActive}
                 >
-                  {lib.color ? (
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: lib.color }}
-                    />
+                  {!lib.isSystem ? (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setColorPickerId(colorPickerId === lib.id ? null : lib.id) }}
+                        className="p-0.5 rounded hover:ring-2 hover:ring-border transition-all"
+                        aria-label="색상 변경"
+                      >
+                        <span
+                          className="block w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: lib.color || "#6B7280" }}
+                        />
+                      </button>
+                      {colorPickerId === lib.id && (
+                        <div
+                          className="absolute left-0 top-7 z-20 bg-surface border border-border rounded-lg shadow-md p-2 flex gap-1.5 flex-wrap w-[116px]"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          {LIBRARY_COLORS.map(c => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={e => { e.stopPropagation(); onUpdateLibraryColor(lib.id, c); setColorPickerId(null) }}
+                              className={[
+                                "w-5 h-5 rounded-full border-2 transition-transform hover:scale-110",
+                                lib.color === c ? "border-text-primary scale-110" : "border-transparent",
+                              ].join(" ")}
+                              style={{ backgroundColor: c }}
+                              aria-label={c}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <FolderOpen size={14} className="text-text-tertiary shrink-0" />
                   )}
