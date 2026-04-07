@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { BookOpen, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +27,32 @@ interface ExperienceFormV2Props {
   onSave: (experience: ExperienceV2) => void
   onCancel: () => void
   onUnsavedChange?: (hasUnsaved: boolean) => void
+}
+
+// Labels in commonCore that have equivalent fields in type-specific extensions
+const CORE_PERIOD_EQUIVALENTS = [
+  "기간", "재직기간", "읽은 기간/완독일", "제작 기간", "준비 기간", "학습 기간",
+]
+const CORE_ROLE_EQUIVALENTS = [
+  "내 역할/기여도", "내 역할/기여", "내 역할", "직책/역할", "역할/직책",
+]
+const CORE_ACHIEVEMENT_EQUIVALENTS = [
+  "핵심 성과", "핵심 성과 기록",
+]
+
+function hasEquivalentInExtensions(coreLabel: string, extensionLabels: Set<string>): boolean {
+  if (extensionLabels.has(coreLabel)) return true
+
+  if (coreLabel === "기간") {
+    return CORE_PERIOD_EQUIVALENTS.some(eq => extensionLabels.has(eq))
+  }
+  if (coreLabel === "내 역할/기여도") {
+    return CORE_ROLE_EQUIVALENTS.some(eq => extensionLabels.has(eq))
+  }
+  if (coreLabel === "핵심 성과") {
+    return CORE_ACHIEVEMENT_EQUIVALENTS.some(eq => extensionLabels.has(eq))
+  }
+  return false
 }
 
 export default function ExperienceFormV2({
@@ -114,6 +140,104 @@ export default function ExperienceFormV2({
     )
   }
 
+  // ── Computed layout for restructured form ──────────────────────
+  const formLayout = useMemo(() => {
+    if (!template) return null
+
+    // Separate type-specific sections from shared extended section
+    const typeSpecificSections = extensionSections.filter(s => s.id !== "extended")
+    const sharedExtendedSection = extensionSections.find(s => s.id === "extended")
+
+    // Extract standalone fields from core
+    const titleBlock = coreBlocks.find(b => b.label === "경험명")
+    const summaryBlock = coreBlocks.find(b => b.label === "한 줄 요약")
+    const evidenceBlock = coreBlocks.find(b => b.label === "증빙 자료")
+
+    // Collect all labels from type-specific extensions to detect overlap
+    const extensionLabels = new Set<string>()
+    for (const section of typeSpecificSections) {
+      for (const block of section.blocks) {
+        extensionLabels.add(block.label)
+      }
+    }
+
+    // Remaining core blocks = those not extracted and not overlapping with extensions
+    const extractedLabels = new Set(["경험명", "한 줄 요약", "증빙 자료"])
+    const remainingCoreBlocks = coreBlocks.filter(b => {
+      if (extractedLabels.has(b.label)) return false
+      return !hasEquivalentInExtensions(b.label, extensionLabels)
+    })
+
+    // Merge remaining core + shared extended blocks into "확장 입력"
+    const mergedExtendedBlocks = [
+      ...remainingCoreBlocks,
+      ...(sharedExtendedSection?.blocks ?? []),
+    ]
+
+    return {
+      titleBlock,
+      summaryBlock,
+      evidenceBlock,
+      typeSpecificSections,
+      mergedExtendedBlocks,
+      sharedExtendedSectionId: sharedExtendedSection?.id ?? "extended",
+    }
+  }, [template, coreBlocks, extensionSections])
+
+  // ── Handle changes to blocks that live in merged sections ──────
+  function handleCoreBlockChange(blockId: string, value: BlockValue) {
+    setCoreBlocks(prev =>
+      prev.map(b => (b.id === blockId ? { ...b, value } : b))
+    )
+  }
+
+  function handleMergedExtendedChange(blocks: Block[]) {
+    // Split back: core blocks update coreBlocks state, shared extended update extensionSections
+    if (!formLayout) return
+    const coreBlockIds = new Set(coreBlocks.map(b => b.id))
+    const updatedCoreBlocks = blocks.filter(b => coreBlockIds.has(b.id))
+    const updatedExtBlocks = blocks.filter(b => !coreBlockIds.has(b.id))
+
+    // Update core blocks that are in the merged section
+    setCoreBlocks(prev =>
+      prev.map(b => {
+        const updated = updatedCoreBlocks.find(u => u.id === b.id)
+        return updated ?? b
+      })
+    )
+
+    // Update shared extended section
+    setExtensionSections(prev =>
+      prev.map(s =>
+        s.id === formLayout.sharedExtendedSectionId
+          ? { ...s, blocks: updatedExtBlocks }
+          : s
+      )
+    )
+  }
+
+  // Handle evidence block appended to last type-specific section
+  function handleTypeSpecificWithEvidenceChange(sectionId: string, blocks: Block[]) {
+    if (!formLayout?.evidenceBlock) {
+      handleExtensionChange(sectionId, blocks)
+      return
+    }
+
+    const evidenceId = formLayout.evidenceBlock.id
+    const evidenceUpdated = blocks.find(b => b.id === evidenceId)
+    const sectionBlocks = blocks.filter(b => b.id !== evidenceId)
+
+    // Update the extension section
+    handleExtensionChange(sectionId, sectionBlocks)
+
+    // Update evidence block in core
+    if (evidenceUpdated) {
+      setCoreBlocks(prev =>
+        prev.map(b => (b.id === evidenceId ? evidenceUpdated : b))
+      )
+    }
+  }
+
   function handleSave(status: ExperienceStatus) {
     if (!typeId || !template) {
       setTypeError(true)
@@ -189,27 +313,57 @@ export default function ExperienceFormV2({
         </p>
       )}
 
-      {/* Core fields */}
-      {template && (
+      {/* Form sections — restructured order */}
+      {template && formLayout && (
         <div className="flex flex-col gap-5">
-          <FormSection
-            label={template.commonCore.label}
-            blocks={coreBlocks}
-            onChange={setCoreBlocks}
-          />
-
-          {/* Extension sections */}
-          {extensionSections.map(section => (
-            <FormSection
-              key={section.id}
-              label={section.label}
-              blocks={section.blocks}
-              defaultCollapsed={section.collapsed}
-              onChange={blocks => handleExtensionChange(section.id, blocks)}
+          {/* 1. Standalone title + summary */}
+          {formLayout.titleBlock && (
+            <StandaloneBlockField
+              block={formLayout.titleBlock}
+              onChange={handleCoreBlockChange}
             />
-          ))}
+          )}
+          {formLayout.summaryBlock && (
+            <StandaloneBlockField
+              block={formLayout.summaryBlock}
+              onChange={handleCoreBlockChange}
+            />
+          )}
 
-          {/* Custom blocks section */}
+          {/* 2. Type-specific extension sections FIRST */}
+          {formLayout.typeSpecificSections.map((section, idx) => {
+            const isLast = idx === formLayout.typeSpecificSections.length - 1
+            // Append evidence block to the last type-specific section
+            const sectionBlocks = isLast && formLayout.evidenceBlock
+              ? [...section.blocks, formLayout.evidenceBlock]
+              : section.blocks
+
+            return (
+              <FormSection
+                key={section.id}
+                label={section.label}
+                blocks={sectionBlocks}
+                defaultCollapsed={section.collapsed}
+                onChange={blocks =>
+                  isLast && formLayout.evidenceBlock
+                    ? handleTypeSpecificWithEvidenceChange(section.id, blocks)
+                    : handleExtensionChange(section.id, blocks)
+                }
+              />
+            )
+          })}
+
+          {/* 3. Merged "확장 입력" section (remaining core + shared extended) */}
+          {formLayout.mergedExtendedBlocks.length > 0 && (
+            <FormSection
+              label="확장 입력"
+              blocks={formLayout.mergedExtendedBlocks}
+              defaultCollapsed
+              onChange={handleMergedExtendedChange}
+            />
+          )}
+
+          {/* 4. Custom blocks section (unchanged) */}
           <section className="border border-dashed border-border rounded-lg px-5 py-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-title text-text-primary">나만의 블록 추가</h3>
@@ -289,6 +443,34 @@ export default function ExperienceFormV2({
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Standalone block field (title / summary) ────��───────────────────
+function StandaloneBlockField({
+  block,
+  onChange,
+}: {
+  block: Block
+  onChange: (blockId: string, value: BlockValue) => void
+}) {
+  const val = block.value
+  if (val.type !== "text") return null
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-label text-text-primary">
+        {block.label}
+        {block.required && <span className="text-error ml-0.5">*</span>}
+      </label>
+      <input
+        type="text"
+        className="h-12 w-full rounded-md border border-border bg-surface px-4 text-body text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand transition-colors"
+        placeholder={block.placeholder}
+        value={val.text}
+        onChange={e => onChange(block.id, { ...val, text: e.target.value })}
+      />
     </div>
   )
 }
