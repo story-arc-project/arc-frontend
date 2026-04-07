@@ -13,7 +13,7 @@ import RightPanelV2 from "@/components/features/archive/RightPanelV2"
 import type { ArchiveModeV2 } from "@/components/features/archive/RightPanelV2"
 import type { ExperienceV2, Library } from "@/types/archive"
 import { MOCK_EXPERIENCES_V2, MOCK_LIBRARIES } from "@/lib/mock-data"
-import { useLibraryFilter } from "@/hooks/useLibraryFilter"
+import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { cloneBlocks, uid } from "@/lib/block-utils"
 
 /** @deprecated Use ArchiveModeV2 from RightPanelV2 */
@@ -38,11 +38,13 @@ export default function ArchivePage() {
   const [libraries, setLibraries] = useState<Library[]>(MOCK_LIBRARIES)
   const [activeLibraryId, setActiveLibraryId] = useState("lib-all")
 
-  // Library-scoped experiences: "전체" shows all, others show by experienceIds
+  // Library-scoped experiences: system=all, filter-based=smart match, manual=by IDs
   const activeLibrary = libraries.find(l => l.id === activeLibraryId)
   const libraryExperiences = activeLibrary?.isSystem
     ? experiences
-    : experiences.filter(e => activeLibrary?.experienceIds.includes(e.id))
+    : activeLibrary?.filter
+      ? experiences.filter(e => matchesFilter(e, activeLibrary.filter!))
+      : experiences.filter(e => activeLibrary?.experienceIds.includes(e.id))
 
   const {
     filter,
@@ -205,6 +207,18 @@ export default function ArchivePage() {
     )
   }, [])
 
+  // ── Save current filter as smart library ───────────────────────────
+  const handleSaveAsLibrary = useCallback((name: string) => {
+    const newLib: Library = {
+      id: uid("lib"),
+      name,
+      isSystem: false,
+      experienceIds: [],
+      filter: { ...filter },
+    }
+    setLibraries(prev => [...prev, newLib])
+  }, [filter])
+
   // ── Unsaved guard ─────────────────────────────────────────────────
   const confirmDiscard = useCallback(() => {
     setShowGuardModal(false)
@@ -248,6 +262,7 @@ export default function ArchivePage() {
         onToggleType={toggleTypeFilter}
         onToggleStatus={toggleStatusFilter}
         onClearFilters={clearFilters}
+        onSaveAsLibrary={handleSaveAsLibrary}
       />
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
         {filteredExperiences.length === 0 ? (
@@ -297,8 +312,7 @@ export default function ArchivePage() {
         {/* Card list area */}
         {!middleCollapsed &&
         <div
-          className=
-            "md:ml-[20vw] border-r border-border bg-surface flex-shrink-0 overflow-hidden transition-[width,min-width,opacity] duration-300 ease-in-out"
+          className="md:ml-[20vw] w-[340px] min-w-[280px] max-w-[400px] border-r border-border bg-surface flex-shrink-0 overflow-hidden transition-[width,min-width,opacity] duration-300 ease-in-out"
         >
           {listPanel}
         </div>

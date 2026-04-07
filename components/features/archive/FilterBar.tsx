@@ -1,9 +1,9 @@
 "use client"
 
-import { Search, X, SlidersHorizontal } from "lucide-react"
+import { Search, X, SlidersHorizontal, BookmarkPlus } from "lucide-react"
 import { useState } from "react"
 import type { LibraryFilter, SortBy, ExperienceTypeId, ExperienceStatus } from "@/types/archive"
-import { EXPERIENCE_TYPES } from "@/lib/templates-v2"
+import { EXPERIENCE_TYPES, TYPE_CATEGORIES } from "@/lib/templates-v2"
 
 interface FilterBarProps {
   filter: LibraryFilter
@@ -13,6 +13,7 @@ interface FilterBarProps {
   onToggleType: (typeId: ExperienceTypeId) => void
   onToggleStatus: (status: ExperienceStatus) => void
   onClearFilters: () => void
+  onSaveAsLibrary?: (name: string) => void
 }
 
 const SORT_OPTIONS: { value: SortBy; label: string }[] = [
@@ -29,8 +30,19 @@ export default function FilterBar({
   onToggleType,
   onToggleStatus,
   onClearFilters,
+  onSaveAsLibrary,
 }: FilterBarProps) {
   const [showFilters, setShowFilters] = useState(false)
+  const [showSaveInput, setShowSaveInput] = useState(false)
+  const [saveName, setSaveName] = useState("")
+
+  function handleSave() {
+    const name = saveName.trim()
+    if (!name || !onSaveAsLibrary) return
+    onSaveAsLibrary(name)
+    setSaveName("")
+    setShowSaveInput(false)
+  }
 
   return (
     <div className="flex flex-col gap-3 px-4 py-3 border-b border-border bg-surface">
@@ -59,7 +71,7 @@ export default function FilterBar({
           type="button"
           onClick={() => setShowFilters(s => !s)}
           className={[
-            "h-9 w-9 flex items-center justify-center rounded-md border transition-colors",
+            "h-9 w-9 flex items-center justify-center rounded-md border transition-colors shrink-0",
             showFilters || isFilterActive
               ? "border-brand bg-surface-brand text-brand"
               : "border-border bg-surface-secondary text-text-tertiary hover:text-text-secondary",
@@ -72,7 +84,7 @@ export default function FilterBar({
 
       {/* Filter chips */}
       {showFilters && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {/* Status filters */}
           <div className="flex gap-2">
             <FilterChip
@@ -87,28 +99,81 @@ export default function FilterBar({
             />
           </div>
 
-          {/* Type filters */}
-          <div className="flex flex-wrap gap-1.5">
-            {EXPERIENCE_TYPES.map(t => (
-              <FilterChip
-                key={t.id}
-                label={t.label}
-                active={filter.typeIds?.includes(t.id) ?? false}
-                onClick={() => onToggleType(t.id)}
-              />
-            ))}
+          {/* Type filters grouped by category */}
+          <div className="flex flex-col gap-2">
+            {TYPE_CATEGORIES.map(cat => {
+              const types = EXPERIENCE_TYPES.filter(t => t.category === cat.key)
+              return (
+                <div key={cat.key}>
+                  <p className="text-caption text-text-tertiary mb-1">{cat.label}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {types.map(t => (
+                      <FilterChip
+                        key={t.id}
+                        label={t.label}
+                        active={filter.typeIds?.includes(t.id) ?? false}
+                        onClick={() => onToggleType(t.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
           </div>
 
-          {isFilterActive && (
-            <button
-              type="button"
-              onClick={onClearFilters}
-              className="flex items-center gap-1 text-body-sm text-text-tertiary hover:text-text-secondary transition-colors self-start"
-            >
-              <X size={14} />
-              필터 초기화
-            </button>
-          )}
+          {/* Actions row */}
+          <div className="flex items-center justify-between">
+            {isFilterActive && (
+              <button
+                type="button"
+                onClick={onClearFilters}
+                className="flex items-center gap-1 text-body-sm text-text-tertiary hover:text-text-secondary transition-colors"
+              >
+                <X size={14} />
+                필터 초기화
+              </button>
+            )}
+
+            {/* Save as library */}
+            {isFilterActive && onSaveAsLibrary && (
+              showSaveInput ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={saveName}
+                    onChange={e => setSaveName(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setShowSaveInput(false) }}
+                    placeholder="라이브러리 이름"
+                    className="h-7 w-24 rounded-md border border-border bg-surface-secondary px-2 text-caption text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    className="text-caption text-brand hover:text-brand-dark transition-colors"
+                  >
+                    저장
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowSaveInput(false); setSaveName("") }}
+                    className="text-caption text-text-tertiary hover:text-text-secondary transition-colors"
+                  >
+                    취소
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowSaveInput(true)}
+                  className="flex items-center gap-1 text-body-sm text-text-tertiary hover:text-text-secondary transition-colors"
+                >
+                  <BookmarkPlus size={14} />
+                  라이브러리로 저장
+                </button>
+              )
+            )}
+          </div>
         </div>
       )}
     </div>
