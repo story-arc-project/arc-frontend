@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog } from "@/components/ui/dialog"
 import LibrarySidebar from "@/components/features/archive/LibrarySidebar"
@@ -31,6 +31,8 @@ export default function ArchivePage() {
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [pendingSelectId, setPendingSelectId] = useState<string | null | undefined>(undefined)
   const [showGuardModal, setShowGuardModal] = useState(false)
+
+  const [middleCollapsed, setMiddleCollapsed] = useState(false)
 
   const [experiences, setExperiences] = useState<ExperienceV2[]>(MOCK_EXPERIENCES_V2)
   const [libraries, setLibraries] = useState<Library[]>(MOCK_LIBRARIES)
@@ -158,6 +160,7 @@ export default function ArchivePage() {
   // ── Library management ────────────────────────────────────────────
   const handleSelectLibrary = useCallback((id: string) => {
     setActiveLibraryId(id)
+    setMiddleCollapsed(false)
   }, [])
 
   const handleCreateLibrary = useCallback((name: string) => {
@@ -222,6 +225,17 @@ export default function ArchivePage() {
   // ── List panel (sidebar + filter bar + card list) ─────────────────
   const listPanel = (
     <div className="flex flex-col h-full">
+      {/* Collapse toggle header (desktop only) */}
+      <div className="hidden md:flex items-center justify-end px-3 py-1.5 border-b border-border bg-surface shrink-0">
+        <button
+          type="button"
+          onClick={() => setMiddleCollapsed(true)}
+          className="p-1 text-text-tertiary hover:text-text-secondary transition-colors rounded"
+          aria-label="패널 접기"
+        >
+          <ChevronLeft size={16} />
+        </button>
+      </div>
       <FilterBar
         filter={filter}
         isFilterActive={isFilterActive}
@@ -276,11 +290,33 @@ export default function ArchivePage() {
           onNewExperience={handleNewExperience}
         />
         {/* Card list area */}
-        <div className="md:ml-[20vw] md:min-w-[220px] w-[340px] min-w-[280px] max-w-[400px] border-r border-border bg-surface flex-shrink-0">
+        <div
+          className={[
+            "md:ml-[20vw] border-r border-border bg-surface flex-shrink-0 overflow-hidden",
+            "transition-[width,min-width,opacity] duration-300 ease-in-out",
+            middleCollapsed
+              ? "w-0 min-w-0 border-r-0 opacity-0"
+              : "w-[340px] min-w-[280px] max-w-[400px] opacity-100",
+          ].join(" ")}
+        >
           {listPanel}
         </div>
         {/* Detail panel */}
-        <div className="flex-1 flex overflow-hidden bg-surface">
+        <div className={[
+          "flex-1 flex overflow-hidden bg-surface relative",
+          middleCollapsed ? "md:ml-[20vw]" : "",
+        ].join(" ")}>
+          {/* Expand button when middle panel is collapsed */}
+          {middleCollapsed && (
+            <button
+              type="button"
+              onClick={() => setMiddleCollapsed(false)}
+              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-surface border border-border border-l-0 rounded-r-md p-1.5 text-text-tertiary hover:text-text-secondary hover:bg-surface-secondary transition-colors shadow-sm"
+              aria-label="패널 펼치기"
+            >
+              <ChevronRight size={16} />
+            </button>
+          )}
           <RightPanelV2
             mode={mode}
             selectedExperience={selectedExperience}
