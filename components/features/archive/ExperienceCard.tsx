@@ -37,6 +37,7 @@ export default function ExperienceCard({
   const [showLibrarySubmenu, setShowLibrarySubmenu] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const submenuRef = useRef<HTMLDivElement>(null)
   const submenuTriggerRef = useRef<HTMLButtonElement>(null)
   const typeInfo = EXPERIENCE_TYPE_MAP[experience.typeId]
 
@@ -68,10 +69,11 @@ export default function ExperienceCard({
 
   // Close menu on outside click
   const handleOutsideClick = useCallback((e: MouseEvent) => {
-    if (
-      menuRef.current && !menuRef.current.contains(e.target as Node) &&
-      triggerRef.current && !triggerRef.current.contains(e.target as Node)
-    ) {
+    const target = e.target as Node
+    const inMenu = menuRef.current?.contains(target)
+    const inTrigger = triggerRef.current?.contains(target)
+    const inSubmenu = submenuRef.current?.contains(target)
+    if (!inMenu && !inTrigger && !inSubmenu) {
       setMenuOpen(false)
       setShowLibrarySubmenu(false)
     }
@@ -130,10 +132,9 @@ export default function ExperienceCard({
               {showLibrarySubmenu &&
                 createPortal(
                   <div
+                    ref={submenuRef}
                     className="fixed w-36 bg-surface border border-border rounded-lg shadow-md py-1 z-50"
                     style={{ top: submenuPos.top, left: submenuPos.left }}
-                    onMouseEnter={() => setShowLibrarySubmenu(true)}
-                    onMouseLeave={() => setShowLibrarySubmenu(false)}
                   >
                     {libraries.filter(l => !l.isSystem).map(lib => {
                       const isIn = lib.experienceIds.includes(experience.id)
@@ -141,7 +142,7 @@ export default function ExperienceCard({
                         <button
                           key={lib.id}
                           type="button"
-                          onClick={e => { e.stopPropagation(); onMoveToLibrary(lib.id); setMenuOpen(false); setShowLibrarySubmenu(false) }}
+                          onClick={e => { e.stopPropagation(); onMoveToLibrary(lib.id) }}
                           className={[
                             "w-full flex items-center gap-2 px-3 py-2 text-body-sm transition-colors",
                             isIn ? "text-brand bg-surface-brand/30" : "text-text-primary hover:bg-surface-secondary",
@@ -220,6 +221,24 @@ export default function ExperienceCard({
         <p className="text-body-sm text-text-secondary line-clamp-2 mb-2">
           {experience.summary}
         </p>
+      )}
+
+      {/* Library indicators */}
+      {libraries && libraries.filter(l => !l.isSystem && l.experienceIds.includes(experience.id)).length > 0 && (
+        <div className="flex items-center gap-1.5 mt-2">
+          {libraries.filter(l => !l.isSystem && l.experienceIds.includes(experience.id)).map(lib => (
+            <span
+              key={lib.id}
+              className="flex items-center gap-1 bg-surface-secondary rounded-full px-2 py-0.5"
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ backgroundColor: lib.color || "#6B7280" }}
+              />
+              <span className="text-caption text-text-tertiary truncate max-w-[80px]">{lib.name}</span>
+            </span>
+          ))}
+        </div>
       )}
 
       {/* Tags + date */}
