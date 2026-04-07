@@ -1,7 +1,8 @@
 "use client"
 
 import { MoreHorizontal, ChevronRight } from "lucide-react"
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { Badge } from "@/components/ui/badge"
 import type { ExperienceV2, Library } from "@/types/archive"
 import { EXPERIENCE_TYPE_MAP } from "@/lib/templates-v2"
@@ -34,20 +35,142 @@ export default function ExperienceCard({
 }: ExperienceCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [showLibrarySubmenu, setShowLibrarySubmenu] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const submenuTriggerRef = useRef<HTMLButtonElement>(null)
   const typeInfo = EXPERIENCE_TYPE_MAP[experience.typeId]
 
+  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
+  const [submenuPos, setSubmenuPos] = useState({ top: 0, left: 0 })
+
+  // Position the main menu when it opens
+  useEffect(() => {
+    if (!menuOpen || !triggerRef.current) return
+    const rect = triggerRef.current.getBoundingClientRect()
+    setMenuPos({
+      top: rect.bottom + 4,
+      left: Math.min(rect.right - 160, window.innerWidth - 168),
+    })
+  }, [menuOpen])
+
+  // Position submenu when it shows
+  useEffect(() => {
+    if (!showLibrarySubmenu || !submenuTriggerRef.current) return
+    const rect = submenuTriggerRef.current.getBoundingClientRect()
+    const submenuWidth = 144
+    // Prefer right side, fall back to left if not enough space
+    const preferRight = rect.right + submenuWidth + 4 <= window.innerWidth
+    setSubmenuPos({
+      top: rect.top,
+      left: preferRight ? rect.right + 4 : rect.left - submenuWidth - 4,
+    })
+  }, [showLibrarySubmenu])
+
   // Close menu on outside click
+  const handleOutsideClick = useCallback((e: MouseEvent) => {
+    if (
+      menuRef.current && !menuRef.current.contains(e.target as Node) &&
+      triggerRef.current && !triggerRef.current.contains(e.target as Node)
+    ) {
+      setMenuOpen(false)
+      setShowLibrarySubmenu(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!menuOpen) return
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handleClick)
-    return () => document.removeEventListener("mousedown", handleClick)
+    document.addEventListener("mousedown", handleOutsideClick)
+    return () => document.removeEventListener("mousedown", handleOutsideClick)
+  }, [menuOpen, handleOutsideClick])
+
+  // Close menu on scroll
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleScroll = () => { setMenuOpen(false); setShowLibrarySubmenu(false) }
+    window.addEventListener("scroll", handleScroll, true)
+    return () => window.removeEventListener("scroll", handleScroll, true)
   }, [menuOpen])
+
+  const contextMenu = menuOpen
+    ? createPortal(
+        <div
+          ref={menuRef}
+          className="fixed w-40 bg-surface border border-border rounded-lg shadow-md py-1 z-50"
+          style={{ top: menuPos.top, left: menuPos.left }}
+        >
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onEdit(); setMenuOpen(false) }}
+            className="w-full text-left px-3 py-2 text-body-sm text-text-primary hover:bg-surface-secondary transition-colors"
+          >
+            편집
+          </button>
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onDuplicate(); setMenuOpen(false) }}
+            className="w-full text-left px-3 py-2 text-body-sm text-text-primary hover:bg-surface-secondary transition-colors"
+          >
+            복제
+          </button>
+          {libraries && onMoveToLibrary && (
+            <div
+              className="relative"
+              onMouseEnter={() => setShowLibrarySubmenu(true)}
+              onMouseLeave={() => setShowLibrarySubmenu(false)}
+            >
+              <button
+                ref={submenuTriggerRef}
+                type="button"
+                onClick={e => { e.stopPropagation(); setShowLibrarySubmenu(s => !s) }}
+                className="w-full flex items-center justify-between px-3 py-2 text-body-sm text-text-primary hover:bg-surface-secondary transition-colors"
+              >
+                라이브러리 이동
+                <ChevronRight size={14} className="text-text-tertiary" />
+              </button>
+              {showLibrarySubmenu &&
+                createPortal(
+                  <div
+                    className="fixed w-36 bg-surface border border-border rounded-lg shadow-md py-1 z-50"
+                    style={{ top: submenuPos.top, left: submenuPos.left }}
+                    onMouseEnter={() => setShowLibrarySubmenu(true)}
+                    onMouseLeave={() => setShowLibrarySubmenu(false)}
+                  >
+                    {libraries.filter(l => !l.isSystem).map(lib => {
+                      const isIn = lib.experienceIds.includes(experience.id)
+                      return (
+                        <button
+                          key={lib.id}
+                          type="button"
+                          onClick={e => { e.stopPropagation(); onMoveToLibrary(lib.id); setMenuOpen(false); setShowLibrarySubmenu(false) }}
+                          className={[
+                            "w-full flex items-center gap-2 px-3 py-2 text-body-sm transition-colors",
+                            isIn ? "text-brand bg-surface-brand/30" : "text-text-primary hover:bg-surface-secondary",
+                          ].join(" ")}
+                        >
+                          {lib.color && (
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lib.color }} />
+                          )}
+                          <span className="truncate">{lib.name}</span>
+                          {isIn && <span className="text-caption text-brand ml-auto">✓</span>}
+                        </button>
+                      )
+                    })}
+                  </div>,
+                  document.body
+                )}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onDelete(); setMenuOpen(false) }}
+            className="w-full text-left px-3 py-2 text-body-sm text-error hover:bg-surface-secondary transition-colors"
+          >
+            삭제
+          </button>
+        </div>,
+        document.body
+      )
+    : null
 
   return (
     <div
@@ -73,8 +196,9 @@ export default function ExperienceCard({
         </div>
 
         {/* Quick actions */}
-        <div ref={menuRef} className="relative">
+        <div className="relative">
           <button
+            ref={triggerRef}
             type="button"
             onClick={e => { e.stopPropagation(); setMenuOpen(o => !o) }}
             className="text-text-tertiary hover:text-text-secondary transition-all p-1 rounded"
@@ -82,71 +206,7 @@ export default function ExperienceCard({
           >
             <MoreHorizontal size={16} />
           </button>
-          {menuOpen && (
-            <div className="absolute right-0 top-full mt-1 w-40 bg-surface border border-border rounded-lg shadow-md py-1 z-10">
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); onEdit(); setMenuOpen(false) }}
-                className="w-full text-left px-3 py-2 text-body-sm text-text-primary hover:bg-surface-secondary transition-colors"
-              >
-                편집
-              </button>
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); onDuplicate(); setMenuOpen(false) }}
-                className="w-full text-left px-3 py-2 text-body-sm text-text-primary hover:bg-surface-secondary transition-colors"
-              >
-                복제
-              </button>
-              {libraries && onMoveToLibrary && (
-                <div
-                  className="relative"
-                  onMouseEnter={() => setShowLibrarySubmenu(true)}
-                  onMouseLeave={() => setShowLibrarySubmenu(false)}
-                >
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); setShowLibrarySubmenu(s => !s) }}
-                    className="w-full flex items-center justify-between px-3 py-2 text-body-sm text-text-primary hover:bg-surface-secondary transition-colors"
-                  >
-                    라이브러리 이동
-                    <ChevronRight size={14} className="text-text-tertiary" />
-                  </button>
-                  {showLibrarySubmenu && (
-                    <div className="absolute left-full top-0 ml-1 w-36 bg-surface border border-border rounded-lg shadow-md py-1 z-20">
-                      {libraries.filter(l => !l.isSystem).map(lib => {
-                        const isIn = lib.experienceIds.includes(experience.id)
-                        return (
-                          <button
-                            key={lib.id}
-                            type="button"
-                            onClick={e => { e.stopPropagation(); onMoveToLibrary(lib.id); setMenuOpen(false); setShowLibrarySubmenu(false) }}
-                            className={[
-                              "w-full flex items-center gap-2 px-3 py-2 text-body-sm transition-colors",
-                              isIn ? "text-brand bg-surface-brand/30" : "text-text-primary hover:bg-surface-secondary",
-                            ].join(" ")}
-                          >
-                            {lib.color && (
-                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lib.color }} />
-                            )}
-                            <span className="truncate">{lib.name}</span>
-                            {isIn && <span className="text-caption text-brand ml-auto">✓</span>}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={e => { e.stopPropagation(); onDelete(); setMenuOpen(false) }}
-                className="w-full text-left px-3 py-2 text-body-sm text-error hover:bg-surface-secondary transition-colors"
-              >
-                삭제
-              </button>
-            </div>
-          )}
+          {contextMenu}
         </div>
       </div>
 
