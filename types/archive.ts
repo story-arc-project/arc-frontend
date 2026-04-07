@@ -203,6 +203,7 @@ export interface Library {
   icon?: string
   isSystem: boolean
   experienceIds: string[]
+  filter?: LibraryFilter
 }
 
 // ─── Preset ─────────────────────────────────────────────────────

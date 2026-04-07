@@ -1,9 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, FolderOpen, Trash2, Pencil } from "lucide-react"
+import { Plus, FolderOpen, Trash2, Pencil, SlidersHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Library, ExperienceV2 } from "@/types/archive"
+import { matchesFilter } from "@/hooks/useLibraryFilter"
 
 const LIBRARY_COLORS = [
   "#EF4444", "#F97316", "#EAB308", "#22C55E",
@@ -24,6 +25,7 @@ interface LibrarySidebarProps {
 
 function countMatches(lib: Library, experiences: ExperienceV2[]): number {
   if (lib.isSystem) return experiences.length
+  if (lib.filter) return experiences.filter(e => matchesFilter(e, lib.filter!)).length
   return lib.experienceIds.filter(id => experiences.some(e => e.id === id)).length
 }
 
@@ -93,7 +95,11 @@ export default function LibrarySidebar({
                   ].join(" ")}
                   aria-selected={isActive}
                 >
-                  {!lib.isSystem ? (
+                  {lib.isSystem ? (
+                    <FolderOpen size={14} className="text-text-tertiary shrink-0" />
+                  ) : lib.filter ? (
+                    <SlidersHorizontal size={14} className="shrink-0" style={{ color: lib.color || "#6B7280" }} />
+                  ) : (
                     <div className="relative">
                       <button
                         type="button"
@@ -127,8 +133,6 @@ export default function LibrarySidebar({
                         </div>
                       )}
                     </div>
-                  ) : (
-                    <FolderOpen size={14} className="text-text-tertiary shrink-0" />
                   )}
 
                   {isEditing ? (

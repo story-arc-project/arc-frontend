@@ -21,7 +21,7 @@ interface UseLibraryFilterReturn {
   isFilterActive: boolean
 }
 
-function matchesFilter(exp: ExperienceV2, filter: LibraryFilter): boolean {
+export function matchesFilter(exp: ExperienceV2, filter: LibraryFilter): boolean {
   if (filter.search) {
     const q = filter.search.toLowerCase()
     const inTitle = exp.title.toLowerCase().includes(q)
