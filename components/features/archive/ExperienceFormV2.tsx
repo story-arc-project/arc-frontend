@@ -19,11 +19,12 @@ import type {
 } from "@/types/archive"
 import { getTemplateForType } from "@/lib/templates-v2"
 import { cloneBlocks, uid } from "@/lib/block-utils"
-import { usePresets } from "@/hooks/usePresets"
+import type { UsePresetsReturn } from "@/hooks/usePresets"
 
 interface ExperienceFormV2Props {
   mode: "new" | "edit"
   initialExperience?: ExperienceV2
+  presetsHook: UsePresetsReturn
   onSave: (experience: ExperienceV2) => void
   onCancel: () => void
   onUnsavedChange?: (hasUnsaved: boolean) => void
@@ -58,6 +59,7 @@ function hasEquivalentInExtensions(coreLabel: string, extensionLabels: Set<strin
 export default function ExperienceFormV2({
   mode,
   initialExperience,
+  presetsHook,
   onSave,
   onCancel,
   onUnsavedChange,
@@ -79,7 +81,7 @@ export default function ExperienceFormV2({
   const [typeError, setTypeError] = useState(false)
   const [savePresetOpen, setSavePresetOpen] = useState(false)
   const [applyPresetOpen, setApplyPresetOpen] = useState(false)
-  const { presets, createPreset, getPreset } = usePresets()
+  const { presets, createPreset, getPreset } = presetsHook
 
   // Load template when type changes
   useEffect(() => {

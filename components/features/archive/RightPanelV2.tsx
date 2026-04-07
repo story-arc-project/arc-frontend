@@ -3,12 +3,14 @@
 import ExperienceFormV2 from "./ExperienceFormV2"
 import ExperienceDetailV2 from "./ExperienceDetailV2"
 import type { ExperienceV2 } from "@/types/archive"
+import type { UsePresetsReturn } from "@/hooks/usePresets"
 
 export type ArchiveModeV2 = "empty" | "new" | "detail" | "edit"
 
 interface RightPanelV2Props {
   mode: ArchiveModeV2
   selectedExperience: ExperienceV2 | null
+  presetsHook: UsePresetsReturn
   onNewExperience: () => void
   onSave: (exp: ExperienceV2) => void
   onDelete: (id: string) => void
@@ -21,6 +23,7 @@ interface RightPanelV2Props {
 export default function RightPanelV2({
   mode,
   selectedExperience,
+  presetsHook,
   onNewExperience,
   onSave,
   onDelete,
@@ -38,6 +41,7 @@ export default function RightPanelV2({
       {mode === "new" && (
         <ExperienceFormV2
           mode="new"
+          presetsHook={presetsHook}
           onSave={onSave}
           onCancel={onCancel}
           onUnsavedChange={onUnsavedChange}
@@ -57,6 +61,7 @@ export default function RightPanelV2({
         <ExperienceFormV2
           mode="edit"
           initialExperience={selectedExperience}
+          presetsHook={presetsHook}
           onSave={onSave}
           onCancel={onCancel}
           onUnsavedChange={onUnsavedChange}

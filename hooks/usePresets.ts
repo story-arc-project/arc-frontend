@@ -5,7 +5,7 @@ import type { Preset, Block, ExperienceTypeId } from "@/types/archive"
 import { uid, cloneBlocks } from "@/lib/block-utils"
 import { MOCK_PRESETS } from "@/lib/mock-data"
 
-interface UsePresetsReturn {
+export interface UsePresetsReturn {
   presets: Preset[]
   createPreset: (name: string, blocks: Block[], opts?: { description?: string; recommendedTypeIds?: ExperienceTypeId[] }) => void
   updatePreset: (id: string, updates: Partial<Pick<Preset, "name" | "description" | "recommendedTypeIds" | "isFavorite">>) => void

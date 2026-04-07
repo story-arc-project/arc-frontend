@@ -15,6 +15,7 @@ import type { ExperienceV2, Library } from "@/types/archive"
 import { MOCK_EXPERIENCES_V2, MOCK_LIBRARIES } from "@/lib/mock-data"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { cloneBlocks, uid } from "@/lib/block-utils"
+import { usePresets } from "@/hooks/usePresets"
 
 /** @deprecated Use ArchiveModeV2 from RightPanelV2 */
 export type ArchiveMode = "empty" | "new" | "detail" | "edit"
@@ -37,6 +38,7 @@ export default function ArchivePage() {
   const [experiences, setExperiences] = useState<ExperienceV2[]>(MOCK_EXPERIENCES_V2)
   const [libraries, setLibraries] = useState<Library[]>(MOCK_LIBRARIES)
   const [activeLibraryId, setActiveLibraryId] = useState("lib-all")
+  const presetsHook = usePresets()
 
   // Library-scoped experiences: system=all, filter-based=smart match, manual=by IDs
   const activeLibrary = libraries.find(l => l.id === activeLibraryId)
@@ -336,6 +338,7 @@ export default function ArchivePage() {
           <RightPanelV2
             mode={mode}
             selectedExperience={selectedExperience}
+            presetsHook={presetsHook}
             onNewExperience={handleNewExperience}
             onSave={handleSave}
             onDelete={handleDelete}
@@ -384,6 +387,7 @@ export default function ArchivePage() {
                 <RightPanelV2
                   mode={mode}
                   selectedExperience={selectedExperience}
+                  presetsHook={presetsHook}
                   onNewExperience={handleNewExperience}
                   onSave={handleSave}
                   onDelete={handleDelete}
