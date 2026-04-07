@@ -78,7 +78,7 @@ export default function LibrarySidebar({
                   onClick={() => !isEditing && onSelectLibrary(lib.id)}
                   onKeyDown={e => { if (e.key === "Enter") onSelectLibrary(lib.id) }}
                   className={[
-                    "group flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors text-body-sm",
+                    "group flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors text-body-sm min-w-0",
                     isActive
                       ? "bg-surface text-text-primary"
                       : "text-text-secondary hover:bg-surface hover:text-text-primary",
@@ -97,7 +97,7 @@ export default function LibrarySidebar({
                   {isEditing ? (
                     <input
                       type="text"
-                      className="flex-1 h-6 bg-transparent border-b border-brand text-body-sm text-text-primary focus:outline-none"
+                      className="flex-1 min-w-0 h-6 bg-transparent border-b border-brand text-body-sm text-text-primary focus:outline-none"
                       value={editName}
                       onChange={e => setEditName(e.target.value)}
                       onBlur={commitRename}
