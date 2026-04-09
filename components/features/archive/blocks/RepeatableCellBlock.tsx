@@ -216,6 +216,7 @@ function RowEditor({
           const cellVal = row.cells[col.key]
           const strVal = Array.isArray(cellVal) ? cellVal.join(", ") : (cellVal ?? "")
           const isLong = col.blockType === "textarea"
+          const isDate = col.blockType === "date"
 
           return (
             <div key={col.key} className={`flex flex-col gap-1.5 ${isLong ? "sm:col-span-2" : ""}`}>
@@ -232,7 +233,7 @@ function RowEditor({
                 />
               ) : (
                 <input
-                  type="text"
+                  type={isDate ? "date" : "text"}
                   className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
                   placeholder={col.placeholder}
                   value={strVal}

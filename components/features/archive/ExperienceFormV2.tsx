@@ -105,15 +105,21 @@ export default function ExperienceFormV2({
         setCoreBlocks(initialExperience.coreBlocks)
       }
       if (extensionSections.length === 0) {
+        const savedBlocks = initialExperience.extensionBlocks
+        // Distribute saved extension blocks across template sections by matching labels
         setExtensionSections(
-          tmpl.extensions.map(ext => ({
-            id: ext.id,
-            label: ext.label,
-            collapsed: ext.collapsed,
-            blocks: initialExperience.extensionBlocks.length > 0
-              ? initialExperience.extensionBlocks
-              : cloneBlocks(ext.blocks),
-          }))
+          tmpl.extensions.map(ext => {
+            const templateLabels = new Set(ext.blocks.map(b => b.label))
+            const matchedBlocks = savedBlocks.filter(b => templateLabels.has(b.label))
+            return {
+              id: ext.id,
+              label: ext.label,
+              collapsed: ext.collapsed,
+              blocks: matchedBlocks.length > 0
+                ? matchedBlocks
+                : cloneBlocks(ext.blocks),
+            }
+          })
         )
       }
     }
@@ -122,14 +128,29 @@ export default function ExperienceFormV2({
 
   // Track dirty state
   useEffect(() => {
-    const hasData =
-      coreBlocks.some(b => {
+    const hasBlockData = (blocks: Block[]) =>
+      blocks.some(b => {
         const v = b.value
         if (v.type === "text" || v.type === "textarea") return v.text.trim() !== ""
+        if (v.type === "checklist") return v.checked.length > 0
+        if (v.type === "single-select") return v.selected !== ""
+        if (v.type === "date") return v.date !== ""
+        if (v.type === "period") return v.start !== "" || v.end !== ""
+        if (v.type === "tags") return v.tags.length > 0
+        if (v.type === "link") return v.url.trim() !== ""
+        if (v.type === "file") return v.fileName.trim() !== ""
+        if (v.type === "repeatable-cell") return v.rows.length > 0
+        if (v.type === "table") return v.rows.length > 0
         return false
-      }) || customBlocks.length > 0
+      })
+    const extensionBlocks = extensionSections.flatMap(s => s.blocks)
+    const hasData =
+      hasBlockData(coreBlocks) ||
+      hasBlockData(extensionBlocks) ||
+      customBlocks.length > 0 ||
+      tags.length > 0
     onUnsavedChange?.(hasData)
-  }, [coreBlocks, customBlocks, onUnsavedChange])
+  }, [coreBlocks, extensionSections, customBlocks, tags, onUnsavedChange])
 
   const handleTypeSelect = useCallback((id: ExperienceTypeId) => {
     setTypeId(id)
@@ -449,7 +470,7 @@ export default function ExperienceFormV2({
   )
 }
 
-// ── Standalone block field (title / summary) ────��───────────────────
+// ── Standalone block field (title / summary) ────────────────────────
 function StandaloneBlockField({
   block,
   onChange,

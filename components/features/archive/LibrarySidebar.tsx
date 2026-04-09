@@ -24,7 +24,7 @@ interface LibrarySidebarProps {
 }
 
 function countMatches(lib: Library, experiences: ExperienceV2[]): number {
-  if (lib.isSystem) return experiences.length
+  if (lib.id === "lib-all") return experiences.length
   if (lib.filter) return experiences.filter(e => matchesFilter(e, lib.filter!)).length
   return lib.experienceIds.filter(id => experiences.some(e => e.id === id)).length
 }

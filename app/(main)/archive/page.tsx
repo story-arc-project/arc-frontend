@@ -42,7 +42,7 @@ export default function ArchivePage() {
 
   // Library-scoped experiences: system=all, filter-based=smart match, manual=by IDs
   const activeLibrary = libraries.find(l => l.id === activeLibraryId)
-  const libraryExperiences = activeLibrary?.isSystem
+  const libraryExperiences = activeLibraryId === "lib-all"
     ? experiences
     : activeLibrary?.filter
       ? experiences.filter(e => matchesFilter(e, activeLibrary.filter!))

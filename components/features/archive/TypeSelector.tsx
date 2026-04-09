@@ -1,5 +1,6 @@
 "use client"
 
+import type React from "react"
 import { useState } from "react"
 import { Search } from "lucide-react"
 import * as icons from "lucide-react"

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Dialog } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -54,6 +54,19 @@ export default function BlockEditModal({
   const [newTableCol, setNewTableCol] = useState("")
 
   // Reset state when modal opens with new config
+  useEffect(() => {
+    if (open) {
+      setLabel(initialConfig?.label ?? "")
+      setPlaceholder(initialConfig?.placeholder ?? "")
+      setOptions(initialConfig?.options ?? [])
+      setNewOption("")
+      setColumns(initialConfig?.columns ?? [])
+      setNewColLabel("")
+      setTableColumns(initialConfig?.tableColumns ?? [])
+      setNewTableCol("")
+    }
+  }, [open, blockType, initialConfig])
+
   const handleConfirm = () => {
     if (!label.trim()) return
     onConfirm({
@@ -178,6 +191,7 @@ export default function BlockEditModal({
                   >
                     <option value="text">짧은 텍스트</option>
                     <option value="textarea">긴 텍스트</option>
+                    <option value="date">날짜</option>
                   </select>
                   <button
                     type="button"
