@@ -113,14 +113,17 @@ export default function HistoryPage() {
     }
   }
 
+  const [deleteError, setDeleteError] = useState(false);
+
   async function handleDelete() {
     if (!deleteId) return;
+    setDeleteError(false);
     try {
       await deleteAnalysis(deleteId);
       setItems((prev) => prev.filter((i) => i.id !== deleteId));
       setDeleteId(null);
     } catch {
-      setDeleteId(null);
+      setDeleteError(true);
     }
   }
 
@@ -140,7 +143,7 @@ export default function HistoryPage() {
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
             aria-label="정렬 기준"
-            className="px-3 py-2 min-h-[44px] w-full sm:w-auto text-label border border-border rounded-md bg-surface text-text-primary appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23999%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat pr-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            className="px-3 py-2 min-h-[44px] w-full sm:w-auto text-label border border-border rounded-md bg-surface text-text-primary appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat pr-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           >
             <option value="newest">최신순</option>
             <option value="oldest">오래된순</option>
@@ -258,18 +261,21 @@ export default function HistoryPage() {
 
         <Dialog
           open={deleteId !== null}
-          onClose={() => setDeleteId(null)}
+          onClose={() => { setDeleteId(null); setDeleteError(false); }}
           ariaLabel="분석 삭제 확인"
         >
           <h3 className="text-title text-text-primary mb-2">분석을 삭제할까요?</h3>
           <p className="text-body-sm text-text-secondary mb-4">
             삭제된 분석은 복구할 수 없습니다.
           </p>
+          {deleteError && (
+            <p className="text-body-sm text-error mb-3">삭제에 실패했습니다. 다시 시도해 주세요.</p>
+          )}
           <div className="flex gap-2 justify-end">
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => setDeleteId(null)}
+              onClick={() => { setDeleteId(null); setDeleteError(false); }}
             >
               취소
             </Button>

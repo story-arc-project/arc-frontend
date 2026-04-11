@@ -15,7 +15,7 @@ export function formatDate(iso: string): string {
  * e.g. "2024년 3월 15일 오후 2:30"
  */
 export function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleDateString("ko-KR", {
+  return new Date(iso).toLocaleString("ko-KR", {
     year: "numeric",
     month: "long",
     day: "numeric",
@@ -30,6 +30,7 @@ export function formatDateTime(iso: string): string {
  */
 export function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 0) return "방금 전";
   const mins = Math.floor(diff / 60000);
   if (mins < 60) return `${mins}분 전`;
   const hours = Math.floor(mins / 60);

@@ -34,14 +34,17 @@ export default function KeywordAnalysisPage() {
     loadData();
   }, [loadData]);
 
+  const [deleteError, setDeleteError] = useState(false);
+
   async function handleDelete() {
     if (!deleteId) return;
+    setDeleteError(false);
     try {
       await deleteKeywordAnalysis(deleteId);
       setItems((prev) => prev.filter((i) => i.id !== deleteId));
       setDeleteId(null);
     } catch {
-      setDeleteId(null);
+      setDeleteError(true);
     }
   }
 
@@ -153,15 +156,18 @@ export default function KeywordAnalysisPage() {
 
         <Dialog
           open={deleteId !== null}
-          onClose={() => setDeleteId(null)}
+          onClose={() => { setDeleteId(null); setDeleteError(false); }}
           ariaLabel="분석 삭제 확인"
         >
           <h3 className="text-title text-text-primary mb-2">분석을 삭제할까요?</h3>
           <p className="text-body-sm text-text-secondary mb-4">
             삭제된 분석은 복구할 수 없습니다.
           </p>
+          {deleteError && (
+            <p className="text-body-sm text-error mb-3">삭제에 실패했습니다. 다시 시도해 주세요.</p>
+          )}
           <div className="flex gap-2 justify-end">
-            <Button variant="secondary" size="sm" onClick={() => setDeleteId(null)}>
+            <Button variant="secondary" size="sm" onClick={() => { setDeleteId(null); setDeleteError(false); }}>
               취소
             </Button>
             <Button variant="destructive" size="sm" onClick={handleDelete}>

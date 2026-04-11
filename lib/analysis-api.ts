@@ -42,7 +42,7 @@ export function getIndividualAnalysisList(params?: {
         return mockIndividualAnalysisList.filter((s) => s.status === params.status);
       return mockIndividualAnalysisList;
     });
-  const qs = params?.status ? `?status=${params.status}` : "";
+  const qs = params?.status && params.status !== "all" ? `?status=${params.status}` : "";
   return api.get<AnalysisSnapshot[]>(`/api/analysis/individual${qs}`);
 }
 
@@ -149,7 +149,7 @@ export function getBookmarks(params?: {
         return mockBookmarks.filter((b) => b.type === params.type);
       return mockBookmarks;
     });
-  const qs = params?.type ? `?type=${params.type}` : "";
+  const qs = params?.type && params.type !== "all" ? `?type=${params.type}` : "";
   return api.get<BookmarkedSnapshot[]>(`/api/analysis/bookmarks${qs}`);
 }
 
@@ -179,7 +179,7 @@ export function getAnalysisHistory(params?: {
       return result;
     });
   const qs = new URLSearchParams();
-  if (params?.type) qs.set("type", params.type);
+  if (params?.type && params.type !== "all") qs.set("type", params.type);
   if (params?.sort) qs.set("sort", params.sort);
   const query = qs.toString();
   return api.get<AnalysisSnapshot[]>(
