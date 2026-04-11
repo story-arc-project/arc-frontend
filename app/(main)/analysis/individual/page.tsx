@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getIndividualAnalysisList } from "@/lib/analysis-api";
+import { formatDate } from "@/lib/date-utils";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import AnalysisStatusBadge from "@/components/features/analysis/common/AnalysisStatusBadge";
+import FilterBar from "@/components/features/analysis/common/FilterBar";
 
 type FilterKey = "all" | "pending" | "completed";
 const FILTERS: { key: FilterKey; label: string }[] = [
@@ -14,31 +16,29 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "completed", label: "분석 완료" },
 ];
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 export default function IndividualAnalysisPage() {
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    getIndividualAnalysisList({ status: filter }).then((data) => {
-      setItems(data);
-      setLoading(false);
-    });
+    setError(false);
+    getIndividualAnalysisList({ status: filter })
+      .then((data) => {
+        setItems(data);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
   }, [filter]);
 
   return (
     <div className="px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
         <div>
           <h1 className="text-heading-2 text-text-primary">개별 경험 분석</h1>
           <p className="text-body text-text-secondary mt-1">
@@ -46,36 +46,40 @@ export default function IndividualAnalysisPage() {
           </p>
         </div>
 
-        {/* Filter */}
-        <div className="flex items-center gap-1.5">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => setFilter(f.key)}
-              className={[
-                "px-3 py-1.5 rounded-md text-label transition-colors",
-                filter === f.key
-                  ? "bg-brand text-white"
-                  : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary border border-border",
-              ].join(" ")}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <FilterBar options={FILTERS} value={filter} onChange={setFilter} />
 
-        {/* List */}
-        {loading ? (
+        {error ? (
+          <div className="py-12 text-center">
+            <p className="text-body text-text-secondary mb-3">
+              데이터를 불러오지 못했습니다.
+            </p>
+            <button
+              type="button"
+              onClick={() => setFilter(filter)}
+              className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : loading ? (
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="h-20 bg-surface-secondary rounded-lg animate-pulse" />
+              <div key={i} className="bg-surface-secondary rounded-lg animate-pulse p-4 space-y-2">
+                <div className="h-4 w-48 bg-surface-tertiary rounded" />
+                <div className="h-3 w-64 bg-surface-tertiary rounded" />
+                <div className="h-3 w-24 bg-surface-tertiary rounded" />
+              </div>
             ))}
           </div>
         ) : items.length === 0 ? (
-          <p className="text-body-sm text-text-tertiary py-12 text-center">
-            해당 조건의 분석 결과가 없습니다.
-          </p>
+          <div className="py-12 text-center">
+            <p className="text-body text-text-tertiary">
+              해당 조건의 분석 결과가 없습니다.
+            </p>
+            <p className="text-body-sm text-text-tertiary mt-1">
+              경험을 기록하면 자동으로 분석이 시작됩니다.
+            </p>
+          </div>
         ) : (
           <div className="space-y-3">
             {items.map((item) => {
@@ -125,6 +129,7 @@ export default function IndividualAnalysisPage() {
                 <Link
                   key={item.id}
                   href={`/analysis/individual/${item.id}`}
+                  className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-lg"
                 >
                   {content}
                 </Link>

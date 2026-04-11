@@ -23,15 +23,20 @@ export default function RoleInterpretationSection({
       <div className="space-y-2">
         {interpretations.map((item, idx) => {
           const isOpen = openIdx === idx;
+          const panelId = `role-panel-${item.incidentId}`;
+          const triggerId = `role-trigger-${item.incidentId}`;
           return (
             <div
               key={item.incidentId}
-              className="bg-surface border border-border rounded-lg overflow-hidden"
+              className="border border-border rounded-lg overflow-hidden"
             >
               <button
+                id={triggerId}
                 type="button"
                 onClick={() => setOpenIdx(isOpen ? -1 : idx)}
-                className="w-full flex items-center justify-between px-4 py-3 text-left"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
               >
                 <span className="text-body-sm text-text-primary font-medium">
                   사건 {idx + 1}: {item.role.responsibility}
@@ -42,11 +47,16 @@ export default function RoleInterpretationSection({
                     "shrink-0 text-text-tertiary transition-transform duration-200",
                     isOpen ? "rotate-180" : "",
                   ].join(" ")}
+                  aria-hidden="true"
                 />
               </button>
               {isOpen && (
-                <div className="px-4 pb-4 space-y-4 border-t border-border pt-3">
-                  {/* Role */}
+                <div
+                  id={panelId}
+                  role="region"
+                  aria-labelledby={triggerId}
+                  className="px-4 pb-4 space-y-4 border-t border-border pt-3"
+                >
                   <div>
                     <p className="text-caption text-text-tertiary font-medium mb-2">
                       역할
@@ -66,7 +76,6 @@ export default function RoleInterpretationSection({
                       </p>
                     </div>
                   </div>
-                  {/* Action */}
                   <div>
                     <p className="text-caption text-text-tertiary font-medium mb-2">
                       행동
@@ -78,7 +87,6 @@ export default function RoleInterpretationSection({
                       </span>
                     </div>
                   </div>
-                  {/* Performance */}
                   <div>
                     <p className="text-caption text-text-tertiary font-medium mb-2">
                       성과

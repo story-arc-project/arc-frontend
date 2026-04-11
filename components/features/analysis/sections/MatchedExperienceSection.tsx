@@ -27,16 +27,18 @@ export default function MatchedExperienceSection({
       <h3 className="text-title text-text-primary">키워드 부합 경험 목록</h3>
 
       {/* Keyword tabs */}
-      <div className="flex gap-1.5 flex-wrap">
+      <div className="flex gap-1.5 flex-wrap" role="tablist">
         {keywordIds.map((kid) => {
           const def = definitions.find((d) => d.keywordId === kid);
           return (
             <button
               key={kid}
               type="button"
+              role="tab"
+              aria-selected={activeKeyword === kid}
               onClick={() => setActiveKeyword(kid)}
               className={[
-                "px-3 py-1.5 rounded-md text-label transition-colors",
+                "px-3 py-1.5 rounded-md text-label transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
                 activeKeyword === kid
                   ? "bg-brand text-white"
                   : "text-text-secondary hover:text-text-primary border border-border hover:border-border-strong",
@@ -49,7 +51,7 @@ export default function MatchedExperienceSection({
       </div>
 
       {/* Experience cards */}
-      <div className="space-y-3">
+      <div className="space-y-3" role="tabpanel">
         {filtered.map((exp) => (
           <div
             key={`${exp.keywordId}-${exp.experienceId}`}

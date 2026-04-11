@@ -5,28 +5,33 @@ import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getKeywordList, deleteKeywordAnalysis } from "@/lib/analysis-api";
+import { formatDate } from "@/lib/date-utils";
 import { Button, Badge, Dialog } from "@/components/ui";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 export default function KeywordAnalysisPage() {
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  function loadData() {
+    setLoading(true);
+    setError(false);
+    getKeywordList()
+      .then((data) => {
+        setItems(data);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
+  }
+
   useEffect(() => {
-    getKeywordList().then((data) => {
-      setItems(data);
-      setLoading(false);
-    });
+    loadData();
   }, []);
 
   async function handleDelete() {
@@ -48,22 +53,47 @@ export default function KeywordAnalysisPage() {
           </div>
           <Link href="/analysis/keyword/new">
             <Button size="sm">
-              <Plus size={16} />
+              <Plus size={16} aria-hidden="true" />
               새 키워드 분석
             </Button>
           </Link>
         </div>
 
-        {loading ? (
+        {error ? (
+          <div className="py-12 text-center">
+            <p className="text-body text-text-secondary mb-3">
+              데이터를 불러오지 못했습니다.
+            </p>
+            <button
+              type="button"
+              onClick={loadData}
+              className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : loading ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="h-20 bg-surface-secondary rounded-lg animate-pulse" />
+              <div key={i} className="bg-surface-secondary rounded-lg animate-pulse p-4 space-y-2">
+                <div className="h-4 w-48 bg-surface-tertiary rounded" />
+                <div className="h-3 w-64 bg-surface-tertiary rounded" />
+                <div className="flex gap-1.5 mt-1">
+                  <div className="h-5 w-16 bg-surface-tertiary rounded-full" />
+                  <div className="h-5 w-20 bg-surface-tertiary rounded-full" />
+                </div>
+              </div>
             ))}
           </div>
         ) : items.length === 0 ? (
-          <p className="text-body-sm text-text-tertiary py-12 text-center">
-            아직 키워드 분석 결과가 없습니다.
-          </p>
+          <div className="py-12 text-center">
+            <p className="text-body text-text-tertiary">
+              아직 키워드 분석 결과가 없습니다.
+            </p>
+            <p className="text-body-sm text-text-tertiary mt-1">
+              키워드를 선택해 경험 분석을 시작해보세요.
+            </p>
+          </div>
         ) : (
           <div className="space-y-3">
             {items.map((item) => (
@@ -74,7 +104,7 @@ export default function KeywordAnalysisPage() {
                 <div className="flex items-start justify-between gap-3">
                   <Link
                     href={`/analysis/keyword/${item.id}`}
-                    className="flex-1 min-w-0"
+                    className="flex-1 min-w-0 focus-visible:outline-none"
                   >
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="text-body-sm text-text-primary font-medium">
@@ -105,7 +135,7 @@ export default function KeywordAnalysisPage() {
                     <button
                       type="button"
                       onClick={() => setDeleteId(item.id)}
-                      className="p-1 rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors"
+                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                       aria-label="삭제"
                     >
                       <Trash2 size={16} />

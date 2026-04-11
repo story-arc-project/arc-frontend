@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -23,9 +23,13 @@ export default function ComprehensiveNewPage() {
   const [scenario, setScenario] = useState("");
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
+  const unmountedRef = useRef(false);
 
   useEffect(() => {
     getSelectableExperiences().then(setExperiences);
+    return () => {
+      unmountedRef.current = true;
+    };
   }, []);
 
   const startAnalysis = useCallback(async () => {
@@ -36,14 +40,16 @@ export default function ComprehensiveNewPage() {
         scenario: scenario || undefined,
       });
 
-      // Poll for status
       const poll = async (retries: number): Promise<void> => {
-        if (retries <= 0) {
-          setPhase("error");
-          setErrorMsg("분석 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
+        if (unmountedRef.current || retries <= 0) {
+          if (!unmountedRef.current) {
+            setPhase("error");
+            setErrorMsg("분석 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
+          }
           return;
         }
         const { status } = await getAnalysisStatus(analysisId);
+        if (unmountedRef.current) return;
         if (status === "completed") {
           router.push(`/analysis/comprehensive/${analysisId}`);
           return;
@@ -54,20 +60,24 @@ export default function ComprehensiveNewPage() {
           return;
         }
         await new Promise((r) => setTimeout(r, 3000));
-        return poll(retries - 1);
+        if (!unmountedRef.current) {
+          return poll(retries - 1);
+        }
       };
 
       await poll(20);
     } catch {
-      setPhase("error");
-      setErrorMsg("분석 요청에 실패했습니다.");
+      if (!unmountedRef.current) {
+        setPhase("error");
+        setErrorMsg("분석 요청에 실패했습니다.");
+      }
     }
   }, [selected, scenario, router]);
 
   if (phase === "loading") {
     return (
-      <div className="flex flex-col items-center justify-center py-24 px-4">
-        <Loader2 size={32} className="text-brand animate-spin mb-4" />
+      <div className="flex flex-col items-center justify-center py-24 px-4" role="status" aria-live="polite">
+        <Loader2 size={32} className="text-brand animate-spin mb-4" aria-hidden="true" />
         <h2 className="text-title text-text-primary mb-1">분석 중입니다...</h2>
         <p className="text-body-sm text-text-secondary">
           선택한 {selected.length}개 경험을 종합 분석하고 있어요.
@@ -102,9 +112,9 @@ export default function ComprehensiveNewPage() {
       <div className="max-w-3xl mx-auto space-y-6">
         <Link
           href="/analysis/comprehensive"
-          className="inline-flex items-center gap-1 text-body-sm text-text-secondary hover:text-text-primary transition-colors"
+          className="inline-flex items-center gap-1 text-body-sm text-text-secondary hover:text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
         >
-          <ArrowLeft size={14} />
+          <ArrowLeft size={14} aria-hidden="true" />
           목록으로
         </Link>
 
@@ -115,7 +125,6 @@ export default function ComprehensiveNewPage() {
           </p>
         </div>
 
-        {/* Experience Selection */}
         <section className="space-y-3">
           <h3 className="text-title text-text-primary">경험 선택</h3>
           <ExperienceSelector
@@ -126,7 +135,6 @@ export default function ComprehensiveNewPage() {
           />
         </section>
 
-        {/* Scenario Input */}
         <section className="space-y-3">
           <h3 className="text-title text-text-primary">
             목표 시나리오{" "}
@@ -141,7 +149,6 @@ export default function ComprehensiveNewPage() {
           />
         </section>
 
-        {/* Submit */}
         <div className="pt-4">
           <Button
             fullWidth

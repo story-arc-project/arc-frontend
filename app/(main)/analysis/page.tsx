@@ -17,6 +17,7 @@ import {
 import type { AnalysisHomeSummary, AnalysisType } from "@/types/analysis";
 import { analysisTypeLabel } from "@/types/analysis";
 import { getAnalysisHomeSummary } from "@/lib/analysis-api";
+import { formatRelativeTime } from "@/lib/date-utils";
 import { Badge } from "@/components/ui";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
@@ -57,33 +58,54 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "keyword", label: "키워드" },
 ];
 
-function formatRelativeTime(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}분 전`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}시간 전`;
-  const days = Math.floor(hours / 24);
-  return `${days}일 전`;
-}
-
 export default function AnalysisHomePage() {
   const [data, setData] = useState<AnalysisHomeSummary | null>(null);
+  const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabKey>("individual");
 
   useEffect(() => {
-    getAnalysisHomeSummary().then(setData);
+    getAnalysisHomeSummary()
+      .then(setData)
+      .catch(() => setError(true));
   }, []);
+
+  if (error) {
+    return (
+      <div className="px-4 py-8 sm:px-8">
+        <div className="max-w-5xl mx-auto flex flex-col items-center justify-center py-16">
+          <p className="text-body text-text-secondary mb-3">
+            데이터를 불러오지 못했습니다.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setError(false);
+              getAnalysisHomeSummary()
+                .then(setData)
+                .catch(() => setError(true));
+            }}
+            className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+          >
+            다시 시도
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!data) {
     return (
       <div className="px-4 py-8 sm:px-8">
         <div className="max-w-5xl mx-auto space-y-6">
-          {/* Skeleton */}
           <div className="h-8 w-48 bg-surface-secondary rounded animate-pulse" />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="h-24 bg-surface-secondary rounded-lg animate-pulse" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-28 bg-surface-secondary rounded-lg animate-pulse" />
             ))}
           </div>
         </div>
@@ -131,7 +153,7 @@ export default function AnalysisHomePage() {
                 className="bg-surface border border-border rounded-lg p-4 flex items-center gap-3"
               >
                 <div className={`p-2 rounded-md bg-surface-secondary ${STAT_COLORS[i]}`}>
-                  <Icon size={18} />
+                  <Icon size={18} aria-hidden="true" />
                 </div>
                 <div>
                   <p className="text-heading-3 text-text-primary leading-none">
@@ -152,13 +174,10 @@ export default function AnalysisHomePage() {
             <Link
               key={action.href}
               href={action.href}
-              className="group bg-surface border border-border rounded-lg p-5 hover:border-brand transition-colors"
+              className="group bg-surface border border-border rounded-lg p-5 hover:border-brand transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             >
               <div className="flex items-center gap-2 mb-2">
-                <action.icon
-                  size={18}
-                  className="text-brand"
-                />
+                <action.icon size={18} className="text-brand" aria-hidden="true" />
                 <h3 className="text-title text-text-primary">
                   {action.title}
                 </h3>
@@ -167,7 +186,7 @@ export default function AnalysisHomePage() {
                 {action.desc}
               </p>
               <span className="inline-flex items-center gap-1 mt-3 text-caption text-brand font-medium group-hover:gap-2 transition-all">
-                시작하기 <ArrowRight size={12} />
+                시작하기 <ArrowRight size={12} aria-hidden="true" />
               </span>
             </Link>
           ))}
@@ -177,14 +196,16 @@ export default function AnalysisHomePage() {
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-title text-text-primary">최근 분석 결과</h2>
-            <div className="flex border border-border rounded-md overflow-hidden">
+            <div className="flex border border-border rounded-md overflow-hidden" role="tablist">
               {TABS.map((t) => (
                 <button
                   key={t.key}
                   type="button"
+                  role="tab"
+                  aria-selected={tab === t.key}
                   onClick={() => setTab(t.key)}
                   className={[
-                    "px-3 py-1.5 text-label transition-colors",
+                    "px-3 py-1.5 text-label transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset",
                     tab === t.key
                       ? "bg-brand text-white"
                       : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary",
@@ -196,17 +217,22 @@ export default function AnalysisHomePage() {
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3" role="tabpanel">
             {recentMap[tab].length === 0 ? (
-              <p className="text-body-sm text-text-tertiary py-8 text-center">
-                아직 분석 결과가 없습니다.
-              </p>
+              <div className="py-12 text-center">
+                <p className="text-body text-text-tertiary">
+                  아직 분석 결과가 없습니다.
+                </p>
+                <p className="text-body-sm text-text-tertiary mt-1">
+                  경험을 기록하고 분석을 시작해보세요.
+                </p>
+              </div>
             ) : (
               recentMap[tab].map((snapshot) => (
                 <Link
                   key={snapshot.id}
                   href={`${detailPath[snapshot.type]}/${snapshot.id}`}
-                  className="block bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors"
+                  className="block bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -243,13 +269,13 @@ export default function AnalysisHomePage() {
         {/* Placeholders */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="bg-surface-secondary border border-border rounded-lg p-6 flex flex-col items-center justify-center text-center">
-            <BarChart3 size={24} className="text-text-tertiary mb-2" />
+            <BarChart3 size={24} className="text-text-tertiary mb-2" aria-hidden="true" />
             <p className="text-body-sm text-text-tertiary">
               시각화 차트 — 준비 중
             </p>
           </div>
           <div className="bg-surface-secondary border border-border rounded-lg p-6 flex flex-col items-center justify-center text-center">
-            <Lightbulb size={24} className="text-text-tertiary mb-2" />
+            <Lightbulb size={24} className="text-text-tertiary mb-2" aria-hidden="true" />
             <p className="text-body-sm text-text-tertiary">
               추천 — 준비 중
             </p>
@@ -260,13 +286,13 @@ export default function AnalysisHomePage() {
         <div className="flex items-center gap-4 pt-2">
           <Link
             href="/analysis/history"
-            className="text-body-sm text-brand font-medium hover:underline"
+            className="text-body-sm text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
           >
             전체 결과 보기 &rarr;
           </Link>
           <Link
             href="/analysis/bookmarks"
-            className="text-body-sm text-brand font-medium hover:underline"
+            className="text-body-sm text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
           >
             즐겨찾기 바로가기 &rarr;
           </Link>

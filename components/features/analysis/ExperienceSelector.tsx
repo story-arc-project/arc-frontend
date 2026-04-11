@@ -53,7 +53,8 @@ export default function ExperienceSelector({
                 <button
                   type="button"
                   onClick={() => remove(id)}
-                  className="hover:text-brand-dark"
+                  className="hover:text-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-full"
+                  aria-label={`${exp?.title ?? id} 선택 해제`}
                 >
                   <X size={12} />
                 </button>
@@ -71,60 +72,66 @@ export default function ExperienceSelector({
       </p>
 
       {/* Experience list */}
-      <div className="space-y-2 max-h-80 overflow-y-auto">
-        {completeExps.map((exp) => {
-          const checked = selected.includes(exp.id);
-          return (
-            <label
-              key={exp.id}
-              className={[
-                "flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors",
-                checked
-                  ? "border-brand bg-surface-brand"
-                  : "border-border hover:border-border-strong",
-              ].join(" ")}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => toggle(exp.id)}
-                className="sr-only"
-              />
-              <div
+      {completeExps.length === 0 ? (
+        <p className="text-body-sm text-text-tertiary py-4 text-center">
+          선택 가능한 경험이 없습니다.
+        </p>
+      ) : (
+        <div className="space-y-2 max-h-80 overflow-y-auto">
+          {completeExps.map((exp) => {
+            const checked = selected.includes(exp.id);
+            return (
+              <label
+                key={exp.id}
                 className={[
-                  "w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors",
-                  checked ? "bg-brand border-brand" : "border-border-strong",
+                  "flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors",
+                  checked
+                    ? "border-brand bg-surface-brand"
+                    : "border-border hover:border-border-strong",
                 ].join(" ")}
               >
-                {checked && (
-                  <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                    <path
-                      d="M1 4L3.5 6.5L9 1"
-                      stroke="white"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="text-body-sm text-text-primary font-medium">
-                  {exp.title}
-                </span>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-caption text-text-tertiary">
-                    {exp.type}
-                  </span>
-                  <span className="text-caption text-text-tertiary">
-                    중요도 {exp.importance}
-                  </span>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(exp.id)}
+                  className="peer sr-only"
+                />
+                <div
+                  className={[
+                    "w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-1",
+                    checked ? "bg-brand border-brand" : "border-border-strong",
+                  ].join(" ")}
+                >
+                  {checked && (
+                    <svg width="10" height="8" viewBox="0 0 10 8" fill="none" aria-hidden="true">
+                      <path
+                        d="M1 4L3.5 6.5L9 1"
+                        stroke="white"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
                 </div>
-              </div>
-            </label>
-          );
-        })}
-      </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-body-sm text-text-primary font-medium">
+                    {exp.title}
+                  </span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-caption text-text-tertiary">
+                      {exp.type}
+                    </span>
+                    <span className="text-caption text-text-tertiary">
+                      중요도 {exp.importance}
+                    </span>
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

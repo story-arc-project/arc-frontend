@@ -26,19 +26,24 @@ export default function ExperienceSummarySection({
       <div className="space-y-2">
         {incidents.map((inc) => {
           const isOpen = openId === inc.id;
+          const panelId = `incident-panel-${inc.id}`;
+          const triggerId = `incident-trigger-${inc.id}`;
           return (
             <div
               key={inc.id}
-              className="bg-surface border border-border rounded-lg overflow-hidden"
+              className="border border-border rounded-lg overflow-hidden"
             >
               <button
+                id={triggerId}
                 type="button"
                 onClick={() => setOpenId(isOpen ? null : inc.id)}
-                className="w-full flex items-center justify-between px-4 py-3 text-left"
+                aria-expanded={isOpen}
+                aria-controls={panelId}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
               >
                 <span className="text-body-sm text-text-primary font-medium truncate pr-2">
                   {inc.situation.slice(0, 60)}
-                  {inc.situation.length > 60 ? "…" : ""}
+                  {inc.situation.length > 60 ? "..." : ""}
                 </span>
                 <ChevronDown
                   size={16}
@@ -46,10 +51,16 @@ export default function ExperienceSummarySection({
                     "shrink-0 text-text-tertiary transition-transform duration-200",
                     isOpen ? "rotate-180" : "",
                   ].join(" ")}
+                  aria-hidden="true"
                 />
               </button>
               {isOpen && (
-                <div className="px-4 pb-4 space-y-3 border-t border-border pt-3">
+                <div
+                  id={panelId}
+                  role="region"
+                  aria-labelledby={triggerId}
+                  className="px-4 pb-4 space-y-3 border-t border-border pt-3"
+                >
                   <div>
                     <p className="text-caption text-text-tertiary font-medium mb-1">
                       상황

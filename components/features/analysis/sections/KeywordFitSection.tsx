@@ -12,11 +12,18 @@ const AXIS_LABELS: Record<string, string> = {
   consistency: "반복성·일관성",
 };
 
-function GaugeBar({ value, max = 25 }: { value: number; max?: number }) {
+function GaugeBar({ value, max = 25, label }: { value: number; max?: number; label?: string }) {
   const pct = Math.round((value / max) * 100);
   return (
     <div className="flex items-center gap-2">
-      <div className="flex-1 h-2 bg-surface-secondary rounded-full overflow-hidden">
+      <div
+        className="flex-1 h-2 bg-surface-secondary rounded-full overflow-hidden"
+        role="progressbar"
+        aria-valuenow={value}
+        aria-valuemin={0}
+        aria-valuemax={max}
+        aria-label={label}
+      >
         <div
           className="h-full bg-brand rounded-full"
           style={{ width: `${pct}%` }}
@@ -64,7 +71,7 @@ export default function KeywordFitSection({
                   <p className="text-caption text-text-tertiary mb-1">
                     {AXIS_LABELS[key] ?? key}
                   </p>
-                  <GaugeBar value={value} />
+                  <GaugeBar value={value} label={AXIS_LABELS[key] ?? key} />
                 </div>
               ))}
             </div>

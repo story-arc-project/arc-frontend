@@ -28,7 +28,14 @@ export default function CoverageSection({ coverage }: CoverageSectionProps) {
                   {item.matchedCount}/{item.totalCount} ({pct}%)
                 </span>
               </div>
-              <div className="h-2 bg-surface-secondary rounded-full overflow-hidden">
+              <div
+                className="h-2 bg-surface-secondary rounded-full overflow-hidden"
+                role="progressbar"
+                aria-valuenow={pct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`${item.label} 커버리지 ${pct}%`}
+              >
                 <div
                   className="h-full bg-brand rounded-full transition-all"
                   style={{ width: `${pct}%` }}

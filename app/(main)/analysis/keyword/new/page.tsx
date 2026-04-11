@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -31,10 +31,14 @@ export default function KeywordNewPage() {
   const [scenario, setScenario] = useState("");
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
+  const unmountedRef = useRef(false);
 
   useEffect(() => {
     getKeywordSuggestions().then(setSuggestions);
     getSelectableExperiences().then(setExperiences);
+    return () => {
+      unmountedRef.current = true;
+    };
   }, []);
 
   const startAnalysis = useCallback(async () => {
@@ -47,12 +51,15 @@ export default function KeywordNewPage() {
       });
 
       const poll = async (retries: number): Promise<void> => {
-        if (retries <= 0) {
-          setPhase("error");
-          setErrorMsg("분석 시간이 초과되었습니다.");
+        if (unmountedRef.current || retries <= 0) {
+          if (!unmountedRef.current) {
+            setPhase("error");
+            setErrorMsg("분석 시간이 초과되었습니다.");
+          }
           return;
         }
         const { status } = await getAnalysisStatus(analysisId);
+        if (unmountedRef.current) return;
         if (status === "completed") {
           router.push(`/analysis/keyword/${analysisId}`);
           return;
@@ -63,20 +70,24 @@ export default function KeywordNewPage() {
           return;
         }
         await new Promise((r) => setTimeout(r, 3000));
-        return poll(retries - 1);
+        if (!unmountedRef.current) {
+          return poll(retries - 1);
+        }
       };
 
       await poll(20);
     } catch {
-      setPhase("error");
-      setErrorMsg("분석 요청에 실패했습니다.");
+      if (!unmountedRef.current) {
+        setPhase("error");
+        setErrorMsg("분석 요청에 실패했습니다.");
+      }
     }
   }, [selectedKeywords, scopeAll, selectedExpIds, scenario, router]);
 
   if (phase === "loading") {
     return (
-      <div className="flex flex-col items-center justify-center py-24 px-4">
-        <Loader2 size={32} className="text-brand animate-spin mb-4" />
+      <div className="flex flex-col items-center justify-center py-24 px-4" role="status" aria-live="polite">
+        <Loader2 size={32} className="text-brand animate-spin mb-4" aria-hidden="true" />
         <h2 className="text-title text-text-primary mb-1">분석 중입니다...</h2>
         <p className="text-body-sm text-text-secondary">
           선택한 키워드를 기준으로 경험을 분석하고 있어요.
@@ -111,9 +122,9 @@ export default function KeywordNewPage() {
       <div className="max-w-3xl mx-auto space-y-6">
         <Link
           href="/analysis/keyword"
-          className="inline-flex items-center gap-1 text-body-sm text-text-secondary hover:text-text-primary transition-colors"
+          className="inline-flex items-center gap-1 text-body-sm text-text-secondary hover:text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
         >
-          <ArrowLeft size={14} />
+          <ArrowLeft size={14} aria-hidden="true" />
           목록으로
         </Link>
 
@@ -124,7 +135,6 @@ export default function KeywordNewPage() {
           </p>
         </div>
 
-        {/* 1. Keyword Selection */}
         <section className="space-y-3">
           <h3 className="text-title text-text-primary">키워드 선택</h3>
           <KeywordSelector
@@ -135,17 +145,17 @@ export default function KeywordNewPage() {
           />
         </section>
 
-        {/* 2. Scope */}
         <section className="space-y-3">
           <h3 className="text-title text-text-primary">분석 범위</h3>
-          <div className="flex items-center gap-4">
+          <fieldset className="flex items-center gap-4">
+            <legend className="sr-only">분석 범위 선택</legend>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="radio"
                 name="scope"
                 checked={scopeAll}
                 onChange={() => setScopeAll(true)}
-                className="accent-brand"
+                className="accent-brand w-4 h-4"
               />
               <span className="text-body-sm text-text-primary">전체 경험</span>
             </label>
@@ -155,13 +165,13 @@ export default function KeywordNewPage() {
                 name="scope"
                 checked={!scopeAll}
                 onChange={() => setScopeAll(false)}
-                className="accent-brand"
+                className="accent-brand w-4 h-4"
               />
               <span className="text-body-sm text-text-primary">
                 특정 경험만
               </span>
             </label>
-          </div>
+          </fieldset>
           {!scopeAll && (
             <ExperienceSelector
               experiences={experiences}
@@ -172,7 +182,6 @@ export default function KeywordNewPage() {
           )}
         </section>
 
-        {/* 3. Scenario */}
         <section className="space-y-3">
           <h3 className="text-title text-text-primary">
             목표 시나리오{" "}
@@ -187,7 +196,6 @@ export default function KeywordNewPage() {
           />
         </section>
 
-        {/* Submit */}
         <div className="pt-4">
           <Button
             fullWidth

@@ -10,9 +10,11 @@ import {
   updateAnalysisMeta,
   deleteAnalysis,
 } from "@/lib/analysis-api";
+import { formatDate } from "@/lib/date-utils";
 import { Badge, Button, Dialog } from "@/components/ui";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
+import FilterBar from "@/components/features/analysis/common/FilterBar";
 
 type FilterKey = "all" | AnalysisType;
 type SortKey = "newest" | "oldest";
@@ -35,14 +37,6 @@ const NEW_PATH: Record<AnalysisType, string> = {
   comprehensive: "/analysis/comprehensive/new",
   keyword: "/analysis/keyword/new",
 };
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 function InlineEdit({
   value,
@@ -70,19 +64,22 @@ function InlineEdit({
           if (e.key === "Enter") onSave(text);
           if (e.key === "Escape") onCancel();
         }}
-        className="text-body-sm text-text-primary font-medium border-b border-brand bg-transparent outline-none px-0 py-0.5"
+        aria-label="분석 제목 변경"
+        className="text-body-sm text-text-primary font-medium border-b border-brand bg-transparent outline-none px-0 py-0.5 focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
       />
       <button
         type="button"
         onClick={() => onSave(text)}
-        className="p-0.5 text-success hover:text-success"
+        className="p-1 text-success hover:text-success focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+        aria-label="저장"
       >
         <Check size={14} />
       </button>
       <button
         type="button"
         onClick={onCancel}
-        className="p-0.5 text-text-tertiary hover:text-text-primary"
+        className="p-1 text-text-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+        aria-label="취소"
       >
         <X size={14} />
       </button>
@@ -95,15 +92,22 @@ export default function HistoryPage() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("newest");
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
-    getAnalysisHistory({ type: filter, sort }).then((data) => {
-      setItems(data);
-      setLoading(false);
-    });
+    setError(false);
+    getAnalysisHistory({ type: filter, sort })
+      .then((data) => {
+        setItems(data);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
   }, [filter, sort]);
 
   async function handleRename(id: string, title: string) {
@@ -131,46 +135,55 @@ export default function HistoryPage() {
           </p>
         </div>
 
-        {/* Filter + Sort */}
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            {FILTERS.map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setFilter(f.key)}
-                className={[
-                  "px-3 py-1.5 rounded-md text-label transition-colors",
-                  filter === f.key
-                    ? "bg-brand text-white"
-                    : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary border border-border",
-                ].join(" ")}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          <FilterBar options={FILTERS} value={filter} onChange={setFilter} />
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
-            className="px-3 py-1.5 text-label border border-border rounded-md bg-surface text-text-primary"
+            aria-label="정렬 기준"
+            className="px-3 py-2 text-label border border-border rounded-md bg-surface text-text-primary appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23999%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat pr-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           >
             <option value="newest">최신순</option>
             <option value="oldest">오래된순</option>
           </select>
         </div>
 
-        {/* List */}
-        {loading ? (
+        {error ? (
+          <div className="py-12 text-center">
+            <p className="text-body text-text-secondary mb-3">
+              데이터를 불러오지 못했습니다.
+            </p>
+            <button
+              type="button"
+              onClick={() => setFilter(filter)}
+              className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : loading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-20 bg-surface-secondary rounded-lg animate-pulse" />
+              <div key={i} className="bg-surface-secondary rounded-lg animate-pulse p-4 space-y-2">
+                <div className="flex gap-2">
+                  <div className="h-5 w-12 bg-surface-tertiary rounded-full" />
+                  <div className="h-5 w-40 bg-surface-tertiary rounded" />
+                  <div className="h-5 w-16 bg-surface-tertiary rounded-full" />
+                </div>
+                <div className="h-3 w-64 bg-surface-tertiary rounded" />
+                <div className="h-3 w-24 bg-surface-tertiary rounded" />
+              </div>
             ))}
           </div>
         ) : items.length === 0 ? (
-          <p className="text-body-sm text-text-tertiary py-12 text-center">
-            분석 결과가 없습니다.
-          </p>
+          <div className="py-12 text-center">
+            <p className="text-body text-text-tertiary">
+              아직 분석 결과가 없습니다.
+            </p>
+            <p className="text-body-sm text-text-tertiary mt-1">
+              경험을 기록하고 분석을 시작해보세요.
+            </p>
+          </div>
         ) : (
           <div className="space-y-3">
             {items.map((item) => (
@@ -193,7 +206,7 @@ export default function HistoryPage() {
                       ) : (
                         <Link
                           href={`${DETAIL_PATH[item.type]}/${item.id}`}
-                          className="text-body-sm text-text-primary font-medium hover:underline"
+                          className="text-body-sm text-text-primary font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
                         >
                           {item.title}
                         </Link>
@@ -217,25 +230,25 @@ export default function HistoryPage() {
                     <button
                       type="button"
                       onClick={() => setEditId(item.id)}
-                      className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-surface-tertiary transition-colors"
+                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                       aria-label="이름 변경"
                     >
-                      <Pencil size={14} />
+                      <Pencil size={16} />
                     </button>
                     <Link
                       href={NEW_PATH[item.type]}
-                      className="p-1 rounded-md text-text-tertiary hover:text-brand hover:bg-surface-tertiary transition-colors"
+                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-brand hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                       aria-label="다시 분석"
                     >
-                      <RotateCcw size={14} />
+                      <RotateCcw size={16} />
                     </Link>
                     <button
                       type="button"
                       onClick={() => setDeleteId(item.id)}
-                      className="p-1 rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors"
+                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                       aria-label="삭제"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
@@ -244,7 +257,6 @@ export default function HistoryPage() {
           </div>
         )}
 
-        {/* Delete confirm */}
         <Dialog
           open={deleteId !== null}
           onClose={() => setDeleteId(null)}

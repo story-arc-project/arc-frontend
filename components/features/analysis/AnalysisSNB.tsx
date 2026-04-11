@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   LayoutDashboard,
   FileSearch,
@@ -31,11 +31,22 @@ export default function AnalysisSNB() {
 
   const current = SNB_ITEMS.find((item) => isActive(pathname, item.href, item.exact));
 
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") closeMobile();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [mobileOpen, closeMobile]);
+
   return (
     <>
       {/* Desktop SNB */}
       <aside className="hidden md:flex flex-col w-56 shrink-0 border-r border-border bg-surface-secondary overflow-y-auto">
-        <nav className="p-3 space-y-1">
+        <nav className="p-3 space-y-1" aria-label="분석 탭 네비게이션">
           {SNB_ITEMS.map((item) => {
             const active = isActive(pathname, item.href, item.exact);
             const Icon = item.icon;
@@ -43,8 +54,9 @@ export default function AnalysisSNB() {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={[
-                  "flex items-center gap-2.5 px-3 py-2.5 rounded-md text-body-sm transition-colors duration-150",
+                  "flex items-center gap-2.5 px-3 py-2.5 rounded-md text-body-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
                   active
                     ? "bg-surface-brand text-brand font-semibold"
                     : "text-text-secondary hover:text-text-primary hover:bg-surface-tertiary",
@@ -58,13 +70,14 @@ export default function AnalysisSNB() {
         </nav>
       </aside>
 
-      {/* Mobile: horizontal tab bar */}
-      <div className="md:hidden border-b border-border bg-surface">
-        {/* Dropdown trigger */}
+      {/* Mobile: dropdown navigation */}
+      <div className="md:hidden border-b border-border bg-surface relative">
         <button
           type="button"
           onClick={() => setMobileOpen(!mobileOpen)}
-          className="flex items-center justify-between w-full px-4 py-3 text-body-sm font-medium text-text-primary"
+          aria-expanded={mobileOpen}
+          aria-controls="analysis-mobile-nav"
+          className="flex items-center justify-between w-full px-4 py-3 text-body-sm font-medium text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset"
         >
           <span className="flex items-center gap-2">
             {current && <current.icon size={16} className="text-brand" />}
@@ -79,30 +92,42 @@ export default function AnalysisSNB() {
           />
         </button>
 
-        {/* Dropdown menu */}
         {mobileOpen && (
-          <nav className="px-2 pb-2 space-y-0.5">
-            {SNB_ITEMS.map((item) => {
-              const active = isActive(pathname, item.href, item.exact);
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={[
-                    "flex items-center gap-2.5 px-3 py-2.5 rounded-md text-body-sm transition-colors duration-150",
-                    active
-                      ? "bg-surface-brand text-brand font-semibold"
-                      : "text-text-secondary hover:text-text-primary hover:bg-surface-tertiary",
-                  ].join(" ")}
-                >
-                  <Icon size={16} />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 z-10"
+              onClick={closeMobile}
+              aria-hidden="true"
+            />
+            <nav
+              id="analysis-mobile-nav"
+              className="absolute left-0 right-0 top-full z-20 bg-surface border-b border-border shadow-sm px-2 pb-2 space-y-0.5"
+              aria-label="분석 탭 네비게이션"
+            >
+              {SNB_ITEMS.map((item) => {
+                const active = isActive(pathname, item.href, item.exact);
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={closeMobile}
+                    aria-current={active ? "page" : undefined}
+                    className={[
+                      "flex items-center gap-2.5 px-3 py-2.5 rounded-md text-body-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
+                      active
+                        ? "bg-surface-brand text-brand font-semibold"
+                        : "text-text-secondary hover:text-text-primary hover:bg-surface-tertiary",
+                    ].join(" ")}
+                  >
+                    <Icon size={16} />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </>
         )}
       </div>
     </>
