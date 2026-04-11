@@ -1,14 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-
-interface SelectableExperience {
-  id: string;
-  title: string;
-  type: string;
-  importance: number;
-  isComplete: boolean;
-}
+import type { SelectableExperience } from "@/types/analysis";
 
 interface ExperienceSelectorProps {
   experiences: SelectableExperience[];
@@ -53,7 +46,7 @@ export default function ExperienceSelector({
                 <button
                   type="button"
                   onClick={() => remove(id)}
-                  className="hover:text-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-full"
+                  className="p-1 -m-0.5 min-w-[28px] min-h-[28px] flex items-center justify-center hover:text-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-full"
                   aria-label={`${exp?.title ?? id} 선택 해제`}
                 >
                   <X size={12} />

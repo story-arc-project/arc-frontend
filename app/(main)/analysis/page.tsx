@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -15,7 +15,7 @@ import {
   Lightbulb,
 } from "lucide-react";
 import type { AnalysisHomeSummary, AnalysisType } from "@/types/analysis";
-import { analysisTypeLabel } from "@/types/analysis";
+import { analysisTypeLabel, ANALYSIS_DETAIL_PATH } from "@/types/analysis";
 import { getAnalysisHomeSummary } from "@/lib/analysis-api";
 import { formatRelativeTime } from "@/lib/date-utils";
 import { Badge } from "@/components/ui";
@@ -63,41 +63,41 @@ export default function AnalysisHomePage() {
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabKey>("individual");
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
+    setError(false);
     getAnalysisHomeSummary()
       .then(setData)
       .catch(() => setError(true));
   }, []);
 
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
   if (error) {
     return (
-      <div className="px-4 py-8 sm:px-8">
-        <div className="max-w-5xl mx-auto flex flex-col items-center justify-center py-16">
+      <main className="px-4 py-8 sm:px-8">
+        <div className="max-w-5xl mx-auto flex flex-col items-center justify-center py-16" role="alert">
           <p className="text-body text-text-secondary mb-3">
             데이터를 불러오지 못했습니다.
           </p>
           <button
             type="button"
-            onClick={() => {
-              setError(false);
-              getAnalysisHomeSummary()
-                .then(setData)
-                .catch(() => setError(true));
-            }}
+            onClick={loadData}
             className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
           >
             다시 시도
           </button>
         </div>
-      </div>
+      </main>
     );
   }
 
   if (!data) {
     return (
-      <div className="px-4 py-8 sm:px-8">
-        <div className="max-w-5xl mx-auto space-y-6">
-          <div className="h-8 w-48 bg-surface-secondary rounded animate-pulse" />
+      <main className="px-4 py-8 sm:px-8">
+        <div className="max-w-5xl mx-auto space-y-6" aria-busy="true">
+          <div className="h-8 w-2/5 bg-surface-secondary rounded animate-pulse" />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="h-24 bg-surface-secondary rounded-lg animate-pulse" />
@@ -109,7 +109,7 @@ export default function AnalysisHomePage() {
             ))}
           </div>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -126,14 +126,8 @@ export default function AnalysisHomePage() {
     keyword: data.recentKeyword,
   };
 
-  const detailPath: Record<AnalysisType, string> = {
-    individual: "/analysis/individual",
-    comprehensive: "/analysis/comprehensive",
-    keyword: "/analysis/keyword",
-  };
-
   return (
-    <div className="px-4 py-8 sm:px-8">
+    <main className="px-4 py-8 sm:px-8">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Header */}
         <div>
@@ -144,7 +138,7 @@ export default function AnalysisHomePage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           {statItems.map((item, i) => {
             const Icon = STAT_ICONS[i];
             return (
@@ -169,7 +163,7 @@ export default function AnalysisHomePage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
           {QUICK_ACTIONS.map((action) => (
             <Link
               key={action.href}
@@ -196,13 +190,15 @@ export default function AnalysisHomePage() {
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-title text-text-primary">최근 분석 결과</h2>
-            <div className="flex border border-border rounded-md overflow-hidden" role="tablist">
+            <div className="flex border border-border rounded-md overflow-hidden" role="tablist" aria-label="분석 유형">
               {TABS.map((t) => (
                 <button
                   key={t.key}
+                  id={`recent-tab-${t.key}`}
                   type="button"
                   role="tab"
                   aria-selected={tab === t.key}
+                  aria-controls={`recent-panel-${t.key}`}
                   onClick={() => setTab(t.key)}
                   className={[
                     "px-3 py-1.5 text-label transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset",
@@ -217,7 +213,7 @@ export default function AnalysisHomePage() {
             </div>
           </div>
 
-          <div className="space-y-3" role="tabpanel">
+          <div className="space-y-3" role="tabpanel" id={`recent-panel-${tab}`} aria-labelledby={`recent-tab-${tab}`}>
             {recentMap[tab].length === 0 ? (
               <div className="py-12 text-center">
                 <p className="text-body text-text-tertiary">
@@ -229,13 +225,15 @@ export default function AnalysisHomePage() {
               </div>
             ) : (
               recentMap[tab].map((snapshot) => (
-                <Link
+                <div
                   key={snapshot.id}
-                  href={`${detailPath[snapshot.type]}/${snapshot.id}`}
-                  className="block bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                  className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
+                    <Link
+                      href={`${ANALYSIS_DETAIL_PATH[snapshot.type]}/${snapshot.id}`}
+                      className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
+                    >
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <Badge variant="outline">
                           {analysisTypeLabel[snapshot.type]}
@@ -253,14 +251,14 @@ export default function AnalysisHomePage() {
                           {formatRelativeTime(snapshot.createdAt)}
                         </span>
                       </div>
-                    </div>
+                    </Link>
                     <BookmarkToggle
+                      analysisId={snapshot.id}
                       isBookmarked={snapshot.isBookmarked}
-                      onToggle={() => {}}
                       size="sm"
                     />
                   </div>
-                </Link>
+                </div>
               ))
             )}
           </div>
@@ -298,6 +296,6 @@ export default function AnalysisHomePage() {
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

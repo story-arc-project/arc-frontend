@@ -1,28 +1,24 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button, Input } from "@/components/ui";
-import type { KeywordSuggestion, KeywordCategory } from "@/types/analysis";
+import type { KeywordSuggestion, KeywordCategory, SelectableExperience } from "@/types/analysis";
 import {
   getKeywordSuggestions,
   getSelectableExperiences,
   createKeywordAnalysis,
-  getAnalysisStatus,
 } from "@/lib/analysis-api";
+import useAnalysisPolling from "@/hooks/useAnalysisPolling";
 import KeywordSelector from "@/components/features/analysis/KeywordSelector";
 import ExperienceSelector from "@/components/features/analysis/ExperienceSelector";
 
 type Phase = "select" | "loading" | "error";
 
 export default function KeywordNewPage() {
-  const router = useRouter();
   const [suggestions, setSuggestions] = useState<KeywordSuggestion[]>([]);
-  const [experiences, setExperiences] = useState<
-    { id: string; title: string; type: string; importance: number; isComplete: boolean }[]
-  >([]);
+  const [experiences, setExperiences] = useState<SelectableExperience[]>([]);
   const [selectedKeywords, setSelectedKeywords] = useState<
     { label: string; category: KeywordCategory }[]
   >([]);
@@ -31,58 +27,46 @@ export default function KeywordNewPage() {
   const [scenario, setScenario] = useState("");
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
-  const unmountedRef = useRef(false);
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
+
+  const { start: startPolling } = useAnalysisPolling({
+    analysisId,
+    redirectPath: "/analysis/keyword",
+    onFailed: (msg) => {
+      setPhase("error");
+      setErrorMsg(msg);
+    },
+    onTimeout: (msg) => {
+      setPhase("error");
+      setErrorMsg(msg);
+    },
+  });
 
   useEffect(() => {
     getKeywordSuggestions().then(setSuggestions);
     getSelectableExperiences().then(setExperiences);
-    return () => {
-      unmountedRef.current = true;
-    };
   }, []);
+
+  useEffect(() => {
+    if (analysisId && phase === "loading") {
+      startPolling();
+    }
+  }, [analysisId, phase, startPolling]);
 
   const startAnalysis = useCallback(async () => {
     setPhase("loading");
     try {
-      const { analysisId } = await createKeywordAnalysis({
+      const { analysisId: id } = await createKeywordAnalysis({
         keywords: selectedKeywords,
         experienceIds: scopeAll ? undefined : selectedExpIds,
         scenario: scenario || undefined,
       });
-
-      const poll = async (retries: number): Promise<void> => {
-        if (unmountedRef.current || retries <= 0) {
-          if (!unmountedRef.current) {
-            setPhase("error");
-            setErrorMsg("분석 시간이 초과되었습니다.");
-          }
-          return;
-        }
-        const { status } = await getAnalysisStatus(analysisId);
-        if (unmountedRef.current) return;
-        if (status === "completed") {
-          router.push(`/analysis/keyword/${analysisId}`);
-          return;
-        }
-        if (status === "failed") {
-          setPhase("error");
-          setErrorMsg("분석에 실패했습니다. 다시 시도해주세요.");
-          return;
-        }
-        await new Promise((r) => setTimeout(r, 3000));
-        if (!unmountedRef.current) {
-          return poll(retries - 1);
-        }
-      };
-
-      await poll(20);
+      setAnalysisId(id);
     } catch {
-      if (!unmountedRef.current) {
-        setPhase("error");
-        setErrorMsg("분석 요청에 실패했습니다.");
-      }
+      setPhase("error");
+      setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selectedKeywords, scopeAll, selectedExpIds, scenario, router]);
+  }, [selectedKeywords, scopeAll, selectedExpIds, scenario]);
 
   if (phase === "loading") {
     return (
@@ -96,8 +80,7 @@ export default function KeywordNewPage() {
           {Array.from({ length: 4 }).map((_, i) => (
             <div
               key={i}
-              className="h-12 bg-surface-secondary rounded-lg animate-pulse"
-              style={{ animationDelay: `${i * 150}ms` }}
+              className={`h-12 bg-surface-secondary rounded-lg animate-pulse [animation-delay:${i * 150}ms]`}
             />
           ))}
         </div>
@@ -107,7 +90,7 @@ export default function KeywordNewPage() {
 
   if (phase === "error") {
     return (
-      <div className="flex flex-col items-center justify-center py-24 px-4">
+      <div className="flex flex-col items-center justify-center py-24 px-4" role="alert">
         <h2 className="text-title text-text-primary mb-2">오류 발생</h2>
         <p className="text-body-sm text-text-secondary mb-4">{errorMsg}</p>
         <Button size="sm" onClick={() => setPhase("select")}>
@@ -118,7 +101,7 @@ export default function KeywordNewPage() {
   }
 
   return (
-    <div className="px-4 py-8 sm:px-8">
+    <main className="px-4 py-8 sm:px-8">
       <div className="max-w-3xl mx-auto space-y-6">
         <Link
           href="/analysis/keyword"
@@ -136,7 +119,7 @@ export default function KeywordNewPage() {
         </div>
 
         <section className="space-y-3">
-          <h3 className="text-title text-text-primary">키워드 선택</h3>
+          <h2 className="text-title text-text-primary">키워드 선택</h2>
           <KeywordSelector
             suggestions={suggestions}
             selected={selectedKeywords}
@@ -146,7 +129,7 @@ export default function KeywordNewPage() {
         </section>
 
         <section className="space-y-3">
-          <h3 className="text-title text-text-primary">분석 범위</h3>
+          <h2 className="text-title text-text-primary">분석 범위</h2>
           <fieldset className="flex items-center gap-4">
             <legend className="sr-only">분석 범위 선택</legend>
             <label className="flex items-center gap-2 cursor-pointer">
@@ -183,12 +166,12 @@ export default function KeywordNewPage() {
         </section>
 
         <section className="space-y-3">
-          <h3 className="text-title text-text-primary">
+          <h2 className="text-title text-text-primary">
             목표 시나리오{" "}
             <span className="text-caption text-text-tertiary font-normal">
               (선택)
             </span>
-          </h3>
+          </h2>
           <Input
             value={scenario}
             onChange={(e) => setScenario(e.target.value)}
@@ -206,6 +189,6 @@ export default function KeywordNewPage() {
           </Button>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

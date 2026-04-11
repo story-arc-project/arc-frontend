@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getIndividualAnalysisList } from "@/lib/analysis-api";
@@ -22,7 +22,7 @@ export default function IndividualAnalysisPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     setLoading(true);
     setError(false);
     getIndividualAnalysisList({ status: filter })
@@ -36,8 +36,12 @@ export default function IndividualAnalysisPage() {
       });
   }, [filter]);
 
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
   return (
-    <div className="px-4 py-8 sm:px-8">
+    <main className="px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-heading-2 text-text-primary">개별 경험 분석</h1>
@@ -46,28 +50,28 @@ export default function IndividualAnalysisPage() {
           </p>
         </div>
 
-        <FilterBar options={FILTERS} value={filter} onChange={setFilter} />
+        <FilterBar options={FILTERS} value={filter} onChange={setFilter} id="individual" />
 
         {error ? (
-          <div className="py-12 text-center">
+          <div className="py-12 text-center" role="alert">
             <p className="text-body text-text-secondary mb-3">
               데이터를 불러오지 못했습니다.
             </p>
             <button
               type="button"
-              onClick={() => setFilter(filter)}
+              onClick={loadData}
               className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
             >
               다시 시도
             </button>
           </div>
         ) : loading ? (
-          <div className="space-y-3">
+          <div className="space-y-3" aria-busy="true">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="bg-surface-secondary rounded-lg animate-pulse p-4 space-y-2">
-                <div className="h-4 w-48 bg-surface-tertiary rounded" />
-                <div className="h-3 w-64 bg-surface-tertiary rounded" />
-                <div className="h-3 w-24 bg-surface-tertiary rounded" />
+                <div className="h-4 w-2/5 bg-surface-tertiary rounded" />
+                <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
+                <div className="h-3 w-1/4 bg-surface-tertiary rounded" />
               </div>
             ))}
           </div>
@@ -81,7 +85,7 @@ export default function IndividualAnalysisPage() {
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3" role="tabpanel" id={`individual-panel-${filter}`} aria-labelledby={`individual-tab-${filter}`}>
             {items.map((item) => {
               const isPending = item.status === "pending";
               const displayStatus =
@@ -138,6 +142,6 @@ export default function IndividualAnalysisPage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }

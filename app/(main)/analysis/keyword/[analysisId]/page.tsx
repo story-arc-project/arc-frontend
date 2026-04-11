@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -20,22 +20,28 @@ import ImprovementGuideCard from "@/components/features/analysis/common/Improvem
 export default function KeywordDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
   const [data, setData] = useState<KeywordAnalysisResult | null>(null);
-  const [bookmarked, setBookmarked] = useState(false);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     getKeywordResult(analysisId)
-      .then((result) => {
-        setData(result);
-        setBookmarked(result.isBookmarked);
-      })
+      .then(setData)
       .catch(() => setError(true));
   }, [analysisId]);
 
+  const keywordRecGroups = useMemo(() => {
+    if (!data) return [];
+    return data.keywordDefinitions.map((def) => ({
+      label: def.label,
+      recommendations: data.keywordRecommendations.filter(
+        (r) => r.reason.includes(def.label)
+      ),
+    }));
+  }, [data]);
+
   if (error) {
     return (
-      <div className="px-4 py-8 sm:px-8">
-        <div className="max-w-4xl mx-auto flex flex-col items-center justify-center py-16">
+      <main className="px-4 py-8 sm:px-8">
+        <div className="max-w-4xl mx-auto flex flex-col items-center justify-center py-16" role="alert">
           <p className="text-body text-text-secondary mb-3">
             분석 결과를 불러오지 못했습니다.
           </p>
@@ -46,18 +52,18 @@ export default function KeywordDetailPage() {
             목록으로 돌아가기
           </Link>
         </div>
-      </div>
+      </main>
     );
   }
 
   if (!data) {
     return (
-      <div className="px-4 py-8 sm:px-8">
-        <div className="max-w-4xl mx-auto space-y-6">
+      <main className="px-4 py-8 sm:px-8">
+        <div className="max-w-4xl mx-auto space-y-6" aria-busy="true">
           <div className="h-4 w-20 bg-surface-secondary rounded animate-pulse" />
           <div className="space-y-2">
-            <div className="h-7 w-64 bg-surface-secondary rounded animate-pulse" />
-            <div className="h-4 w-48 bg-surface-tertiary rounded animate-pulse" />
+            <div className="h-7 w-3/5 bg-surface-secondary rounded animate-pulse" />
+            <div className="h-4 w-2/5 bg-surface-tertiary rounded animate-pulse" />
             <div className="flex gap-1.5">
               <div className="h-6 w-16 bg-surface-tertiary rounded-full animate-pulse" />
               <div className="h-6 w-20 bg-surface-tertiary rounded-full animate-pulse" />
@@ -65,25 +71,18 @@ export default function KeywordDetailPage() {
           </div>
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="bg-surface-secondary rounded-lg animate-pulse p-4 space-y-3">
-              <div className="h-5 w-40 bg-surface-tertiary rounded" />
+              <div className="h-5 w-2/5 bg-surface-tertiary rounded" />
               <div className="h-3 w-full bg-surface-tertiary rounded" />
               <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
             </div>
           ))}
         </div>
-      </div>
+      </main>
     );
   }
 
-  const keywordRecGroups = data.keywordDefinitions.map((def) => ({
-    label: def.label,
-    recommendations: data.keywordRecommendations.filter((r) =>
-      r.reason.includes(def.label)
-    ),
-  }));
-
   return (
-    <div className="px-4 py-8 sm:px-8">
+    <main className="px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-8">
         <Link
           href="/analysis/keyword"
@@ -108,8 +107,8 @@ export default function KeywordDetailPage() {
             </div>
           </div>
           <BookmarkToggle
-            isBookmarked={bookmarked}
-            onToggle={() => setBookmarked(!bookmarked)}
+            analysisId={data.id}
+            isBookmarked={data.isBookmarked}
           />
         </div>
 
@@ -118,7 +117,7 @@ export default function KeywordDetailPage() {
         <KeywordDefinitionSection definitions={data.keywordDefinitions} />
 
         <section className="space-y-3">
-          <h3 className="text-title text-text-primary">경험 선별 기준</h3>
+          <h2 className="text-title text-text-primary">경험 선별 기준</h2>
           <div className="bg-surface-secondary rounded-lg p-4">
             <p className="text-body-sm text-text-secondary leading-relaxed whitespace-pre-line">
               {data.selectionCriteria}
@@ -141,9 +140,9 @@ export default function KeywordDetailPage() {
         <KeywordFitSection evaluations={data.fitEvaluations} />
 
         <section className="space-y-6">
-          <h3 className="text-title text-text-primary">
+          <h2 className="text-title text-text-primary">
             보완 가이드 · 연계 활동 추천
-          </h3>
+          </h2>
 
           {data.improvementGuides.length > 0 && (
             <div className="space-y-2">
@@ -171,6 +170,6 @@ export default function KeywordDetailPage() {
           )}
         </section>
       </div>
-    </div>
+    </main>
   );
 }

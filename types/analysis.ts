@@ -303,6 +303,31 @@ export interface KeywordAnalysisResult {
   keywordRecommendations: ActivityRecommendation[];
 }
 
+// ─── Selectable Experience ─────────────────────────────────
+
+export interface SelectableExperience {
+  id: string;
+  title: string;
+  type: string;
+  importance: number;
+  isComplete: boolean;
+}
+
+// ─── Shared Constants ──────────────────────────────────────
+
+export const ANALYSIS_DETAIL_PATH: Record<AnalysisType, string> = {
+  individual: "/analysis/individual",
+  comprehensive: "/analysis/comprehensive",
+  keyword: "/analysis/keyword",
+};
+
+export const ANALYSIS_TYPE_FILTERS: { key: "all" | AnalysisType; label: string }[] = [
+  { key: "all", label: "전체" },
+  { key: "individual", label: "개별" },
+  { key: "comprehensive", label: "종합" },
+  { key: "keyword", label: "키워드" },
+];
+
 // ─── Analysis Home Summary ──────────────────────────────────
 
 export interface AnalysisHomeSummary {

@@ -19,22 +19,18 @@ import ConfidenceGuideSection from "@/components/features/analysis/sections/Conf
 export default function ComprehensiveDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
   const [data, setData] = useState<ComprehensiveAnalysisResult | null>(null);
-  const [bookmarked, setBookmarked] = useState(false);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     getComprehensiveResult(analysisId)
-      .then((result) => {
-        setData(result);
-        setBookmarked(result.isBookmarked);
-      })
+      .then(setData)
       .catch(() => setError(true));
   }, [analysisId]);
 
   if (error) {
     return (
-      <div className="px-4 py-8 sm:px-8">
-        <div className="max-w-4xl mx-auto flex flex-col items-center justify-center py-16">
+      <main className="px-4 py-8 sm:px-8">
+        <div className="max-w-4xl mx-auto flex flex-col items-center justify-center py-16" role="alert">
           <p className="text-body text-text-secondary mb-3">
             분석 결과를 불러오지 못했습니다.
           </p>
@@ -45,28 +41,28 @@ export default function ComprehensiveDetailPage() {
             목록으로 돌아가기
           </Link>
         </div>
-      </div>
+      </main>
     );
   }
 
   if (!data) {
     return (
-      <div className="px-4 py-8 sm:px-8">
-        <div className="max-w-4xl mx-auto space-y-6">
+      <main className="px-4 py-8 sm:px-8">
+        <div className="max-w-4xl mx-auto space-y-6" aria-busy="true">
           <div className="h-4 w-20 bg-surface-secondary rounded animate-pulse" />
           <div className="space-y-2">
-            <div className="h-7 w-64 bg-surface-secondary rounded animate-pulse" />
-            <div className="h-4 w-48 bg-surface-tertiary rounded animate-pulse" />
+            <div className="h-7 w-3/5 bg-surface-secondary rounded animate-pulse" />
+            <div className="h-4 w-2/5 bg-surface-tertiary rounded animate-pulse" />
           </div>
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="bg-surface-secondary rounded-lg animate-pulse p-4 space-y-3">
-              <div className="h-5 w-40 bg-surface-tertiary rounded" />
+              <div className="h-5 w-2/5 bg-surface-tertiary rounded" />
               <div className="h-3 w-full bg-surface-tertiary rounded" />
               <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
             </div>
           ))}
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -78,7 +74,7 @@ export default function ComprehensiveDetailPage() {
   }));
 
   return (
-    <div className="px-4 py-8 sm:px-8">
+    <main className="px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-8">
         <Link
           href="/analysis/comprehensive"
@@ -97,8 +93,8 @@ export default function ComprehensiveDetailPage() {
             </p>
           </div>
           <BookmarkToggle
-            isBookmarked={bookmarked}
-            onToggle={() => setBookmarked(!bookmarked)}
+            analysisId={data.id}
+            isBookmarked={data.isBookmarked}
           />
         </div>
 
@@ -131,6 +127,6 @@ export default function ComprehensiveDetailPage() {
           guides={data.confidenceGuide.improvementGuides}
         />
       </div>
-    </div>
+    </main>
   );
 }

@@ -1,5 +1,3 @@
-"use client";
-
 import { api } from "./api";
 import type {
   AnalysisHomeSummary,
@@ -10,6 +8,7 @@ import type {
   KeywordAnalysisResult,
   KeywordSuggestion,
   BookmarkedSnapshot,
+  SelectableExperience,
 } from "@/types/analysis";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
@@ -203,9 +202,7 @@ export function deleteAnalysis(analysisId: string): Promise<void> {
 
 // ─── Selectable Experiences ─────────────────────────────────
 
-export function getSelectableExperiences(): Promise<
-  { id: string; title: string; type: string; importance: number; isComplete: boolean }[]
-> {
+export function getSelectableExperiences(): Promise<SelectableExperience[]> {
   if (USE_MOCK)
     return mock(async () => (await mocks()).mockSelectableExperiences);
   return api.get("/api/analysis/experiences/selectable");

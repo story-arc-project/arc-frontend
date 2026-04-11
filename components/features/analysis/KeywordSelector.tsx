@@ -63,7 +63,12 @@ export default function KeywordSelector({
               className="inline-flex items-center gap-1.5 bg-surface-brand text-brand rounded-full px-3 py-1 text-label"
             >
               {kw.label}
-              <button type="button" onClick={() => remove(kw.label)} className="hover:text-brand-dark">
+              <button
+                type="button"
+                onClick={() => remove(kw.label)}
+                className="p-1 -m-0.5 min-w-[28px] min-h-[28px] flex items-center justify-center hover:text-brand-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-full"
+                aria-label={`${kw.label} 제거`}
+              >
                 <X size={12} />
               </button>
             </span>
@@ -134,7 +139,7 @@ export default function KeywordSelector({
             value={customCategory}
             onChange={(e) => setCustomCategory(e.target.value as KeywordCategory)}
             aria-label="키워드 카테고리"
-            className="px-3 py-2 text-body-sm border border-border rounded-md bg-surface text-text-primary appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23999%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat pr-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            className="px-3 py-2 min-h-[44px] text-body-sm border border-border rounded-md bg-surface text-text-primary appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23999%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat pr-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           >
             {CATEGORIES.map((c) => (
               <option key={c.key} value={c.key}>

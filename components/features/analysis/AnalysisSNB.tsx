@@ -62,7 +62,7 @@ export default function AnalysisSNB() {
                     : "text-text-secondary hover:text-text-primary hover:bg-surface-tertiary",
                 ].join(" ")}
               >
-                <Icon size={16} />
+                <Icon size={16} aria-hidden="true" />
                 {item.label}
               </Link>
             );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
@@ -16,7 +16,7 @@ export default function KeywordAnalysisPage() {
   const [error, setError] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  function loadData() {
+  const loadData = useCallback(() => {
     setLoading(true);
     setError(false);
     getKeywordList()
@@ -28,21 +28,25 @@ export default function KeywordAnalysisPage() {
         setError(true);
         setLoading(false);
       });
-  }
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   async function handleDelete() {
     if (!deleteId) return;
-    await deleteKeywordAnalysis(deleteId);
-    setItems((prev) => prev.filter((i) => i.id !== deleteId));
-    setDeleteId(null);
+    try {
+      await deleteKeywordAnalysis(deleteId);
+      setItems((prev) => prev.filter((i) => i.id !== deleteId));
+      setDeleteId(null);
+    } catch {
+      setDeleteId(null);
+    }
   }
 
   return (
-    <div className="px-4 py-8 sm:px-8">
+    <main className="px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -60,7 +64,7 @@ export default function KeywordAnalysisPage() {
         </div>
 
         {error ? (
-          <div className="py-12 text-center">
+          <div className="py-12 text-center" role="alert">
             <p className="text-body text-text-secondary mb-3">
               데이터를 불러오지 못했습니다.
             </p>
@@ -73,11 +77,11 @@ export default function KeywordAnalysisPage() {
             </button>
           </div>
         ) : loading ? (
-          <div className="space-y-3">
+          <div className="space-y-3" aria-busy="true">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="bg-surface-secondary rounded-lg animate-pulse p-4 space-y-2">
-                <div className="h-4 w-48 bg-surface-tertiary rounded" />
-                <div className="h-3 w-64 bg-surface-tertiary rounded" />
+                <div className="h-4 w-2/5 bg-surface-tertiary rounded" />
+                <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
                 <div className="flex gap-1.5 mt-1">
                   <div className="h-5 w-16 bg-surface-tertiary rounded-full" />
                   <div className="h-5 w-20 bg-surface-tertiary rounded-full" />
@@ -104,7 +108,7 @@ export default function KeywordAnalysisPage() {
                 <div className="flex items-start justify-between gap-3">
                   <Link
                     href={`/analysis/keyword/${item.id}`}
-                    className="flex-1 min-w-0 focus-visible:outline-none"
+                    className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
                   >
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <span className="text-body-sm text-text-primary font-medium">
@@ -128,8 +132,8 @@ export default function KeywordAnalysisPage() {
                   </Link>
                   <div className="flex items-center gap-1">
                     <BookmarkToggle
+                      analysisId={item.id}
                       isBookmarked={item.isBookmarked}
-                      onToggle={() => {}}
                       size="sm"
                     />
                     <button
@@ -166,6 +170,6 @@ export default function KeywordAnalysisPage() {
           </div>
         </Dialog>
       </div>
-    </div>
+    </main>
   );
 }

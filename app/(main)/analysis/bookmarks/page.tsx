@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import type { BookmarkedSnapshot, AnalysisType } from "@/types/analysis";
-import { analysisTypeLabel } from "@/types/analysis";
+import { analysisTypeLabel, ANALYSIS_DETAIL_PATH, ANALYSIS_TYPE_FILTERS } from "@/types/analysis";
 import { getBookmarks } from "@/lib/analysis-api";
 import { formatDate } from "@/lib/date-utils";
 import { Badge } from "@/components/ui";
@@ -12,18 +12,6 @@ import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle
 import FilterBar from "@/components/features/analysis/common/FilterBar";
 
 type FilterKey = "all" | AnalysisType;
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "all", label: "전체" },
-  { key: "individual", label: "개별" },
-  { key: "comprehensive", label: "종합" },
-  { key: "keyword", label: "키워드" },
-];
-
-const DETAIL_PATH: Record<AnalysisType, string> = {
-  individual: "/analysis/individual",
-  comprehensive: "/analysis/comprehensive",
-  keyword: "/analysis/keyword",
-};
 
 export default function BookmarksPage() {
   const [items, setItems] = useState<BookmarkedSnapshot[]>([]);
@@ -31,7 +19,7 @@ export default function BookmarksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     setLoading(true);
     setError(false);
     getBookmarks({ type: filter })
@@ -45,8 +33,12 @@ export default function BookmarksPage() {
       });
   }, [filter]);
 
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
   return (
-    <div className="px-4 py-8 sm:px-8">
+    <main className="px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-heading-2 text-text-primary">즐겨찾기</h1>
@@ -55,31 +47,31 @@ export default function BookmarksPage() {
           </p>
         </div>
 
-        <FilterBar options={FILTERS} value={filter} onChange={setFilter} />
+        <FilterBar options={ANALYSIS_TYPE_FILTERS} value={filter} onChange={setFilter} id="bookmarks" />
 
         {error ? (
-          <div className="py-12 text-center">
+          <div className="py-12 text-center" role="alert">
             <p className="text-body text-text-secondary mb-3">
               데이터를 불러오지 못했습니다.
             </p>
             <button
               type="button"
-              onClick={() => setFilter(filter)}
+              onClick={loadData}
               className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
             >
               다시 시도
             </button>
           </div>
         ) : loading ? (
-          <div className="space-y-3">
+          <div className="space-y-3" aria-busy="true">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="bg-surface-secondary rounded-lg animate-pulse p-4 space-y-2">
                 <div className="flex gap-2">
                   <div className="h-5 w-12 bg-surface-tertiary rounded-full" />
-                  <div className="h-5 w-40 bg-surface-tertiary rounded" />
+                  <div className="h-5 w-2/5 bg-surface-tertiary rounded" />
                 </div>
-                <div className="h-3 w-64 bg-surface-tertiary rounded" />
-                <div className="h-3 w-32 bg-surface-tertiary rounded" />
+                <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
+                <div className="h-3 w-1/3 bg-surface-tertiary rounded" />
               </div>
             ))}
           </div>
@@ -93,7 +85,7 @@ export default function BookmarksPage() {
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3" role="tabpanel" id={`bookmarks-panel-${filter}`} aria-labelledby={`bookmarks-tab-${filter}`}>
             {items.map((item) => (
               <div
                 key={item.id}
@@ -101,8 +93,8 @@ export default function BookmarksPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <Link
-                    href={`${DETAIL_PATH[item.type]}/${item.id}`}
-                    className="flex-1 min-w-0 focus-visible:outline-none"
+                    href={`${ANALYSIS_DETAIL_PATH[item.type]}/${item.id}`}
+                    className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
                   >
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <Badge variant="outline">
@@ -123,8 +115,9 @@ export default function BookmarksPage() {
                     </div>
                   </Link>
                   <BookmarkToggle
+                    analysisId={item.id}
                     isBookmarked={true}
-                    onToggle={() => {
+                    onToggled={() => {
                       setItems((prev) => prev.filter((p) => p.id !== item.id));
                     }}
                     size="sm"
@@ -135,6 +128,6 @@ export default function BookmarksPage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }
