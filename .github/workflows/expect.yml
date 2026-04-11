@@ -16,24 +16,30 @@ jobs:
       EXPECT_BASE_URL: "http://localhost:3000"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Start dev server
-        run: npm run dev &
+      - name: Build application
+        run: npm run build
 
-      - name: Wait for dev server
-        run: npx wait-on y --timeout 60000
+      - name: Start server
+        run: npm run start &
 
-      - name: Run expect
+      - name: Wait for server
+        run: npx wait-on http://localhost:3000 --timeout 60000
+
+      - name: Run expect tests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx expect-cli@latest --ci
+        run: npx expect-cli@latest --ci --target branch
 
       - name: Upload test artifacts
         if: always()
