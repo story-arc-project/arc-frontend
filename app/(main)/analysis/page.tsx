@@ -1,199 +1,301 @@
 "use client";
 
-import { useState } from "react";
-import { Filter, Tag, BarChart2, Clock } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
+import {
+  FileText,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  FileSearch,
+  Layers,
+  Tags,
+  ArrowRight,
+  BarChart3,
+  Lightbulb,
+} from "lucide-react";
+import type { AnalysisHomeSummary, AnalysisType } from "@/types/analysis";
+import { analysisTypeLabel, ANALYSIS_DETAIL_PATH } from "@/types/analysis";
+import { getAnalysisHomeSummary } from "@/lib/analysis-api";
+import { formatRelativeTime } from "@/lib/date-utils";
 import { Badge } from "@/components/ui";
+import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
+import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
-type ViewMode = "keywords" | "timeline";
-type FilterType = "전체" | "프로젝트" | "인턴" | "대외활동" | "수상" | "자격증";
-
-const FILTER_TYPES: FilterType[] = ["전체", "프로젝트", "인턴", "대외활동", "수상", "자격증"];
-
-const KEYWORD_DATA = [
-  { keyword: "기획", count: 9, category: "역량" },
-  { keyword: "협업", count: 8, category: "역량" },
-  { keyword: "UX 리서치", count: 6, category: "역량" },
-  { keyword: "데이터 분석", count: 5, category: "역량" },
-  { keyword: "리더십", count: 5, category: "역량" },
-  { keyword: "발표·커뮤니케이션", count: 4, category: "역량" },
-  { keyword: "Python", count: 4, category: "기술" },
-  { keyword: "Figma", count: 3, category: "기술" },
-  { keyword: "사용자 인터뷰", count: 3, category: "방법론" },
-  { keyword: "애자일", count: 2, category: "방법론" },
+const STAT_ICONS = [FileText, CheckCircle, Clock, AlertTriangle] as const;
+const STAT_COLORS = [
+  "text-brand",
+  "text-success",
+  "text-text-secondary",
+  "text-warning",
 ];
 
-const EXPERIENCES = [
-  { id: "1", title: "UX 리서치 인턴십", type: "인턴" as FilterType, date: "2024.07", tags: ["UX", "리서치", "협업"], summary: "스타트업에서 앱 사용자 인터뷰 설계 및 분석을 주도했습니다." },
-  { id: "2", title: "캡스톤 디자인 프로젝트", type: "프로젝트" as FilterType, date: "2024.03", tags: ["기획", "팀리더", "발표"], summary: "6인 팀 리더로서 서비스 기획부터 프로토타입까지 총괄했습니다." },
-  { id: "3", title: "교내 창업 경진대회 금상", type: "수상" as FilterType, date: "2023.11", tags: ["수상", "아이디어"], summary: "사회문제 해결형 비즈니스 모델 기획으로 금상을 수상했습니다." },
-  { id: "4", title: "데이터 분석 대외활동", type: "대외활동" as FilterType, date: "2023.09", tags: ["데이터 분석", "Python"], summary: "공공데이터를 활용한 분석 프로젝트를 수행했습니다." },
-  { id: "5", title: "SQLD 자격증 취득", type: "자격증" as FilterType, date: "2023.06", tags: ["SQL", "DB"], summary: "데이터베이스 설계 및 쿼리 역량을 검증받았습니다." },
+const QUICK_ACTIONS = [
+  {
+    href: "/analysis/individual",
+    icon: FileSearch,
+    title: "개별 분석 보기",
+    desc: "경험 하나하나의 역량과 강점을 분석합니다.",
+  },
+  {
+    href: "/analysis/comprehensive/new",
+    icon: Layers,
+    title: "종합 분석 시작",
+    desc: "여러 경험을 묶어 일관된 스토리라인을 만듭니다.",
+  },
+  {
+    href: "/analysis/keyword/new",
+    icon: Tags,
+    title: "키워드 분석 시작",
+    desc: "특정 키워드에 부합하는 경험을 찾아 분석합니다.",
+  },
 ];
 
-const TIMELINE_MONTHS = [
-  { month: "2024.07", items: ["UX 리서치 인턴십"] },
-  { month: "2024.03", items: ["캡스톤 디자인 프로젝트"] },
-  { month: "2023.11", items: ["교내 창업 경진대회 금상"] },
-  { month: "2023.09", items: ["데이터 분석 대외활동"] },
-  { month: "2023.06", items: ["SQLD 자격증 취득"] },
+type TabKey = "individual" | "comprehensive" | "keyword";
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "individual", label: "개별" },
+  { key: "comprehensive", label: "종합" },
+  { key: "keyword", label: "키워드" },
 ];
 
-const MAX_KEYWORD_COUNT = Math.max(...KEYWORD_DATA.map((k) => k.count));
+export default function AnalysisHomePage() {
+  const [data, setData] = useState<AnalysisHomeSummary | null>(null);
+  const [error, setError] = useState(false);
+  const [tab, setTab] = useState<TabKey>("individual");
 
-export default function AnalysisPage() {
-  const [view, setView] = useState<ViewMode>("keywords");
-  const [activeFilter, setActiveFilter] = useState<FilterType>("전체");
+  const loadData = useCallback(() => {
+    setError(false);
+    getAnalysisHomeSummary()
+      .then(setData)
+      .catch(() => setError(true));
+  }, []);
 
-  const filtered = activeFilter === "전체"
-    ? EXPERIENCES
-    : EXPERIENCES.filter((e) => e.type === activeFilter);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
-  return (
-    <div className="min-h-[calc(100dvh-var(--gnb-h))] bg-surface px-4 py-8 sm:px-8">
-      <div className="max-w-4xl mx-auto space-y-8">
-
-        {/* Header */}
-        <div>
-          <h1 className="text-heading-2 text-text-primary">커리어 분석</h1>
-          <p className="text-body text-text-secondary mt-1">기록된 경험에서 패턴과 역량을 발견해요.</p>
+  if (error) {
+    return (
+      <main className="px-4 py-8 sm:px-8">
+        <div className="max-w-5xl mx-auto flex flex-col items-center justify-center py-16" role="alert">
+          <p className="text-body text-text-secondary mb-3">
+            데이터를 불러오지 못했습니다.
+          </p>
+          <button
+            type="button"
+            onClick={loadData}
+            className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+          >
+            다시 시도
+          </button>
         </div>
+      </main>
+    );
+  }
 
-        {/* View toggle + filter */}
-        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-          <div className="flex border border-border rounded-lg overflow-hidden">
-            <button
-              onClick={() => setView("keywords")}
-              className={[
-                "flex items-center gap-1.5 px-3 py-2 text-label transition-colors",
-                view === "keywords"
-                  ? "bg-brand text-white"
-                  : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary",
-              ].join(" ")}
-            >
-              <Tag size={14} />
-              키워드
-            </button>
-            <button
-              onClick={() => setView("timeline")}
-              className={[
-                "flex items-center gap-1.5 px-3 py-2 text-label transition-colors border-l border-border",
-                view === "timeline"
-                  ? "bg-brand text-white"
-                  : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary",
-              ].join(" ")}
-            >
-              <Clock size={14} />
-              타임라인
-            </button>
+  if (!data) {
+    return (
+      <main className="px-4 py-8 sm:px-8">
+        <div className="max-w-5xl mx-auto space-y-6" aria-busy="true">
+          <div className="h-8 w-2/5 bg-surface-secondary rounded animate-pulse" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-24 bg-surface-secondary rounded-lg animate-pulse" />
+            ))}
           </div>
-
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <Filter size={13} className="text-text-tertiary" />
-            {FILTER_TYPES.map((f) => (
-              <button
-                key={f}
-                onClick={() => setActiveFilter(f)}
-                className={[
-                  "text-label px-2.5 py-1 rounded-md border transition-colors",
-                  activeFilter === f
-                    ? "border-brand bg-surface-brand text-brand"
-                    : "border-border text-text-secondary hover:border-border-strong hover:text-text-primary",
-                ].join(" ")}
-              >
-                {f}
-              </button>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-28 bg-surface-secondary rounded-lg animate-pulse" />
             ))}
           </div>
         </div>
+      </main>
+    );
+  }
 
-        {/* View: Keywords */}
-        {view === "keywords" && (
-          <div className="space-y-6">
-            {/* Keyword frequency chart */}
-            <div className="bg-surface border border-border rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-5">
-                <BarChart2 size={15} className="text-text-secondary" />
-                <h2 className="text-title text-text-primary">역량 키워드 빈도</h2>
-              </div>
-              <div className="space-y-2.5">
-                {KEYWORD_DATA.map(({ keyword, count, category }) => (
-                  <div key={keyword} className="flex items-center gap-3">
-                    <span className="text-body-sm text-text-secondary w-36 shrink-0 truncate">{keyword}</span>
-                    <div className="flex-1 h-2 bg-surface-secondary rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-brand rounded-full"
-                        style={{ width: `${(count / MAX_KEYWORD_COUNT) * 100}%` }}
-                      />
-                    </div>
-                    <span className="text-label text-text-tertiary w-8 text-right shrink-0">{count}</span>
-                    <Badge variant="default">{category}</Badge>
-                  </div>
-                ))}
-              </div>
-            </div>
+  const statItems = [
+    { label: "전체 경험", value: data.stats.totalExperiences },
+    { label: "분석 완료", value: data.stats.analysisCompleted },
+    { label: "최근 분석", value: formatRelativeTime(data.stats.lastAnalysisAt) },
+    { label: "보완 필요", value: data.stats.improvementNeeded },
+  ];
 
-            {/* Experience list */}
-            <div className="bg-surface border border-border rounded-xl p-5">
-              <h2 className="text-title text-text-primary mb-4">
-                경험 목록
-                <span className="text-body-sm text-text-tertiary font-normal ml-2">{filtered.length}개</span>
-              </h2>
-              <div className="divide-y divide-border">
-                {filtered.map((exp) => (
-                  <div key={exp.id} className="py-4 first:pt-0 last:pb-0">
-                    <div className="flex items-start gap-3">
-                      <Badge variant="default" className="mt-0.5 shrink-0">{exp.type}</Badge>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-body-sm text-text-primary font-medium">{exp.title}</span>
-                          <span className="text-caption text-text-tertiary">{exp.date}</span>
-                        </div>
-                        <p className="text-body-sm text-text-secondary mt-1 leading-relaxed">{exp.summary}</p>
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {exp.tags.map((tag) => (
-                            <span key={tag} className="text-caption text-text-secondary bg-surface-secondary px-1.5 py-0.5 rounded">
-                              #{tag}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+  const recentMap: Record<TabKey, typeof data.recentIndividual> = {
+    individual: data.recentIndividual,
+    comprehensive: data.recentComprehensive,
+    keyword: data.recentKeyword,
+  };
+
+  return (
+    <main className="px-4 py-8 sm:px-8">
+      <div className="max-w-5xl mx-auto space-y-8">
+        {/* Header */}
+        <div>
+          <h1 className="text-heading-2 text-text-primary">분석 홈</h1>
+          <p className="text-body text-text-secondary mt-1">
+            기록된 경험에서 패턴과 역량을 발견해요.
+          </p>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
+          {statItems.map((item, i) => {
+            const Icon = STAT_ICONS[i];
+            return (
+              <div
+                key={item.label}
+                className="bg-surface border border-border rounded-lg p-4 flex items-center gap-3"
+              >
+                <div className={`p-2 rounded-md bg-surface-secondary ${STAT_COLORS[i]}`}>
+                  <Icon size={18} aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-heading-3 text-text-primary leading-none">
+                    {item.value}
+                  </p>
+                  <p className="text-caption text-text-tertiary mt-1">
+                    {item.label}
+                  </p>
+                </div>
               </div>
+            );
+          })}
+        </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
+          {QUICK_ACTIONS.map((action) => (
+            <Link
+              key={action.href}
+              href={action.href}
+              className="group bg-surface border border-border rounded-lg p-5 hover:border-brand transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <action.icon size={18} className="text-brand" aria-hidden="true" />
+                <h3 className="text-title text-text-primary">
+                  {action.title}
+                </h3>
+              </div>
+              <p className="text-body-sm text-text-secondary leading-relaxed">
+                {action.desc}
+              </p>
+              <span className="inline-flex items-center gap-1 mt-3 text-caption text-brand font-medium group-hover:gap-2 transition-all">
+                시작하기 <ArrowRight size={12} aria-hidden="true" />
+              </span>
+            </Link>
+          ))}
+        </div>
+
+        {/* Recent Results */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-title text-text-primary">최근 분석 결과</h2>
+            <div className="flex border border-border rounded-md overflow-hidden" role="tablist" aria-label="분석 유형">
+              {TABS.map((t) => (
+                <button
+                  key={t.key}
+                  id={`recent-tab-${t.key}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === t.key}
+                  aria-controls={`recent-panel-${t.key}`}
+                  onClick={() => setTab(t.key)}
+                  className={[
+                    "px-3 py-1.5 text-label transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset",
+                    tab === t.key
+                      ? "bg-brand text-white"
+                      : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary",
+                  ].join(" ")}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
           </div>
-        )}
 
-        {/* View: Timeline */}
-        {view === "timeline" && (
-          <div className="bg-surface border border-border rounded-xl p-5">
-            <h2 className="text-title text-text-primary mb-6">경험 타임라인</h2>
-            <div className="relative pl-4">
-              {/* vertical line */}
-              <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
-              <div className="space-y-6">
-                {TIMELINE_MONTHS.map(({ month, items }) => (
-                  <div key={month} className="relative flex gap-4 items-start">
-                    <div className="w-3 h-3 rounded-full bg-brand border-2 border-surface shrink-0 mt-0.5 z-10" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-label text-text-tertiary mb-1.5">{month}</p>
-                      <div className="space-y-1.5">
-                        {items.map((item) => (
-                          <div key={item} className="bg-surface-secondary border border-border rounded-lg px-3 py-2">
-                            <span className="text-body-sm text-text-primary">{item}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+          <div className="space-y-3" role="tabpanel" id={`recent-panel-${tab}`} aria-labelledby={`recent-tab-${tab}`}>
+            {recentMap[tab].length === 0 ? (
+              <div className="py-12 text-center">
+                <p className="text-body text-text-tertiary">
+                  아직 분석 결과가 없습니다.
+                </p>
+                <p className="text-body-sm text-text-tertiary mt-1">
+                  경험을 기록하고 분석을 시작해보세요.
+                </p>
               </div>
-            </div>
+            ) : (
+              recentMap[tab].map((snapshot) => (
+                <div
+                  key={snapshot.id}
+                  className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <Link
+                      href={`${ANALYSIS_DETAIL_PATH[snapshot.type]}/${snapshot.id}`}
+                      className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
+                    >
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <Badge variant="outline">
+                          {analysisTypeLabel[snapshot.type]}
+                        </Badge>
+                        <span className="text-body-sm text-text-primary font-medium truncate">
+                          {snapshot.title}
+                        </span>
+                      </div>
+                      <p className="text-body-sm text-text-secondary line-clamp-1">
+                        {snapshot.summaryText}
+                      </p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <ConfidenceBadge confidence={snapshot.overallConfidence} />
+                        <span className="text-caption text-text-tertiary">
+                          {formatRelativeTime(snapshot.createdAt)}
+                        </span>
+                      </div>
+                    </Link>
+                    <BookmarkToggle
+                      analysisId={snapshot.id}
+                      isBookmarked={snapshot.isBookmarked}
+                      size="sm"
+                    />
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-        )}
+        </section>
 
+        {/* Placeholders */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="bg-surface-secondary border border-border rounded-lg p-6 flex flex-col items-center justify-center text-center">
+            <BarChart3 size={24} className="text-text-tertiary mb-2" aria-hidden="true" />
+            <p className="text-body-sm text-text-tertiary">
+              시각화 차트 — 준비 중
+            </p>
+          </div>
+          <div className="bg-surface-secondary border border-border rounded-lg p-6 flex flex-col items-center justify-center text-center">
+            <Lightbulb size={24} className="text-text-tertiary mb-2" aria-hidden="true" />
+            <p className="text-body-sm text-text-tertiary">
+              추천 — 준비 중
+            </p>
+          </div>
+        </div>
+
+        {/* Bottom Links */}
+        <div className="flex items-center gap-4 pt-2">
+          <Link
+            href="/analysis/history"
+            className="text-body-sm text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+          >
+            전체 결과 보기 &rarr;
+          </Link>
+          <Link
+            href="/analysis/bookmarks"
+            className="text-body-sm text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+          >
+            즐겨찾기 바로가기 &rarr;
+          </Link>
+        </div>
       </div>
-    </div>
+    </main>
   );
 }
