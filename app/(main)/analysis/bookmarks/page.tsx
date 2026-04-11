@@ -1,0 +1,137 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import type { BookmarkedSnapshot, AnalysisType } from "@/types/analysis";
+import { analysisTypeLabel } from "@/types/analysis";
+import { getBookmarks } from "@/lib/analysis-api";
+import { Badge } from "@/components/ui";
+import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
+import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
+
+type FilterKey = "all" | AnalysisType;
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "all", label: "전체" },
+  { key: "individual", label: "개별" },
+  { key: "comprehensive", label: "종합" },
+  { key: "keyword", label: "키워드" },
+];
+
+const DETAIL_PATH: Record<AnalysisType, string> = {
+  individual: "/analysis/individual",
+  comprehensive: "/analysis/comprehensive",
+  keyword: "/analysis/keyword",
+};
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export default function BookmarksPage() {
+  const [items, setItems] = useState<BookmarkedSnapshot[]>([]);
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    getBookmarks({ type: filter }).then((data) => {
+      setItems(data);
+      setLoading(false);
+    });
+  }, [filter]);
+
+  return (
+    <div className="px-4 py-8 sm:px-8">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-heading-2 text-text-primary">즐겨찾기</h1>
+          <p className="text-body text-text-secondary mt-1">
+            저장한 분석 결과를 모아볼 수 있어요.
+          </p>
+        </div>
+
+        {/* Filter */}
+        <div className="flex items-center gap-1.5">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              className={[
+                "px-3 py-1.5 rounded-md text-label transition-colors",
+                filter === f.key
+                  ? "bg-brand text-white"
+                  : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary border border-border",
+              ].join(" ")}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* List */}
+        {loading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-20 bg-surface-secondary rounded-lg animate-pulse" />
+            ))}
+          </div>
+        ) : items.length === 0 ? (
+          <div className="py-16 text-center">
+            <p className="text-body text-text-tertiary">
+              아직 즐겨찾기한 분석이 없습니다.
+            </p>
+            <p className="text-body-sm text-text-tertiary mt-1">
+              분석 결과에서 &#9733;를 눌러 저장해보세요.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {items.map((item) => (
+              <div
+                key={item.id}
+                className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <Link
+                    href={`${DETAIL_PATH[item.type]}/${item.id}`}
+                    className="flex-1 min-w-0"
+                  >
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <Badge variant="outline">
+                        {analysisTypeLabel[item.type]}
+                      </Badge>
+                      <span className="text-body-sm text-text-primary font-medium">
+                        {item.title}
+                      </span>
+                    </div>
+                    <p className="text-body-sm text-text-secondary line-clamp-2">
+                      {item.summaryText}
+                    </p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <ConfidenceBadge confidence={item.overallConfidence} />
+                      <span className="text-caption text-text-tertiary">
+                        저장: {formatDate(item.bookmarkedAt)}
+                      </span>
+                    </div>
+                  </Link>
+                  <BookmarkToggle
+                    isBookmarked={true}
+                    onToggle={() => {
+                      setItems((prev) => prev.filter((p) => p.id !== item.id));
+                    }}
+                    size="sm"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
