@@ -210,7 +210,7 @@ export function ExperienceForm({
     const now = new Date().toISOString();
     const saved: ExperienceWithFolder = {
       id: initialExperience?.id ?? `exp-${Date.now()}`,
-      user_id: initialExperience?.user_id ?? "mock",
+      user_id: initialExperience?.user_id ?? "",
       templates_id: selectedTemplate.id,
       folderId: selectedFolderId,
       raw_text: [...mainFields, ...qualFields, ...customRaw],

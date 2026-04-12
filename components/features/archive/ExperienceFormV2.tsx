@@ -289,7 +289,7 @@ export default function ExperienceFormV2({
     const now = new Date().toISOString()
     const experience: ExperienceV2 = {
       id: initialExperience?.id ?? uid("exp"),
-      userId: initialExperience?.userId ?? "mock",
+      userId: initialExperience?.userId ?? "",
       typeId,
       title,
       summary,

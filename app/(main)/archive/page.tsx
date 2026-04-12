@@ -12,7 +12,8 @@ import ExperienceCard from "@/components/features/archive/ExperienceCard"
 import RightPanelV2 from "@/components/features/archive/RightPanelV2"
 import type { ArchiveModeV2 } from "@/components/features/archive/RightPanelV2"
 import type { ExperienceV2, Library } from "@/types/archive"
-import { MOCK_EXPERIENCES_V2, MOCK_LIBRARIES } from "@/lib/mock-data"
+import { useExperiences } from "@/hooks/useExperiences"
+import { toExperienceV2, toSavePayload } from "@/lib/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { cloneBlocks, uid } from "@/lib/block-utils"
 import { usePresets } from "@/hooks/usePresets"
@@ -35,8 +36,20 @@ export default function ArchivePage() {
 
   const [middleCollapsed, setMiddleCollapsed] = useState(false)
 
-  const [experiences, setExperiences] = useState<ExperienceV2[]>(MOCK_EXPERIENCES_V2)
-  const [libraries, setLibraries] = useState<Library[]>(MOCK_LIBRARIES)
+  const {
+    experiences: apiExperiences,
+    isLoading,
+    createExperience: apiCreate,
+    updateExperience: apiUpdate,
+    deleteExperience: apiDelete,
+  } = useExperiences()
+
+  const experiences = apiExperiences.map(toExperienceV2)
+
+  const defaultLibraries: Library[] = [
+    { id: "lib-all", name: "전체", isSystem: true, experienceIds: [] },
+  ]
+  const [libraries, setLibraries] = useState<Library[]>(defaultLibraries)
   const [activeLibraryId, setActiveLibraryId] = useState("lib-all")
   const presetsHook = usePresets()
 
@@ -99,22 +112,23 @@ export default function ArchivePage() {
 
   // ── CRUD ──────────────────────────────────────────────────────────
   const handleSave = useCallback(
-    (exp: ExperienceV2) => {
-      setExperiences(prev => {
-        const exists = prev.some(e => e.id === exp.id)
-        return exists ? prev.map(e => (e.id === exp.id ? exp : e)) : [...prev, exp]
-      })
-      setSelectedId(exp.id)
+    async (exp: ExperienceV2) => {
+      const payload = toSavePayload(exp)
+      const exists = experiences.some(e => e.id === exp.id)
+      const saved = exists
+        ? await apiUpdate(exp.id, payload)
+        : await apiCreate(payload)
+      setSelectedId(saved.id)
       setMode("detail")
       setHasUnsaved(false)
-      router.push(`/archive?id=${exp.id}`, { scroll: false })
+      router.push(`/archive?id=${saved.id}`, { scroll: false })
     },
-    [router]
+    [experiences, apiCreate, apiUpdate, router]
   )
 
   const handleDelete = useCallback(
-    (id: string) => {
-      setExperiences(prev => prev.filter(e => e.id !== id))
+    async (id: string) => {
+      await apiDelete(id)
       setLibraries(prev =>
         prev.map(lib =>
           lib.isSystem ? lib : { ...lib, experienceIds: lib.experienceIds.filter(eid => eid !== id) }
@@ -126,12 +140,11 @@ export default function ArchivePage() {
       setHasUnsaved(false)
       router.push("/archive", { scroll: false })
     },
-    [router]
+    [apiDelete, router]
   )
 
   const handleDuplicate = useCallback(
-    (exp: ExperienceV2) => {
-      const now = new Date().toISOString()
+    async (exp: ExperienceV2) => {
       const clone: ExperienceV2 = {
         ...exp,
         id: uid("exp"),
@@ -140,15 +153,14 @@ export default function ArchivePage() {
         coreBlocks: cloneBlocks(exp.coreBlocks),
         extensionBlocks: cloneBlocks(exp.extensionBlocks),
         customBlocks: cloneBlocks(exp.customBlocks),
-        createdAt: now,
-        updatedAt: now,
       }
-      setExperiences(prev => [...prev, clone])
-      setSelectedId(clone.id)
+      const payload = toSavePayload(clone)
+      const created = await apiCreate(payload)
+      setSelectedId(created.id)
       setMode("detail")
-      router.push(`/archive?id=${clone.id}`, { scroll: false })
+      router.push(`/archive?id=${created.id}`, { scroll: false })
     },
-    [router]
+    [apiCreate, router]
   )
 
   const handleCancel = useCallback(() => {
@@ -267,7 +279,11 @@ export default function ArchivePage() {
         onSaveAsLibrary={handleSaveAsLibrary}
       />
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
-        {filteredExperiences.length === 0 ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center py-16 text-text-tertiary">
+            <p className="text-body">불러오는 중…</p>
+          </div>
+        ) : filteredExperiences.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-text-tertiary">
             <p className="text-body">경험이 없습니다</p>
             <button

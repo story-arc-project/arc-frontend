@@ -3,7 +3,6 @@
 import { useState, useCallback } from "react"
 import type { Preset, Block, ExperienceTypeId } from "@/types/archive"
 import { uid, cloneBlocks } from "@/lib/block-utils"
-import { MOCK_PRESETS } from "@/lib/mock-data"
 
 export interface UsePresetsReturn {
   presets: Preset[]
@@ -15,7 +14,7 @@ export interface UsePresetsReturn {
 }
 
 export function usePresets(): UsePresetsReturn {
-  const [presets, setPresets] = useState<Preset[]>(MOCK_PRESETS)
+  const [presets, setPresets] = useState<Preset[]>([])
 
   const createPreset = useCallback(
     (
