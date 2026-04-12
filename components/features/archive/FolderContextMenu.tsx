@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useCallback, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useCallback, type KeyboardEvent } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 
 interface FolderContextMenuProps {
@@ -18,11 +18,6 @@ export function FolderContextMenu({
 }: FolderContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const itemsRef = useRef<HTMLButtonElement[]>([]);
-  const [pos, setPos] = useState<{ top: number; left: number; visibility: "hidden" | "visible" }>({
-    top: anchorRect.bottom + 4,
-    left: anchorRect.right,
-    visibility: "hidden",
-  });
 
   const setItemRef = useCallback((el: HTMLButtonElement | null, idx: number) => {
     if (el) itemsRef.current[idx] = el;
@@ -30,8 +25,9 @@ export function FolderContextMenu({
 
   // Position menu within viewport, right-aligned to the anchor button
   useLayoutEffect(() => {
-    if (!menuRef.current) return;
-    const rect = menuRef.current.getBoundingClientRect();
+    const menu = menuRef.current;
+    if (!menu) return;
+    const rect = menu.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     let left = anchorRect.right - rect.width;
@@ -39,7 +35,9 @@ export function FolderContextMenu({
     if (left < 8) left = 8;
     if (left + rect.width > vw - 8) left = vw - rect.width - 8;
     if (top + rect.height > vh - 8) top = anchorRect.top - rect.height - 4;
-    setPos({ top, left, visibility: "visible" });
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+    menu.style.visibility = "visible";
   }, [anchorRect]);
 
   // Auto-focus first item on mount
@@ -92,7 +90,7 @@ export function FolderContextMenu({
       ref={menuRef}
       role="menu"
       aria-label="폴더 메뉴"
-      style={pos}
+      style={{ top: anchorRect.bottom + 4, left: anchorRect.right, visibility: "hidden" }}
       className="fixed z-50 bg-surface border border-border rounded-lg shadow-md py-1 min-w-[130px]"
       onKeyDown={handleKeyDown}
     >

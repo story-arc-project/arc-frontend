@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Dialog } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -53,8 +53,11 @@ export default function BlockEditModal({
   const [tableColumns, setTableColumns] = useState<string[]>(initialConfig?.tableColumns ?? [])
   const [newTableCol, setNewTableCol] = useState("")
 
-  // Reset state when modal opens with new config
-  useEffect(() => {
+  // Reset state when modal opens with new config (adjust state during render)
+  const [prevResetKey, setPrevResetKey] = useState("")
+  const resetKey = open ? `${blockType}-${initialConfig?.label ?? ""}` : ""
+  if (resetKey !== prevResetKey) {
+    setPrevResetKey(resetKey)
     if (open) {
       setLabel(initialConfig?.label ?? "")
       setPlaceholder(initialConfig?.placeholder ?? "")
@@ -65,7 +68,7 @@ export default function BlockEditModal({
       setTableColumns(initialConfig?.tableColumns ?? [])
       setNewTableCol("")
     }
-  }, [open, blockType, initialConfig])
+  }
 
   const handleConfirm = () => {
     if (!label.trim()) return

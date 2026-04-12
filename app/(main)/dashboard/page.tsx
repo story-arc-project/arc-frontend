@@ -51,9 +51,9 @@ export default function DashboardPage() {
             <span className="text-label text-brand font-semibold">AI 아이덴티티 요약</span>
           </div>
           <p className="text-body text-text-primary leading-relaxed">
-            "사람과 문제 사이에서 인사이트를 찾는{" "}
+            &ldquo;사람과 문제 사이에서 인사이트를 찾는{" "}
             <span className="text-brand font-semibold">기획·리서치 지향 인재</span>. 팀 내 커뮤니케이션과 사용자
-            중심 분석 경험이 풍부하며, 창업과 디자인 영역까지 확장 중입니다."
+            중심 분석 경험이 풍부하며, 창업과 디자인 영역까지 확장 중입니다.&rdquo;
           </p>
           <p className="text-caption text-text-tertiary mt-3">12개 경험 기반 · 최근 업데이트 2일 전</p>
         </div>

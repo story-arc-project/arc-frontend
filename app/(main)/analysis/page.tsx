@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -14,7 +14,7 @@ import {
   BarChart3,
   Lightbulb,
 } from "lucide-react";
-import type { AnalysisHomeSummary, AnalysisType } from "@/types/analysis";
+import type { AnalysisHomeSummary } from "@/types/analysis";
 import { analysisTypeLabel, ANALYSIS_DETAIL_PATH } from "@/types/analysis";
 import { getAnalysisHomeSummary } from "@/lib/analysis-api";
 import { formatRelativeTime } from "@/lib/date-utils";
@@ -62,17 +62,15 @@ export default function AnalysisHomePage() {
   const [data, setData] = useState<AnalysisHomeSummary | null>(null);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabKey>("individual");
-
-  const loadData = useCallback(() => {
-    setError(false);
-    getAnalysisHomeSummary()
-      .then(setData)
-      .catch(() => setError(true));
-  }, []);
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    let ignore = false;
+    getAnalysisHomeSummary()
+      .then((result) => { if (!ignore) { setData(result); setError(false); } })
+      .catch(() => { if (!ignore) setError(true); });
+    return () => { ignore = true; };
+  }, [retryKey]);
 
   if (error) {
     return (
@@ -83,7 +81,7 @@ export default function AnalysisHomePage() {
           </p>
           <button
             type="button"
-            onClick={loadData}
+            onClick={() => setRetryKey((k) => k + 1)}
             className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
           >
             다시 시도

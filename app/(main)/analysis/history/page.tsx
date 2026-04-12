@@ -83,18 +83,17 @@ export default function HistoryPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(false);
-    getAnalysisHistory({ type: filter, sort })
-      .then((data) => {
-        setItems(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError(true);
-        setLoading(false);
-      });
+    try {
+      const data = await getAnalysisHistory({ type: filter, sort });
+      setItems(data);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
   }, [filter, sort]);
 
   useEffect(() => {

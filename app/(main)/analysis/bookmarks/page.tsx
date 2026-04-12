@@ -19,18 +19,17 @@ export default function BookmarksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(false);
-    getBookmarks({ type: filter })
-      .then((data) => {
-        setItems(data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError(true);
-        setLoading(false);
-      });
+    try {
+      const data = await getBookmarks({ type: filter });
+      setItems(data);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
   }, [filter]);
 
   useEffect(() => {
