@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+import AuthProvider from "@/contexts/AuthContext";
+
 export const metadata: Metadata = {
   title: "ARC",
   description: "포트폴리오 아카이빙 및 AI 연계 자동화 플랫폼",
@@ -20,7 +22,9 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col">
-        {children}
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );
