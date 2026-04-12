@@ -39,7 +39,7 @@ jobs:
       - name: Run expect tests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx expect-cli@latest --ci --target branch
+        run: npx -y expect-cli@latest --yes --no-cookies --target branch --url "$EXPECT_BASE_URL"
 
       - name: Upload test artifacts
         if: always()

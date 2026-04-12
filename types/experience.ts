@@ -21,8 +21,13 @@ export interface ExperienceListData {
   contents: Experience[];
 }
 
-// 생성/수정 요청 body
+// 생성 요청 body
 export interface ExperienceSavePayload {
   type: string;
+  content: Record<string, unknown>;
+}
+
+// 수정 요청 body (type 제외)
+export interface ExperienceUpdatePayload {
   content: Record<string, unknown>;
 }

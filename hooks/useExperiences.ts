@@ -8,7 +8,7 @@ import {
   updateExperience as apiUpdateExperience,
   deleteExperience as apiDeleteExperience,
 } from "@/lib/api";
-import type { Experience, ExperienceSavePayload } from "@/types/experience";
+import type { Experience, ExperienceSavePayload, ExperienceUpdatePayload } from "@/types/experience";
 
 export function useExperiences() {
   const [experiences, setExperiences] = useState<Experience[]>([]);
@@ -44,7 +44,7 @@ export function useExperiences() {
   );
 
   const updateExperience = useCallback(
-    async (id: string, payload: ExperienceSavePayload): Promise<Experience> => {
+    async (id: string, payload: ExperienceUpdatePayload): Promise<Experience> => {
       const updated = await apiUpdateExperience(id, payload);
       await refetch();
       return updated;

@@ -116,7 +116,7 @@ export default function ArchivePage() {
       const payload = toSavePayload(exp)
       const exists = experiences.some(e => e.id === exp.id)
       const saved = exists
-        ? await apiUpdate(exp.id, payload)
+        ? await apiUpdate(exp.id, { content: payload.content })
         : await apiCreate(payload)
       setSelectedId(saved.id)
       setMode("detail")
