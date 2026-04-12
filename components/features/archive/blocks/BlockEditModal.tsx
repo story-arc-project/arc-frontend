@@ -55,7 +55,7 @@ export default function BlockEditModal({
 
   // Reset state when modal opens with new config (adjust state during render)
   const [prevResetKey, setPrevResetKey] = useState("")
-  const resetKey = open ? `${blockType}-${initialConfig?.label ?? ""}` : ""
+  const resetKey = open ? `${blockType}-${initialConfig?.label ?? ""}-${initialConfig?.placeholder ?? ""}-${(initialConfig?.options ?? []).join(",")}` : ""
   if (resetKey !== prevResetKey) {
     setPrevResetKey(resetKey)
     if (open) {
