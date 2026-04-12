@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useCallback, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useCallback, type KeyboardEvent, type CSSProperties } from "react";
 import { Pencil, Trash2 } from "lucide-react";
+
+const HIDDEN_INITIAL_STYLE: CSSProperties = { visibility: "hidden" }
 
 interface FolderContextMenuProps {
   anchorRect: DOMRect;
@@ -23,7 +25,9 @@ export function FolderContextMenu({
     if (el) itemsRef.current[idx] = el;
   }, []);
 
-  // Position menu within viewport, right-aligned to the anchor button
+  // Position menu within viewport, right-aligned to the anchor button.
+  // Uses direct DOM writes to avoid set-state-in-effect lint rule.
+  // useLayoutEffect runs synchronously before paint so the hidden→visible flash is invisible.
   useLayoutEffect(() => {
     const menu = menuRef.current;
     if (!menu) return;
@@ -90,7 +94,7 @@ export function FolderContextMenu({
       ref={menuRef}
       role="menu"
       aria-label="폴더 메뉴"
-      style={{ top: anchorRect.bottom + 4, left: anchorRect.right, visibility: "hidden" }}
+      style={HIDDEN_INITIAL_STYLE}
       className="fixed z-50 bg-surface border border-border rounded-lg shadow-md py-1 min-w-[130px]"
       onKeyDown={handleKeyDown}
     >
