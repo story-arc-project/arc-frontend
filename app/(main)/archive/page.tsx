@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react"
@@ -17,6 +17,10 @@ import { toExperienceV2, toSavePayload } from "@/lib/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { cloneBlocks, uid } from "@/lib/block-utils"
 import { usePresets } from "@/hooks/usePresets"
+
+const DEFAULT_LIBRARIES: Library[] = [
+  { id: "lib-all", name: "전체", isSystem: true, experienceIds: [] },
+]
 
 /** @deprecated Use ArchiveModeV2 from RightPanelV2 */
 export type ArchiveMode = "empty" | "new" | "detail" | "edit"
@@ -44,12 +48,9 @@ export default function ArchivePage() {
     deleteExperience: apiDelete,
   } = useExperiences()
 
-  const experiences = apiExperiences.map(toExperienceV2)
+  const experiences = useMemo(() => apiExperiences.map(toExperienceV2), [apiExperiences])
 
-  const defaultLibraries: Library[] = [
-    { id: "lib-all", name: "전체", isSystem: true, experienceIds: [] },
-  ]
-  const [libraries, setLibraries] = useState<Library[]>(defaultLibraries)
+  const [libraries, setLibraries] = useState<Library[]>(DEFAULT_LIBRARIES)
   const [activeLibraryId, setActiveLibraryId] = useState("lib-all")
   const presetsHook = usePresets()
 
@@ -72,15 +73,14 @@ export default function ArchivePage() {
     clearFilters,
   } = useLibraryFilter(libraryExperiences)
 
-  // Sync ?id= on first mount
-  useEffect(() => {
-    const id = searchParams.get("id")
-    if (id && experiences.find(e => e.id === id)) {
-      setSelectedId(id)
-      setMode("detail")
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Sync ?id= when experiences are loaded (adjust state during render)
+  const [syncedForParams, setSyncedForParams] = useState<string | null>(null)
+  const idParam = searchParams.get("id")
+  if (idParam && idParam !== syncedForParams && experiences.find(e => e.id === idParam)) {
+    setSyncedForParams(idParam)
+    setSelectedId(idParam)
+    setMode("detail")
+  }
 
   // ── Selection ──────────────────────────────────────────────────────
   const handleSelectExperience = useCallback(
