@@ -1,97 +1,185 @@
 # CLAUDE.md — ARC
 
-## 프로젝트
+## Project
 
-포트폴리오 아카이빙 및 AI 연계 자동화 플랫폼.
-정성적 경험 데이터를 수집·연결해 커리어 내러티브를 만들어주는 서비스.
-주요 타겟: 진로가 확정되지 않은 대학생.
+ARC는 정성적 경험 데이터를 기록·연결해 커리어 내러티브를 만드는 플랫폼이다.  
+주요 타겟은 진로가 확정되지 않은 대학생이다.
 
-## 핵심 원칙
+---
 
-- **기록 허들을 낮추는 것이 최우선.** UX 판단 기준은 항상 입력 편의성.
-- 이력은 스펙 목록이 아니라 정성적 경험의 총체. 데이터 수집·연결에 집중.
-- 안정감을 주는 플랫폼 톤. 위압적이거나 경쟁적인 UI 지양.
+## Core Principles
 
-## 스택
+- 입력 허들을 최소화한다 (UX 최우선)
+- 경험은 정성 데이터로 다룬다
+- 사용자가 생각하지 않도록 자동화한다
+- 안정감을 주는 톤 유지 (경쟁/압박 지양)
 
-- Next.js 16.2.1 (App Router)
-- TypeScript (strict mode)
+---
+
+## Product Perspective
+
+- ARC는 스펙 관리 도구가 아니라 경험 기록 도구다
+- 사용자는 구조화보다 빠른 기록을 원한다
+- 입력은 단순하게, 정리는 시스템이 수행한다
+
+---
+
+## Tech Stack
+
+- Next.js (App Router)
+- TypeScript (strict)
 - Tailwind CSS
 
-## 폴더 구조
+---
 
-```
-app/
-├── (auth)/          — 인증 관련 라우트
-├── (main)/
-│   ├── dashboard/   — 역량 가시화, 퀵 레코딩
-│   ├── archive/     — 유형별 경험 입력·관리
-│   ├── analysis/    — 키워드 분석, 시각화 리포트
-│   ├── strategy/    — 진로 로드맵, 내러티브 구축
-│   └── export/      — 이력서·자소서 자동 생성
-├── landing/         — 서비스 소개, 플랜 비교
-└── layout.tsx
-components/
-├── ui/              — 범용 UI 컴포넌트
-├── layout/          — 레이아웃 관련
-└── features/        — 도메인별 컴포넌트 (archive/, analysis/ 등)
-lib/                 — 유틸리티, API 클라이언트
-hooks/               — 커스텀 훅
-types/               — 타입 정의
-styles/              — 글로벌 스타일
+## Structure
+
+```text
+app/          # Next.js App Router (pages, layouts, API routes)
+components/   # UI·feature·layout 컴포넌트
+lib/          # 유틸리티, API 클라이언트, 매퍼
+hooks/        # 커스텀 React 훅
+types/        # 공유 타입 정의
+contexts/     # React Context providers
+public/       # 정적 에셋
+docs/         # 프로젝트 문서 (claude 등)
 ```
 
-## 명령어
+---
 
-- `npm dev` — 개발 서버
-- `npm build` — 프로덕션 빌드
-- `eslint` — 린트
-- `npm start` — 서버 시작
+## Commands
 
-## 컨벤션
+- `npm run dev`
+- `npm run build`
+- `npm run lint`
 
-- 컴포넌트: PascalCase (`ArchiveCard.tsx`)
-- 함수·변수: camelCase
-- 타입·인터페이스: PascalCase, `I` 접두사 없이 사용
-- import 순서: react/next → 외부 라이브러리 → `@/lib` → `@/components` → 상대경로
-- 컴포넌트 파일 하나에 default export 하나
-- 적응형 웹 기준으로 Tailwind 클래스 작성
-- 페이지 간 상태는 URL searchParams로 관리, 전역 상태 최소화
+---
 
-## AI 기능 규칙
+## Conventions
 
-- AI 호출은 반드시 백엔드 API 엔드포인트로 분리
-- 프론트에서는 fetch로 호출만 한다. 프론트에 API 키나 프롬프트 로직 두지 않는다
-- 워터마크·Pro 기능은 서버에서 검증 후 적용
+- PascalCase: components
+- camelCase: variables/functions
+- Type: PascalCase (no prefix)
+- import order:
+  react/next → external → `@/lib` → `@/components` → relative
+- default export 1개
+- Tailwind only (no inline style)
+- 상태는 가능하면 searchParams 기반
+
+---
+
+## AI Rules
+
+- AI 호출은 반드시 backend API
+- frontend는 fetch만 담당
+- API key / prompt 로직 frontend 금지
+- 판단 로직은 서버에 둔다
+
+---
 
 ## UX Rules
-- 입력은 항상 최소 단계로 설계
-- optional 입력을 기본값으로 허용
+
+- 입력 단계 최소화
+- optional 입력 허용
 - validation은 느슨하게, 후처리 강화
-- 사용자가 생각하지 않도록 자동화 우선
+- 한 화면 = 하나의 핵심 행동
+- 빈 상태에서도 다음 행동이 보여야 함
 
-## 금지 사항
+---
 
-- `any` 타입 사용 금지
-- `console.log` 커밋 금지
-- 인라인 스타일 사용 금지 (Tailwind로 통일)
-- 요청하지 않은 리팩토링 금지 — 변경 범위를 최소화할 것
-- AI 관련 로직을 프론트엔드에 직접 구현 금지
+## Hard Constraints
 
-## 기획 문서
+- `any` 금지
+- console.log 커밋 금지
+- 요청하지 않은 리팩토링 금지
+- 변경 범위 최소화
+- 프론트에 AI 로직 구현 금지
 
-Phase별 기능 상세는 아래 문서를 참조한다.
-작업 시작 전 해당 Phase 문서를 확인할 것.
+---
 
-- Phase 1 (대회용 구현): `docs/phase-1.md`
-- Phase 1.5 (방향성 제시): `docs/phase-1.5.md`
+## Development Workflow (Mandatory)
 
-## Skills
+기본 흐름:
 
-UI·Git 관련 상세 규칙은 Skills로 분리되어 있다.
-Claude가 관련 작업을 감지하면 자동으로 로드한다.
+> 작은 구현 → 검증 → (필요 시) Codex 리뷰 → 마무리
 
-|Skill          |자동 로드 조건              |
-|---------------|----------------------|
-|`ui-guidelines`|컴포넌트, 스타일, 색상, 레이아웃 작업|
-|`git-workflow` |브랜치 생성, 커밋, PR, 푸시 작업 |
+### 1. Plan
+- 요구사항을 1~2문장으로 정리
+- 변경 파일과 영향 범위 식별
+
+### 2. Implement
+- 최소 동작 버전 먼저 구현
+- 기존 구조 유지
+
+### 3. Validate
+```bash
+npm run lint
+npm run build
+```
+
+### 4. Adversarial Review (조건부)
+
+다음 경우 실행:
+- 3개 이상 파일 변경
+- UX 흐름 변경
+- 상태 구조 변경
+- API 변경
+
+```bash
+/codex:adversarial-review --base main
+```
+
+### 5. Final Review (필수)
+
+```bash
+/codex:review --base main
+```
+
+---
+
+## Codex Usage
+
+### 역할
+- Claude: 구현
+- Codex: 리뷰 / 문제 해결
+
+### Rescue
+```bash
+/codex:rescue
+```
+
+사용 조건:
+- 동일 문제 2회 반복
+- 원인 불명 버그
+
+---
+
+## Quality Bar
+
+- lint 통과
+- build 통과
+- 타입 안정성 유지
+- UX 악화 없음
+- 입력 단계 증가 없음
+- AI 로직 frontend 없음
+
+---
+
+## Output Rules
+
+작업 완료 시:
+
+- 변경 내용
+- 변경 이유
+- 수정 파일
+- 검증 결과
+- 남은 리스크
+
+---
+
+## References
+
+- workflow: `docs/claude/workflow.md`
+- codex: `docs/claude/codex.md`
+- checklist: `docs/claude/checklist.md`
+- git-workflow: `/git-workflow` (skill)

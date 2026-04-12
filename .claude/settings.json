@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "FileChanged": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx eslint . --fix"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx eslint . && npm run build"
+          }
+        ]
+      }
+    ]
+  }
+}
