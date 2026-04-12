@@ -7,7 +7,7 @@ import type { ExperienceV2, ExperienceTypeId, ExperienceStatus, Block } from "@/
  * API의 content 필드에 블록 데이터가 JSON으로 저장되어 있다고 가정.
  */
 export function toExperienceV2(exp: Experience): ExperienceV2 {
-  const content = exp.content as {
+  const content = (exp.content ?? {}) as {
     title?: string
     summary?: string
     status?: ExperienceStatus
