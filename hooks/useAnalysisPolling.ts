@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAnalysisStatus } from "@/lib/analysis-api";
+import { getAnalysisStatus } from "@/lib/api/analysis-api";
 
 const MAX_RETRIES = 20;
 const POLL_INTERVAL_MS = 3_000;

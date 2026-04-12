@@ -17,7 +17,7 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import type { Block, BlockType, BlockValue } from "@/types/archive"
-import { createBlock, cloneBlock } from "@/lib/block-utils"
+import { createBlock, cloneBlock } from "@/lib/utils/block-utils"
 import BlockRenderer from "./BlockRenderer"
 import BlockTypePicker from "./BlockTypePicker"
 import BlockEditModal, { type BlockEditConfig } from "./BlockEditModal"

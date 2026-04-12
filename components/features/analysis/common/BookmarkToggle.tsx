@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Star } from "lucide-react";
-import { addBookmark, removeBookmark } from "@/lib/analysis-api";
+import { addBookmark, removeBookmark } from "@/lib/api/analysis-api";
 
 interface BookmarkToggleProps {
   analysisId: string;

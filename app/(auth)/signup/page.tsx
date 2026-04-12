@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button, DatePicker, Input, toast, ToastContainer } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api/client";
 import { VerifyEmailResponse } from "@/types/auth";
 import {
   type Step,

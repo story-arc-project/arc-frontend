@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 import type { Preset, Block, ExperienceTypeId } from "@/types/archive"
-import { uid, cloneBlocks } from "@/lib/block-utils"
+import { uid, cloneBlocks } from "@/lib/utils/block-utils"
 
 export interface UsePresetsReturn {
   presets: Preset[]

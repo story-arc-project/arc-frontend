@@ -9,7 +9,7 @@ import {
   getKeywordSuggestions,
   getSelectableExperiences,
   createKeywordAnalysis,
-} from "@/lib/analysis-api";
+} from "@/lib/api/analysis-api";
 import useAnalysisPolling from "@/hooks/useAnalysisPolling";
 import KeywordSelector from "@/components/features/analysis/KeywordSelector";
 import ExperienceSelector from "@/components/features/analysis/ExperienceSelector";

@@ -5,7 +5,7 @@ import { Plus, Trash2 } from "lucide-react"
 import { Dialog } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import type { BlockType, BlockColumnDef } from "@/types/archive"
-import { uid } from "@/lib/block-utils"
+import { uid } from "@/lib/utils/block-utils"
 
 export interface BlockEditConfig {
   label: string

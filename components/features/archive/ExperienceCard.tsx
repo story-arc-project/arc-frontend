@@ -5,7 +5,7 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { Badge } from "@/components/ui/badge"
 import type { ExperienceV2, Library } from "@/types/archive"
-import { EXPERIENCE_TYPE_MAP } from "@/lib/templates-v2"
+import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2"
 
 interface ExperienceCardProps {
   experience: ExperienceV2

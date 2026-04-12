@@ -13,9 +13,9 @@ import RightPanelV2 from "@/components/features/archive/RightPanelV2"
 import type { ArchiveModeV2 } from "@/components/features/archive/RightPanelV2"
 import type { ExperienceV2, Library } from "@/types/archive"
 import { useExperiences } from "@/hooks/useExperiences"
-import { toExperienceV2, toSavePayload } from "@/lib/experience-mapper"
+import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
-import { cloneBlocks, uid } from "@/lib/block-utils"
+import { cloneBlocks, uid } from "@/lib/utils/block-utils"
 import { usePresets } from "@/hooks/usePresets"
 
 const DEFAULT_LIBRARIES: Library[] = [

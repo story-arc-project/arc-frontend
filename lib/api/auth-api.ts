@@ -1,5 +1,5 @@
 import type { AuthUser } from "@/types/auth";
-import { api } from "@/lib/api";
+import { api } from "@/lib/api/client";
 
 /**
  * GET /auth/me - 현재 로그인 사용자 정보 조회

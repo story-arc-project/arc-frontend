@@ -10,7 +10,7 @@ import {
   createLinkField,
   createFileField,
   createRepeatableCell,
-} from '@/lib/block-utils'
+} from '@/lib/utils/block-utils'
 
 // ─── Experience Type Registry ───────────────────────────────────
 

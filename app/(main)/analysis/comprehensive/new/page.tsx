@@ -8,7 +8,7 @@ import type { SelectableExperience } from "@/types/analysis";
 import {
   getSelectableExperiences,
   createComprehensiveAnalysis,
-} from "@/lib/analysis-api";
+} from "@/lib/api/analysis-api";
 import useAnalysisPolling from "@/hooks/useAnalysisPolling";
 import ExperienceSelector from "@/components/features/analysis/ExperienceSelector";
 
