@@ -45,6 +45,8 @@ function SignupForm() {
   // Profile fields
   const [birth, setBirth] = useState("");
   const [education, setEducation] = useState("");
+  const [school, setSchool] = useState("");
+  const [department, setDepartment] = useState("");
   const [phone, setPhone] = useState("");
 
   // Password strength
@@ -58,7 +60,7 @@ function SignupForm() {
 
   // Onboarding fields
   const [name, setName] = useState("");
-  const [q1, setQ1] = useState<string | null>(null);
+  const [worries, setWorries] = useState<string[]>([]);
   const [interests, setInterests] = useState<string[]>([]);
 
   // Verify fields
@@ -83,6 +85,12 @@ function SignupForm() {
   function toggleInterest(opt: string) {
     setInterests((prev) =>
       prev.includes(opt) ? prev.filter((i) => i !== opt) : [...prev, opt]
+    );
+  }
+
+  function toggleWorry(opt: string) {
+    setWorries((prev) =>
+      prev.includes(opt) ? prev.filter((w) => w !== opt) : [...prev, opt]
     );
   }
 
@@ -182,9 +190,11 @@ function SignupForm() {
       await api.post("/auth/onboarding", {
         name,
         birth,
-        ...(education.trim() && { education }),
-        ...(phone            && { phone }),
-        ...(q1               && { worry: [q1] }),
+        ...(education.trim()  && { education }),
+        ...(school.trim()     && { school }),
+        ...(department.trim() && { department }),
+        ...(phone             && { phone }),
+        ...(worries.length > 0   && { worry: worries }),
         ...(interests.length > 0 && { interest: interests }),
       }, { auth: false });
       router.push("/dashboard");
@@ -464,13 +474,37 @@ function SignupForm() {
                 </div>
 
                 {/* 소속 (선택) */}
-                <div className="mb-6">
+                <div className="mb-5">
                   <Input
                     label="소속"
                     type="text"
                     placeholder="예) 서울대학교 컴퓨터공학과, 삼성전자 재직 중"
                     value={education}
                     onChange={(e) => setEducation(e.target.value)}
+                  />
+                  <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
+                </div>
+
+                {/* 학교 (선택) */}
+                <div className="mb-5">
+                  <Input
+                    label="학교"
+                    type="text"
+                    placeholder="예) 서울대학교"
+                    value={school}
+                    onChange={(e) => setSchool(e.target.value)}
+                  />
+                  <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
+                </div>
+
+                {/* 학과 (선택) */}
+                <div className="mb-6">
+                  <Input
+                    label="학과"
+                    type="text"
+                    placeholder="예) 컴퓨터공학과"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
                   />
                   <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
                 </div>
@@ -488,18 +522,18 @@ function SignupForm() {
                   요즘 가장 고민되는 게 뭐예요?
                 </h1>
                 <p className="text-body text-text-secondary mb-8">
-                  솔직하게 골라도 괜찮아요 😊
+                  복수 선택 가능해요 · 솔직하게 골라도 괜찮아요 😊
                 </p>
                 <div className="grid grid-cols-2 gap-2.5 mb-6">
                   {Q1_OPTIONS.map((opt) => (
                     <button
                       key={opt}
                       type="button"
-                      onClick={() => setQ1(opt)}
+                      onClick={() => toggleWorry(opt)}
                       className={[
                         "h-12 rounded-xl border-2 text-body font-semibold",
                         "transition-all duration-150 cursor-pointer",
-                        q1 === opt
+                        worries.includes(opt)
                           ? "border-brand bg-surface-brand text-brand"
                           : "border-border bg-surface text-text-primary hover:border-brand/40 hover:bg-surface-brand/30",
                       ].join(" ")}
@@ -509,7 +543,7 @@ function SignupForm() {
                   ))}
                 </div>
                 <div className="flex gap-2.5">
-                  <Button onClick={() => goTo("q2")} disabled={!q1} className="flex-1 w-auto">
+                  <Button onClick={() => goTo("q2")} className="flex-1 w-auto">
                     다음
                   </Button>
                   <button
