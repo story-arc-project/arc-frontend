@@ -2,7 +2,7 @@
 
 import ExperienceFormV2 from "./ExperienceFormV2"
 import ExperienceDetailV2 from "./ExperienceDetailV2"
-import type { ExperienceV2 } from "@/types/archive"
+import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
 import type { UsePresetsReturn } from "@/hooks/usePresets"
 
 export type ArchiveModeV2 = "empty" | "new" | "detail" | "edit"
@@ -18,6 +18,7 @@ interface RightPanelV2Props {
   onCancel: () => void
   onEdit: () => void
   onUnsavedChange: (hasUnsaved: boolean) => void
+  onUpdateImportance?: (id: string, value: ImportanceLevel | undefined) => void
 }
 
 export default function RightPanelV2({
@@ -31,6 +32,7 @@ export default function RightPanelV2({
   onCancel,
   onEdit,
   onUnsavedChange,
+  onUpdateImportance,
 }: RightPanelV2Props) {
   return (
     <div className="flex-1 h-full overflow-y-auto bg-surface scrollbar-hide">
@@ -54,6 +56,7 @@ export default function RightPanelV2({
           onEdit={onEdit}
           onDelete={onDelete}
           onDuplicate={onDuplicate}
+          onUpdateImportance={onUpdateImportance}
         />
       )}
 

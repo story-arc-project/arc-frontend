@@ -4,6 +4,7 @@ import { MoreHorizontal, ChevronRight } from "lucide-react"
 import { useState, useRef, useEffect, useCallback } from "react"
 import { createPortal } from "react-dom"
 import { Badge } from "@/components/ui/badge"
+import ImportanceSelector from "./ImportanceSelector"
 import type { ExperienceV2, Library } from "@/types/archive"
 import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2"
 
@@ -189,11 +190,18 @@ export default function ExperienceCard({
     >
       {/* Top row: type badge + status */}
       <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
           <Badge variant="brand">{typeInfo?.label ?? "경험"}</Badge>
           <Badge variant={experience.status === "complete" ? "success" : "warning"}>
             {experience.status === "complete" ? "완료" : "작성 중"}
           </Badge>
+          {experience.importance !== undefined && (
+            <ImportanceSelector
+              value={experience.importance}
+              size="sm"
+              readOnly
+            />
+          )}
         </div>
 
         {/* Quick actions */}

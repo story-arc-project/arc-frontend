@@ -9,7 +9,7 @@ export interface Experience {
   id: string;
   user_id: string;
   type: string;
-  priority: string;
+  importance: number | null;
   content: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -24,10 +24,12 @@ export interface ExperienceListData {
 // 생성 요청 body
 export interface ExperienceSavePayload {
   type: string;
+  importance?: number | null;
   content: Record<string, unknown>;
 }
 
 // 수정 요청 body (type 제외)
 export interface ExperienceUpdatePayload {
-  content: Record<string, unknown>;
+  importance?: number | null;
+  content?: Record<string, unknown>;
 }
