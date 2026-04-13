@@ -9,8 +9,8 @@ import {
   getAnalysisHistory,
   updateAnalysisMeta,
   deleteAnalysis,
-} from "@/lib/analysis-api";
-import { formatDate } from "@/lib/date-utils";
+} from "@/lib/api/analysis-api";
+import { formatDate } from "@/lib/utils/date-utils";
 import { Badge, Button, Dialog } from "@/components/ui";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";

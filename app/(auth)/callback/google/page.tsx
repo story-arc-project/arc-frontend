@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api/client";
 import { AuthSuccessResult } from "@/types/auth";
 
 export default function GoogleCallbackPage() {

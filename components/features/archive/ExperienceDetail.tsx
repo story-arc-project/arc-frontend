@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button, Chip, Dialog } from "@/components/ui";
 import { ExperienceForm } from "./ExperienceForm";
 import type { Folder, Template, ExperienceWithFolder } from "@/types/archive";
-import { isQualitativeKey, isQualitativeTemplate } from "@/lib/templates";
+import { isQualitativeKey, isQualitativeTemplate } from "@/lib/constants/templates";
 
 interface ExperienceDetailProps {
   experience: ExperienceWithFolder;

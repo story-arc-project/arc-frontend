@@ -5,7 +5,7 @@ import { useState } from "react"
 import { Search } from "lucide-react"
 import * as icons from "lucide-react"
 import type { ExperienceTypeId } from "@/types/archive"
-import { EXPERIENCE_TYPES, TYPE_CATEGORIES } from "@/lib/templates-v2"
+import { EXPERIENCE_TYPES, TYPE_CATEGORIES } from "@/lib/constants/templates-v2"
 
 interface TypeSelectorProps {
   selectedId: ExperienceTypeId | null

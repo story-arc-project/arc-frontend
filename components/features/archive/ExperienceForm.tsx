@@ -15,7 +15,7 @@ import type {
   RawTextField,
   TemplateField,
 } from "@/types/archive";
-import { isQualitativeKey, isQualitativeTemplate, buildQualitativeFields } from "@/lib/templates";
+import { isQualitativeKey, isQualitativeTemplate, buildQualitativeFields } from "@/lib/constants/templates";
 
 interface ExperienceFormProps {
   mode: "new" | "edit";

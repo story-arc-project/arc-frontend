@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Block, RepeatableCellBlockValue, BlockRow, BlockColumnDef } from "@/types/archive"
-import { createEmptyRow, uid } from "@/lib/block-utils"
+import { createEmptyRow, uid } from "@/lib/utils/block-utils"
 
 interface RepeatableCellBlockProps {
   block: Block

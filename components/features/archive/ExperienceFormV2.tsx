@@ -17,8 +17,8 @@ import type {
   BlockValue,
   TemplateV2,
 } from "@/types/archive"
-import { getTemplateForType } from "@/lib/templates-v2"
-import { cloneBlocks, uid } from "@/lib/block-utils"
+import { getTemplateForType } from "@/lib/constants/templates-v2"
+import { cloneBlocks, uid } from "@/lib/utils/block-utils"
 import type { UsePresetsReturn } from "@/hooks/usePresets"
 
 interface ExperienceFormV2Props {

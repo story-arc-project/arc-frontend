@@ -3,7 +3,7 @@
 import { Search, X, SlidersHorizontal, BookmarkPlus } from "lucide-react"
 import { useState } from "react"
 import type { LibraryFilter, SortBy, ExperienceTypeId, ExperienceStatus } from "@/types/archive"
-import { EXPERIENCE_TYPES, TYPE_CATEGORIES } from "@/lib/templates-v2"
+import { EXPERIENCE_TYPES, TYPE_CATEGORIES } from "@/lib/constants/templates-v2"
 
 interface FilterBarProps {
   filter: LibraryFilter

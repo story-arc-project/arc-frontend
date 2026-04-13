@@ -3,7 +3,7 @@
 import { createContext, useCallback, useEffect, useState } from "react";
 
 import type { AuthUser, AuthContextValue } from "@/types/auth";
-import { fetchCurrentUser, logoutUser } from "@/lib/auth-api";
+import { fetchCurrentUser, logoutUser } from "@/lib/api/auth-api";
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 

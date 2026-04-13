@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
-import { api } from "@/lib/api";
+import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui";
 
 export default function SettingsPage() {

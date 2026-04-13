@@ -16,8 +16,8 @@ import {
 } from "lucide-react";
 import type { AnalysisHomeSummary } from "@/types/analysis";
 import { analysisTypeLabel, ANALYSIS_DETAIL_PATH } from "@/types/analysis";
-import { getAnalysisHomeSummary } from "@/lib/analysis-api";
-import { formatRelativeTime } from "@/lib/date-utils";
+import { getAnalysisHomeSummary } from "@/lib/api/analysis-api";
+import { formatRelativeTime } from "@/lib/utils/date-utils";
 import { Badge } from "@/components/ui";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { getExperience } from "@/lib/api";
+import { getExperience } from "@/lib/api/experience-api";
 import type { Experience } from "@/types/experience";
 
 export function useExperience(id: string | null) {

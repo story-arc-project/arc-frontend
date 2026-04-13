@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import type { AnalysisSnapshot } from "@/types/analysis";
-import { getIndividualAnalysisList } from "@/lib/analysis-api";
-import { formatDate } from "@/lib/date-utils";
+import { getIndividualAnalysisList } from "@/lib/api/analysis-api";
+import { formatDate } from "@/lib/utils/date-utils";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import AnalysisStatusBadge from "@/components/features/analysis/common/AnalysisStatusBadge";
 import FilterBar from "@/components/features/analysis/common/FilterBar";

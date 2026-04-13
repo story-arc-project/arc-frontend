@@ -16,7 +16,7 @@ import {
 import { Button, Dialog } from "@/components/ui";
 import { FolderGroup } from "./FolderGroup";
 import type { Folder, ExperienceWithFolder, Template } from "@/types/archive";
-import { getExperienceTitle } from "@/lib/templates";
+import { getExperienceTitle } from "@/lib/constants/templates";
 
 interface ArchiveSidebarProps {
   folders: Folder[];

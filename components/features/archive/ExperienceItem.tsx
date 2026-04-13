@@ -5,7 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Menu } from "lucide-react";
 import { Badge } from "@/components/ui";
 import type { ExperienceWithFolder, Template } from "@/types/archive";
-import { getExperienceTitle, getExperiencePeriod } from "@/lib/templates";
+import { getExperienceTitle, getExperiencePeriod } from "@/lib/constants/templates";
 
 interface ExperienceItemProps {
   experience: ExperienceWithFolder;

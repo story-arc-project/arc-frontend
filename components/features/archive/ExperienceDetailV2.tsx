@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
 import BlockList from "./blocks/BlockList"
 import type { ExperienceV2 } from "@/types/archive"
-import { EXPERIENCE_TYPE_MAP } from "@/lib/templates-v2"
+import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2"
 
 interface ExperienceDetailV2Props {
   experience: ExperienceV2

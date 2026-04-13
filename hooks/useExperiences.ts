@@ -7,7 +7,7 @@ import {
   createExperience as apiCreateExperience,
   updateExperience as apiUpdateExperience,
   deleteExperience as apiDeleteExperience,
-} from "@/lib/api";
+} from "@/lib/api/experience-api";
 import type { Experience, ExperienceSavePayload, ExperienceUpdatePayload } from "@/types/experience";
 
 export function useExperiences() {
