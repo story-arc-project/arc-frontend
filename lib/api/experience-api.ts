@@ -16,7 +16,7 @@ export async function getExperiences(): Promise<ExperienceListData> {
 
 export async function getExperience(id: string): Promise<Experience> {
   const res = await api.get<ApiSuccessResponse<Experience>>(
-    `/experiences/${id}/`,
+    `/experiences/${id}`,
   );
   return res.data;
 }
@@ -36,12 +36,12 @@ export async function updateExperience(
   payload: ExperienceUpdatePayload,
 ): Promise<Experience> {
   const res = await api.put<ApiSuccessResponse<Experience>>(
-    `/experiences/${id}/`,
+    `/experiences/${id}`,
     payload,
   );
   return res.data;
 }
 
 export async function deleteExperience(id: string): Promise<void> {
-  await api.delete<void>(`/experiences/${id}/`);
+  await api.delete<void>(`/experiences/${id}`);
 }
