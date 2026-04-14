@@ -242,6 +242,40 @@ export interface Preset {
   updatedAt: string
 }
 
+// ─── Library API DTOs ───────────────────────────────────────────
+
+export interface LibraryFilterDTO {
+  search?: string
+  sortBy?: SortBy
+  types?: string[]
+  statuses?: string[]
+  tags?: string[]
+}
+
+export interface LibraryDTO {
+  id: string
+  name: string
+  color?: string
+  icon?: string
+  is_system: boolean
+  filter?: LibraryFilterDTO
+}
+
+export interface CreateLibraryPayload {
+  name: string
+  color?: string
+  icon?: string
+  is_system?: boolean
+  filter?: LibraryFilterDTO
+}
+
+export interface UpdateLibraryPayload {
+  name?: string
+  color?: string
+  icon?: string
+  filter?: LibraryFilterDTO
+}
+
 // ─── Legacy types (kept for migration reference, will be removed) ──
 
 /** @deprecated Use Block with type 'text' instead */
