@@ -10,17 +10,20 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "npx eslint . && npm run build"
-          }
-        ]
-      }
     ]
+    // "Stop": [
+    //   {
+    //     "matcher": "*",
+    //     "hooks": [
+    //       {
+    //         "type": "command",
+    //         "command": "npx eslint . && npm run build"
+    //       }
+    //     ]
+    //   }
+    // ]
+  },
+  "enabledPlugins": {
+    "oh-my-claudecode@omc": true
   }
 }
