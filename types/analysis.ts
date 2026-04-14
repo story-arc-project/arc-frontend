@@ -1,5 +1,7 @@
 // ─── Enum Types ─────────────────────────────────────────────
 
+import type { ImportanceLevel } from "./archive";
+
 export type AnalysisType = "individual" | "comprehensive" | "keyword";
 export type ConfidenceLevel = "sufficient" | "partial" | "insufficient";
 export type AnalysisStatus = "pending" | "processing" | "completed" | "failed";
@@ -11,7 +13,7 @@ export type ConnectionType =
   | "role_expansion"
   | "impact_expansion"
   | "contrast_transition";
-export type ImportanceLevel = 1 | 2 | 3 | 4 | 5;
+export type { ImportanceLevel };
 
 // ─── Common Structures ──────────────────────────────────────
 
