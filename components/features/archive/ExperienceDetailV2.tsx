@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
 import BlockList from "./blocks/BlockList"
-import type { ExperienceV2 } from "@/types/archive"
+import ImportanceSelector from "./ImportanceSelector"
+import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
 import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2"
 
 interface ExperienceDetailV2Props {
@@ -14,6 +15,7 @@ interface ExperienceDetailV2Props {
   onEdit: () => void
   onDelete: (id: string) => void
   onDuplicate: (exp: ExperienceV2) => void
+  onUpdateImportance?: (id: string, value: ImportanceLevel | undefined) => void
 }
 
 function formatDate(iso: string): string {
@@ -26,6 +28,7 @@ export default function ExperienceDetailV2({
   onEdit,
   onDelete,
   onDuplicate,
+  onUpdateImportance,
 }: ExperienceDetailV2Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const typeInfo = EXPERIENCE_TYPE_MAP[experience.typeId]
@@ -46,11 +49,21 @@ export default function ExperienceDetailV2({
       {/* Header */}
       <div className="flex items-start justify-between mb-6 gap-4">
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="brand">{typeInfo?.label ?? "경험"}</Badge>
             <Badge variant={experience.status === "complete" ? "success" : "warning"}>
               {experience.status === "complete" ? "완료" : "작성 중"}
             </Badge>
+            <ImportanceSelector
+              value={experience.importance}
+              onChange={
+                onUpdateImportance
+                  ? value => onUpdateImportance(experience.id, value)
+                  : undefined
+              }
+              size="md"
+              readOnly={!onUpdateImportance}
+            />
           </div>
           <h2 className="text-heading-3 text-text-primary">{experience.title || "(제목 없음)"}</h2>
           {experience.summary && (

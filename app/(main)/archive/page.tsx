@@ -11,9 +11,13 @@ import FilterBar from "@/components/features/archive/FilterBar"
 import ExperienceCard from "@/components/features/archive/ExperienceCard"
 import RightPanelV2 from "@/components/features/archive/RightPanelV2"
 import type { ArchiveModeV2 } from "@/components/features/archive/RightPanelV2"
-import type { ExperienceV2, Library } from "@/types/archive"
+import type { ExperienceV2, ImportanceLevel, Library } from "@/types/archive"
 import { useExperiences } from "@/hooks/useExperiences"
-import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper"
+import {
+  toExperienceV2,
+  toSavePayload,
+  toUpdateImportancePayload,
+} from "@/lib/utils/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { cloneBlocks, uid } from "@/lib/utils/block-utils"
 import { usePresets } from "@/hooks/usePresets"
@@ -116,7 +120,10 @@ export default function ArchivePage() {
       const payload = toSavePayload(exp)
       const exists = experiences.some(e => e.id === exp.id)
       const saved = exists
-        ? await apiUpdate(exp.id, { content: payload.content })
+        ? await apiUpdate(exp.id, {
+            content: payload.content,
+            importance: payload.importance,
+          })
         : await apiCreate(payload)
       setSelectedId(saved.id)
       setMode("detail")
@@ -124,6 +131,13 @@ export default function ArchivePage() {
       router.push(`/archive?id=${saved.id}`, { scroll: false })
     },
     [experiences, apiCreate, apiUpdate, router]
+  )
+
+  const handleUpdateImportance = useCallback(
+    async (id: string, value: ImportanceLevel | undefined) => {
+      await apiUpdate(id, toUpdateImportancePayload(value))
+    },
+    [apiUpdate],
   )
 
   const handleDelete = useCallback(
@@ -362,6 +376,7 @@ export default function ArchivePage() {
             onCancel={handleCancel}
             onEdit={() => setMode("edit")}
             onUnsavedChange={setHasUnsaved}
+            onUpdateImportance={handleUpdateImportance}
           />
         </div>
       </div>
@@ -411,6 +426,7 @@ export default function ArchivePage() {
                   onCancel={handleCancel}
                   onEdit={() => setMode("edit")}
                   onUnsavedChange={setHasUnsaved}
+                  onUpdateImportance={handleUpdateImportance}
                 />
               </div>
             </motion.div>

@@ -9,6 +9,7 @@ import FormSection from "./FormSection"
 import BlockList from "./blocks/BlockList"
 import SavePresetModal from "./SavePresetModal"
 import ApplyPresetModal from "./ApplyPresetModal"
+import ImportanceSelector from "./ImportanceSelector"
 import type {
   ExperienceV2,
   ExperienceTypeId,
@@ -16,6 +17,7 @@ import type {
   Block,
   BlockValue,
   TemplateV2,
+  ImportanceLevel,
 } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks, uid } from "@/lib/utils/block-utils"
@@ -78,6 +80,9 @@ export default function ExperienceFormV2({
     initialExperience?.customBlocks ?? []
   )
   const [tags, setTags] = useState<string[]>(initialExperience?.tags ?? [])
+  const [importance, setImportance] = useState<ImportanceLevel | undefined>(
+    initialExperience?.importance,
+  )
   const [typeError, setTypeError] = useState(false)
   const [savePresetOpen, setSavePresetOpen] = useState(false)
   const [applyPresetOpen, setApplyPresetOpen] = useState(false)
@@ -144,13 +149,15 @@ export default function ExperienceFormV2({
         return false
       })
     const extensionBlocks = extensionSections.flatMap(s => s.blocks)
+    const importanceChanged = importance !== initialExperience?.importance
     const hasData =
       hasBlockData(coreBlocks) ||
       hasBlockData(extensionBlocks) ||
       customBlocks.length > 0 ||
-      tags.length > 0
+      tags.length > 0 ||
+      importanceChanged
     onUnsavedChange?.(hasData)
-  }, [coreBlocks, extensionSections, customBlocks, tags, onUnsavedChange])
+  }, [coreBlocks, extensionSections, customBlocks, tags, importance, initialExperience, onUnsavedChange])
 
   const handleTypeSelect = useCallback((id: ExperienceTypeId) => {
     setTypeId(id)
@@ -295,6 +302,7 @@ export default function ExperienceFormV2({
       summary,
       status,
       tags,
+      importance,
       coreBlocks,
       extensionBlocks: allExtensionBlocks,
       customBlocks,
@@ -316,6 +324,13 @@ export default function ExperienceFormV2({
           <p className="text-body-sm text-text-tertiary mt-1">
             유형을 선택하고 내용을 기록해주세요
           </p>
+          <div className="mt-3">
+            <ImportanceSelector
+              value={importance}
+              onChange={setImportance}
+              size="md"
+            />
+          </div>
         </div>
         {initialExperience && (
           <Badge variant={initialExperience.status === "complete" ? "success" : "warning"}>

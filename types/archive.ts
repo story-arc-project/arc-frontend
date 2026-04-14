@@ -169,6 +169,28 @@ export interface TemplateV2 {
 
 export type ExperienceStatus = 'draft' | 'complete'
 
+// 경험 중요도 — 1(매우 낮음) ~ 5(매우 높음)
+export type ImportanceLevel = 1 | 2 | 3 | 4 | 5
+
+export const IMPORTANCE_LEVELS: readonly ImportanceLevel[] = [5, 4, 3, 2, 1] as const
+
+export const IMPORTANCE_LABELS: Record<ImportanceLevel, string> = {
+  5: '매우 높음',
+  4: '높음',
+  3: '보통',
+  2: '낮음',
+  1: '매우 낮음',
+}
+
+export function isImportanceLevel(value: unknown): value is ImportanceLevel {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 5
+  )
+}
+
 export interface ExperienceV2 {
   id: string
   userId: string
@@ -177,6 +199,7 @@ export interface ExperienceV2 {
   summary: string
   status: ExperienceStatus
   tags: string[]
+  importance?: ImportanceLevel
   coreBlocks: Block[]
   extensionBlocks: Block[]
   customBlocks: Block[]
