@@ -1,7 +1,7 @@
 "use client"
 
 import { MoreHorizontal, ChevronRight } from "lucide-react"
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { Badge } from "@/components/ui/badge"
 import ImportanceSelector from "./ImportanceSelector"
@@ -41,6 +41,10 @@ export default function ExperienceCard({
   const submenuRef = useRef<HTMLDivElement>(null)
   const submenuTriggerRef = useRef<HTMLButtonElement>(null)
   const typeInfo = EXPERIENCE_TYPE_MAP[experience.typeId]
+  const manualLibraries = useMemo(
+    () => (libraries ?? []).filter(l => !l.isSystem && !l.filter),
+    [libraries],
+  )
 
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const [submenuPos, setSubmenuPos] = useState({ top: 0, left: 0 })
@@ -115,7 +119,7 @@ export default function ExperienceCard({
           >
             복제
           </button>
-          {libraries && onMoveToLibrary && (
+          {libraries && onMoveToLibrary && manualLibraries.length > 0 && (
             <div
               className="relative"
               onMouseEnter={() => setShowLibrarySubmenu(true)}
@@ -137,7 +141,7 @@ export default function ExperienceCard({
                     className="fixed w-36 bg-surface border border-border rounded-lg shadow-md py-1 z-50"
                     style={{ top: submenuPos.top, left: submenuPos.left }}
                   >
-                    {libraries.filter(l => !l.isSystem).map(lib => {
+                    {manualLibraries.map(lib => {
                       const isIn = lib.experienceIds.includes(experience.id)
                       return (
                         <button
