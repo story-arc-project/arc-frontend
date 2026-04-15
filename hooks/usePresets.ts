@@ -91,35 +91,67 @@ export function usePresets(): UsePresetsReturn {
         Pick<Preset, "name" | "description" | "recommendedTypeIds" | "isFavorite" | "blocks">
       >,
     ): Promise<void> => {
-      const snapshot = presets;
-      setPresets((prev) =>
-        prev.map((p) =>
-          p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p,
-        ),
-      );
+      // Capture the pre-change item AND tag the optimistic write with a
+      // unique timestamp. If a later concurrent mutation on the same record
+      // overwrites our optimistic value, the timestamp no longer matches and
+      // we skip local rollback — refetch() reconciles instead. This avoids
+      // clobbering a successful newer mutation with a stale rollback.
+      let previous: Preset | undefined;
+      const optimisticUpdatedAt = new Date().toISOString();
+      setPresets((prev) => {
+        previous = prev.find((p) => p.id === id);
+        return prev.map((p) =>
+          p.id === id ? { ...p, ...updates, updatedAt: optimisticUpdatedAt } : p,
+        );
+      });
       try {
         const dto = await apiUpdatePreset(id, updates);
         setPresets((prev) => prev.map((p) => (p.id === id ? toPreset(dto) : p)));
       } catch (err) {
-        setPresets(snapshot);
+        if (previous) {
+          const restored = previous;
+          setPresets((prev) =>
+            prev.map((p) =>
+              p.id === id && p.updatedAt === optimisticUpdatedAt ? restored : p,
+            ),
+          );
+        }
+        void refetch();
         throw err;
       }
     },
-    [presets],
+    [refetch],
   );
 
   const deletePreset = useCallback(
     async (id: string): Promise<void> => {
-      const snapshot = presets;
-      setPresets((prev) => prev.filter((p) => p.id !== id));
+      // Read the prior state from inside the functional updater so rollback
+      // is based on the actually-committed state rather than a stale closure.
+      let previous: Preset | undefined;
+      let previousIndex = -1;
+      setPresets((prev) => {
+        previousIndex = prev.findIndex((p) => p.id === id);
+        previous = previousIndex >= 0 ? prev[previousIndex] : undefined;
+        return prev.filter((p) => p.id !== id);
+      });
       try {
         await apiDeletePreset(id);
       } catch (err) {
-        setPresets(snapshot);
+        if (previous) {
+          const restored = previous;
+          const insertIdx = previousIndex;
+          setPresets((prev) => {
+            if (prev.some((p) => p.id === id)) return prev;
+            const next = [...prev];
+            next.splice(Math.min(Math.max(insertIdx, 0), next.length), 0, restored);
+            return next;
+          });
+        }
+        void refetch();
         throw err;
       }
     },
-    [presets],
+    [refetch],
   );
 
   const duplicatePreset = useCallback(

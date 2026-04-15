@@ -176,10 +176,15 @@ export function useLibraries() {
     [loadLibraryMembership],
   );
 
+  // Mutation resolves as soon as the server acknowledges the write. The
+  // follow-up refetch runs best-effort in the background so a transient
+  // GET failure does not masquerade as a write failure — which would
+  // invite the user to retry and create duplicates (or repeat destructive
+  // deletes).
   const createLibrary = useCallback(
     async (payload: UseLibrariesMutationInput): Promise<void> => {
       await apiCreateLibrary(payload);
-      await refetch();
+      void refetch();
     },
     [refetch],
   );
@@ -187,7 +192,7 @@ export function useLibraries() {
   const updateLibrary = useCallback(
     async (id: string, payload: UseLibrariesUpdateInput): Promise<void> => {
       await apiUpdateLibrary(id, payload);
-      await refetch();
+      void refetch();
     },
     [refetch],
   );
@@ -195,7 +200,7 @@ export function useLibraries() {
   const deleteLibrary = useCallback(
     async (id: string): Promise<void> => {
       await apiDeleteLibrary(id);
-      await refetch();
+      void refetch();
     },
     [refetch],
   );
@@ -217,8 +222,8 @@ export function useLibraries() {
   }, []);
 
   const resyncLibraryMembership = useCallback(
-    async (libraryId: string): Promise<void> => {
-      if (libraryId === ALL_LIBRARY_ID) return;
+    async (libraryId: string): Promise<boolean> => {
+      if (libraryId === ALL_LIBRARY_ID) return true;
       try {
         const data = await getLibraryExperiences(libraryId);
         const ids = data.contents.map((experience) => experience.id);
@@ -229,10 +234,28 @@ export function useLibraries() {
           ),
         );
         markMembershipLoaded(libraryId);
+        return true;
       } catch (err) {
         if (process.env.NODE_ENV !== "production") {
           console.warn("[useLibraries] resyncLibraryMembership failed", libraryId, err);
         }
+        // Resync failed: local state is now known-stale. Drop the loaded
+        // marker and surface an error flag so the UI can expose a retry
+        // affordance via retryLibraryMembership().
+        loadedMembershipRef.current.delete(libraryId);
+        setLoadedMembershipIds((prev) => {
+          if (!prev.has(libraryId)) return prev;
+          const next = new Set(prev);
+          next.delete(libraryId);
+          return next;
+        });
+        setMembershipErrorIds((prev) => {
+          if (prev.has(libraryId)) return prev;
+          const next = new Set(prev);
+          next.add(libraryId);
+          return next;
+        });
+        return false;
       }
     },
     [markMembershipLoaded],
