@@ -81,7 +81,9 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<
+    { id: string; type: AnalysisType } | null
+  >(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -115,12 +117,12 @@ export default function HistoryPage() {
   const [deleteError, setDeleteError] = useState(false);
 
   async function handleDelete() {
-    if (!deleteId) return;
+    if (!deleteTarget) return;
     setDeleteError(false);
     try {
-      await deleteAnalysis(deleteId);
-      setItems((prev) => prev.filter((i) => i.id !== deleteId));
-      setDeleteId(null);
+      await deleteAnalysis(deleteTarget.id, deleteTarget.type);
+      setItems((prev) => prev.filter((i) => i.id !== deleteTarget.id));
+      setDeleteTarget(null);
     } catch {
       setDeleteError(true);
     }
@@ -245,7 +247,8 @@ export default function HistoryPage() {
                     </Link>
                     <button
                       type="button"
-                      onClick={() => setDeleteId(item.id)}
+                      onClick={() => setDeleteTarget({ id: item.id, type: item.type })}
+                      disabled={item.type === "individual"}
                       className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                       aria-label="삭제"
                     >
@@ -259,8 +262,8 @@ export default function HistoryPage() {
         )}
 
         <Dialog
-          open={deleteId !== null}
-          onClose={() => { setDeleteId(null); setDeleteError(false); }}
+          open={deleteTarget !== null}
+          onClose={() => { setDeleteTarget(null); setDeleteError(false); }}
           ariaLabel="분석 삭제 확인"
         >
           <h3 className="text-title text-text-primary mb-2">분석을 삭제할까요?</h3>
@@ -274,7 +277,7 @@ export default function HistoryPage() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => { setDeleteId(null); setDeleteError(false); }}
+              onClick={() => { setDeleteTarget(null); setDeleteError(false); }}
             >
               취소
             </Button>

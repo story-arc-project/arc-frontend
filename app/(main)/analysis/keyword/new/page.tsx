@@ -3,34 +3,29 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { Button, Input } from "@/components/ui";
-import type { KeywordSuggestion, KeywordCategory, SelectableExperience } from "@/types/analysis";
+import { Button } from "@/components/ui";
+import type { KeywordSuggestion, KeywordCategory } from "@/types/analysis";
 import {
   getKeywordSuggestions,
-  getSelectableExperiences,
   createKeywordAnalysis,
 } from "@/lib/api/analysis-api";
 import useAnalysisPolling from "@/hooks/useAnalysisPolling";
 import KeywordSelector from "@/components/features/analysis/KeywordSelector";
-import ExperienceSelector from "@/components/features/analysis/ExperienceSelector";
 
 type Phase = "select" | "loading" | "error";
 
 export default function KeywordNewPage() {
   const [suggestions, setSuggestions] = useState<KeywordSuggestion[]>([]);
-  const [experiences, setExperiences] = useState<SelectableExperience[]>([]);
   const [selectedKeywords, setSelectedKeywords] = useState<
     { label: string; category: KeywordCategory }[]
   >([]);
-  const [scopeAll, setScopeAll] = useState(true);
-  const [selectedExpIds, setSelectedExpIds] = useState<string[]>([]);
-  const [scenario, setScenario] = useState("");
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
   const [analysisId, setAnalysisId] = useState<string | null>(null);
 
   const { start: startPolling } = useAnalysisPolling({
     analysisId,
+    type: "keyword",
     redirectPath: "/analysis/keyword",
     onFailed: (msg) => {
       setPhase("error");
@@ -44,7 +39,6 @@ export default function KeywordNewPage() {
 
   useEffect(() => {
     getKeywordSuggestions().then(setSuggestions);
-    getSelectableExperiences().then(setExperiences);
   }, []);
 
   useEffect(() => {
@@ -56,17 +50,14 @@ export default function KeywordNewPage() {
   const startAnalysis = useCallback(async () => {
     setPhase("loading");
     try {
-      const { analysisId: id } = await createKeywordAnalysis({
-        keywords: selectedKeywords,
-        experienceIds: scopeAll ? undefined : selectedExpIds,
-        scenario: scenario || undefined,
-      });
+      const labels = selectedKeywords.map((k) => k.label);
+      const { analysisId: id } = await createKeywordAnalysis(labels);
       setAnalysisId(id);
     } catch {
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selectedKeywords, scopeAll, selectedExpIds, scenario]);
+  }, [selectedKeywords]);
 
   if (phase === "loading") {
     return (
@@ -114,7 +105,7 @@ export default function KeywordNewPage() {
         <div>
           <h1 className="text-heading-2 text-text-primary">새 키워드 분석</h1>
           <p className="text-body text-text-secondary mt-1">
-            분석할 키워드를 선택하고 범위를 설정하세요.
+            분석할 키워드를 선택해주세요.
           </p>
         </div>
 
@@ -125,57 +116,6 @@ export default function KeywordNewPage() {
             selected={selectedKeywords}
             onChange={setSelectedKeywords}
             maxCount={3}
-          />
-        </section>
-
-        <section className="space-y-3">
-          <h2 className="text-title text-text-primary">분석 범위</h2>
-          <fieldset className="flex items-center gap-4">
-            <legend className="sr-only">분석 범위 선택</legend>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="scope"
-                checked={scopeAll}
-                onChange={() => setScopeAll(true)}
-                className="accent-brand w-4 h-4"
-              />
-              <span className="text-body-sm text-text-primary">전체 경험</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="scope"
-                checked={!scopeAll}
-                onChange={() => setScopeAll(false)}
-                className="accent-brand w-4 h-4"
-              />
-              <span className="text-body-sm text-text-primary">
-                특정 경험만
-              </span>
-            </label>
-          </fieldset>
-          {!scopeAll && (
-            <ExperienceSelector
-              experiences={experiences}
-              selected={selectedExpIds}
-              onChange={setSelectedExpIds}
-              minCount={1}
-            />
-          )}
-        </section>
-
-        <section className="space-y-3">
-          <h2 className="text-title text-text-primary">
-            목표 시나리오{" "}
-            <span className="text-caption text-text-tertiary font-normal">
-              (선택)
-            </span>
-          </h2>
-          <Input
-            value={scenario}
-            onChange={(e) => setScenario(e.target.value)}
-            placeholder="예: 컨설팅펌 취업, 데이터 분석가 전환"
           />
         </section>
 

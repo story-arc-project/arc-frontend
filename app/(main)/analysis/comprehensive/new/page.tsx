@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { Button, Input } from "@/components/ui";
+import { Button } from "@/components/ui";
 import type { SelectableExperience } from "@/types/analysis";
 import {
   getSelectableExperiences,
@@ -17,13 +17,13 @@ type Phase = "select" | "loading" | "error";
 export default function ComprehensiveNewPage() {
   const [experiences, setExperiences] = useState<SelectableExperience[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
-  const [scenario, setScenario] = useState("");
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
   const [analysisId, setAnalysisId] = useState<string | null>(null);
 
   const { start: startPolling } = useAnalysisPolling({
     analysisId,
+    type: "comprehensive",
     redirectPath: "/analysis/comprehensive",
     onFailed: (msg) => {
       setPhase("error");
@@ -48,16 +48,13 @@ export default function ComprehensiveNewPage() {
   const startAnalysis = useCallback(async () => {
     setPhase("loading");
     try {
-      const { analysisId: id } = await createComprehensiveAnalysis({
-        experienceIds: selected,
-        scenario: scenario || undefined,
-      });
+      const { analysisId: id } = await createComprehensiveAnalysis(selected);
       setAnalysisId(id);
     } catch {
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selected, scenario]);
+  }, [selected]);
 
   if (phase === "loading") {
     return (
@@ -105,7 +102,7 @@ export default function ComprehensiveNewPage() {
         <div>
           <h1 className="text-heading-2 text-text-primary">새 종합 분석</h1>
           <p className="text-body text-text-secondary mt-1">
-            분석할 경험을 선택하고 시나리오를 설정하세요.
+            분석할 경험을 선택해주세요.
           </p>
         </div>
 
@@ -116,20 +113,6 @@ export default function ComprehensiveNewPage() {
             selected={selected}
             onChange={setSelected}
             minCount={2}
-          />
-        </section>
-
-        <section className="space-y-3">
-          <h2 className="text-title text-text-primary">
-            목표 시나리오{" "}
-            <span className="text-caption text-text-tertiary font-normal">
-              (선택)
-            </span>
-          </h2>
-          <Input
-            value={scenario}
-            onChange={(e) => setScenario(e.target.value)}
-            placeholder="예: 컨설팅펌 취업, 로스쿨 진학"
           />
         </section>
 

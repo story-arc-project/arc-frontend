@@ -1,14 +1,17 @@
 import { api } from "./client";
+import { getExperiences } from "./experience-api";
+import type { ApiSuccessResponse } from "@/types/api";
 import type {
   AnalysisHomeSummary,
   AnalysisSnapshot,
-  AnalysisStatus,
+  AnalysisType,
   IndividualAnalysisResult,
   ComprehensiveAnalysisResult,
   KeywordAnalysisResult,
   KeywordSuggestion,
   BookmarkedSnapshot,
   SelectableExperience,
+  ConfidenceLevel,
 } from "@/types/analysis";
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
@@ -23,16 +26,202 @@ function mocks() {
   return import("./mocks/analysis");
 }
 
-// ─── Analysis Home ──────────────────────────────────────────
+// ─── Defensive DTO parsing ──────────────────────────────────
+// 백엔드 응답 구조가 프런트 리치 타입과 완전히 일치한다는 보장이 없다.
+// 얕은 매퍼로 누락 필드에 안전 기본값을 채우고, 최상위 형태만 맞춘다.
 
-export function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
-  if (USE_MOCK) return mock(async () => (await mocks()).mockAnalysisHomeSummary);
-  return api.get<AnalysisHomeSummary>("/api/analysis/home/summary");
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord {
+  return value && typeof value === "object" ? (value as UnknownRecord) : {};
+}
+
+function asArray<T = unknown>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function asBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function asConfidence(value: unknown): ConfidenceLevel {
+  return value === "sufficient" || value === "partial" || value === "insufficient"
+    ? value
+    : "partial";
+}
+
+function asAnalysisType(value: unknown, fallback: AnalysisType = "individual"): AnalysisType {
+  return value === "individual" || value === "comprehensive" || value === "keyword"
+    ? value
+    : fallback;
+}
+
+/** 목록 응답이 `T[]` 혹은 `{ items: T[] }` / `{ contents: T[] }` 형태 어느 쪽이든 수용한다. */
+function unwrapList<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  const rec = asRecord(value);
+  if (Array.isArray(rec.items)) return rec.items as T[];
+  if (Array.isArray(rec.contents)) return rec.contents as T[];
+  if (Array.isArray(rec.data)) return rec.data as T[];
+  return [];
+}
+
+function mapSnapshot(
+  dto: unknown,
+  fallbackType: AnalysisType = "individual",
+): AnalysisSnapshot {
+  const r = asRecord(dto);
+  return {
+    id: asString(r.id),
+    type: asAnalysisType(r.type, fallbackType),
+    title: asString(r.title),
+    status:
+      r.status === "pending" ||
+      r.status === "processing" ||
+      r.status === "completed" ||
+      r.status === "failed"
+        ? r.status
+        : "completed",
+    createdAt: asString(r.createdAt ?? r.created_at),
+    experienceCount: asNumber(r.experienceCount ?? r.experience_count),
+    summaryText: asString(r.summaryText ?? r.summary_text ?? r.analysis_summary),
+    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
+    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
+    selectedExperienceIds: Array.isArray(r.selectedExperienceIds ?? r.selected_experience_ids)
+      ? ((r.selectedExperienceIds ?? r.selected_experience_ids) as string[])
+      : undefined,
+    selectedKeywords: Array.isArray(r.selectedKeywords ?? r.selected_keywords)
+      ? ((r.selectedKeywords ?? r.selected_keywords) as string[])
+      : undefined,
+  };
+}
+
+function mapBookmark(dto: unknown): BookmarkedSnapshot {
+  const snapshot = mapSnapshot(dto);
+  const r = asRecord(dto);
+  return {
+    ...snapshot,
+    isBookmarked: true,
+    bookmarkedAt: asString(r.bookmarkedAt ?? r.bookmarked_at ?? snapshot.createdAt),
+  };
+}
+
+/**
+ * detail 응답은 리치 타입과 완전히 일치한다는 보장이 없다.
+ * 프런트에서 사용하는 최상위 필드만 강제로 채우고, 중첩 섹션은 배열 기본값으로 방어한다.
+ */
+function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
+  const r = asRecord(dto);
+  return {
+    id: asString(r.id),
+    experienceId: asString(r.experienceId ?? r.experience_id),
+    experienceTitle: asString(r.experienceTitle ?? r.experience_title),
+    experienceType: asString(r.experienceType ?? r.experience_type),
+    analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
+    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
+    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
+    summary: asString(r.summary ?? r.analysis_summary),
+    incidents: asArray(r.incidents) as IndividualAnalysisResult["incidents"],
+    roleInterpretations: asArray(
+      r.roleInterpretations ?? r.role_interpretations,
+    ) as IndividualAnalysisResult["roleInterpretations"],
+    keywords: asArray(r.keywords) as IndividualAnalysisResult["keywords"],
+    starSummaries: asArray(
+      r.starSummaries ?? r.star_summaries,
+    ) as IndividualAnalysisResult["starSummaries"],
+    recommendations: asArray(r.recommendations) as IndividualAnalysisResult["recommendations"],
+    improvementGuides: asArray(
+      r.improvementGuides ?? r.improvement_guides,
+    ) as IndividualAnalysisResult["improvementGuides"],
+    reusableExpressions: asArray(
+      r.reusableExpressions ?? r.reusable_expressions,
+    ) as IndividualAnalysisResult["reusableExpressions"],
+    relatedExperiences: asArray(
+      r.relatedExperiences ?? r.related_experiences,
+    ) as IndividualAnalysisResult["relatedExperiences"],
+  };
+}
+
+function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
+  const r = asRecord(dto);
+  const confidenceGuide = asRecord(r.confidenceGuide ?? r.confidence_guide);
+  return {
+    id: asString(r.id),
+    title: asString(r.title),
+    analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
+    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
+    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
+    selectedExperienceIds: asArray<string>(
+      r.selectedExperienceIds ?? r.selected_experience_ids,
+    ),
+    experienceSummaries: asArray(
+      r.experienceSummaries ?? r.experience_summaries,
+    ) as ComprehensiveAnalysisResult["experienceSummaries"],
+    keywords: asArray(r.keywords) as ComprehensiveAnalysisResult["keywords"],
+    connections: asArray(r.connections) as ComprehensiveAnalysisResult["connections"],
+    storylines: asArray(r.storylines) as ComprehensiveAnalysisResult["storylines"],
+    scenarios: asArray(r.scenarios) as ComprehensiveAnalysisResult["scenarios"],
+    commonRecommendations: asArray(
+      r.commonRecommendations ?? r.common_recommendations,
+    ) as ComprehensiveAnalysisResult["commonRecommendations"],
+    scenarioRecommendations: asArray(
+      r.scenarioRecommendations ?? r.scenario_recommendations,
+    ) as ComprehensiveAnalysisResult["scenarioRecommendations"],
+    confidenceGuide: {
+      overallConfidence: asConfidence(
+        confidenceGuide.overallConfidence ?? confidenceGuide.overall_confidence,
+      ),
+      improvementGuides: asArray(
+        confidenceGuide.improvementGuides ?? confidenceGuide.improvement_guides,
+      ) as ComprehensiveAnalysisResult["confidenceGuide"]["improvementGuides"],
+    },
+  };
+}
+
+function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
+  const r = asRecord(dto);
+  return {
+    id: asString(r.id),
+    title: asString(r.title),
+    analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
+    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
+    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
+    selectedKeywords: asArray<string>(r.selectedKeywords ?? r.selected_keywords),
+    keywordDefinitions: asArray(
+      r.keywordDefinitions ?? r.keyword_definitions,
+    ) as KeywordAnalysisResult["keywordDefinitions"],
+    selectionCriteria: asString(r.selectionCriteria ?? r.selection_criteria),
+    coverage: asArray(r.coverage) as KeywordAnalysisResult["coverage"],
+    matchedExperiences: asArray(
+      r.matchedExperiences ?? r.matched_experiences,
+    ) as KeywordAnalysisResult["matchedExperiences"],
+    storylines: asArray(r.storylines) as KeywordAnalysisResult["storylines"],
+    fitEvaluations: asArray(
+      r.fitEvaluations ?? r.fit_evaluations,
+    ) as KeywordAnalysisResult["fitEvaluations"],
+    improvementGuides: asArray(
+      r.improvementGuides ?? r.improvement_guides,
+    ) as KeywordAnalysisResult["improvementGuides"],
+    commonRecommendations: asArray(
+      r.commonRecommendations ?? r.common_recommendations,
+    ) as KeywordAnalysisResult["commonRecommendations"],
+    keywordRecommendations: asArray(
+      r.keywordRecommendations ?? r.keyword_recommendations,
+    ) as KeywordAnalysisResult["keywordRecommendations"],
+  };
 }
 
 // ─── Individual ─────────────────────────────────────────────
 
-export function getIndividualAnalysisList(params?: {
+export async function getIndividualAnalysisList(params?: {
   status?: string;
 }): Promise<AnalysisSnapshot[]> {
   if (USE_MOCK)
@@ -42,104 +231,124 @@ export function getIndividualAnalysisList(params?: {
         return mockIndividualAnalysisList.filter((s) => s.status === params.status);
       return mockIndividualAnalysisList;
     });
-  const qs = params?.status && params.status !== "all" ? `?status=${params.status}` : "";
-  return api.get<AnalysisSnapshot[]>(`/api/analysis/individual${qs}`);
+  const res = await api.get<ApiSuccessResponse<unknown>>("/analysis/individual");
+  const items = unwrapList(res.data).map((dto) => mapSnapshot(dto, "individual"));
+  if (params?.status && params.status !== "all") {
+    return items.filter((s) => s.status === params.status);
+  }
+  return items;
 }
 
-export function getIndividualAnalysisResult(
-  analysisId: string
+export async function getIndividualAnalysisResult(
+  analysisId: string,
 ): Promise<IndividualAnalysisResult> {
   if (USE_MOCK)
     return mock(async () => (await mocks()).mockIndividualAnalysisResult);
-  return api.get<IndividualAnalysisResult>(
-    `/api/analysis/individual/${analysisId}`
+  const res = await api.get<ApiSuccessResponse<unknown>>(
+    `/analysis/individual/${analysisId}`,
   );
+  return mapIndividualDetail(res.data);
 }
 
 // ─── Comprehensive ──────────────────────────────────────────
 
-export function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
+export async function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
   if (USE_MOCK) return mock(async () => (await mocks()).mockComprehensiveList);
-  return api.get<AnalysisSnapshot[]>("/api/analysis/comprehensive");
+  const res = await api.get<ApiSuccessResponse<unknown>>("/analysis/comprehensive");
+  return unwrapList(res.data).map((dto) => mapSnapshot(dto, "comprehensive"));
 }
 
-export function createComprehensiveAnalysis(request: {
-  experienceIds: string[];
-  scenario?: string;
-}): Promise<{ analysisId: string }> {
+/**
+ * POST /analysis/comprehensive
+ * body: experience id 배열 (`string[]`)
+ */
+export async function createComprehensiveAnalysis(
+  experienceIds: string[],
+): Promise<{ analysisId: string }> {
   if (USE_MOCK)
     return mock(async () => ({ analysisId: "comp-new-" + Date.now() }));
-  return api.post<{ analysisId: string }>(
-    "/api/analysis/comprehensive",
-    request
+  const res = await api.post<ApiSuccessResponse<unknown>>(
+    "/analysis/comprehensive",
+    experienceIds,
   );
+  const data = asRecord(res.data);
+  return {
+    analysisId: asString(data.id ?? data.analysisId ?? data.analysis_id),
+  };
 }
 
-export function getComprehensiveResult(
-  analysisId: string
+export async function getComprehensiveResult(
+  analysisId: string,
 ): Promise<ComprehensiveAnalysisResult> {
   if (USE_MOCK)
     return mock(async () => (await mocks()).mockComprehensiveResult);
-  return api.get<ComprehensiveAnalysisResult>(
-    `/api/analysis/comprehensive/${analysisId}`
+  const res = await api.get<ApiSuccessResponse<unknown>>(
+    `/analysis/comprehensive/${analysisId}`,
   );
+  return mapComprehensiveDetail(res.data);
 }
 
-export function getAnalysisStatus(
-  analysisId: string
-): Promise<{ status: AnalysisStatus }> {
-  if (USE_MOCK) return mock(async () => ({ status: "completed" as const }));
-  return api.get<{ status: AnalysisStatus }>(
-    `/api/analysis/status/${analysisId}`
-  );
-}
-
-export function deleteComprehensiveAnalysis(
-  analysisId: string
+export async function deleteComprehensiveAnalysis(
+  analysisId: string,
 ): Promise<void> {
   if (USE_MOCK) return mock(async () => undefined);
-  return api.delete(`/api/analysis/comprehensive/${analysisId}`);
+  await api.delete<void>(`/analysis/comprehensive/${analysisId}`);
 }
 
 // ─── Keyword ────────────────────────────────────────────────
 
-export function getKeywordSuggestions(): Promise<KeywordSuggestion[]> {
+/**
+ * 키워드 추천은 백엔드 스펙 미정. 일단 빈 배열 stub.
+ * TODO: 서버 스펙 확정 시 실제 엔드포인트로 연결.
+ */
+export async function getKeywordSuggestions(): Promise<KeywordSuggestion[]> {
   if (USE_MOCK) return mock(async () => (await mocks()).mockKeywordSuggestions);
-  return api.get<KeywordSuggestion[]>("/api/analysis/keyword/suggestions");
+  return [];
 }
 
-export function getKeywordList(): Promise<AnalysisSnapshot[]> {
+export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
   if (USE_MOCK) return mock(async () => (await mocks()).mockKeywordList);
-  return api.get<AnalysisSnapshot[]>("/api/analysis/keyword");
+  const res = await api.get<ApiSuccessResponse<unknown>>("/analysis/keyword");
+  return unwrapList(res.data).map((dto) => mapSnapshot(dto, "keyword"));
 }
 
-export function createKeywordAnalysis(request: {
-  keywords: { label: string; category: string }[];
-  experienceIds?: string[];
-  scenario?: string;
-}): Promise<{ analysisId: string }> {
+/**
+ * POST /analysis/keyword
+ * body: 키워드 라벨 배열 (`string[]`)
+ */
+export async function createKeywordAnalysis(
+  keywordLabels: string[],
+): Promise<{ analysisId: string }> {
   if (USE_MOCK)
     return mock(async () => ({ analysisId: "kw-new-" + Date.now() }));
-  return api.post<{ analysisId: string }>("/api/analysis/keyword", request);
+  const res = await api.post<ApiSuccessResponse<unknown>>(
+    "/analysis/keyword",
+    keywordLabels,
+  );
+  const data = asRecord(res.data);
+  return {
+    analysisId: asString(data.id ?? data.analysisId ?? data.analysis_id),
+  };
 }
 
-export function getKeywordResult(
-  analysisId: string
+export async function getKeywordResult(
+  analysisId: string,
 ): Promise<KeywordAnalysisResult> {
   if (USE_MOCK) return mock(async () => (await mocks()).mockKeywordResult);
-  return api.get<KeywordAnalysisResult>(
-    `/api/analysis/keyword/${analysisId}`
+  const res = await api.get<ApiSuccessResponse<unknown>>(
+    `/analysis/keyword/${analysisId}`,
   );
+  return mapKeywordDetail(res.data);
 }
 
-export function deleteKeywordAnalysis(analysisId: string): Promise<void> {
+export async function deleteKeywordAnalysis(analysisId: string): Promise<void> {
   if (USE_MOCK) return mock(async () => undefined);
-  return api.delete(`/api/analysis/keyword/${analysisId}`);
+  await api.delete<void>(`/analysis/keyword/${analysisId}`);
 }
 
 // ─── Bookmarks ──────────────────────────────────────────────
 
-export function getBookmarks(params?: {
+export async function getBookmarks(params?: {
   type?: string;
 }): Promise<BookmarkedSnapshot[]> {
   if (USE_MOCK)
@@ -149,23 +358,107 @@ export function getBookmarks(params?: {
         return mockBookmarks.filter((b) => b.type === params.type);
       return mockBookmarks;
     });
-  const qs = params?.type && params.type !== "all" ? `?type=${params.type}` : "";
-  return api.get<BookmarkedSnapshot[]>(`/api/analysis/bookmarks${qs}`);
+  const res = await api.get<ApiSuccessResponse<unknown>>("/analysis/bookmarks");
+  const items = unwrapList(res.data).map(mapBookmark);
+  if (params?.type && params.type !== "all") {
+    return items.filter((b) => b.type === params.type);
+  }
+  return items;
 }
 
-export function addBookmark(analysisId: string): Promise<void> {
+/** POST /analysis/bookmarks/:id — body 없음 */
+export async function addBookmark(analysisId: string): Promise<void> {
   if (USE_MOCK) return mock(async () => undefined);
-  return api.post(`/api/analysis/bookmarks`, { analysisId });
+  await api.post<void>(`/analysis/bookmarks/${analysisId}`);
 }
 
-export function removeBookmark(analysisId: string): Promise<void> {
+export async function removeBookmark(analysisId: string): Promise<void> {
   if (USE_MOCK) return mock(async () => undefined);
-  return api.delete(`/api/analysis/bookmarks/${analysisId}`);
+  await api.delete<void>(`/analysis/bookmarks/${analysisId}`);
 }
 
-// ─── History ────────────────────────────────────────────────
+// ─── Meta / Delete ──────────────────────────────────────────
 
-export function getAnalysisHistory(params?: {
+/** PATCH /analysis/:id — 제목 변경 등 메타 수정 */
+export async function updateAnalysisMeta(
+  analysisId: string,
+  data: { title: string },
+): Promise<void> {
+  if (USE_MOCK) return mock(async () => undefined);
+  await api.patch<void>(`/analysis/${analysisId}`, data);
+}
+
+/**
+ * 스펙상 `/analysis/:id` DELETE는 없으므로 타입별 엔드포인트로 분기한다.
+ * individual 은 스펙상 삭제 엔드포인트가 없어 에러를 던진다.
+ */
+export async function deleteAnalysis(
+  analysisId: string,
+  type: AnalysisType,
+): Promise<void> {
+  if (USE_MOCK) return mock(async () => undefined);
+  if (type === "comprehensive") {
+    return deleteComprehensiveAnalysis(analysisId);
+  }
+  if (type === "keyword") {
+    return deleteKeywordAnalysis(analysisId);
+  }
+  throw new Error("개별 분석은 삭제할 수 없어요.");
+}
+
+// ─── Aggregated views (client-side) ─────────────────────────
+
+/**
+ * `/analysis/home/summary` 엔드포인트가 없으므로 세 목록을 병렬 fetch 후 집계한다.
+ */
+export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
+  if (USE_MOCK)
+    return mock(async () => (await mocks()).mockAnalysisHomeSummary);
+
+  const [individual, comprehensive, keyword, experiencesData] = await Promise.all([
+    getIndividualAnalysisList().catch(() => [] as AnalysisSnapshot[]),
+    getComprehensiveList().catch(() => [] as AnalysisSnapshot[]),
+    getKeywordList().catch(() => [] as AnalysisSnapshot[]),
+    getExperiences().catch(() => ({ count: 0, contents: [] })),
+  ]);
+
+  const all = [...individual, ...comprehensive, ...keyword];
+  const completed = all.filter((s) => s.status === "completed");
+  const improvementNeeded = all.filter(
+    (s) => s.overallConfidence !== "sufficient",
+  ).length;
+  const lastAnalysisAt = all
+    .map((s) => s.createdAt)
+    .filter(Boolean)
+    .sort()
+    .pop() ?? "";
+
+  const recentSlice = (items: AnalysisSnapshot[]) =>
+    [...items]
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
+      .slice(0, 3);
+
+  return {
+    stats: {
+      totalExperiences: experiencesData.count,
+      analysisCompleted: completed.length,
+      lastAnalysisAt,
+      improvementNeeded,
+    },
+    recentIndividual: recentSlice(individual),
+    recentComprehensive: recentSlice(comprehensive),
+    recentKeyword: recentSlice(keyword),
+    recommendations: {
+      experienceGroups: [],
+      suggestedKeywords: [],
+    },
+  };
+}
+
+/**
+ * `/analysis/history` 엔드포인트가 없으므로 세 목록을 병합해 반환한다.
+ */
+export async function getAnalysisHistory(params?: {
   type?: string;
   sort?: "newest" | "oldest";
 }): Promise<AnalysisSnapshot[]> {
@@ -178,32 +471,44 @@ export function getAnalysisHistory(params?: {
       if (params?.sort === "oldest") result.reverse();
       return result;
     });
-  const qs = new URLSearchParams();
-  if (params?.type && params.type !== "all") qs.set("type", params.type);
-  if (params?.sort) qs.set("sort", params.sort);
-  const query = qs.toString();
-  return api.get<AnalysisSnapshot[]>(
-    `/api/analysis/history${query ? `?${query}` : ""}`
-  );
-}
 
-export function updateAnalysisMeta(
-  analysisId: string,
-  data: { title: string }
-): Promise<void> {
-  if (USE_MOCK) return mock(async () => undefined);
-  return api.patch(`/api/analysis/${analysisId}`, data);
-}
+  const [individual, comprehensive, keyword] = await Promise.all([
+    getIndividualAnalysisList().catch(() => [] as AnalysisSnapshot[]),
+    getComprehensiveList().catch(() => [] as AnalysisSnapshot[]),
+    getKeywordList().catch(() => [] as AnalysisSnapshot[]),
+  ]);
 
-export function deleteAnalysis(analysisId: string): Promise<void> {
-  if (USE_MOCK) return mock(async () => undefined);
-  return api.delete(`/api/analysis/${analysisId}`);
+  let merged = [...individual, ...comprehensive, ...keyword];
+  if (params?.type && params.type !== "all") {
+    merged = merged.filter((s) => s.type === params.type);
+  }
+  merged.sort((a, b) => {
+    const cmp = (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+    return params?.sort === "oldest" ? -cmp : cmp;
+  });
+  return merged;
 }
 
 // ─── Selectable Experiences ─────────────────────────────────
 
-export function getSelectableExperiences(): Promise<SelectableExperience[]> {
+/**
+ * 전용 엔드포인트가 없으므로 경험 목록 API에서 derive 한다.
+ */
+export async function getSelectableExperiences(): Promise<SelectableExperience[]> {
   if (USE_MOCK)
     return mock(async () => (await mocks()).mockSelectableExperiences);
-  return api.get("/api/analysis/experiences/selectable");
+
+  const data = await getExperiences();
+  return data.contents.map((exp) => {
+    const content = asRecord(exp.content);
+    const title = asString(content.title);
+    const status = asString(content.status);
+    return {
+      id: exp.id,
+      title,
+      type: exp.type,
+      importance: typeof exp.importance === "number" ? exp.importance : 0,
+      isComplete: status !== "draft",
+    };
+  });
 }

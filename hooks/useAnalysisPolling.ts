@@ -2,20 +2,37 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getAnalysisStatus } from "@/lib/api/analysis-api";
+import {
+  getComprehensiveList,
+  getKeywordList,
+} from "@/lib/api/analysis-api";
+import type { AnalysisSnapshot, AnalysisType } from "@/types/analysis";
 
 const MAX_RETRIES = 20;
 const POLL_INTERVAL_MS = 3_000;
 
+type PollableType = Exclude<AnalysisType, "individual">;
+
 interface UseAnalysisPollingOptions {
   analysisId: string | null;
+  type: PollableType;
   redirectPath: string;
   onFailed: (msg: string) => void;
   onTimeout: (msg: string) => void;
 }
 
+async function fetchSnapshotStatus(
+  type: PollableType,
+  id: string,
+): Promise<AnalysisSnapshot | undefined> {
+  const list =
+    type === "comprehensive" ? await getComprehensiveList() : await getKeywordList();
+  return list.find((s) => s.id === id);
+}
+
 export default function useAnalysisPolling({
   analysisId,
+  type,
   redirectPath,
   onFailed,
   onTimeout,
@@ -35,8 +52,9 @@ export default function useAnalysisPolling({
       for (let i = 0; i < MAX_RETRIES; i++) {
         if (controller.signal.aborted) return;
         try {
-          const { status } = await getAnalysisStatus(analysisId);
+          const snapshot = await fetchSnapshotStatus(type, analysisId);
           if (controller.signal.aborted) return;
+          const status = snapshot?.status;
           if (status === "completed") {
             router.push(`${redirectPath}/${analysisId}`);
             return;
@@ -65,7 +83,7 @@ export default function useAnalysisPolling({
         onTimeout("분석 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
       }
     })();
-  }, [analysisId, redirectPath, onFailed, onTimeout, router]);
+  }, [analysisId, type, redirectPath, onFailed, onTimeout, router]);
 
   useEffect(() => {
     return () => {
