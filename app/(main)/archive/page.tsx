@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react"
@@ -69,7 +69,28 @@ export default function ArchivePage() {
   } = useLibraries()
 
   const [activeLibraryId, setActiveLibraryId] = useState(ALL_LIBRARY_ID)
+  const [libraryActionError, setLibraryActionError] = useState<string | null>(null)
   const presetsHook = usePresets()
+
+  // Ref mirror lets deferred callbacks (e.g. delete onSuccess) read the current
+  // active library instead of the value captured when the request was dispatched.
+  const activeLibraryIdRef = useRef(activeLibraryId)
+  useEffect(() => { activeLibraryIdRef.current = activeLibraryId }, [activeLibraryId])
+
+  const runLibraryAction = useCallback(
+    (promise: Promise<void>, failMsg: string, onSuccess?: () => void) => {
+      promise
+        .then(() => {
+          onSuccess?.()
+        })
+        .catch(() => {
+          // Keep prior banners if they're unrelated; only overwrite with the
+          // latest failure. Users dismiss manually via the close button.
+          setLibraryActionError(failMsg)
+        })
+    },
+    [],
+  )
 
   // Library-scoped experiences: system=all, filter-based=smart match, manual=by IDs
   const activeLibrary = libraries.find(l => l.id === activeLibraryId)
@@ -240,66 +261,84 @@ export default function ArchivePage() {
   }, [])
 
   const handleCreateLibrary = useCallback((name: string) => {
-    void createLibrary({
-      name,
-      isSystem: false,
-    })
-  }, [createLibrary])
+    runLibraryAction(
+      createLibrary({ name, isSystem: false }),
+      "라이브러리를 만들지 못했어요",
+    )
+  }, [createLibrary, runLibraryAction])
 
   const handleRenameLibrary = useCallback((id: string, name: string) => {
     const library = libraries.find((item) => item.id === id)
     if (!library) return
 
-    void updateLibrary(id, {
-      name,
-      color: library.color,
-      icon: library.icon,
-      isSystem: library.isSystem,
-      filter: library.filter,
-    })
-  }, [libraries, updateLibrary])
+    runLibraryAction(
+      updateLibrary(id, {
+        name,
+        color: library.color,
+        icon: library.icon,
+        filter: library.filter,
+      }),
+      "라이브러리 이름을 변경하지 못했어요",
+    )
+  }, [libraries, updateLibrary, runLibraryAction])
 
   const handleUpdateLibraryColor = useCallback((id: string, color: string) => {
     const library = libraries.find((item) => item.id === id)
     if (!library) return
 
-    void updateLibrary(id, {
-      name: library.name,
-      color,
-      icon: library.icon,
-      isSystem: library.isSystem,
-      filter: library.filter,
-    })
-  }, [libraries, updateLibrary])
+    runLibraryAction(
+      updateLibrary(id, {
+        name: library.name,
+        color,
+        icon: library.icon,
+        filter: library.filter,
+      }),
+      "라이브러리 색상을 변경하지 못했어요",
+    )
+  }, [libraries, updateLibrary, runLibraryAction])
 
   const handleDeleteLibrary = useCallback((id: string) => {
-    void deleteLibrary(id)
-    if (activeLibraryId === id) {
-      setActiveLibraryId(ALL_LIBRARY_ID)
-      clearFilters()
-    }
-  }, [activeLibraryId, clearFilters, deleteLibrary])
+    runLibraryAction(
+      deleteLibrary(id),
+      "라이브러리를 삭제하지 못했어요",
+      () => {
+        if (activeLibraryIdRef.current === id) {
+          setActiveLibraryId(ALL_LIBRARY_ID)
+          clearFilters()
+        }
+      },
+    )
+  }, [clearFilters, deleteLibrary, runLibraryAction])
 
   const handleMoveToLibrary = useCallback((experienceId: string, libraryId: string) => {
     const library = libraries.find((item) => item.id === libraryId)
     if (!library || library.isSystem || library.filter) return
 
     if (library.experienceIds.includes(experienceId)) {
-      void removeExperienceFromLibrary(libraryId, experienceId)
+      runLibraryAction(
+        removeExperienceFromLibrary(libraryId, experienceId),
+        "라이브러리에서 제거하지 못했어요",
+      )
       return
     }
 
-    void addExperienceToLibrary(libraryId, experienceId)
-  }, [addExperienceToLibrary, libraries, removeExperienceFromLibrary])
+    runLibraryAction(
+      addExperienceToLibrary(libraryId, experienceId),
+      "라이브러리에 추가하지 못했어요",
+    )
+  }, [addExperienceToLibrary, libraries, removeExperienceFromLibrary, runLibraryAction])
 
   // ── Save current filter as smart library ───────────────────────────
   const handleSaveAsLibrary = useCallback((name: string) => {
-    void createLibrary({
-      name,
-      isSystem: false,
-      filter: { ...filter },
-    })
-  }, [createLibrary, filter])
+    runLibraryAction(
+      createLibrary({
+        name,
+        isSystem: false,
+        filter: { ...filter },
+      }),
+      "라이브러리를 만들지 못했어요",
+    )
+  }, [createLibrary, filter, runLibraryAction])
 
   // ── Unsaved guard ─────────────────────────────────────────────────
   const confirmDiscard = useCallback(() => {
@@ -357,6 +396,21 @@ export default function ArchivePage() {
               className="text-brand hover:text-brand-dark transition-colors shrink-0"
             >
               다시 시도
+            </button>
+          </div>
+        )}
+        {libraryActionError && (
+          <div
+            role="alert"
+            aria-live="polite"
+            className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-border bg-surface text-text-secondary text-body-sm"
+          >
+            <p>{libraryActionError}</p>
+            <button
+              onClick={() => setLibraryActionError(null)}
+              className="text-brand hover:text-brand-dark transition-colors shrink-0"
+            >
+              닫기
             </button>
           </div>
         )}

@@ -30,7 +30,6 @@ interface UseLibrariesUpdateInput {
   name?: string;
   color?: string;
   icon?: string;
-  isSystem?: boolean;
   filter?: LibraryFilter;
 }
 
@@ -42,13 +41,17 @@ export function useLibraries() {
   const [loadedMembershipIds, setLoadedMembershipIds] = useState<Set<string>>(() => new Set());
   const [membershipErrorIds, setMembershipErrorIds] = useState<Set<string>>(() => new Set());
   const loadedMembershipRef = useRef<Set<string>>(new Set());
+  const refetchVersionRef = useRef(0);
 
   const refetch = useCallback(async () => {
+    const version = ++refetchVersionRef.current;
     setIsLoading(true);
     setError(null);
 
     try {
       const libraryDTOs = await getLibraries();
+      if (version !== refetchVersionRef.current) return;
+
       const mappedLibraries = libraryDTOs
         .map((library) => toLibrary(library))
         .filter((library) => library.id !== ALL_LIBRARY_ID);
@@ -58,9 +61,12 @@ export function useLibraries() {
       setMembershipErrorIds(new Set());
       setLibraries([createAllLibrary(), ...mappedLibraries]);
     } catch (err) {
+      if (version !== refetchVersionRef.current) return;
       setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
     } finally {
-      setIsLoading(false);
+      if (version === refetchVersionRef.current) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -73,6 +79,10 @@ export function useLibraries() {
       if (libraryId === ALL_LIBRARY_ID) return;
       if (loadedMembershipRef.current.has(libraryId)) return;
       loadedMembershipRef.current.add(libraryId);
+      // Pin this call to the refetch generation that started it. If a later
+      // refetch bumps the version before we resolve, we drop our result so a
+      // stale membership response can't overwrite fresh state.
+      const version = refetchVersionRef.current;
       setLoadingMembershipIds((prev) => {
         const next = new Set(prev);
         next.add(libraryId);
@@ -87,6 +97,7 @@ export function useLibraries() {
       let succeeded = false;
       try {
         const data = await getLibraryExperiences(libraryId);
+        if (version !== refetchVersionRef.current) return;
         const ids = data.contents.map((experience) => experience.id);
         setLibraries((prev) =>
           prev.map((library) =>
@@ -94,7 +105,12 @@ export function useLibraries() {
           ),
         );
         succeeded = true;
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[useLibraries] loadLibraryMembership failed", libraryId, err);
+        }
       } finally {
+        if (version === refetchVersionRef.current) {
         setLoadingMembershipIds((prev) => {
           if (!prev.has(libraryId)) return prev;
           const next = new Set(prev);
@@ -119,6 +135,7 @@ export function useLibraries() {
             next.add(libraryId);
             return next;
           });
+        }
         }
       }
     },
