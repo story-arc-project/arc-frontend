@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   getExperiences,
+  getExperience,
   createExperience as apiCreateExperience,
   updateExperience as apiUpdateExperience,
   deleteExperience as apiDeleteExperience,
+  duplicateExperience as apiDuplicateExperience,
 } from "@/lib/api/experience-api";
 import type { Experience, ExperienceSavePayload, ExperienceUpdatePayload } from "@/types/experience";
 
@@ -60,6 +62,30 @@ export function useExperiences() {
     [refetch],
   );
 
+  const duplicateExperience = useCallback(
+    async (id: string): Promise<string> => {
+      const newId = await apiDuplicateExperience(id);
+      // POST succeeded — the server-side record exists. The follow-up fetch is
+      // best-effort hydration so selection works before the list refresh; a
+      // failure here must not make the caller think duplication failed and
+      // retry, which would create multiple copies.
+      try {
+        const created = await getExperience(newId);
+        let inserted = false;
+        setExperiences((prev) => {
+          if (prev.some((e) => e.id === created.id)) return prev;
+          inserted = true;
+          return [created, ...prev];
+        });
+        if (inserted) setCount((c) => c + 1);
+      } catch {
+        refetch();
+      }
+      return newId;
+    },
+    [refetch],
+  );
+
   return {
     experiences,
     count,
@@ -69,5 +95,6 @@ export function useExperiences() {
     createExperience,
     updateExperience,
     deleteExperience,
+    duplicateExperience,
   };
 }

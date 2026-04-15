@@ -20,7 +20,6 @@ import {
   toUpdateImportancePayload,
 } from "@/lib/utils/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
-import { cloneBlocks, uid } from "@/lib/utils/block-utils"
 import { usePresets } from "@/hooks/usePresets"
 import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
 
@@ -48,6 +47,7 @@ export default function ArchivePage() {
     createExperience: apiCreate,
     updateExperience: apiUpdate,
     deleteExperience: apiDelete,
+    duplicateExperience: apiDuplicate,
   } = useExperiences()
 
   const experiences = useMemo(() => apiExperiences.map(toExperienceV2), [apiExperiences])
@@ -70,6 +70,7 @@ export default function ArchivePage() {
 
   const [activeLibraryId, setActiveLibraryId] = useState(ALL_LIBRARY_ID)
   const [libraryActionError, setLibraryActionError] = useState<string | null>(null)
+  const [experienceActionError, setExperienceActionError] = useState<string | null>(null)
   const presetsHook = usePresets()
 
   // Ref mirror lets deferred callbacks (e.g. delete onSuccess) read the current
@@ -226,22 +227,18 @@ export default function ArchivePage() {
 
   const handleDuplicate = useCallback(
     async (exp: ExperienceV2) => {
-      const clone: ExperienceV2 = {
-        ...exp,
-        id: uid("exp"),
-        title: `${exp.title} (복사본)`,
-        status: "draft",
-        coreBlocks: cloneBlocks(exp.coreBlocks),
-        extensionBlocks: cloneBlocks(exp.extensionBlocks),
-        customBlocks: cloneBlocks(exp.customBlocks),
+      try {
+        const newId = await apiDuplicate(exp.id)
+        setExperienceActionError(null)
+        setSelectedId(newId)
+        setMode("detail")
+        router.push(`/archive?id=${newId}`, { scroll: false })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "경험을 복제하지 못했어요"
+        setExperienceActionError(message)
       }
-      const payload = toSavePayload(clone)
-      const created = await apiCreate(payload)
-      setSelectedId(created.id)
-      setMode("detail")
-      router.push(`/archive?id=${created.id}`, { scroll: false })
     },
-    [apiCreate, router]
+    [apiDuplicate, router]
   )
 
   const handleCancel = useCallback(() => {
@@ -408,6 +405,21 @@ export default function ArchivePage() {
             <p>{libraryActionError}</p>
             <button
               onClick={() => setLibraryActionError(null)}
+              className="text-brand hover:text-brand-dark transition-colors shrink-0"
+            >
+              닫기
+            </button>
+          </div>
+        )}
+        {experienceActionError && (
+          <div
+            role="alert"
+            aria-live="polite"
+            className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-border bg-surface text-text-secondary text-body-sm"
+          >
+            <p>{experienceActionError}</p>
+            <button
+              onClick={() => setExperienceActionError(null)}
               className="text-brand hover:text-brand-dark transition-colors shrink-0"
             >
               닫기

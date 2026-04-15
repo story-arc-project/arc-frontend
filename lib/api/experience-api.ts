@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, ApiError } from "./client";
 import type {
   Experience,
   ExperienceListData,
@@ -44,4 +44,15 @@ export async function updateExperience(
 
 export async function deleteExperience(id: string): Promise<void> {
   await api.delete<void>(`/experiences/${id}`);
+}
+
+export async function duplicateExperience(id: string): Promise<string> {
+  const res = await api.post<ApiSuccessResponse<{ id: string }>>(
+    `/experiences/${id}/duplicate`,
+  );
+  const newId = res?.data?.id;
+  if (typeof newId !== "string" || !newId) {
+    throw new ApiError(500, "복제 응답 형식이 올바르지 않아요.");
+  }
+  return newId;
 }
