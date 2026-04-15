@@ -65,18 +65,25 @@ export function useExperiences() {
   const duplicateExperience = useCallback(
     async (id: string): Promise<string> => {
       const newId = await apiDuplicateExperience(id);
-      // Fetch the new record directly so selection works even if the list
-      // refresh fails or is delayed. A failing list refresh must not silently
-      // leave the caller with an id that is missing from local state.
-      const created = await getExperience(newId);
-      setExperiences((prev) => {
-        if (prev.some((e) => e.id === created.id)) return prev;
-        return [created, ...prev];
-      });
-      setCount((c) => c + 1);
+      // POST succeeded — the server-side record exists. The follow-up fetch is
+      // best-effort hydration so selection works before the list refresh; a
+      // failure here must not make the caller think duplication failed and
+      // retry, which would create multiple copies.
+      try {
+        const created = await getExperience(newId);
+        let inserted = false;
+        setExperiences((prev) => {
+          if (prev.some((e) => e.id === created.id)) return prev;
+          inserted = true;
+          return [created, ...prev];
+        });
+        if (inserted) setCount((c) => c + 1);
+      } catch {
+        refetch();
+      }
       return newId;
     },
-    [],
+    [refetch],
   );
 
   return {
