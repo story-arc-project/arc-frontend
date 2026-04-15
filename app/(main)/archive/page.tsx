@@ -85,14 +85,25 @@ export default function ArchivePage() {
   // ExperienceCard reads `experienceIds` for every manual library to decide
   // which library badges to render and which submenu items to mark as already
   // a member. That state is background-hydrated by `useLibraries`, so until
-  // *all* manual libraries finish loading we must not pass a partially-hydrated
-  // list to the card — otherwise the "전체" view shows missing badges and the
-  // "라이브러리 이동" submenu reports false "unchecked" entries, letting users
-  // send duplicate add requests. Gate the prop on full readiness; the card
-  // already handles `libraries === undefined` by hiding both surfaces.
+  // *all* manual libraries have *settled* (loaded or errored) we must not pass
+  // a partially-hydrated list to the card — otherwise the "전체" view shows
+  // missing badges and the "라이브러리 이동" submenu reports false "unchecked"
+  // entries, letting users send duplicate add requests. We treat errored
+  // libraries as settled so a single failure doesn't permanently disable
+  // library actions across the whole archive; the retry banner below lets the
+  // user recover, and the errored library simply has empty experienceIds
+  // until the retry succeeds.
   const manualLibraries = libraries.filter(l => !l.isSystem && !l.filter)
-  const allMembershipsLoaded = manualLibraries.every(l => loadedMembershipIds.has(l.id))
-  const librariesForCard = allMembershipsLoaded ? libraries : undefined
+  const erroredManualLibraries = manualLibraries.filter(l => membershipErrorIds.has(l.id))
+  const allMembershipsSettled = manualLibraries.every(
+    l => loadedMembershipIds.has(l.id) || membershipErrorIds.has(l.id),
+  )
+  const librariesForCard = allMembershipsSettled ? libraries : undefined
+  const hasMembershipErrors = erroredManualLibraries.length > 0
+
+  const retryAllFailedMemberships = useCallback(() => {
+    erroredManualLibraries.forEach(l => { void retryLibraryMembership(l.id) })
+  }, [erroredManualLibraries, retryLibraryMembership])
 
   const libraryExperiences = activeLibraryId === ALL_LIBRARY_ID
     ? experiences
@@ -330,6 +341,19 @@ export default function ArchivePage() {
         onSaveAsLibrary={handleSaveAsLibrary}
       />
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+        {hasMembershipErrors && (
+          <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-border bg-surface text-text-secondary text-body-sm">
+            <p>
+              일부 라이브러리({erroredManualLibraries.map(l => l.name).join(", ")})를 불러오지 못했어요
+            </p>
+            <button
+              onClick={retryAllFailedMemberships}
+              className="text-brand hover:text-brand-dark transition-colors shrink-0"
+            >
+              다시 시도
+            </button>
+          </div>
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-text-tertiary">
             <p className="text-body">불러오는 중…</p>
