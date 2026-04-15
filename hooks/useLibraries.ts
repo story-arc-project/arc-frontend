@@ -216,6 +216,10 @@ export function useLibraries() {
   const addExperienceToLibrary = useCallback(
     async (libraryId: string, experienceId: string): Promise<void> => {
       await apiAddExperienceToLibrary(libraryId, experienceId);
+      // Bump the version so any in-flight loadLibraryMembership() pinned to
+      // the prior version drops its (now-stale) server snapshot instead of
+      // stomping this optimistic add.
+      refetchVersionRef.current += 1;
       setLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
@@ -231,6 +235,7 @@ export function useLibraries() {
   const removeExperienceFromLibrary = useCallback(
     async (libraryId: string, experienceId: string): Promise<void> => {
       await apiRemoveExperienceFromLibrary(libraryId, experienceId);
+      refetchVersionRef.current += 1;
       setLibraries((prev) =>
         prev.map((library) =>
           library.id === libraryId
