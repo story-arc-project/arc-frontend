@@ -88,17 +88,23 @@ export default function ArchivePage() {
   // *all* manual libraries have *settled* (loaded or errored) we must not pass
   // a partially-hydrated list to the card — otherwise the "전체" view shows
   // missing badges and the "라이브러리 이동" submenu reports false "unchecked"
-  // entries, letting users send duplicate add requests. We treat errored
-  // libraries as settled so a single failure doesn't permanently disable
-  // library actions across the whole archive; the retry banner below lets the
-  // user recover, and the errored library simply has empty experienceIds
-  // until the retry succeeds.
+  // entries, letting users send duplicate add requests.
+  //
+  // Errored libraries count as settled for gating purposes so a single
+  // failure doesn't permanently disable library actions across the whole
+  // archive. However, we must also *strip* errored libraries from the list
+  // we hand to the card: their `experienceIds` is empty-by-failure, not
+  // empty-by-truth, so leaving them in would let the submenu offer a
+  // spurious "add" action that could duplicate an existing membership on the
+  // server. The retry banner below surfaces those libraries separately.
   const manualLibraries = libraries.filter(l => !l.isSystem && !l.filter)
   const erroredManualLibraries = manualLibraries.filter(l => membershipErrorIds.has(l.id))
   const allMembershipsSettled = manualLibraries.every(
     l => loadedMembershipIds.has(l.id) || membershipErrorIds.has(l.id),
   )
-  const librariesForCard = allMembershipsSettled ? libraries : undefined
+  const librariesForCard = allMembershipsSettled
+    ? libraries.filter(l => !membershipErrorIds.has(l.id))
+    : undefined
   const hasMembershipErrors = erroredManualLibraries.length > 0
 
   const retryAllFailedMemberships = useCallback(() => {
