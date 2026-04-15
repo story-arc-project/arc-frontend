@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react"
@@ -11,8 +11,9 @@ import FilterBar from "@/components/features/archive/FilterBar"
 import ExperienceCard from "@/components/features/archive/ExperienceCard"
 import RightPanelV2 from "@/components/features/archive/RightPanelV2"
 import type { ArchiveModeV2 } from "@/components/features/archive/RightPanelV2"
-import type { ExperienceV2, ImportanceLevel, Library } from "@/types/archive"
+import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
 import { useExperiences } from "@/hooks/useExperiences"
+import { useLibraries } from "@/hooks/useLibraries"
 import {
   toExperienceV2,
   toSavePayload,
@@ -21,10 +22,7 @@ import {
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { cloneBlocks, uid } from "@/lib/utils/block-utils"
 import { usePresets } from "@/hooks/usePresets"
-
-const DEFAULT_LIBRARIES: Library[] = [
-  { id: "lib-all", name: "전체", isSystem: true, experienceIds: [] },
-]
+import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
 
 /** @deprecated Use ArchiveModeV2 from RightPanelV2 */
 export type ArchiveMode = "empty" | "new" | "detail" | "edit"
@@ -46,7 +44,7 @@ export default function ArchivePage() {
 
   const {
     experiences: apiExperiences,
-    isLoading,
+    isLoading: isExperiencesLoading,
     createExperience: apiCreate,
     updateExperience: apiUpdate,
     deleteExperience: apiDelete,
@@ -54,13 +52,87 @@ export default function ArchivePage() {
 
   const experiences = useMemo(() => apiExperiences.map(toExperienceV2), [apiExperiences])
 
-  const [libraries, setLibraries] = useState<Library[]>(DEFAULT_LIBRARIES)
-  const [activeLibraryId, setActiveLibraryId] = useState("lib-all")
+  const {
+    libraries,
+    isLoading: isLibrariesLoading,
+    error: librariesError,
+    refetch: refetchLibraries,
+    createLibrary,
+    updateLibrary,
+    deleteLibrary,
+    addExperienceToLibrary,
+    removeExperienceFromLibrary,
+    retryLibraryMembership,
+    loadingMembershipIds,
+    loadedMembershipIds,
+    membershipErrorIds,
+  } = useLibraries()
+
+  const [activeLibraryId, setActiveLibraryId] = useState(ALL_LIBRARY_ID)
+  const [libraryActionError, setLibraryActionError] = useState<string | null>(null)
   const presetsHook = usePresets()
+
+  // Ref mirror lets deferred callbacks (e.g. delete onSuccess) read the current
+  // active library instead of the value captured when the request was dispatched.
+  const activeLibraryIdRef = useRef(activeLibraryId)
+  useEffect(() => { activeLibraryIdRef.current = activeLibraryId }, [activeLibraryId])
+
+  const runLibraryAction = useCallback(
+    (promise: Promise<void>, failMsg: string, onSuccess?: () => void) => {
+      promise
+        .then(() => {
+          onSuccess?.()
+        })
+        .catch(() => {
+          // Keep prior banners if they're unrelated; only overwrite with the
+          // latest failure. Users dismiss manually via the close button.
+          setLibraryActionError(failMsg)
+        })
+    },
+    [],
+  )
 
   // Library-scoped experiences: system=all, filter-based=smart match, manual=by IDs
   const activeLibrary = libraries.find(l => l.id === activeLibraryId)
-  const libraryExperiences = activeLibraryId === "lib-all"
+  const isActiveManual = !!activeLibrary && !activeLibrary.isSystem && !activeLibrary.filter
+  const activeLibraryHasError =
+    isActiveManual && membershipErrorIds.has(activeLibrary!.id)
+  const isManualMembershipPending =
+    isActiveManual &&
+    !activeLibraryHasError &&
+    (loadingMembershipIds.has(activeLibrary!.id) || !loadedMembershipIds.has(activeLibrary!.id))
+  const isLoading = isExperiencesLoading || isLibrariesLoading || isManualMembershipPending
+
+  // ExperienceCard reads `experienceIds` for every manual library to decide
+  // which library badges to render and which submenu items to mark as already
+  // a member. That state is background-hydrated by `useLibraries`, so until
+  // *all* manual libraries have *settled* (loaded or errored) we must not pass
+  // a partially-hydrated list to the card — otherwise the "전체" view shows
+  // missing badges and the "라이브러리 이동" submenu reports false "unchecked"
+  // entries, letting users send duplicate add requests.
+  //
+  // Errored libraries count as settled for gating purposes so a single
+  // failure doesn't permanently disable library actions across the whole
+  // archive. However, we must also *strip* errored libraries from the list
+  // we hand to the card: their `experienceIds` is empty-by-failure, not
+  // empty-by-truth, so leaving them in would let the submenu offer a
+  // spurious "add" action that could duplicate an existing membership on the
+  // server. The retry banner below surfaces those libraries separately.
+  const manualLibraries = libraries.filter(l => !l.isSystem && !l.filter)
+  const erroredManualLibraries = manualLibraries.filter(l => membershipErrorIds.has(l.id))
+  const allMembershipsSettled = manualLibraries.every(
+    l => loadedMembershipIds.has(l.id) || membershipErrorIds.has(l.id),
+  )
+  const librariesForCard = allMembershipsSettled
+    ? libraries.filter(l => !membershipErrorIds.has(l.id))
+    : undefined
+  const hasMembershipErrors = erroredManualLibraries.length > 0
+
+  const retryAllFailedMemberships = useCallback(() => {
+    erroredManualLibraries.forEach(l => { void retryLibraryMembership(l.id) })
+  }, [erroredManualLibraries, retryLibraryMembership])
+
+  const libraryExperiences = activeLibraryId === ALL_LIBRARY_ID
     ? experiences
     : activeLibrary?.filter
       ? experiences.filter(e => matchesFilter(e, activeLibrary.filter!))
@@ -143,11 +215,6 @@ export default function ArchivePage() {
   const handleDelete = useCallback(
     async (id: string) => {
       await apiDelete(id)
-      setLibraries(prev =>
-        prev.map(lib =>
-          lib.isSystem ? lib : { ...lib, experienceIds: lib.experienceIds.filter(eid => eid !== id) }
-        )
-      )
       setSelectedId(null)
       setMode("empty")
       setMobileView("list")
@@ -194,58 +261,84 @@ export default function ArchivePage() {
   }, [])
 
   const handleCreateLibrary = useCallback((name: string) => {
-    const newLib: Library = {
-      id: uid("lib"),
-      name,
-      isSystem: false,
-      experienceIds: [],
-    }
-    setLibraries(prev => [...prev, newLib])
-  }, [])
+    runLibraryAction(
+      createLibrary({ name, isSystem: false }),
+      "라이브러리를 만들지 못했어요",
+    )
+  }, [createLibrary, runLibraryAction])
 
   const handleRenameLibrary = useCallback((id: string, name: string) => {
-    setLibraries(prev => prev.map(l => (l.id === id ? { ...l, name } : l)))
-  }, [])
+    const library = libraries.find((item) => item.id === id)
+    if (!library) return
+
+    runLibraryAction(
+      updateLibrary(id, {
+        name,
+        color: library.color,
+        icon: library.icon,
+        filter: library.filter,
+      }),
+      "라이브러리 이름을 변경하지 못했어요",
+    )
+  }, [libraries, updateLibrary, runLibraryAction])
 
   const handleUpdateLibraryColor = useCallback((id: string, color: string) => {
-    setLibraries(prev => prev.map(l => (l.id === id ? { ...l, color } : l)))
-  }, [])
+    const library = libraries.find((item) => item.id === id)
+    if (!library) return
+
+    runLibraryAction(
+      updateLibrary(id, {
+        name: library.name,
+        color,
+        icon: library.icon,
+        filter: library.filter,
+      }),
+      "라이브러리 색상을 변경하지 못했어요",
+    )
+  }, [libraries, updateLibrary, runLibraryAction])
 
   const handleDeleteLibrary = useCallback((id: string) => {
-    setLibraries(prev => prev.filter(l => l.id !== id))
-    if (activeLibraryId === id) {
-      setActiveLibraryId("lib-all")
-      clearFilters()
-    }
-  }, [activeLibraryId, clearFilters])
+    runLibraryAction(
+      deleteLibrary(id),
+      "라이브러리를 삭제하지 못했어요",
+      () => {
+        if (activeLibraryIdRef.current === id) {
+          setActiveLibraryId(ALL_LIBRARY_ID)
+          clearFilters()
+        }
+      },
+    )
+  }, [clearFilters, deleteLibrary, runLibraryAction])
 
   const handleMoveToLibrary = useCallback((experienceId: string, libraryId: string) => {
-    setLibraries(prev =>
-      prev.map(lib => {
-        if (lib.isSystem) return lib
-        if (lib.id === libraryId) {
-          // Toggle: add if not present, remove if already in
-          const ids = lib.experienceIds.includes(experienceId)
-            ? lib.experienceIds.filter(id => id !== experienceId)
-            : [...lib.experienceIds, experienceId]
-          return { ...lib, experienceIds: ids }
-        }
-        return lib
-      })
+    const library = libraries.find((item) => item.id === libraryId)
+    if (!library || library.isSystem || library.filter) return
+
+    if (library.experienceIds.includes(experienceId)) {
+      runLibraryAction(
+        removeExperienceFromLibrary(libraryId, experienceId),
+        "라이브러리에서 제거하지 못했어요",
+      )
+      return
+    }
+
+    runLibraryAction(
+      addExperienceToLibrary(libraryId, experienceId),
+      "라이브러리에 추가하지 못했어요",
     )
-  }, [])
+  }, [addExperienceToLibrary, libraries, removeExperienceFromLibrary, runLibraryAction])
 
   // ── Save current filter as smart library ───────────────────────────
   const handleSaveAsLibrary = useCallback((name: string) => {
-    const newLib: Library = {
-      id: uid("lib"),
-      name,
-      isSystem: false,
-      experienceIds: [],
-      filter: { ...filter },
-    }
-    setLibraries(prev => [...prev, newLib])
-  }, [filter])
+    runLibraryAction(
+      createLibrary({
+        name,
+        isSystem: false,
+        filter: { ...filter },
+      }),
+      "라이브러리를 만들지 못했어요",
+    )
+  }, [createLibrary, filter, runLibraryAction])
 
   // ── Unsaved guard ─────────────────────────────────────────────────
   const confirmDiscard = useCallback(() => {
@@ -293,9 +386,57 @@ export default function ArchivePage() {
         onSaveAsLibrary={handleSaveAsLibrary}
       />
       <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+        {hasMembershipErrors && (
+          <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-border bg-surface text-text-secondary text-body-sm">
+            <p>
+              일부 라이브러리({erroredManualLibraries.map(l => l.name).join(", ")})를 불러오지 못했어요
+            </p>
+            <button
+              onClick={retryAllFailedMemberships}
+              className="text-brand hover:text-brand-dark transition-colors shrink-0"
+            >
+              다시 시도
+            </button>
+          </div>
+        )}
+        {libraryActionError && (
+          <div
+            role="alert"
+            aria-live="polite"
+            className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-border bg-surface text-text-secondary text-body-sm"
+          >
+            <p>{libraryActionError}</p>
+            <button
+              onClick={() => setLibraryActionError(null)}
+              className="text-brand hover:text-brand-dark transition-colors shrink-0"
+            >
+              닫기
+            </button>
+          </div>
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-text-tertiary">
             <p className="text-body">불러오는 중…</p>
+          </div>
+        ) : librariesError ? (
+          <div className="flex flex-col items-center justify-center py-16 text-text-tertiary">
+            <p className="text-body">라이브러리 목록을 불러오지 못했어요</p>
+            <button
+              onClick={() => { void refetchLibraries() }}
+              className="text-brand text-body-sm mt-2 hover:text-brand-dark transition-colors"
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : activeLibraryHasError ? (
+          <div className="flex flex-col items-center justify-center py-16 text-text-tertiary">
+            <p className="text-body">라이브러리를 불러오지 못했어요</p>
+            <button
+              onClick={() => { void retryLibraryMembership(activeLibrary!.id) }}
+              className="text-brand text-body-sm mt-2 hover:text-brand-dark transition-colors"
+            >
+              다시 시도
+            </button>
           </div>
         ) : filteredExperiences.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-text-tertiary">
@@ -313,7 +454,7 @@ export default function ArchivePage() {
               key={exp.id}
               experience={exp}
               selected={exp.id === selectedId}
-              libraries={libraries}
+              libraries={librariesForCard}
               onClick={() => handleSelectExperience(exp.id)}
               onEdit={() => { handleSelectExperience(exp.id); setTimeout(() => setMode("edit"), 0) }}
               onDuplicate={() => handleDuplicate(exp)}

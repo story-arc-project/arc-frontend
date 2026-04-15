@@ -1,14 +1,16 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { BookOpen, Save } from "lucide-react"
+import { BookOpen, Save, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Dialog } from "@/components/ui/dialog"
 import TypeSelector from "./TypeSelector"
 import FormSection from "./FormSection"
 import BlockList from "./blocks/BlockList"
 import SavePresetModal from "./SavePresetModal"
 import ApplyPresetModal from "./ApplyPresetModal"
+import PresetManager from "./PresetManager"
 import ImportanceSelector from "./ImportanceSelector"
 import type {
   ExperienceV2,
@@ -86,7 +88,8 @@ export default function ExperienceFormV2({
   const [typeError, setTypeError] = useState(false)
   const [savePresetOpen, setSavePresetOpen] = useState(false)
   const [applyPresetOpen, setApplyPresetOpen] = useState(false)
-  const { presets, createPreset, getPreset } = presetsHook
+  const [managePresetOpen, setManagePresetOpen] = useState(false)
+  const { presets, createPreset, updatePreset, deletePreset, duplicatePreset, getPreset } = presetsHook
 
   // Load template when type changes
   useEffect(() => {
@@ -424,6 +427,14 @@ export default function ExperienceFormV2({
                     프리셋 저장
                   </Button>
                 )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setManagePresetOpen(true)}
+                >
+                  <Settings size={14} className="mr-1" />
+                  프리셋 관리
+                </Button>
               </div>
             </div>
             <BlockList
@@ -460,6 +471,30 @@ export default function ExperienceFormV2({
               }
             }}
           />
+          <Dialog
+            open={managePresetOpen}
+            onClose={() => setManagePresetOpen(false)}
+            ariaLabel="프리셋 관리"
+            className="max-w-lg max-h-[85vh] flex flex-col"
+          >
+            <PresetManager
+              presets={presets}
+              onToggleFavorite={(id) => {
+                const target = presets.find(p => p.id === id)
+                if (!target) return
+                void updatePreset(id, { isFavorite: !target.isFavorite })
+              }}
+              onRename={(id, name) => {
+                void updatePreset(id, { name })
+              }}
+              onDuplicate={(id) => {
+                void duplicatePreset(id)
+              }}
+              onDelete={(id) => {
+                void deletePreset(id)
+              }}
+            />
+          </Dialog>
 
           {/* Tags */}
           <div className="flex flex-col gap-1.5">

@@ -46,14 +46,14 @@ export default function PresetManager({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-3 min-h-0 flex-1">
+      <div className="flex items-center justify-between shrink-0">
         <h3 className="text-title text-text-primary">내 프리셋</h3>
         <span className="text-caption text-text-tertiary">{presets.length}개</span>
       </div>
 
       {/* Search */}
-      <div className="relative">
+      <div className="relative shrink-0">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
         <input
           type="text"
@@ -65,7 +65,7 @@ export default function PresetManager({
       </div>
 
       {/* List */}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1 flex-1 min-h-0 overflow-y-auto pr-1">
         {filtered.length === 0 ? (
           <p className="text-body-sm text-text-tertiary text-center py-8">
             {search ? "검색 결과가 없습니다" : "저장된 프리셋이 없습니다"}
