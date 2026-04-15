@@ -110,14 +110,18 @@ export function useLibraries() {
           console.warn("[useLibraries] loadLibraryMembership failed", libraryId, err);
         }
       } finally {
-        if (version === refetchVersionRef.current) {
+        // Always clear the loading indicator. If a mutation bumped the version
+        // while we were in flight, the local state is already authoritative
+        // (the mutation patched it); leaving loadingMembershipIds set here
+        // would strand the library in a permanent "loading" state.
         setLoadingMembershipIds((prev) => {
           if (!prev.has(libraryId)) return prev;
           const next = new Set(prev);
           next.delete(libraryId);
           return next;
         });
-        if (succeeded) {
+        const stale = version !== refetchVersionRef.current;
+        if (stale || succeeded) {
           setLoadedMembershipIds((prev) => {
             if (prev.has(libraryId)) return prev;
             const next = new Set(prev);
@@ -125,17 +129,16 @@ export function useLibraries() {
             return next;
           });
         } else {
-          // Failure: do NOT mark as loaded — that would ship an empty library
-          // as if it were real. Record the error so the UI can render a retry
-          // affordance. The ref stays set so useEffect won't auto-loop; the
-          // user must call retryLibraryMembership() to try again.
+          // Non-stale failure: do NOT mark as loaded — that would ship an
+          // empty library as if it were real. Record the error so the UI can
+          // render a retry affordance. The ref stays set so useEffect won't
+          // auto-loop; the user must call retryLibraryMembership().
           setMembershipErrorIds((prev) => {
             if (prev.has(libraryId)) return prev;
             const next = new Set(prev);
             next.add(libraryId);
             return next;
           });
-        }
         }
       }
     },
@@ -213,42 +216,84 @@ export function useLibraries() {
     });
   }, []);
 
-  const addExperienceToLibrary = useCallback(
-    async (libraryId: string, experienceId: string): Promise<void> => {
-      await apiAddExperienceToLibrary(libraryId, experienceId);
-      // Bump the version so any in-flight loadLibraryMembership() pinned to
-      // the prior version drops its (now-stale) server snapshot instead of
-      // stomping this optimistic add.
-      refetchVersionRef.current += 1;
-      setLibraries((prev) =>
-        prev.map((library) => {
-          if (library.id !== libraryId) return library;
-          if (library.experienceIds.includes(experienceId)) return library;
-          return { ...library, experienceIds: [...library.experienceIds, experienceId] };
-        }),
-      );
-      markMembershipLoaded(libraryId);
+  const resyncLibraryMembership = useCallback(
+    async (libraryId: string): Promise<void> => {
+      if (libraryId === ALL_LIBRARY_ID) return;
+      try {
+        const data = await getLibraryExperiences(libraryId);
+        const ids = data.contents.map((experience) => experience.id);
+        refetchVersionRef.current += 1;
+        setLibraries((prev) =>
+          prev.map((library) =>
+            library.id === libraryId ? { ...library, experienceIds: ids } : library,
+          ),
+        );
+        markMembershipLoaded(libraryId);
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[useLibraries] resyncLibraryMembership failed", libraryId, err);
+        }
+      }
     },
     [markMembershipLoaded],
   );
 
-  const removeExperienceFromLibrary = useCallback(
+  const addExperienceToLibrary = useCallback(
     async (libraryId: string, experienceId: string): Promise<void> => {
-      await apiRemoveExperienceFromLibrary(libraryId, experienceId);
+      // Flip local membership BEFORE awaiting so a second click on a slow
+      // connection sees the updated state and short-circuits instead of
+      // firing a duplicate POST.
+      let alreadyMember = false;
       refetchVersionRef.current += 1;
       setLibraries((prev) =>
-        prev.map((library) =>
-          library.id === libraryId
-            ? {
-                ...library,
-                experienceIds: library.experienceIds.filter((id) => id !== experienceId),
-              }
-            : library,
-        ),
+        prev.map((library) => {
+          if (library.id !== libraryId) return library;
+          if (library.experienceIds.includes(experienceId)) {
+            alreadyMember = true;
+            return library;
+          }
+          return { ...library, experienceIds: [...library.experienceIds, experienceId] };
+        }),
       );
       markMembershipLoaded(libraryId);
+      if (alreadyMember) return;
+      try {
+        await apiAddExperienceToLibrary(libraryId, experienceId);
+      } catch (err) {
+        // Overlapping toggles make naive rollback unsafe: another in-flight
+        // remove may have already flipped state back. Resync from server.
+        await resyncLibraryMembership(libraryId);
+        throw err;
+      }
     },
-    [markMembershipLoaded],
+    [markMembershipLoaded, resyncLibraryMembership],
+  );
+
+  const removeExperienceFromLibrary = useCallback(
+    async (libraryId: string, experienceId: string): Promise<void> => {
+      let wasMember = false;
+      refetchVersionRef.current += 1;
+      setLibraries((prev) =>
+        prev.map((library) => {
+          if (library.id !== libraryId) return library;
+          if (!library.experienceIds.includes(experienceId)) return library;
+          wasMember = true;
+          return {
+            ...library,
+            experienceIds: library.experienceIds.filter((id) => id !== experienceId),
+          };
+        }),
+      );
+      markMembershipLoaded(libraryId);
+      if (!wasMember) return;
+      try {
+        await apiRemoveExperienceFromLibrary(libraryId, experienceId);
+      } catch (err) {
+        await resyncLibraryMembership(libraryId);
+        throw err;
+      }
+    },
+    [markMembershipLoaded, resyncLibraryMembership],
   );
 
   return {
