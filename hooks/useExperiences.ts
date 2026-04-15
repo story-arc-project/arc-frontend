@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   getExperiences,
+  getExperience,
   createExperience as apiCreateExperience,
   updateExperience as apiUpdateExperience,
   deleteExperience as apiDeleteExperience,
+  duplicateExperience as apiDuplicateExperience,
 } from "@/lib/api/experience-api";
 import type { Experience, ExperienceSavePayload, ExperienceUpdatePayload } from "@/types/experience";
 
@@ -60,6 +62,23 @@ export function useExperiences() {
     [refetch],
   );
 
+  const duplicateExperience = useCallback(
+    async (id: string): Promise<string> => {
+      const newId = await apiDuplicateExperience(id);
+      // Fetch the new record directly so selection works even if the list
+      // refresh fails or is delayed. A failing list refresh must not silently
+      // leave the caller with an id that is missing from local state.
+      const created = await getExperience(newId);
+      setExperiences((prev) => {
+        if (prev.some((e) => e.id === created.id)) return prev;
+        return [created, ...prev];
+      });
+      setCount((c) => c + 1);
+      return newId;
+    },
+    [],
+  );
+
   return {
     experiences,
     count,
@@ -69,5 +88,6 @@ export function useExperiences() {
     createExperience,
     updateExperience,
     deleteExperience,
+    duplicateExperience,
   };
 }
