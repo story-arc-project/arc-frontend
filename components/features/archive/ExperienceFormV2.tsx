@@ -34,30 +34,52 @@ interface ExperienceFormV2Props {
   onUnsavedChange?: (hasUnsaved: boolean) => void
 }
 
-// Labels in commonCore that have equivalent fields in type-specific extensions
-const CORE_PERIOD_EQUIVALENTS = [
-  "기간", "재직기간", "읽은 기간/완독일", "제작 기간", "준비 기간", "학습 기간",
-]
-const CORE_ROLE_EQUIVALENTS = [
-  "내 역할/기여도", "내 역할/기여", "내 역할", "직책/역할", "역할/직책",
-]
-const CORE_ACHIEVEMENT_EQUIVALENTS = [
-  "핵심 성과", "핵심 성과 기록",
-]
+// Semantic groups: labels within the same group are treated as asking the same question.
+// Used to hide duplicate fields across core, type-specific extensions, and the shared
+// "확장 입력" section so users don't answer the same thing twice.
+const SEMANTIC_GROUPS: Record<string, string[]> = {
+  period: [
+    "기간", "재직기간", "읽은 기간/완독일", "제작 기간", "준비 기간", "학습 기간",
+  ],
+  role: [
+    "내 역할/기여도", "내 역할/기여", "내 역할", "직책/역할", "역할/직책",
+    "내가 맡은 파트", "내가 한 행동",
+  ],
+  achievement: [
+    "핵심 성과", "핵심 성과 기록", "결과/성과", "성과",
+  ],
+  team: [
+    "협업/팀", "팀/조직", "팀 구성", "협업 방식", "협업/커뮤니케이션 방식",
+  ],
+}
 
-function hasEquivalentInExtensions(coreLabel: string, extensionLabels: Set<string>): boolean {
-  if (extensionLabels.has(coreLabel)) return true
+function getSemanticGroup(label: string): string | null {
+  for (const [key, labels] of Object.entries(SEMANTIC_GROUPS)) {
+    if (labels.includes(label)) return key
+  }
+  return null
+}
 
-  if (coreLabel === "기간") {
-    return CORE_PERIOD_EQUIVALENTS.some(eq => extensionLabels.has(eq))
-  }
-  if (coreLabel === "내 역할/기여도") {
-    return CORE_ROLE_EQUIVALENTS.some(eq => extensionLabels.has(eq))
-  }
-  if (coreLabel === "핵심 성과") {
-    return CORE_ACHIEVEMENT_EQUIVALENTS.some(eq => extensionLabels.has(eq))
-  }
-  return false
+function hasEquivalentIn(label: string, otherLabels: Set<string>): boolean {
+  if (otherLabels.has(label)) return true
+  const group = getSemanticGroup(label)
+  if (!group) return false
+  return SEMANTIC_GROUPS[group].some(eq => otherLabels.has(eq))
+}
+
+function isBlockEmpty(block: Block): boolean {
+  const v = block.value
+  if (v.type === "text" || v.type === "textarea") return v.text.trim() === ""
+  if (v.type === "checklist") return v.checked.length === 0
+  if (v.type === "single-select") return v.selected === ""
+  if (v.type === "date") return v.date === ""
+  if (v.type === "period") return v.start === "" && v.end === ""
+  if (v.type === "tags") return v.tags.length === 0
+  if (v.type === "link") return v.url.trim() === ""
+  if (v.type === "file") return v.fileName.trim() === ""
+  if (v.type === "repeatable-cell") return v.rows.length === 0
+  if (v.type === "table") return v.rows.length === 0
+  return true
 }
 
 export default function ExperienceFormV2({
@@ -136,21 +158,7 @@ export default function ExperienceFormV2({
 
   // Track dirty state
   useEffect(() => {
-    const hasBlockData = (blocks: Block[]) =>
-      blocks.some(b => {
-        const v = b.value
-        if (v.type === "text" || v.type === "textarea") return v.text.trim() !== ""
-        if (v.type === "checklist") return v.checked.length > 0
-        if (v.type === "single-select") return v.selected !== ""
-        if (v.type === "date") return v.date !== ""
-        if (v.type === "period") return v.start !== "" || v.end !== ""
-        if (v.type === "tags") return v.tags.length > 0
-        if (v.type === "link") return v.url.trim() !== ""
-        if (v.type === "file") return v.fileName.trim() !== ""
-        if (v.type === "repeatable-cell") return v.rows.length > 0
-        if (v.type === "table") return v.rows.length > 0
-        return false
-      })
+    const hasBlockData = (blocks: Block[]) => blocks.some(b => !isBlockEmpty(b))
     const extensionBlocks = extensionSections.flatMap(s => s.blocks)
     const importanceChanged = importance !== initialExperience?.importance
     const hasData =
@@ -166,6 +174,18 @@ export default function ExperienceFormV2({
     setTypeId(id)
     setTypeError(false)
   }, [])
+
+  const handleRequestTypeChange = useCallback((): boolean => {
+    const hasBlockData = (blocks: Block[]) => blocks.some(b => !isBlockEmpty(b))
+    const extensionBlocks = extensionSections.flatMap(s => s.blocks)
+    const hasData =
+      hasBlockData(coreBlocks) ||
+      hasBlockData(extensionBlocks) ||
+      customBlocks.length > 0 ||
+      tags.length > 0
+    if (!hasData) return true
+    return window.confirm("경험 유형을 바꾸면 입력한 내용이 초기화될 수 있어요. 계속할까요?")
+  }, [coreBlocks, extensionSections, customBlocks, tags])
 
   function handleExtensionChange(sectionId: string, blocks: Block[]) {
     setExtensionSections(prev =>
@@ -198,13 +218,26 @@ export default function ExperienceFormV2({
     const extractedLabels = new Set(["경험명", "한 줄 요약", "증빙 자료"])
     const remainingCoreBlocks = coreBlocks.filter(b => {
       if (extractedLabels.has(b.label)) return false
-      return !hasEquivalentInExtensions(b.label, extensionLabels)
+      // Keep if user already wrote something — never hide data silently
+      if (!isBlockEmpty(b)) return true
+      return !hasEquivalentIn(b.label, extensionLabels)
     })
 
-    // Merge remaining core + shared extended blocks into "확장 입력"
+    // Labels already present in remaining core + type-specific extensions.
+    // Used to filter duplicate fields out of the shared "확장 입력" section.
+    const usedLabels = new Set<string>(extensionLabels)
+    for (const b of remainingCoreBlocks) usedLabels.add(b.label)
+
+    const filteredSharedExtended = (sharedExtendedSection?.blocks ?? []).filter(b => {
+      // Never hide a block that already has user data
+      if (!isBlockEmpty(b)) return true
+      return !hasEquivalentIn(b.label, usedLabels)
+    })
+
+    // Merge remaining core + filtered shared extended blocks into "확장 입력"
     const mergedExtendedBlocks = [
       ...remainingCoreBlocks,
-      ...(sharedExtendedSection?.blocks ?? []),
+      ...filteredSharedExtended,
     ]
 
     return {
@@ -225,11 +258,14 @@ export default function ExperienceFormV2({
   }
 
   function handleMergedExtendedChange(blocks: Block[]) {
-    // Split back: core blocks update coreBlocks state, shared extended update extensionSections
+    // Split back: core blocks update coreBlocks state, shared extended update extensionSections.
+    // The merged array may only contain a subset of shared extended blocks (the rest
+    // are hidden by dedupe); preserve hidden blocks when writing back.
     if (!formLayout) return
     const coreBlockIds = new Set(coreBlocks.map(b => b.id))
     const updatedCoreBlocks = blocks.filter(b => coreBlockIds.has(b.id))
     const updatedExtBlocks = blocks.filter(b => !coreBlockIds.has(b.id))
+    const updatedExtMap = new Map(updatedExtBlocks.map(b => [b.id, b]))
 
     // Update core blocks that are in the merged section
     setCoreBlocks(prev =>
@@ -239,13 +275,15 @@ export default function ExperienceFormV2({
       })
     )
 
-    // Update shared extended section
+    // Merge visible shared-extended blocks back into full section, keeping hidden ones intact
     setExtensionSections(prev =>
-      prev.map(s =>
-        s.id === formLayout.sharedExtendedSectionId
-          ? { ...s, blocks: updatedExtBlocks }
-          : s
-      )
+      prev.map(s => {
+        if (s.id !== formLayout.sharedExtendedSectionId) return s
+        return {
+          ...s,
+          blocks: s.blocks.map(b => updatedExtMap.get(b.id) ?? b),
+        }
+      })
     )
   }
 
@@ -347,6 +385,7 @@ export default function ExperienceFormV2({
         selectedId={typeId}
         onSelect={handleTypeSelect}
         disabled={mode === "edit"}
+        onRequestChange={handleRequestTypeChange}
       />
       {typeError && (
         <p className="text-body-sm text-error -mt-4 mb-4" role="alert">

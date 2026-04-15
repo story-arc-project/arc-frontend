@@ -44,10 +44,19 @@ export default function ExperienceDetailV2({
 
   const noop = () => {}
 
+  const sections: { num: number; label: string; blocks: typeof experience.coreBlocks }[] = []
+  sections.push({ num: 1, label: "기본 정보", blocks: experience.coreBlocks })
+  if (hasExtension) {
+    sections.push({ num: sections.length + 1, label: "상세 정보", blocks: allExtBlocks })
+  }
+  if (experience.customBlocks.length > 0) {
+    sections.push({ num: sections.length + 1, label: "추가 블록", blocks: experience.customBlocks })
+  }
+
   return (
     <div className="max-w-[640px] mx-auto px-5 py-6 md:px-12 md:py-10">
       {/* Header */}
-      <div className="flex items-start justify-between mb-6 gap-4">
+      <div className="flex items-start justify-between mb-5 gap-4">
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="brand">{typeInfo?.label ?? "경험"}</Badge>
@@ -102,27 +111,25 @@ export default function ExperienceDetailV2({
         </div>
       )}
 
-      {/* Core fields */}
-      <div className="flex flex-col gap-5 mb-6">
-        <h3 className="text-title text-text-primary">기본 정보</h3>
-        <BlockList blocks={experience.coreBlocks} readOnly onChange={noop} />
+      <div className="border-t border-border mb-6" />
+
+      {/* Sections */}
+      <div className="flex flex-col gap-5">
+        {sections.map(section => (
+          <section
+            key={section.label}
+            className="rounded-xl border border-border bg-surface p-5 md:p-6"
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-surface-brand text-brand-dark text-caption font-semibold">
+                {section.num}
+              </span>
+              <h3 className="text-title text-text-primary">{section.label}</h3>
+            </div>
+            <BlockList blocks={section.blocks} readOnly onChange={noop} />
+          </section>
+        ))}
       </div>
-
-      {/* Extension fields */}
-      {hasExtension && (
-        <div className="flex flex-col gap-5 mb-6">
-          <h3 className="text-title text-text-primary">상세 정보</h3>
-          <BlockList blocks={allExtBlocks} readOnly onChange={noop} />
-        </div>
-      )}
-
-      {/* Custom fields */}
-      {experience.customBlocks.length > 0 && (
-        <div className="flex flex-col gap-5 mb-6">
-          <h3 className="text-title text-text-primary">추가 블록</h3>
-          <BlockList blocks={experience.customBlocks} readOnly onChange={noop} />
-        </div>
-      )}
 
       {/* Meta */}
       <p className="text-caption text-text-disabled mt-6">

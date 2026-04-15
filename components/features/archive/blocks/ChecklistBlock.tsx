@@ -29,8 +29,8 @@ export default function ChecklistBlock({ block, readOnly, onChange }: ChecklistB
 
   if (readOnly) {
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-label text-text-secondary">{block.label}</span>
+      <div className="flex flex-col gap-1.5 border-l-2 border-brand/30 pl-3.5">
+        <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
         {val.checked.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {val.checked.map(c => (
@@ -40,7 +40,7 @@ export default function ChecklistBlock({ block, readOnly, onChange }: ChecklistB
             ))}
           </div>
         ) : (
-          <p className="text-body text-text-tertiary">—</p>
+          <p className="text-body text-text-disabled">—</p>
         )}
       </div>
     )
