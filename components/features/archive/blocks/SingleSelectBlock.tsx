@@ -59,9 +59,11 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
 
   if (readOnly) {
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-label text-text-secondary">{block.label}</span>
-        <p className="text-body text-text-primary">{val.selected || "—"}</p>
+      <div className="flex flex-col gap-1 border-l-2 border-brand/30 pl-3.5">
+        <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
+        {val.selected
+          ? <p className="text-body text-text-primary">{val.selected}</p>
+          : <p className="text-body text-text-disabled">—</p>}
       </div>
     )
   }

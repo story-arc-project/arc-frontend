@@ -190,37 +190,54 @@ export default function ArchivePage() {
   // ── CRUD ──────────────────────────────────────────────────────────
   const handleSave = useCallback(
     async (exp: ExperienceV2) => {
-      const payload = toSavePayload(exp)
-      const exists = experiences.some(e => e.id === exp.id)
-      const saved = exists
-        ? await apiUpdate(exp.id, {
-            content: payload.content,
-            importance: payload.importance,
-          })
-        : await apiCreate(payload)
-      setSelectedId(saved.id)
-      setMode("detail")
-      setHasUnsaved(false)
-      router.push(`/archive?id=${saved.id}`, { scroll: false })
+      try {
+        const payload = toSavePayload(exp)
+        const exists = experiences.some(e => e.id === exp.id)
+        const saved = exists
+          ? await apiUpdate(exp.id, {
+              content: payload.content,
+              importance: payload.importance,
+            })
+          : await apiCreate(payload)
+        setExperienceActionError(null)
+        setSelectedId(saved.id)
+        setMode("detail")
+        setHasUnsaved(false)
+        router.push(`/archive?id=${saved.id}`, { scroll: false })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "경험을 저장하지 못했어요"
+        setExperienceActionError(message)
+      }
     },
     [experiences, apiCreate, apiUpdate, router]
   )
 
   const handleUpdateImportance = useCallback(
     async (id: string, value: ImportanceLevel | undefined) => {
-      await apiUpdate(id, toUpdateImportancePayload(value))
+      try {
+        await apiUpdate(id, toUpdateImportancePayload(value))
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "중요도를 변경하지 못했어요"
+        setExperienceActionError(message)
+      }
     },
     [apiUpdate],
   )
 
   const handleDelete = useCallback(
     async (id: string) => {
-      await apiDelete(id)
-      setSelectedId(null)
-      setMode("empty")
-      setMobileView("list")
-      setHasUnsaved(false)
-      router.push("/archive", { scroll: false })
+      try {
+        await apiDelete(id)
+        setExperienceActionError(null)
+        setSelectedId(null)
+        setMode("empty")
+        setMobileView("list")
+        setHasUnsaved(false)
+        router.push("/archive", { scroll: false })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "경험을 삭제하지 못했어요"
+        setExperienceActionError(message)
+      }
     },
     [apiDelete, router]
   )

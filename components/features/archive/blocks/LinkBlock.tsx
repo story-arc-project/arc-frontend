@@ -18,8 +18,8 @@ export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps)
 
   if (readOnly) {
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-label text-text-secondary">{block.label}</span>
+      <div className="flex flex-col gap-1 border-l-2 border-brand/30 pl-3.5">
+        <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
         {val.url ? (
           <div className="flex flex-col gap-0.5">
             <span className="text-body text-text-primary">{val.title || val.url}</span>
@@ -27,7 +27,7 @@ export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps)
             {val.linkType && <span className="text-caption text-text-tertiary">{val.linkType}</span>}
           </div>
         ) : (
-          <p className="text-body text-text-tertiary">—</p>
+          <p className="text-body text-text-disabled">—</p>
         )}
       </div>
     )

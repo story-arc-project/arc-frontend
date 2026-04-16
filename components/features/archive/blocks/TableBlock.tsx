@@ -43,10 +43,10 @@ export default function TableBlock({ block, readOnly, onChange }: TableBlockProp
 
   if (readOnly) {
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-label text-text-secondary">{block.label}</span>
+      <div className="flex flex-col gap-1.5 border-l-2 border-brand/30 pl-3.5">
+        <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
         {val.columns.length === 0 ? (
-          <p className="text-body text-text-tertiary">—</p>
+          <p className="text-body text-text-disabled">—</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-body-sm">
