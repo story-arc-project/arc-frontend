@@ -58,22 +58,34 @@ export default function useAnalysisPolling({
 
     (async () => {
       let consecutiveErrors = 0;
+      let consecutiveNotFound = 0;
+      const MAX_NOT_FOUND = 5;
       for (let i = 0; i < MAX_RETRIES; i++) {
         if (controller.signal.aborted) return;
         try {
           const snapshot = await fetchSnapshotStatus(type, analysisId);
           if (controller.signal.aborted) return;
           consecutiveErrors = 0;
-          const status = snapshot?.status;
-          if (status === "completed") {
-            setPolling(false);
-            router.push(`${redirectPath}/${analysisId}`);
-            return;
-          }
-          if (status === "failed") {
-            setPolling(false);
-            onFailedRef.current("분석에 실패했습니다. 다시 시도해주세요.");
-            return;
+          if (!snapshot) {
+            consecutiveNotFound++;
+            if (consecutiveNotFound >= MAX_NOT_FOUND) {
+              setPolling(false);
+              onFailedRef.current("분석 결과를 찾을 수 없습니다. 다시 시도해주세요.");
+              return;
+            }
+          } else {
+            consecutiveNotFound = 0;
+            const status = snapshot.status;
+            if (status === "completed") {
+              setPolling(false);
+              router.push(`${redirectPath}/${analysisId}`);
+              return;
+            }
+            if (status === "failed") {
+              setPolling(false);
+              onFailedRef.current("분석에 실패했습니다. 다시 시도해주세요.");
+              return;
+            }
           }
         } catch {
           if (controller.signal.aborted) return;
