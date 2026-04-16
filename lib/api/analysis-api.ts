@@ -89,7 +89,7 @@ function mapSnapshot(
       r.status === "completed" ||
       r.status === "failed"
         ? r.status
-        : "completed",
+        : "pending",
     createdAt: asString(r.createdAt ?? r.created_at),
     experienceCount: asNumber(r.experienceCount ?? r.experience_count),
     summaryText: asString(r.summaryText ?? r.summary_text ?? r.analysis_summary),
@@ -232,7 +232,7 @@ export async function getIndividualAnalysisList(params?: {
       return mockIndividualAnalysisList;
     });
   const res = await api.get<ApiSuccessResponse<unknown>>("/analysis/individual");
-  const items = unwrapList(res.data).map((dto) => mapSnapshot(dto, "individual"));
+  const items = unwrapList(res.data).map((dto) => mapSnapshot(dto, "individual")).filter((s) => s.id);
   if (params?.status && params.status !== "all") {
     return items.filter((s) => s.status === params.status);
   }
@@ -255,7 +255,7 @@ export async function getIndividualAnalysisResult(
 export async function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
   if (USE_MOCK) return mock(async () => (await mocks()).mockComprehensiveList);
   const res = await api.get<ApiSuccessResponse<unknown>>("/analysis/comprehensive");
-  return unwrapList(res.data).map((dto) => mapSnapshot(dto, "comprehensive"));
+  return unwrapList(res.data).map((dto) => mapSnapshot(dto, "comprehensive")).filter((s) => s.id);
 }
 
 /**
@@ -311,7 +311,7 @@ export async function getKeywordSuggestions(): Promise<KeywordSuggestion[]> {
 export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
   if (USE_MOCK) return mock(async () => (await mocks()).mockKeywordList);
   const res = await api.get<ApiSuccessResponse<unknown>>("/analysis/keyword");
-  return unwrapList(res.data).map((dto) => mapSnapshot(dto, "keyword"));
+  return unwrapList(res.data).map((dto) => mapSnapshot(dto, "keyword")).filter((s) => s.id);
 }
 
 /**
@@ -437,7 +437,7 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
 
   const all = [...individual, ...comprehensive, ...keyword];
   const completed = all.filter((s) => s.status === "completed");
-  const improvementNeeded = all.filter(
+  const improvementNeeded = completed.filter(
     (s) => s.overallConfidence !== "sufficient",
   ).length;
   const lastAnalysisAt = all
@@ -530,7 +530,7 @@ export async function getSelectableExperiences(): Promise<SelectableExperience[]
       title,
       type: exp.type,
       importance: typeof exp.importance === "number" ? exp.importance : 0,
-      isComplete: status !== "draft",
+      isComplete: status !== "" && status !== "draft",
     };
   });
 }

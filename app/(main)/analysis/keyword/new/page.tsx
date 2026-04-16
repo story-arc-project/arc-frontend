@@ -37,7 +37,7 @@ export default function KeywordNewPage() {
     },
   });
 
-  useEffect(() => {
+  const fetchSuggestions = useCallback(() => {
     getKeywordSuggestions()
       .then(setSuggestions)
       .catch(() => {
@@ -45,6 +45,10 @@ export default function KeywordNewPage() {
         setErrorMsg("키워드 추천을 불러오지 못했습니다.");
       });
   }, []);
+
+  useEffect(() => {
+    fetchSuggestions();
+  }, [fetchSuggestions]);
 
   useEffect(() => {
     if (analysisId && phase === "loading") {
@@ -89,7 +93,7 @@ export default function KeywordNewPage() {
       <div className="flex flex-col items-center justify-center py-24 px-4" role="alert">
         <h2 className="text-title text-text-primary mb-2">오류 발생</h2>
         <p className="text-body-sm text-text-secondary mb-4">{errorMsg}</p>
-        <Button size="sm" onClick={() => setPhase("select")}>
+        <Button size="sm" onClick={() => { setPhase("select"); fetchSuggestions(); }}>
           다시 시도
         </Button>
       </div>

@@ -35,7 +35,7 @@ export default function ComprehensiveNewPage() {
     },
   });
 
-  useEffect(() => {
+  const fetchExperiences = useCallback(() => {
     getSelectableExperiences()
       .then(setExperiences)
       .catch(() => {
@@ -43,6 +43,10 @@ export default function ComprehensiveNewPage() {
         setErrorMsg("경험 목록을 불러오지 못했습니다.");
       });
   }, []);
+
+  useEffect(() => {
+    fetchExperiences();
+  }, [fetchExperiences]);
 
   useEffect(() => {
     if (analysisId && phase === "loading") {
@@ -86,7 +90,7 @@ export default function ComprehensiveNewPage() {
       <div className="flex flex-col items-center justify-center py-24 px-4" role="alert">
         <h2 className="text-title text-text-primary mb-2">오류 발생</h2>
         <p className="text-body-sm text-text-secondary mb-4">{errorMsg}</p>
-        <Button size="sm" onClick={() => setPhase("select")}>
+        <Button size="sm" onClick={() => { setPhase("select"); fetchExperiences(); }}>
           다시 시도
         </Button>
       </div>
