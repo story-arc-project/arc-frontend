@@ -43,7 +43,6 @@ const SEMANTIC_GROUPS: Record<string, string[]> = {
   ],
   role: [
     "내 역할/기여도", "내 역할/기여", "내 역할", "직책/역할", "역할/직책",
-    "내가 맡은 파트", "내가 한 행동",
   ],
   achievement: [
     "핵심 성과", "핵심 성과 기록", "결과/성과", "성과",
