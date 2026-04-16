@@ -67,6 +67,7 @@ export default function TypeSelector({ selectedId, onSelect, disabled, onRequest
   }
 
   const handleSelect = (id: ExperienceTypeId) => {
+    if (id !== selectedId && onRequestChange && !onRequestChange()) return
     onSelect(id)
     setExpanded(false)
     setSearch("")
