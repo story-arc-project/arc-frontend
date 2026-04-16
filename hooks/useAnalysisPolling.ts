@@ -10,6 +10,7 @@ import type { AnalysisSnapshot, AnalysisType } from "@/types/analysis";
 
 const MAX_RETRIES = 20;
 const POLL_INTERVAL_MS = 3_000;
+const MAX_CONSECUTIVE_ERRORS = 3;
 
 type PollableType = Exclude<AnalysisType, "individual">;
 
@@ -41,6 +42,13 @@ export default function useAnalysisPolling({
   const abortRef = useRef<AbortController | null>(null);
   const [polling, setPolling] = useState(false);
 
+  // Use refs for callbacks to avoid stale closures and prevent
+  // `start` from being recreated on every render
+  const onFailedRef = useRef(onFailed);
+  const onTimeoutRef = useRef(onTimeout);
+  useEffect(() => { onFailedRef.current = onFailed; }, [onFailed]);
+  useEffect(() => { onTimeoutRef.current = onTimeout; }, [onTimeout]);
+
   const start = useCallback(() => {
     if (!analysisId) return;
     setPolling(true);
@@ -49,41 +57,47 @@ export default function useAnalysisPolling({
     abortRef.current = controller;
 
     (async () => {
+      let consecutiveErrors = 0;
       for (let i = 0; i < MAX_RETRIES; i++) {
         if (controller.signal.aborted) return;
         try {
           const snapshot = await fetchSnapshotStatus(type, analysisId);
           if (controller.signal.aborted) return;
+          consecutiveErrors = 0;
           const status = snapshot?.status;
           if (status === "completed") {
+            setPolling(false);
             router.push(`${redirectPath}/${analysisId}`);
             return;
           }
           if (status === "failed") {
             setPolling(false);
-            onFailed("분석에 실패했습니다. 다시 시도해주세요.");
+            onFailedRef.current("분석에 실패했습니다. 다시 시도해주세요.");
             return;
           }
         } catch {
           if (controller.signal.aborted) return;
-          setPolling(false);
-          onFailed("분석 상태 확인에 실패했습니다.");
-          return;
+          consecutiveErrors++;
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            setPolling(false);
+            onFailedRef.current("분석 상태 확인에 실패했습니다.");
+            return;
+          }
         }
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, POLL_INTERVAL_MS);
           controller.signal.addEventListener("abort", () => {
             clearTimeout(timer);
             resolve();
-          });
+          }, { once: true });
         });
       }
       if (!controller.signal.aborted) {
         setPolling(false);
-        onTimeout("분석 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
+        onTimeoutRef.current("분석 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
       }
     })();
-  }, [analysisId, type, redirectPath, onFailed, onTimeout, router]);
+  }, [analysisId, type, redirectPath, router]);
 
   useEffect(() => {
     return () => {

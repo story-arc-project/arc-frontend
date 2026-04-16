@@ -36,7 +36,12 @@ export default function ComprehensiveNewPage() {
   });
 
   useEffect(() => {
-    getSelectableExperiences().then(setExperiences);
+    getSelectableExperiences()
+      .then(setExperiences)
+      .catch(() => {
+        setPhase("error");
+        setErrorMsg("경험 목록을 불러오지 못했습니다.");
+      });
   }, []);
 
   useEffect(() => {

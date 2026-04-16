@@ -272,9 +272,11 @@ export async function createComprehensiveAnalysis(
     experienceIds,
   );
   const data = asRecord(res.data);
-  return {
-    analysisId: asString(data.id ?? data.analysisId ?? data.analysis_id),
-  };
+  const analysisId = asString(data.id ?? data.analysisId ?? data.analysis_id);
+  if (!analysisId) {
+    throw new Error("분석 생성 응답에서 ID를 찾을 수 없습니다.");
+  }
+  return { analysisId };
 }
 
 export async function getComprehensiveResult(
@@ -326,9 +328,11 @@ export async function createKeywordAnalysis(
     keywordLabels,
   );
   const data = asRecord(res.data);
-  return {
-    analysisId: asString(data.id ?? data.analysisId ?? data.analysis_id),
-  };
+  const analysisId = asString(data.id ?? data.analysisId ?? data.analysis_id);
+  if (!analysisId) {
+    throw new Error("분석 생성 응답에서 ID를 찾을 수 없습니다.");
+  }
+  return { analysisId };
 }
 
 export async function getKeywordResult(
@@ -415,12 +419,21 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
   if (USE_MOCK)
     return mock(async () => (await mocks()).mockAnalysisHomeSummary);
 
+  let failCount = 0;
+  const safe = <T,>(fallback: T) => (p: Promise<T>): Promise<T> =>
+    p.catch(() => { failCount++; return fallback; });
+
   const [individual, comprehensive, keyword, experiencesData] = await Promise.all([
-    getIndividualAnalysisList().catch(() => [] as AnalysisSnapshot[]),
-    getComprehensiveList().catch(() => [] as AnalysisSnapshot[]),
-    getKeywordList().catch(() => [] as AnalysisSnapshot[]),
-    getExperiences().catch(() => ({ count: 0, contents: [] })),
+    safe<AnalysisSnapshot[]>([])(getIndividualAnalysisList()),
+    safe<AnalysisSnapshot[]>([])(getComprehensiveList()),
+    safe<AnalysisSnapshot[]>([])(getKeywordList()),
+    safe({ count: 0, contents: [] as Awaited<ReturnType<typeof getExperiences>>["contents"] })(getExperiences()),
   ]);
+
+  // 모든 요청이 실패하면 에러를 전파한다
+  if (failCount === 4) {
+    throw new Error("분석 데이터를 불러올 수 없습니다.");
+  }
 
   const all = [...individual, ...comprehensive, ...keyword];
   const completed = all.filter((s) => s.status === "completed");
@@ -472,11 +485,20 @@ export async function getAnalysisHistory(params?: {
       return result;
     });
 
+  let historyFailCount = 0;
+  const safeFetch = (p: Promise<AnalysisSnapshot[]>): Promise<AnalysisSnapshot[]> =>
+    p.catch(() => { historyFailCount++; return [] as AnalysisSnapshot[]; });
+
   const [individual, comprehensive, keyword] = await Promise.all([
-    getIndividualAnalysisList().catch(() => [] as AnalysisSnapshot[]),
-    getComprehensiveList().catch(() => [] as AnalysisSnapshot[]),
-    getKeywordList().catch(() => [] as AnalysisSnapshot[]),
+    safeFetch(getIndividualAnalysisList()),
+    safeFetch(getComprehensiveList()),
+    safeFetch(getKeywordList()),
   ]);
+
+  // 모든 요청이 실패하면 에러를 전파한다
+  if (historyFailCount === 3) {
+    throw new Error("분석 기록을 불러올 수 없습니다.");
+  }
 
   let merged = [...individual, ...comprehensive, ...keyword];
   if (params?.type && params.type !== "all") {

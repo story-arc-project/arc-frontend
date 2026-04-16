@@ -102,7 +102,10 @@ export default function HistoryPage() {
     loadData();
   }, [loadData]);
 
+  const [renameError, setRenameError] = useState<string | null>(null);
+
   async function handleRename(id: string, title: string) {
+    setRenameError(null);
     try {
       await updateAnalysisMeta(id, { title });
       setItems((prev) =>
@@ -110,7 +113,7 @@ export default function HistoryPage() {
       );
       setEditId(null);
     } catch {
-      // TODO: surface error to user via toast
+      setRenameError("이름 변경에 실패했습니다.");
     }
   }
 
@@ -150,6 +153,13 @@ export default function HistoryPage() {
             <option value="oldest">오래된순</option>
           </select>
         </div>
+
+        {renameError && (
+          <div role="alert" className="px-4 py-3 rounded-lg border border-border bg-surface text-body-sm text-error flex items-center justify-between">
+            <p>{renameError}</p>
+            <button onClick={() => setRenameError(null)} className="text-text-tertiary hover:text-text-primary transition-colors shrink-0">닫기</button>
+          </div>
+        )}
 
         {error ? (
           <div className="py-12 text-center" role="alert">

@@ -38,7 +38,12 @@ export default function KeywordNewPage() {
   });
 
   useEffect(() => {
-    getKeywordSuggestions().then(setSuggestions);
+    getKeywordSuggestions()
+      .then(setSuggestions)
+      .catch(() => {
+        setPhase("error");
+        setErrorMsg("키워드 추천을 불러오지 못했습니다.");
+      });
   }, []);
 
   useEffect(() => {
