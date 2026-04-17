@@ -47,10 +47,16 @@ function calcRecordingPeriod(experiences: Experience[]): string {
   let oldest = Infinity;
   for (const e of experiences) {
     const t = new Date(e.created_at).getTime();
+    if (isNaN(t)) continue;
     if (t < oldest) oldest = t;
   }
-  const diff = Date.now() - oldest;
-  const months = Math.max(1, Math.floor(diff / (1000 * 60 * 60 * 24 * 30)));
+  if (oldest === Infinity) return "시작 전";
+  const oldestDate = new Date(oldest);
+  const now = new Date();
+  const months =
+    (now.getFullYear() * 12 + now.getMonth()) -
+    (oldestDate.getFullYear() * 12 + oldestDate.getMonth());
+  if (months <= 0) return "이번 달";
   return `${months}개월`;
 }
 
@@ -104,13 +110,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "keyword", label: "키워드" },
 ];
 
-const STAT_ICONS = [FileText, TrendingUp, Clock, CheckCircle] as const;
-const STAT_COLORS = [
-  "text-brand",
-  "text-success",
-  "text-text-secondary",
-  "text-brand",
-];
 
 // Tailwind JIT cannot accept dynamic width values, so the distribution bar
 // snaps to 12 discrete buckets driven by count/maxTypeCount.
@@ -211,16 +210,20 @@ export default function DashboardPage() {
       : "…";
 
   const statItems = useMemo(() => [
-    { label: "총 경험", value: `${experiences.length}개` },
+    { label: "총 경험", value: `${experiences.length}개`, icon: FileText, iconColor: "text-brand" },
     {
       label: "이번 달 추가",
       value: mounted ? `${countThisMonth(experiences)}개` : "…",
+      icon: TrendingUp,
+      iconColor: "text-success",
     },
     {
       label: "기록 기간",
       value: mounted ? calcRecordingPeriod(experiences) : "…",
+      icon: Clock,
+      iconColor: "text-text-secondary",
     },
-    { label: "분석 완료", value: analysisCompletedLabel },
+    { label: "분석 완료", value: analysisCompletedLabel, icon: CheckCircle, iconColor: "text-brand" },
   ], [experiences, analysisCompletedLabel, mounted]);
 
   const recentMap: Record<TabKey, AnalysisSnapshot[]> | null = useMemo(
@@ -318,14 +321,13 @@ export default function DashboardPage() {
 
         {/* ── Stats Row ── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {statItems.map(({ label, value }, i) => {
-            const Icon = STAT_ICONS[i];
+          {statItems.map(({ label, value, icon: Icon, iconColor }) => {
             return (
               <div
                 key={label}
                 className="bg-surface border border-border rounded-lg p-4 flex items-center gap-3"
               >
-                <div className={`p-2 rounded-md bg-surface-secondary ${STAT_COLORS[i]}`}>
+                <div className={`p-2 rounded-md bg-surface-secondary ${iconColor}`}>
                   <Icon size={18} aria-hidden="true" />
                 </div>
                 <div>
