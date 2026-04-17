@@ -14,8 +14,9 @@ import {
   ResumeMutationUnsupportedError,
   updateResume,
 } from "@/lib/api/export-api";
-import type { ResumeVersion } from "@/types/resume";
+import { isEmptySection, type ResumeVersion } from "@/types/resume";
 import { DraftRestoreBanner } from "./_components/DraftRestoreBanner";
+import { EmptyResumeState } from "./_components/EmptyResumeState";
 import { ParsingWarningsBanner } from "./_components/ParsingWarningsBanner";
 import { RegenerateConfirmDialog } from "./_components/RegenerateConfirmDialog";
 import { ResumeDetailSkeleton } from "./_components/ResumeDetailSkeleton";
@@ -49,6 +50,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const [regenerating, setRegenerating] = useState(false);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<ResumeDraft | null>(null);
+  const [continueAnyway, setContinueAnyway] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,6 +82,23 @@ export default function ResumeDetailPage({ params }: PageProps) {
     if (!resume || !initial) return false;
     return JSON.stringify(resume) !== JSON.stringify(initial);
   }, [resume, initial]);
+
+  const isFullyEmpty = useMemo(() => {
+    if (!resume) return false;
+    return (
+      isEmptySection(resume.인적사항 as unknown as Record<string, unknown>) &&
+      !resume.자기소개_요약?.trim() &&
+      isEmptySection(resume.학력) &&
+      isEmptySection(resume.경력) &&
+      isEmptySection(resume.프로젝트) &&
+      isEmptySection(resume.대외활동) &&
+      isEmptySection(resume.동아리_학회) &&
+      isEmptySection(resume.수상) &&
+      isEmptySection(resume.자격증) &&
+      isEmptySection(resume.어학) &&
+      isEmptySection(resume.기술및역량 as unknown as Record<string, unknown>)
+    );
+  }, [resume]);
 
   const versionLabel = useMemo(() => {
     if (!resume) return "레쥬메";
@@ -164,6 +183,10 @@ export default function ResumeDetailPage({ params }: PageProps) {
   }, [dirty]);
 
   if (loading) return <ResumeDetailSkeleton />;
+
+  if (resume && isFullyEmpty && !continueAnyway && !pendingDraft) {
+    return <EmptyResumeState onContinueAnyway={() => setContinueAnyway(true)} />;
+  }
 
   if (error || !resume) {
     const status = error instanceof ApiError ? error.status : 500;
