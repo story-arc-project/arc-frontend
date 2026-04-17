@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
+
+import "./print.css";
 import { Button } from "@/components/ui";
 import { ApiError } from "@/lib/api/client";
 import { getResume } from "@/lib/api/export-api";
