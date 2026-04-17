@@ -44,10 +44,13 @@ function countThisMonth(experiences: Experience[]): number {
 
 function calcRecordingPeriod(experiences: Experience[]): string {
   if (experiences.length === 0) return "시작 전";
-  const dates = experiences.map((e) => new Date(e.created_at).getTime());
-  const oldest = Math.min(...dates);
+  let oldest = Infinity;
+  for (const e of experiences) {
+    const t = new Date(e.created_at).getTime();
+    if (t < oldest) oldest = t;
+  }
   const diff = Date.now() - oldest;
-  const months = Math.max(1, Math.round(diff / (1000 * 60 * 60 * 24 * 30)));
+  const months = Math.max(1, Math.floor(diff / (1000 * 60 * 60 * 24 * 30)));
   return `${months}개월`;
 }
 
@@ -79,7 +82,7 @@ function calcTypeDistribution(
       label: EXPERIENCE_TYPE_MAP[type as ExperienceTypeId]?.label ?? type,
       count,
     })),
-    { type: "etc", label: "기타", count: otherCount },
+    { type: "__system_etc__", label: "기타", count: otherCount },
   ];
 }
 
@@ -109,27 +112,80 @@ const STAT_COLORS = [
   "text-brand",
 ];
 
+// Tailwind JIT cannot accept dynamic width values, so the distribution bar
+// snaps to 12 discrete buckets driven by count/maxTypeCount.
+const BAR_WIDTH_CLASSES = [
+  "w-0",
+  "w-1/12",
+  "w-2/12",
+  "w-3/12",
+  "w-4/12",
+  "w-5/12",
+  "w-6/12",
+  "w-7/12",
+  "w-8/12",
+  "w-9/12",
+  "w-10/12",
+  "w-11/12",
+  "w-full",
+] as const;
+
+function pickBarWidth(count: number, max: number): string {
+  if (max <= 0) return BAR_WIDTH_CLASSES[0];
+  const bucket = Math.min(
+    BAR_WIDTH_CLASSES.length - 1,
+    Math.max(0, Math.round((count / max) * 12)),
+  );
+  return BAR_WIDTH_CLASSES[bucket];
+}
+
 // ─── Component ──────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { experiences, isLoading: expLoading } = useExperiences();
+  const {
+    experiences,
+    isLoading: expLoading,
+    error: expError,
+    refetch: refetchExperiences,
+  } = useExperiences();
   const [summary, setSummary] = useState<AnalysisHomeSummary | null>(null);
   const [summaryError, setSummaryError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [tab, setTab] = useState<TabKey>("individual");
+  const [mounted, setMounted] = useState(false);
+
+  // One-shot post-hydration flip so date-sensitive nodes render real time
+  // only on the client; the SSR output keeps a deterministic placeholder.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     let ignore = false;
     getAnalysisHomeSummary()
       .then((result) => {
-        if (!ignore) { setSummary(result); setSummaryError(false); }
+        if (!ignore) {
+          setSummary(result);
+          setSummaryError(false);
+        }
       })
       .catch(() => {
-        if (!ignore) setSummaryError(true);
+        if (!ignore) {
+          setSummary(null);
+          setSummaryError(true);
+        }
       });
-    return () => { ignore = true; };
+    return () => {
+      ignore = true;
+    };
   }, [retryKey]);
+
+  const retrySummary = () => {
+    setSummaryError(false);
+    setRetryKey((k) => k + 1);
+  };
 
   const recentExperiences = useMemo(() => {
     return [...experiences]
@@ -148,27 +204,43 @@ export default function DashboardPage() {
     [typeDistribution],
   );
 
+  const analysisCompletedLabel = summary
+    ? `${summary.stats.analysisCompleted}회`
+    : summaryError
+      ? "—"
+      : "…";
+
   const statItems = useMemo(() => [
     { label: "총 경험", value: `${experiences.length}개` },
-    { label: "이번 달 추가", value: `${countThisMonth(experiences)}개` },
-    { label: "기록 기간", value: calcRecordingPeriod(experiences) },
-    { label: "분석 완료", value: `${summary?.stats.analysisCompleted ?? 0}회` },
-  ], [experiences, summary]);
+    {
+      label: "이번 달 추가",
+      value: mounted ? `${countThisMonth(experiences)}개` : "…",
+    },
+    {
+      label: "기록 기간",
+      value: mounted ? calcRecordingPeriod(experiences) : "…",
+    },
+    { label: "분석 완료", value: analysisCompletedLabel },
+  ], [experiences, analysisCompletedLabel, mounted]);
 
-  const recentMap: Record<TabKey, AnalysisSnapshot[]> | null = summary
-    ? {
-        individual: summary.recentIndividual,
-        comprehensive: summary.recentComprehensive,
-        keyword: summary.recentKeyword,
-      }
-    : null;
+  const recentMap: Record<TabKey, AnalysisSnapshot[]> | null = useMemo(
+    () =>
+      summary
+        ? {
+            individual: summary.recentIndividual,
+            comprehensive: summary.recentComprehensive,
+            keyword: summary.recentKeyword,
+          }
+        : null,
+    [summary],
+  );
 
   const userName = user?.profile?.name ?? "사용자";
 
   // ── Loading skeleton ──
   if (expLoading) {
     return (
-      <div className="min-h-[calc(100dvh-var(--gnb-h))] bg-surface px-4 py-8 sm:px-8">
+      <main className="min-h-[calc(100dvh-var(--gnb-h))] bg-surface px-4 py-8 sm:px-8">
         <div className="max-w-4xl mx-auto space-y-6" aria-busy="true">
           <div className="h-8 w-2/5 bg-surface-secondary rounded animate-pulse" />
           <div className="h-5 w-1/4 bg-surface-secondary rounded animate-pulse" />
@@ -181,18 +253,55 @@ export default function DashboardPage() {
             <div className="h-56 bg-surface-secondary rounded-xl animate-pulse" />
             <div className="h-56 bg-surface-secondary rounded-xl animate-pulse" />
           </div>
+          {/* Reserve space for Recent Analysis to avoid layout shift after expLoading resolves */}
+          <div className="h-6 w-1/5 bg-surface-secondary rounded animate-pulse" />
+          <div className="space-y-3">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="h-20 bg-surface-secondary rounded-lg animate-pulse" />
+            ))}
+          </div>
         </div>
-      </div>
+      </main>
+    );
+  }
+
+  // ── Experience fetch error ──
+  if (expError) {
+    return (
+      <main className="min-h-[calc(100dvh-var(--gnb-h))] bg-surface px-4 py-8 sm:px-8">
+        <div className="max-w-4xl mx-auto">
+          <div
+            role="alert"
+            aria-live="polite"
+            className="bg-surface border border-border rounded-xl p-8 flex flex-col items-center text-center"
+          >
+            <p className="text-body text-text-secondary mb-3">
+              경험 데이터를 불러오지 못했어요.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                void refetchExperiences();
+              }}
+              className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors"
+            >
+              다시 시도
+            </button>
+          </div>
+        </div>
+      </main>
     );
   }
 
   return (
-    <div className="min-h-[calc(100dvh-var(--gnb-h))] bg-surface px-4 py-8 sm:px-8">
+    <main className="min-h-[calc(100dvh-var(--gnb-h))] bg-surface px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-8">
 
         {/* ── Header ── */}
         <div>
-          <p className="text-body-sm text-text-tertiary mb-1">{todayString()}</p>
+          <p className="text-body-sm text-text-tertiary mb-1">
+            {mounted ? todayString() : "\u00A0"}
+          </p>
           <h1 className="text-heading-2 text-text-primary">
             안녕하세요, {userName} 님
           </h1>
@@ -247,8 +356,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="h-1.5 bg-surface-secondary rounded-full overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-brand transition-all"
-                        style={{ width: `${(count / maxTypeCount) * 100}%` }}
+                        className={`h-full rounded-full bg-brand transition-all ${pickBarWidth(count, maxTypeCount)}`}
                       />
                     </div>
                   </div>
@@ -282,7 +390,7 @@ export default function DashboardPage() {
                         </Badge>
                       </div>
                       <p className="text-caption text-text-tertiary">
-                        {formatRelativeTime(exp.updatedAt)}
+                        {mounted ? formatRelativeTime(exp.updatedAt) : "\u00A0"}
                       </p>
                       {exp.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-0.5">
@@ -370,7 +478,7 @@ export default function DashboardPage() {
               </p>
               <button
                 type="button"
-                onClick={() => setRetryKey((k) => k + 1)}
+                onClick={retrySummary}
                 className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors"
               >
                 다시 시도
@@ -427,7 +535,7 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2 mt-2">
                           <ConfidenceBadge confidence={snapshot.overallConfidence} />
                           <span className="text-caption text-text-tertiary">
-                            {formatRelativeTime(snapshot.createdAt)}
+                            {mounted ? formatRelativeTime(snapshot.createdAt) : "\u00A0"}
                           </span>
                         </div>
                       </Link>
@@ -454,49 +562,53 @@ export default function DashboardPage() {
         </section>
 
         {/* ── Recommendations ── */}
-        {summary && (
+        {summary ? (
           <RecommendationSection
             summary={summary}
             hasExperiences={experiences.length > 0}
           />
+        ) : summaryError ? null : (
+          <RecommendationSkeleton />
         )}
 
         {/* ── CTA Cards ── */}
-        <div className="grid sm:grid-cols-2 gap-4">
-          <Link
-            href="/archive"
-            className="group bg-surface border border-border rounded-xl p-5 hover:border-brand transition-colors"
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <Plus size={18} className="text-brand" aria-hidden="true" />
-              <h3 className="text-title text-text-primary">새 경험 기록하기</h3>
-            </div>
-            <p className="text-body-sm text-text-secondary">
-              오늘의 경험을 기록하고 커리어 스토리를 쌓아보세요.
-            </p>
-            <span className="inline-flex items-center gap-1 mt-3 text-caption text-brand font-medium group-hover:gap-2 transition-all">
-              아카이브로 이동 <ArrowRight size={12} aria-hidden="true" />
-            </span>
-          </Link>
-          <Link
-            href="/export"
-            className="group bg-surface border border-border rounded-xl p-5 hover:border-brand transition-colors"
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <FileText size={18} className="text-brand" aria-hidden="true" />
-              <h3 className="text-title text-text-primary">이력서/자소서 만들기</h3>
-            </div>
-            <p className="text-body-sm text-text-secondary">
-              기록된 경험으로 이력서와 자기소개서를 만들어보세요.
-            </p>
-            <span className="inline-flex items-center gap-1 mt-3 text-caption text-brand font-medium group-hover:gap-2 transition-all">
-              익스포트로 이동 <ArrowRight size={12} aria-hidden="true" />
-            </span>
-          </Link>
-        </div>
+        {experiences.length > 0 && (
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Link
+              href="/archive"
+              className="group bg-surface border border-border rounded-xl p-5 hover:border-brand transition-colors"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Plus size={18} className="text-brand" aria-hidden="true" />
+                <h3 className="text-title text-text-primary">새 경험 기록하기</h3>
+              </div>
+              <p className="text-body-sm text-text-secondary">
+                오늘의 경험을 기록하고 커리어 스토리를 쌓아보세요.
+              </p>
+              <span className="inline-flex items-center gap-1 mt-3 text-caption text-brand font-medium group-hover:gap-2 transition-all">
+                아카이브로 이동 <ArrowRight size={12} aria-hidden="true" />
+              </span>
+            </Link>
+            <Link
+              href="/export"
+              className="group bg-surface border border-border rounded-xl p-5 hover:border-brand transition-colors"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <FileText size={18} className="text-brand" aria-hidden="true" />
+                <h3 className="text-title text-text-primary">이력서/자소서 만들기</h3>
+              </div>
+              <p className="text-body-sm text-text-secondary">
+                기록된 경험으로 이력서와 자기소개서를 만들어보세요.
+              </p>
+              <span className="inline-flex items-center gap-1 mt-3 text-caption text-brand font-medium group-hover:gap-2 transition-all">
+                익스포트로 이동 <ArrowRight size={12} aria-hidden="true" />
+              </span>
+            </Link>
+          </div>
+        )}
 
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -515,21 +627,24 @@ function RecommendationSection({
   if (!hasGroups && !hasKeywords) {
     if (!hasExperiences) return null;
     return (
-      <div className="bg-surface-secondary border border-border rounded-xl p-6 text-center">
-        <Lightbulb size={24} className="text-text-tertiary mx-auto mb-2" aria-hidden="true" />
-        <p className="text-body text-text-secondary">
-          경험이 쌓이고 있어요!
-        </p>
-        <p className="text-body-sm text-text-tertiary mt-1">
-          분석을 시작하면 맞춤 추천을 받을 수 있어요.
-        </p>
-        <Link
-          href="/analysis"
-          className="inline-flex items-center gap-1 mt-3 text-label text-brand hover:text-brand-dark transition-colors"
-        >
-          분석 시작하기 <ArrowRight size={14} />
-        </Link>
-      </div>
+      <section>
+        <h2 className="text-title text-text-primary mb-4">추천</h2>
+        <div className="bg-surface-secondary border border-border rounded-xl p-6 text-center">
+          <Lightbulb size={24} className="text-text-tertiary mx-auto mb-2" aria-hidden="true" />
+          <p className="text-body text-text-secondary">
+            경험이 쌓이고 있어요!
+          </p>
+          <p className="text-body-sm text-text-tertiary mt-1">
+            분석을 시작하면 맞춤 추천을 받을 수 있어요.
+          </p>
+          <Link
+            href="/analysis"
+            className="inline-flex items-center gap-1 mt-3 text-label text-brand hover:text-brand-dark transition-colors"
+          >
+            분석 시작하기 <ArrowRight size={14} />
+          </Link>
+        </div>
+      </section>
     );
   }
 
@@ -592,6 +707,31 @@ function RecommendationSection({
             </Link>
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+function RecommendationSkeleton() {
+  return (
+    <section aria-hidden="true">
+      <div className="h-6 w-16 bg-surface-secondary rounded mb-4 animate-pulse" />
+      <div className="space-y-4">
+        <div className="bg-surface border border-border rounded-xl p-5">
+          <div className="h-4 w-48 bg-surface-secondary rounded mb-3 animate-pulse" />
+          <div className="space-y-2">
+            <div className="h-12 bg-surface-secondary rounded-lg animate-pulse" />
+            <div className="h-12 bg-surface-secondary rounded-lg animate-pulse" />
+          </div>
+        </div>
+        <div className="bg-surface border border-border rounded-xl p-5">
+          <div className="h-4 w-32 bg-surface-secondary rounded mb-3 animate-pulse" />
+          <div className="flex flex-wrap gap-2">
+            <div className="h-7 w-16 bg-surface-secondary rounded-full animate-pulse" />
+            <div className="h-7 w-20 bg-surface-secondary rounded-full animate-pulse" />
+            <div className="h-7 w-14 bg-surface-secondary rounded-full animate-pulse" />
+          </div>
+        </div>
       </div>
     </section>
   );
