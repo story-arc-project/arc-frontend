@@ -6,6 +6,7 @@ import { Button } from "@/components/ui";
 import { ApiError } from "@/lib/api/client";
 import { getResume } from "@/lib/api/export-api";
 import type { ResumeVersion } from "@/types/resume";
+import { ParsingWarningsBanner } from "./_components/ParsingWarningsBanner";
 import { ResumeDetailSkeleton } from "./_components/ResumeDetailSkeleton";
 import { ResumeDetailTopBar } from "./_components/ResumeDetailTopBar";
 import { ResumeEditorPanel } from "./_components/ResumeEditorPanel";
@@ -141,7 +142,8 @@ export default function ResumeDetailPage({ params }: PageProps) {
             mobileTab === "editor" ? "" : "hidden md:flex",
           ].join(" ")}
         >
-          <div className="p-5 sm:p-6">
+          <div className="p-5 sm:p-6 space-y-3">
+            <ParsingWarningsBanner warnings={resume.파싱경고} />
             <ResumeEditorPanel resume={resume} onChange={setResume} />
           </div>
         </aside>
