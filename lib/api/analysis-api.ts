@@ -5,6 +5,7 @@ import type {
   AnalysisHomeSummary,
   AnalysisSnapshot,
   AnalysisType,
+  AnalysisStatus,
   IndividualAnalysisResult,
   ComprehensiveAnalysisResult,
   KeywordAnalysisResult,
@@ -295,6 +296,13 @@ export async function deleteComprehensiveAnalysis(
 ): Promise<void> {
   if (USE_MOCK) return mock(async () => undefined);
   await api.delete<void>(`/analysis/comprehensive/${analysisId}`);
+}
+
+export async function getAnalysisStatus(
+  analysisId: string,
+): Promise<{ status: AnalysisStatus }> {
+  if (USE_MOCK) return mock(async () => ({ status: "completed" as const }));
+  return api.get<{ status: AnalysisStatus }>(`/analysis/status/${analysisId}`);
 }
 
 // ─── Keyword ────────────────────────────────────────────────

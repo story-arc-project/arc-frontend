@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   getExperiences,
@@ -18,23 +18,56 @@ export function useExperiences() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const refetch = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const data = await getExperiences();
+      if (!mountedRef.current) return;
       setExperiences(data.contents);
       setCount(data.count);
+      setIsLoading(false);
     } catch (err) {
+      if (!mountedRef.current) return;
       setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
-    } finally {
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    refetch();
-  }, [refetch]);
+    let cancelled = false;
+
+    async function load() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data = await getExperiences();
+        if (cancelled) return;
+        setExperiences(data.contents);
+        setCount(data.count);
+        setIsLoading(false);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
+        setIsLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const createExperience = useCallback(
     async (payload: ExperienceSavePayload): Promise<Experience> => {
@@ -79,7 +112,12 @@ export function useExperiences() {
         });
         if (inserted) setCount((c) => c + 1);
       } catch {
-        refetch();
+        try {
+          await refetch();
+        } catch {
+          // Best-effort list refresh — swallow so a transient GET failure
+          // doesn't surface as a write failure and invite retries that create duplicates.
+        }
       }
       return newId;
     },
