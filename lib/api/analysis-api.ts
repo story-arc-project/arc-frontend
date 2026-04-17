@@ -501,7 +501,9 @@ export async function getAnalysisHistory(params?: {
     throw new Error("분석 기록을 불러올 수 없습니다.");
   }
 
-  let merged = [...individual, ...comprehensive, ...keyword];
+  let merged = [...individual, ...comprehensive, ...keyword].filter(
+    (s) => s.status === "completed",
+  );
   if (params?.type && params.type !== "all") {
     merged = merged.filter((s) => s.type === params.type);
   }
