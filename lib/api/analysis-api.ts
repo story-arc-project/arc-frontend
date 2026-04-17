@@ -42,8 +42,10 @@ export function getIndividualAnalysisList(params?: {
         return mockIndividualAnalysisList.filter((s) => s.status === params.status);
       return mockIndividualAnalysisList;
     });
-  const qs = params?.status && params.status !== "all" ? `?status=${params.status}` : "";
-  return api.get<AnalysisSnapshot[]>(`/api/analysis/individual${qs}`);
+  const qs = new URLSearchParams();
+  if (params?.status && params.status !== "all") qs.set("status", params.status);
+  const query = qs.toString();
+  return api.get<AnalysisSnapshot[]>(`/api/analysis/individual${query ? `?${query}` : ""}`);
 }
 
 export function getIndividualAnalysisResult(
@@ -149,8 +151,10 @@ export function getBookmarks(params?: {
         return mockBookmarks.filter((b) => b.type === params.type);
       return mockBookmarks;
     });
-  const qs = params?.type && params.type !== "all" ? `?type=${params.type}` : "";
-  return api.get<BookmarkedSnapshot[]>(`/api/analysis/bookmarks${qs}`);
+  const qs = new URLSearchParams();
+  if (params?.type && params.type !== "all") qs.set("type", params.type);
+  const query = qs.toString();
+  return api.get<BookmarkedSnapshot[]>(`/api/analysis/bookmarks${query ? `?${query}` : ""}`);
 }
 
 export function addBookmark(analysisId: string): Promise<void> {

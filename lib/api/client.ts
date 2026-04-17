@@ -71,7 +71,11 @@ async function request<T>(
 
   if (res.status === 204) return undefined as T;
 
-  return res.json() as Promise<T>;
+  try {
+    return await res.json() as T;
+  } catch {
+    throw new ApiError(res.status, "응답 형식이 올바르지 않아요.", "INVALID_JSON");
+  }
 }
 
 // ──────────────────────────────────────────────
