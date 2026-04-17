@@ -47,12 +47,13 @@ export function useLibraries() {
 
   const refetch = useCallback(async () => {
     const version = ++refetchVersionRef.current;
+    const membershipVersion = membershipVersionRef.current;
     setIsLoading(true);
     setError(null);
 
     try {
       const libraryDTOs = await getLibraries();
-      if (version !== refetchVersionRef.current) return;
+      if (version !== refetchVersionRef.current || membershipVersion !== membershipVersionRef.current) return;
 
       const mappedLibraries = libraryDTOs
         .map((library) => toLibrary(library))
