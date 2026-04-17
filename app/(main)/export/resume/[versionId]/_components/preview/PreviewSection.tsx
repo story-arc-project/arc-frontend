@@ -10,7 +10,7 @@ interface PreviewSectionProps {
 export function PreviewSection({ title, children }: PreviewSectionProps) {
   return (
     <section className="resume-section mt-7 first:mt-0">
-      <h3 className="text-[13px] font-bold uppercase tracking-[0.08em] text-text-primary border-b border-gray-200 pb-1.5 mb-3">
+      <h3 className="text-[13px] font-bold uppercase tracking-[0.08em] text-text-primary border-b border-border pb-1.5 mb-3">
         {title}
       </h3>
       <div className="flex flex-col gap-3">{children}</div>

@@ -39,9 +39,12 @@ export async function getResumeList(): Promise<ResumeListItem[]> {
 }
 
 function toListItem(raw: unknown): ResumeListItem {
+  if (raw === null || typeof raw !== "object") {
+    return { version_id: "", language: "ko", generated_at: "", summary_preview: null };
+  }
   const r = raw as Record<string, unknown>;
 
-  const versionId = (r.version_id as string | undefined) ?? "";
+  const versionId = typeof r.version_id === "string" ? r.version_id : "";
   const metaRaw = (r.meta as Record<string, unknown> | undefined) ?? {};
 
   const rawLang =
@@ -55,8 +58,8 @@ function toListItem(raw: unknown): ResumeListItem {
     "";
 
   const summaryPreview =
-    (r.summary_preview as string | undefined) ??
-    sliceSummary(r.자기소개_요약 as string | null | undefined);
+    (typeof r.summary_preview === "string" ? r.summary_preview : undefined) ??
+    sliceSummary(typeof r.자기소개_요약 === "string" ? r.자기소개_요약 : null);
 
   return {
     version_id: versionId,
@@ -83,7 +86,7 @@ export class ResumeMutationUnsupportedError extends Error {
 }
 
 function isUnsupportedStatus(err: unknown): err is ApiError {
-  return err instanceof ApiError && (err.status === 404 || err.status === 501 || err.status === 405);
+  return err instanceof ApiError && (err.status === 501 || err.status === 405);
 }
 
 export async function updateResume(

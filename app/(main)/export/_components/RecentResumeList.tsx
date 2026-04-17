@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FileText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
+import { ApiError } from "@/lib/api/client";
 import {
   deleteResume,
   getResumeList,
@@ -47,6 +48,7 @@ export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
   const load = useCallback(async () => {
     try {
       const data = await getResumeList();
+      setError(null);
       setItems(data);
     } catch (err) {
       setError(err as Error);
@@ -69,6 +71,8 @@ export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
       if (err instanceof ResumeMutationUnsupportedError) {
         setDeleteSupported(false);
         toast("삭제 기능은 곧 제공될 예정이에요", "info");
+      } else if (err instanceof ApiError && err.status === 404) {
+        setItems((prev) => (prev ?? []).filter((r) => r.version_id !== versionId));
       } else {
         toast.error("삭제에 실패했어요");
       }

@@ -30,7 +30,7 @@ function Group({ label, items }: { label: string; items: string[] }) {
 }
 
 export function PreviewSkills({ data }: Props) {
-  if (isEmptySection(data as unknown as Record<string, unknown>)) return null;
+  if (isEmptySection(data)) return null;
 
   return (
     <PreviewSection title="기술 및 역량">

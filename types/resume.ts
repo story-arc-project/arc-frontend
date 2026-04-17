@@ -162,14 +162,17 @@ export interface ResumeListItem {
 
 export function isEmptySection(section: unknown): boolean {
   if (section === null || section === undefined) return true;
-  if (Array.isArray(section)) return section.length === 0;
+  if (Array.isArray(section)) return section.length === 0 || section.every((item) => isEmptySection(item));
   if (typeof section === "object" && section !== null) {
     const values = Object.values(section as Record<string, unknown>);
     if (values.length === 0) return true;
     return values.every((v) => {
       if (v === null || v === undefined) return true;
-      if (Array.isArray(v)) return v.length === 0;
+      if (Array.isArray(v)) return v.length === 0 || v.every((item) => isEmptySection(item));
       if (typeof v === "string") return v.trim() === "";
+      if (typeof v === "number") return true;
+      if (typeof v === "boolean") return !v;
+      if (typeof v === "object") return isEmptySection(v);
       return false;
     });
   }

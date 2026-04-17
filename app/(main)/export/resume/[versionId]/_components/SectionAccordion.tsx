@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -18,12 +18,15 @@ export function SectionAccordion({
   children,
 }: SectionAccordionProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const panelId = useId();
 
   return (
     <section className="rounded-lg border border-border bg-surface">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={panelId}
         className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
       >
         <div className="flex items-center gap-2">
@@ -51,7 +54,8 @@ export function SectionAccordion({
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="overflow-hidden"
+            id={panelId}
+          className="overflow-hidden"
           >
             <div className="border-t border-border px-4 py-4">{children}</div>
           </motion.div>
