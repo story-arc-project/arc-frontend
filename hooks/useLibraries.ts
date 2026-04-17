@@ -42,6 +42,8 @@ export function useLibraries() {
   const [membershipErrorIds, setMembershipErrorIds] = useState<Set<string>>(() => new Set());
   const loadedMembershipRef = useRef<Set<string>>(new Set());
   const refetchVersionRef = useRef(0);
+  const membershipVersionRef = useRef(0);
+  const loadLibraryMembershipRef = useRef<(id: string) => Promise<void>>(async () => {});
 
   const refetch = useCallback(async () => {
     const version = ++refetchVersionRef.current;
@@ -60,6 +62,9 @@ export function useLibraries() {
       setLoadedMembershipIds(new Set());
       setMembershipErrorIds(new Set());
       setLibraries([createAllLibrary(), ...mappedLibraries]);
+      mappedLibraries.forEach((library) => {
+        if (!library.filter) void loadLibraryMembershipRef.current(library.id);
+      });
     } catch (err) {
       if (version !== refetchVersionRef.current) return;
       setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
@@ -105,10 +110,8 @@ export function useLibraries() {
           ),
         );
         succeeded = true;
-      } catch (err) {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("[useLibraries] loadLibraryMembership failed", libraryId, err);
-        }
+      } catch {
+        // error state tracked via setMembershipErrorIds below
       } finally {
         // Always clear the loading indicator. If a mutation bumped the version
         // while we were in flight, the local state is already authoritative
@@ -145,21 +148,7 @@ export function useLibraries() {
     [],
   );
 
-  // Eager-load membership for every manual library so ExperienceCard can
-  // render library-indicator badges and the "move to library" submenu's
-  // checked state for non-active libraries. Without this, cards on the
-  // default "전체" view never show which libraries an experience belongs to,
-  // and clicking an already-member library in the submenu sends a duplicate
-  // add request. Deduped via loadedMembershipRef, and re-triggered after
-  // refetch() (which clears the ref) so create/update/delete stay in sync.
-  useEffect(() => {
-    libraries.forEach((library) => {
-      if (library.id === ALL_LIBRARY_ID) return;
-      if (library.filter) return;
-      if (loadedMembershipRef.current.has(library.id)) return;
-      void loadLibraryMembership(library.id);
-    });
-  }, [libraries, loadLibraryMembership]);
+  loadLibraryMembershipRef.current = loadLibraryMembership;
 
   const retryLibraryMembership = useCallback(
     async (libraryId: string): Promise<void> => {
@@ -227,7 +216,7 @@ export function useLibraries() {
       try {
         const data = await getLibraryExperiences(libraryId);
         const ids = data.contents.map((experience) => experience.id);
-        refetchVersionRef.current += 1;
+        membershipVersionRef.current += 1;
         setLibraries((prev) =>
           prev.map((library) =>
             library.id === libraryId ? { ...library, experienceIds: ids } : library,
@@ -235,10 +224,7 @@ export function useLibraries() {
         );
         markMembershipLoaded(libraryId);
         return true;
-      } catch (err) {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("[useLibraries] resyncLibraryMembership failed", libraryId, err);
-        }
+      } catch {
         // Resync failed: local state is now known-stale. Drop the loaded
         // marker and surface an error flag so the UI can expose a retry
         // affordance via retryLibraryMembership().
@@ -267,7 +253,7 @@ export function useLibraries() {
       // connection sees the updated state and short-circuits instead of
       // firing a duplicate POST.
       let alreadyMember = false;
-      refetchVersionRef.current += 1;
+      membershipVersionRef.current += 1;
       setLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
@@ -295,7 +281,7 @@ export function useLibraries() {
   const removeExperienceFromLibrary = useCallback(
     async (libraryId: string, experienceId: string): Promise<void> => {
       let wasMember = false;
-      refetchVersionRef.current += 1;
+      membershipVersionRef.current += 1;
       setLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
