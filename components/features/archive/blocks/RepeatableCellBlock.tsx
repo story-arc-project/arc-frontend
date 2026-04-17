@@ -64,26 +64,31 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
 
   if (readOnly) {
     return (
-      <div className="flex flex-col gap-3">
-        <span className="text-label text-text-secondary">{block.label}</span>
+      <div className="flex flex-col gap-3 border-l-2 border-brand/30 pl-3.5">
+        <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
         {val.rows.length === 0 ? (
-          <p className="text-body text-text-tertiary">—</p>
+          <p className="text-body text-text-disabled">—</p>
         ) : (
           <div className="flex flex-col gap-3">
             {val.rows.map((row, idx) => (
               <div
                 key={row.id}
-                className="bg-surface-secondary border border-border rounded-lg p-4"
+                className={[
+                  "border border-border rounded-lg p-4",
+                  idx % 2 === 0 ? "bg-surface" : "bg-surface-secondary",
+                ].join(" ")}
               >
-                <span className="text-caption text-text-tertiary mb-2 block">#{idx + 1}</span>
+                <span className="text-caption text-text-tertiary font-semibold mb-2 block">#{idx + 1}</span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {val.columns.map(col => {
                     const cellVal = row.cells[col.key]
                     const display = Array.isArray(cellVal) ? cellVal.join(", ") : cellVal
                     return (
                       <div key={col.key} className="flex flex-col gap-0.5">
-                        <span className="text-caption text-text-tertiary">{col.label}</span>
-                        <span className="text-body-sm text-text-primary">{display || "—"}</span>
+                        <span className="text-caption text-text-tertiary font-medium">{col.label}</span>
+                        {display
+                          ? <span className="text-body-sm text-text-primary whitespace-pre-wrap">{display}</span>
+                          : <span className="text-body-sm text-text-disabled">—</span>}
                       </div>
                     )
                   })}

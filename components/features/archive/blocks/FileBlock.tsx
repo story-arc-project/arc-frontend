@@ -19,8 +19,8 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
 
   if (readOnly) {
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-label text-text-secondary">{block.label}</span>
+      <div className="flex flex-col gap-1 border-l-2 border-brand/30 pl-3.5">
+        <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
         {val.fileName ? (
           <div className="flex items-center gap-2">
             <Paperclip size={14} className="text-text-tertiary" />
@@ -30,7 +30,7 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
             )}
           </div>
         ) : (
-          <p className="text-body text-text-tertiary">—</p>
+          <p className="text-body text-text-disabled">—</p>
         )}
       </div>
     )

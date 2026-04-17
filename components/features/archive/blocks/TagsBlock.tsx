@@ -27,8 +27,8 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
 
   if (readOnly) {
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-label text-text-secondary">{block.label}</span>
+      <div className="flex flex-col gap-1.5 border-l-2 border-brand/30 pl-3.5">
+        <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
         {val.tags.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {val.tags.map(tag => (
@@ -38,7 +38,7 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
             ))}
           </div>
         ) : (
-          <p className="text-body text-text-tertiary">—</p>
+          <p className="text-body text-text-disabled">—</p>
         )}
       </div>
     )

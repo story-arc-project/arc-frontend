@@ -31,9 +31,11 @@ export default function PeriodBlock({ block, readOnly, onChange }: PeriodBlockPr
   if (readOnly) {
     const display = formatPeriodToString(val)
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-label text-text-secondary">{block.label}</span>
-        <p className="text-body text-text-primary">{display || "—"}</p>
+      <div className="flex flex-col gap-1 border-l-2 border-brand/30 pl-3.5">
+        <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
+        {display
+          ? <p className="text-body text-text-primary">{display}</p>
+          : <p className="text-body text-text-disabled">—</p>}
       </div>
     )
   }
