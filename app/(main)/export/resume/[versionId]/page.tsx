@@ -1,18 +1,34 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 
 import "./print.css";
 import { Button } from "@/components/ui";
+import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
-import { getResume } from "@/lib/api/export-api";
+import {
+  createResume,
+  getResume,
+  ResumeMutationUnsupportedError,
+  updateResume,
+} from "@/lib/api/export-api";
 import type { ResumeVersion } from "@/types/resume";
+import { DraftRestoreBanner } from "./_components/DraftRestoreBanner";
 import { ParsingWarningsBanner } from "./_components/ParsingWarningsBanner";
+import { RegenerateConfirmDialog } from "./_components/RegenerateConfirmDialog";
 import { ResumeDetailSkeleton } from "./_components/ResumeDetailSkeleton";
 import { ResumeDetailTopBar } from "./_components/ResumeDetailTopBar";
 import { ResumeEditorPanel } from "./_components/ResumeEditorPanel";
 import { ResumePreview } from "./_components/ResumePreview";
+import {
+  clearDraft,
+  isDraftNewer,
+  readDraft,
+  writeDraft,
+  type ResumeDraft,
+} from "./_components/resume-draft";
 
 type MobileTab = "editor" | "preview";
 
@@ -22,11 +38,17 @@ interface PageProps {
 
 export default function ResumeDetailPage({ params }: PageProps) {
   const { versionId } = use(params);
+  const router = useRouter();
+
   const [resume, setResume] = useState<ResumeVersion | null>(null);
   const [initial, setInitial] = useState<ResumeVersion | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("editor");
+  const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<ResumeDraft | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,6 +57,14 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const data = await getResume(versionId);
       setResume(data);
       setInitial(data);
+
+      const draft = readDraft(versionId);
+      if (draft && isDraftNewer(draft, data)) {
+        setPendingDraft(draft);
+      } else {
+        setPendingDraft(null);
+        if (draft) clearDraft(versionId);
+      }
     } catch (err) {
       setError(err as Error);
     } finally {
@@ -58,15 +88,80 @@ export default function ResumeDetailPage({ params }: PageProps) {
     return `레쥬메 #${shortId} ${lang}`;
   }, [resume, versionId]);
 
-  const handleSave = useCallback(() => {
-    // Wired in Block 9
-  }, []);
-  const handleRegenerate = useCallback(() => {
-    // Wired in Block 9
-  }, []);
+  const handleSave = useCallback(async () => {
+    if (!resume || !dirty || saving) return;
+    setSaving(true);
+    try {
+      const updated = await updateResume(versionId, resume);
+      setResume(updated);
+      setInitial(updated);
+      clearDraft(versionId);
+      toast.success("저장됐어요");
+    } catch (err) {
+      if (err instanceof ResumeMutationUnsupportedError) {
+        writeDraft(versionId, resume);
+        setInitial(resume);
+        toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
+      } else {
+        toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [resume, dirty, saving, versionId]);
+
+  const handleRegenerate = useCallback(async () => {
+    if (!resume || regenerating) return;
+    setRegenerating(true);
+    try {
+      const created = await createResume({ language: resume.meta.language });
+      const newId = created.version_id;
+      if (!newId) throw new Error("version_id missing");
+      clearDraft(versionId);
+      router.push(`/export/resume/${newId}`);
+    } catch {
+      toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
+      setRegenerating(false);
+    }
+  }, [resume, regenerating, router, versionId]);
+
   const handlePrint = useCallback(() => {
     if (typeof window !== "undefined") window.print();
   }, []);
+
+  const handleRestoreDraft = useCallback(() => {
+    if (!pendingDraft) return;
+    setResume(pendingDraft.data);
+    setPendingDraft(null);
+  }, [pendingDraft]);
+
+  const handleDiscardDraft = useCallback(() => {
+    clearDraft(versionId);
+    setPendingDraft(null);
+  }, [versionId]);
+
+  // Ctrl/Cmd+S
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleSave]);
+
+  // beforeunload when dirty
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
 
   if (loading) return <ResumeDetailSkeleton />;
 
@@ -106,10 +201,10 @@ export default function ResumeDetailPage({ params }: PageProps) {
       <ResumeDetailTopBar
         versionLabel={versionLabel}
         dirty={dirty}
-        saving={false}
-        regenerating={false}
+        saving={saving}
+        regenerating={regenerating}
         onSave={handleSave}
-        onRegenerate={handleRegenerate}
+        onRegenerate={() => setRegenerateOpen(true)}
         onPrint={handlePrint}
       />
 
@@ -145,6 +240,13 @@ export default function ResumeDetailPage({ params }: PageProps) {
           ].join(" ")}
         >
           <div className="p-5 sm:p-6 space-y-3">
+            {pendingDraft && (
+              <DraftRestoreBanner
+                updatedAt={pendingDraft.updated_at}
+                onRestore={handleRestoreDraft}
+                onDiscard={handleDiscardDraft}
+              />
+            )}
             <ParsingWarningsBanner warnings={resume.파싱경고} />
             <ResumeEditorPanel resume={resume} onChange={setResume} />
           </div>
@@ -161,6 +263,13 @@ export default function ResumeDetailPage({ params }: PageProps) {
           </div>
         </main>
       </div>
+
+      <RegenerateConfirmDialog
+        open={regenerateOpen}
+        submitting={regenerating}
+        onClose={() => setRegenerateOpen(false)}
+        onConfirm={handleRegenerate}
+      />
     </div>
   );
 }
