@@ -8,12 +8,14 @@ import type {
 
 // ─── Resume endpoints ──────────────────────────────────────────────
 
-export async function createResume(params: {
-  language: ResumeLanguage;
-}): Promise<ResumeVersion> {
+export async function createResume(
+  params: { language: ResumeLanguage },
+  options?: { signal?: AbortSignal },
+): Promise<ResumeVersion> {
   const res = await api.post<ApiSuccessResponse<ResumeVersion>>(
     "/export/resume",
     { language: params.language },
+    options,
   );
   return res.data;
 }
