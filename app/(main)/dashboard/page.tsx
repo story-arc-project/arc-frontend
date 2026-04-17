@@ -1,176 +1,598 @@
 "use client";
 
-import { useState } from "react";
-import { TrendingUp, Zap, Clock, Award, ChevronRight, Plus } from "lucide-react";
-import { Button, Badge, Textarea } from "@/components/ui";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  FileText,
+  TrendingUp,
+  Clock,
+  CheckCircle,
+  ChevronRight,
+  Plus,
+  ArrowRight,
+  Lightbulb,
+  Tags,
+} from "lucide-react";
+import { Badge } from "@/components/ui";
+import { useAuth } from "@/hooks/useAuth";
+import { useExperiences } from "@/hooks/useExperiences";
+import { getAnalysisHomeSummary } from "@/lib/api/analysis-api";
+import { toExperienceV2 } from "@/lib/utils/experience-mapper";
+import { formatRelativeTime } from "@/lib/utils/date-utils";
+import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2";
+import {
+  analysisTypeLabel,
+  ANALYSIS_DETAIL_PATH,
+} from "@/types/analysis";
+import type { AnalysisHomeSummary, AnalysisSnapshot } from "@/types/analysis";
+import type { Experience } from "@/types/experience";
+import type { ExperienceTypeId } from "@/types/archive";
+import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
+import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
-const CAPABILITY_DATA = [
-  { label: "기획·분석", value: 82, color: "bg-brand" },
-  { label: "커뮤니케이션", value: 74, color: "bg-brand" },
-  { label: "리더십", value: 60, color: "bg-brand" },
-  { label: "기술·개발", value: 55, color: "bg-brand" },
-  { label: "창의·디자인", value: 48, color: "bg-brand" },
+// ─── Helpers ────────────────────────────────────────────────
+
+function countThisMonth(experiences: Experience[]): number {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  return experiences.filter((e) => {
+    const d = new Date(e.created_at);
+    return d.getFullYear() === y && d.getMonth() === m;
+  }).length;
+}
+
+function calcRecordingPeriod(experiences: Experience[]): string {
+  if (experiences.length === 0) return "시작 전";
+  const dates = experiences.map((e) => new Date(e.created_at).getTime());
+  const oldest = Math.min(...dates);
+  const diff = Date.now() - oldest;
+  const months = Math.max(1, Math.round(diff / (1000 * 60 * 60 * 24 * 30)));
+  return `${months}개월`;
+}
+
+function calcTypeDistribution(
+  experiences: Experience[],
+): { type: string; label: string; count: number }[] {
+  const map = new Map<string, number>();
+  for (const exp of experiences) {
+    map.set(exp.type, (map.get(exp.type) ?? 0) + 1);
+  }
+  const sorted = [...map.entries()]
+    .sort((a, b) => b[1] - a[1]);
+
+  const MAX_VISIBLE = 6;
+  if (sorted.length <= MAX_VISIBLE) {
+    return sorted.map(([type, count]) => ({
+      type,
+      label: EXPERIENCE_TYPE_MAP[type as ExperienceTypeId]?.label ?? type,
+      count,
+    }));
+  }
+
+  const visible = sorted.slice(0, MAX_VISIBLE - 1);
+  const rest = sorted.slice(MAX_VISIBLE - 1);
+  const otherCount = rest.reduce((sum, [, c]) => sum + c, 0);
+  return [
+    ...visible.map(([type, count]) => ({
+      type,
+      label: EXPERIENCE_TYPE_MAP[type as ExperienceTypeId]?.label ?? type,
+      count,
+    })),
+    { type: "etc", label: "기타", count: otherCount },
+  ];
+}
+
+function todayString(): string {
+  return new Date().toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  });
+}
+
+// ─── Tab types ──────────────────────────────────────────────
+
+type TabKey = "individual" | "comprehensive" | "keyword";
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "individual", label: "개별" },
+  { key: "comprehensive", label: "종합" },
+  { key: "keyword", label: "키워드" },
 ];
 
-const RECENT_EXPERIENCES = [
-  { id: "1", title: "UX 리서치 인턴십", type: "인턴", date: "2024.07 – 2024.08", tags: ["UX", "리서치", "협업"] },
-  { id: "2", title: "캡스톤 디자인 프로젝트", type: "프로젝트", date: "2024.03 – 2024.06", tags: ["기획", "팀리더"] },
-  { id: "3", title: "교내 창업 경진대회 금상", type: "수상", date: "2023.11", tags: ["수상", "아이디어"] },
+const STAT_ICONS = [FileText, TrendingUp, Clock, CheckCircle] as const;
+const STAT_COLORS = [
+  "text-brand",
+  "text-success",
+  "text-text-secondary",
+  "text-brand",
 ];
 
-const QUICK_TAGS = ["오늘 배운 것", "프로젝트", "대외활동", "수업", "생각 메모"];
+// ─── Component ──────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const [memo, setMemo] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  const { user } = useAuth();
+  const { experiences, isLoading: expLoading } = useExperiences();
+  const [summary, setSummary] = useState<AnalysisHomeSummary | null>(null);
+  const [summaryError, setSummaryError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+  const [tab, setTab] = useState<TabKey>("individual");
 
-  const handleQuickRecord = () => {
-    if (!memo.trim()) return;
-    setSubmitted(true);
-    setTimeout(() => {
-      setMemo("");
-      setSubmitted(false);
-    }, 1800);
-  };
+  useEffect(() => {
+    let ignore = false;
+    getAnalysisHomeSummary()
+      .then((result) => {
+        if (!ignore) { setSummary(result); setSummaryError(false); }
+      })
+      .catch(() => {
+        if (!ignore) setSummaryError(true);
+      });
+    return () => { ignore = true; };
+  }, [retryKey]);
+
+  const recentExperiences = useMemo(() => {
+    return [...experiences]
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      .slice(0, 5)
+      .map(toExperienceV2);
+  }, [experiences]);
+
+  const typeDistribution = useMemo(
+    () => calcTypeDistribution(experiences),
+    [experiences],
+  );
+
+  const maxTypeCount = useMemo(
+    () => Math.max(1, ...typeDistribution.map((d) => d.count)),
+    [typeDistribution],
+  );
+
+  const statItems = useMemo(() => [
+    { label: "총 경험", value: `${experiences.length}개` },
+    { label: "이번 달 추가", value: `${countThisMonth(experiences)}개` },
+    { label: "기록 기간", value: calcRecordingPeriod(experiences) },
+    { label: "분석 완료", value: `${summary?.stats.analysisCompleted ?? 0}회` },
+  ], [experiences, summary]);
+
+  const recentMap: Record<TabKey, AnalysisSnapshot[]> | null = summary
+    ? {
+        individual: summary.recentIndividual,
+        comprehensive: summary.recentComprehensive,
+        keyword: summary.recentKeyword,
+      }
+    : null;
+
+  const userName = user?.profile?.name ?? "사용자";
+
+  // ── Loading skeleton ──
+  if (expLoading) {
+    return (
+      <div className="min-h-[calc(100dvh-var(--gnb-h))] bg-surface px-4 py-8 sm:px-8">
+        <div className="max-w-4xl mx-auto space-y-6" aria-busy="true">
+          <div className="h-8 w-2/5 bg-surface-secondary rounded animate-pulse" />
+          <div className="h-5 w-1/4 bg-surface-secondary rounded animate-pulse" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-24 bg-surface-secondary rounded-lg animate-pulse" />
+            ))}
+          </div>
+          <div className="grid sm:grid-cols-2 gap-6">
+            <div className="h-56 bg-surface-secondary rounded-xl animate-pulse" />
+            <div className="h-56 bg-surface-secondary rounded-xl animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100dvh-var(--gnb-h))] bg-surface px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-8">
 
-        {/* Header */}
+        {/* ── Header ── */}
         <div>
-          <p className="text-body-sm text-text-tertiary mb-1">2024년 4월 2일 수요일</p>
-          <h1 className="text-heading-2 text-text-primary">안녕하세요, 상추 님</h1>
-          <p className="text-body text-text-secondary mt-1">총 12개의 경험이 기록되어 있어요.</p>
+          <p className="text-body-sm text-text-tertiary mb-1">{todayString()}</p>
+          <h1 className="text-heading-2 text-text-primary">
+            안녕하세요, {userName} 님
+          </h1>
+          {experiences.length > 0 ? (
+            <p className="text-body text-text-secondary mt-1">
+              총 {experiences.length}개의 경험이 기록되어 있어요.
+            </p>
+          ) : (
+            <p className="text-body text-text-secondary mt-1">
+              첫 경험을 기록하고 나만의 커리어 내러티브를 시작해보세요.
+            </p>
+          )}
         </div>
 
-        {/* AI Identity Summary */}
-        <div className="bg-surface-brand border border-border rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Zap size={15} className="text-brand" />
-            <span className="text-label text-brand font-semibold">AI 아이덴티티 요약</span>
-          </div>
-          <p className="text-body text-text-primary leading-relaxed">
-            &ldquo;사람과 문제 사이에서 인사이트를 찾는{" "}
-            <span className="text-brand font-semibold">기획·리서치 지향 인재</span>. 팀 내 커뮤니케이션과 사용자
-            중심 분석 경험이 풍부하며, 창업과 디자인 영역까지 확장 중입니다.&rdquo;
-          </p>
-          <p className="text-caption text-text-tertiary mt-3">12개 경험 기반 · 최근 업데이트 2일 전</p>
-        </div>
-
-        {/* Stats Row */}
+        {/* ── Stats Row ── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { icon: Award, label: "총 경험", value: "12개" },
-            { icon: TrendingUp, label: "이번 달 추가", value: "3개" },
-            { icon: Clock, label: "기록 기간", value: "14개월" },
-            { icon: Zap, label: "역량 키워드", value: "28개" },
-          ].map(({ icon: Icon, label, value }) => (
-            <div key={label} className="bg-surface border border-border rounded-lg p-4">
-              <Icon size={16} className="text-text-tertiary mb-2" />
-              <p className="text-display text-text-primary">{value}</p>
-              <p className="text-caption text-text-secondary mt-0.5">{label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Capability Chart + Recent Experiences */}
-        <div className="grid sm:grid-cols-2 gap-6">
-
-          {/* Capability bars */}
-          <div className="bg-surface border border-border rounded-xl p-5">
-            <h2 className="text-title text-text-primary mb-4">역량 분포</h2>
-            <div className="space-y-3">
-              {CAPABILITY_DATA.map(({ label, value, color }) => (
-                <div key={label}>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-body-sm text-text-secondary">{label}</span>
-                    <span className="text-label text-text-tertiary">{value}%</span>
-                  </div>
-                  <div className="h-1.5 bg-surface-secondary rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${color}`}
-                      style={{ width: `${value}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <a
-              href="/analysis"
-              className="mt-4 flex items-center gap-1 text-label text-brand hover:text-brand-dark transition-colors"
-            >
-              상세 분석 보기 <ChevronRight size={14} />
-            </a>
-          </div>
-
-          {/* Recent experiences */}
-          <div className="bg-surface border border-border rounded-xl p-5">
-            <h2 className="text-title text-text-primary mb-4">최근 경험</h2>
-            <div className="space-y-3">
-              {RECENT_EXPERIENCES.map((exp) => (
-                <div key={exp.id} className="flex flex-col gap-1 py-2 border-b border-border last:border-0 last:pb-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-body-sm text-text-primary font-medium">{exp.title}</span>
-                    <Badge variant="default">{exp.type}</Badge>
-                  </div>
-                  <p className="text-caption text-text-tertiary">{exp.date}</p>
-                  <div className="flex flex-wrap gap-1 mt-0.5">
-                    {exp.tags.map((tag) => (
-                      <span key={tag} className="text-caption text-text-secondary bg-surface-secondary px-1.5 py-0.5 rounded">
-                        #{tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <a
-              href="/archive"
-              className="mt-4 flex items-center gap-1 text-label text-brand hover:text-brand-dark transition-colors"
-            >
-              전체 아카이브 <ChevronRight size={14} />
-            </a>
-          </div>
-        </div>
-
-        {/* Quick Recording */}
-        <div className="bg-surface border border-border rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Plus size={15} className="text-text-secondary" />
-            <h2 className="text-title text-text-primary">퀵 레코딩</h2>
-          </div>
-          <p className="text-body-sm text-text-secondary mb-3">지금 느낀 것, 배운 것을 짧게 남겨요.</p>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {QUICK_TAGS.map((tag) => (
-              <button
-                key={tag}
-                onClick={() => setMemo((prev) => (prev ? `${prev} #${tag}` : `#${tag} `))}
-                className="text-label text-text-secondary bg-surface-secondary hover:bg-surface-tertiary border border-border px-2.5 py-1 rounded-md transition-colors"
+          {statItems.map(({ label, value }, i) => {
+            const Icon = STAT_ICONS[i];
+            return (
+              <div
+                key={label}
+                className="bg-surface border border-border rounded-lg p-4 flex items-center gap-3"
               >
-                {tag}
-              </button>
-            ))}
+                <div className={`p-2 rounded-md bg-surface-secondary ${STAT_COLORS[i]}`}>
+                  <Icon size={18} aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="text-heading-3 text-text-primary leading-none">
+                    {value}
+                  </p>
+                  <p className="text-caption text-text-tertiary mt-1">
+                    {label}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Type Distribution + Recent Experiences ── */}
+        {experiences.length > 0 && (
+          <div className="grid sm:grid-cols-2 gap-6">
+            {/* Type distribution */}
+            <div className="bg-surface border border-border rounded-xl p-5">
+              <h2 className="text-title text-text-primary mb-4">경험 유형 분포</h2>
+              <div className="space-y-3">
+                {typeDistribution.map(({ type, label, count }) => (
+                  <div key={type}>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-body-sm text-text-secondary">{label}</span>
+                      <span className="text-label text-text-tertiary">{count}개</span>
+                    </div>
+                    <div className="h-1.5 bg-surface-secondary rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-brand transition-all"
+                        style={{ width: `${(count / maxTypeCount) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Link
+                href="/archive"
+                className="mt-4 flex items-center gap-1 text-label text-brand hover:text-brand-dark transition-colors"
+              >
+                전체 아카이브 <ChevronRight size={14} />
+              </Link>
+            </div>
+
+            {/* Recent experiences */}
+            <div className="bg-surface border border-border rounded-xl p-5">
+              <h2 className="text-title text-text-primary mb-4">최근 경험</h2>
+              <div className="space-y-3">
+                {recentExperiences.map((exp) => {
+                  const typeInfo = EXPERIENCE_TYPE_MAP[exp.typeId];
+                  return (
+                    <div
+                      key={exp.id}
+                      className="flex flex-col gap-1 py-2 border-b border-border last:border-0 last:pb-0"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-body-sm text-text-primary font-medium truncate">
+                          {exp.title || "제목 없음"}
+                        </span>
+                        <Badge variant="default">
+                          {typeInfo?.label ?? exp.typeId}
+                        </Badge>
+                      </div>
+                      <p className="text-caption text-text-tertiary">
+                        {formatRelativeTime(exp.updatedAt)}
+                      </p>
+                      {exp.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {exp.tags.slice(0, 3).map((tag) => (
+                            <span
+                              key={tag}
+                              className="text-caption text-text-secondary bg-surface-secondary px-1.5 py-0.5 rounded"
+                            >
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <Link
+                href="/archive"
+                className="mt-4 flex items-center gap-1 text-label text-brand hover:text-brand-dark transition-colors"
+              >
+                전체 아카이브 <ChevronRight size={14} />
+              </Link>
+            </div>
           </div>
-          <Textarea
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            placeholder="오늘 어떤 경험을 했나요? 짧아도 괜찮아요."
-            rows={3}
-          />
-          <div className="flex justify-end mt-3">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleQuickRecord}
-              disabled={!memo.trim() || submitted}
+        )}
+
+        {/* ── Empty state for zero experiences ── */}
+        {experiences.length === 0 && (
+          <div className="bg-surface border border-border rounded-xl p-8 flex flex-col items-center text-center">
+            <div className="p-3 rounded-full bg-surface-brand mb-4">
+              <Plus size={24} className="text-brand" />
+            </div>
+            <h2 className="text-title text-text-primary mb-1">
+              아직 기록된 경험이 없어요
+            </h2>
+            <p className="text-body-sm text-text-secondary mb-4">
+              경험을 기록하면 유형 분포와 최근 활동을 한눈에 볼 수 있어요.
+            </p>
+            <Link
+              href="/archive"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors"
             >
-              {submitted ? "저장됐어요!" : "저장하기"}
-            </Button>
+              <Plus size={14} />
+              첫 경험 기록하기
+            </Link>
           </div>
+        )}
+
+        {/* ── Recent Analysis ── */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-title text-text-primary">최근 분석</h2>
+            <div
+              className="flex border border-border rounded-md overflow-hidden"
+              role="tablist"
+              aria-label="분석 유형"
+            >
+              {TABS.map((t) => (
+                <button
+                  key={t.key}
+                  id={`dash-tab-${t.key}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === t.key}
+                  aria-controls={`dash-panel-${t.key}`}
+                  onClick={() => setTab(t.key)}
+                  className={[
+                    "px-3 py-1.5 text-label transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset",
+                    tab === t.key
+                      ? "bg-brand text-white"
+                      : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary",
+                  ].join(" ")}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {summaryError && (
+            <div className="py-8 flex flex-col items-center" role="alert">
+              <p className="text-body text-text-secondary mb-3">
+                분석 데이터를 불러오지 못했습니다.
+              </p>
+              <button
+                type="button"
+                onClick={() => setRetryKey((k) => k + 1)}
+                className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors"
+              >
+                다시 시도
+              </button>
+            </div>
+          )}
+
+          {!summaryError && !recentMap && (
+            <div className="space-y-3" aria-busy="true">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div key={i} className="h-20 bg-surface-secondary rounded-lg animate-pulse" />
+              ))}
+            </div>
+          )}
+
+          {recentMap && (
+            <div
+              className="space-y-3"
+              role="tabpanel"
+              id={`dash-panel-${tab}`}
+              aria-labelledby={`dash-tab-${tab}`}
+            >
+              {recentMap[tab].length === 0 ? (
+                <div className="py-12 text-center">
+                  <p className="text-body text-text-tertiary">
+                    아직 분석 결과가 없습니다.
+                  </p>
+                  <p className="text-body-sm text-text-tertiary mt-1">
+                    경험을 기록하고 분석을 시작해보세요.
+                  </p>
+                </div>
+              ) : (
+                recentMap[tab].map((snapshot) => (
+                  <div
+                    key={snapshot.id}
+                    className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <Link
+                        href={`${ANALYSIS_DETAIL_PATH[snapshot.type]}/${snapshot.id}`}
+                        className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
+                      >
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <Badge variant="outline">
+                            {analysisTypeLabel[snapshot.type]}
+                          </Badge>
+                          <span className="text-body-sm text-text-primary font-medium truncate">
+                            {snapshot.title}
+                          </span>
+                        </div>
+                        <p className="text-body-sm text-text-secondary line-clamp-1">
+                          {snapshot.summaryText}
+                        </p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <ConfidenceBadge confidence={snapshot.overallConfidence} />
+                          <span className="text-caption text-text-tertiary">
+                            {formatRelativeTime(snapshot.createdAt)}
+                          </span>
+                        </div>
+                      </Link>
+                      <BookmarkToggle
+                        analysisId={snapshot.id}
+                        isBookmarked={snapshot.isBookmarked}
+                        size="sm"
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          <div className="mt-4">
+            <Link
+              href="/analysis"
+              className="text-body-sm text-brand font-medium hover:underline"
+            >
+              분석 홈으로 &rarr;
+            </Link>
+          </div>
+        </section>
+
+        {/* ── Recommendations ── */}
+        {summary && (
+          <RecommendationSection
+            summary={summary}
+            hasExperiences={experiences.length > 0}
+          />
+        )}
+
+        {/* ── CTA Cards ── */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Link
+            href="/archive"
+            className="group bg-surface border border-border rounded-xl p-5 hover:border-brand transition-colors"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <Plus size={18} className="text-brand" aria-hidden="true" />
+              <h3 className="text-title text-text-primary">새 경험 기록하기</h3>
+            </div>
+            <p className="text-body-sm text-text-secondary">
+              오늘의 경험을 기록하고 커리어 스토리를 쌓아보세요.
+            </p>
+            <span className="inline-flex items-center gap-1 mt-3 text-caption text-brand font-medium group-hover:gap-2 transition-all">
+              아카이브로 이동 <ArrowRight size={12} aria-hidden="true" />
+            </span>
+          </Link>
+          <Link
+            href="/export"
+            className="group bg-surface border border-border rounded-xl p-5 hover:border-brand transition-colors"
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <FileText size={18} className="text-brand" aria-hidden="true" />
+              <h3 className="text-title text-text-primary">이력서/자소서 만들기</h3>
+            </div>
+            <p className="text-body-sm text-text-secondary">
+              기록된 경험으로 이력서와 자기소개서를 만들어보세요.
+            </p>
+            <span className="inline-flex items-center gap-1 mt-3 text-caption text-brand font-medium group-hover:gap-2 transition-all">
+              익스포트로 이동 <ArrowRight size={12} aria-hidden="true" />
+            </span>
+          </Link>
         </div>
 
       </div>
     </div>
+  );
+}
+
+// ─── Recommendation Sub-component ───────────────────────────
+
+function RecommendationSection({
+  summary,
+  hasExperiences,
+}: {
+  summary: AnalysisHomeSummary;
+  hasExperiences: boolean;
+}) {
+  const hasGroups = summary.recommendations.experienceGroups.length > 0;
+  const hasKeywords = summary.recommendations.suggestedKeywords.length > 0;
+
+  if (!hasGroups && !hasKeywords) {
+    if (!hasExperiences) return null;
+    return (
+      <div className="bg-surface-secondary border border-border rounded-xl p-6 text-center">
+        <Lightbulb size={24} className="text-text-tertiary mx-auto mb-2" aria-hidden="true" />
+        <p className="text-body text-text-secondary">
+          경험이 쌓이고 있어요!
+        </p>
+        <p className="text-body-sm text-text-tertiary mt-1">
+          분석을 시작하면 맞춤 추천을 받을 수 있어요.
+        </p>
+        <Link
+          href="/analysis"
+          className="inline-flex items-center gap-1 mt-3 text-label text-brand hover:text-brand-dark transition-colors"
+        >
+          분석 시작하기 <ArrowRight size={14} />
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <section>
+      <h2 className="text-title text-text-primary mb-4">추천</h2>
+      <div className="space-y-4">
+        {hasGroups && (
+          <div className="bg-surface border border-border rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Lightbulb size={16} className="text-brand" aria-hidden="true" />
+              <h3 className="text-body text-text-primary font-medium">
+                이 경험들을 함께 분석해보세요
+              </h3>
+            </div>
+            <div className="space-y-2">
+              {summary.recommendations.experienceGroups.slice(0, 3).map((group, i) => (
+                <div
+                  key={i}
+                  className="bg-surface-secondary rounded-lg px-4 py-3"
+                >
+                  <p className="text-body-sm text-text-secondary">
+                    {group.reason}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/analysis/comprehensive/new"
+              className="inline-flex items-center gap-1 mt-3 text-label text-brand hover:text-brand-dark transition-colors"
+            >
+              종합 분석 시작 <ArrowRight size={14} />
+            </Link>
+          </div>
+        )}
+
+        {hasKeywords && (
+          <div className="bg-surface border border-border rounded-xl p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Tags size={16} className="text-brand" aria-hidden="true" />
+              <h3 className="text-body text-text-primary font-medium">
+                추천 키워드
+              </h3>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {summary.recommendations.suggestedKeywords.slice(0, 6).map((kw) => (
+                <span
+                  key={kw.id}
+                  className="inline-flex items-center rounded-full px-3 py-1 bg-surface-brand text-brand text-label"
+                >
+                  {kw.label}
+                </span>
+              ))}
+            </div>
+            <Link
+              href="/analysis/keyword/new"
+              className="inline-flex items-center gap-1 mt-3 text-label text-brand hover:text-brand-dark transition-colors"
+            >
+              키워드 분석 시작 <ArrowRight size={14} />
+            </Link>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
