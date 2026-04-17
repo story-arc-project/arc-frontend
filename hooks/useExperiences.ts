@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   getExperiences,
@@ -18,15 +18,25 @@ export function useExperiences() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const refetch = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const data = await getExperiences();
+      if (!mountedRef.current) return;
       setExperiences(data.contents);
       setCount(data.count);
       setIsLoading(false);
     } catch (err) {
+      if (!mountedRef.current) return;
       setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
       setIsLoading(false);
     }
@@ -103,8 +113,9 @@ export function useExperiences() {
       } catch {
         try {
           await refetch();
-        } catch (refetchErr) {
-          throw refetchErr instanceof Error ? refetchErr : new Error("목록 갱신에 실패했어요.");
+        } catch {
+          // Best-effort list refresh — swallow so a transient GET failure
+          // doesn't surface as a write failure and invite retries that create duplicates.
         }
       }
       return newId;

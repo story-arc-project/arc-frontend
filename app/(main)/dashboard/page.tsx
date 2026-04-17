@@ -286,7 +286,7 @@ export default function DashboardPage() {
               onClick={() => {
                 void refetchExperiences();
               }}
-              className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors"
+              className="px-4 py-2 rounded-md bg-brand text-text-on-brand text-label hover:bg-brand-dark transition-colors"
             >
               다시 시도
             </button>
@@ -434,7 +434,7 @@ export default function DashboardPage() {
             </p>
             <Link
               href="/archive"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-brand text-text-on-brand text-label hover:bg-brand-dark transition-colors"
             >
               <Plus size={14} />
               첫 경험 기록하기
@@ -458,12 +458,12 @@ export default function DashboardPage() {
                   type="button"
                   role="tab"
                   aria-selected={tab === t.key}
-                  aria-controls={`dash-panel-${t.key}`}
+                  aria-controls={tab === t.key ? `dash-panel-${t.key}` : undefined}
                   onClick={() => setTab(t.key)}
                   className={[
                     "px-3 py-1.5 text-label transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset",
                     tab === t.key
-                      ? "bg-brand text-white"
+                      ? "bg-brand text-text-on-brand"
                       : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary",
                   ].join(" ")}
                 >
@@ -481,7 +481,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={retrySummary}
-                className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors"
+                className="px-4 py-2 rounded-md bg-brand text-text-on-brand text-label hover:bg-brand-dark transition-colors"
               >
                 다시 시도
               </button>

@@ -84,10 +84,12 @@ export function useLibraries() {
       if (libraryId === ALL_LIBRARY_ID) return;
       if (loadedMembershipRef.current.has(libraryId)) return;
       loadedMembershipRef.current.add(libraryId);
-      // Pin this call to the refetch generation that started it. If a later
-      // refetch bumps the version before we resolve, we drop our result so a
-      // stale membership response can't overwrite fresh state.
+      // Pin this call to both the refetch generation and the membership mutation
+      // generation. A mutation (add/remove) bumps membershipVersionRef, so an
+      // in-flight GET that resolves after a mutation is treated as stale and
+      // dropped — preventing optimistic state from being overwritten.
       const version = refetchVersionRef.current;
+      const membershipVersion = membershipVersionRef.current;
       setLoadingMembershipIds((prev) => {
         const next = new Set(prev);
         next.add(libraryId);
@@ -102,7 +104,7 @@ export function useLibraries() {
       let succeeded = false;
       try {
         const data = await getLibraryExperiences(libraryId);
-        if (version !== refetchVersionRef.current) return;
+        if (version !== refetchVersionRef.current || membershipVersion !== membershipVersionRef.current) return;
         const ids = data.contents.map((experience) => experience.id);
         setLibraries((prev) =>
           prev.map((library) =>
@@ -123,7 +125,7 @@ export function useLibraries() {
           next.delete(libraryId);
           return next;
         });
-        const stale = version !== refetchVersionRef.current;
+        const stale = version !== refetchVersionRef.current || membershipVersion !== membershipVersionRef.current;
         if (stale || succeeded) {
           setLoadedMembershipIds((prev) => {
             if (prev.has(libraryId)) return prev;
