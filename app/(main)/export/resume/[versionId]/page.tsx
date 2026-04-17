@@ -8,6 +8,7 @@ import { getResume } from "@/lib/api/export-api";
 import type { ResumeVersion } from "@/types/resume";
 import { ResumeDetailSkeleton } from "./_components/ResumeDetailSkeleton";
 import { ResumeDetailTopBar } from "./_components/ResumeDetailTopBar";
+import { ResumePreview } from "./_components/ResumePreview";
 
 type MobileTab = "editor" | "preview";
 
@@ -155,11 +156,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
           ].join(" ")}
         >
           <div className="p-5 sm:p-8">
-            <div className="mx-auto max-w-[210mm] rounded-sm bg-surface p-10 shadow-sm">
-              <p className="text-body-sm text-text-secondary text-center">
-                미리보기는 곧 추가될 예정이에요.
-              </p>
-            </div>
+            <ResumePreview resume={resume} />
           </div>
         </main>
       </div>
