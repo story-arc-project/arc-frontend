@@ -25,16 +25,38 @@ export function useExperiences() {
       const data = await getExperiences();
       setExperiences(data.contents);
       setCount(data.count);
+      setIsLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
-    } finally {
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    refetch();
-  }, [refetch]);
+    let cancelled = false;
+
+    async function load() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data = await getExperiences();
+        if (cancelled) return;
+        setExperiences(data.contents);
+        setCount(data.count);
+        setIsLoading(false);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
+        setIsLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const createExperience = useCallback(
     async (payload: ExperienceSavePayload): Promise<Experience> => {
@@ -79,7 +101,11 @@ export function useExperiences() {
         });
         if (inserted) setCount((c) => c + 1);
       } catch {
-        refetch();
+        try {
+          await refetch();
+        } catch (refetchErr) {
+          throw refetchErr instanceof Error ? refetchErr : new Error("목록 갱신에 실패했어요.");
+        }
       }
       return newId;
     },
