@@ -35,7 +35,7 @@ export async function getResumeList(): Promise<ResumeListItem[]> {
 
   if (!Array.isArray(data)) return [];
 
-  return data.map((item) => toListItem(item));
+  return data.map((item) => toListItem(item)).filter((item) => item.version_id !== "");
 }
 
 function toListItem(raw: unknown): ResumeListItem {
@@ -44,10 +44,10 @@ function toListItem(raw: unknown): ResumeListItem {
   const versionId = (r.version_id as string | undefined) ?? "";
   const metaRaw = (r.meta as Record<string, unknown> | undefined) ?? {};
 
-  const language =
-    (r.language as ResumeLanguage | undefined) ??
-    (metaRaw.language as ResumeLanguage | undefined) ??
-    "ko";
+  const rawLang =
+    (r.language as string | undefined) ??
+    (metaRaw.language as string | undefined);
+  const language: ResumeLanguage = rawLang === "en" ? "en" : "ko";
 
   const generatedAt =
     (r.generated_at as string | undefined) ??

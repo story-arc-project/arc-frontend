@@ -86,7 +86,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const isFullyEmpty = useMemo(() => {
     if (!resume) return false;
     return (
-      isEmptySection(resume.인적사항 as unknown as Record<string, unknown>) &&
+      isEmptySection(resume.인적사항) &&
       !resume.자기소개_요약?.trim() &&
       isEmptySection(resume.학력) &&
       isEmptySection(resume.경력) &&
@@ -96,7 +96,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
       isEmptySection(resume.수상) &&
       isEmptySection(resume.자격증) &&
       isEmptySection(resume.어학) &&
-      isEmptySection(resume.기술및역량 as unknown as Record<string, unknown>)
+      isEmptySection(resume.기술및역량)
     );
   }, [resume]);
 
@@ -118,9 +118,13 @@ export default function ResumeDetailPage({ params }: PageProps) {
       toast.success("저장됐어요");
     } catch (err) {
       if (err instanceof ResumeMutationUnsupportedError) {
-        writeDraft(versionId, resume);
-        setInitial(resume);
-        toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
+        const saved = writeDraft(versionId, resume);
+        if (saved) {
+          setInitial(resume);
+          toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
+        } else {
+          toast.error("임시 저장도 실패했어요. 페이지를 닫지 마세요.");
+        }
       } else {
         toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
       }
@@ -136,13 +140,12 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const created = await createResume({ language: resume.meta.language });
       const newId = created.version_id;
       if (!newId) throw new Error("version_id missing");
-      clearDraft(versionId);
       router.push(`/export/resume/${newId}`);
     } catch {
       toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
       setRegenerating(false);
     }
-  }, [resume, regenerating, router, versionId]);
+  }, [resume, regenerating, router]);
 
   const handlePrint = useCallback(() => {
     if (typeof window !== "undefined") window.print();
@@ -152,7 +155,8 @@ export default function ResumeDetailPage({ params }: PageProps) {
     if (!pendingDraft) return;
     setResume(pendingDraft.data);
     setPendingDraft(null);
-  }, [pendingDraft]);
+    clearDraft(versionId);
+  }, [pendingDraft, versionId]);
 
   const handleDiscardDraft = useCallback(() => {
     clearDraft(versionId);
@@ -163,13 +167,14 @@ export default function ResumeDetailPage({ params }: PageProps) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        if (!resume || !dirty) return;
         e.preventDefault();
         handleSave();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleSave]);
+  }, [handleSave, resume, dirty]);
 
   // beforeunload when dirty
   useEffect(() => {
@@ -255,7 +260,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
         ))}
       </div>
 
-      <div className="flex h-[calc(100dvh-var(--gnb-h)-3.5rem)] flex-col md:flex-row">
+      <div className="flex h-[calc(100dvh-var(--gnb-h)-3.5rem)] md:h-[calc(100dvh-var(--gnb-h))] flex-col md:flex-row">
         <aside
           className={[
             "no-print flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto border-border bg-surface md:max-w-[40%] md:flex-none md:basis-2/5 md:border-r",

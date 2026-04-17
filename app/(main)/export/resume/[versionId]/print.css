@@ -13,7 +13,7 @@
   }
 
   /* Remove top padding reserved for the fixed GNB */
-  body > div.pt-\[var\(--gnb-h\)\] {
+  body > [data-print-root] {
     padding-top: 0 !important;
   }
 

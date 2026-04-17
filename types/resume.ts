@@ -160,17 +160,11 @@ export interface ResumeListItem {
 // ─── Section emptiness helper ──────────────────────────────────────
 // Used by preview to hide empty sections.
 
-type Section =
-  | null
-  | undefined
-  | unknown[]
-  | Record<string, unknown>;
-
-export function isEmptySection(section: Section): boolean {
+export function isEmptySection(section: unknown): boolean {
   if (section === null || section === undefined) return true;
   if (Array.isArray(section)) return section.length === 0;
-  if (typeof section === "object") {
-    const values = Object.values(section);
+  if (typeof section === "object" && section !== null) {
+    const values = Object.values(section as Record<string, unknown>);
     if (values.length === 0) return true;
     return values.every((v) => {
       if (v === null || v === undefined) return true;

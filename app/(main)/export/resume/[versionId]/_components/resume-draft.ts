@@ -24,19 +24,18 @@ export function readDraft(versionId: string): ResumeDraft | null {
   }
 }
 
-export function writeDraft(versionId: string, data: ResumeVersion): ResumeDraft {
+export function writeDraft(versionId: string, data: ResumeVersion): boolean {
   const draft: ResumeDraft = {
     data,
     updated_at: new Date().toISOString(),
   };
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(key(versionId), JSON.stringify(draft));
-    } catch {
-      // ignore quota errors
-    }
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(key(versionId), JSON.stringify(draft));
+    return true;
+  } catch {
+    return false;
   }
-  return draft;
 }
 
 export function clearDraft(versionId: string): void {

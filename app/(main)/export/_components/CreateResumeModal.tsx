@@ -53,8 +53,9 @@ export function CreateResumeModal({ open, onClose }: CreateResumeModalProps) {
         throw new Error("version_id missing in response");
       }
       router.push(`/export/resume/${versionId}`);
+      onClose();
     } catch (err) {
-      if ((err as { name?: string }).name === "AbortError") {
+      if (err instanceof DOMException && err.name === "AbortError") {
         toast.error("생성이 오래 걸려요. 잠시 후 다시 시도해주세요.");
       } else {
         toast.error("레쥬메 생성에 실패했어요. 잠시 후 다시 시도해주세요.");
