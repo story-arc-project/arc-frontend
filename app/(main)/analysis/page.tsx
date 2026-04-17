@@ -114,7 +114,7 @@ export default function AnalysisHomePage() {
   const statItems = [
     { label: "전체 경험", value: data.stats.totalExperiences },
     { label: "분석 완료", value: data.stats.analysisCompleted },
-    { label: "최근 분석", value: formatRelativeTime(data.stats.lastAnalysisAt) },
+    { label: "최근 분석", value: data.stats.lastAnalysisAt ? formatRelativeTime(data.stats.lastAnalysisAt) : "-" },
     { label: "보완 필요", value: data.stats.improvementNeeded },
   ];
 

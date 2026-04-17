@@ -440,7 +440,7 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
   const improvementNeeded = completed.filter(
     (s) => s.overallConfidence !== "sufficient",
   ).length;
-  const lastAnalysisAt = all
+  const lastAnalysisAt = completed
     .map((s) => s.createdAt)
     .filter(Boolean)
     .sort()
@@ -448,6 +448,7 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
 
   const recentSlice = (items: AnalysisSnapshot[]) =>
     [...items]
+      .filter((s) => s.status === "completed")
       .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
       .slice(0, 3);
 
