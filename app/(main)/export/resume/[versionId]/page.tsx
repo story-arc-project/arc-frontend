@@ -8,6 +8,7 @@ import { getResume } from "@/lib/api/export-api";
 import type { ResumeVersion } from "@/types/resume";
 import { ResumeDetailSkeleton } from "./_components/ResumeDetailSkeleton";
 import { ResumeDetailTopBar } from "./_components/ResumeDetailTopBar";
+import { ResumeEditorPanel } from "./_components/ResumeEditorPanel";
 import { ResumePreview } from "./_components/ResumePreview";
 
 type MobileTab = "editor" | "preview";
@@ -141,11 +142,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
           ].join(" ")}
         >
           <div className="p-5 sm:p-6">
-            <div className="rounded-lg border border-dashed border-border bg-surface-secondary p-8 text-center">
-              <p className="text-body-sm text-text-secondary">
-                섹션 편집기는 곧 추가될 예정이에요.
-              </p>
-            </div>
+            <ResumeEditorPanel resume={resume} onChange={setResume} />
           </div>
         </aside>
 
