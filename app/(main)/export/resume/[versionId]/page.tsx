@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import "./print.css";
 import { Button } from "@/components/ui";
@@ -77,6 +77,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
   useEffect(() => {
     load();
   }, [load]);
+
+  const dirtyRef = useRef(false);
+  const resumeRef = useRef<ResumeVersion | null>(null);
 
   const dirty = useMemo(() => {
     if (!resume || !initial) return false;
@@ -175,12 +178,25 @@ export default function ResumeDetailPage({ params }: PageProps) {
     setPendingDraft(null);
   }, [versionId]);
 
-  // Ctrl/Cmd+S
+  // Keep refs in sync for unmount handler
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  useEffect(() => { resumeRef.current = resume; }, [resume]);
+
+  // Persist draft on any client-side navigation (unmount)
+  useEffect(() => {
+    return () => {
+      if (dirtyRef.current && resumeRef.current) {
+        writeDraft(versionId, resumeRef.current);
+      }
+    };
+  }, [versionId]);
+
+  // Ctrl/Cmd+S — always consume the shortcut on this page
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        if (!resume || !dirty) return;
         e.preventDefault();
+        if (!resume || !dirty) return;
         handleSave();
       }
     };
