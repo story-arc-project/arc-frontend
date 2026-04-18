@@ -162,6 +162,7 @@ export interface ResumeListItem {
 
 export function isEmptySection(section: unknown): boolean {
   if (section === null || section === undefined) return true;
+  if (typeof section === "string") return section.trim() === "";
   if (Array.isArray(section)) return section.length === 0 || section.every((item) => isEmptySection(item));
   if (typeof section === "object" && section !== null) {
     const entries = Object.entries(section as Record<string, unknown>);

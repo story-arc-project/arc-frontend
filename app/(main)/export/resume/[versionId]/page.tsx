@@ -113,17 +113,18 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const handleSave = useCallback(async () => {
     if (!resume || !dirty || saving) return;
     setSaving(true);
+    const snapshot = resume;
     try {
-      const updated = await updateResume(versionId, resume);
-      setResume(updated);
+      const updated = await updateResume(versionId, snapshot);
       setInitial(updated);
+      setResume((current) => (current === snapshot ? updated : current));
       clearDraft(versionId);
       toast.success("저장됐어요");
     } catch (err) {
       if (err instanceof ResumeMutationUnsupportedError) {
-        const saved = writeDraft(versionId, resume);
+        const saved = writeDraft(versionId, snapshot);
         if (saved) {
-          setInitial(resume);
+          setInitial(snapshot);
           toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
         } else {
           toast.error("임시 저장도 실패했어요. 페이지를 닫지 마세요.");
