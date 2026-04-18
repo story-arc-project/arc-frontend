@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { ArrowLeft, Printer, RefreshCcw, Save } from "lucide-react";
 import { Button } from "@/components/ui";
 
@@ -9,6 +8,7 @@ interface ResumeDetailTopBarProps {
   dirty: boolean;
   saving: boolean;
   regenerating: boolean;
+  onBack: () => void;
   onSave: () => void;
   onRegenerate: () => void;
   onPrint: () => void;
@@ -19,6 +19,7 @@ export function ResumeDetailTopBar({
   dirty,
   saving,
   regenerating,
+  onBack,
   onSave,
   onRegenerate,
   onPrint,
@@ -27,13 +28,14 @@ export function ResumeDetailTopBar({
     <header
       className="no-print sticky top-[var(--gnb-h)] z-40 flex h-14 items-center gap-2 border-b border-border bg-surface/90 px-4 backdrop-blur-sm sm:px-6"
     >
-      <Link
-        href="/export"
+      <button
+        type="button"
+        onClick={onBack}
         aria-label="익스포트로 돌아가기"
         className="flex h-9 w-9 items-center justify-center rounded-md text-text-secondary hover:bg-surface-tertiary hover:text-text-primary transition-colors"
       >
         <ArrowLeft size={16} />
-      </Link>
+      </button>
       <div className="min-w-0 flex-1">
         <p className="text-body-sm text-text-primary truncate">
           {versionLabel}

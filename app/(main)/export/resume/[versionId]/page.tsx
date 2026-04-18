@@ -151,6 +151,14 @@ export default function ResumeDetailPage({ params }: PageProps) {
     if (typeof window !== "undefined") window.print();
   }, []);
 
+  const handleBack = useCallback(() => {
+    if (dirty && resume) {
+      writeDraft(versionId, resume);
+      toast("변경사항을 임시 저장했어요", "info");
+    }
+    router.push("/export");
+  }, [dirty, resume, versionId, router]);
+
   const handleRestoreDraft = useCallback(() => {
     if (!pendingDraft) return;
     setResume(pendingDraft.data);
@@ -231,6 +239,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
         dirty={dirty}
         saving={saving}
         regenerating={regenerating}
+        onBack={handleBack}
         onSave={handleSave}
         onRegenerate={() => setRegenerateOpen(true)}
         onPrint={handlePrint}
