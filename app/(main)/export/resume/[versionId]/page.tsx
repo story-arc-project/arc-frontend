@@ -153,7 +153,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
 
   const handleBack = useCallback(() => {
     if (dirty && resume) {
-      writeDraft(versionId, resume);
+      const saved = writeDraft(versionId, resume);
+      if (!saved) {
+        toast.error("임시 저장에 실패했어요. 저장 후 나가주세요.");
+        return;
+      }
       toast("변경사항을 임시 저장했어요", "info");
     }
     router.push("/export");

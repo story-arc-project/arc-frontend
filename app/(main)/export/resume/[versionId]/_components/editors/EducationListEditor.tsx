@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import type { Education } from "@/types/resume";
 import {
   AddItemButton,
@@ -10,6 +12,41 @@ import {
   nextClientId,
   SortableList,
 } from "./shared";
+
+function GpaInput({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+}) {
+  // null = not actively editing; show parent value. string = user is typing.
+  const [raw, setRaw] = useState<string | null>(null);
+  const display = raw ?? (value !== null ? String(value) : "");
+
+  return (
+    <EditorTextInput
+      inputMode="decimal"
+      value={display}
+      onChange={(e) => {
+        const str = e.target.value;
+        setRaw(str);
+        if (str === "") {
+          onChange(null);
+        } else if (!str.endsWith(".")) {
+          const num = Number(str);
+          if (Number.isFinite(num)) onChange(num);
+        }
+      }}
+      onBlur={() => {
+        const num = raw === null || raw === "" ? null : parseFloat(raw);
+        const finalVal = num !== null && Number.isFinite(num) ? num : null;
+        onChange(finalVal);
+        setRaw(null);
+      }}
+    />
+  );
+}
 
 const 전공구분Options = ["주전공", "복수전공", "부전공", "연계전공"] as const;
 const 학위Options = ["학사", "석사", "박사", "전문학사"] as const;
@@ -124,29 +161,15 @@ export function EducationListEditor({ value, onChange }: Props) {
             </div>
             <div className="grid grid-cols-3 gap-2">
               <EditorField label="학점">
-                <EditorTextInput
-                  inputMode="decimal"
-                  value={edu.학점 ?? ""}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    const num = raw === "" ? null : Number(raw);
-                    updateItem(edu.id, {
-                      학점: num !== null && Number.isFinite(num) ? num : null,
-                    });
-                  }}
+                <GpaInput
+                  value={edu.학점}
+                  onChange={(v) => updateItem(edu.id, { 학점: v })}
                 />
               </EditorField>
               <EditorField label="만점">
-                <EditorTextInput
-                  inputMode="decimal"
-                  value={edu.만점 ?? ""}
-                  onChange={(e) => {
-                    const raw = e.target.value;
-                    const num = raw === "" ? null : Number(raw);
-                    updateItem(edu.id, {
-                      만점: num !== null && Number.isFinite(num) ? num : null,
-                    });
-                  }}
+                <GpaInput
+                  value={edu.만점}
+                  onChange={(v) => updateItem(edu.id, { 만점: v })}
                 />
               </EditorField>
               <EditorField label="비고">
