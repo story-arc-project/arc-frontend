@@ -23,23 +23,26 @@ export async function getExperience(id: string): Promise<Experience> {
 
 export async function createExperience(
   payload: ExperienceSavePayload,
-): Promise<Experience> {
-  const res = await api.post<ApiSuccessResponse<Experience>>(
+): Promise<string> {
+  const res = await api.post<ApiSuccessResponse<{ id: string }>>(
     "/experiences/",
     payload,
   );
-  return res.data;
+  const newId = res?.data?.id;
+  if (typeof newId !== "string" || !newId) {
+    throw new ApiError(500, "생성 응답 형식이 올바르지 않아요.");
+  }
+  return newId;
 }
 
 export async function updateExperience(
   id: string,
   payload: ExperienceUpdatePayload,
-): Promise<Experience> {
-  const res = await api.put<ApiSuccessResponse<Experience>>(
+): Promise<void> {
+  await api.put<ApiSuccessResponse<undefined>>(
     `/experiences/${id}`,
     payload,
   );
-  return res.data;
 }
 
 export async function deleteExperience(id: string): Promise<void> {

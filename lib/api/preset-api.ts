@@ -1,6 +1,6 @@
 import { api } from "./client";
 import type { ApiSuccessResponse } from "@/types/api";
-import type { Block, ExperienceTypeId } from "@/types/archive";
+import type { Block } from "@/types/archive";
 import {
   type PresetDTO,
   toPresetUpsertPayload,
@@ -16,7 +16,7 @@ interface PresetIdData {
 }
 
 export async function getPresets(): Promise<PresetDTO[]> {
-  const res = await api.get<ApiSuccessResponse<PresetListData>>("/presets");
+  const res = await api.get<ApiSuccessResponse<PresetListData>>("/presets/");
   return res.data.contents;
 }
 
@@ -28,12 +28,11 @@ export async function getPreset(id: string): Promise<PresetDTO> {
 export async function createPreset(payload: {
   name: string;
   description?: string;
-  recommendedTypeIds?: ExperienceTypeId[];
   blocks: Block[];
   isFavorite?: boolean;
 }): Promise<PresetDTO> {
   const res = await api.post<ApiSuccessResponse<PresetDTO>>(
-    "/presets",
+    "/presets/",
     toPresetUpsertPayload(payload),
   );
   return res.data;
@@ -44,7 +43,6 @@ export async function updatePreset(
   payload: {
     name?: string;
     description?: string;
-    recommendedTypeIds?: ExperienceTypeId[];
     blocks?: Block[];
     isFavorite?: boolean;
   },

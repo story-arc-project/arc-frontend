@@ -10,7 +10,7 @@ import {
   updatePreset as apiUpdatePreset,
 } from "@/lib/api/preset-api";
 import { toPreset } from "@/lib/utils/preset-mapper";
-import type { Block, ExperienceTypeId, Preset } from "@/types/archive";
+import type { Block, Preset } from "@/types/archive";
 
 export interface UsePresetsReturn {
   presets: Preset[];
@@ -20,12 +20,12 @@ export interface UsePresetsReturn {
   createPreset: (
     name: string,
     blocks: Block[],
-    opts?: { description?: string; recommendedTypeIds?: ExperienceTypeId[] },
+    opts?: { description?: string },
   ) => Promise<void>;
   updatePreset: (
     id: string,
     updates: Partial<
-      Pick<Preset, "name" | "description" | "recommendedTypeIds" | "isFavorite" | "blocks">
+      Pick<Preset, "name" | "description" | "isFavorite" | "blocks">
     >,
   ) => Promise<void>;
   deletePreset: (id: string) => Promise<void>;
@@ -65,13 +65,12 @@ export function usePresets(): UsePresetsReturn {
     async (
       name: string,
       blocks: Block[],
-      opts?: { description?: string; recommendedTypeIds?: ExperienceTypeId[] },
+      opts?: { description?: string },
     ): Promise<void> => {
       try {
         const dto = await apiCreatePreset({
           name,
           description: opts?.description,
-          recommendedTypeIds: opts?.recommendedTypeIds,
           blocks,
           isFavorite: false,
         });
@@ -88,7 +87,7 @@ export function usePresets(): UsePresetsReturn {
     async (
       id: string,
       updates: Partial<
-        Pick<Preset, "name" | "description" | "recommendedTypeIds" | "isFavorite" | "blocks">
+        Pick<Preset, "name" | "description" | "isFavorite" | "blocks">
       >,
     ): Promise<void> => {
       // Capture the pre-change item AND tag the optimistic write with a

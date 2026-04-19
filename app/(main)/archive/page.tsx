@@ -193,17 +193,21 @@ export default function ArchivePage() {
       try {
         const payload = toSavePayload(exp)
         const exists = experiences.some(e => e.id === exp.id)
-        const saved = exists
-          ? await apiUpdate(exp.id, {
-              content: payload.content,
-              importance: payload.importance,
-            })
-          : await apiCreate(payload)
+        let savedId: string
+        if (exists) {
+          await apiUpdate(exp.id, {
+            content: payload.content,
+            importance: payload.importance,
+          })
+          savedId = exp.id
+        } else {
+          savedId = await apiCreate(payload)
+        }
         setExperienceActionError(null)
-        setSelectedId(saved.id)
+        setSelectedId(savedId)
         setMode("detail")
         setHasUnsaved(false)
-        router.push(`/archive?id=${saved.id}`, { scroll: false })
+        router.push(`/archive?id=${savedId}`, { scroll: false })
       } catch (err) {
         const message = err instanceof Error ? err.message : "경험을 저장하지 못했어요"
         setExperienceActionError(message)

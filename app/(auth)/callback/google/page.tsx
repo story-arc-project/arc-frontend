@@ -33,8 +33,8 @@ function GoogleCallbackHandler() {
     api
       .post<AuthSuccessResult>("/auth/social-login", { provider : "google", token : code }, { auth: false })
       .then((result) => {
-        if(result.onboarded) { 
-          router.replace("/dashboard"); 
+        if (result.data.onboarded) {
+          router.replace("/dashboard");
         } else {
           router.push(`/signup?step=profile&email=${encodeURIComponent(result.data.user.email)}`);
         }
