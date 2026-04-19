@@ -150,6 +150,11 @@ export default function LandingDemo() {
     export: null,
   });
 
+  function goToStep(nextKey: StepKey) {
+    setStep(nextKey);
+    tabRefs.current[nextKey]?.focus();
+  }
+
   function handleTabKeyDown(e: KeyboardEvent<HTMLButtonElement>, currentKey: StepKey) {
     const currentIndex = STEPS.findIndex((s) => s.key === currentKey);
     if (currentIndex === -1) return;
@@ -428,7 +433,7 @@ export default function LandingDemo() {
 
                   <button
                     type="button"
-                    onClick={() => setStep("analyze")}
+                    onClick={() => goToStep("analyze")}
                     disabled={experiences.length === 0}
                     className="w-full mt-4 h-10 inline-flex items-center justify-center gap-1.5 rounded-lg border border-brand text-brand text-[13px] font-semibold hover:bg-surface-brand transition-colors disabled:border-border disabled:text-text-disabled disabled:cursor-not-allowed"
                   >
@@ -533,14 +538,14 @@ export default function LandingDemo() {
                 <div className="flex justify-between pt-2">
                   <button
                     type="button"
-                    onClick={() => setStep("record")}
+                    onClick={() => goToStep("record")}
                     className="text-[13px] font-medium text-text-secondary hover:text-text-primary transition-colors"
                   >
                     ← 경험 수정하기
                   </button>
                   <button
                     type="button"
-                    onClick={() => setStep("export")}
+                    onClick={() => goToStep("export")}
                     className="h-10 px-4 inline-flex items-center gap-1.5 rounded-lg bg-brand text-text-on-brand text-[13px] font-semibold hover:bg-brand-dark transition-colors"
                   >
                     이력서로 꺼내기
@@ -679,7 +684,7 @@ export default function LandingDemo() {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setStep("record")}
+                      onClick={() => goToStep("record")}
                       className="h-10 px-4 rounded-lg border border-border text-[13px] font-medium text-text-primary hover:bg-surface-tertiary transition-colors"
                     >
                       다시 해보기
