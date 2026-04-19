@@ -15,6 +15,18 @@ interface GenericFileCardProps {
   downloadLabel?: string
 }
 
+const SAFE_DOWNLOAD_SCHEMES = ["http:", "https:", "blob:", "data:"]
+
+function getSafeDownloadHref(url?: string): string | null {
+  if (!url) return null
+  try {
+    const parsed = new URL(url, typeof window === "undefined" ? "http://localhost" : window.location.href)
+    return SAFE_DOWNLOAD_SCHEMES.includes(parsed.protocol) ? parsed.toString() : null
+  } catch {
+    return null
+  }
+}
+
 export default function GenericFileCard({
   name,
   size,
@@ -25,6 +37,7 @@ export default function GenericFileCard({
   downloadLabel = "다운로드",
 }: GenericFileCardProps) {
   const sizeLabel = formatBytes(size)
+  const safeHref = getSafeDownloadHref(url)
 
   return (
     <div className="group relative flex items-center gap-3 rounded-md border border-border bg-surface px-4 py-3">
@@ -42,9 +55,9 @@ export default function GenericFileCard({
         </div>
         {sizeLabel && <span className="text-caption text-text-tertiary">{sizeLabel}</span>}
       </div>
-      {url && (
+      {safeHref && (
         <a
-          href={url}
+          href={safeHref}
           target="_blank"
           rel="noreferrer noopener"
           download={name || undefined}

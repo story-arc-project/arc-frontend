@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { Paperclip, X } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
-import { deleteFile, getFileUrl, MAX_FILE_SIZE_BYTES } from "@/lib/api/files-api"
+import { getFileUrl, MAX_FILE_SIZE_BYTES } from "@/lib/api/files-api"
 import { useFileUpload } from "@/hooks/useFileUpload"
 import type { Block, FileBlockValue } from "@/types/archive"
 
@@ -120,8 +120,9 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
     setUrlError(null)
   }
 
-  async function handleDelete() {
-    const prev = val
+  function handleDelete() {
+    // 원격 삭제는 부모 저장 성공 후 서버의 고아 파일 정리 정책에 맡긴다.
+    // 여기서 즉시 deleteFile 을 호출하면 사용자가 폼을 취소했을 때 원본이 먼저 사라져 복구할 수 없다.
     onChange({
       type: "file",
       fileName: "",
@@ -131,13 +132,6 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
     setFetched(null)
     setUrlError(null)
     reset()
-    if (prev.fileId) {
-      try {
-        await deleteFile(prev.fileId)
-      } catch {
-        // 파일 원본 삭제 실패는 서버 정리 정책에 맡기고 UI는 이미 초기화됨
-      }
-    }
   }
 
   const hasUploaded = Boolean(val.fileId)
@@ -205,8 +199,10 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
       ) : (
         <label className="flex h-12 flex-1 cursor-pointer items-center gap-2 rounded-md border border-dashed border-border bg-surface px-4 transition-colors hover:border-brand">
           <Paperclip size={16} className="text-text-tertiary" />
-          <span className="text-body-sm text-text-tertiary">
-            파일 선택… (최대 {maxMb}MB)
+          <span className="truncate text-body-sm text-text-tertiary">
+            {val.fileName
+              ? `${val.fileName} · 교체하려면 클릭`
+              : `파일 선택… (최대 ${maxMb}MB)`}
           </span>
           <input
             type="file"

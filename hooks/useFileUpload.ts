@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { uploadFile, type UploadedFile } from "@/lib/api/files-api";
-import { ApiError } from "@/lib/api/api-error";
+import { ApiError } from "@/lib/api/client";
 
 export type UploadState = "idle" | "uploading" | "success" | "error";
 
