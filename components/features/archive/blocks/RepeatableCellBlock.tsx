@@ -252,8 +252,13 @@ function CellInput({
   value: string | string[] | undefined
   onChange: (value: string | string[]) => void
 }) {
-  const strVal = Array.isArray(value) ? "" : (value ?? "")
-  const arrVal = Array.isArray(value) ? value : []
+  // 열 타입이 변경되어 기존 값(string ↔ string[])이 불일치할 때 UI에서 값이 사라지지 않도록 정규화한다.
+  const strVal = Array.isArray(value) ? value.join(", ") : (value ?? "")
+  const arrVal = Array.isArray(value)
+    ? value
+    : typeof value === "string" && value.trim()
+      ? value.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
+      : []
 
   if (column.blockType === "textarea") {
     return (

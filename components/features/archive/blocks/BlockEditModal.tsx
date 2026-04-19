@@ -197,7 +197,6 @@ export default function BlockEditModal({
                     <option value="date">날짜</option>
                     <option value="link">링크</option>
                     <option value="tags">태그</option>
-                    <option value="checklist">체크박스</option>
                   </select>
                   <button
                     type="button"

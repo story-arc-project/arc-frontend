@@ -49,6 +49,9 @@ function SignupForm() {
   const [affiliation, setAffiliation] = useState<AffiliationStatus | "">("");
   const [school, setSchool] = useState("");
   const [department, setDepartment] = useState("");
+  const [company, setCompany] = useState("");
+  const [desiredRole, setDesiredRole] = useState("");
+  const [affiliationDetail, setAffiliationDetail] = useState("");
   const [phone, setPhone] = useState("");
 
   // Password strength
@@ -187,8 +190,12 @@ function SignupForm() {
       await api.post("/auth/onboarding", {
         name,
         birth,
-        ...(school.trim()     && { school }),
-        ...(department.trim() && { department }),
+        ...(affiliation && { affiliation }),
+        ...(affiliation === "student"   && school.trim()            && { school }),
+        ...(affiliation === "student"   && department.trim()        && { department }),
+        ...(affiliation === "employed"  && company.trim()           && { company }),
+        ...(affiliation === "jobseeker" && desiredRole.trim()       && { desiredRole }),
+        ...(affiliation === "other"     && affiliationDetail.trim() && { affiliationDetail }),
         ...(phone             && { phone }),
         ...(worries.length > 0   && { worry: worries }),
         ...(interests.length > 0 && { interest: interests }),
@@ -485,6 +492,9 @@ function SignupForm() {
                             setAffiliation(active ? "" : opt.value);
                             setSchool("");
                             setDepartment("");
+                            setCompany("");
+                            setDesiredRole("");
+                            setAffiliationDetail("");
                           }}
                           className={[
                             "h-11 rounded-xl border-2 text-body-sm font-semibold",
@@ -532,8 +542,8 @@ function SignupForm() {
                       label="직장명"
                       type="text"
                       placeholder="예) 삼성전자"
-                      value={school}
-                      onChange={(e) => setSchool(e.target.value)}
+                      value={company}
+                      onChange={(e) => setCompany(e.target.value)}
                     />
                   </div>
                 )}
@@ -544,8 +554,8 @@ function SignupForm() {
                       label="관심 직무/분야"
                       type="text"
                       placeholder="예) 백엔드 개발, 프로덕트 기획"
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
+                      value={desiredRole}
+                      onChange={(e) => setDesiredRole(e.target.value)}
                     />
                   </div>
                 )}
@@ -556,8 +566,8 @@ function SignupForm() {
                       label="소속"
                       type="text"
                       placeholder="현재 소속을 자유롭게 입력해주세요"
-                      value={school}
-                      onChange={(e) => setSchool(e.target.value)}
+                      value={affiliationDetail}
+                      onChange={(e) => setAffiliationDetail(e.target.value)}
                     />
                   </div>
                 )}
