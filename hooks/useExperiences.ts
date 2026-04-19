@@ -70,19 +70,18 @@ export function useExperiences() {
   }, []);
 
   const createExperience = useCallback(
-    async (payload: ExperienceSavePayload): Promise<Experience> => {
-      const created = await apiCreateExperience(payload);
+    async (payload: ExperienceSavePayload): Promise<string> => {
+      const newId = await apiCreateExperience(payload);
       await refetch();
-      return created;
+      return newId;
     },
     [refetch],
   );
 
   const updateExperience = useCallback(
-    async (id: string, payload: ExperienceUpdatePayload): Promise<Experience> => {
-      const updated = await apiUpdateExperience(id, payload);
+    async (id: string, payload: ExperienceUpdatePayload): Promise<void> => {
+      await apiUpdateExperience(id, payload);
       await refetch();
-      return updated;
     },
     [refetch],
   );

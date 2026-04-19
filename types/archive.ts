@@ -239,7 +239,6 @@ export interface Preset {
   id: string
   name: string
   description?: string
-  recommendedTypeIds?: ExperienceTypeId[]
   blocks: Block[]
   isFavorite: boolean
   createdAt: string

@@ -11,9 +11,18 @@ interface LibraryIdData {
   id: string;
 }
 
+interface LibraryListData {
+  count: number;
+  contents: {
+    system: LibraryDTO[];
+    custom: LibraryDTO[];
+  };
+}
+
 export async function getLibraries(): Promise<LibraryDTO[]> {
-  const res = await api.get<ApiSuccessResponse<LibraryDTO[]>>("/libraries");
-  return res.data;
+  const res = await api.get<ApiSuccessResponse<LibraryListData>>("/libraries/");
+  const { system, custom } = res.data.contents;
+  return [...system, ...custom];
 }
 
 export async function createLibrary(payload: {
@@ -24,7 +33,7 @@ export async function createLibrary(payload: {
   filter?: LibraryFilter;
 }): Promise<string> {
   const res = await api.post<ApiSuccessResponse<LibraryIdData>>(
-    "/libraries",
+    "/libraries/",
     toLibraryUpsertPayload(payload),
   );
   return res.data.id;
