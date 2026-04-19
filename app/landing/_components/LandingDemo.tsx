@@ -159,7 +159,7 @@ export default function LandingDemo() {
     setExperiences((prev) => [
       ...prev,
       {
-        id: `demo-${Date.now()}`,
+        id: `demo-${crypto.randomUUID()}`,
         typeId,
         title: title.trim(),
         period: period.trim() || "기간 미입력",
@@ -202,16 +202,18 @@ export default function LandingDemo() {
             return (
               <button
                 key={s.key}
+                id={`landing-demo-tab-${s.key}`}
                 type="button"
                 role="tab"
                 aria-selected={active}
+                aria-controls={`landing-demo-panel-${s.key}`}
                 onClick={() => setStep(s.key)}
                 className={[
                   "text-left rounded-xl border px-4 py-3 transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2",
                   active
-                    ? "bg-white border-brand shadow-sm"
-                    : "bg-white/60 border-border hover:border-border-strong",
+                    ? "bg-surface border-brand shadow-sm"
+                    : "bg-surface/60 border-border hover:border-border-strong",
                 ].join(" ")}
               >
                 <span
@@ -230,11 +232,14 @@ export default function LandingDemo() {
         </div>
 
         {/* Panels */}
-        <div className="bg-white rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden">
           <AnimatePresence mode="wait">
             {step === "record" && (
               <motion.div
                 key="record"
+                role="tabpanel"
+                id="landing-demo-panel-record"
+                aria-labelledby="landing-demo-tab-record"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
@@ -261,7 +266,7 @@ export default function LandingDemo() {
                             "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-colors",
                             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1",
                             active
-                              ? "bg-brand text-white border-brand"
+                              ? "bg-brand text-text-on-brand border-brand"
                               : "bg-surface border-border text-text-secondary hover:border-border-strong",
                           ].join(" ")}
                         >
@@ -313,7 +318,7 @@ export default function LandingDemo() {
                     type="button"
                     onClick={addExperience}
                     disabled={!canAdd}
-                    className="w-full h-10 inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand text-white text-[13px] font-semibold hover:bg-brand-dark transition-colors disabled:bg-gray-200 disabled:text-text-disabled disabled:cursor-not-allowed"
+                    className="w-full h-10 inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand text-text-on-brand text-[13px] font-semibold hover:bg-brand-dark transition-colors disabled:bg-surface-tertiary disabled:text-text-disabled disabled:cursor-not-allowed"
                   >
                     <Plus size={14} aria-hidden="true" />
                     경험 추가
@@ -353,7 +358,7 @@ export default function LandingDemo() {
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: -8 }}
                               transition={{ duration: 0.2 }}
-                              className="bg-white border border-border rounded-lg p-3"
+                              className="bg-surface border border-border rounded-lg p-3"
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0 flex-1">
@@ -407,6 +412,9 @@ export default function LandingDemo() {
             {step === "analyze" && (
               <motion.div
                 key="analyze"
+                role="tabpanel"
+                id="landing-demo-panel-analyze"
+                aria-labelledby="landing-demo-tab-analyze"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
@@ -456,7 +464,7 @@ export default function LandingDemo() {
                           />
                         </div>
                         <span className="text-[11px] text-text-tertiary w-8 shrink-0">
-                          {k.percent}
+                          {k.percent}%
                         </span>
                       </div>
                     ))}
@@ -473,7 +481,7 @@ export default function LandingDemo() {
                       {analysis.top.map((k) => (
                         <span
                           key={k.key}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-border text-[12px] text-text-primary"
+                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface border border-border text-[12px] text-text-primary"
                         >
                           <span className="w-1.5 h-1.5 rounded-full bg-brand" />
                           {k.key}
@@ -497,7 +505,7 @@ export default function LandingDemo() {
                   <button
                     type="button"
                     onClick={() => setStep("export")}
-                    className="h-10 px-4 inline-flex items-center gap-1.5 rounded-lg bg-brand text-white text-[13px] font-semibold hover:bg-brand-dark transition-colors"
+                    className="h-10 px-4 inline-flex items-center gap-1.5 rounded-lg bg-brand text-text-on-brand text-[13px] font-semibold hover:bg-brand-dark transition-colors"
                   >
                     이력서로 꺼내기
                     <ArrowRight size={14} aria-hidden="true" />
@@ -509,13 +517,16 @@ export default function LandingDemo() {
             {step === "export" && (
               <motion.div
                 key="export"
+                role="tabpanel"
+                id="landing-demo-panel-export"
+                aria-labelledby="landing-demo-tab-export"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.25 }}
                 className="p-6"
               >
-                <div className="bg-white rounded-xl border border-border overflow-hidden">
+                <div className="bg-surface rounded-xl border border-border overflow-hidden">
                   <div className="px-5 py-3 border-b border-border bg-surface-secondary flex items-center gap-2">
                     <FileText size={14} className="text-brand" aria-hidden="true" />
                     <span className="text-[12px] font-semibold text-text-primary">
@@ -633,7 +644,7 @@ export default function LandingDemo() {
                     </button>
                     <Link
                       href="/signup"
-                      className="h-10 px-4 inline-flex items-center gap-1.5 rounded-lg bg-brand text-white text-[13px] font-semibold hover:bg-brand-dark transition-colors"
+                      className="h-10 px-4 inline-flex items-center gap-1.5 rounded-lg bg-brand text-text-on-brand text-[13px] font-semibold hover:bg-brand-dark transition-colors"
                     >
                       무료로 이어가기
                       <ArrowRight size={14} aria-hidden="true" />
