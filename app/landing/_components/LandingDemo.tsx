@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -144,6 +144,28 @@ const STEPS: { key: StepKey; label: string; hint: string }[] = [
 export default function LandingDemo() {
   const [step, setStep] = useState<StepKey>("record");
   const [experiences, setExperiences] = useState<DemoExperience[]>(SEED_EXPERIENCES);
+  const tabRefs = useRef<Record<StepKey, HTMLButtonElement | null>>({
+    record: null,
+    analyze: null,
+    export: null,
+  });
+
+  function handleTabKeyDown(e: KeyboardEvent<HTMLButtonElement>, currentKey: StepKey) {
+    const currentIndex = STEPS.findIndex((s) => s.key === currentKey);
+    if (currentIndex === -1) return;
+
+    let nextIndex: number | null = null;
+    if (e.key === "ArrowRight") nextIndex = (currentIndex + 1) % STEPS.length;
+    else if (e.key === "ArrowLeft") nextIndex = (currentIndex - 1 + STEPS.length) % STEPS.length;
+    else if (e.key === "Home") nextIndex = 0;
+    else if (e.key === "End") nextIndex = STEPS.length - 1;
+
+    if (nextIndex === null) return;
+    e.preventDefault();
+    const nextKey = STEPS[nextIndex].key;
+    setStep(nextKey);
+    tabRefs.current[nextKey]?.focus();
+  }
 
   const [typeId, setTypeId] = useState<DemoTypeId>("internship");
   const [title, setTitle] = useState("");
@@ -203,11 +225,16 @@ export default function LandingDemo() {
               <button
                 key={s.key}
                 id={`landing-demo-tab-${s.key}`}
+                ref={(el) => {
+                  tabRefs.current[s.key] = el;
+                }}
                 type="button"
                 role="tab"
                 aria-selected={active}
                 aria-controls={`landing-demo-panel-${s.key}`}
+                tabIndex={active ? 0 : -1}
                 onClick={() => setStep(s.key)}
+                onKeyDown={(e) => handleTabKeyDown(e, s.key)}
                 className={[
                   "text-left rounded-xl border px-4 py-3 transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2",
