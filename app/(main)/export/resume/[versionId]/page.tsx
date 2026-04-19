@@ -86,6 +86,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
     return JSON.stringify(resume) !== JSON.stringify(initial);
   }, [resume, initial]);
 
+  // Sync refs during render so the unmount handler sees the latest values
+  // even when client navigation fires before passive effects flush.
+  dirtyRef.current = dirty;
+  resumeRef.current = resume;
+
   const isFullyEmpty = useMemo(() => {
     if (!resume) return false;
     return (
@@ -178,10 +183,6 @@ export default function ResumeDetailPage({ params }: PageProps) {
     clearDraft(versionId);
     setPendingDraft(null);
   }, [versionId]);
-
-  // Keep refs in sync for unmount handler
-  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
-  useEffect(() => { resumeRef.current = resume; }, [resume]);
 
   // Persist draft on any client-side navigation (unmount)
   useEffect(() => {
