@@ -126,11 +126,17 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const updated = await updateResume(versionId, snapshot);
       setInitial(updated);
       setResume((current) => (current === snapshot ? updated : current));
-      clearDraft(versionId);
+      // Only clear the draft when no newer edits arrived during save.
+      // Otherwise the unmount handler may have just persisted a fresher draft we must keep.
+      if (resumeRef.current === snapshot) {
+        clearDraft(versionId);
+      }
       toast.success("저장됐어요");
     } catch (err) {
       if (err instanceof ResumeMutationUnsupportedError) {
-        const saved = writeDraft(versionId, snapshot);
+        // Persist the freshest state — never overwrite a newer draft with a stale snapshot.
+        const latest = resumeRef.current ?? snapshot;
+        const saved = writeDraft(versionId, latest);
         if (saved) {
           setInitial(snapshot);
           toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
