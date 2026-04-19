@@ -59,6 +59,22 @@ function asConfidence(value: unknown): ConfidenceLevel {
     : "partial";
 }
 
+function mapStatus(value: unknown): AnalysisStatus {
+  // 백엔드 스펙: "pending" | "queued" | "success" | "failed"
+  // 프런트 enum: "pending" | "processing" | "completed" | "failed"
+  if (value === "queued") return "processing";
+  if (value === "success") return "completed";
+  if (
+    value === "pending" ||
+    value === "processing" ||
+    value === "completed" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+  return "pending";
+}
+
 function asAnalysisType(value: unknown, fallback: AnalysisType = "individual"): AnalysisType {
   return value === "individual" || value === "comprehensive" || value === "keyword"
     ? value
@@ -80,27 +96,27 @@ function mapSnapshot(
   fallbackType: AnalysisType = "individual",
 ): AnalysisSnapshot {
   const r = asRecord(dto);
+  const experienceIdsRaw =
+    r.selectedExperienceIds ?? r.selected_experience_ids ?? r.experience_ids;
+  const singleExperienceId = r.experience_id ?? r.experienceId;
+  const keywordsRaw = r.selectedKeywords ?? r.selected_keywords ?? r.keywords;
   return {
     id: asString(r.id),
     type: asAnalysisType(r.type, fallbackType),
     title: asString(r.title),
-    status:
-      r.status === "pending" ||
-      r.status === "processing" ||
-      r.status === "completed" ||
-      r.status === "failed"
-        ? r.status
-        : "pending",
+    status: mapStatus(r.status),
     createdAt: asString(r.createdAt ?? r.created_at),
     experienceCount: asNumber(r.experienceCount ?? r.experience_count),
     summaryText: asString(r.summaryText ?? r.summary_text ?? r.analysis_summary),
     overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
-    selectedExperienceIds: Array.isArray(r.selectedExperienceIds ?? r.selected_experience_ids)
-      ? ((r.selectedExperienceIds ?? r.selected_experience_ids) as string[])
-      : undefined,
-    selectedKeywords: Array.isArray(r.selectedKeywords ?? r.selected_keywords)
-      ? ((r.selectedKeywords ?? r.selected_keywords) as string[])
+    selectedExperienceIds: Array.isArray(experienceIdsRaw)
+      ? (experienceIdsRaw as string[])
+      : typeof singleExperienceId === "string" && singleExperienceId
+        ? [singleExperienceId]
+        : undefined,
+    selectedKeywords: Array.isArray(keywordsRaw)
+      ? (keywordsRaw as string[])
       : undefined,
   };
 }
@@ -121,6 +137,7 @@ function mapBookmark(dto: unknown): BookmarkedSnapshot {
  */
 function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
   const r = asRecord(dto);
+  const result = asRecord(r.result);
   return {
     id: asString(r.id),
     experienceId: asString(r.experienceId ?? r.experience_id),
@@ -129,7 +146,7 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
     analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
     overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
-    summary: asString(r.summary ?? r.analysis_summary),
+    summary: asString(r.summary ?? r.analysis_summary ?? result.summary),
     incidents: asArray(r.incidents) as IndividualAnalysisResult["incidents"],
     roleInterpretations: asArray(
       r.roleInterpretations ?? r.role_interpretations,
@@ -161,7 +178,7 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
     overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
     selectedExperienceIds: asArray<string>(
-      r.selectedExperienceIds ?? r.selected_experience_ids,
+      r.selectedExperienceIds ?? r.selected_experience_ids ?? r.experience_ids,
     ),
     experienceSummaries: asArray(
       r.experienceSummaries ?? r.experience_summaries,
@@ -195,7 +212,9 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
     analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
     overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
-    selectedKeywords: asArray<string>(r.selectedKeywords ?? r.selected_keywords),
+    selectedKeywords: asArray<string>(
+      r.selectedKeywords ?? r.selected_keywords ?? r.keywords,
+    ),
     keywordDefinitions: asArray(
       r.keywordDefinitions ?? r.keyword_definitions,
     ) as KeywordAnalysisResult["keywordDefinitions"],
@@ -261,7 +280,11 @@ export async function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
 
 /**
  * POST /analysis/comprehensive
- * body: experience id 배열 (`string[]`)
+ * body: `{ experiences: string[] }`
+ *
+ * 백엔드 스펙상 응답은 `{ status, message }`만 반환하고 id 는 포함되지 않는다.
+ * 호출부가 후속 폴링을 위해 id 를 필요로 하므로, 서버가 id 를 확장 포함할 때만
+ * 해당 값을 사용하고 부재 시 에러를 던진다.
  */
 export async function createComprehensiveAnalysis(
   experienceIds: string[],
@@ -270,7 +293,7 @@ export async function createComprehensiveAnalysis(
     return mock(async () => ({ analysisId: "comp-new-" + Date.now() }));
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/comprehensive",
-    experienceIds,
+    { experiences: experienceIds },
   );
   const data = asRecord(res.data);
   const analysisId = asString(data.id ?? data.analysisId ?? data.analysis_id);
@@ -324,7 +347,11 @@ export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
 
 /**
  * POST /analysis/keyword
- * body: 키워드 라벨 배열 (`string[]`)
+ * body: `{ keywords: string[] }`
+ *
+ * 백엔드 스펙상 응답은 `{ status, message }`만 반환하고 id 는 포함되지 않는다.
+ * 호출부가 후속 폴링을 위해 id 를 필요로 하므로, 서버가 id 를 확장 포함할 때만
+ * 해당 값을 사용하고 부재 시 에러를 던진다.
  */
 export async function createKeywordAnalysis(
   keywordLabels: string[],
@@ -333,7 +360,7 @@ export async function createKeywordAnalysis(
     return mock(async () => ({ analysisId: "kw-new-" + Date.now() }));
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/keyword",
-    keywordLabels,
+    { keywords: keywordLabels },
   );
   const data = asRecord(res.data);
   const analysisId = asString(data.id ?? data.analysisId ?? data.analysis_id);
