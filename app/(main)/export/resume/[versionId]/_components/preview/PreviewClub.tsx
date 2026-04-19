@@ -9,10 +9,12 @@ interface Props {
 
 export function PreviewClub({ data }: Props) {
   if (isEmptySection(data)) return null;
+  const items = data.filter((c) => !isEmptySection(c));
+  if (items.length === 0) return null;
 
   return (
     <PreviewSection title="동아리 · 학회">
-      {data.map((c) => (
+      {items.map((c) => (
         <div key={c.id}>
           <PreviewRow
             left={

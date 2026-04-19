@@ -9,10 +9,12 @@ interface Props {
 
 export function PreviewCertification({ data }: Props) {
   if (isEmptySection(data)) return null;
+  const items = data.filter((c) => !isEmptySection(c));
+  if (items.length === 0) return null;
 
   return (
     <PreviewSection title="자격증">
-      {data.map((c) => (
+      {items.map((c) => (
         <PreviewRow
           key={c.id}
           left={

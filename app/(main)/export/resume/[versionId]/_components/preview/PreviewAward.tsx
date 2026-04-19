@@ -9,10 +9,12 @@ interface Props {
 
 export function PreviewAward({ data }: Props) {
   if (isEmptySection(data)) return null;
+  const items = data.filter((a) => !isEmptySection(a));
+  if (items.length === 0) return null;
 
   return (
     <PreviewSection title="수상">
-      {data.map((a) => (
+      {items.map((a) => (
         <PreviewRow
           key={a.id}
           left={

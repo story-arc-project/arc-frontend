@@ -9,10 +9,12 @@ interface Props {
 
 export function PreviewActivity({ data }: Props) {
   if (isEmptySection(data)) return null;
+  const items = data.filter((a) => !isEmptySection(a));
+  if (items.length === 0) return null;
 
   return (
     <PreviewSection title="대외활동">
-      {data.map((a) => (
+      {items.map((a) => (
         <div key={a.id}>
           <PreviewRow
             left={

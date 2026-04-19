@@ -9,10 +9,12 @@ interface Props {
 
 export function PreviewProject({ data }: Props) {
   if (isEmptySection(data)) return null;
+  const items = data.filter((p) => !isEmptySection(p));
+  if (items.length === 0) return null;
 
   return (
     <PreviewSection title="프로젝트">
-      {data.map((p) => {
+      {items.map((p) => {
         const techLine = p.사용기술.filter((t) => t && t.trim()).join(", ");
         return (
           <div key={p.id}>

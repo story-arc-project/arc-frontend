@@ -9,10 +9,12 @@ interface Props {
 
 export function PreviewCareer({ data }: Props) {
   if (isEmptySection(data)) return null;
+  const items = data.filter((c) => !isEmptySection(c));
+  if (items.length === 0) return null;
 
   return (
     <PreviewSection title="경력">
-      {data.map((c) => {
+      {items.map((c) => {
         const subline = [c.부서, c.직위, c.고용형태]
           .filter((v) => v && String(v).trim())
           .join(" · ");

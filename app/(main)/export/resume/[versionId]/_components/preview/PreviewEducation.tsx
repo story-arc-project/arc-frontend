@@ -24,10 +24,12 @@ function formatGpa(edu: Education): string | null {
 
 export function PreviewEducation({ data }: Props) {
   if (isEmptySection(data)) return null;
+  const items = data.filter((edu) => !isEmptySection(edu));
+  if (items.length === 0) return null;
 
   return (
     <PreviewSection title="학력">
-      {data.map((edu) => {
+      {items.map((edu) => {
         const subline = [
           edu.학과,
           edu.전공구분,

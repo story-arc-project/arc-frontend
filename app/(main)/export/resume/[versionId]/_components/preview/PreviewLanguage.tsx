@@ -9,10 +9,12 @@ interface Props {
 
 export function PreviewLanguage({ data }: Props) {
   if (isEmptySection(data)) return null;
+  const items = data.filter((l) => !isEmptySection(l));
+  if (items.length === 0) return null;
 
   return (
     <PreviewSection title="어학">
-      {data.map((l) => (
+      {items.map((l) => (
         <PreviewRow
           key={l.id}
           left={
