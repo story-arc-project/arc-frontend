@@ -6,6 +6,15 @@ interface Props {
   data: PersonalInfo;
 }
 
+function isSafeHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function PreviewPersonalInfo({ data }: Props) {
   if (isEmptySection(data as unknown as Record<string, unknown>)) return null;
 
@@ -39,20 +48,27 @@ export function PreviewPersonalInfo({ data }: Props) {
           {contactLine && <p>{contactLine}</p>}
           {links.length > 0 && (
             <p className="break-all">
-              {links.map((l, i) => (
-                <span key={i}>
-                  {i > 0 && <span className="mx-1.5">·</span>}
-                  {l.label ? `${l.label}: ` : ""}
-                  <a
-                    href={l.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="underline"
-                  >
-                    {l.url}
-                  </a>
-                </span>
-              ))}
+              {links.map((l, i) => {
+                const safe = isSafeHttpUrl(l.url);
+                return (
+                  <span key={i}>
+                    {i > 0 && <span className="mx-1.5">·</span>}
+                    {l.label ? `${l.label}: ` : ""}
+                    {safe ? (
+                      <a
+                        href={l.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline"
+                      >
+                        {l.url}
+                      </a>
+                    ) : (
+                      <span>{l.url}</span>
+                    )}
+                  </span>
+                );
+              })}
             </p>
           )}
         </div>
