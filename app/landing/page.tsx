@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
+import LandingDemo from "./_components/LandingDemo";
 
 /* ── Shared animation ────────────────────────────────────── */
 function Reveal({
@@ -176,6 +177,7 @@ function Navbar() {
           <span className="text-heading-3 font-bold tracking-widest text-text-primary">ARC</span>
           <div className="hidden sm:flex items-center gap-7 text-body-large text-text-secondary font-medium">
             <Link href="#features" className="hover:text-text-primary transition-colors">기능</Link>
+            <Link href="#demo" className="hover:text-text-primary transition-colors">체험</Link>
             <Link href="#how" className="hover:text-text-primary transition-colors">사용법</Link>
             <Link href="#pricing" className="hover:text-text-primary transition-colors">요금</Link>
           </div>
@@ -253,11 +255,11 @@ function Hero() {
               무료로 시작하기
             </Link>
             <Link
-              href="#features"
+              href="#demo"
               className="h-12 px-6 text-text-primary text-[15px] font-medium rounded-lg
                          hover:bg-surface-tertiary transition-colors inline-flex items-center"
             >
-              기능 살펴보기 →
+              로그인 없이 체험하기 →
             </Link>
           </motion.div>
         </div>
@@ -601,6 +603,7 @@ export default function LandingPage() {
         <Hero />
         <SocialProof />
         <Features />
+        <LandingDemo />
         <HowItWorks />
         <Pricing />
         <FinalCTA />
