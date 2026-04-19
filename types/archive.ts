@@ -65,6 +65,10 @@ export interface FileBlockValue {
   fileName: string
   description: string
   evidenceType: string
+  fileId?: string
+  mimeType?: string
+  size?: number
+  url?: string
 }
 
 export interface BlockColumnDef {
