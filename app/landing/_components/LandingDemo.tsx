@@ -233,13 +233,16 @@ export default function LandingDemo() {
 
         {/* Panels */}
         <div className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden">
-          <AnimatePresence mode="wait">
-            {step === "record" && (
+          <div
+            role="tabpanel"
+            id="landing-demo-panel-record"
+            aria-labelledby="landing-demo-tab-record"
+            hidden={step !== "record"}
+          >
+            <AnimatePresence mode="wait">
+              {step === "record" && (
               <motion.div
                 key="record"
-                role="tabpanel"
-                id="landing-demo-panel-record"
-                aria-labelledby="landing-demo-tab-record"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
@@ -407,14 +410,20 @@ export default function LandingDemo() {
                   </button>
                 </div>
               </motion.div>
-            )}
+              )}
+            </AnimatePresence>
+          </div>
 
-            {step === "analyze" && (
+          <div
+            role="tabpanel"
+            id="landing-demo-panel-analyze"
+            aria-labelledby="landing-demo-tab-analyze"
+            hidden={step !== "analyze"}
+          >
+            <AnimatePresence mode="wait">
+              {step === "analyze" && (
               <motion.div
                 key="analyze"
-                role="tabpanel"
-                id="landing-demo-panel-analyze"
-                aria-labelledby="landing-demo-tab-analyze"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
@@ -512,14 +521,20 @@ export default function LandingDemo() {
                   </button>
                 </div>
               </motion.div>
-            )}
+              )}
+            </AnimatePresence>
+          </div>
 
-            {step === "export" && (
+          <div
+            role="tabpanel"
+            id="landing-demo-panel-export"
+            aria-labelledby="landing-demo-tab-export"
+            hidden={step !== "export"}
+          >
+            <AnimatePresence mode="wait">
+              {step === "export" && (
               <motion.div
                 key="export"
-                role="tabpanel"
-                id="landing-demo-panel-export"
-                aria-labelledby="landing-demo-tab-export"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
@@ -652,8 +667,9 @@ export default function LandingDemo() {
                   </div>
                 </div>
               </motion.div>
-            )}
-          </AnimatePresence>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
     </section>
