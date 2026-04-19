@@ -17,6 +17,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Plus, Trash2, X } from "lucide-react";
 
+import type { ResumeVersion } from "@/types/resume";
+
 // ─── EditorField: compact label + input pair ───────────────────────
 
 const inputClass =
@@ -346,6 +348,33 @@ export function EditorCard({
 let clientIdCounter = -1;
 export function nextClientId(): number {
   return clientIdCounter--;
+}
+
+// Reserve a counter floor below every id already present in the resume so
+// newly-issued client ids never collide with restored draft ids.
+export function reserveClientIds(resume: ResumeVersion): void {
+  const sections: ReadonlyArray<ReadonlyArray<{ id: number }> | undefined> = [
+    resume.학력,
+    resume.경력,
+    resume.자격증,
+    resume.어학,
+    resume.대외활동,
+    resume.프로젝트,
+    resume.수상,
+    resume.동아리_학회,
+  ];
+  let min: number | null = null;
+  for (const section of sections) {
+    if (!section) continue;
+    for (const item of section) {
+      if (typeof item?.id === "number" && (min === null || item.id < min)) {
+        min = item.id;
+      }
+    }
+  }
+  if (min !== null) {
+    clientIdCounter = Math.min(clientIdCounter, min - 1);
+  }
 }
 
 // ─── AddItemButton ─────────────────────────────────────────────────

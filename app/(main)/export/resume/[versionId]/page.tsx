@@ -23,6 +23,7 @@ import { ResumeDetailSkeleton } from "./_components/ResumeDetailSkeleton";
 import { ResumeDetailTopBar } from "./_components/ResumeDetailTopBar";
 import { ResumeEditorPanel } from "./_components/ResumeEditorPanel";
 import { ResumePreview } from "./_components/ResumePreview";
+import { reserveClientIds } from "./_components/editors/shared";
 import {
   clearDraft,
   isDraftNewer,
@@ -59,9 +60,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const data = await getResume(versionId);
       setResume(data);
       setInitial(data);
+      reserveClientIds(data);
 
       const draft = readDraft(versionId);
       if (draft && isDraftNewer(draft, data)) {
+        reserveClientIds(draft.data);
         setPendingDraft(draft);
       } else {
         setPendingDraft(null);
