@@ -80,15 +80,16 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
   const [urlError, setUrlError] = useState<string | null>(null)
 
   const resolvedUrl =
-    val.url ?? (fetched && fetched.id === val.fileId ? fetched.url : undefined)
+    fetched && fetched.id === val.fileId ? fetched.url : val.url
 
   useEffect(() => {
-    if (!val.fileId || val.url) return
+    const id = val.fileId
+    if (!id) return
     let cancelled = false
-    getFileUrl(val.fileId)
+    getFileUrl(id)
       .then((info) => {
-        if (!cancelled && val.fileId) {
-          setFetched({ id: val.fileId, url: info.url })
+        if (!cancelled) {
+          setFetched({ id, url: info.url })
         }
       })
       .catch((err: unknown) => {
@@ -99,7 +100,7 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
     return () => {
       cancelled = true
     }
-  }, [val.fileId, val.url])
+  }, [val.fileId])
 
   function update(field: keyof Omit<FileBlockValue, "type">, v: string) {
     onChange({ ...val, [field]: v })
