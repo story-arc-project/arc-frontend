@@ -17,7 +17,7 @@ export function GNB() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 h-[var(--gnb-h)] border-b border-border bg-surface/90 backdrop-blur-sm">
+    <header className="no-print fixed inset-x-0 top-0 z-50 h-[var(--gnb-h)] border-b border-border bg-surface/90 backdrop-blur-sm">
       <div className="w-full mx-auto px-6 h-full flex items-center gap-6">
         <Link href="/" className="text-heading-3 font-bold text-text-primary tracking-widest">
           ARC

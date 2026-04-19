@@ -1,0 +1,48 @@
+@media print {
+  @page {
+    size: A4;
+    margin: 20mm 15mm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+  }
+
+  /* Remove top padding reserved for the fixed GNB */
+  body > [data-print-root] {
+    padding-top: 0 !important;
+  }
+
+  /* Strip the surrounding scroll panels and backgrounds */
+  main.flex-1 {
+    overflow: visible !important;
+    height: auto !important;
+    background: white !important;
+    padding: 0 !important;
+  }
+
+  .resume-preview {
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .resume-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Remove drop shadows / rounded corners for a cleaner print */
+  .shadow-sm,
+  .shadow,
+  .shadow-md,
+  .shadow-lg {
+    box-shadow: none !important;
+  }
+}
