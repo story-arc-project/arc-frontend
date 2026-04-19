@@ -7,20 +7,16 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
 import type { Preset } from "@/types/archive"
 
-type ApplyMode = "insert" | "overwrite"
-
 interface ApplyPresetModalProps {
   open: boolean
   presets: Preset[]
   onClose: () => void
-  onApply: (presetId: string, mode: ApplyMode) => void
+  onApply: (presetId: string) => void
 }
 
 export default function ApplyPresetModal({ open, presets, onClose, onApply }: ApplyPresetModalProps) {
   const [search, setSearch] = useState("")
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [applyMode, setApplyMode] = useState<ApplyMode>("insert")
-  const [showOverwriteWarning, setShowOverwriteWarning] = useState(false)
 
   const sorted = [...presets].sort((a, b) => {
     if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1
@@ -35,21 +31,17 @@ export default function ApplyPresetModal({ open, presets, onClose, onApply }: Ap
 
   function handleApply() {
     if (!selectedId) return
-    if (applyMode === "overwrite" && !showOverwriteWarning) {
-      setShowOverwriteWarning(true)
-      return
-    }
-    onApply(selectedId, applyMode)
+    onApply(selectedId)
     onClose()
   }
 
   return (
-    <Dialog open={open} onClose={onClose} ariaLabel="프리셋 적용">
+    <Dialog open={open} onClose={onClose} ariaLabel="프리셋 불러오기">
       <div className="flex flex-col gap-4 min-h-[400px]">
         <div>
-          <h3 className="text-heading-3 text-text-primary">프리셋 적용</h3>
+          <h3 className="text-heading-3 text-text-primary">프리셋 불러오기</h3>
           <p className="text-body-sm text-text-tertiary mt-1">
-            저장된 프리셋을 선택해 확장 영역에 적용합니다.
+            선택한 프리셋이 새로운 박스로 추가돼요.
           </p>
         </div>
 
@@ -74,7 +66,7 @@ export default function ApplyPresetModal({ open, presets, onClose, onApply }: Ap
               <button
                 key={preset.id}
                 type="button"
-                onClick={() => { setSelectedId(preset.id); setShowOverwriteWarning(false) }}
+                onClick={() => setSelectedId(preset.id)}
                 className={[
                   "flex items-start gap-2 px-3 py-2.5 rounded-md text-left transition-colors w-full",
                   selectedId === preset.id
@@ -116,51 +108,6 @@ export default function ApplyPresetModal({ open, presets, onClose, onApply }: Ap
           </div>
         )}
 
-        {/* Apply mode */}
-        <div className="flex gap-3">
-          <label className={[
-            "flex-1 flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors text-body-sm",
-            applyMode === "insert"
-              ? "border-brand bg-surface-brand text-text-primary"
-              : "border-border text-text-secondary hover:border-border-strong",
-          ].join(" ")}>
-            <input
-              type="radio"
-              name="applyMode"
-              value="insert"
-              checked={applyMode === "insert"}
-              onChange={() => { setApplyMode("insert"); setShowOverwriteWarning(false) }}
-              className="sr-only"
-            />
-            삽입 (추가)
-          </label>
-          <label className={[
-            "flex-1 flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors text-body-sm",
-            applyMode === "overwrite"
-              ? "border-brand bg-surface-brand text-text-primary"
-              : "border-border text-text-secondary hover:border-border-strong",
-          ].join(" ")}>
-            <input
-              type="radio"
-              name="applyMode"
-              value="overwrite"
-              checked={applyMode === "overwrite"}
-              onChange={() => { setApplyMode("overwrite"); setShowOverwriteWarning(false) }}
-              className="sr-only"
-            />
-            덮어쓰기 (교체)
-          </label>
-        </div>
-
-        {/* Overwrite warning */}
-        {showOverwriteWarning && applyMode === "overwrite" && (
-          <div className="bg-surface-error/10 border border-error/20 rounded-lg p-3">
-            <p className="text-body-sm text-error">
-              기존 확장 입력 블록이 모두 교체됩니다. 정말 적용할까요?
-            </p>
-          </div>
-        )}
-
         {/* Actions */}
         <div className="flex gap-2 justify-end pt-2 border-t border-border">
           <Button variant="ghost" size="sm" onClick={onClose}>
@@ -172,7 +119,7 @@ export default function ApplyPresetModal({ open, presets, onClose, onApply }: Ap
             onClick={handleApply}
             disabled={!selectedId}
           >
-            {showOverwriteWarning ? "확인, 교체합니다" : "적용"}
+            불러오기
           </Button>
         </div>
       </div>

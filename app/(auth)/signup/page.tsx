@@ -10,10 +10,12 @@ import { api, ApiError } from "@/lib/api/client";
 import { VerifyEmailResponse } from "@/types/auth";
 import {
   type Step,
+  type AffiliationStatus,
   ONBOARDING_STEPS,
   STEP_ORDER,
   Q1_OPTIONS,
   INTEREST_OPTIONS,
+  AFFILIATION_OPTIONS,
   stepVariants,
   stepTransition,
   formatPhone,
@@ -44,7 +46,7 @@ function SignupForm() {
 
   // Profile fields
   const [birth, setBirth] = useState("");
-  const [education, setEducation] = useState("");
+  const [affiliation, setAffiliation] = useState<AffiliationStatus | "">("");
   const [school, setSchool] = useState("");
   const [department, setDepartment] = useState("");
   const [phone, setPhone] = useState("");
@@ -190,7 +192,6 @@ function SignupForm() {
       await api.post("/auth/onboarding", {
         name,
         birth,
-        ...(education.trim()  && { education }),
         ...(school.trim()     && { school }),
         ...(department.trim() && { department }),
         ...(phone             && { phone }),
@@ -473,41 +474,98 @@ function SignupForm() {
                   />
                 </div>
 
-                {/* 소속 (선택) */}
+                {/* 현재 상태 (선택) */}
                 <div className="mb-5">
-                  <Input
-                    label="소속"
-                    type="text"
-                    placeholder="예) 서울대학교 컴퓨터공학과, 삼성전자 재직 중"
-                    value={education}
-                    onChange={(e) => setEducation(e.target.value)}
-                  />
+                  <label className="block text-label text-text-primary mb-2">
+                    현재 상태
+                  </label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {AFFILIATION_OPTIONS.map((opt) => {
+                      const active = affiliation === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => {
+                            setAffiliation(active ? "" : opt.value);
+                            setSchool("");
+                            setDepartment("");
+                          }}
+                          className={[
+                            "h-11 rounded-xl border-2 text-body-sm font-semibold",
+                            "transition-all duration-150 cursor-pointer",
+                            active
+                              ? "border-brand bg-surface-brand text-brand"
+                              : "border-border bg-surface text-text-primary hover:border-brand/40 hover:bg-surface-brand/30",
+                          ].join(" ")}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
                 </div>
 
-                {/* 학교 (선택) */}
-                <div className="mb-5">
-                  <Input
-                    label="학교"
-                    type="text"
-                    placeholder="예) 서울대학교"
-                    value={school}
-                    onChange={(e) => setSchool(e.target.value)}
-                  />
-                  <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
-                </div>
+                {/* 상태별 조건부 입력 */}
+                {affiliation === "student" && (
+                  <>
+                    <div className="mb-5">
+                      <Input
+                        label="학교"
+                        type="text"
+                        placeholder="예) 서울대학교"
+                        value={school}
+                        onChange={(e) => setSchool(e.target.value)}
+                      />
+                    </div>
+                    <div className="mb-6">
+                      <Input
+                        label="학과"
+                        type="text"
+                        placeholder="예) 컴퓨터공학과"
+                        value={department}
+                        onChange={(e) => setDepartment(e.target.value)}
+                      />
+                    </div>
+                  </>
+                )}
 
-                {/* 학과 (선택) */}
-                <div className="mb-6">
-                  <Input
-                    label="학과"
-                    type="text"
-                    placeholder="예) 컴퓨터공학과"
-                    value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
-                  />
-                  <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
-                </div>
+                {affiliation === "employed" && (
+                  <div className="mb-6">
+                    <Input
+                      label="직장명"
+                      type="text"
+                      placeholder="예) 삼성전자"
+                      value={school}
+                      onChange={(e) => setSchool(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {affiliation === "jobseeker" && (
+                  <div className="mb-6">
+                    <Input
+                      label="관심 직무/분야"
+                      type="text"
+                      placeholder="예) 백엔드 개발, 프로덕트 기획"
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {affiliation === "other" && (
+                  <div className="mb-6">
+                    <Input
+                      label="소속"
+                      type="text"
+                      placeholder="현재 소속을 자유롭게 입력해주세요"
+                      value={school}
+                      onChange={(e) => setSchool(e.target.value)}
+                    />
+                  </div>
+                )}
 
                 <Button onClick={() => goTo("q1")} disabled={!profileComplete} fullWidth>
                   다음
