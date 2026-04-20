@@ -77,12 +77,7 @@ function LoginForm() {
     }
   }
 
-  function handleSocialLogin(provider: string) {
-    if (provider !== "google") {
-      setSocialError("곧 지원 예정이에요");
-      setTimeout(() => setSocialError(null), 3000);
-      return;
-    }
+  function handleSocialLogin() {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) {
       setSocialError("Google 로그인을 사용할 수 없어요");

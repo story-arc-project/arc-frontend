@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { BookOpen, Save, Settings } from "lucide-react"
+import { BookOpen, Save, Settings, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
@@ -25,6 +25,12 @@ import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks, uid } from "@/lib/utils/block-utils"
 import type { UsePresetsReturn } from "@/hooks/usePresets"
 
+interface AppliedPreset {
+  groupId: string
+  name: string
+  blocks: Block[]
+}
+
 interface ExperienceFormV2Props {
   mode: "new" | "edit"
   initialExperience?: ExperienceV2
@@ -42,13 +48,22 @@ const SEMANTIC_GROUPS: Record<string, string[]> = {
     "기간", "재직기간", "읽은 기간/완독일", "제작 기간", "준비 기간", "학습 기간",
   ],
   role: [
-    "내 역할/기여도", "내 역할/기여", "내 역할", "직책/역할", "역할/직책",
+    "내 역할/기여도", "내 역할/기여", "내 역할", "내가 맡은 파트", "직책/역할", "역할/직책", "역할",
   ],
   achievement: [
-    "핵심 성과", "핵심 성과 기록", "결과/성과",
+    "핵심 성과", "핵심 성과 기록", "결과/성과", "성과", "성과/산출물", "반응/성과", "변화/성과", "임팩트/변화",
   ],
   team: [
     "협업/팀", "팀/조직", "팀 구성", "협업 방식", "협업/커뮤니케이션 방식",
+  ],
+  motivation: [
+    "지원 동기", "참여 동기", "읽은 이유", "목표/만들고 싶었던 이유",
+  ],
+  evidence: [
+    "증빙 자료", "증빙", "활동 인증서", "활동 인증서/수료 증빙", "수상 증빙", "자격증 증빙", "봉사 확인서", "꾸준함 증거",
+  ],
+  lesson: [
+    "배운 점", "느낀 점/가치관 변화",
   ],
 }
 
@@ -102,6 +117,7 @@ export default function ExperienceFormV2({
   const [customBlocks, setCustomBlocks] = useState<Block[]>(
     initialExperience?.customBlocks ?? []
   )
+  const [appliedPresets, setAppliedPresets] = useState<AppliedPreset[]>([])
   const [tags, setTags] = useState<string[]>(initialExperience?.tags ?? [])
   const [importance, setImportance] = useState<ImportanceLevel | undefined>(
     initialExperience?.importance,
@@ -159,15 +175,17 @@ export default function ExperienceFormV2({
   useEffect(() => {
     const hasBlockData = (blocks: Block[]) => blocks.some(b => !isBlockEmpty(b))
     const extensionBlocks = extensionSections.flatMap(s => s.blocks)
+    const presetBlocks = appliedPresets.flatMap(p => p.blocks)
     const importanceChanged = importance !== initialExperience?.importance
     const hasData =
       hasBlockData(coreBlocks) ||
       hasBlockData(extensionBlocks) ||
       customBlocks.length > 0 ||
+      presetBlocks.length > 0 ||
       tags.length > 0 ||
       importanceChanged
     onUnsavedChange?.(hasData)
-  }, [coreBlocks, extensionSections, customBlocks, tags, importance, initialExperience, onUnsavedChange])
+  }, [coreBlocks, extensionSections, customBlocks, appliedPresets, tags, importance, initialExperience, onUnsavedChange])
 
   const handleTypeSelect = useCallback((id: ExperienceTypeId) => {
     setTypeId(id)
@@ -177,14 +195,16 @@ export default function ExperienceFormV2({
   const handleRequestTypeChange = useCallback((): boolean => {
     const hasBlockData = (blocks: Block[]) => blocks.some(b => !isBlockEmpty(b))
     const extensionBlocks = extensionSections.flatMap(s => s.blocks)
+    const presetBlocks = appliedPresets.flatMap(p => p.blocks)
     const hasData =
       hasBlockData(coreBlocks) ||
       hasBlockData(extensionBlocks) ||
       customBlocks.length > 0 ||
+      presetBlocks.length > 0 ||
       tags.length > 0
     if (!hasData) return true
     return window.confirm("경험 유형을 바꾸면 입력한 내용이 초기화될 수 있어요. 계속할까요?")
-  }, [coreBlocks, extensionSections, customBlocks, tags])
+  }, [coreBlocks, extensionSections, customBlocks, appliedPresets, tags])
 
   function handleExtensionChange(sectionId: string, blocks: Block[]) {
     setExtensionSections(prev =>
@@ -332,6 +352,11 @@ export default function ExperienceFormV2({
 
     // Flatten extension blocks
     const allExtensionBlocks = extensionSections.flatMap(s => s.blocks)
+    // Merge custom blocks with applied-preset blocks for persistence
+    const allCustomBlocks = [
+      ...customBlocks,
+      ...appliedPresets.flatMap(p => p.blocks),
+    ]
 
     const now = new Date().toISOString()
     const experience: ExperienceV2 = {
@@ -345,7 +370,7 @@ export default function ExperienceFormV2({
       importance,
       coreBlocks,
       extensionBlocks: allExtensionBlocks,
-      customBlocks,
+      customBlocks: allCustomBlocks,
       createdAt: initialExperience?.createdAt ?? now,
       updatedAt: now,
     }
@@ -353,17 +378,56 @@ export default function ExperienceFormV2({
     onSave(experience)
   }
 
+  const titleValue = formLayout?.titleBlock?.value
+  const titleText = titleValue?.type === "text" ? titleValue.text : ""
+  const summaryValue = formLayout?.summaryBlock?.value
+  const summaryText = summaryValue?.type === "text" ? summaryValue.text : ""
+
   return (
     <div className="max-w-[640px] mx-auto px-5 py-6 md:px-12 md:py-10">
-      {/* Header */}
+      {/* Header — inline editable title + summary */}
       <div className="flex items-start justify-between mb-7 gap-4">
-        <div>
-          <h2 className="text-heading-3 text-text-primary">
-            {mode === "new" ? "새 경험 추가" : "경험 수정"}
-          </h2>
-          <p className="text-body-sm text-text-tertiary mt-1">
-            유형을 선택하고 내용을 기록해주세요
-          </p>
+        <div className="flex-1 min-w-0">
+          {template && formLayout?.titleBlock && titleValue?.type === "text" ? (
+            <input
+              type="text"
+              className="w-full text-heading-3 text-text-primary bg-transparent border-0 p-0 focus:outline-none placeholder:text-text-tertiary"
+              placeholder={formLayout.titleBlock.placeholder ?? (mode === "new" ? "새 경험 추가" : "경험명")}
+              value={titleText}
+              aria-label="경험명"
+              onChange={e =>
+                handleCoreBlockChange(formLayout.titleBlock!.id, {
+                  type: "text",
+                  text: e.target.value,
+                })
+              }
+            />
+          ) : (
+            <h2 className="text-heading-3 text-text-primary">
+              {mode === "new" ? "새 경험 추가" : "경험 수정"}
+            </h2>
+          )}
+
+          {template && formLayout?.summaryBlock && summaryValue?.type === "text" ? (
+            <input
+              type="text"
+              className="w-full mt-1 text-body text-text-secondary bg-transparent border-0 p-0 focus:outline-none placeholder:text-text-tertiary"
+              placeholder={formLayout.summaryBlock.placeholder ?? "한 줄 요약"}
+              value={summaryText}
+              aria-label="한 줄 요약"
+              onChange={e =>
+                handleCoreBlockChange(formLayout.summaryBlock!.id, {
+                  type: "text",
+                  text: e.target.value,
+                })
+              }
+            />
+          ) : (
+            <p className="text-body-sm text-text-tertiary mt-1">
+              유형을 선택하고 내용을 기록해주세요
+            </p>
+          )}
+
           <div className="mt-3">
             <ImportanceSelector
               value={importance}
@@ -395,44 +459,45 @@ export default function ExperienceFormV2({
       {/* Form sections — restructured order */}
       {template && formLayout && (
         <div className="flex flex-col gap-5">
-          {/* 1. Standalone title + summary */}
-          {formLayout.titleBlock && (
-            <StandaloneBlockField
-              block={formLayout.titleBlock}
-              onChange={handleCoreBlockChange}
-            />
-          )}
-          {formLayout.summaryBlock && (
-            <StandaloneBlockField
-              block={formLayout.summaryBlock}
-              onChange={handleCoreBlockChange}
-            />
-          )}
-
-          {/* 2. Type-specific extension sections FIRST */}
+          {/* 1. First type-specific section — flat (no box) */}
           {formLayout.typeSpecificSections.map((section, idx) => {
             const isLast = idx === formLayout.typeSpecificSections.length - 1
-            // Append evidence block to the last type-specific section
             const sectionBlocks = isLast && formLayout.evidenceBlock
               ? [...section.blocks, formLayout.evidenceBlock]
               : section.blocks
+            const onChange = (blocks: Block[]) =>
+              isLast && formLayout.evidenceBlock
+                ? handleTypeSpecificWithEvidenceChange(section.id, blocks)
+                : handleExtensionChange(section.id, blocks)
 
+            // Render the first type-specific section flat (no box)
+            if (idx === 0) {
+              return (
+                <div key={section.id} className="flex flex-col gap-1">
+                  <div className="text-label text-text-tertiary mb-1">
+                    {section.label}
+                  </div>
+                  <BlockList
+                    blocks={sectionBlocks}
+                    onChange={onChange}
+                  />
+                </div>
+              )
+            }
+
+            // Subsequent sections — collapsible boxed
             return (
               <FormSection
                 key={section.id}
                 label={section.label}
                 blocks={sectionBlocks}
                 defaultCollapsed={section.collapsed}
-                onChange={blocks =>
-                  isLast && formLayout.evidenceBlock
-                    ? handleTypeSpecificWithEvidenceChange(section.id, blocks)
-                    : handleExtensionChange(section.id, blocks)
-                }
+                onChange={onChange}
               />
             )
           })}
 
-          {/* 3. Merged "확장 입력" section (remaining core + shared extended) */}
+          {/* 2. Merged "확장 입력" section (remaining core + shared extended) */}
           {formLayout.mergedExtendedBlocks.length > 0 && (
             <FormSection
               label="확장 입력"
@@ -442,38 +507,25 @@ export default function ExperienceFormV2({
             />
           )}
 
-          {/* 4. Custom blocks section (unchanged) */}
+          {/* 3. 나만의 블록 — standalone block addition */}
           <section className="border border-dashed border-border rounded-lg px-5 py-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-title text-text-primary">나만의 블록 추가</h3>
-              <div className="flex gap-1.5">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setApplyPresetOpen(true)}
-                >
-                  <BookOpen size={14} className="mr-1" />
-                  프리셋 적용
-                </Button>
-                {customBlocks.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSavePresetOpen(true)}
-                  >
-                    <Save size={14} className="mr-1" />
-                    프리셋 저장
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setManagePresetOpen(true)}
-                >
-                  <Settings size={14} className="mr-1" />
-                  프리셋 관리
-                </Button>
+            <div className="flex items-center justify-between mb-4 gap-2">
+              <div className="min-w-0">
+                <h3 className="text-title text-text-primary">나만의 블록</h3>
+                <p className="text-caption text-text-tertiary mt-0.5">
+                  필요한 입력을 자유롭게 추가하세요
+                </p>
               </div>
+              {customBlocks.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSavePresetOpen(true)}
+                >
+                  <Save size={14} className="mr-1" />
+                  프리셋으로 저장
+                </Button>
+              )}
             </div>
             <BlockList
               blocks={customBlocks}
@@ -483,6 +535,64 @@ export default function ExperienceFormV2({
               allowDelete
             />
           </section>
+
+          {/* 4. Applied presets — each as its own boxed group */}
+          {appliedPresets.map(group => (
+            <section
+              key={group.groupId}
+              className="border border-border rounded-lg px-5 py-5 bg-surface-secondary/40"
+            >
+              <div className="flex items-center justify-between mb-4 gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <BookOpen size={16} className="text-brand-dark shrink-0" />
+                  <h3 className="text-title text-text-primary truncate">{group.name}</h3>
+                  <Badge variant="default">프리셋</Badge>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setAppliedPresets(prev => prev.filter(p => p.groupId !== group.groupId))
+                  }
+                  aria-label={`${group.name} 프리셋 제거`}
+                >
+                  <Trash2 size={14} className="mr-1" />
+                  제거
+                </Button>
+              </div>
+              <BlockList
+                blocks={group.blocks}
+                onChange={blocks =>
+                  setAppliedPresets(prev =>
+                    prev.map(p => (p.groupId === group.groupId ? { ...p, blocks } : p))
+                  )
+                }
+                allowAdd
+                allowReorder
+                allowDelete
+              />
+            </section>
+          ))}
+
+          {/* 5. Preset toolbar */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setApplyPresetOpen(true)}
+            >
+              <BookOpen size={14} className="mr-1" />
+              프리셋 불러오기
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setManagePresetOpen(true)}
+            >
+              <Settings size={14} className="mr-1" />
+              프리셋 관리
+            </Button>
+          </div>
 
           {/* Preset modals */}
           <SavePresetModal
@@ -498,15 +608,14 @@ export default function ExperienceFormV2({
             open={applyPresetOpen}
             presets={presets}
             onClose={() => setApplyPresetOpen(false)}
-            onApply={(presetId, mode) => {
+            onApply={(presetId) => {
               const preset = getPreset(presetId)
               if (!preset) return
               const cloned = cloneBlocks(preset.blocks)
-              if (mode === "overwrite") {
-                setCustomBlocks(cloned)
-              } else {
-                setCustomBlocks(prev => [...prev, ...cloned])
-              }
+              setAppliedPresets(prev => [
+                ...prev,
+                { groupId: uid("grp"), name: preset.name, blocks: cloned },
+              ])
             }}
           />
           <Dialog
@@ -554,34 +663,6 @@ export default function ExperienceFormV2({
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-// ── Standalone block field (title / summary) ────────────────────────
-function StandaloneBlockField({
-  block,
-  onChange,
-}: {
-  block: Block
-  onChange: (blockId: string, value: BlockValue) => void
-}) {
-  const val = block.value
-  if (val.type !== "text") return null
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-label text-text-primary">
-        {block.label}
-        {block.required && <span className="text-error ml-0.5">*</span>}
-      </label>
-      <input
-        type="text"
-        className="h-12 w-full rounded-md border border-border bg-surface px-4 text-body text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand transition-colors"
-        placeholder={block.placeholder}
-        value={val.text}
-        onChange={e => onChange(block.id, { ...val, text: e.target.value })}
-      />
     </div>
   )
 }

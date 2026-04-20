@@ -25,7 +25,7 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
     onChange({ ...val, rows: val.rows.filter(r => r.id !== rowId) })
   }
 
-  function updateCell(rowId: string, colKey: string, cellValue: string) {
+  function updateCell(rowId: string, colKey: string, cellValue: string | string[]) {
     onChange({
       ...val,
       rows: val.rows.map(r =>
@@ -200,7 +200,7 @@ function RowEditor({
   row: BlockRow
   index: number
   columns: RepeatableCellBlockValue["columns"]
-  onCellChange: (colKey: string, value: string) => void
+  onCellChange: (colKey: string, value: string | string[]) => void
   onRemove: () => void
 }) {
   return (
@@ -219,36 +219,190 @@ function RowEditor({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {columns.map(col => {
           const cellVal = row.cells[col.key]
-          const strVal = Array.isArray(cellVal) ? cellVal.join(", ") : (cellVal ?? "")
-          const isLong = col.blockType === "textarea"
-          const isDate = col.blockType === "date"
+          const isWide =
+            col.blockType === "textarea" ||
+            col.blockType === "tags" ||
+            col.blockType === "checklist"
 
           return (
-            <div key={col.key} className={`flex flex-col gap-1.5 ${isLong ? "sm:col-span-2" : ""}`}>
+            <div key={col.key} className={`flex flex-col gap-1.5 ${isWide ? "sm:col-span-2" : ""}`}>
               <label className="text-caption text-text-secondary">
                 {col.label}
                 {col.required && <span className="text-error ml-0.5">*</span>}
               </label>
-              {isLong ? (
-                <textarea
-                  className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none min-h-[64px]"
-                  placeholder={col.placeholder}
-                  value={strVal}
-                  onChange={e => onCellChange(col.key, e.target.value)}
-                />
-              ) : (
-                <input
-                  type={isDate ? "date" : "text"}
-                  className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-                  placeholder={col.placeholder}
-                  value={strVal}
-                  onChange={e => onCellChange(col.key, e.target.value)}
-                />
-              )}
+              <CellInput
+                column={col}
+                value={cellVal}
+                onChange={(v) => onCellChange(col.key, v)}
+              />
             </div>
           )
         })}
       </div>
+    </div>
+  )
+}
+
+function CellInput({
+  column,
+  value,
+  onChange,
+}: {
+  column: BlockColumnDef
+  value: string | string[] | undefined
+  onChange: (value: string | string[]) => void
+}) {
+  // 열 타입이 변경되어 기존 값(string ↔ string[])이 불일치할 때 UI에서 값이 사라지지 않도록 정규화한다.
+  const strVal = Array.isArray(value) ? value.join(", ") : (value ?? "")
+  const arrVal = Array.isArray(value)
+    ? value
+    : typeof value === "string" && value.trim()
+      ? value.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
+      : []
+
+  if (column.blockType === "textarea") {
+    return (
+      <textarea
+        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none min-h-[64px]"
+        placeholder={column.placeholder}
+        value={strVal}
+        onChange={e => onChange(e.target.value)}
+      />
+    )
+  }
+
+  if (column.blockType === "date") {
+    return (
+      <input
+        type="date"
+        className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+        value={strVal}
+        onChange={e => onChange(e.target.value)}
+      />
+    )
+  }
+
+  if (column.blockType === "link") {
+    return (
+      <input
+        type="url"
+        className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+        placeholder={column.placeholder ?? "https://..."}
+        value={strVal}
+        onChange={e => onChange(e.target.value)}
+      />
+    )
+  }
+
+  if (column.blockType === "tags") {
+    return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder} />
+  }
+
+  if (column.blockType === "checklist") {
+    const options = column.options ?? []
+    if (options.length === 0) {
+      // Fallback: free-form checklist entries (treated as tags)
+      return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder ?? "항목 입력 후 Enter"} />
+    }
+    return (
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {options.map(opt => {
+          const checked = arrVal.includes(opt)
+          return (
+            <label key={opt} className="flex items-center gap-1.5 text-body-sm text-text-primary cursor-pointer">
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() =>
+                  onChange(checked ? arrVal.filter(v => v !== opt) : [...arrVal, opt])
+                }
+                className="rounded border-border text-brand focus:ring-brand"
+              />
+              {opt}
+            </label>
+          )
+        })}
+      </div>
+    )
+  }
+
+  if (column.blockType === "single-select") {
+    const options = column.options ?? []
+    return (
+      <select
+        className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
+        value={strVal}
+        onChange={e => onChange(e.target.value)}
+      >
+        <option value="">선택</option>
+        {options.map(opt => (
+          <option key={opt} value={opt}>{opt}</option>
+        ))}
+      </select>
+    )
+  }
+
+  // Default: text input
+  return (
+    <input
+      type="text"
+      className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+      placeholder={column.placeholder}
+      value={strVal}
+      onChange={e => onChange(e.target.value)}
+    />
+  )
+}
+
+function TagsCellInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string[]
+  onChange: (value: string[]) => void
+  placeholder?: string
+}) {
+  const [input, setInput] = useState("")
+
+  function add() {
+    const t = input.trim()
+    if (!t || value.includes(t)) return
+    onChange([...value, t])
+    setInput("")
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {value.map(tag => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 bg-surface-brand text-brand-dark rounded-full pl-2.5 pr-1.5 py-0.5 text-caption font-medium"
+            >
+              {tag}
+              <button
+                type="button"
+                onClick={() => onChange(value.filter(v => v !== tag))}
+                className="rounded-full p-0.5 hover:bg-brand-light transition-colors text-brand-dark"
+                aria-label={`${tag} 삭제`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        type="text"
+        className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+        placeholder={placeholder ?? "입력 후 Enter"}
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add() } }}
+        onBlur={add}
+      />
     </div>
   )
 }

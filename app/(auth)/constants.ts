@@ -16,6 +16,16 @@ export type Step = "start" | "password" | "verify" | "profile" | "q1" | "q2";
 export const ONBOARDING_STEPS: Step[] = ["profile", "q1", "q2"];
 export const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "q1", "q2"];
 
+/* ── Affiliation status (profile step) ────────────────── */
+export type AffiliationStatus = "student" | "employed" | "jobseeker" | "other";
+
+export const AFFILIATION_OPTIONS: { value: AffiliationStatus; label: string }[] = [
+  { value: "student", label: "학생" },
+  { value: "employed", label: "직장인" },
+  { value: "jobseeker", label: "취준생" },
+  { value: "other", label: "기타" },
+];
+
 /* ── Onboarding options ───────────────────────────────── */
 export const Q1_OPTIONS = [
   "진로/방향성", "취업/인턴", "스펙/자격증",
