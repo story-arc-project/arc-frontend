@@ -38,7 +38,7 @@ export function ExperienceItem({
       style={style}
       role="button"
       tabIndex={0}
-      aria-selected={isActive}
+      aria-pressed={isActive}
       className={[
         "relative flex items-center gap-1 pl-2.5 pr-2.5 py-2 mx-1 rounded-md cursor-pointer transition-colors group/item",
         "focus-visible:outline-2 focus-visible:outline-brand focus-visible:outline-offset-[-2px]",

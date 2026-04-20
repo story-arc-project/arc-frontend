@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { ChevronDown } from "lucide-react"
-import type { Block, BlockValue } from "@/types/archive"
+import type { Block } from "@/types/archive"
 import BlockList from "./blocks/BlockList"
 
 interface FormSectionProps {

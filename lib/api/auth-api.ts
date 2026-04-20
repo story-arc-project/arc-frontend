@@ -1,16 +1,17 @@
 import type { AuthUser } from "@/types/auth";
-import { api } from "@/lib/api/client";
+import { api, ApiError } from "@/lib/api/client";
 
 /**
  * GET /auth/me - 현재 로그인 사용자 정보 조회
- * 401 시 에러를 throw 하지 않고 null 반환 (비인증 상태)
+ * 401(비인증)은 null로 반환, 그 외 장애는 throw해 호출부가 구분 처리한다.
  */
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
   try {
     const res = await api.get<{ data: AuthUser }>("/auth/me", { auth: false });
     return res.data;
-  } catch {
-    return null;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) return null;
+    throw e;
   }
 }
 

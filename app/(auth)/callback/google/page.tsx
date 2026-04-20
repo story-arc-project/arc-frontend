@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api/client";
+import { clearOAuthState, readOAuthState } from "@/lib/auth/oauth-state";
 import { AuthSuccessResult } from "@/types/auth";
 
 export default function GoogleCallbackPage() {
@@ -24,9 +25,17 @@ function GoogleCallbackHandler() {
 
     const code = searchParams.get("code");
     const error = searchParams.get("error");
+    const returnedState = searchParams.get("state");
+    const storedState = readOAuthState();
+    clearOAuthState();
 
     if (error || !code) {
       router.replace("/login?error=social_cancelled");
+      return;
+    }
+
+    if (!returnedState || !storedState || returnedState !== storedState) {
+      router.replace("/login?error=social_failed");
       return;
     }
 

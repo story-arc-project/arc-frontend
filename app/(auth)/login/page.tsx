@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
+import { createOAuthState } from "@/lib/auth/oauth-state";
 import { API_URL, SOCIAL_ERROR_MESSAGES, loginContainer, loginItem } from "../constants";
 
 export default function LoginPage() {
@@ -91,6 +92,7 @@ function LoginForm() {
       scope: "openid email profile",
       access_type: "offline",
       prompt: "select_account",
+      state: createOAuthState(),
     });
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }

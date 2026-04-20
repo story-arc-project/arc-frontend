@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Bookmark } from "lucide-react";
 import { Button, Input, Textarea, PeriodPicker } from "@/components/ui";
 import { TemplateChips } from "./TemplateChips";
 import { QualitativeSection } from "./QualitativeSection";
 import { CustomFieldList } from "./CustomFieldList";
-import { SaveTemplateModal, type TemplateFieldDraft } from "./SaveTemplateModal";
 import type {
   Folder,
   Template,
@@ -125,37 +123,9 @@ export function ExperienceForm({
       .map((f) => ({ id: `cf-${f.key}`, key: f.key, label: f.label, value: f.value, type: ((f as unknown as Record<string, unknown>).fieldType as CustomField["type"]) ?? "textarea" }));
   });
 
-  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
-
   const showQualitative = selectedTemplate
     ? isQualitativeTemplate(selectedTemplate.label)
     : false;
-
-  /** Build the field list for the save-template modal */
-  function buildTemplateDraftFields(): TemplateFieldDraft[] {
-    const templateFields: TemplateFieldDraft[] = (
-      selectedTemplate?.field_schema.filter((f) => !isQualitativeKey(f.key)) ?? []
-    ).map((f) => ({ id: f.key, label: f.label, type: f.type }));
-
-    const qualFields: TemplateFieldDraft[] = showQualitative
-      ? [
-          { id: "motivation", label: "왜 이 활동을 했나요?", type: "textarea" },
-          { id: "takeaway", label: "무엇을 배웠나요?", type: "textarea" },
-        ]
-      : [];
-
-    const customDrafts: TemplateFieldDraft[] = customFields
-      .filter((f) => f.label.trim())
-      .map((f) => ({ id: f.id, label: f.label, type: f.type ?? "textarea" }));
-
-    return [...templateFields, ...qualFields, ...customDrafts];
-  }
-
-  function handleSaveTemplate(name: string, fields: TemplateFieldDraft[]) {
-    // TODO: persist the template via API
-    console.log("Save template:", name, fields);
-    setShowSaveTemplateModal(false);
-  }
 
   // Notify parent when form becomes dirty
   useEffect(() => {
@@ -242,7 +212,6 @@ export function ExperienceForm({
         templates={templates}
         selectedId={selectedTemplate?.id ?? null}
         onSelect={handleTemplateSelect}
-        onCreateTemplate={() => setShowSaveTemplateModal(true)}
         disabled={mode === "edit"}
       />
       {templateError && (
@@ -297,27 +266,6 @@ export function ExperienceForm({
         <CustomFieldList
           fields={customFields}
           onChange={setCustomFields}
-        />
-      )}
-
-      {/* Save as template – only when custom fields exist */}
-      {selectedTemplate && customFields.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowSaveTemplateModal(true)}
-          className="flex items-center gap-1.5 text-caption text-text-tertiary hover:text-brand transition-colors mt-3"
-        >
-          <Bookmark size={13} />
-          이 구성을 템플릿으로 저장
-        </button>
-      )}
-
-      {showSaveTemplateModal && (
-        <SaveTemplateModal
-          open={showSaveTemplateModal}
-          onClose={() => setShowSaveTemplateModal(false)}
-          onSave={handleSaveTemplate}
-          initialFields={buildTemplateDraftFields()}
         />
       )}
 

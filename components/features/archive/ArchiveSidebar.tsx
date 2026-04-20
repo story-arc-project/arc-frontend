@@ -11,7 +11,6 @@ import {
   useSensors,
   DragEndEvent,
   DragStartEvent,
-  DragCancelEvent,
 } from "@dnd-kit/core";
 import { Button, Dialog } from "@/components/ui";
 import { FolderGroup } from "./FolderGroup";
@@ -108,7 +107,7 @@ export function ArchiveSidebar({
         sensors={sensors}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        onDragCancel={(_e: DragCancelEvent) => stopDrag()}
+        onDragCancel={() => stopDrag()}
         id={dndContextId}
       >
         <div className="flex-1 overflow-y-auto min-h-0 py-2">
