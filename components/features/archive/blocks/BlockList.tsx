@@ -88,7 +88,6 @@ export default function BlockList({
           }
           if (b.type === "table" && config.tableColumns) {
             const val = b.value as { type: "table"; columns: string[]; rows: string[][] }
-            const oldColCount = val.columns.length
             const newCols = config.tableColumns
             updated.value = {
               ...val,

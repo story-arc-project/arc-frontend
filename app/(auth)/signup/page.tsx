@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button, DatePicker, Input, toast, ToastContainer } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
+import { createOAuthState } from "@/lib/auth/oauth-state";
 import { api, ApiError } from "@/lib/api/client";
 import { VerifyEmailResponse } from "@/types/auth";
 import {
@@ -179,6 +180,7 @@ function SignupForm() {
       scope: "openid email profile",
       access_type: "offline",
       prompt: "select_account",
+      state: createOAuthState(),
     });
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }

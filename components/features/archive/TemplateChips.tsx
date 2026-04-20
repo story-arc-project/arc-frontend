@@ -7,11 +7,10 @@ interface TemplateChipsProps {
   templates: Template[];
   selectedId: string | null;
   onSelect: (template: Template) => void;
-  onCreateTemplate?: () => void;
   disabled?: boolean;
 }
 
-export function TemplateChips({ templates, selectedId, onSelect, onCreateTemplate, disabled = false }: TemplateChipsProps) {
+export function TemplateChips({ templates, selectedId, onSelect, disabled = false }: TemplateChipsProps) {
   const systemTemplates = templates.filter((t) => t.is_system);
   const customTemplates = templates.filter((t) => !t.is_system);
 
@@ -50,13 +49,8 @@ export function TemplateChips({ templates, selectedId, onSelect, onCreateTemplat
                 {t.label}
               </Chip>
             ))}
-            <Chip onClick={onCreateTemplate}>+ 새 템플릿 만들기</Chip>
           </div>
         </>
-      )}
-
-      {customTemplates.length === 0 && (
-        <Chip onClick={onCreateTemplate}>+ 새 템플릿 만들기</Chip>
       )}
     </div>
   );

@@ -86,14 +86,19 @@ export default function LibrarySidebar({
                   role="button"
                   tabIndex={0}
                   onClick={() => !isEditing && onSelectLibrary(lib.id)}
-                  onKeyDown={e => { if (e.key === "Enter") onSelectLibrary(lib.id) }}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault()
+                      onSelectLibrary(lib.id)
+                    }
+                  }}
                   className={[
                     "group flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors text-body-sm min-w-0",
                     isActive
                       ? "bg-surface text-text-primary"
                       : "text-text-secondary hover:bg-surface hover:text-text-primary",
                   ].join(" ")}
-                  aria-selected={isActive}
+                  aria-pressed={isActive}
                 >
                   {lib.isSystem ? (
                     <FolderOpen size={14} className="text-text-tertiary shrink-0" />

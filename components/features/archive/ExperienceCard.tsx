@@ -182,9 +182,14 @@ export default function ExperienceCard({
     <div
       role="button"
       tabIndex={0}
-      aria-selected={selected}
+      aria-pressed={selected}
       onClick={onClick}
-      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onClick() }}
+      onKeyDown={e => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          onClick()
+        }
+      }}
       className={[
         "group relative bg-surface border rounded-lg p-4 cursor-pointer transition-colors",
         selected
