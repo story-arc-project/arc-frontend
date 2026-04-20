@@ -44,6 +44,8 @@ export default function ArchivePage() {
   const {
     experiences: apiExperiences,
     isLoading: isExperiencesLoading,
+    error: experiencesError,
+    refetch: refetchExperiences,
     createExperience: apiCreate,
     updateExperience: apiUpdate,
     deleteExperience: apiDelete,
@@ -466,6 +468,16 @@ export default function ArchivePage() {
             <p className="text-body">라이브러리를 불러오지 못했어요</p>
             <button
               onClick={() => { void retryLibraryMembership(activeLibrary!.id) }}
+              className="text-brand text-body-sm mt-2 hover:text-brand-dark transition-colors"
+            >
+              다시 시도
+            </button>
+          </div>
+        ) : experiencesError ? (
+          <div className="flex flex-col items-center justify-center py-16 text-text-tertiary">
+            <p className="text-body">경험 목록을 불러오지 못했어요</p>
+            <button
+              onClick={() => { void refetchExperiences() }}
               className="text-brand text-body-sm mt-2 hover:text-brand-dark transition-colors"
             >
               다시 시도
