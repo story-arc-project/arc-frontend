@@ -143,7 +143,7 @@ export default function DemoAnalysisHomePage() {
                   className={[
                     "px-3 py-1.5 text-label transition-colors",
                     tab === t.key
-                      ? "bg-brand text-white"
+                      ? "bg-brand text-text-on-brand"
                       : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary",
                   ].join(" ")}
                 >

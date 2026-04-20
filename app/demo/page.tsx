@@ -75,7 +75,7 @@ export default function DemoIndexPage() {
 
         {/* Persona card */}
         <section className="bg-surface border border-border rounded-xl p-5 sm:p-6 flex flex-col sm:flex-row gap-5 sm:items-center">
-          <div className="w-14 h-14 rounded-full bg-brand text-white flex items-center justify-center text-heading-3 font-semibold shrink-0">
+          <div className="w-14 h-14 rounded-full bg-brand text-text-on-brand flex items-center justify-center text-heading-3 font-semibold shrink-0">
             {demoPersona.name.slice(0, 1)}
           </div>
           <div className="flex-1 min-w-0 space-y-2">

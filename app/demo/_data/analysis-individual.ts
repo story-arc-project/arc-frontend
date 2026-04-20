@@ -286,7 +286,7 @@ export const demoIndividualExtra: IndividualExtra = {
         severity: "major",
         title: "인턴 단일 경험만으로 '데이터 기반 마케터' 타이틀이 성립하기 어려움",
         diagnosis: "공모전·부트캠프·블로그 등 주변 경험과 함께 묶여야 설득력이 완성됩니다.",
-        evidence: "3개월간 카카오에서 프론트엔드 인턴",
+        evidence: "3개월간 오늘의 집 퍼포먼스 마케팅 인턴",
         impact: "단일 이력만으로는 시니어 매니저의 확신을 얻기 어렵습니다.",
         priorityAction: "종합 분석·이력서에서 exp-1을 exp-3·exp-4·exp-6과 묶어 스토리로 구성.",
       },
@@ -329,4 +329,12 @@ export const demoIndividualExtra: IndividualExtra = {
     중기: "BigQuery 실전 과정 수료 + 마케팅 커뮤니티 세미나 발표 (2~3개월)",
     장기: "브랜드 매니저와 그로스 마케터 이력을 한 줄에 묶을 수 있는 '풀시즌 마케팅 운영' 경험 확보 (6~12개월)",
   },
+};
+
+export const demoIndividualResultsById: Record<string, IndividualAnalysisResult> = {
+  [demoIndividualResult.id]: demoIndividualResult,
+};
+
+export const demoIndividualExtraById: Record<string, IndividualExtra> = {
+  [demoIndividualResult.id]: demoIndividualExtra,
 };

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { notFound, useParams } from "next/navigation";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { formatDateTime } from "@/lib/utils/date-utils";
 import { Badge } from "@/components/ui";
@@ -18,13 +19,18 @@ import ItemDiagnosisSection from "../../../_components/extra-sections/ItemDiagno
 import SynergyRecommendationsSection from "../../../_components/extra-sections/SynergyRecommendationsSection";
 import ActionPlanSection from "../../../_components/extra-sections/ActionPlanSection";
 import {
-  demoIndividualResult,
-  demoIndividualExtra,
+  demoIndividualResultsById,
+  demoIndividualExtraById,
 } from "../../../_data/analysis-individual";
 
 export default function DemoIndividualDetailPage() {
-  const data = demoIndividualResult;
-  const extra = demoIndividualExtra;
+  const { id } = useParams<{ id: string }>();
+  const data = demoIndividualResultsById[id];
+  const extra = demoIndividualExtraById[id];
+
+  if (!data || !extra) {
+    notFound();
+  }
 
   return (
     <main className="px-4 py-8 sm:px-8">

@@ -25,7 +25,7 @@ export default function SynergyRecommendationsSection({
             className="bg-surface border border-border rounded-lg p-4 flex flex-col gap-2"
           >
             <div className="flex items-center gap-2">
-              <span className="inline-flex w-5 h-5 items-center justify-center rounded-full bg-brand text-white text-caption font-semibold">
+              <span className="inline-flex w-5 h-5 items-center justify-center rounded-full bg-brand text-text-on-brand text-caption font-semibold">
                 {r.priority}
               </span>
               <span className="text-caption text-text-tertiary">{r.category}</span>
