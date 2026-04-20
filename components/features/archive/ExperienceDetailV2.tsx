@@ -8,7 +8,7 @@ import { Dialog } from "@/components/ui/dialog"
 import BlockList from "./blocks/BlockList"
 import ImportanceSelector from "./ImportanceSelector"
 import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
-import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2"
+import { EXPERIENCE_TYPE_MAP, getTemplateForType } from "@/lib/constants/templates-v2"
 
 interface ExperienceDetailV2Props {
   experience: ExperienceV2
@@ -32,25 +32,61 @@ export default function ExperienceDetailV2({
 }: ExperienceDetailV2Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const typeInfo = EXPERIENCE_TYPE_MAP[experience.typeId]
+  const template = getTemplateForType(experience.typeId)
 
-  const allExtBlocks = experience.extensionBlocks
-  const hasExtension = allExtBlocks.some(b => {
-    const v = b.value
+  const hasValue = (block: ExperienceV2["coreBlocks"][number]): boolean => {
+    const v = block.value
     if (v.type === "text" || v.type === "textarea") return v.text.trim() !== ""
     if (v.type === "tags") return v.tags.length > 0
+    if (v.type === "checklist") return v.checked.length > 0
+    if (v.type === "single-select") return v.selected.trim() !== ""
+    if (v.type === "date") return v.date.trim() !== ""
+    if (v.type === "period") return v.start.trim() !== "" || v.end.trim() !== "" || v.isCurrent
+    if (v.type === "link") return v.url.trim() !== ""
+    if (v.type === "file") return v.fileName.trim() !== ""
     if (v.type === "repeatable-cell") return v.rows.length > 0
+    if (v.type === "table") return v.rows.length > 0
     return false
-  })
+  }
+
+  const nonEmptyCoreBlocks = experience.coreBlocks.filter(hasValue)
+  const nonEmptyExtBlocks = experience.extensionBlocks.filter(hasValue)
+  const nonEmptyCustomBlocks = experience.customBlocks.filter(hasValue)
 
   const noop = () => {}
 
   const sections: { num: number; label: string; blocks: typeof experience.coreBlocks }[] = []
-  sections.push({ num: 1, label: "기본 정보", blocks: experience.coreBlocks })
-  if (hasExtension) {
-    sections.push({ num: sections.length + 1, label: "상세 정보", blocks: allExtBlocks })
+
+  // Type-specific sections are shown with their original template labels so
+  // the detail view matches what users saw while filling out the form.
+  const usedExtIds = new Set<string>()
+  for (const ext of template.extensions) {
+    const sectionBlocks = ext.blocks
+      .map(templateBlock => nonEmptyExtBlocks.find(b => b.label === templateBlock.label))
+      .filter((block): block is typeof experience.extensionBlocks[number] => Boolean(block))
+
+    sectionBlocks.forEach(block => usedExtIds.add(block.id))
+    if (sectionBlocks.length > 0) {
+      sections.push({
+        num: sections.length + 1,
+        label: ext.label,
+        blocks: sectionBlocks,
+      })
+    }
   }
-  if (experience.customBlocks.length > 0) {
-    sections.push({ num: sections.length + 1, label: "추가 블록", blocks: experience.customBlocks })
+
+  // Unmatched extension fields (e.g. legacy/renamed labels) are kept visible.
+  const unmatchedExt = nonEmptyExtBlocks.filter(b => !usedExtIds.has(b.id))
+  if (unmatchedExt.length > 0) {
+    sections.push({ num: sections.length + 1, label: "추가 입력", blocks: unmatchedExt })
+  }
+
+  if (nonEmptyCoreBlocks.length > 0) {
+    sections.push({ num: sections.length + 1, label: "공통 정보", blocks: nonEmptyCoreBlocks })
+  }
+
+  if (nonEmptyCustomBlocks.length > 0) {
+    sections.push({ num: sections.length + 1, label: "추가 블록", blocks: nonEmptyCustomBlocks })
   }
 
   return (
