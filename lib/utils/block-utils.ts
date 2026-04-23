@@ -150,11 +150,11 @@ export function isBlockEmpty(block: Block): boolean {
     case 'textarea':
       return v.text.trim() === ''
     case 'date':
-      return v.date === ''
+      return v.date.trim() === ''
     case 'period':
-      return v.start === '' && v.end === ''
+      return v.start.trim() === '' && v.end.trim() === ''
     case 'single-select':
-      return v.selected === ''
+      return v.selected.trim() === ''
     case 'checklist':
       return v.checked.length === 0
     case 'tags':
@@ -162,7 +162,11 @@ export function isBlockEmpty(block: Block): boolean {
     case 'link':
       return v.url.trim() === ''
     case 'file':
-      return v.fileName === ''
+      return (
+        v.fileName.trim() === '' &&
+        (v.fileId?.trim() ?? '') === '' &&
+        (v.url?.trim() ?? '') === ''
+      )
     case 'repeatable-cell':
       return v.rows.length === 0
     case 'table':

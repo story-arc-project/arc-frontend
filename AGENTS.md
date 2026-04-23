@@ -15,7 +15,7 @@ Use Node 20 with npm.
 CI on pull requests to `main` runs `lint`, `typecheck`, and `build`; run all three before opening a PR.
 
 ## Coding Style & Naming Conventions
-This codebase uses TypeScript, React 19, Next.js 16 App Router, and Tailwind CSS v4. Follow the existing style: 2-space indentation, semicolons, and double quotes. Use `PascalCase` for React components (`ResumePreview.tsx`), `camelCase` for hooks and helpers (`useFileUpload.ts`), and kebab-case for shared utility/UI filenames (`date-picker.tsx`, `analysis-api.ts`). Keep route files aligned with Next conventions: `page.tsx`, `layout.tsx`, `loading.tsx`.
+This codebase uses TypeScript, React 19, Next.js 16 App Router, and Tailwind CSS v4. Follow the existing style in the file you're editing: use 2-space indentation, and keep quote and semicolon usage consistent with the surrounding code while minimizing unrelated formatting changes. Use `PascalCase` for React components (`ResumePreview.tsx`), `camelCase` for hooks and helpers (`useFileUpload.ts`), and kebab-case for shared utility/UI filenames (`date-picker.tsx`, `analysis-api.ts`). Keep route files aligned with Next conventions: `page.tsx`, `layout.tsx`, `loading.tsx`.
 
 ## Testing Guidelines
 There is no dedicated test runner committed yet. Treat `npm run lint`, `npm run typecheck`, and `npm run build` as the required validation baseline. For UI changes, add manual QA notes in the PR and include screenshots for visible changes. If you introduce automated tests later, colocate them as `*.test.ts` or `*.test.tsx` next to the feature they cover.
