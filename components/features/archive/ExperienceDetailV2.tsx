@@ -42,6 +42,7 @@ export default function ExperienceDetailV2({
   const noop = () => {}
 
   const sections: { num: number; label: string; blocks: typeof experience.coreBlocks }[] = []
+  const templateSections: { label: string; blocks: typeof experience.coreBlocks }[] = []
 
   // Type-specific sections are shown with their original template labels so
   // the detail view matches what users saw while filling out the form.
@@ -57,7 +58,10 @@ export default function ExperienceDetailV2({
 
   const usedExtIds = new Set<string>()
   if (template) {
-    for (const ext of template.extensions) {
+    const sharedExtension = template.extensions.find(ext => ext.id === "extended") ?? null
+    const typeSpecificExtensions = template.extensions.filter(ext => ext.id !== "extended")
+
+    for (const ext of typeSpecificExtensions) {
       const sectionBlocks = ext.blocks
         .map(templateBlock => {
           const blocksForLabel = extBlocksByLabel.get(templateBlock.label)
@@ -68,13 +72,35 @@ export default function ExperienceDetailV2({
         .filter((block): block is typeof experience.extensionBlocks[number] => Boolean(block))
 
       if (sectionBlocks.length > 0) {
-        sections.push({
-          num: sections.length + 1,
+        templateSections.push({
           label: ext.label,
           blocks: sectionBlocks,
         })
       }
     }
+
+    if (sharedExtension) {
+      const sharedLabels = new Set(sharedExtension.blocks.map(block => block.label))
+      const sharedBlocks = nonEmptyExtBlocks.filter(
+        block => !usedExtIds.has(block.id) && sharedLabels.has(block.label)
+      )
+
+      if (sharedBlocks.length > 0) {
+        for (const block of sharedBlocks) usedExtIds.add(block.id)
+        templateSections.unshift({
+          label: sharedExtension.label,
+          blocks: sharedBlocks,
+        })
+      }
+    }
+  }
+
+  for (const section of templateSections) {
+    sections.push({
+      num: sections.length + 1,
+      label: section.label,
+      blocks: section.blocks,
+    })
   }
 
   // Unmatched extension fields (e.g. legacy/renamed labels) are kept visible.
