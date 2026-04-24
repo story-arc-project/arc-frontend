@@ -32,8 +32,9 @@ export default function ExperienceDetailV2({
   onUpdateImportance,
 }: ExperienceDetailV2Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const typeInfo = EXPERIENCE_TYPE_MAP[experience.typeId]
-  const template = getTemplateForType(experience.typeId)
+  const hasKnownType = Object.hasOwn(EXPERIENCE_TYPE_MAP, experience.typeId)
+  const typeInfo = hasKnownType ? EXPERIENCE_TYPE_MAP[experience.typeId] : undefined
+  const template = hasKnownType ? getTemplateForType(experience.typeId) : null
   const nonEmptyCoreBlocks = experience.coreBlocks.filter(block => !isBlockEmpty(block))
   const nonEmptyExtBlocks = experience.extensionBlocks.filter(block => !isBlockEmpty(block))
   const nonEmptyCustomBlocks = experience.customBlocks.filter(block => !isBlockEmpty(block))
@@ -55,22 +56,24 @@ export default function ExperienceDetailV2({
   }
 
   const usedExtIds = new Set<string>()
-  for (const ext of template.extensions) {
-    const sectionBlocks = ext.blocks
-      .map(templateBlock => {
-        const blocksForLabel = extBlocksByLabel.get(templateBlock.label)
-        const nextBlock = blocksForLabel?.shift()
-        if (nextBlock) usedExtIds.add(nextBlock.id)
-        return nextBlock
-      })
-      .filter((block): block is typeof experience.extensionBlocks[number] => Boolean(block))
+  if (template) {
+    for (const ext of template.extensions) {
+      const sectionBlocks = ext.blocks
+        .map(templateBlock => {
+          const blocksForLabel = extBlocksByLabel.get(templateBlock.label)
+          const nextBlock = blocksForLabel?.shift()
+          if (nextBlock) usedExtIds.add(nextBlock.id)
+          return nextBlock
+        })
+        .filter((block): block is typeof experience.extensionBlocks[number] => Boolean(block))
 
-    if (sectionBlocks.length > 0) {
-      sections.push({
-        num: sections.length + 1,
-        label: ext.label,
-        blocks: sectionBlocks,
-      })
+      if (sectionBlocks.length > 0) {
+        sections.push({
+          num: sections.length + 1,
+          label: ext.label,
+          blocks: sectionBlocks,
+        })
+      }
     }
   }
 
