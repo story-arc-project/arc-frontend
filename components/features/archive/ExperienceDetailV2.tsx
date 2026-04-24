@@ -8,7 +8,8 @@ import { Dialog } from "@/components/ui/dialog"
 import BlockList from "./blocks/BlockList"
 import ImportanceSelector from "./ImportanceSelector"
 import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
-import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2"
+import { EXPERIENCE_TYPE_MAP, getTemplateForType } from "@/lib/constants/templates-v2"
+import { isBlockEmpty } from "@/lib/utils/block-utils"
 
 interface ExperienceDetailV2Props {
   experience: ExperienceV2
@@ -31,26 +32,89 @@ export default function ExperienceDetailV2({
   onUpdateImportance,
 }: ExperienceDetailV2Props) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const typeInfo = EXPERIENCE_TYPE_MAP[experience.typeId]
-
-  const allExtBlocks = experience.extensionBlocks
-  const hasExtension = allExtBlocks.some(b => {
-    const v = b.value
-    if (v.type === "text" || v.type === "textarea") return v.text.trim() !== ""
-    if (v.type === "tags") return v.tags.length > 0
-    if (v.type === "repeatable-cell") return v.rows.length > 0
-    return false
-  })
+  const hasKnownType = Object.hasOwn(EXPERIENCE_TYPE_MAP, experience.typeId)
+  const typeInfo = hasKnownType ? EXPERIENCE_TYPE_MAP[experience.typeId] : undefined
+  const template = hasKnownType ? getTemplateForType(experience.typeId) : null
+  const nonEmptyCoreBlocks = experience.coreBlocks.filter(block => !isBlockEmpty(block))
+  const nonEmptyExtBlocks = experience.extensionBlocks.filter(block => !isBlockEmpty(block))
+  const nonEmptyCustomBlocks = experience.customBlocks.filter(block => !isBlockEmpty(block))
 
   const noop = () => {}
 
   const sections: { num: number; label: string; blocks: typeof experience.coreBlocks }[] = []
-  sections.push({ num: 1, label: "기본 정보", blocks: experience.coreBlocks })
-  if (hasExtension) {
-    sections.push({ num: sections.length + 1, label: "상세 정보", blocks: allExtBlocks })
+  const templateSections: { label: string; blocks: typeof experience.coreBlocks }[] = []
+
+  // Type-specific sections are shown with their original template labels so
+  // the detail view matches what users saw while filling out the form.
+  const extBlocksByLabel = new Map<string, typeof experience.extensionBlocks>()
+  for (const block of nonEmptyExtBlocks) {
+    const blocksForLabel = extBlocksByLabel.get(block.label)
+    if (blocksForLabel) {
+      blocksForLabel.push(block)
+    } else {
+      extBlocksByLabel.set(block.label, [block])
+    }
   }
-  if (experience.customBlocks.length > 0) {
-    sections.push({ num: sections.length + 1, label: "추가 블록", blocks: experience.customBlocks })
+
+  const usedExtIds = new Set<string>()
+  if (template) {
+    const sharedExtension = template.extensions.find(ext => ext.id === "extended") ?? null
+    const typeSpecificExtensions = template.extensions.filter(ext => ext.id !== "extended")
+
+    for (const ext of typeSpecificExtensions) {
+      const sectionBlocks = ext.blocks
+        .map(templateBlock => {
+          const blocksForLabel = extBlocksByLabel.get(templateBlock.label)
+          const nextBlock = blocksForLabel?.shift()
+          if (nextBlock) usedExtIds.add(nextBlock.id)
+          return nextBlock
+        })
+        .filter((block): block is typeof experience.extensionBlocks[number] => Boolean(block))
+
+      if (sectionBlocks.length > 0) {
+        templateSections.push({
+          label: ext.label,
+          blocks: sectionBlocks,
+        })
+      }
+    }
+
+    if (sharedExtension) {
+      const sharedLabels = new Set(sharedExtension.blocks.map(block => block.label))
+      const sharedBlocks = nonEmptyExtBlocks.filter(
+        block => !usedExtIds.has(block.id) && sharedLabels.has(block.label)
+      )
+
+      if (sharedBlocks.length > 0) {
+        for (const block of sharedBlocks) usedExtIds.add(block.id)
+        templateSections.unshift({
+          label: sharedExtension.label,
+          blocks: sharedBlocks,
+        })
+      }
+    }
+  }
+
+  for (const section of templateSections) {
+    sections.push({
+      num: sections.length + 1,
+      label: section.label,
+      blocks: section.blocks,
+    })
+  }
+
+  // Unmatched extension fields (e.g. legacy/renamed labels) are kept visible.
+  const unmatchedExt = nonEmptyExtBlocks.filter(b => !usedExtIds.has(b.id))
+  if (unmatchedExt.length > 0) {
+    sections.push({ num: sections.length + 1, label: "추가 입력", blocks: unmatchedExt })
+  }
+
+  if (nonEmptyCoreBlocks.length > 0) {
+    sections.push({ num: sections.length + 1, label: "공통 정보", blocks: nonEmptyCoreBlocks })
+  }
+
+  if (nonEmptyCustomBlocks.length > 0) {
+    sections.push({ num: sections.length + 1, label: "추가 블록", blocks: nonEmptyCustomBlocks })
   }
 
   return (

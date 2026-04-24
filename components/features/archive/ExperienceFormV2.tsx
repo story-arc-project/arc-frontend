@@ -22,7 +22,7 @@ import type {
   ImportanceLevel,
 } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
-import { cloneBlocks, uid } from "@/lib/utils/block-utils"
+import { cloneBlocks, isBlockEmpty, uid } from "@/lib/utils/block-utils"
 import type { UsePresetsReturn } from "@/hooks/usePresets"
 
 interface AppliedPreset {
@@ -79,21 +79,6 @@ function hasEquivalentIn(label: string, otherLabels: Set<string>): boolean {
   const group = getSemanticGroup(label)
   if (!group) return false
   return SEMANTIC_GROUPS[group].some(eq => otherLabels.has(eq))
-}
-
-function isBlockEmpty(block: Block): boolean {
-  const v = block.value
-  if (v.type === "text" || v.type === "textarea") return v.text.trim() === ""
-  if (v.type === "checklist") return v.checked.length === 0
-  if (v.type === "single-select") return v.selected === ""
-  if (v.type === "date") return v.date === ""
-  if (v.type === "period") return v.start === "" && v.end === ""
-  if (v.type === "tags") return v.tags.length === 0
-  if (v.type === "link") return v.url.trim() === ""
-  if (v.type === "file") return v.fileName.trim() === ""
-  if (v.type === "repeatable-cell") return v.rows.length === 0
-  if (v.type === "table") return v.rows.length === 0
-  return true
 }
 
 export default function ExperienceFormV2({
