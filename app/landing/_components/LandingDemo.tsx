@@ -154,6 +154,10 @@ export default function LandingDemo() {
 
   function goToStep(nextKey: StepKey) {
     setStep(nextKey);
+  }
+
+  function focusTab(nextKey: StepKey) {
+    setStep(nextKey);
     tabRefs.current[nextKey]?.focus();
   }
 
@@ -170,7 +174,7 @@ export default function LandingDemo() {
     if (nextIndex === null) return;
     e.preventDefault();
     const nextKey = STEPS[nextIndex].key;
-    goToStep(nextKey);
+    focusTab(nextKey);
   }
 
   const [typeId, setTypeId] = useState<DemoTypeId>("internship");
@@ -201,15 +205,6 @@ export default function LandingDemo() {
 
   function removeExperience(id: string) {
     setExperiences((prev) => prev.filter((e) => e.id !== id));
-  }
-
-  function resetDemo() {
-    setExperiences(SEED_EXPERIENCES);
-    setTitle("");
-    setPeriod("");
-    setSummary("");
-    setTypeId("internship");
-    goToStep("record");
   }
 
   return (
@@ -275,7 +270,7 @@ export default function LandingDemo() {
 
         {/* Panels — single AnimatePresence wrapping active panel only */}
         <div className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden">
-          <AnimatePresence mode="sync">
+          <AnimatePresence mode="wait">
             {step === "record" && (
               <motion.div
                 key="record"
@@ -643,23 +638,25 @@ export default function LandingDemo() {
                             return (
                               <li
                                 key={exp.id}
-                                className="group flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:border-border-strong"
+                                className="group flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:border-border-strong"
                               >
-                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-brand text-brand">
-                                  <meta.icon size={14} aria-hidden="true" />
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-brand text-brand">
+                                    <meta.icon size={14} aria-hidden="true" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-body-sm text-text-primary font-medium truncate">
+                                      {exp.title}
+                                      <span className="ml-2 text-caption text-text-tertiary font-normal">
+                                        {meta.label}
+                                      </span>
+                                    </p>
+                                    <p className="text-caption text-text-secondary line-clamp-2">
+                                      {exp.summary}
+                                    </p>
+                                  </div>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-body-sm text-text-primary font-medium truncate">
-                                    {exp.title}
-                                    <span className="ml-2 text-caption text-text-tertiary font-normal">
-                                      {meta.label}
-                                    </span>
-                                  </p>
-                                  <p className="text-caption text-text-secondary truncate">
-                                    {exp.summary}
-                                  </p>
-                                </div>
-                                <span className="text-caption text-text-tertiary shrink-0 hidden sm:inline">
+                                <span className="text-caption text-text-tertiary shrink-0 sm:ml-auto pl-11 sm:pl-0">
                                   {exp.period}
                                 </span>
                               </li>
@@ -707,7 +704,7 @@ export default function LandingDemo() {
                   <div className="flex gap-2 shrink-0">
                     <button
                       type="button"
-                      onClick={resetDemo}
+                      onClick={() => goToStep("record")}
                       className="h-10 px-4 rounded-lg border border-border text-body-sm font-medium text-text-primary hover:bg-surface-tertiary transition-colors"
                     >
                       다시 해보기
