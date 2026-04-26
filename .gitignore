@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 # next-env.d.ts is auto-generated but committed for CI compatibility
+
+# local tool state (claude code / oh-my-claudecode)
+.claude/settings.local.json
+.omc/
