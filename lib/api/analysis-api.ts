@@ -7,6 +7,11 @@ import type {
   AnalysisType,
   AnalysisStatus,
   IndividualAnalysisResult,
+  IndividualAnalysisResultBody,
+  IndividualWeakness,
+  IndividualSynergyRecommendation,
+  WeaknessSeverity,
+  SynergyPriority,
   ComprehensiveAnalysisResult,
   KeywordAnalysisResult,
   KeywordSuggestion,
@@ -131,40 +136,105 @@ function mapBookmark(dto: unknown): BookmarkedSnapshot {
   };
 }
 
+function asWeaknessSeverity(value: unknown): WeaknessSeverity {
+  return value === "high" || value === "medium" || value === "low" ? value : "medium";
+}
+
+function asSynergyPriority(value: unknown): SynergyPriority {
+  return value === "high" || value === "medium" || value === "low" ? value : "medium";
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+function mapWeakness(dto: unknown, index: number): IndividualWeakness {
+  const r = asRecord(dto);
+  return {
+    id: asString(r.id, `w-${index}`),
+    category: asString(r.category),
+    severity: asWeaknessSeverity(r.severity),
+    title: asString(r.title),
+    diagnosis: asString(r.diagnosis),
+    evidence: asString(r.evidence),
+    impact: asString(r.impact),
+    priorityAction: asString(r.priorityAction ?? r.priority_action),
+    improvementExample: asString(r.improvementExample ?? r.improvement_example),
+  };
+}
+
+function mapSynergy(dto: unknown): IndividualSynergyRecommendation {
+  const r = asRecord(dto);
+  return {
+    priority: asSynergyPriority(r.priority),
+    category: asString(r.category),
+    name: asString(r.name),
+    reason: asString(r.reason),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+    estimatedDuration: asString(r.estimatedDuration ?? r.estimated_duration),
+  };
+}
+
 /**
- * detail 응답은 리치 타입과 완전히 일치한다는 보장이 없다.
- * 프런트에서 사용하는 최상위 필드만 강제로 채우고, 중첩 섹션은 배열 기본값으로 방어한다.
+ * 백엔드 응답 형태:
+ * { id, status, experience_id, result: { ... } }
  */
 function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
   const r = asRecord(dto);
-  const result = asRecord(r.result);
+  const rawResult = asRecord(r.result);
+  const deep = asRecord(rawResult.deepAnalysis ?? rawResult.deep_analysis);
+  const star = asRecord(rawResult.starFormat ?? rawResult.star_format);
+  const diagnosis = asRecord(rawResult.itemDiagnosis ?? rawResult.item_diagnosis);
+  const action = asRecord(rawResult.actionPlan ?? rawResult.action_plan);
+
+  // action_plan 키는 백엔드 표기에 따라 short_term/mid_term/long_term 또는 한글 키일 수 있다.
+  const shortTerm = asString(
+    action.shortTerm ?? action.short_term ?? (action as UnknownRecord)["단기"],
+  );
+  const midTerm = asString(
+    action.midTerm ?? action.mid_term ?? (action as UnknownRecord)["중기"],
+  );
+  const longTerm = asString(
+    action.longTerm ?? action.long_term ?? (action as UnknownRecord)["장기"],
+  );
+
+  const result: IndividualAnalysisResultBody = {
+    status: asString(rawResult.status),
+    itemName: asString(rawResult.itemName ?? rawResult.item_name),
+    itemType: asString(rawResult.itemType ?? rawResult.item_type),
+    briefSummary: asString(rawResult.briefSummary ?? rawResult.brief_summary),
+    deepAnalysis: {
+      careerValue: asString(deep.careerValue ?? deep.career_value),
+      strengths: asStringArray(deep.strengths),
+      limitations: asStringArray(deep.limitations),
+      applicableRoles: asStringArray(deep.applicableRoles ?? deep.applicable_roles),
+      marketValue: asString(deep.marketValue ?? deep.market_value),
+    },
+    starFormat: {
+      title: asString(star.title),
+      situation: asString(star.situation ?? star.S ?? star.s),
+      task: asString(star.task ?? star.T ?? star.t),
+      action: asString(star.action ?? star.A ?? star.a),
+      result: asString(star.result ?? star.R ?? star.r),
+    },
+    itemDiagnosis: {
+      oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
+      weaknesses: asArray(diagnosis.weaknesses).map((w, i) => mapWeakness(w, i)),
+      missingElements: asStringArray(diagnosis.missingElements ?? diagnosis.missing_elements),
+      rewriteSuggestion: asString(diagnosis.rewriteSuggestion ?? diagnosis.rewrite_suggestion),
+    },
+    synergyRecommendations: asArray(
+      rawResult.synergyRecommendations ?? rawResult.synergy_recommendations,
+    ).map(mapSynergy),
+    actionPlan: { shortTerm, midTerm, longTerm },
+    missingInfoWarning: asString(rawResult.missingInfoWarning ?? rawResult.missing_info_warning),
+  };
+
   return {
     id: asString(r.id),
+    status: mapStatus(r.status),
     experienceId: asString(r.experienceId ?? r.experience_id),
-    experienceTitle: asString(r.experienceTitle ?? r.experience_title),
-    experienceType: asString(r.experienceType ?? r.experience_type),
-    analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
-    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
-    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
-    summary: asString(r.summary ?? r.analysis_summary ?? result.summary),
-    incidents: asArray(r.incidents) as IndividualAnalysisResult["incidents"],
-    roleInterpretations: asArray(
-      r.roleInterpretations ?? r.role_interpretations,
-    ) as IndividualAnalysisResult["roleInterpretations"],
-    keywords: asArray(r.keywords) as IndividualAnalysisResult["keywords"],
-    starSummaries: asArray(
-      r.starSummaries ?? r.star_summaries,
-    ) as IndividualAnalysisResult["starSummaries"],
-    recommendations: asArray(r.recommendations) as IndividualAnalysisResult["recommendations"],
-    improvementGuides: asArray(
-      r.improvementGuides ?? r.improvement_guides,
-    ) as IndividualAnalysisResult["improvementGuides"],
-    reusableExpressions: asArray(
-      r.reusableExpressions ?? r.reusable_expressions,
-    ) as IndividualAnalysisResult["reusableExpressions"],
-    relatedExperiences: asArray(
-      r.relatedExperiences ?? r.related_experiences,
-    ) as IndividualAnalysisResult["relatedExperiences"],
+    result,
   };
 }
 

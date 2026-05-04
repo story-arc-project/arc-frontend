@@ -204,182 +204,104 @@ export const mockIndividualAnalysisList: AnalysisSnapshot[] = [
 
 export const mockIndividualAnalysisResult: IndividualAnalysisResult = {
   id: "ind-1",
+  status: "completed",
   experienceId: "exp-v2-1",
-  experienceTitle: "카카오 프론트엔드 인턴십",
-  experienceType: "career",
-  analyzedAt: "2026-04-09T14:30:00Z",
-  isBookmarked: true,
-  overallConfidence: "sufficient",
-  summary:
-    "6개월간 카카오에서 프론트엔드 인턴으로 근무하며, 신규 기능 개발과 성능 최적화를 주도한 경험입니다. 실무 환경에서의 협업 역량과 기술 성장이 잘 드러납니다.",
-  incidents: [
-    {
-      id: "inc-1",
-      situation: "주요 페이지 렌더링 속도가 3초 이상으로 사용자 이탈률이 증가하는 상황",
+  result: {
+    status: "completed",
+    itemName: "카카오 프론트엔드 인턴십",
+    itemType: "career",
+    briefSummary:
+      "6개월간 카카오에서 프론트엔드 인턴으로 근무하며, 신규 기능 개발과 성능 최적화를 주도한 경험입니다. 실무 환경에서의 협업 역량과 기술 성장이 잘 드러납니다.",
+    deepAnalysis: {
+      careerValue:
+        "실제 트래픽이 많은 서비스에서 성능 개선을 주도한 경험은 중·대형 서비스 프론트엔드 직무에 직접적인 가치를 가집니다.",
+      strengths: [
+        "성능 병목을 정량적으로 측정하고 개선한 경험",
+        "재사용 가능한 컴포넌트 라이브러리를 설계한 시스템적 사고",
+        "코드 리뷰 문화에 적극 참여하며 협업한 이력",
+      ],
+      limitations: [
+        "협업 과정에서 의견 충돌을 조율한 구체적 사례가 부족",
+        "성능 최적화 후 사용자 행동 변화에 대한 후속 분석 미기재",
+      ],
+      applicableRoles: ["프론트엔드 엔지니어", "UX 엔지니어", "퍼포먼스 엔지니어"],
+      marketValue:
+        "성능 최적화·아키텍처 설계 경험은 시니어 주니어 사이의 차별 포인트로 작용해 IT 대기업 및 스타트업 모두에서 가산점이 됩니다.",
+    },
+    starFormat: {
+      title: "주요 페이지 성능 40% 개선",
+      situation: "주요 페이지 렌더링 속도가 3초 이상으로 사용자 이탈률이 증가하던 상황",
+      task: "성능 병목을 식별하고 페이지 로딩 시간을 단축해야 함",
       action: "React 프로파일러로 병목 지점을 분석하고, 코드 스플리팅과 메모이제이션을 적용",
-      result: "렌더링 속도 40% 개선, 이탈률 15% 감소",
-      evidence: {
-        quote: "주요 페이지 성능 40% 개선이라는 구체적 성과를 달성했습니다.",
-        sourceField: "핵심 성과",
-        experienceTitle: "카카오 프론트엔드 인턴십",
-      },
+      result: "렌더링 속도 40% 개선, 사용자 이탈률 15% 감소",
     },
-    {
-      id: "inc-2",
-      situation: "신규 대시보드 기능 개발 요청이 들어왔으나, 기존 컴포넌트 구조로는 확장이 어려운 상황",
-      action: "컴포넌트 아키텍처를 재설계하고, 재사용 가능한 공통 컴포넌트 라이브러리를 구축",
-      result: "이후 기능 개발 시간 30% 단축, 코드 리뷰에서 긍정적 피드백",
-      evidence: {
-        quote: "프론트엔드 개발자로서 신규 기능 개발과 코드 리뷰 참여",
-        sourceField: "내 역할/기여도",
-        experienceTitle: "카카오 프론트엔드 인턴십",
-      },
-    },
-  ],
-  roleInterpretations: [
-    {
-      incidentId: "inc-1",
-      role: {
-        responsibility: "페이지 성능 최적화 전담",
-        scope: "프론트엔드 팀 내 성능 개선 태스크",
-        decisionAuthority: "최적화 방법론 선택 및 적용 범위 결정",
-      },
-      action: { type: "문제 해결", description: "프로파일링 기반 체계적 성능 분석 후 최적화 적용" },
-      performance: {
-        metric: "렌더링 속도 40% 개선",
-        output: "최적화된 코드베이스",
-        change: "사용자 이탈률 15% 감소",
-      },
-    },
-    {
-      incidentId: "inc-2",
-      role: {
-        responsibility: "공통 컴포넌트 라이브러리 설계",
-        scope: "팀 전체 프론트엔드 아키텍처",
-        decisionAuthority: "컴포넌트 구조 및 API 설계",
-      },
-      action: { type: "설계/구축", description: "재사용 가능한 컴포넌트 아키텍처 설계 및 구현" },
-      performance: {
-        metric: "기능 개발 시간 30% 단축",
-        output: "공통 컴포넌트 라이브러리",
-        change: "팀 생산성 향상",
-      },
-    },
-  ],
-  keywords: [
-    {
-      id: "k-1",
-      label: "프론트엔드 개발",
-      category: "skill",
-      confidence: "sufficient",
-      evidences: [
-        { quote: "React 프로파일러로 병목 지점을 분석하고, 코드 스플리팅과 메모이제이션을 적용", experienceTitle: "카카오 프론트엔드 인턴십" },
+    itemDiagnosis: {
+      oneLineVerdict:
+        "정량적 성과는 매우 강하지만, 협업 맥락의 근거가 부족해 ‘기술 단독’ 이미지로 비칠 수 있어요.",
+      weaknesses: [
+        {
+          id: "w-1",
+          category: "협업 맥락",
+          severity: "high",
+          title: "팀과의 의사결정 과정이 보이지 않음",
+          diagnosis: "성능 개선의 결정과 실행이 본인 단독으로만 서술돼 있어요.",
+          evidence: "‘프로파일링 후 최적화를 적용’ 외에 팀과의 논의 흔적이 없음",
+          impact: "협업 역량을 묻는 면접에서 이 경험만으로는 답하기 어려울 수 있어요.",
+          priorityAction: "코드 리뷰·팀 회의에서 의견을 조율한 사례를 1~2줄 추가",
+          improvementExample:
+            "‘리더와 함께 우선순위 합의 → 팀 코드 리뷰에서 메모이제이션 전략 합의 → 단계적 배포’와 같이 의사결정 흐름을 적어보세요.",
+        },
+        {
+          id: "w-2",
+          category: "후속 분석",
+          severity: "medium",
+          title: "개선 후 사용자 행동 변화에 대한 해석 부족",
+          diagnosis: "이탈률 15% 감소가 어떤 사용자 행동 변화로 이어졌는지에 대한 서술이 없어요.",
+          evidence: "수치만 기재되어 있고 해석이 빠져 있음",
+          impact: "성과의 의미가 ‘숫자 자랑’에 머무를 수 있음",
+          priorityAction: "이탈률 감소 → 전환률·세션 길이에 미친 영향 한 줄 추가",
+          improvementExample:
+            "‘이탈률 15%↓ → 평균 세션 길이 1.4배 증가, 결제 페이지 진입률 8%↑’",
+        },
       ],
+      missingElements: ["팀 규모 및 본인 포지션", "성능 개선 후 모니터링 체계"],
+      rewriteSuggestion:
+        "‘React 프로파일러로 LCP 3.2초의 원인을 식별하고, 팀 리뷰를 거쳐 코드 스플리팅·메모이제이션을 단계적으로 적용. 결과적으로 LCP 40%↓, 이탈률 15%↓, 결제 페이지 진입률 8%↑를 달성했습니다.’",
     },
-    {
-      id: "k-2",
-      label: "문제 해결",
-      category: "skill",
-      confidence: "sufficient",
-      evidences: [
-        { quote: "렌더링 속도가 3초 이상이라는 문제를 체계적으로 분석하여 해결", experienceTitle: "카카오 프론트엔드 인턴십" },
-      ],
+    synergyRecommendations: [
+      {
+        priority: "high",
+        category: "포트폴리오",
+        name: "성능 최적화 사례 기술 블로그 정리",
+        reason: "구체적 수치와 방법론이 있어 설득력 있는 콘텐츠가 됩니다.",
+        expectedEffect: "기술 커뮤니케이션 역량 증명 + 포트폴리오 강화",
+        estimatedDuration: "2주",
+      },
+      {
+        priority: "medium",
+        category: "오픈소스",
+        name: "오픈소스 성능 PR 기여",
+        reason: "실무 경험을 외부에서 검증할 수 있는 좋은 방법입니다.",
+        expectedEffect: "기술 역량의 외부 검증 + 커뮤니티 노출",
+        estimatedDuration: "1개월",
+      },
+      {
+        priority: "low",
+        category: "협업",
+        name: "팀 회고 기록 정리",
+        reason: "협업 사례가 부족한 점을 보완할 수 있습니다.",
+        expectedEffect: "협업 역량 근거 강화",
+        estimatedDuration: "1주",
+      },
+    ],
+    actionPlan: {
+      shortTerm: "코드 리뷰·팀 회의 사례를 본 이력의 ‘내 역할’에 1~2줄 보완",
+      midTerm: "기술 블로그에 성능 최적화 회고 글 1편 발행",
+      longTerm: "오픈소스 성능 관련 PR 기여로 외부 검증 이력 확보",
     },
-    {
-      id: "k-3",
-      label: "자기주도성",
-      category: "work_style",
-      confidence: "partial",
-      evidences: [
-        { quote: "컴포넌트 아키텍처를 재설계하고, 재사용 가능한 공통 컴포넌트 라이브러리를 구축", experienceTitle: "카카오 프론트엔드 인턴십" },
-      ],
-    },
-    {
-      id: "k-4",
-      label: "성장 지향",
-      category: "value",
-      confidence: "partial",
-      evidences: [
-        { quote: "인턴 기간 동안 성능 최적화와 아키텍처 설계까지 역할을 확장", experienceTitle: "카카오 프론트엔드 인턴십" },
-      ],
-    },
-  ],
-  starSummaries: [
-    {
-      incidentId: "inc-1",
-      situation: "주요 페이지 렌더링 속도가 3초 이상으로 사용자 이탈률 증가",
-      task: "페이지 성능 최적화를 통해 이탈률 감소",
-      action: "React 프로파일러 분석 → 코드 스플리팅 + 메모이제이션 적용",
-      result: "렌더링 속도 40% 개선, 이탈률 15% 감소",
-      missingFields: [],
-    },
-    {
-      incidentId: "inc-2",
-      situation: "기존 컴포넌트 구조로는 신규 기능 확장이 어려운 상황",
-      task: "확장 가능한 컴포넌트 아키텍처 구축",
-      action: "컴포넌트 라이브러리 재설계 및 구현",
-      result: "기능 개발 시간 30% 단축",
-      missingFields: [],
-    },
-  ],
-  recommendations: [
-    {
-      id: "rec-1",
-      activity: "성능 최적화 사례를 기술 블로그로 정리",
-      reason: "구체적 수치와 방법론이 있어 설득력 있는 콘텐츠가 될 수 있습니다.",
-      evidence: { quote: "렌더링 속도 40% 개선", experienceTitle: "카카오 프론트엔드 인턴십" },
-      expectedEffect: "기술 커뮤니케이션 역량 증명 + 포트폴리오 강화",
-      type: "expand",
-    },
-    {
-      id: "rec-2",
-      activity: "오픈소스 프로젝트에 성능 관련 PR 기여",
-      reason: "실무 성능 최적화 경험을 오픈소스 기여로 확장하면 역량의 깊이를 증명할 수 있습니다.",
-      evidence: { quote: "코드 스플리팅과 메모이제이션을 적용", experienceTitle: "카카오 프론트엔드 인턴십" },
-      expectedEffect: "기술 역량의 외부 검증 + 커뮤니티 참여 이력",
-      type: "expand",
-    },
-    {
-      id: "rec-3",
-      activity: "협업 과정에서의 갈등 해결 사례 보완",
-      reason: "기술적 성과는 충분하지만, 협업 맥락에서의 소통 사례가 부족합니다.",
-      evidence: { quote: "코드 리뷰에서 긍정적 피드백", experienceTitle: "카카오 프론트엔드 인턴십" },
-      expectedEffect: "협업 역량 근거 강화",
-      type: "supplement",
-    },
-  ],
-  improvementGuides: [
-    {
-      reason: "협업 과정에서의 구체적인 소통 사례가 부족합니다.",
-      suggestion: "코드 리뷰나 팀 미팅에서 의견 조율한 사례를 추가해보세요.",
-      targetField: "내 역할/기여도",
-    },
-    {
-      reason: "인턴 기간 동안의 학습 과정이 명시되어 있지 않습니다.",
-      suggestion: "새로운 기술을 습득한 과정이나 멘토링 경험을 기록해보세요.",
-    },
-  ],
-  reusableExpressions: [
-    { type: "30s_summary", label: "30초 요약", text: "카카오에서 6개월간 프론트엔드 인턴으로 근무하며, 주요 페이지 성능을 40% 개선하고 공통 컴포넌트 라이브러리를 구축하여 팀 생산성을 30% 향상시켰습니다." },
-    { type: "performance", label: "성과 중심", text: "React 프로파일러 기반 체계적 분석으로 렌더링 속도 40%를 개선했고, 재사용 가능한 컴포넌트 아키텍처를 설계하여 이후 기능 개발 시간을 30% 단축했습니다." },
-    { type: "problem_solving", label: "문제 해결", text: "페이지 렌더링 3초 초과 문제를 프로파일링으로 진단하고, 코드 스플리팅과 메모이제이션을 적용해 속도 40% 개선과 이탈률 15% 감소를 이끌어냈습니다." },
-    { type: "collaboration", label: "협업", text: "프론트엔드 팀의 코드 리뷰 문화에 적극 참여하며, 공통 컴포넌트 라이브러리를 제안·구축하여 팀 전체의 개발 효율성을 높였습니다." },
-    { type: "learning", label: "학습/성장", text: "인턴 기간 동안 성능 최적화와 컴포넌트 아키텍처 설계까지 역할을 확장하며, 실무 프론트엔드 개발의 전반적인 역량을 성장시켰습니다." },
-  ],
-  relatedExperiences: [
-    {
-      experienceId: "exp-v2-3",
-      title: "캡스톤 디자인 프로젝트",
-      reason: "같은 프론트엔드 기술 스택을 활용한 프로젝트로, 기술 성장 스토리를 연결할 수 있습니다.",
-      connectionType: "temporal_growth",
-    },
-    {
-      experienceId: "exp-v2-4",
-      title: "오픈소스 컨트리뷰션",
-      reason: "개인 프로젝트에서 실무로 확장된 역할 변화를 보여줄 수 있습니다.",
-      connectionType: "role_expansion",
-    },
-  ],
+    missingInfoWarning:
+      "팀 규모/직책, 모니터링 체계 등 일부 맥락 정보가 누락되어 있어 추가 입력 시 정확도가 더 높아져요.",
+  },
 };
 
 // ─── Comprehensive Analysis ─────────────────────────────────

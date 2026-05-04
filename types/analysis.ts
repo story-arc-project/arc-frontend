@@ -92,70 +92,94 @@ export const connectionTypeLabel: Record<ConnectionType, string> = {
 };
 
 // ─── Individual Analysis Detail ─────────────────────────────
+// 백엔드 응답: { id, status, experience_id, result }
+// result 안에 실제 분석 결과 트리가 들어 있다.
 
-export interface IncidentCard {
-  id: string;
-  situation: string;
-  action: string;
-  result: string;
-  evidence: Evidence;
+export type WeaknessSeverity = "high" | "medium" | "low";
+export type SynergyPriority = "high" | "medium" | "low";
+
+export interface IndividualDeepAnalysis {
+  careerValue: string;
+  strengths: string[];
+  limitations: string[];
+  applicableRoles: string[];
+  marketValue: string;
 }
 
-export interface RoleInterpretation {
-  incidentId: string;
-  role: { responsibility: string; scope: string; decisionAuthority: string };
-  action: { type: string; description: string };
-  performance: { metric: string; output: string; change: string; evidenceLink?: string };
-}
-
-export interface StarSummary {
-  incidentId: string;
+export interface IndividualStarFormat {
+  title: string;
   situation: string;
   task: string;
   action: string;
   result: string;
-  missingFields: string[];
 }
 
-export interface ReusableExpression {
-  type: "30s_summary" | "2min_summary" | "performance" | "problem_solving" | "collaboration" | "learning";
-  label: string;
-  text: string;
-}
-
-export interface RelatedExperience {
-  experienceId: string;
+export interface IndividualWeakness {
+  id: string;
+  category: string;
+  severity: WeaknessSeverity;
   title: string;
+  diagnosis: string;
+  evidence: string;
+  impact: string;
+  priorityAction: string;
+  improvementExample: string;
+}
+
+export interface IndividualItemDiagnosis {
+  oneLineVerdict: string;
+  weaknesses: IndividualWeakness[];
+  missingElements: string[];
+  rewriteSuggestion: string;
+}
+
+export interface IndividualSynergyRecommendation {
+  priority: SynergyPriority;
+  category: string;
+  name: string;
   reason: string;
-  connectionType: ConnectionType;
+  expectedEffect: string;
+  estimatedDuration: string;
+}
+
+export interface IndividualActionPlan {
+  shortTerm: string;
+  midTerm: string;
+  longTerm: string;
+}
+
+export interface IndividualAnalysisResultBody {
+  status: string;
+  itemName: string;
+  itemType: string;
+  briefSummary: string;
+  deepAnalysis: IndividualDeepAnalysis;
+  starFormat: IndividualStarFormat;
+  itemDiagnosis: IndividualItemDiagnosis;
+  synergyRecommendations: IndividualSynergyRecommendation[];
+  actionPlan: IndividualActionPlan;
+  missingInfoWarning: string;
 }
 
 export interface IndividualAnalysisResult {
   id: string;
+  status: AnalysisStatus;
   experienceId: string;
-  experienceTitle: string;
-  experienceType: string;
-  analyzedAt: string;
-  isBookmarked: boolean;
-  overallConfidence: ConfidenceLevel;
-  // A: Summary + Incidents
-  summary: string;
-  incidents: IncidentCard[];
-  // B: Role/Action/Performance
-  roleInterpretations: RoleInterpretation[];
-  // C: Keywords Top K
-  keywords: Keyword[];
-  // D: STAR Summary
-  starSummaries: StarSummary[];
-  // E: Recommendations
-  recommendations: ActivityRecommendation[];
-  // F: Confidence + Guides
-  improvementGuides: ImprovementGuide[];
-  // G: Reusable Expressions
-  reusableExpressions: ReusableExpression[];
-  // H: Related Experiences
-  relatedExperiences: RelatedExperience[];
+  result: IndividualAnalysisResultBody;
 }
+
+// 진단/시너지 라벨
+export const weaknessSeverityLabel: Record<WeaknessSeverity, string> = {
+  high: "심각",
+  medium: "보통",
+  low: "경미",
+};
+
+export const synergyPriorityLabel: Record<SynergyPriority, string> = {
+  high: "강력 추천",
+  medium: "추천",
+  low: "참고",
+};
 
 // ─── Comprehensive Analysis Detail ──────────────────────────
 
