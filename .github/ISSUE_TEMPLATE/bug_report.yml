@@ -1,0 +1,44 @@
+name: "🐛 Bug Report"
+description: 버그를 발견했어요
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 📝 버그 내용
+      description: |
+        Given–When–Then 형태로 적어주시면 파악하기 좋아요.
+      placeholder: |
+        Given: 로그인된 상태에서
+        When: 저장 버튼을 클릭했을 때
+        Then: 500 에러가 발생해요
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: ✅ 기대되는 동작
+      description: 어떻게 동작해야 했나요? (선택)
+      placeholder: 저장이 정상적으로 완료되고 토스트가 나타나야 해요
+    validations:
+      required: false
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: ❌ 실제 동작
+      description: 실제로 어떻게 동작했나요? (선택)
+      placeholder: 저장 버튼 클릭 후 화면이 멈추고 콘솔에 500 에러가 남아요
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: 📷 스크린샷
+      description: 이미지를 아래 입력란에 드래그&드롭하면 자동으로 업로드돼요. (선택)
+      placeholder: 여기에 이미지를 드래그&드롭하세요
+    validations:
+      required: false

@@ -1,0 +1,62 @@
+name: "✨ Feature Request"
+description: 새로운 기능을 추가하거나 기존 기능(성능 포함)을 개선할 때 사용해주세요
+title: "[Feature] "
+labels: ["feat"]
+body:
+  - type: checkboxes
+    id: type
+    attributes:
+      label: "#️⃣ 요청 유형"
+      description: 해당되는 항목을 선택해주세요. (복수 선택 가능)
+      options:
+        - label: 새로운 기능 추가
+        - label: 기존 기능 개선
+        - label: 성능 개선
+
+  - type: textarea
+    id: what
+    attributes:
+      label: "#️⃣ 어떤 기능인가요?"
+      description: 추가하려는 기능 또는 개선하려는 부분에 대해 간결하게 설명해주세요.
+      placeholder: 예) 경험 기록 카드에 태그 자동 추천 기능을 추가하고 싶어요
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: "#️⃣ 이 기능이 필요한 이유는 무엇인가요?"
+      description: 이 기능이 왜 필요한지, 또는 개선/성능 향상이 필요한 이유에 대해 설명해주세요.
+      placeholder: 예) 사용자가 태그를 직접 떠올려 입력해야 해서 기록이 끊겨요
+    validations:
+      required: true
+
+  - type: textarea
+    id: how
+    attributes:
+      label: 🛠️ 구현 방안
+      description: 이 기능을 어떻게 구현할 수 있을지에 대한 아이디어를 간단히 설명해주세요. (선택)
+      placeholder: 예) 입력 텍스트를 분석해 후보 태그 3개를 칩으로 보여주는 방식
+    validations:
+      required: false
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: ✅ 작업 상세 내용
+      description: 세부 작업을 체크리스트로 적어주세요. (선택)
+      value: |
+        - [ ] TODO
+        - [ ] TODO
+        - [ ] TODO
+    validations:
+      required: false
+
+  - type: textarea
+    id: references
+    attributes:
+      label: 📎 참고할만한 자료
+      description: 관련 문서, 스크린샷, 또는 예시 등이 있다면 첨부해주세요. (선택)
+      placeholder: 링크를 붙이거나 이미지를 드래그&드롭하세요
+    validations:
+      required: false
