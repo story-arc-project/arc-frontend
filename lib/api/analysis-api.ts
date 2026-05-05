@@ -7,8 +7,26 @@ import type {
   AnalysisType,
   AnalysisStatus,
   IndividualAnalysisResult,
+  IndividualAnalysisResultBody,
+  IndividualWeakness,
+  IndividualSynergyRecommendation,
+  IndividualStarFormat,
+  IndividualActionPlan,
+  WeaknessSeverity,
+  SynergyPriority,
   ComprehensiveAnalysisResult,
+  ComprehensiveWeakness,
+  SynergyCombination,
+  ContentQualityIssue,
+  JobRecommendation,
   KeywordAnalysisResult,
+  KeywordDefinition,
+  KeywordCoverage,
+  KeywordEvidence,
+  MatchedExperience,
+  KeywordMatchedGroup,
+  KeywordStoryline,
+  KeywordSpecificRecommendation,
   KeywordSuggestion,
   BookmarkedSnapshot,
   SelectableExperience,
@@ -131,111 +149,362 @@ function mapBookmark(dto: unknown): BookmarkedSnapshot {
   };
 }
 
-/**
- * detail 응답은 리치 타입과 완전히 일치한다는 보장이 없다.
- * 프런트에서 사용하는 최상위 필드만 강제로 채우고, 중첩 섹션은 배열 기본값으로 방어한다.
- */
-function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
+function asWeaknessSeverity(value: unknown): WeaknessSeverity {
+  return value === "high" || value === "medium" || value === "low" ? value : "medium";
+}
+
+function asSynergyPriority(value: unknown): SynergyPriority {
+  return value === "high" || value === "medium" || value === "low" ? value : "medium";
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+function mapIndividualWeakness(dto: unknown, index: number): IndividualWeakness {
   const r = asRecord(dto);
-  const result = asRecord(r.result);
   return {
-    id: asString(r.id),
-    experienceId: asString(r.experienceId ?? r.experience_id),
-    experienceTitle: asString(r.experienceTitle ?? r.experience_title),
-    experienceType: asString(r.experienceType ?? r.experience_type),
-    analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
-    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
-    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
-    summary: asString(r.summary ?? r.analysis_summary ?? result.summary),
-    incidents: asArray(r.incidents) as IndividualAnalysisResult["incidents"],
-    roleInterpretations: asArray(
-      r.roleInterpretations ?? r.role_interpretations,
-    ) as IndividualAnalysisResult["roleInterpretations"],
-    keywords: asArray(r.keywords) as IndividualAnalysisResult["keywords"],
-    starSummaries: asArray(
-      r.starSummaries ?? r.star_summaries,
-    ) as IndividualAnalysisResult["starSummaries"],
-    recommendations: asArray(r.recommendations) as IndividualAnalysisResult["recommendations"],
-    improvementGuides: asArray(
-      r.improvementGuides ?? r.improvement_guides,
-    ) as IndividualAnalysisResult["improvementGuides"],
-    reusableExpressions: asArray(
-      r.reusableExpressions ?? r.reusable_expressions,
-    ) as IndividualAnalysisResult["reusableExpressions"],
-    relatedExperiences: asArray(
-      r.relatedExperiences ?? r.related_experiences,
-    ) as IndividualAnalysisResult["relatedExperiences"],
+    id: asString(r.id, `w-${index}`),
+    category: asString(r.category),
+    severity: asWeaknessSeverity(r.severity),
+    title: asString(r.title),
+    diagnosis: asString(r.diagnosis),
+    evidence: asString(r.evidence),
+    impact: asString(r.impact),
+    priorityAction: asString(r.priorityAction ?? r.priority_action),
+    improvementExample: asString(r.improvementExample ?? r.improvement_example),
   };
 }
 
+function mapComprehensiveWeakness(dto: unknown, index: number): ComprehensiveWeakness {
+  const r = asRecord(dto);
+  return {
+    id: asString(r.id, `w-${index}`),
+    category: asString(r.category),
+    severity: asWeaknessSeverity(r.severity),
+    title: asString(r.title),
+    diagnosis: asString(r.diagnosis),
+    evidence: asString(r.evidence),
+    impact: asString(r.impact),
+    priorityAction: asString(r.priorityAction ?? r.priority_action),
+  };
+}
+
+function mapSynergy(dto: unknown): IndividualSynergyRecommendation {
+  const r = asRecord(dto);
+  return {
+    priority: asSynergyPriority(r.priority),
+    category: asString(r.category),
+    name: asString(r.name),
+    reason: asString(r.reason),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+    estimatedDuration: asString(r.estimatedDuration ?? r.estimated_duration),
+  };
+}
+
+function mapStarFormat(dto: unknown): IndividualStarFormat {
+  const r = asRecord(dto);
+  return {
+    title: asString(r.title),
+    situation: asString(r.situation ?? r.S ?? r.s),
+    task: asString(r.task ?? r.T ?? r.t),
+    action: asString(r.action ?? r.A ?? r.a),
+    result: asString(r.result ?? r.R ?? r.r),
+  };
+}
+
+/**
+ * action_plan 키는 백엔드 표기에 따라 short_term/mid_term/long_term 또는 한글 키일 수 있다.
+ */
+function mapActionPlan(dto: unknown): IndividualActionPlan {
+  const r = asRecord(dto);
+  return {
+    shortTerm: asString(r.shortTerm ?? r.short_term ?? r["단기"]),
+    midTerm: asString(r.midTerm ?? r.mid_term ?? r["중기"]),
+    longTerm: asString(r.longTerm ?? r.long_term ?? r["장기"]),
+  };
+}
+
+/**
+ * 백엔드 응답 형태:
+ * { id, status, experience_id, result: { ... } }
+ *
+ * 응답이 flat 으로 내려오는 경우(`result` wrapper 부재)도 동일하게 파싱한다.
+ */
+function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
+  const r = asRecord(dto);
+  const body = r.result && typeof r.result === "object" ? asRecord(r.result) : r;
+  const deep = asRecord(body.deepAnalysis ?? body.deep_analysis);
+  const diagnosis = asRecord(body.itemDiagnosis ?? body.item_diagnosis);
+
+  const result: IndividualAnalysisResultBody = {
+    status: asString(body.status ?? r.status),
+    itemName: asString(body.itemName ?? body.item_name),
+    itemType: asString(body.itemType ?? body.item_type),
+    briefSummary: asString(body.briefSummary ?? body.brief_summary),
+    deepAnalysis: {
+      careerValue: asString(deep.careerValue ?? deep.career_value),
+      strengths: asStringArray(deep.strengths),
+      limitations: asStringArray(deep.limitations),
+      applicableRoles: asStringArray(deep.applicableRoles ?? deep.applicable_roles),
+      marketValue: asString(deep.marketValue ?? deep.market_value),
+    },
+    starFormat: mapStarFormat(body.starFormat ?? body.star_format),
+    itemDiagnosis: {
+      oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
+      weaknesses: asArray(diagnosis.weaknesses).map((w, i) => mapIndividualWeakness(w, i)),
+      missingElements: asStringArray(diagnosis.missingElements ?? diagnosis.missing_elements),
+      rewriteSuggestion: asString(diagnosis.rewriteSuggestion ?? diagnosis.rewrite_suggestion),
+    },
+    synergyRecommendations: asArray(
+      body.synergyRecommendations ?? body.synergy_recommendations,
+    ).map(mapSynergy),
+    actionPlan: mapActionPlan(body.actionPlan ?? body.action_plan),
+    missingInfoWarning: asString(body.missingInfoWarning ?? body.missing_info_warning),
+  };
+
+  return {
+    id: asString(r.id ?? body.id),
+    status: mapStatus(r.status ?? body.status),
+    experienceId: asString(r.experienceId ?? r.experience_id ?? body.experience_id),
+    result,
+  };
+}
+
+function mapSynergyCombination(dto: unknown): SynergyCombination {
+  const r = asRecord(dto);
+  return {
+    combinationTitle: asString(r.combinationTitle ?? r.combination_title),
+    items: asStringArray(r.items),
+    synergyReason: asString(r.synergyReason ?? r.synergy_reason),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+    applicableRoles: asStringArray(r.applicableRoles ?? r.applicable_roles),
+  };
+}
+
+function mapContentQualityIssue(dto: unknown): ContentQualityIssue {
+  const r = asRecord(dto);
+  return {
+    item: asString(r.item),
+    issue: asString(r.issue),
+    improvementHint: asString(r.improvementHint ?? r.improvement_hint),
+  };
+}
+
+function mapJobRecommendation(dto: unknown): JobRecommendation {
+  const r = asRecord(dto);
+  return {
+    company: asString(r.company),
+    role: asString(r.role),
+    deadline: asString(r.deadline),
+    whyMatch: asString(r.whyMatch ?? r.why_match),
+    url: asString(r.url),
+  };
+}
+
+/**
+ * 종합 분석 응답 형태 (prefix 없는 평탄형, result wrapper도 방어):
+ * { status, user_school, user_department, brief_summary, detailed_summary,
+ *   keyword_clustering, experience_insights, synergy_combinations[],
+ *   additional_recommendations, resume_star_format[], action_plan,
+ *   critical_diagnosis, valid_job_recommendations[], missing_info_warning }
+ */
 function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
   const r = asRecord(dto);
-  const confidenceGuide = asRecord(r.confidenceGuide ?? r.confidence_guide);
+  const body = r.result && typeof r.result === "object" ? asRecord(r.result) : r;
+
+  const clustering = asRecord(body.keywordClustering ?? body.keyword_clustering);
+  const insights = asRecord(body.experienceInsights ?? body.experience_insights);
+  const additional = asRecord(body.additionalRecommendations ?? body.additional_recommendations);
+  const diagnosis = asRecord(body.criticalDiagnosis ?? body.critical_diagnosis);
+
   return {
-    id: asString(r.id),
-    title: asString(r.title),
-    analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
-    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
-    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
-    selectedExperienceIds: asArray<string>(
-      r.selectedExperienceIds ?? r.selected_experience_ids ?? r.experience_ids,
-    ),
-    experienceSummaries: asArray(
-      r.experienceSummaries ?? r.experience_summaries,
-    ) as ComprehensiveAnalysisResult["experienceSummaries"],
-    keywords: asArray(r.keywords) as ComprehensiveAnalysisResult["keywords"],
-    connections: asArray(r.connections) as ComprehensiveAnalysisResult["connections"],
-    storylines: asArray(r.storylines) as ComprehensiveAnalysisResult["storylines"],
-    scenarios: asArray(r.scenarios) as ComprehensiveAnalysisResult["scenarios"],
-    commonRecommendations: asArray(
-      r.commonRecommendations ?? r.common_recommendations,
-    ) as ComprehensiveAnalysisResult["commonRecommendations"],
-    scenarioRecommendations: asArray(
-      r.scenarioRecommendations ?? r.scenario_recommendations,
-    ) as ComprehensiveAnalysisResult["scenarioRecommendations"],
-    confidenceGuide: {
-      overallConfidence: asConfidence(
-        confidenceGuide.overallConfidence ?? confidenceGuide.overall_confidence,
+    id: asString(r.id ?? body.id),
+    status: mapStatus(r.status ?? body.status),
+    userSchool: asString(body.userSchool ?? body.user_school),
+    userDepartment: asString(body.userDepartment ?? body.user_department),
+    briefSummary: asString(body.briefSummary ?? body.brief_summary),
+    detailedSummary: asString(body.detailedSummary ?? body.detailed_summary),
+    keywordClustering: {
+      personalityTendency: asStringArray(
+        clustering.personalityTendency ?? clustering.personality_tendency,
       ),
-      improvementGuides: asArray(
-        confidenceGuide.improvementGuides ?? confidenceGuide.improvement_guides,
-      ) as ComprehensiveAnalysisResult["confidenceGuide"]["improvementGuides"],
+      coreCompetency: asStringArray(clustering.coreCompetency ?? clustering.core_competency),
+      jobIndustry: asStringArray(clustering.jobIndustry ?? clustering.job_industry),
     },
+    experienceInsights: {
+      motivation: asString(insights.motivation),
+      learningPoints: asString(insights.learningPoints ?? insights.learning_points),
+    },
+    synergyCombinations: asArray(
+      body.synergyCombinations ?? body.synergy_combinations,
+    ).map(mapSynergyCombination),
+    additionalRecommendations: {
+      certifications: asStringArray(additional.certifications),
+      clubsAndSocieties: asStringArray(
+        additional.clubsAndSocieties ?? additional.clubs_and_societies,
+      ),
+      projectsAndContests: asStringArray(
+        additional.projectsAndContests ?? additional.projects_and_contests,
+      ),
+    },
+    resumeStarFormat: asArray(
+      body.resumeStarFormat ?? body.resume_star_format,
+    ).map(mapStarFormat),
+    actionPlan: mapActionPlan(body.actionPlan ?? body.action_plan),
+    criticalDiagnosis: {
+      oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
+      weaknesses: asArray(diagnosis.weaknesses).map((w, i) => mapComprehensiveWeakness(w, i)),
+      missingExperienceTypes: asStringArray(
+        diagnosis.missingExperienceTypes ?? diagnosis.missing_experience_types,
+      ),
+      contentQualityIssues: asArray(
+        diagnosis.contentQualityIssues ?? diagnosis.content_quality_issues,
+      ).map(mapContentQualityIssue),
+      competitorGap: asString(diagnosis.competitorGap ?? diagnosis.competitor_gap),
+    },
+    validJobRecommendations: asArray(
+      body.validJobRecommendations ?? body.valid_job_recommendations,
+    ).map(mapJobRecommendation),
+    missingInfoWarning: asString(body.missingInfoWarning ?? body.missing_info_warning),
+  };
+}
+
+function mapKeywordDefinition(dto: unknown): KeywordDefinition {
+  const r = asRecord(dto);
+  return {
+    keyword: asString(r.keyword),
+    definition: asString(r.definition),
+    synonyms: asStringArray(r.synonyms),
+    complianceCriteria: asStringArray(r.complianceCriteria ?? r.compliance_criteria),
+  };
+}
+
+function mapKeywordCoverage(dto: unknown): KeywordCoverage {
+  const r = asRecord(dto);
+  return {
+    keyword: asString(r.keyword),
+    relatedCount: asNumber(r.relatedCount ?? r.related_count),
+    totalCount: asNumber(r.totalCount ?? r.total_count),
+    coveragePercent: asNumber(r.coveragePercent ?? r.coverage_percent),
+  };
+}
+
+function mapKeywordEvidence(dto: unknown): KeywordEvidence {
+  const r = asRecord(dto);
+  return {
+    type: asString(r.type),
+    content: asString(r.content),
+    sourceQuote: asString(r.sourceQuote ?? r.source_quote),
+  };
+}
+
+function mapMatchedExperience(dto: unknown): MatchedExperience {
+  const r = asRecord(dto);
+  return {
+    careerTitle: asString(r.careerTitle ?? r.career_title),
+    organization: asString(r.organization),
+    period: asString(r.period),
+    relevance: asString(r.relevance),
+    evidence: asArray(r.evidence).map(mapKeywordEvidence),
+    matchedCriteria: asStringArray(r.matchedCriteria ?? r.matched_criteria),
+    confidence: asString(r.confidence),
+    confidenceReason: asString(r.confidenceReason ?? r.confidence_reason),
+  };
+}
+
+function mapKeywordMatchedGroup(dto: unknown): KeywordMatchedGroup {
+  const r = asRecord(dto);
+  return {
+    keyword: asString(r.keyword),
+    experiences: asArray(r.experiences).map(mapMatchedExperience),
+  };
+}
+
+function mapKeywordStoryline(dto: unknown): KeywordStoryline {
+  const r = asRecord(dto);
+  const structure = asRecord(r.structure);
+  const used = asRecord(r.usedExperiences ?? r.used_experiences);
+  return {
+    keyword: asString(r.keyword),
+    storylineTitle: asString(r.storylineTitle ?? r.storyline_title),
+    structure: {
+      start: asString(structure.start),
+      development: asString(structure.development),
+      evidence: asString(structure.evidence),
+      growth: asString(structure.growth),
+      destination: asString(structure.destination),
+    },
+    usedExperiences: {
+      core: asStringArray(used.core),
+      supporting: asStringArray(used.supporting),
+    },
+    keyQuotes: asStringArray(r.keyQuotes ?? r.key_quotes),
+  };
+}
+
+/**
+ * 보강 가이드의 항목들은 백엔드 확정 형태가 미정이라 string 또는 객체일 수 있다.
+ * 객체일 경우 가장 의미 있는 텍스트 필드를 추려 문자열로 평탄화한다.
+ */
+function coerceImprovementText(value: unknown): string {
+  if (typeof value === "string") return value;
+  const r = asRecord(value);
+  return asString(
+    r.description ??
+      r.text ??
+      r.content ??
+      r.suggestion ??
+      r.reason ??
+      r.recommendation,
+  );
+}
+
+function mapKeywordSpecificRecommendation(dto: unknown): KeywordSpecificRecommendation {
+  if (typeof dto === "string") return { keyword: "", description: dto };
+  const r = asRecord(dto);
+  return {
+    keyword: asString(r.keyword),
+    description: coerceImprovementText(r.recommendation ?? r.description ?? r),
   };
 }
 
 function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
   const r = asRecord(dto);
+  // 응답이 result wrapper로 감싸져 올 가능성도 방어한다.
+  const body = r.result && typeof r.result === "object" ? asRecord(r.result) : r;
+  const guide = asRecord(body.improvementGuide ?? body.improvement_guide);
+  const selection = asRecord(body.selectionCriteria ?? body.selection_criteria);
+
   return {
-    id: asString(r.id),
-    title: asString(r.title),
-    analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
-    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
-    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
-    selectedKeywords: asArray<string>(
-      r.selectedKeywords ?? r.selected_keywords ?? r.keywords,
-    ),
+    id: asString(r.id ?? body.id),
+    status: mapStatus(r.status ?? body.status),
+    analysisDate: asString(body.analysisDate ?? body.analysis_date ?? body.created_at),
+    keywords: asStringArray(body.keywords ?? body.selectedKeywords ?? body.selected_keywords),
+    targetScenario: asString(body.targetScenario ?? body.target_scenario),
     keywordDefinitions: asArray(
-      r.keywordDefinitions ?? r.keyword_definitions,
-    ) as KeywordAnalysisResult["keywordDefinitions"],
-    selectionCriteria: asString(r.selectionCriteria ?? r.selection_criteria),
-    coverage: asArray(r.coverage) as KeywordAnalysisResult["coverage"],
+      body.keywordDefinitions ?? body.keyword_definitions,
+    ).map(mapKeywordDefinition),
+    selectionCriteria: {
+      summary: asString(selection.summary),
+      criteria: asStringArray(selection.criteria),
+    },
+    coverage: asArray(body.coverage).map(mapKeywordCoverage),
     matchedExperiences: asArray(
-      r.matchedExperiences ?? r.matched_experiences,
-    ) as KeywordAnalysisResult["matchedExperiences"],
-    storylines: asArray(r.storylines) as KeywordAnalysisResult["storylines"],
-    fitEvaluations: asArray(
-      r.fitEvaluations ?? r.fit_evaluations,
-    ) as KeywordAnalysisResult["fitEvaluations"],
-    improvementGuides: asArray(
-      r.improvementGuides ?? r.improvement_guides,
-    ) as KeywordAnalysisResult["improvementGuides"],
-    commonRecommendations: asArray(
-      r.commonRecommendations ?? r.common_recommendations,
-    ) as KeywordAnalysisResult["commonRecommendations"],
-    keywordRecommendations: asArray(
-      r.keywordRecommendations ?? r.keyword_recommendations,
-    ) as KeywordAnalysisResult["keywordRecommendations"],
+      body.matchedExperiences ?? body.matched_experiences,
+    ).map(mapKeywordMatchedGroup),
+    storylines: asArray(body.storylines).map(mapKeywordStoryline),
+    improvementGuide: {
+      informationEnhancement: asArray(
+        guide.informationEnhancement ?? guide.information_enhancement,
+      ).map(coerceImprovementText).filter(Boolean),
+      experienceExpansion: asArray(
+        guide.experienceExpansion ?? guide.experience_expansion,
+      ).map(coerceImprovementText).filter(Boolean),
+      keywordSpecificRecommendations: asArray(
+        guide.keywordSpecificRecommendations ?? guide.keyword_specific_recommendations,
+      ).map(mapKeywordSpecificRecommendation),
+    },
   };
 }
 

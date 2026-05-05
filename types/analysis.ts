@@ -6,47 +6,9 @@ export type AnalysisType = "individual" | "comprehensive" | "keyword";
 export type ConfidenceLevel = "sufficient" | "partial" | "insufficient";
 export type AnalysisStatus = "pending" | "processing" | "completed" | "failed";
 export type KeywordCategory = "skill" | "work_style" | "value" | "job_domain";
-export type EvidenceRole = "primary" | "supporting";
-export type ConnectionType =
-  | "temporal_growth"
-  | "cause_effect"
-  | "role_expansion"
-  | "impact_expansion"
-  | "contrast_transition";
 export type { ImportanceLevel };
 
 // ─── Common Structures ──────────────────────────────────────
-
-export interface Evidence {
-  quote: string;
-  sourceField?: string;
-  experienceId?: string;
-  experienceTitle?: string;
-}
-
-export interface Keyword {
-  id: string;
-  label: string;
-  category: KeywordCategory;
-  confidence: ConfidenceLevel;
-  evidences: Evidence[];
-}
-
-export interface ImprovementGuide {
-  reason: string;
-  suggestion: string;
-  targetField?: string;
-}
-
-export interface ActivityRecommendation {
-  id: string;
-  activity: string;
-  reason: string;
-  evidence: Evidence;
-  expectedEffect: string;
-  type: "expand" | "supplement";
-  scenarioId?: string;
-}
 
 export interface AnalysisSnapshot {
   id: string;
@@ -83,194 +45,181 @@ export const analysisTypeLabel: Record<AnalysisType, string> = {
   keyword: "키워드 분석",
 };
 
-export const connectionTypeLabel: Record<ConnectionType, string> = {
-  temporal_growth: "시간순 성장",
-  cause_effect: "원인/결과",
-  role_expansion: "역할 확장",
-  impact_expansion: "임팩트 확장",
-  contrast_transition: "대조/전환",
-};
-
 // ─── Individual Analysis Detail ─────────────────────────────
+// 백엔드 응답: { id, status, experience_id, result }
+// result 안에 실제 분석 결과 트리가 들어 있다.
 
-export interface IncidentCard {
-  id: string;
-  situation: string;
-  action: string;
-  result: string;
-  evidence: Evidence;
+export type WeaknessSeverity = "high" | "medium" | "low";
+export type SynergyPriority = "high" | "medium" | "low";
+
+export interface IndividualDeepAnalysis {
+  careerValue: string;
+  strengths: string[];
+  limitations: string[];
+  applicableRoles: string[];
+  marketValue: string;
 }
 
-export interface RoleInterpretation {
-  incidentId: string;
-  role: { responsibility: string; scope: string; decisionAuthority: string };
-  action: { type: string; description: string };
-  performance: { metric: string; output: string; change: string; evidenceLink?: string };
-}
-
-export interface StarSummary {
-  incidentId: string;
+export interface IndividualStarFormat {
+  title: string;
   situation: string;
   task: string;
   action: string;
   result: string;
-  missingFields: string[];
 }
 
-export interface ReusableExpression {
-  type: "30s_summary" | "2min_summary" | "performance" | "problem_solving" | "collaboration" | "learning";
-  label: string;
-  text: string;
-}
-
-export interface RelatedExperience {
-  experienceId: string;
+export interface IndividualWeakness {
+  id: string;
+  category: string;
+  severity: WeaknessSeverity;
   title: string;
+  diagnosis: string;
+  evidence: string;
+  impact: string;
+  priorityAction: string;
+  improvementExample: string;
+}
+
+export interface IndividualItemDiagnosis {
+  oneLineVerdict: string;
+  weaknesses: IndividualWeakness[];
+  missingElements: string[];
+  rewriteSuggestion: string;
+}
+
+export interface IndividualSynergyRecommendation {
+  priority: SynergyPriority;
+  category: string;
+  name: string;
   reason: string;
-  connectionType: ConnectionType;
+  expectedEffect: string;
+  estimatedDuration: string;
+}
+
+export interface IndividualActionPlan {
+  shortTerm: string;
+  midTerm: string;
+  longTerm: string;
+}
+
+export interface IndividualAnalysisResultBody {
+  status: string;
+  itemName: string;
+  itemType: string;
+  briefSummary: string;
+  deepAnalysis: IndividualDeepAnalysis;
+  starFormat: IndividualStarFormat;
+  itemDiagnosis: IndividualItemDiagnosis;
+  synergyRecommendations: IndividualSynergyRecommendation[];
+  actionPlan: IndividualActionPlan;
+  missingInfoWarning: string;
 }
 
 export interface IndividualAnalysisResult {
   id: string;
+  status: AnalysisStatus;
   experienceId: string;
-  experienceTitle: string;
-  experienceType: string;
-  analyzedAt: string;
-  isBookmarked: boolean;
-  overallConfidence: ConfidenceLevel;
-  // A: Summary + Incidents
-  summary: string;
-  incidents: IncidentCard[];
-  // B: Role/Action/Performance
-  roleInterpretations: RoleInterpretation[];
-  // C: Keywords Top K
-  keywords: Keyword[];
-  // D: STAR Summary
-  starSummaries: StarSummary[];
-  // E: Recommendations
-  recommendations: ActivityRecommendation[];
-  // F: Confidence + Guides
-  improvementGuides: ImprovementGuide[];
-  // G: Reusable Expressions
-  reusableExpressions: ReusableExpression[];
-  // H: Related Experiences
-  relatedExperiences: RelatedExperience[];
+  result: IndividualAnalysisResultBody;
 }
+
+// 진단/시너지 라벨
+export const weaknessSeverityLabel: Record<WeaknessSeverity, string> = {
+  high: "심각",
+  medium: "보통",
+  low: "경미",
+};
+
+export const synergyPriorityLabel: Record<SynergyPriority, string> = {
+  high: "강력 추천",
+  medium: "추천",
+  low: "참고",
+};
 
 // ─── Comprehensive Analysis Detail ──────────────────────────
+// 백엔드 응답 (prefix A_/B_… 제거된 형태):
+// status, user_school, user_department, brief_summary, detailed_summary,
+// keyword_clustering, experience_insights, synergy_combinations[],
+// additional_recommendations, resume_star_format[], action_plan,
+// critical_diagnosis, valid_job_recommendations[], missing_info_warning
 
-export interface ExperienceSummaryCard {
-  experienceId: string;
-  title: string;
-  summary: string;
-  highlight: string;
-  role: EvidenceRole;
-  importance: ImportanceLevel;
+export interface KeywordClustering {
+  personalityTendency: string[];
+  coreCompetency: string[];
+  jobIndustry: string[];
 }
 
-export interface Connection {
-  fromExperienceId: string;
-  fromTitle: string;
-  toExperienceId: string;
-  toTitle: string;
-  connectionType: ConnectionType;
-  strength: "strong" | "moderate" | "weak";
-  evidence: Evidence;
-  improvementGuide?: ImprovementGuide;
+export interface ExperienceInsights {
+  motivation: string;
+  learningPoints: string;
 }
 
-export interface Storyline {
+export interface SynergyCombination {
+  combinationTitle: string;
+  items: string[];
+  synergyReason: string;
+  expectedEffect: string;
+  applicableRoles: string[];
+}
+
+export interface AdditionalRecommendations {
+  certifications: string[];
+  clubsAndSocieties: string[];
+  projectsAndContests: string[];
+}
+
+export interface ContentQualityIssue {
+  item: string;
+  issue: string;
+  improvementHint: string;
+}
+
+export interface ComprehensiveWeakness {
   id: string;
-  start: string;
-  development: string;
+  category: string;
+  severity: WeaknessSeverity;
+  title: string;
+  diagnosis: string;
   evidence: string;
-  growth: string;
-  arrival: string;
-  coreExperienceIds: string[];
-  supportingExperienceIds: string[];
+  impact: string;
+  priorityAction: string;
 }
 
-export interface Scenario {
-  id: string;
-  title: string;
-  rationale: string;
-  recommendedExperienceIds: string[];
-  emphasisPoints: string[];
-  speakingOrder: string[];
-  fitComment?: string;
+export interface CriticalDiagnosis {
+  oneLineVerdict: string;
+  weaknesses: ComprehensiveWeakness[];
+  missingExperienceTypes: string[];
+  contentQualityIssues: ContentQualityIssue[];
+  competitorGap: string;
+}
+
+export interface JobRecommendation {
+  company: string;
+  role: string;
+  deadline: string;
+  whyMatch: string;
+  url: string;
 }
 
 export interface ComprehensiveAnalysisResult {
   id: string;
-  title: string;
-  analyzedAt: string;
-  isBookmarked: boolean;
-  overallConfidence: ConfidenceLevel;
-  selectedExperienceIds: string[];
-  // A
-  experienceSummaries: ExperienceSummaryCard[];
-  // B
-  keywords: Keyword[];
-  // C
-  connections: Connection[];
-  // D
-  storylines: Storyline[];
-  // E
-  scenarios: Scenario[];
-  // F
-  commonRecommendations: ActivityRecommendation[];
-  // G
-  scenarioRecommendations: ActivityRecommendation[];
-  // H
-  confidenceGuide: {
-    overallConfidence: ConfidenceLevel;
-    improvementGuides: ImprovementGuide[];
-  };
+  status: AnalysisStatus;
+  userSchool: string;
+  userDepartment: string;
+  briefSummary: string;
+  detailedSummary: string;
+  keywordClustering: KeywordClustering;
+  experienceInsights: ExperienceInsights;
+  synergyCombinations: SynergyCombination[];
+  additionalRecommendations: AdditionalRecommendations;
+  resumeStarFormat: IndividualStarFormat[];
+  actionPlan: IndividualActionPlan;
+  criticalDiagnosis: CriticalDiagnosis;
+  validJobRecommendations: JobRecommendation[];
+  missingInfoWarning: string;
 }
 
 // ─── Keyword Analysis Detail ────────────────────────────────
-
-export interface KeywordDefinition {
-  keywordId: string;
-  label: string;
-  category: KeywordCategory;
-  redefinition: string;
-  synonyms: string[];
-  fitCriteria: { id: string; description: string }[];
-}
-
-export interface KeywordCoverage {
-  keywordId: string;
-  label: string;
-  matchedCount: number;
-  totalCount: number;
-}
-
-export interface MatchedExperience {
-  keywordId: string;
-  experienceId: string;
-  title: string;
-  fitScore: number;
-  evidence: Evidence;
-  matchedCriteriaIds: string[];
-}
-
-export interface KeywordFitAxis {
-  specificity: number;
-  actionClarity: number;
-  impactStrength: number;
-  consistency: number;
-}
-
-export interface KeywordFitEvaluation {
-  keywordId: string;
-  label: string;
-  totalScore: number;
-  axes: KeywordFitAxis;
-  strongEvidences: Evidence[];
-  weakEvidences: Evidence[];
-  missingEvidences: string[];
-}
+// 백엔드 응답: { status, analysis_date, keywords[], target_scenario, keyword_definitions[], ... }
 
 export interface KeywordSuggestion {
   id: string;
@@ -280,29 +229,86 @@ export interface KeywordSuggestion {
   relatedExperienceCount: number;
 }
 
+export interface KeywordDefinition {
+  keyword: string;
+  definition: string;
+  synonyms: string[];
+  complianceCriteria: string[];
+}
+
+export interface KeywordSelectionCriteria {
+  summary: string;
+  criteria: string[];
+}
+
+export interface KeywordCoverage {
+  keyword: string;
+  relatedCount: number;
+  totalCount: number;
+  coveragePercent: number;
+}
+
+export interface KeywordEvidence {
+  type: string;
+  content: string;
+  sourceQuote: string;
+}
+
+export interface MatchedExperience {
+  careerTitle: string;
+  organization: string;
+  period: string;
+  relevance: string;
+  evidence: KeywordEvidence[];
+  matchedCriteria: string[];
+  confidence: string;
+  confidenceReason: string;
+}
+
+export interface KeywordMatchedGroup {
+  keyword: string;
+  experiences: MatchedExperience[];
+}
+
+export interface KeywordStorylineStructure {
+  start: string;
+  development: string;
+  evidence: string;
+  growth: string;
+  destination: string;
+}
+
+export interface KeywordStoryline {
+  keyword: string;
+  storylineTitle: string;
+  structure: KeywordStorylineStructure;
+  usedExperiences: { core: string[]; supporting: string[] };
+  keyQuotes: string[];
+}
+
+export interface KeywordSpecificRecommendation {
+  keyword: string;
+  description: string;
+}
+
+export interface KeywordImprovementGuide {
+  informationEnhancement: string[];
+  experienceExpansion: string[];
+  keywordSpecificRecommendations: KeywordSpecificRecommendation[];
+}
+
 export interface KeywordAnalysisResult {
   id: string;
-  title: string;
-  analyzedAt: string;
-  isBookmarked: boolean;
-  overallConfidence: ConfidenceLevel;
-  selectedKeywords: string[];
-  // A
+  status: AnalysisStatus;
+  analysisDate: string;
+  keywords: string[];
+  targetScenario: string;
   keywordDefinitions: KeywordDefinition[];
-  // B
-  selectionCriteria: string;
-  // C
+  selectionCriteria: KeywordSelectionCriteria;
   coverage: KeywordCoverage[];
-  // D
-  matchedExperiences: MatchedExperience[];
-  // E
-  storylines: Storyline[];
-  // F
-  fitEvaluations: KeywordFitEvaluation[];
-  // G
-  improvementGuides: ImprovementGuide[];
-  commonRecommendations: ActivityRecommendation[];
-  keywordRecommendations: ActivityRecommendation[];
+  matchedExperiences: KeywordMatchedGroup[];
+  storylines: KeywordStoryline[];
+  improvementGuide: KeywordImprovementGuide;
 }
 
 // ─── Selectable Experience ─────────────────────────────────

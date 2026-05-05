@@ -1,18 +1,10 @@
 "use client";
 
+import { isSafeHttpUrl } from "@/lib/utils/url-utils";
 import { isEmptySection, type PersonalInfo } from "@/types/resume";
 
 interface Props {
   data: PersonalInfo;
-}
-
-function isSafeHttpUrl(value: string): boolean {
-  try {
-    const { protocol } = new URL(value);
-    return protocol === "http:" || protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 export function PreviewPersonalInfo({ data }: Props) {
