@@ -253,48 +253,7 @@ export interface ComprehensiveAnalysisResult {
 }
 
 // ─── Keyword Analysis Detail ────────────────────────────────
-
-export interface KeywordDefinition {
-  keywordId: string;
-  label: string;
-  category: KeywordCategory;
-  redefinition: string;
-  synonyms: string[];
-  fitCriteria: { id: string; description: string }[];
-}
-
-export interface KeywordCoverage {
-  keywordId: string;
-  label: string;
-  matchedCount: number;
-  totalCount: number;
-}
-
-export interface MatchedExperience {
-  keywordId: string;
-  experienceId: string;
-  title: string;
-  fitScore: number;
-  evidence: Evidence;
-  matchedCriteriaIds: string[];
-}
-
-export interface KeywordFitAxis {
-  specificity: number;
-  actionClarity: number;
-  impactStrength: number;
-  consistency: number;
-}
-
-export interface KeywordFitEvaluation {
-  keywordId: string;
-  label: string;
-  totalScore: number;
-  axes: KeywordFitAxis;
-  strongEvidences: Evidence[];
-  weakEvidences: Evidence[];
-  missingEvidences: string[];
-}
+// 백엔드 응답: { status, analysis_date, keywords[], target_scenario, keyword_definitions[], ... }
 
 export interface KeywordSuggestion {
   id: string;
@@ -304,29 +263,86 @@ export interface KeywordSuggestion {
   relatedExperienceCount: number;
 }
 
+export interface KeywordDefinition {
+  keyword: string;
+  definition: string;
+  synonyms: string[];
+  complianceCriteria: string[];
+}
+
+export interface KeywordSelectionCriteria {
+  summary: string;
+  criteria: string[];
+}
+
+export interface KeywordCoverage {
+  keyword: string;
+  relatedCount: number;
+  totalCount: number;
+  coveragePercent: number;
+}
+
+export interface KeywordEvidence {
+  type: string;
+  content: string;
+  sourceQuote: string;
+}
+
+export interface MatchedExperience {
+  careerTitle: string;
+  organization: string;
+  period: string;
+  relevance: string;
+  evidence: KeywordEvidence[];
+  matchedCriteria: string[];
+  confidence: string;
+  confidenceReason: string;
+}
+
+export interface KeywordMatchedGroup {
+  keyword: string;
+  experiences: MatchedExperience[];
+}
+
+export interface KeywordStorylineStructure {
+  start: string;
+  development: string;
+  evidence: string;
+  growth: string;
+  destination: string;
+}
+
+export interface KeywordStoryline {
+  keyword: string;
+  storylineTitle: string;
+  structure: KeywordStorylineStructure;
+  usedExperiences: { core: string[]; supporting: string[] };
+  keyQuotes: string[];
+}
+
+export interface KeywordSpecificRecommendation {
+  keyword: string;
+  description: string;
+}
+
+export interface KeywordImprovementGuide {
+  informationEnhancement: string[];
+  experienceExpansion: string[];
+  keywordSpecificRecommendations: KeywordSpecificRecommendation[];
+}
+
 export interface KeywordAnalysisResult {
   id: string;
-  title: string;
-  analyzedAt: string;
-  isBookmarked: boolean;
-  overallConfidence: ConfidenceLevel;
-  selectedKeywords: string[];
-  // A
+  status: AnalysisStatus;
+  analysisDate: string;
+  keywords: string[];
+  targetScenario: string;
   keywordDefinitions: KeywordDefinition[];
-  // B
-  selectionCriteria: string;
-  // C
+  selectionCriteria: KeywordSelectionCriteria;
   coverage: KeywordCoverage[];
-  // D
-  matchedExperiences: MatchedExperience[];
-  // E
-  storylines: Storyline[];
-  // F
-  fitEvaluations: KeywordFitEvaluation[];
-  // G
-  improvementGuides: ImprovementGuide[];
-  commonRecommendations: ActivityRecommendation[];
-  keywordRecommendations: ActivityRecommendation[];
+  matchedExperiences: KeywordMatchedGroup[];
+  storylines: KeywordStoryline[];
+  improvementGuide: KeywordImprovementGuide;
 }
 
 // ─── Selectable Experience ─────────────────────────────────

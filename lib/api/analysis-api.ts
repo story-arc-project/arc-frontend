@@ -14,6 +14,13 @@ import type {
   SynergyPriority,
   ComprehensiveAnalysisResult,
   KeywordAnalysisResult,
+  KeywordDefinition,
+  KeywordCoverage,
+  KeywordEvidence,
+  MatchedExperience,
+  KeywordMatchedGroup,
+  KeywordStoryline,
+  KeywordSpecificRecommendation,
   KeywordSuggestion,
   BookmarkedSnapshot,
   SelectableExperience,
@@ -274,38 +281,141 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
   };
 }
 
-function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
+function mapKeywordDefinition(dto: unknown): KeywordDefinition {
   const r = asRecord(dto);
   return {
-    id: asString(r.id),
-    title: asString(r.title),
-    analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
-    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
-    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
-    selectedKeywords: asArray<string>(
-      r.selectedKeywords ?? r.selected_keywords ?? r.keywords,
-    ),
+    keyword: asString(r.keyword),
+    definition: asString(r.definition),
+    synonyms: asStringArray(r.synonyms),
+    complianceCriteria: asStringArray(r.complianceCriteria ?? r.compliance_criteria),
+  };
+}
+
+function mapKeywordCoverage(dto: unknown): KeywordCoverage {
+  const r = asRecord(dto);
+  return {
+    keyword: asString(r.keyword),
+    relatedCount: asNumber(r.relatedCount ?? r.related_count),
+    totalCount: asNumber(r.totalCount ?? r.total_count),
+    coveragePercent: asNumber(r.coveragePercent ?? r.coverage_percent),
+  };
+}
+
+function mapKeywordEvidence(dto: unknown): KeywordEvidence {
+  const r = asRecord(dto);
+  return {
+    type: asString(r.type),
+    content: asString(r.content),
+    sourceQuote: asString(r.sourceQuote ?? r.source_quote),
+  };
+}
+
+function mapMatchedExperience(dto: unknown): MatchedExperience {
+  const r = asRecord(dto);
+  return {
+    careerTitle: asString(r.careerTitle ?? r.career_title),
+    organization: asString(r.organization),
+    period: asString(r.period),
+    relevance: asString(r.relevance),
+    evidence: asArray(r.evidence).map(mapKeywordEvidence),
+    matchedCriteria: asStringArray(r.matchedCriteria ?? r.matched_criteria),
+    confidence: asString(r.confidence),
+    confidenceReason: asString(r.confidenceReason ?? r.confidence_reason),
+  };
+}
+
+function mapKeywordMatchedGroup(dto: unknown): KeywordMatchedGroup {
+  const r = asRecord(dto);
+  return {
+    keyword: asString(r.keyword),
+    experiences: asArray(r.experiences).map(mapMatchedExperience),
+  };
+}
+
+function mapKeywordStoryline(dto: unknown): KeywordStoryline {
+  const r = asRecord(dto);
+  const structure = asRecord(r.structure);
+  const used = asRecord(r.usedExperiences ?? r.used_experiences);
+  return {
+    keyword: asString(r.keyword),
+    storylineTitle: asString(r.storylineTitle ?? r.storyline_title),
+    structure: {
+      start: asString(structure.start),
+      development: asString(structure.development),
+      evidence: asString(structure.evidence),
+      growth: asString(structure.growth),
+      destination: asString(structure.destination),
+    },
+    usedExperiences: {
+      core: asStringArray(used.core),
+      supporting: asStringArray(used.supporting),
+    },
+    keyQuotes: asStringArray(r.keyQuotes ?? r.key_quotes),
+  };
+}
+
+/**
+ * 보강 가이드의 항목들은 백엔드 확정 형태가 미정이라 string 또는 객체일 수 있다.
+ * 객체일 경우 가장 의미 있는 텍스트 필드를 추려 문자열로 평탄화한다.
+ */
+function coerceImprovementText(value: unknown): string {
+  if (typeof value === "string") return value;
+  const r = asRecord(value);
+  return asString(
+    r.description ??
+      r.text ??
+      r.content ??
+      r.suggestion ??
+      r.reason ??
+      r.recommendation,
+  );
+}
+
+function mapKeywordSpecificRecommendation(dto: unknown): KeywordSpecificRecommendation {
+  if (typeof dto === "string") return { keyword: "", description: dto };
+  const r = asRecord(dto);
+  return {
+    keyword: asString(r.keyword),
+    description: coerceImprovementText(r.recommendation ?? r.description ?? r),
+  };
+}
+
+function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
+  const r = asRecord(dto);
+  // 응답이 result wrapper로 감싸져 올 가능성도 방어한다.
+  const body = r.result && typeof r.result === "object" ? asRecord(r.result) : r;
+  const guide = asRecord(body.improvementGuide ?? body.improvement_guide);
+  const selection = asRecord(body.selectionCriteria ?? body.selection_criteria);
+
+  return {
+    id: asString(r.id ?? body.id),
+    status: mapStatus(r.status ?? body.status),
+    analysisDate: asString(body.analysisDate ?? body.analysis_date ?? body.created_at),
+    keywords: asStringArray(body.keywords ?? body.selected_keywords),
+    targetScenario: asString(body.targetScenario ?? body.target_scenario),
     keywordDefinitions: asArray(
-      r.keywordDefinitions ?? r.keyword_definitions,
-    ) as KeywordAnalysisResult["keywordDefinitions"],
-    selectionCriteria: asString(r.selectionCriteria ?? r.selection_criteria),
-    coverage: asArray(r.coverage) as KeywordAnalysisResult["coverage"],
+      body.keywordDefinitions ?? body.keyword_definitions,
+    ).map(mapKeywordDefinition),
+    selectionCriteria: {
+      summary: asString(selection.summary),
+      criteria: asStringArray(selection.criteria),
+    },
+    coverage: asArray(body.coverage).map(mapKeywordCoverage),
     matchedExperiences: asArray(
-      r.matchedExperiences ?? r.matched_experiences,
-    ) as KeywordAnalysisResult["matchedExperiences"],
-    storylines: asArray(r.storylines) as KeywordAnalysisResult["storylines"],
-    fitEvaluations: asArray(
-      r.fitEvaluations ?? r.fit_evaluations,
-    ) as KeywordAnalysisResult["fitEvaluations"],
-    improvementGuides: asArray(
-      r.improvementGuides ?? r.improvement_guides,
-    ) as KeywordAnalysisResult["improvementGuides"],
-    commonRecommendations: asArray(
-      r.commonRecommendations ?? r.common_recommendations,
-    ) as KeywordAnalysisResult["commonRecommendations"],
-    keywordRecommendations: asArray(
-      r.keywordRecommendations ?? r.keyword_recommendations,
-    ) as KeywordAnalysisResult["keywordRecommendations"],
+      body.matchedExperiences ?? body.matched_experiences,
+    ).map(mapKeywordMatchedGroup),
+    storylines: asArray(body.storylines).map(mapKeywordStoryline),
+    improvementGuide: {
+      informationEnhancement: asArray(
+        guide.informationEnhancement ?? guide.information_enhancement,
+      ).map(coerceImprovementText).filter(Boolean),
+      experienceExpansion: asArray(
+        guide.experienceExpansion ?? guide.experience_expansion,
+      ).map(coerceImprovementText).filter(Boolean),
+      keywordSpecificRecommendations: asArray(
+        guide.keywordSpecificRecommendations ?? guide.keyword_specific_recommendations,
+      ).map(mapKeywordSpecificRecommendation),
+    },
   };
 }
 

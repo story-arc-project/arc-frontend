@@ -603,132 +603,183 @@ export const mockKeywordList: AnalysisSnapshot[] = [
 
 export const mockKeywordResult: KeywordAnalysisResult = {
   id: "kw-1",
-  title: "'리더십 · 협업' 키워드 분석",
-  analyzedAt: "2026-04-04T11:00:00Z",
-  isBookmarked: false,
-  overallConfidence: "partial",
-  selectedKeywords: ["리더십", "협업"],
+  status: "completed",
+  analysisDate: "2026-04-04T11:00:00Z",
+  keywords: ["리더십", "협업"],
+  targetScenario: "IT 서비스 기업 신입 프로덕트 매니저 지원",
   keywordDefinitions: [
     {
-      keywordId: "kd-1",
-      label: "리더십",
-      category: "work_style",
-      redefinition: "팀의 방향을 설정하고, 구성원의 역량을 이끌어내며 목표를 달성하는 능력",
+      keyword: "리더십",
+      definition: "팀의 방향을 설정하고, 구성원의 역량을 이끌어내며 목표를 달성하는 능력",
       synonyms: ["팀 리딩", "의사결정", "비전 제시"],
-      fitCriteria: [
-        { id: "fc-1", description: "팀 목표 설정 및 공유 경험이 있는가" },
-        { id: "fc-2", description: "구성원 역할 분배 및 조율 사례가 있는가" },
-        { id: "fc-3", description: "갈등 상황에서 조율한 경험이 있는가" },
-        { id: "fc-4", description: "팀 성과에 대한 책임을 진 사례가 있는가" },
+      complianceCriteria: [
+        "팀 목표 설정 및 공유 경험이 있는가",
+        "구성원 역할 분배 및 조율 사례가 있는가",
+        "갈등 상황에서 조율한 경험이 있는가",
+        "팀 성과에 대한 책임을 진 사례가 있는가",
       ],
     },
     {
-      keywordId: "kd-2",
-      label: "협업",
-      category: "work_style",
-      redefinition: "다양한 배경의 팀원들과 효과적으로 소통하며 공동 목표를 달성하는 능력",
+      keyword: "협업",
+      definition: "다양한 배경의 팀원들과 효과적으로 소통하며 공동 목표를 달성하는 능력",
       synonyms: ["팀워크", "커뮤니케이션", "협력"],
-      fitCriteria: [
-        { id: "fc-5", description: "역할 분담 후 상호 피드백을 교환한 경험이 있는가" },
-        { id: "fc-6", description: "의견 차이를 조율한 구체적 사례가 있는가" },
-        { id: "fc-7", description: "다른 직군과 협업한 경험이 있는가" },
-        { id: "fc-8", description: "팀 내 소통 문화 개선에 기여한 사례가 있는가" },
+      complianceCriteria: [
+        "역할 분담 후 상호 피드백을 교환한 경험이 있는가",
+        "의견 차이를 조율한 구체적 사례가 있는가",
+        "다른 직군과 협업한 경험이 있는가",
+        "팀 내 소통 문화 개선에 기여한 사례가 있는가",
       ],
     },
   ],
-  selectionCriteria:
-    "선택된 키워드('리더십', '협업')와 관련된 행동, 성과, 역할 기술이 포함된 경험을 우선 선별했습니다. 단순 참여 언급보다 구체적 행동과 결과가 있는 경험에 높은 가중치를 부여했습니다.",
+  selectionCriteria: {
+    summary:
+      "선택된 키워드('리더십', '협업')와 관련된 행동, 성과, 역할 기술이 포함된 경험을 우선 선별했습니다.",
+    criteria: [
+      "단순 참여 언급보다 구체적 행동과 결과가 있는 경험에 높은 가중치 부여",
+      "팀 단위(2인 이상) 활동에 가산점 부여",
+      "타겟 시나리오와 직무 적합성이 보이는 경험 우선",
+    ],
+  },
   coverage: [
-    { keywordId: "kd-1", label: "리더십", matchedCount: 4, totalCount: 12 },
-    { keywordId: "kd-2", label: "협업", matchedCount: 5, totalCount: 12 },
+    { keyword: "리더십", relatedCount: 4, totalCount: 12, coveragePercent: 33 },
+    { keyword: "협업", relatedCount: 5, totalCount: 12, coveragePercent: 42 },
   ],
   matchedExperiences: [
-    { keywordId: "kd-1", experienceId: "exp-v2-2", title: "캡스톤 디자인 프로젝트", fitScore: 85, evidence: { quote: "6인 팀 리더로서 서비스 기획부터 프로토타입까지 총괄", experienceTitle: "캡스톤 디자인 프로젝트" }, matchedCriteriaIds: ["fc-1", "fc-2", "fc-4"] },
-    { keywordId: "kd-1", experienceId: "ind-4", title: "교내 창업 경진대회", fitScore: 72, evidence: { quote: "팀장으로서 비즈니스 모델 기획을 주도", experienceTitle: "교내 창업 경진대회" }, matchedCriteriaIds: ["fc-1", "fc-4"] },
-    { keywordId: "kd-1", experienceId: "ind-6", title: "동아리 운영 경험", fitScore: 45, evidence: { quote: "동아리 회장으로서 운영을 담당", experienceTitle: "동아리 운영 경험" }, matchedCriteriaIds: ["fc-1"] },
-    { keywordId: "kd-2", experienceId: "exp-v2-1", title: "카카오 프론트엔드 인턴십", fitScore: 68, evidence: { quote: "코드 리뷰에 적극 참여하며 팀원과 소통", experienceTitle: "카카오 프론트엔드 인턴십" }, matchedCriteriaIds: ["fc-5", "fc-7"] },
-    { keywordId: "kd-2", experienceId: "exp-v2-2", title: "캡스톤 디자인 프로젝트", fitScore: 78, evidence: { quote: "6인 팀에서 역할 분배 및 주간 회의 운영", experienceTitle: "캡스톤 디자인 프로젝트" }, matchedCriteriaIds: ["fc-5", "fc-6", "fc-7"] },
-    { keywordId: "kd-2", experienceId: "ind-5", title: "UX 리서치 프로젝트", fitScore: 55, evidence: { quote: "디자이너와 개발자 간 인사이트 공유 세션 진행", experienceTitle: "UX 리서치 프로젝트" }, matchedCriteriaIds: ["fc-7"] },
+    {
+      keyword: "리더십",
+      experiences: [
+        {
+          careerTitle: "캡스톤 디자인 프로젝트",
+          organization: "한양대학교",
+          period: "2024.03 - 2024.06",
+          relevance: "6인 팀 리더로서 기획부터 프로토타입까지 총괄한 경험으로, 리더십 핵심 기준 다수를 충족",
+          evidence: [
+            {
+              type: "행동",
+              content: "팀원 6인의 역할을 기획·디자인·개발로 나누고 주간 회의를 운영",
+              sourceQuote: "6인 팀 리더로서 서비스 기획부터 프로토타입까지 총괄",
+            },
+            {
+              type: "성과",
+              content: "발표 평가에서 학과 내 상위 3팀에 선정",
+              sourceQuote: "최종 발표에서 우수상 수상",
+            },
+          ],
+          matchedCriteria: [
+            "팀 목표 설정 및 공유 경험이 있는가",
+            "구성원 역할 분배 및 조율 사례가 있는가",
+            "팀 성과에 대한 책임을 진 사례가 있는가",
+          ],
+          confidence: "high",
+          confidenceReason: "복수의 정량적 근거와 역할 기술이 함께 제시됨",
+        },
+        {
+          careerTitle: "교내 창업 경진대회",
+          organization: "교내 창업지원단",
+          period: "2023.09 - 2023.12",
+          relevance: "팀장으로서 비즈니스 모델 기획을 주도",
+          evidence: [
+            {
+              type: "행동",
+              content: "비즈니스 모델 캔버스를 직접 작성하고 팀원과 합의 후 발표 자료 총괄",
+              sourceQuote: "팀장으로서 비즈니스 모델 기획을 주도",
+            },
+          ],
+          matchedCriteria: [
+            "팀 목표 설정 및 공유 경험이 있는가",
+            "팀 성과에 대한 책임을 진 사례가 있는가",
+          ],
+          confidence: "medium",
+          confidenceReason: "리더 역할은 명확하나 갈등 조율 사례가 부족",
+        },
+      ],
+    },
+    {
+      keyword: "협업",
+      experiences: [
+        {
+          careerTitle: "캡스톤 디자인 프로젝트",
+          organization: "한양대학교",
+          period: "2024.03 - 2024.06",
+          relevance: "기획·디자인·개발 직군이 섞인 팀에서 의견 조율과 피드백 교환을 주도",
+          evidence: [
+            {
+              type: "행동",
+              content: "주간 회의에서 디자인-개발 간 의견 차이를 조율",
+              sourceQuote: "6인 팀에서 역할 분배 및 주간 회의 운영",
+            },
+          ],
+          matchedCriteria: [
+            "역할 분담 후 상호 피드백을 교환한 경험이 있는가",
+            "의견 차이를 조율한 구체적 사례가 있는가",
+            "다른 직군과 협업한 경험이 있는가",
+          ],
+          confidence: "high",
+          confidenceReason: "다직군 협업 + 의견 조율 사례가 모두 확인됨",
+        },
+        {
+          careerTitle: "카카오 프론트엔드 인턴십",
+          organization: "카카오",
+          period: "2024.07 - 2024.12",
+          relevance: "코드 리뷰 문화에 적극 참여",
+          evidence: [
+            {
+              type: "행동",
+              content: "팀 코드 리뷰에서 의견을 정리해 PR로 반영",
+              sourceQuote: "코드 리뷰에 적극 참여하며 팀원과 소통",
+            },
+          ],
+          matchedCriteria: [
+            "역할 분담 후 상호 피드백을 교환한 경험이 있는가",
+            "다른 직군과 협업한 경험이 있는가",
+          ],
+          confidence: "medium",
+          confidenceReason: "협업 사례가 코드 리뷰에 한정되어 있음",
+        },
+      ],
+    },
   ],
   storylines: [
     {
-      id: "ksl-1",
-      start: "동아리 운영에서 처음으로 팀을 이끄는 경험",
-      development: "캡스톤 프로젝트에서 본격적인 팀 리더십을 발휘하고, 다양한 역할 조율을 경험",
-      evidence: "6인 팀 리더로서 역할 분배, 갈등 조율, 최종 발표까지 총괄",
-      growth: "카카오 인턴십에서 실무 환경의 협업 문화를 체험하고 코드 리뷰 참여",
-      arrival: "리더십과 협업 모두를 갖춘 팀 플레이어",
-      coreExperienceIds: ["exp-v2-2", "exp-v2-1"],
-      supportingExperienceIds: ["ind-6", "ind-5"],
-    },
-  ],
-  fitEvaluations: [
-    {
-      keywordId: "kd-1",
-      label: "리더십",
-      totalScore: 72,
-      axes: { specificity: 18, actionClarity: 20, impactStrength: 17, consistency: 17 },
-      strongEvidences: [
-        { quote: "6인 팀 리더로서 서비스 기획부터 프로토타입까지 총괄", experienceTitle: "캡스톤 디자인 프로젝트" },
+      keyword: "리더십",
+      storylineTitle: "동아리 운영 → 캡스톤 리더 → 실무 협업으로 이어진 리더십 성장",
+      structure: {
+        start: "동아리 운영에서 처음으로 팀을 이끌게 된 계기",
+        development: "캡스톤 프로젝트에서 6인 팀의 리더 역할을 수행하며 의견 조율과 일정 관리에 도전",
+        evidence: "주간 회의 운영, 역할 분배, 갈등 조율, 최종 발표까지 직접 주도",
+        growth: "카카오 인턴십에서 실무 협업 문화를 체험하고 코드 리뷰 의견을 적극 반영",
+        destination: "리더십과 협업을 모두 증명할 수 있는 팀 플레이어로 성장",
+      },
+      usedExperiences: {
+        core: ["캡스톤 디자인 프로젝트", "카카오 프론트엔드 인턴십"],
+        supporting: ["동아리 운영 경험"],
+      },
+      keyQuotes: [
+        "6인 팀 리더로서 서비스 기획부터 프로토타입까지 총괄",
+        "코드 리뷰에 적극 참여하며 팀원과 소통",
       ],
-      weakEvidences: [
-        { quote: "동아리 회장으로서 운영을 담당", experienceTitle: "동아리 운영 경험" },
-      ],
-      missingEvidences: ["갈등 상황에서 구체적으로 조율한 사례"],
-    },
-    {
-      keywordId: "kd-2",
-      label: "협업",
-      totalScore: 58,
-      axes: { specificity: 14, actionClarity: 15, impactStrength: 12, consistency: 17 },
-      strongEvidences: [
-        { quote: "6인 팀에서 역할 분배 및 주간 회의 운영", experienceTitle: "캡스톤 디자인 프로젝트" },
-      ],
-      weakEvidences: [
-        { quote: "코드 리뷰에 적극 참여", experienceTitle: "카카오 프론트엔드 인턴십" },
-      ],
-      missingEvidences: ["의견 차이를 조율한 구체적 사례", "팀 소통 문화 개선 기여 사례"],
     },
   ],
-  improvementGuides: [
-    {
-      reason: "협업의 구체적인 소통 사례가 부족합니다.",
-      suggestion: "의견 충돌을 해결한 경험이나 팀 소통 방식을 개선한 사례를 추가하세요.",
-      targetField: "내 역할/기여도",
-    },
-    {
-      reason: "리더십에서 갈등 조율 사례가 부족합니다.",
-      suggestion: "팀원 간 의견이 갈렸을 때 어떻게 조율했는지 구체적으로 기록해보세요.",
-    },
-  ],
-  commonRecommendations: [
-    {
-      id: "krec-1",
-      activity: "팀 프로젝트에서 회고 세션 운영",
-      reason: "리더십과 협업 모두를 증명할 수 있는 활동입니다.",
-      evidence: { quote: "주간 회의 운영", experienceTitle: "캡스톤 디자인 프로젝트" },
-      expectedEffect: "팀 소통 역량 증명 + 리더십 근거 강화",
-      type: "expand",
-    },
-  ],
-  keywordRecommendations: [
-    {
-      id: "krec-2",
-      activity: "멘토링 활동 참여",
-      reason: "리더십의 '구성원 성장 지원' 측면을 보강할 수 있습니다.",
-      evidence: { quote: "팀 리더로서 역할 분배", experienceTitle: "캡스톤 디자인 프로젝트" },
-      expectedEffect: "리더십 키워드 부합도 상승",
-      type: "supplement",
-    },
-    {
-      id: "krec-3",
-      activity: "타 직군 협업 프로젝트 참여",
-      reason: "협업 키워드의 '다양한 배경과의 소통' 기준을 강화합니다.",
-      evidence: { quote: "디자이너와 개발자 간 인사이트 공유", experienceTitle: "UX 리서치 프로젝트" },
-      expectedEffect: "협업 키워드 부합도 상승",
-      type: "expand",
-    },
-  ],
+  improvementGuide: {
+    informationEnhancement: [
+      "갈등 상황에서 어떻게 조율했는지 구체적인 대화 사례 추가",
+      "팀 회의의 의사결정 결과가 프로젝트에 미친 영향 한 줄 보강",
+    ],
+    experienceExpansion: [
+      "타 직군과의 협업 프로젝트 1건 추가",
+      "팀 소통 문화 개선 기여 사례 정리",
+    ],
+    keywordSpecificRecommendations: [
+      {
+        keyword: "리더십",
+        description: "멘토링 활동에 참여해 ‘구성원 성장 지원’ 측면을 보강하세요.",
+      },
+      {
+        keyword: "협업",
+        description: "타 직군이 포함된 사이드 프로젝트에 참여해 다배경 협업 사례를 늘리세요.",
+      },
+    ],
+  },
 };
 
 // ─── Bookmarks ──────────────────────────────────────────────
