@@ -358,197 +358,127 @@ export const mockComprehensiveList: AnalysisSnapshot[] = [
 
 export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
   id: "comp-1",
-  title: "개발 직무 종합 분석",
-  analyzedAt: "2026-04-08T12:00:00Z",
-  isBookmarked: true,
-  overallConfidence: "sufficient",
-  selectedExperienceIds: ["exp-v2-1", "exp-v2-3", "ind-5"],
-  experienceSummaries: [
+  status: "completed",
+  userSchool: "한양대학교",
+  userDepartment: "컴퓨터소프트웨어학부",
+  briefSummary:
+    "프론트엔드 개발과 UX 사고를 두 축으로 성장 흐름이 이어지는 포트폴리오. 정량적 성과는 강하나 협업 맥락 보강이 필요합니다.",
+  detailedSummary:
+    "캡스톤 → UX 리서치 → 카카오 인턴십으로 이어지는 일관된 성장 라인이 보입니다. 성능 최적화 등 정량적 성과는 매우 강한 반면, 다배경 팀과의 협업·갈등 조율 경험은 단편적입니다. 단기적으로는 본 이력의 협업 맥락을 보강하고, 중기적으로는 풀스택·UX 엔지니어로 확장 가능한 사이드 프로젝트를 시도해볼 만합니다.",
+  keywordClustering: {
+    personalityTendency: ["주도형", "분석형", "성장 지향"],
+    coreCompetency: ["성능 최적화", "프론트엔드 아키텍처", "UX 리서치", "팀 리더십"],
+    jobIndustry: ["IT 서비스 / 프론트엔드", "UX 엔지니어링", "프로덕트 엔지니어링"],
+  },
+  experienceInsights: {
+    motivation:
+      "사용자에게 직접 닿는 화면을 다루는 일에 강한 동기를 가지고 있으며, 측정 가능한 성과로 이어지는 작업을 선호합니다.",
+    learningPoints:
+      "프로파일링 기반 분석, 컴포넌트 아키텍처 설계, 사용자 인터뷰를 통한 정성 데이터 해석을 학습 포인트로 정리할 수 있습니다.",
+  },
+  synergyCombinations: [
     {
-      experienceId: "exp-v2-1",
-      title: "카카오 프론트엔드 인턴십",
-      summary: "실무 환경에서 성능 최적화와 컴포넌트 아키텍처를 주도한 핵심 경험",
-      highlight: "렌더링 속도 40% 개선, 팀 생산성 30% 향상",
-      role: "primary",
-      importance: 5,
+      combinationTitle: "성능 + UX 사고 결합",
+      items: ["카카오 프론트엔드 인턴십", "UX 리서치 프로젝트"],
+      synergyReason:
+        "성능 최적화의 정량 성과와 사용자 인터뷰 정성 데이터를 결합해 ‘UX 엔지니어’ 직무에 강한 근거가 됩니다.",
+      expectedEffect: "기술 + UX 양 측면 모두에서 신뢰도 상승",
+      applicableRoles: ["UX 엔지니어", "프로덕트 엔지니어"],
     },
     {
-      experienceId: "exp-v2-3",
-      title: "캡스톤 디자인 프로젝트",
-      summary: "팀 리더로서 서비스 기획부터 프로토타입까지 총괄한 프로젝트",
-      highlight: "6인 팀 리더, 프로토타입 완성",
-      role: "primary",
-      importance: 4,
-    },
-    {
-      experienceId: "ind-5",
-      title: "UX 리서치 프로젝트",
-      summary: "사용자 인터뷰 설계 및 분석을 통해 사용자 중심 사고를 보여준 경험",
-      highlight: "인터뷰 12건 수행, 인사이트 도출",
-      role: "supporting",
-      importance: 3,
-    },
-  ],
-  keywords: [
-    {
-      id: "ck-1",
-      label: "프론트엔드 개발",
-      category: "skill",
-      confidence: "sufficient",
-      evidences: [
-        { quote: "React 프로파일러 기반 성능 최적화", experienceTitle: "카카오 프론트엔드 인턴십" },
-        { quote: "프로토타입 프론트엔드 구현", experienceTitle: "캡스톤 디자인 프로젝트" },
-      ],
-    },
-    {
-      id: "ck-2",
-      label: "리더십",
-      category: "work_style",
-      confidence: "partial",
-      evidences: [
-        { quote: "6인 팀 리더로서 총괄", experienceTitle: "캡스톤 디자인 프로젝트" },
-      ],
-    },
-    {
-      id: "ck-3",
-      label: "사용자 중심 사고",
-      category: "value",
-      confidence: "partial",
-      evidences: [
-        { quote: "사용자 인터뷰 설계 및 분석을 주도", experienceTitle: "UX 리서치 프로젝트" },
-      ],
-    },
-    {
-      id: "ck-4",
-      label: "문제 해결",
-      category: "skill",
-      confidence: "sufficient",
-      evidences: [
-        { quote: "렌더링 병목 분석 후 최적화", experienceTitle: "카카오 프론트엔드 인턴십" },
-      ],
+      combinationTitle: "리더십 흐름 + 실무 협업",
+      items: ["캡스톤 디자인 프로젝트", "카카오 프론트엔드 인턴십"],
+      synergyReason:
+        "학내 리더십 경험과 실무 협업 경험이 시간순으로 이어져 ‘성장하는 팀 플레이어’ 서사를 만듭니다.",
+      expectedEffect: "리더십·협업 역량의 일관된 증명",
+      applicableRoles: ["프론트엔드 엔지니어", "테크 리드 트랙"],
     },
   ],
-  connections: [
+  additionalRecommendations: {
+    certifications: ["정보처리기사", "Google UX Design Professional Certificate"],
+    clubsAndSocieties: ["GDSC", "Likelion 프론트엔드 트랙"],
+    projectsAndContests: ["오픈소스 성능 PR", "교내 해커톤 출전", "토이 프로덕트 출시"],
+  },
+  resumeStarFormat: [
     {
-      fromExperienceId: "exp-v2-3",
-      fromTitle: "캡스톤 디자인 프로젝트",
-      toExperienceId: "exp-v2-1",
-      toTitle: "카카오 프론트엔드 인턴십",
-      connectionType: "temporal_growth",
-      strength: "strong",
-      evidence: {
-        quote: "학교 프로젝트에서 쌓은 프론트엔드 기초가 실무 인턴십에서 성과로 이어짐",
-        experienceTitle: "캡스톤 → 카카오",
-      },
+      title: "주요 페이지 성능 40% 개선",
+      situation: "주요 페이지 LCP가 3초를 넘어 이탈률이 증가하던 상황",
+      task: "팀 합의 하에 성능 개선 단일 책임자로 LCP 단축",
+      action: "React 프로파일러로 병목을 식별, 코드 스플리팅·메모이제이션 단계 적용",
+      result: "LCP 40%↓, 이탈률 15%↓, 결제 페이지 진입률 8%↑",
     },
     {
-      fromExperienceId: "ind-5",
-      fromTitle: "UX 리서치 프로젝트",
-      toExperienceId: "exp-v2-1",
-      toTitle: "카카오 프론트엔드 인턴십",
-      connectionType: "role_expansion",
-      strength: "weak",
-      evidence: {
-        quote: "UX 리서치 경험이 프론트엔드 개발에 미친 영향이 명시적으로 드러나지 않음",
-        experienceTitle: "UX 리서치 → 카카오",
-      },
-      improvementGuide: {
-        reason: "UX 리서치 경험과 프론트엔드 개발의 연결이 약합니다.",
-        suggestion: "리서치 인사이트가 UI 개발에 영향을 준 사례를 추가해보세요.",
-      },
+      title: "공통 컴포넌트 라이브러리 설계",
+      situation: "신규 대시보드 요청에 기존 구조로는 확장이 어려웠던 상황",
+      task: "재사용 가능한 컴포넌트 아키텍처 설계 책임",
+      action: "팀 리뷰를 거쳐 토큰·컴포넌트 API를 정의하고 점진 적용",
+      result: "후속 기능 개발 시간 30% 단축, 팀 코드 리뷰 만족도 상승",
     },
   ],
-  storylines: [
-    {
-      id: "sl-1",
-      start: "캡스톤 프로젝트에서 프론트엔드 개발에 처음 도전",
-      development: "UX 리서치를 통해 사용자 관점을 학습하고, 프로토타입 개발 역량을 키움",
-      evidence: "6인 팀 리더로서 서비스 기획부터 프로토타입까지 완성",
-      growth: "카카오 인턴십에서 실무 성능 최적화와 아키텍처 설계를 주도",
-      arrival: "프론트엔드 개발자로서 기술력과 협업 역량을 모두 갖춘 인재",
-      coreExperienceIds: ["exp-v2-1", "exp-v2-3"],
-      supportingExperienceIds: ["ind-5"],
-    },
-  ],
-  scenarios: [
-    {
-      id: "sc-1",
-      title: "IT 기업 프론트엔드 개발자",
-      rationale: "실무 인턴 경험과 성능 최적화 성과가 직접적으로 어필됩니다.",
-      recommendedExperienceIds: ["exp-v2-1", "exp-v2-3"],
-      emphasisPoints: ["성능 40% 개선 수치", "컴포넌트 아키텍처 설계 경험"],
-      speakingOrder: ["카카오 인턴십 → 캡스톤 프로젝트 → 기술 성장 스토리"],
-    },
-    {
-      id: "sc-2",
-      title: "UX 엔지니어",
-      rationale: "프론트엔드 기술력 + UX 리서치 경험의 조합이 차별점이 됩니다.",
-      recommendedExperienceIds: ["exp-v2-1", "ind-5"],
-      emphasisPoints: ["사용자 인터뷰 경험", "성능 최적화를 통한 UX 개선"],
-      speakingOrder: ["UX 리서치 → 카카오 인턴십 → 사용자 중심 개발"],
-      fitComment: "UX 엔지니어 포지션은 아직 국내에서 채용이 적지만, 글로벌 IT 기업에서 수요가 증가하고 있습니다.",
-    },
-  ],
-  commonRecommendations: [
-    {
-      id: "crec-1",
-      activity: "기술 블로그 운영 시작",
-      reason: "성능 최적화 사례를 글로 정리하면 기술 커뮤니케이션 역량도 증명할 수 있습니다.",
-      evidence: { quote: "렌더링 속도 40% 개선", experienceTitle: "카카오 프론트엔드 인턴십" },
-      expectedEffect: "포트폴리오 강화 + 기술 커뮤니티 참여",
-      type: "expand",
-    },
-    {
-      id: "crec-2",
-      activity: "사이드 프로젝트로 풀스택 경험 추가",
-      reason: "프론트엔드 외에 백엔드 이해도를 보여주면 기술 범위가 넓어집니다.",
-      evidence: { quote: "프론트엔드 팀 내 성능 개선 태스크 전담", experienceTitle: "카카오 프론트엔드 인턴십" },
-      expectedEffect: "풀스택 역량 증명",
-      type: "supplement",
-    },
-    {
-      id: "crec-3",
-      activity: "협업 사례 구체화",
-      reason: "코드 리뷰 참여 외에 팀원과의 의견 조율 사례가 있으면 협업 역량이 강화됩니다.",
-      evidence: { quote: "코드 리뷰에서 긍정적 피드백", experienceTitle: "카카오 프론트엔드 인턴십" },
-      expectedEffect: "팀워크 역량 근거 보강",
-      type: "supplement",
-    },
-  ],
-  scenarioRecommendations: [
-    {
-      id: "srec-1",
-      activity: "프론트엔드 성능 모니터링 도구 활용 경험 추가",
-      reason: "IT 기업에서 성능 모니터링은 필수 역량입니다.",
-      evidence: { quote: "React 프로파일러로 병목 지점을 분석", experienceTitle: "카카오 프론트엔드 인턴십" },
-      expectedEffect: "실무 성능 관리 역량 증명",
-      type: "expand",
-      scenarioId: "sc-1",
-    },
-    {
-      id: "srec-2",
-      activity: "사용성 테스트 참여 경험 추가",
-      reason: "UX 엔지니어는 개발뿐 아니라 테스트 참여도 중요합니다.",
-      evidence: { quote: "사용자 인터뷰 설계 및 분석을 주도", experienceTitle: "UX 리서치 프로젝트" },
-      expectedEffect: "UX 리서치 → 개발 연결 역량 강화",
-      type: "supplement",
-      scenarioId: "sc-2",
-    },
-  ],
-  confidenceGuide: {
-    overallConfidence: "sufficient",
-    improvementGuides: [
+  actionPlan: {
+    shortTerm: "본 이력의 협업 사례를 보강하고, 정량 성과의 ‘해석’ 한 줄 추가",
+    midTerm: "사이드 프로젝트로 풀스택·UX 엔지니어링 경험을 1건 확보",
+    longTerm: "오픈소스 기여 + UX 엔지니어 포지션을 타겟으로 한 포트폴리오 정리",
+  },
+  criticalDiagnosis: {
+    oneLineVerdict:
+      "정량 성과 우수, 그러나 ‘다배경 팀과의 협업’ 근거가 약해 직무 인터뷰에서 약점이 될 수 있어요.",
+    weaknesses: [
       {
-        reason: "UX 리서치와 프론트엔드 개발의 연결이 약합니다.",
-        suggestion: "리서치 인사이트가 개발에 영향을 준 구체적 사례를 추가하세요.",
-        targetField: "내 역할/기여도",
+        id: "cw-1",
+        category: "협업 맥락",
+        severity: "high",
+        title: "다른 직군과의 협업 사례 부족",
+        diagnosis: "디자이너·기획자와의 의사결정 흔적이 잘 드러나지 않습니다.",
+        evidence: "본 포트폴리오 전반에서 ‘본인 단독’ 액션 위주로 서술됨",
+        impact: "협업 역량 인터뷰에서 답변 폭이 좁아짐",
+        priorityAction: "타 직군과의 의사결정·합의 사례를 1~2건 추가",
       },
       {
-        reason: "팀 내 갈등 해결이나 의견 조율 사례가 부족합니다.",
-        suggestion: "협업 과정에서의 커뮤니케이션 경험을 기록해보세요.",
+        id: "cw-2",
+        category: "정량 해석",
+        severity: "medium",
+        title: "수치는 있으나 해석이 부족",
+        diagnosis: "‘15% 감소’ 등의 수치가 사용자 행동 변화로 이어진 해석이 없음",
+        evidence: "‘이탈률 15% 감소’ 단독 기재",
+        impact: "수치가 자기자랑처럼 들릴 수 있음",
+        priorityAction: "지표가 상위 비즈니스 지표에 어떤 영향을 줬는지 한 줄 추가",
       },
     ],
+    missingExperienceTypes: ["타 직군 협업 프로젝트", "장기 운영 경험", "외부 팀 발표 경험"],
+    contentQualityIssues: [
+      {
+        item: "‘성능 최적화’ 항목",
+        issue: "도입한 기법은 명확하지만 의사결정 과정이 보이지 않음",
+        improvementHint: "‘프로파일 → 후보 검토 → 팀 합의’ 흐름을 한 줄로 보강",
+      },
+      {
+        item: "‘공통 컴포넌트 라이브러리’ 항목",
+        issue: "팀 합의 과정이 빠져 있음",
+        improvementHint: "디자이너와의 토큰 합의 사례를 추가",
+      },
+    ],
+    competitorGap:
+      "비슷한 학번·전공 후보군 대비 정량 성과는 상위권이지만, ‘다배경 협업’ 측면은 평균 수준입니다.",
   },
+  validJobRecommendations: [
+    {
+      company: "토스",
+      role: "프론트엔드 엔지니어 (신입)",
+      deadline: "2026-05-31",
+      whyMatch: "성능 최적화 성과와 컴포넌트 아키텍처 설계 경험이 직접 연결됩니다.",
+      url: "https://example.com/jobs/toss-fe",
+    },
+    {
+      company: "당근",
+      role: "프론트엔드 엔지니어 (주니어)",
+      deadline: "2026-06-15",
+      whyMatch: "팀 리더십과 실무 협업 경험이 사내 문화와 잘 맞을 가능성이 높아요.",
+      url: "https://example.com/jobs/karrot-fe",
+    },
+  ],
+  missingInfoWarning:
+    "팀 규모, 본인 직책, 모니터링 체계 등 일부 정보가 빠져 있어 채워주시면 정확도가 더 올라갑니다.",
 };
 
 // ─── Keyword Analysis ───────────────────────────────────────

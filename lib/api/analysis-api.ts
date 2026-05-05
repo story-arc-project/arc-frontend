@@ -10,9 +10,15 @@ import type {
   IndividualAnalysisResultBody,
   IndividualWeakness,
   IndividualSynergyRecommendation,
+  IndividualStarFormat,
+  IndividualActionPlan,
   WeaknessSeverity,
   SynergyPriority,
   ComprehensiveAnalysisResult,
+  ComprehensiveWeakness,
+  SynergyCombination,
+  ContentQualityIssue,
+  JobRecommendation,
   KeywordAnalysisResult,
   KeywordDefinition,
   KeywordCoverage,
@@ -155,7 +161,7 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
-function mapWeakness(dto: unknown, index: number): IndividualWeakness {
+function mapIndividualWeakness(dto: unknown, index: number): IndividualWeakness {
   const r = asRecord(dto);
   return {
     id: asString(r.id, `w-${index}`),
@@ -167,6 +173,20 @@ function mapWeakness(dto: unknown, index: number): IndividualWeakness {
     impact: asString(r.impact),
     priorityAction: asString(r.priorityAction ?? r.priority_action),
     improvementExample: asString(r.improvementExample ?? r.improvement_example),
+  };
+}
+
+function mapComprehensiveWeakness(dto: unknown, index: number): ComprehensiveWeakness {
+  const r = asRecord(dto);
+  return {
+    id: asString(r.id, `w-${index}`),
+    category: asString(r.category),
+    severity: asWeaknessSeverity(r.severity),
+    title: asString(r.title),
+    diagnosis: asString(r.diagnosis),
+    evidence: asString(r.evidence),
+    impact: asString(r.impact),
+    priorityAction: asString(r.priorityAction ?? r.priority_action),
   };
 }
 
@@ -182,6 +202,29 @@ function mapSynergy(dto: unknown): IndividualSynergyRecommendation {
   };
 }
 
+function mapStarFormat(dto: unknown): IndividualStarFormat {
+  const r = asRecord(dto);
+  return {
+    title: asString(r.title),
+    situation: asString(r.situation ?? r.S ?? r.s),
+    task: asString(r.task ?? r.T ?? r.t),
+    action: asString(r.action ?? r.A ?? r.a),
+    result: asString(r.result ?? r.R ?? r.r),
+  };
+}
+
+/**
+ * action_plan 키는 백엔드 표기에 따라 short_term/mid_term/long_term 또는 한글 키일 수 있다.
+ */
+function mapActionPlan(dto: unknown): IndividualActionPlan {
+  const r = asRecord(dto);
+  return {
+    shortTerm: asString(r.shortTerm ?? r.short_term ?? r["단기"]),
+    midTerm: asString(r.midTerm ?? r.mid_term ?? r["중기"]),
+    longTerm: asString(r.longTerm ?? r.long_term ?? r["장기"]),
+  };
+}
+
 /**
  * 백엔드 응답 형태:
  * { id, status, experience_id, result: { ... } }
@@ -190,20 +233,7 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
   const r = asRecord(dto);
   const rawResult = asRecord(r.result);
   const deep = asRecord(rawResult.deepAnalysis ?? rawResult.deep_analysis);
-  const star = asRecord(rawResult.starFormat ?? rawResult.star_format);
   const diagnosis = asRecord(rawResult.itemDiagnosis ?? rawResult.item_diagnosis);
-  const action = asRecord(rawResult.actionPlan ?? rawResult.action_plan);
-
-  // action_plan 키는 백엔드 표기에 따라 short_term/mid_term/long_term 또는 한글 키일 수 있다.
-  const shortTerm = asString(
-    action.shortTerm ?? action.short_term ?? (action as UnknownRecord)["단기"],
-  );
-  const midTerm = asString(
-    action.midTerm ?? action.mid_term ?? (action as UnknownRecord)["중기"],
-  );
-  const longTerm = asString(
-    action.longTerm ?? action.long_term ?? (action as UnknownRecord)["장기"],
-  );
 
   const result: IndividualAnalysisResultBody = {
     status: asString(rawResult.status),
@@ -217,23 +247,17 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
       applicableRoles: asStringArray(deep.applicableRoles ?? deep.applicable_roles),
       marketValue: asString(deep.marketValue ?? deep.market_value),
     },
-    starFormat: {
-      title: asString(star.title),
-      situation: asString(star.situation ?? star.S ?? star.s),
-      task: asString(star.task ?? star.T ?? star.t),
-      action: asString(star.action ?? star.A ?? star.a),
-      result: asString(star.result ?? star.R ?? star.r),
-    },
+    starFormat: mapStarFormat(rawResult.starFormat ?? rawResult.star_format),
     itemDiagnosis: {
       oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
-      weaknesses: asArray(diagnosis.weaknesses).map((w, i) => mapWeakness(w, i)),
+      weaknesses: asArray(diagnosis.weaknesses).map((w, i) => mapIndividualWeakness(w, i)),
       missingElements: asStringArray(diagnosis.missingElements ?? diagnosis.missing_elements),
       rewriteSuggestion: asString(diagnosis.rewriteSuggestion ?? diagnosis.rewrite_suggestion),
     },
     synergyRecommendations: asArray(
       rawResult.synergyRecommendations ?? rawResult.synergy_recommendations,
     ).map(mapSynergy),
-    actionPlan: { shortTerm, midTerm, longTerm },
+    actionPlan: mapActionPlan(rawResult.actionPlan ?? rawResult.action_plan),
     missingInfoWarning: asString(rawResult.missingInfoWarning ?? rawResult.missing_info_warning),
   };
 
@@ -245,39 +269,102 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
   };
 }
 
+function mapSynergyCombination(dto: unknown): SynergyCombination {
+  const r = asRecord(dto);
+  return {
+    combinationTitle: asString(r.combinationTitle ?? r.combination_title),
+    items: asStringArray(r.items),
+    synergyReason: asString(r.synergyReason ?? r.synergy_reason),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+    applicableRoles: asStringArray(r.applicableRoles ?? r.applicable_roles),
+  };
+}
+
+function mapContentQualityIssue(dto: unknown): ContentQualityIssue {
+  const r = asRecord(dto);
+  return {
+    item: asString(r.item),
+    issue: asString(r.issue),
+    improvementHint: asString(r.improvementHint ?? r.improvement_hint),
+  };
+}
+
+function mapJobRecommendation(dto: unknown): JobRecommendation {
+  const r = asRecord(dto);
+  return {
+    company: asString(r.company),
+    role: asString(r.role),
+    deadline: asString(r.deadline),
+    whyMatch: asString(r.whyMatch ?? r.why_match),
+    url: asString(r.url),
+  };
+}
+
+/**
+ * 종합 분석 응답 형태 (prefix 없는 평탄형, result wrapper도 방어):
+ * { status, user_school, user_department, brief_summary, detailed_summary,
+ *   keyword_clustering, experience_insights, synergy_combinations[],
+ *   additional_recommendations, resume_star_format[], action_plan,
+ *   critical_diagnosis, valid_job_recommendations[], missing_info_warning }
+ */
 function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
   const r = asRecord(dto);
-  const confidenceGuide = asRecord(r.confidenceGuide ?? r.confidence_guide);
+  const body = r.result && typeof r.result === "object" ? asRecord(r.result) : r;
+
+  const clustering = asRecord(body.keywordClustering ?? body.keyword_clustering);
+  const insights = asRecord(body.experienceInsights ?? body.experience_insights);
+  const additional = asRecord(body.additionalRecommendations ?? body.additional_recommendations);
+  const diagnosis = asRecord(body.criticalDiagnosis ?? body.critical_diagnosis);
+
   return {
-    id: asString(r.id),
-    title: asString(r.title),
-    analyzedAt: asString(r.analyzedAt ?? r.analyzed_at ?? r.created_at),
-    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
-    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
-    selectedExperienceIds: asArray<string>(
-      r.selectedExperienceIds ?? r.selected_experience_ids ?? r.experience_ids,
-    ),
-    experienceSummaries: asArray(
-      r.experienceSummaries ?? r.experience_summaries,
-    ) as ComprehensiveAnalysisResult["experienceSummaries"],
-    keywords: asArray(r.keywords) as ComprehensiveAnalysisResult["keywords"],
-    connections: asArray(r.connections) as ComprehensiveAnalysisResult["connections"],
-    storylines: asArray(r.storylines) as ComprehensiveAnalysisResult["storylines"],
-    scenarios: asArray(r.scenarios) as ComprehensiveAnalysisResult["scenarios"],
-    commonRecommendations: asArray(
-      r.commonRecommendations ?? r.common_recommendations,
-    ) as ComprehensiveAnalysisResult["commonRecommendations"],
-    scenarioRecommendations: asArray(
-      r.scenarioRecommendations ?? r.scenario_recommendations,
-    ) as ComprehensiveAnalysisResult["scenarioRecommendations"],
-    confidenceGuide: {
-      overallConfidence: asConfidence(
-        confidenceGuide.overallConfidence ?? confidenceGuide.overall_confidence,
+    id: asString(r.id ?? body.id),
+    status: mapStatus(r.status ?? body.status),
+    userSchool: asString(body.userSchool ?? body.user_school),
+    userDepartment: asString(body.userDepartment ?? body.user_department),
+    briefSummary: asString(body.briefSummary ?? body.brief_summary),
+    detailedSummary: asString(body.detailedSummary ?? body.detailed_summary),
+    keywordClustering: {
+      personalityTendency: asStringArray(
+        clustering.personalityTendency ?? clustering.personality_tendency,
       ),
-      improvementGuides: asArray(
-        confidenceGuide.improvementGuides ?? confidenceGuide.improvement_guides,
-      ) as ComprehensiveAnalysisResult["confidenceGuide"]["improvementGuides"],
+      coreCompetency: asStringArray(clustering.coreCompetency ?? clustering.core_competency),
+      jobIndustry: asStringArray(clustering.jobIndustry ?? clustering.job_industry),
     },
+    experienceInsights: {
+      motivation: asString(insights.motivation),
+      learningPoints: asString(insights.learningPoints ?? insights.learning_points),
+    },
+    synergyCombinations: asArray(
+      body.synergyCombinations ?? body.synergy_combinations,
+    ).map(mapSynergyCombination),
+    additionalRecommendations: {
+      certifications: asStringArray(additional.certifications),
+      clubsAndSocieties: asStringArray(
+        additional.clubsAndSocieties ?? additional.clubs_and_societies,
+      ),
+      projectsAndContests: asStringArray(
+        additional.projectsAndContests ?? additional.projects_and_contests,
+      ),
+    },
+    resumeStarFormat: asArray(
+      body.resumeStarFormat ?? body.resume_star_format,
+    ).map(mapStarFormat),
+    actionPlan: mapActionPlan(body.actionPlan ?? body.action_plan),
+    criticalDiagnosis: {
+      oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
+      weaknesses: asArray(diagnosis.weaknesses).map((w, i) => mapComprehensiveWeakness(w, i)),
+      missingExperienceTypes: asStringArray(
+        diagnosis.missingExperienceTypes ?? diagnosis.missing_experience_types,
+      ),
+      contentQualityIssues: asArray(
+        diagnosis.contentQualityIssues ?? diagnosis.content_quality_issues,
+      ).map(mapContentQualityIssue),
+      competitorGap: asString(diagnosis.competitorGap ?? diagnosis.competitor_gap),
+    },
+    validJobRecommendations: asArray(
+      body.validJobRecommendations ?? body.valid_job_recommendations,
+    ).map(mapJobRecommendation),
+    missingInfoWarning: asString(body.missingInfoWarning ?? body.missing_info_warning),
   };
 }
 
