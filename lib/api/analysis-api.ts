@@ -228,18 +228,20 @@ function mapActionPlan(dto: unknown): IndividualActionPlan {
 /**
  * 백엔드 응답 형태:
  * { id, status, experience_id, result: { ... } }
+ *
+ * 응답이 flat 으로 내려오는 경우(`result` wrapper 부재)도 동일하게 파싱한다.
  */
 function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
   const r = asRecord(dto);
-  const rawResult = asRecord(r.result);
-  const deep = asRecord(rawResult.deepAnalysis ?? rawResult.deep_analysis);
-  const diagnosis = asRecord(rawResult.itemDiagnosis ?? rawResult.item_diagnosis);
+  const body = r.result && typeof r.result === "object" ? asRecord(r.result) : r;
+  const deep = asRecord(body.deepAnalysis ?? body.deep_analysis);
+  const diagnosis = asRecord(body.itemDiagnosis ?? body.item_diagnosis);
 
   const result: IndividualAnalysisResultBody = {
-    status: asString(rawResult.status),
-    itemName: asString(rawResult.itemName ?? rawResult.item_name),
-    itemType: asString(rawResult.itemType ?? rawResult.item_type),
-    briefSummary: asString(rawResult.briefSummary ?? rawResult.brief_summary),
+    status: asString(body.status ?? r.status),
+    itemName: asString(body.itemName ?? body.item_name),
+    itemType: asString(body.itemType ?? body.item_type),
+    briefSummary: asString(body.briefSummary ?? body.brief_summary),
     deepAnalysis: {
       careerValue: asString(deep.careerValue ?? deep.career_value),
       strengths: asStringArray(deep.strengths),
@@ -247,7 +249,7 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
       applicableRoles: asStringArray(deep.applicableRoles ?? deep.applicable_roles),
       marketValue: asString(deep.marketValue ?? deep.market_value),
     },
-    starFormat: mapStarFormat(rawResult.starFormat ?? rawResult.star_format),
+    starFormat: mapStarFormat(body.starFormat ?? body.star_format),
     itemDiagnosis: {
       oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
       weaknesses: asArray(diagnosis.weaknesses).map((w, i) => mapIndividualWeakness(w, i)),
@@ -255,16 +257,16 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
       rewriteSuggestion: asString(diagnosis.rewriteSuggestion ?? diagnosis.rewrite_suggestion),
     },
     synergyRecommendations: asArray(
-      rawResult.synergyRecommendations ?? rawResult.synergy_recommendations,
+      body.synergyRecommendations ?? body.synergy_recommendations,
     ).map(mapSynergy),
-    actionPlan: mapActionPlan(rawResult.actionPlan ?? rawResult.action_plan),
-    missingInfoWarning: asString(rawResult.missingInfoWarning ?? rawResult.missing_info_warning),
+    actionPlan: mapActionPlan(body.actionPlan ?? body.action_plan),
+    missingInfoWarning: asString(body.missingInfoWarning ?? body.missing_info_warning),
   };
 
   return {
-    id: asString(r.id),
-    status: mapStatus(r.status),
-    experienceId: asString(r.experienceId ?? r.experience_id),
+    id: asString(r.id ?? body.id),
+    status: mapStatus(r.status ?? body.status),
+    experienceId: asString(r.experienceId ?? r.experience_id ?? body.experience_id),
     result,
   };
 }

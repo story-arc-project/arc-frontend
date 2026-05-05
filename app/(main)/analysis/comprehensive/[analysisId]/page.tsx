@@ -16,6 +16,7 @@ import type {
 } from "@/types/analysis";
 import { weaknessSeverityLabel } from "@/types/analysis";
 import { getComprehensiveResult } from "@/lib/api/analysis-api";
+import { isSafeHttpUrl } from "@/lib/utils/url-utils";
 import { Badge } from "@/components/ui";
 
 export default function ComprehensiveDetailPage() {
@@ -470,7 +471,7 @@ function JobRecommendationsBlock({ items }: { items: JobRecommendation[] }) {
               )}
             </div>
             {j.whyMatch && <Field label="추천 이유" value={j.whyMatch} />}
-            {j.url && (
+            {j.url && isSafeHttpUrl(j.url) && (
               <a
                 href={j.url}
                 target="_blank"

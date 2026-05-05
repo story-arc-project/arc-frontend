@@ -227,6 +227,7 @@ function CoverageBlock({ coverage }: { coverage: KeywordCoverage[] }) {
               <div
                 className="h-1.5 rounded-full bg-surface-tertiary overflow-hidden"
                 role="progressbar"
+                aria-label={`${c.keyword} 커버리지`}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={pct}
