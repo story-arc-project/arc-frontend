@@ -480,7 +480,7 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
     analysisDate: asString(body.analysisDate ?? body.analysis_date ?? body.created_at),
-    keywords: asStringArray(body.keywords ?? body.selected_keywords),
+    keywords: asStringArray(body.keywords ?? body.selectedKeywords ?? body.selected_keywords),
     targetScenario: asString(body.targetScenario ?? body.target_scenario),
     keywordDefinitions: asArray(
       body.keywordDefinitions ?? body.keyword_definitions,
