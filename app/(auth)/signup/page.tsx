@@ -8,6 +8,7 @@ import { Button, DatePicker, Input, toast, ToastContainer } from "@/components/u
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { api, ApiError } from "@/lib/api/client";
+import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { VerifyEmailResponse } from "@/types/auth";
 import {
   type Step,
@@ -34,6 +35,7 @@ export default function SignupPage() {
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isChecking } = useRedirectIfAuthenticated({ allowOnboardingFlow: true });
 
   const [step, setStep] = useState<Step>("start");
   const [dir, setDir] = useState(1);
@@ -232,6 +234,8 @@ function SignupForm() {
     phone.length === 11;
   const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
   const isOnboarding = onboardingIndex >= 0;
+
+  if (isChecking) return null;
 
   return (
     <div className="w-full max-w-lg">

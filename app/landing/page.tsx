@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
+import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import LandingDemo from "./_components/LandingDemo";
 
 /* ── Shared animation ────────────────────────────────────── */
@@ -596,6 +597,10 @@ function Footer() {
 
 /* ── Page ────────────────────────────────────────────────── */
 export default function LandingPage() {
+  const { isChecking } = useRedirectIfAuthenticated();
+
+  if (isChecking) return null;
+
   return (
     <div className="min-h-screen bg-surface">
       <Navbar />

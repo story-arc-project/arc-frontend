@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
+import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { API_URL, SOCIAL_ERROR_MESSAGES, loginContainer, loginItem } from "../constants";
 
 export default function LoginPage() {
@@ -20,6 +21,7 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isChecking } = useRedirectIfAuthenticated();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -96,6 +98,8 @@ function LoginForm() {
     });
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
+
+  if (isChecking) return null;
 
   return (
     <div className="w-full max-w-lg">
