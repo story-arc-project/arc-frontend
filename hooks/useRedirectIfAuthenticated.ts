@@ -25,5 +25,5 @@ export function useRedirectIfAuthenticated({ allowOnboardingFlow = false }: Opti
     router.replace(isOnboarded ? "/dashboard" : "/signup?step=profile");
   }, [shouldRedirect, isOnboarded, router]);
 
-  return { isChecking: isLoading || shouldRedirect };
+  return { isLoading, shouldRedirect };
 }

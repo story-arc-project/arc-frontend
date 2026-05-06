@@ -35,7 +35,7 @@ export default function SignupPage() {
 function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isChecking } = useRedirectIfAuthenticated({ allowOnboardingFlow: true });
+  const { shouldRedirect } = useRedirectIfAuthenticated({ allowOnboardingFlow: true });
 
   const [step, setStep] = useState<Step>("start");
   const [dir, setDir] = useState(1);
@@ -235,7 +235,7 @@ function SignupForm() {
   const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
   const isOnboarding = onboardingIndex >= 0;
 
-  if (isChecking) return null;
+  if (shouldRedirect) return null;
 
   return (
     <div className="w-full max-w-lg">

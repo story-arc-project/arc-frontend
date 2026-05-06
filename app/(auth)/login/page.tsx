@@ -21,7 +21,7 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isChecking } = useRedirectIfAuthenticated();
+  const { shouldRedirect } = useRedirectIfAuthenticated();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -99,7 +99,7 @@ function LoginForm() {
     window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
-  if (isChecking) return null;
+  if (shouldRedirect) return null;
 
   return (
     <div className="w-full max-w-lg">

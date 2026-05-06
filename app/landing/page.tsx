@@ -597,9 +597,9 @@ function Footer() {
 
 /* ── Page ────────────────────────────────────────────────── */
 export default function LandingPage() {
-  const { isChecking } = useRedirectIfAuthenticated();
+  const { shouldRedirect } = useRedirectIfAuthenticated();
 
-  if (isChecking) return null;
+  if (shouldRedirect) return null;
 
   return (
     <div className="min-h-screen bg-surface">
