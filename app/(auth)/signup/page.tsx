@@ -8,6 +8,7 @@ import { Button, DatePicker, Input, toast, ToastContainer } from "@/components/u
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { api, ApiError } from "@/lib/api/client";
+import { useAuth } from "@/hooks/useAuth";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { VerifyEmailResponse } from "@/types/auth";
 import {
@@ -40,6 +41,7 @@ function SignupForm() {
   const stepParam = searchParams.get("step") as Step | null;
   const isOnOnboardingStep = stepParam !== null && ONBOARDING_STEPS.includes(stepParam);
   const { shouldRedirect } = useRedirectIfAuthenticated({ allowOnboardingFlow: isOnOnboardingStep });
+  const { isAuthenticated } = useAuth();
 
   const [step, setStep] = useState<Step>("start");
   const [dir, setDir] = useState(1);
@@ -113,7 +115,11 @@ function SignupForm() {
 
   function goBack() {
     const idx = STEP_ORDER.indexOf(step);
-    if (idx > 0) goTo(STEP_ORDER[idx - 1], -1);
+    if (idx <= 0) return;
+    const prev = STEP_ORDER[idx - 1];
+    // 인증된 사용자는 온보딩 흐름 밖(start/password/verify)으로 되돌아갈 수 없다.
+    if (isAuthenticated && !ONBOARDING_STEPS.includes(prev)) return;
+    goTo(prev, -1);
   }
 
   async function handleSignup() {
@@ -246,7 +252,7 @@ function SignupForm() {
       <ToastContainer />
       {/* Back */}
       <div className="h-8 mb-3 flex items-center">
-        {step !== "start" && (
+        {step !== "start" && !(isAuthenticated && step === "profile") && (
           <button
             type="button"
             onClick={goBack}
