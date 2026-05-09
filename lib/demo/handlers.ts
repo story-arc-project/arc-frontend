@@ -11,11 +11,11 @@ import type {
   ExperienceUpdatePayload,
 } from "@/types/experience";
 import type { LibraryDTO, LibraryUpsertPayload } from "@/lib/utils/library-mapper";
-import type { PresetDTO } from "@/lib/utils/preset-mapper";
+import type { PresetDTO, PresetUpsertPayload } from "@/lib/utils/preset-mapper";
 import type { ResumeLanguage, ResumeListItem, ResumeVersion } from "@/types/resume";
 import type { AuthUser } from "@/types/auth";
 
-import { experienceStore, libraryStore, resumeStore } from "./store";
+import { experienceStore, libraryStore, presetStore, resumeStore } from "./store";
 import { seedDemoUser, seedResumeListItem, DEMO_RESUME_VERSION_ID } from "./seed";
 
 // 짧은 인공 지연으로 실제 API 호출처럼 보이게 한다.
@@ -92,10 +92,33 @@ export async function removeExperienceFromLibrary(libraryId: string, experienceI
   await delay(undefined);
 }
 
-// ─── Preset (read-only, empty) ──────────────────────────────
+// ─── Preset ─────────────────────────────────────────────────
 
 export async function getPresets(): Promise<PresetDTO[]> {
-  return delay([]);
+  return delay(presetStore.list());
+}
+
+export async function getPreset(id: string): Promise<PresetDTO> {
+  const found = presetStore.get(id);
+  if (!found) throw new Error("not found");
+  return delay(found);
+}
+
+export async function createPreset(payload: PresetUpsertPayload): Promise<PresetDTO> {
+  return delay(presetStore.create(payload));
+}
+
+export async function updatePreset(id: string, payload: PresetUpsertPayload): Promise<PresetDTO> {
+  return delay(presetStore.update(id, payload));
+}
+
+export async function deletePreset(id: string): Promise<void> {
+  presetStore.delete(id);
+  await delay(undefined);
+}
+
+export async function duplicatePreset(id: string): Promise<string> {
+  return delay(presetStore.duplicate(id));
 }
 
 // ─── Auth ───────────────────────────────────────────────────

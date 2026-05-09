@@ -3,6 +3,7 @@
 
 import type { Experience, ExperienceSavePayload, ExperienceUpdatePayload } from "@/types/experience";
 import type { LibraryDTO, LibraryUpsertPayload } from "@/lib/utils/library-mapper";
+import type { PresetDTO, PresetUpsertPayload } from "@/lib/utils/preset-mapper";
 import type { ResumeVersion } from "@/types/resume";
 
 import {
@@ -39,7 +40,8 @@ export const experienceStore = {
   },
 
   get(id: string): Experience | undefined {
-    return experiences.find((e) => e.id === id);
+    const found = experiences.find((e) => e.id === id);
+    return found ? clone(found) : undefined;
   },
 
   create(payload: ExperienceSavePayload): string {
@@ -103,7 +105,7 @@ export const libraryStore = {
 
   experiencesIn(libraryId: string): Experience[] {
     const ids = libraryMembership[libraryId] ?? [];
-    return experiences.filter((e) => ids.includes(e.id));
+    return clone(experiences.filter((e) => ids.includes(e.id)));
   },
 
   create(payload: LibraryUpsertPayload): string {
@@ -150,6 +152,72 @@ export const libraryStore = {
   removeExperience(libraryId: string, experienceId: string): void {
     const list = libraryMembership[libraryId] ?? [];
     libraryMembership[libraryId] = list.filter((id) => id !== experienceId);
+  },
+};
+
+// ─── Preset ─────────────────────────────────────────────────
+// 시드는 비어있다. 사용자가 폼에서 만든 프리셋만 메모리에 누적된다.
+
+let presets: PresetDTO[] = [];
+
+export const presetStore = {
+  list(): PresetDTO[] {
+    return clone(presets);
+  },
+
+  get(id: string): PresetDTO | undefined {
+    const found = presets.find((p) => p.id === id);
+    return found ? clone(found) : undefined;
+  },
+
+  create(payload: PresetUpsertPayload): PresetDTO {
+    const id = genId("demo-preset");
+    const now = nowIso();
+    const dto: PresetDTO = {
+      id,
+      name: payload.name ?? "새 프리셋",
+      description: payload.description ?? null,
+      blocks: payload.blocks ?? [],
+      is_favorite: payload.is_favorite ?? false,
+      created_at: now,
+      updated_at: now,
+    };
+    presets = [...presets, dto];
+    return clone(dto);
+  },
+
+  update(id: string, payload: PresetUpsertPayload): PresetDTO {
+    const idx = presets.findIndex((p) => p.id === id);
+    if (idx < 0) throw new Error("not found");
+    const merged: PresetDTO = {
+      ...presets[idx],
+      name: payload.name ?? presets[idx].name,
+      description: payload.description !== undefined ? payload.description : presets[idx].description,
+      blocks: payload.blocks ?? presets[idx].blocks,
+      is_favorite: payload.is_favorite ?? presets[idx].is_favorite,
+      updated_at: nowIso(),
+    };
+    presets = presets.map((p, i) => (i === idx ? merged : p));
+    return clone(merged);
+  },
+
+  delete(id: string): void {
+    presets = presets.filter((p) => p.id !== id);
+  },
+
+  duplicate(id: string): string {
+    const src = presets.find((p) => p.id === id);
+    if (!src) throw new Error("not found");
+    const newId = genId("demo-preset");
+    const now = nowIso();
+    const copied: PresetDTO = {
+      ...clone(src),
+      id: newId,
+      created_at: now,
+      updated_at: now,
+    };
+    presets = [...presets, copied];
+    return newId;
   },
 };
 

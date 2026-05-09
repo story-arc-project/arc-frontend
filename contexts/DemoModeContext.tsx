@@ -94,9 +94,10 @@ export function DemoModeProvider({ children }: { children: React.ReactNode }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [open, setOpen] = useState(true);
 
-  // 마운트 시 데모 모드 ON, 언마운트 시 OFF.
-  // pathname 이 /demo 로 시작하면 isDemoMode() 가 자체적으로 true 를 반환하지만,
-  // 명시적 setter 도 함께 호출해 SSR 직후 동기 호출에서도 안정적으로 동작하게 한다.
+  // 마운트(hydration 직후) 시 데모 모드 ON, 언마운트 시 OFF.
+  // useEffect 는 클라이언트에서만 실행되므로 서버 렌더 단계에는 영향이 없다.
+  // 서버 렌더 단계의 isDemoMode() 호출은 별도로 pathname 기반 판별에 의존한다
+  // (lib/demo/state.ts 참고).
   useEffect(() => {
     setDemoMode(true);
     return () => setDemoMode(false);

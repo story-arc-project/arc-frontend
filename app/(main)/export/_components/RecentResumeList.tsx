@@ -11,6 +11,7 @@ import {
   getResumeList,
   ResumeMutationUnsupportedError,
 } from "@/lib/api/export-api";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import type { ResumeListItem } from "@/types/resume";
 
 interface RecentResumeListProps {
@@ -40,6 +41,7 @@ function shortenId(versionId: string): string {
 }
 
 export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
+  const basePath = useBasePath();
   const [items, setItems] = useState<ResumeListItem[] | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [deleteSupported, setDeleteSupported] = useState(true);
@@ -138,7 +140,7 @@ export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
               <FileText size={16} />
             </div>
             <Link
-              href={`/export/resume/${item.version_id}`}
+              href={`${basePath}/export/resume/${item.version_id}`}
               className="flex min-w-0 flex-1 items-center gap-3"
             >
               <div className="min-w-0 flex-1">

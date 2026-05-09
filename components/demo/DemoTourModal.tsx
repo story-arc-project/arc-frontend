@@ -51,7 +51,7 @@ export function DemoTourModal() {
         {isLast ? (
           <Link
             href="/signup"
-            className="h-9 px-4 bg-brand text-white text-body-sm font-semibold rounded-lg hover:bg-brand-dark transition-colors inline-flex items-center gap-1"
+            className="h-9 px-4 bg-brand text-text-on-brand text-body-sm font-semibold rounded-lg hover:bg-brand-dark transition-colors inline-flex items-center gap-1"
           >
             회원가입하고 직접 써보기
             <ArrowRight size={14} aria-hidden="true" />
@@ -60,7 +60,7 @@ export function DemoTourModal() {
           <button
             type="button"
             onClick={next}
-            className="h-9 px-4 bg-brand text-white text-body-sm font-semibold rounded-lg hover:bg-brand-dark transition-colors inline-flex items-center gap-1"
+            className="h-9 px-4 bg-brand text-text-on-brand text-body-sm font-semibold rounded-lg hover:bg-brand-dark transition-colors inline-flex items-center gap-1"
           >
             {step.nextLabel ?? "다음"}
           </button>

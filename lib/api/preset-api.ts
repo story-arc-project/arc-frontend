@@ -24,28 +24,9 @@ export async function getPresets(): Promise<PresetDTO[]> {
 }
 
 export async function getPreset(id: string): Promise<PresetDTO> {
-  if (isDemoMode()) return makeDemoPreset({ id });
+  if (isDemoMode()) return demo.getPreset(id);
   const res = await api.get<ApiSuccessResponse<PresetDTO>>(`/presets/${id}`);
   return res.data;
-}
-
-function makeDemoPreset(input: {
-  id?: string;
-  name?: string;
-  description?: string;
-  blocks?: Block[];
-  isFavorite?: boolean;
-}): PresetDTO {
-  const now = new Date().toISOString();
-  return {
-    id: input.id ?? `demo-preset-${Date.now()}`,
-    name: input.name ?? "데모 프리셋",
-    description: input.description ?? null,
-    blocks: input.blocks ?? [],
-    is_favorite: input.isFavorite ?? false,
-    created_at: now,
-    updated_at: now,
-  };
 }
 
 export async function createPreset(payload: {
@@ -54,7 +35,7 @@ export async function createPreset(payload: {
   blocks: Block[];
   isFavorite?: boolean;
 }): Promise<PresetDTO> {
-  if (isDemoMode()) return makeDemoPreset(payload);
+  if (isDemoMode()) return demo.createPreset(toPresetUpsertPayload(payload));
   const res = await api.post<ApiSuccessResponse<PresetDTO>>(
     "/presets/",
     toPresetUpsertPayload(payload),
@@ -71,7 +52,7 @@ export async function updatePreset(
     isFavorite?: boolean;
   },
 ): Promise<PresetDTO> {
-  if (isDemoMode()) return makeDemoPreset({ id, ...payload });
+  if (isDemoMode()) return demo.updatePreset(id, toPresetUpsertPayload(payload));
   const res = await api.put<ApiSuccessResponse<PresetDTO>>(
     `/presets/${id}`,
     toPresetUpsertPayload(payload),
@@ -80,12 +61,12 @@ export async function updatePreset(
 }
 
 export async function deletePreset(id: string): Promise<void> {
-  if (isDemoMode()) return;
+  if (isDemoMode()) return demo.deletePreset(id);
   await api.delete<void>(`/presets/${id}`);
 }
 
 export async function duplicatePreset(id: string): Promise<string> {
-  if (isDemoMode()) return `${id}-copy-${Date.now()}`;
+  if (isDemoMode()) return demo.duplicatePreset(id);
   const res = await api.post<ApiSuccessResponse<PresetIdData>>(
     `/presets/${id}/duplicate`,
   );
