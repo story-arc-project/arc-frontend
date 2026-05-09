@@ -256,7 +256,7 @@ function Hero() {
               무료로 시작하기
             </Link>
             <Link
-              href="#demo"
+              href="/demo"
               className="h-12 px-6 text-text-primary text-[15px] font-medium rounded-lg
                          hover:bg-surface-tertiary transition-colors inline-flex items-center"
             >

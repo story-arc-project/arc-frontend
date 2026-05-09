@@ -17,10 +17,12 @@ import type {
 import { weaknessSeverityLabel } from "@/types/analysis";
 import { getComprehensiveResult } from "@/lib/api/analysis-api";
 import { isSafeHttpUrl } from "@/lib/utils/url-utils";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui";
 
 export default function ComprehensiveDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
+  const basePath = useBasePath();
   const [data, setData] = useState<ComprehensiveAnalysisResult | null>(null);
   const [error, setError] = useState(false);
 
@@ -38,7 +40,7 @@ export default function ComprehensiveDetailPage() {
             분석 결과를 불러오지 못했습니다.
           </p>
           <Link
-            href="/analysis/comprehensive"
+            href={`${basePath}/analysis/comprehensive`}
             className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
           >
             목록으로 돌아가기
@@ -75,7 +77,7 @@ export default function ComprehensiveDetailPage() {
     <main className="px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-8">
         <Link
-          href="/analysis/comprehensive"
+          href={`${basePath}/analysis/comprehensive`}
           className="inline-flex items-center gap-1 text-body-sm text-text-secondary hover:text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
         >
           <ArrowLeft size={14} aria-hidden="true" />
