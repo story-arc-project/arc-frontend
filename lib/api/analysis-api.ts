@@ -33,7 +33,12 @@ import type {
   ConfidenceLevel,
 } from "@/types/analysis";
 
-const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
+import { isDemoMode } from "@/lib/demo/state";
+
+// 환경 변수 또는 데모 라우트(/demo) 진입 시 mock 데이터를 사용한다.
+function shouldMock(): boolean {
+  return process.env.NEXT_PUBLIC_USE_MOCK === "true" || isDemoMode();
+}
 
 async function mock<T>(loader: () => Promise<T>): Promise<T> {
   // simulate network delay
@@ -513,7 +518,7 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
 export async function getIndividualAnalysisList(params?: {
   status?: string;
 }): Promise<AnalysisSnapshot[]> {
-  if (USE_MOCK)
+  if (shouldMock())
     return mock(async () => {
       const { mockIndividualAnalysisList } = await mocks();
       if (params?.status && params.status !== "all")
@@ -531,7 +536,7 @@ export async function getIndividualAnalysisList(params?: {
 export async function getIndividualAnalysisResult(
   analysisId: string,
 ): Promise<IndividualAnalysisResult> {
-  if (USE_MOCK)
+  if (shouldMock())
     return mock(async () => (await mocks()).mockIndividualAnalysisResult);
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/analysis/individual/${analysisId}`,
@@ -542,7 +547,7 @@ export async function getIndividualAnalysisResult(
 // ─── Comprehensive ──────────────────────────────────────────
 
 export async function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
-  if (USE_MOCK) return mock(async () => (await mocks()).mockComprehensiveList);
+  if (shouldMock()) return mock(async () => (await mocks()).mockComprehensiveList);
   const res = await api.get<ApiSuccessResponse<unknown>>("/analysis/comprehensive");
   return unwrapList(res.data).map((dto) => mapSnapshot(dto, "comprehensive")).filter((s) => s.id);
 }
@@ -558,7 +563,7 @@ export async function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
 export async function createComprehensiveAnalysis(
   experienceIds: string[],
 ): Promise<{ analysisId: string }> {
-  if (USE_MOCK)
+  if (shouldMock())
     return mock(async () => ({ analysisId: "comp-new-" + Date.now() }));
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/comprehensive",
@@ -575,7 +580,7 @@ export async function createComprehensiveAnalysis(
 export async function getComprehensiveResult(
   analysisId: string,
 ): Promise<ComprehensiveAnalysisResult> {
-  if (USE_MOCK)
+  if (shouldMock())
     return mock(async () => (await mocks()).mockComprehensiveResult);
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/analysis/comprehensive/${analysisId}`,
@@ -586,14 +591,14 @@ export async function getComprehensiveResult(
 export async function deleteComprehensiveAnalysis(
   analysisId: string,
 ): Promise<void> {
-  if (USE_MOCK) return mock(async () => undefined);
+  if (shouldMock()) return mock(async () => undefined);
   await api.delete<void>(`/analysis/comprehensive/${analysisId}`);
 }
 
 export async function getAnalysisStatus(
   analysisId: string,
 ): Promise<{ status: AnalysisStatus }> {
-  if (USE_MOCK) return mock(async () => ({ status: "completed" as const }));
+  if (shouldMock()) return mock(async () => ({ status: "completed" as const }));
   return api.get<{ status: AnalysisStatus }>(`/analysis/status/${analysisId}`);
 }
 
@@ -604,12 +609,12 @@ export async function getAnalysisStatus(
  * TODO: 서버 스펙 확정 시 실제 엔드포인트로 연결.
  */
 export async function getKeywordSuggestions(): Promise<KeywordSuggestion[]> {
-  if (USE_MOCK) return mock(async () => (await mocks()).mockKeywordSuggestions);
+  if (shouldMock()) return mock(async () => (await mocks()).mockKeywordSuggestions);
   return [];
 }
 
 export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
-  if (USE_MOCK) return mock(async () => (await mocks()).mockKeywordList);
+  if (shouldMock()) return mock(async () => (await mocks()).mockKeywordList);
   const res = await api.get<ApiSuccessResponse<unknown>>("/analysis/keyword");
   return unwrapList(res.data).map((dto) => mapSnapshot(dto, "keyword")).filter((s) => s.id);
 }
@@ -625,7 +630,7 @@ export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
 export async function createKeywordAnalysis(
   keywordLabels: string[],
 ): Promise<{ analysisId: string }> {
-  if (USE_MOCK)
+  if (shouldMock())
     return mock(async () => ({ analysisId: "kw-new-" + Date.now() }));
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/keyword",
@@ -642,7 +647,7 @@ export async function createKeywordAnalysis(
 export async function getKeywordResult(
   analysisId: string,
 ): Promise<KeywordAnalysisResult> {
-  if (USE_MOCK) return mock(async () => (await mocks()).mockKeywordResult);
+  if (shouldMock()) return mock(async () => (await mocks()).mockKeywordResult);
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/analysis/keyword/${analysisId}`,
   );
@@ -650,7 +655,7 @@ export async function getKeywordResult(
 }
 
 export async function deleteKeywordAnalysis(analysisId: string): Promise<void> {
-  if (USE_MOCK) return mock(async () => undefined);
+  if (shouldMock()) return mock(async () => undefined);
   await api.delete<void>(`/analysis/keyword/${analysisId}`);
 }
 
@@ -659,7 +664,7 @@ export async function deleteKeywordAnalysis(analysisId: string): Promise<void> {
 export async function getBookmarks(params?: {
   type?: string;
 }): Promise<BookmarkedSnapshot[]> {
-  if (USE_MOCK)
+  if (shouldMock())
     return mock(async () => {
       const { mockBookmarks } = await mocks();
       if (params?.type && params.type !== "all")
@@ -676,12 +681,12 @@ export async function getBookmarks(params?: {
 
 /** POST /analysis/bookmarks/:id — body 없음 */
 export async function addBookmark(analysisId: string): Promise<void> {
-  if (USE_MOCK) return mock(async () => undefined);
+  if (shouldMock()) return mock(async () => undefined);
   await api.post<void>(`/analysis/bookmarks/${analysisId}`);
 }
 
 export async function removeBookmark(analysisId: string): Promise<void> {
-  if (USE_MOCK) return mock(async () => undefined);
+  if (shouldMock()) return mock(async () => undefined);
   await api.delete<void>(`/analysis/bookmarks/${analysisId}`);
 }
 
@@ -692,7 +697,7 @@ export async function updateAnalysisMeta(
   analysisId: string,
   data: { title: string },
 ): Promise<void> {
-  if (USE_MOCK) return mock(async () => undefined);
+  if (shouldMock()) return mock(async () => undefined);
   await api.patch<void>(`/analysis/${analysisId}`, data);
 }
 
@@ -704,7 +709,7 @@ export async function deleteAnalysis(
   analysisId: string,
   type: AnalysisType,
 ): Promise<void> {
-  if (USE_MOCK) return mock(async () => undefined);
+  if (shouldMock()) return mock(async () => undefined);
   if (type === "comprehensive") {
     return deleteComprehensiveAnalysis(analysisId);
   }
@@ -720,7 +725,7 @@ export async function deleteAnalysis(
  * `/analysis/home/summary` 엔드포인트가 없으므로 세 목록을 병렬 fetch 후 집계한다.
  */
 export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
-  if (USE_MOCK)
+  if (shouldMock())
     return mock(async () => (await mocks()).mockAnalysisHomeSummary);
 
   let failCount = 0;
@@ -780,7 +785,7 @@ export async function getAnalysisHistory(params?: {
   type?: string;
   sort?: "newest" | "oldest";
 }): Promise<AnalysisSnapshot[]> {
-  if (USE_MOCK)
+  if (shouldMock())
     return mock(async () => {
       const { mockHistory } = await mocks();
       let result = [...mockHistory];
@@ -824,7 +829,7 @@ export async function getAnalysisHistory(params?: {
  * 전용 엔드포인트가 없으므로 경험 목록 API에서 derive 한다.
  */
 export async function getSelectableExperiences(): Promise<SelectableExperience[]> {
-  if (USE_MOCK)
+  if (shouldMock())
     return mock(async () => (await mocks()).mockSelectableExperiences);
 
   const data = await getExperiences();

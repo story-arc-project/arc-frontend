@@ -12,10 +12,12 @@ import type {
 } from "@/types/analysis";
 import { weaknessSeverityLabel, synergyPriorityLabel } from "@/types/analysis";
 import { getIndividualAnalysisResult } from "@/lib/api/analysis-api";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui";
 
 export default function IndividualAnalysisDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
+  const basePath = useBasePath();
   const [data, setData] = useState<IndividualAnalysisResult | null>(null);
   const [error, setError] = useState(false);
 
@@ -33,7 +35,7 @@ export default function IndividualAnalysisDetailPage() {
             분석 결과를 불러오지 못했습니다.
           </p>
           <Link
-            href="/analysis/individual"
+            href={basePath ? `${basePath}/analysis` : "/analysis/individual"}
             className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
           >
             목록으로 돌아가기
@@ -70,7 +72,7 @@ export default function IndividualAnalysisDetailPage() {
     <main className="px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-8">
         <Link
-          href="/analysis/individual"
+          href={basePath ? `${basePath}/analysis` : "/analysis/individual"}
           className="inline-flex items-center gap-1 text-body-sm text-text-secondary hover:text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
         >
           <ArrowLeft size={14} aria-hidden="true" />
@@ -84,7 +86,7 @@ export default function IndividualAnalysisDetailPage() {
           </div>
           {data.experienceId && (
             <Link
-              href={`/archive?id=${data.experienceId}`}
+              href={`${basePath}/archive?id=${data.experienceId}`}
               className="inline-flex items-center gap-1 text-caption text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
             >
               아카이브에서 보기 <ExternalLink size={12} aria-hidden="true" />

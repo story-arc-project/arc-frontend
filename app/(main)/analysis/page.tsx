@@ -18,6 +18,7 @@ import type { AnalysisHomeSummary } from "@/types/analysis";
 import { analysisTypeLabel, ANALYSIS_DETAIL_PATH } from "@/types/analysis";
 import { getAnalysisHomeSummary } from "@/lib/api/analysis-api";
 import { formatRelativeTime } from "@/lib/utils/date-utils";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
@@ -59,6 +60,7 @@ const TABS: { key: TabKey; label: string }[] = [
 ];
 
 export default function AnalysisHomePage() {
+  const basePath = useBasePath();
   const [data, setData] = useState<AnalysisHomeSummary | null>(null);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabKey>("individual");
@@ -160,12 +162,13 @@ export default function AnalysisHomePage() {
           })}
         </div>
 
-        {/* Quick Actions */}
+        {/* Quick Actions — 데모에서는 list/new 페이지를 미러링하지 않으므로 숨긴다 */}
+        {basePath === "" && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
           {QUICK_ACTIONS.map((action) => (
             <Link
               key={action.href}
-              href={action.href}
+              href={`${basePath}${action.href}`}
               className="group bg-surface border border-border rounded-lg p-5 hover:border-brand transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             >
               <div className="flex items-center gap-2 mb-2">
@@ -183,6 +186,7 @@ export default function AnalysisHomePage() {
             </Link>
           ))}
         </div>
+        )}
 
         {/* Recent Results */}
         <section>
@@ -229,7 +233,7 @@ export default function AnalysisHomePage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <Link
-                      href={`${ANALYSIS_DETAIL_PATH[snapshot.type]}/${snapshot.id}`}
+                      href={`${basePath}${ANALYSIS_DETAIL_PATH[snapshot.type]}/${snapshot.id}`}
                       className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
                     >
                       <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -278,21 +282,23 @@ export default function AnalysisHomePage() {
           </div>
         </div>
 
-        {/* Bottom Links */}
+        {/* Bottom Links — 데모에서는 history/bookmarks 페이지를 미러링하지 않으므로 숨긴다 */}
+        {basePath === "" && (
         <div className="flex items-center gap-4 pt-2">
           <Link
-            href="/analysis/history"
+            href={`${basePath}/analysis/history`}
             className="text-body-sm text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
           >
             전체 결과 보기 &rarr;
           </Link>
           <Link
-            href="/analysis/bookmarks"
+            href={`${basePath}/analysis/bookmarks`}
             className="text-body-sm text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
           >
             즐겨찾기 바로가기 &rarr;
           </Link>
         </div>
+        )}
       </div>
     </main>
   );

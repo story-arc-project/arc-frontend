@@ -5,6 +5,8 @@ import type {
   ResumeListItem,
   ResumeVersion,
 } from "@/types/resume";
+import { isDemoMode } from "@/lib/demo/state";
+import * as demo from "@/lib/demo/handlers";
 
 // ─── Resume endpoints ──────────────────────────────────────────────
 
@@ -12,6 +14,7 @@ export async function createResume(
   params: { language: ResumeLanguage },
   options?: { signal?: AbortSignal },
 ): Promise<ResumeVersion> {
+  if (isDemoMode()) return demo.createResume(params);
   const res = await api.post<ApiSuccessResponse<ResumeVersion>>(
     "/export/resume",
     { language: params.language },
@@ -21,6 +24,7 @@ export async function createResume(
 }
 
 export async function getResume(versionId: string): Promise<ResumeVersion> {
+  if (isDemoMode()) return demo.getResume(versionId);
   const res = await api.get<ApiSuccessResponse<ResumeVersion>>(
     `/export/resume/${versionId}`,
   );
@@ -30,6 +34,7 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
 // Accept both the slim list shape and the full-payload shape. When the
 // backend returns full ResumeVersion objects, extract the fields we need.
 export async function getResumeList(): Promise<ResumeListItem[]> {
+  if (isDemoMode()) return demo.getResumeList();
   const res = await api.get<ApiSuccessResponse<unknown>>("/export/resume");
   const data = res.data;
 
@@ -93,6 +98,7 @@ export async function updateResume(
   versionId: string,
   data: ResumeVersion,
 ): Promise<ResumeVersion> {
+  if (isDemoMode()) return demo.updateResume(versionId, data);
   try {
     const res = await api.patch<ApiSuccessResponse<ResumeVersion>>(
       `/export/resume/${versionId}`,
@@ -108,6 +114,7 @@ export async function updateResume(
 }
 
 export async function deleteResume(versionId: string): Promise<void> {
+  if (isDemoMode()) return demo.deleteResume(versionId);
   try {
     await api.delete<void>(`/export/resume/${versionId}`);
   } catch (err) {
