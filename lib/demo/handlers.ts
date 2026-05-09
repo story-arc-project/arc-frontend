@@ -16,7 +16,7 @@ import type { ResumeLanguage, ResumeListItem, ResumeVersion } from "@/types/resu
 import type { AuthUser } from "@/types/auth";
 
 import { experienceStore, libraryStore, presetStore, resumeStore } from "./store";
-import { seedDemoUser, seedResumeListItem, DEMO_RESUME_VERSION_ID } from "./seed";
+import { seedResumeListItem, DEMO_RESUME_VERSION_ID } from "./seed";
 
 // 짧은 인공 지연으로 실제 API 호출처럼 보이게 한다.
 function delay<T>(value: T, ms = 200): Promise<T> {
@@ -124,8 +124,11 @@ export async function duplicatePreset(id: string): Promise<string> {
 // ─── Auth ───────────────────────────────────────────────────
 
 export async function fetchCurrentUser(): Promise<AuthUser | null> {
-  // 데모 사용자 반환 → AuthContext 에러를 방지하고 GNB 등 user 의존 UI 가 정상 렌더된다.
-  return delay(seedDemoUser);
+  // 데모 방문자를 인증된 사용자로 캐시하면 안 된다.
+  // 그럴 경우 데모 종료 후 /signup·/login 으로 이동했을 때
+  // useRedirectIfAuthenticated() 가 곧장 /dashboard 로 보내버려
+  // 회원가입 흐름이 차단된다 (Codex P1).
+  return delay(null);
 }
 
 export async function logoutUser(): Promise<void> {

@@ -11,6 +11,7 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 
 import { setDemoMode } from "@/lib/demo/state";
+import { useAuth } from "@/hooks/useAuth";
 
 export interface DemoTourStep {
   id: string;
@@ -90,6 +91,7 @@ export function useDemoMode(): DemoModeContextValue {
 export function DemoModeProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname() ?? "";
+  const { refetch: refetchAuth } = useAuth();
 
   const [stepIndex, setStepIndex] = useState(0);
   const [open, setOpen] = useState(true);
@@ -98,10 +100,17 @@ export function DemoModeProvider({ children }: { children: React.ReactNode }) {
   // useEffect 는 클라이언트에서만 실행되므로 서버 렌더 단계에는 영향이 없다.
   // 서버 렌더 단계의 isDemoMode() 호출은 별도로 pathname 기반 판별에 의존한다
   // (lib/demo/state.ts 참고).
+  //
+  // 언마운트 시 AuthContext 를 refetch 한다. 데모에서 fetchCurrentUser 는
+  // null 을 반환하므로, 실제 로그인 세션을 가진 사용자가 데모를 보고 떠날 때
+  // 캐시된 null 이 그대로 남지 않도록 진짜 세션을 다시 조회한다.
   useEffect(() => {
     setDemoMode(true);
-    return () => setDemoMode(false);
-  }, []);
+    return () => {
+      setDemoMode(false);
+      void refetchAuth();
+    };
+  }, [refetchAuth]);
 
   const next = useCallback(() => {
     const nextIdx = Math.min(stepIndex + 1, DEMO_TOUR_STEPS.length - 1);
