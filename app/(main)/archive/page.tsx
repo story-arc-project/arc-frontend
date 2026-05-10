@@ -532,7 +532,7 @@ export default function ArchivePage() {
         {/* Card list area */}
         {!middleCollapsed &&
         <div
-          className="md:ml-[clamp(220px,20vw,300px)] w-[340px] min-w-[280px] max-w-[400px] border-r border-border bg-surface flex-shrink-0 overflow-hidden transition-[width,min-width,opacity] duration-300 ease-in-out"
+          className="md:ml-[clamp(220px,20vw,300px)] w-[400px] min-w-[320px] max-w-[460px] border-r border-border bg-surface flex-shrink-0 overflow-hidden transition-[width,min-width,opacity] duration-300 ease-in-out"
         >
           {listPanel}
         </div>
