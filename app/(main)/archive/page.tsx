@@ -532,7 +532,7 @@ export default function ArchivePage() {
         {/* Card list area */}
         {!middleCollapsed &&
         <div
-          className="md:ml-[20vw] w-[340px] min-w-[280px] max-w-[400px] border-r border-border bg-surface flex-shrink-0 overflow-hidden transition-[width,min-width,opacity] duration-300 ease-in-out"
+          className="md:ml-[clamp(220px,20vw,300px)] w-[340px] min-w-[280px] max-w-[400px] border-r border-border bg-surface flex-shrink-0 overflow-hidden transition-[width,min-width,opacity] duration-300 ease-in-out"
         >
           {listPanel}
         </div>
@@ -540,7 +540,7 @@ export default function ArchivePage() {
         {/* Detail panel */}
         <div className={[
           "flex-1 flex overflow-hidden bg-surface relative",
-          middleCollapsed ? "md:ml-[20vw]" : "",
+          middleCollapsed ? "md:ml-[clamp(220px,20vw,300px)]" : "",
         ].join(" ")}>
           {/* Expand button when middle panel is collapsed */}
           {middleCollapsed && (

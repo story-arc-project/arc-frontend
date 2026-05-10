@@ -10,7 +10,7 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
   return (
     <DemoModeProvider>
       <DemoBanner />
-      <div className="min-h-[calc(100dvh-2.5rem)]">{children}</div>
+      <div className="min-h-[calc(100dvh-2.5rem)]" style={{ '--gnb-h': '2.5rem' } as React.CSSProperties}>{children}</div>
       <DemoTourModal />
     </DemoModeProvider>
   );
