@@ -1,5 +1,5 @@
 import { DemoModeProvider } from "@/contexts/DemoModeContext";
-import { DemoBanner } from "@/components/demo/DemoBanner";
+import { DemoGNB } from "@/components/demo/DemoGNB";
 import { DemoTourModal } from "@/components/demo/DemoTourModal";
 
 // 데모 페이지는 클라이언트 상태(useSearchParams 등) 의존성이 있어
@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
 export default function DemoLayout({ children }: { children: React.ReactNode }) {
   return (
     <DemoModeProvider>
-      <DemoBanner />
-      <div className="min-h-[calc(100dvh-2.5rem)]" style={{ '--gnb-h': '2.5rem' } as React.CSSProperties}>{children}</div>
+      <DemoGNB />
+      <div className="pt-[var(--gnb-h)]">{children}</div>
       <DemoTourModal />
     </DemoModeProvider>
   );
