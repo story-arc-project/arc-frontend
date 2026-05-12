@@ -5,6 +5,8 @@ import {
   type PresetDTO,
   toPresetUpsertPayload,
 } from "@/lib/utils/preset-mapper";
+import { isDemoMode } from "@/lib/demo/state";
+import * as demo from "@/lib/demo/handlers";
 
 interface PresetListData {
   count: number;
@@ -16,11 +18,13 @@ interface PresetIdData {
 }
 
 export async function getPresets(): Promise<PresetDTO[]> {
+  if (isDemoMode()) return demo.getPresets();
   const res = await api.get<ApiSuccessResponse<PresetListData>>("/presets/");
   return res.data.contents;
 }
 
 export async function getPreset(id: string): Promise<PresetDTO> {
+  if (isDemoMode()) return demo.getPreset(id);
   const res = await api.get<ApiSuccessResponse<PresetDTO>>(`/presets/${id}`);
   return res.data;
 }
@@ -31,6 +35,7 @@ export async function createPreset(payload: {
   blocks: Block[];
   isFavorite?: boolean;
 }): Promise<PresetDTO> {
+  if (isDemoMode()) return demo.createPreset(toPresetUpsertPayload(payload));
   const res = await api.post<ApiSuccessResponse<PresetDTO>>(
     "/presets/",
     toPresetUpsertPayload(payload),
@@ -47,6 +52,7 @@ export async function updatePreset(
     isFavorite?: boolean;
   },
 ): Promise<PresetDTO> {
+  if (isDemoMode()) return demo.updatePreset(id, toPresetUpsertPayload(payload));
   const res = await api.put<ApiSuccessResponse<PresetDTO>>(
     `/presets/${id}`,
     toPresetUpsertPayload(payload),
@@ -55,10 +61,12 @@ export async function updatePreset(
 }
 
 export async function deletePreset(id: string): Promise<void> {
+  if (isDemoMode()) return demo.deletePreset(id);
   await api.delete<void>(`/presets/${id}`);
 }
 
 export async function duplicatePreset(id: string): Promise<string> {
+  if (isDemoMode()) return demo.duplicatePreset(id);
   const res = await api.post<ApiSuccessResponse<PresetIdData>>(
     `/presets/${id}/duplicate`,
   );

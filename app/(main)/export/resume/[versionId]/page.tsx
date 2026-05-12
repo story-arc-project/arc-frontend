@@ -14,6 +14,7 @@ import {
   ResumeMutationUnsupportedError,
   updateResume,
 } from "@/lib/api/export-api";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import { isEmptySection, type ResumeVersion } from "@/types/resume";
 import { DraftRestoreBanner } from "./_components/DraftRestoreBanner";
 import { EmptyResumeState } from "./_components/EmptyResumeState";
@@ -41,6 +42,7 @@ interface PageProps {
 export default function ResumeDetailPage({ params }: PageProps) {
   const { versionId } = use(params);
   const router = useRouter();
+  const basePath = useBasePath();
 
   const [resume, setResume] = useState<ResumeVersion | null>(null);
   const [initial, setInitial] = useState<ResumeVersion | null>(null);
@@ -158,12 +160,12 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const created = await createResume({ language: resume.meta.language });
       const newId = created.version_id;
       if (!newId) throw new Error("version_id missing");
-      router.push(`/export/resume/${newId}`);
+      router.push(`${basePath}/export/resume/${newId}`);
     } catch {
       toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
       setRegenerating(false);
     }
-  }, [resume, regenerating, router]);
+  }, [resume, regenerating, router, basePath]);
 
   const handlePrint = useCallback(() => {
     if (typeof window !== "undefined") window.print();
@@ -178,8 +180,8 @@ export default function ResumeDetailPage({ params }: PageProps) {
       }
       toast("변경사항을 임시 저장했어요", "info");
     }
-    router.push("/export");
-  }, [dirty, resume, versionId, router]);
+    router.push(`${basePath}/export`);
+  }, [dirty, resume, versionId, router, basePath]);
 
   const handleRestoreDraft = useCallback(() => {
     if (!pendingDraft) return;
@@ -248,7 +250,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
             : "잠시 후 다시 시도해주세요."}
         </p>
         <div className="flex gap-2">
-          <Link href="/export">
+          <Link href={`${basePath}/export`}>
             <Button variant="ghost" size="sm">
               익스포트로 돌아가기
             </Button>

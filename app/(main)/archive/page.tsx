@@ -22,6 +22,7 @@ import {
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { usePresets } from "@/hooks/usePresets"
 import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
+import { useBasePath } from "@/lib/utils/use-base-path"
 
 /** @deprecated Use ArchiveModeV2 from RightPanelV2 */
 export type ArchiveMode = "empty" | "new" | "detail" | "edit"
@@ -31,6 +32,7 @@ type MobileView = "list" | "panel"
 export default function ArchivePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const basePath = useBasePath()
 
   const [mode, setMode] = useState<ArchiveModeV2>("empty")
   const [mobileView, setMobileView] = useState<MobileView>("list")
@@ -172,9 +174,9 @@ export default function ArchivePage() {
       setSelectedId(id)
       setMode("detail")
       setMobileView("panel")
-      router.push(`/archive?id=${id}`, { scroll: false })
+      router.push(`${basePath}/archive?id=${id}`, { scroll: false })
     },
-    [hasUnsaved, router]
+    [hasUnsaved, router, basePath]
   )
 
   const handleNewExperience = useCallback(() => {
@@ -186,8 +188,8 @@ export default function ArchivePage() {
     setSelectedId(null)
     setMode("new")
     setMobileView("panel")
-    router.push("/archive", { scroll: false })
-  }, [hasUnsaved, router])
+    router.push(`${basePath}/archive`, { scroll: false })
+  }, [hasUnsaved, router, basePath])
 
   // ── CRUD ──────────────────────────────────────────────────────────
   const handleSave = useCallback(
@@ -209,13 +211,13 @@ export default function ArchivePage() {
         setSelectedId(savedId)
         setMode("detail")
         setHasUnsaved(false)
-        router.push(`/archive?id=${savedId}`, { scroll: false })
+        router.push(`${basePath}/archive?id=${savedId}`, { scroll: false })
       } catch (err) {
         const message = err instanceof Error ? err.message : "경험을 저장하지 못했어요"
         setExperienceActionError(message)
       }
     },
-    [experiences, apiCreate, apiUpdate, router]
+    [experiences, apiCreate, apiUpdate, router, basePath]
   )
 
   const handleUpdateImportance = useCallback(
@@ -239,13 +241,13 @@ export default function ArchivePage() {
         setMode("empty")
         setMobileView("list")
         setHasUnsaved(false)
-        router.push("/archive", { scroll: false })
+        router.push(`${basePath}/archive`, { scroll: false })
       } catch (err) {
         const message = err instanceof Error ? err.message : "경험을 삭제하지 못했어요"
         setExperienceActionError(message)
       }
     },
-    [apiDelete, router]
+    [apiDelete, router, basePath]
   )
 
   const handleDuplicate = useCallback(
@@ -255,13 +257,13 @@ export default function ArchivePage() {
         setExperienceActionError(null)
         setSelectedId(newId)
         setMode("detail")
-        router.push(`/archive?id=${newId}`, { scroll: false })
+        router.push(`${basePath}/archive?id=${newId}`, { scroll: false })
       } catch (err) {
         const message = err instanceof Error ? err.message : "경험을 복제하지 못했어요"
         setExperienceActionError(message)
       }
     },
-    [apiDuplicate, router]
+    [apiDuplicate, router, basePath]
   )
 
   const handleCancel = useCallback(() => {
@@ -368,15 +370,15 @@ export default function ArchivePage() {
       setSelectedId(null)
       setMode("new")
       setMobileView("panel")
-      router.push("/archive", { scroll: false })
+      router.push(`${basePath}/archive`, { scroll: false })
     } else if (pendingSelectId !== undefined) {
       setSelectedId(pendingSelectId)
       setMode("detail")
       setMobileView("panel")
-      router.push(`/archive?id=${pendingSelectId}`, { scroll: false })
+      router.push(`${basePath}/archive?id=${pendingSelectId}`, { scroll: false })
     }
     setPendingSelectId(undefined)
-  }, [pendingSelectId, router])
+  }, [pendingSelectId, router, basePath])
 
   // ── Derived ───────────────────────────────────────────────────────
   const selectedExperience = experiences.find(e => e.id === selectedId) ?? null
@@ -530,7 +532,7 @@ export default function ArchivePage() {
         {/* Card list area */}
         {!middleCollapsed &&
         <div
-          className="md:ml-[20vw] w-[340px] min-w-[280px] max-w-[400px] border-r border-border bg-surface flex-shrink-0 overflow-hidden transition-[width,min-width,opacity] duration-300 ease-in-out"
+          className="md:ml-[clamp(220px,20vw,300px)] w-[400px] min-w-[320px] max-w-[460px] border-r border-border bg-surface flex-shrink-0 overflow-hidden transition-[width,min-width,opacity] duration-300 ease-in-out"
         >
           {listPanel}
         </div>
@@ -538,7 +540,7 @@ export default function ArchivePage() {
         {/* Detail panel */}
         <div className={[
           "flex-1 flex overflow-hidden bg-surface relative",
-          middleCollapsed ? "md:ml-[20vw]" : "",
+          middleCollapsed ? "md:ml-[clamp(220px,20vw,300px)]" : "",
         ].join(" ")}>
           {/* Expand button when middle panel is collapsed */}
           {middleCollapsed && (

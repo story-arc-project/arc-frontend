@@ -41,7 +41,7 @@ function SignupForm() {
   const stepParam = searchParams.get("step") as Step | null;
   const isOnOnboardingStep = stepParam !== null && ONBOARDING_STEPS.includes(stepParam);
   const { shouldRedirect } = useRedirectIfAuthenticated({ allowOnboardingFlow: isOnOnboardingStep });
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
 
   const [step, setStep] = useState<Step>("start");
   const [dir, setDir] = useState(1);
@@ -96,6 +96,13 @@ function SignupForm() {
     if (stepParam && STEP_ORDER.includes(stepParam)) setStep(stepParam);
   }, [searchParams]);
 
+  // 이미 인증된 사용자가 verify 단계에 머무르지 않도록 강제 이탈
+  useEffect(() => {
+    if (step === "verify" && !isAuthLoading && isAuthenticated) {
+      goTo("profile");
+    }
+  }, [step, isAuthenticated, isAuthLoading]);
+
   function toggleInterest(opt: string) {
     setInterests((prev) =>
       prev.includes(opt) ? prev.filter((i) => i !== opt) : [...prev, opt]
@@ -118,7 +125,8 @@ function SignupForm() {
     if (idx <= 0) return;
     const prev = STEP_ORDER[idx - 1];
     // 인증된 사용자는 온보딩 흐름 밖(start/password/verify)으로 되돌아갈 수 없다.
-    if (isAuthenticated && !ONBOARDING_STEPS.includes(prev)) return;
+    // isAuthLoading 중에도 차단해 레이스 컨디션을 방지한다.
+    if ((isAuthenticated || isAuthLoading) && !ONBOARDING_STEPS.includes(prev)) return;
     goTo(prev, -1);
   }
 
@@ -252,7 +260,7 @@ function SignupForm() {
       <ToastContainer />
       {/* Back */}
       <div className="h-8 mb-3 flex items-center">
-        {step !== "start" && !(isAuthenticated && step === "profile") && (
+        {step !== "start" && !((isAuthenticated || isAuthLoading) && step === "profile") && (
           <button
             type="button"
             onClick={goBack}

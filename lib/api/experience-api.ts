@@ -6,8 +6,11 @@ import type {
   ExperienceUpdatePayload,
   ApiSuccessResponse,
 } from "@/types/experience";
+import { isDemoMode } from "@/lib/demo/state";
+import * as demo from "@/lib/demo/handlers";
 
 export async function getExperiences(): Promise<ExperienceListData> {
+  if (isDemoMode()) return demo.getExperiences();
   const res = await api.get<ApiSuccessResponse<ExperienceListData>>(
     "/experiences/",
   );
@@ -15,6 +18,7 @@ export async function getExperiences(): Promise<ExperienceListData> {
 }
 
 export async function getExperience(id: string): Promise<Experience> {
+  if (isDemoMode()) return demo.getExperience(id);
   const res = await api.get<ApiSuccessResponse<Experience>>(
     `/experiences/${id}`,
   );
@@ -24,6 +28,7 @@ export async function getExperience(id: string): Promise<Experience> {
 export async function createExperience(
   payload: ExperienceSavePayload,
 ): Promise<string> {
+  if (isDemoMode()) return demo.createExperience(payload);
   const res = await api.post<ApiSuccessResponse<{ id: string }>>(
     "/experiences/",
     payload,
@@ -39,6 +44,7 @@ export async function updateExperience(
   id: string,
   payload: ExperienceUpdatePayload,
 ): Promise<void> {
+  if (isDemoMode()) return demo.updateExperience(id, payload);
   await api.put<ApiSuccessResponse<undefined>>(
     `/experiences/${id}`,
     payload,
@@ -46,10 +52,12 @@ export async function updateExperience(
 }
 
 export async function deleteExperience(id: string): Promise<void> {
+  if (isDemoMode()) return demo.deleteExperience(id);
   await api.delete<void>(`/experiences/${id}`);
 }
 
 export async function duplicateExperience(id: string): Promise<string> {
+  if (isDemoMode()) return demo.duplicateExperience(id);
   const res = await api.post<ApiSuccessResponse<{ id: string }>>(
     `/experiences/${id}/duplicate`,
   );

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Dialog } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { createResume } from "@/lib/api/export-api";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import type { ResumeLanguage } from "@/types/resume";
 import { ResumeGenerationOverlay } from "./ResumeGenerationOverlay";
 
@@ -17,6 +18,7 @@ const GENERATION_TIMEOUT_MS = 60_000;
 
 export function CreateResumeModal({ open, onClose }: CreateResumeModalProps) {
   const router = useRouter();
+  const basePath = useBasePath();
   const [language, setLanguage] = useState<ResumeLanguage>("ko");
   const [submitting, setSubmitting] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -52,7 +54,7 @@ export function CreateResumeModal({ open, onClose }: CreateResumeModalProps) {
       if (!versionId) {
         throw new Error("version_id missing in response");
       }
-      router.push(`/export/resume/${versionId}`);
+      router.push(`${basePath}/export/resume/${versionId}`);
       onClose();
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
