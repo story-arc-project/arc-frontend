@@ -226,42 +226,69 @@ export default function AnalysisHomePage() {
                 </p>
               </div>
             ) : (
-              recentMap[tab].map((snapshot) => (
-                <div
-                  key={snapshot.id}
-                  className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <Link
-                      href={`${basePath}${ANALYSIS_DETAIL_PATH[snapshot.type]}/${snapshot.id}`}
-                      className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
-                    >
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <Badge variant="outline">
-                          {analysisTypeLabel[snapshot.type]}
-                        </Badge>
-                        <span className="text-body-sm text-text-primary font-medium truncate">
-                          {snapshot.title}
-                        </span>
-                      </div>
-                      <p className="text-body-sm text-text-secondary line-clamp-1">
-                        {snapshot.summaryText}
-                      </p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <ConfidenceBadge confidence={snapshot.overallConfidence} />
-                        <span className="text-caption text-text-tertiary">
-                          {formatRelativeTime(snapshot.createdAt)}
-                        </span>
-                      </div>
-                    </Link>
-                    <BookmarkToggle
-                      analysisId={snapshot.id}
-                      isBookmarked={snapshot.isBookmarked}
-                      size="sm"
-                    />
+              recentMap[tab].map((snapshot) => {
+                const isNavigable = snapshot.status === "completed";
+                return (
+                  <div
+                    key={snapshot.id}
+                    className={[
+                      "bg-surface border border-border rounded-lg p-4",
+                      !isNavigable ? "opacity-60 cursor-not-allowed" : "hover:border-brand transition-colors",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      {isNavigable ? (
+                        <Link
+                          href={`${basePath}${ANALYSIS_DETAIL_PATH[snapshot.type]}/${snapshot.id}`}
+                          className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
+                        >
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <Badge variant="outline">
+                              {analysisTypeLabel[snapshot.type]}
+                            </Badge>
+                            <span className="text-body-sm text-text-primary font-medium truncate">
+                              {snapshot.title}
+                            </span>
+                          </div>
+                          <p className="text-body-sm text-text-secondary line-clamp-1">
+                            {snapshot.summaryText}
+                          </p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <ConfidenceBadge confidence={snapshot.overallConfidence} />
+                            <span className="text-caption text-text-tertiary">
+                              {formatRelativeTime(snapshot.createdAt)}
+                            </span>
+                          </div>
+                        </Link>
+                      ) : (
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <Badge variant="outline">
+                              {analysisTypeLabel[snapshot.type]}
+                            </Badge>
+                            <span className="text-body-sm text-text-primary font-medium truncate">
+                              {snapshot.title}
+                            </span>
+                          </div>
+                          <p className="text-body-sm text-text-tertiary line-clamp-1">
+                            분석 진행 중...
+                          </p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="text-caption text-text-tertiary">
+                              {formatRelativeTime(snapshot.createdAt)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <BookmarkToggle
+                        analysisId={snapshot.id}
+                        isBookmarked={snapshot.isBookmarked}
+                        size="sm"
+                      />
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </section>
