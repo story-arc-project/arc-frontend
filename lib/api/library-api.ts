@@ -44,7 +44,7 @@ export async function createLibrary(payload: {
       color: payload.color ?? "",
       icon: payload.icon ?? "",
       is_system: payload.isSystem ?? false,
-      filter: toLibraryFilterDTO(payload.filter) ?? {},
+      filter: toLibraryFilterDTO(payload.filter) ?? null,
     },
   );
   return res.data.id;
