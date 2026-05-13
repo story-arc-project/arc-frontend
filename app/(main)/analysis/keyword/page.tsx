@@ -121,7 +121,7 @@ export default function KeywordAnalysisPage() {
                           </span>
                         </div>
                         <p className="text-body-sm text-text-tertiary mt-1">
-                          분석 진행 중...
+                          {item.status === "failed" ? "분석에 실패했습니다" : "분석 진행 중..."}
                         </p>
                         {item.selectedKeywords && item.selectedKeywords.length > 0 && (
                           <div className="flex gap-1.5 mt-1.5 flex-wrap">

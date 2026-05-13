@@ -271,7 +271,7 @@ export default function AnalysisHomePage() {
                             </span>
                           </div>
                           <p className="text-body-sm text-text-tertiary line-clamp-1">
-                            분석 진행 중...
+                            {snapshot.status === "failed" ? "분석에 실패했습니다" : "분석 진행 중..."}
                           </p>
                           <div className="flex items-center gap-2 mt-2">
                             <span className="text-caption text-text-tertiary">

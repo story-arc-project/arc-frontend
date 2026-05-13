@@ -104,7 +104,11 @@ export default function IndividualAnalysisPage() {
                       </div>
                       {!isNavigable ? (
                         <p className="text-body-sm text-text-tertiary">
-                          입력 완료 후 자동 분석됩니다
+                          {item.status === "processing"
+                            ? "분석 진행 중..."
+                            : item.status === "failed"
+                            ? "분석에 실패했습니다"
+                            : "입력 완료 후 자동 분석됩니다"}
                         </p>
                       ) : (
                         <p className="text-body-sm text-text-secondary line-clamp-1">
