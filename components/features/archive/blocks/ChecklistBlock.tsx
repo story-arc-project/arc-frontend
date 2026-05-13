@@ -78,7 +78,7 @@ export default function ChecklistBlock({ block, readOnly, onChange }: ChecklistB
             {option}
             <button
               type="button"
-              onClick={e => { e.stopPropagation(); removeOption(option) }}
+              onClick={e => { e.preventDefault(); e.stopPropagation(); removeOption(option) }}
               className="rounded-full p-0.5 hover:bg-brand-light transition-colors"
               aria-label={`${option} 삭제`}
             >
