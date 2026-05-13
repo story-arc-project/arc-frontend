@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Dialog } from "@/components/ui";
-import { toast } from "@/components/ui/toast";
 import { createResume } from "@/lib/api/export-api";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import type { ResumeLanguage } from "@/types/resume";
@@ -21,6 +20,7 @@ export function CreateResumeModal({ open, onClose }: CreateResumeModalProps) {
   const basePath = useBasePath();
   const [language, setLanguage] = useState<ResumeLanguage>("ko");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -33,10 +33,12 @@ export function CreateResumeModal({ open, onClose }: CreateResumeModalProps) {
     if (!open) {
       setLanguage("ko");
       setSubmitting(false);
+      setError(null);
     }
   }, [open]);
 
   const handleSubmit = async () => {
+    setError(null);
     setSubmitting(true);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -58,9 +60,9 @@ export function CreateResumeModal({ open, onClose }: CreateResumeModalProps) {
       onClose();
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        toast.error("생성이 오래 걸려요. 잠시 후 다시 시도해주세요.");
+        setError("생성이 오래 걸렸어요. 다시 시도해 주세요.");
       } else {
-        toast.error("레쥬메 생성에 실패했어요. 잠시 후 다시 시도해주세요.");
+        setError("레쥬메 생성에 실패했어요. 다시 시도해 주세요.");
       }
       setSubmitting(false);
     } finally {
@@ -136,6 +138,25 @@ export function CreateResumeModal({ open, onClose }: CreateResumeModalProps) {
               })}
             </div>
           </fieldset>
+
+          {error && (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg bg-error/10 border border-error/20 px-4 py-3 flex items-center justify-between gap-3"
+            >
+              <p className="text-body-sm text-error">{error}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  handleSubmit();
+                }}
+                className="text-body-sm font-medium text-error underline-offset-2 hover:underline shrink-0"
+              >
+                다시 시도
+              </button>
+            </div>
+          )}
 
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={handleClose}>
