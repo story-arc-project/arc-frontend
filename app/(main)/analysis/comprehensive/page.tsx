@@ -117,7 +117,7 @@ export default function ComprehensiveAnalysisPage() {
                             {item.title}
                           </span>
                           <p className="text-body-sm text-text-tertiary mt-1">
-                            분석 진행 중...
+                            {item.status === "failed" ? "분석에 실패했습니다" : "분석 진행 중..."}
                           </p>
                         </div>
                       ) : (
