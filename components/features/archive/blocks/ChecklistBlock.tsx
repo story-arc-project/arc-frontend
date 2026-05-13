@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { X } from "lucide-react"
 import type { Block, ChecklistBlockValue } from "@/types/archive"
 
 interface ChecklistBlockProps {
@@ -18,6 +19,14 @@ export default function ChecklistBlock({ block, readOnly, onChange }: ChecklistB
       ? val.checked.filter(c => c !== option)
       : [...val.checked, option]
     onChange({ ...val, checked: next })
+  }
+
+  function removeOption(option: string) {
+    onChange({
+      ...val,
+      options: val.options.filter(o => o !== option),
+      checked: val.checked.filter(c => c !== option),
+    })
   }
 
   function addOption() {
@@ -54,7 +63,7 @@ export default function ChecklistBlock({ block, readOnly, onChange }: ChecklistB
           <label
             key={option}
             className={[
-              "flex items-center gap-2 cursor-pointer rounded-md border px-3 py-2 text-body transition-colors",
+              "flex items-center gap-2 cursor-pointer rounded-md border pl-3 pr-1.5 py-2 text-body transition-colors",
               val.checked.includes(option)
                 ? "border-brand bg-surface-brand text-text-primary"
                 : "border-border bg-surface text-text-secondary hover:border-border-strong",
@@ -67,6 +76,14 @@ export default function ChecklistBlock({ block, readOnly, onChange }: ChecklistB
               onChange={() => toggle(option)}
             />
             {option}
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); removeOption(option) }}
+              className="rounded-full p-0.5 hover:bg-brand-light transition-colors"
+              aria-label={`${option} 삭제`}
+            >
+              <X size={12} />
+            </button>
           </label>
         ))}
       </div>
