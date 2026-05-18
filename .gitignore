@@ -44,3 +44,9 @@ yarn-error.log*
 # local tool state (claude code / oh-my-claudecode)
 .claude/settings.local.json
 .omc/
+
+# AI Agent Related
+.agents/
+
+# Uncommitted Related
+.uncommitted/
