@@ -6,12 +6,29 @@ user-invocable: false
 
 Git 작업 전 아래 규칙을 반드시 따른다.
 
+## 🌳 브랜치 전략 (2단계 통합)
+
+```
+feat/* · fix/* ...  ──PR──▶  dev  ──(실사용 테스트/검증 후)──▶  main
+```
+
+- **모든 개발은 `dev`에서 브랜치를 따고, `dev`로 머지한다.**
+- `dev`에 모인 변경을 실사용 테스트/검증한 뒤, `dev` → `main`으로 머지한다.
+- 따라서 일반 작업의 PR base는 **`main`이 아니라 `dev`**다.
+
+```bash
+# 작업 시작 (항상 dev 기준)
+git checkout dev && git pull origin dev
+git checkout -b feat/archive-input-form
+```
+
 ## ⛔ 절대 금지
 
 ```bash
-# main 브랜치 직접 커밋/푸시
-git commit -m "..."   # main에서 실행 금지
+# main · dev 브랜치 직접 커밋/푸시 금지
+git commit -m "..."   # main, dev에서 직접 실행 금지
 git push origin main  # 직접 푸시 금지
+git push origin dev   # 직접 푸시 금지 (PR로만 머지)
 ```
 
 작업 시작 전 항상 현재 브랜치를 확인한다: `git branch`
@@ -31,8 +48,8 @@ hotfix/이슈명      긴급 수정
 
 **규칙**: 영문 소문자, 하이픈 구분
 ```bash
-# 작업 시작
-git checkout main && git pull origin main
+# 작업 시작 (dev에서 분기)
+git checkout dev && git pull origin dev
 git checkout -b feat/archive-input-form
 ```
 
@@ -79,7 +96,8 @@ git checkout -b feat/archive-input-form
 
 ```bash
 git push origin feat/archive-input-form
-# GitHub에서 PR 생성 → 리뷰 → merge → 브랜치 삭제
+# GitHub에서 PR 생성 (base: dev) → 리뷰 → dev로 merge → 브랜치 삭제
+# dev 실사용 검증 후 별도로 dev → main PR 진행
 ```
 
 PR 본문 템플릿:
@@ -99,6 +117,6 @@ PR 본문 템플릿:
 PR이 다음 요구 사항을 충족하는지 확인하세요.
 
 - [ ] 커밋 메시지 컨벤션에 맞게 작성했습니다.
-- [ ] `main` 브랜치가 아닌 별도 브랜치에서 작업했습니다.
+- [ ] `dev`에서 분기한 별도 브랜치에서 작업했고, PR base가 `dev`입니다.
 - [ ] 변경 사항에 대한 테스트를 했습니다. (버그 수정 / 기능에 대한 테스트)
 ```
