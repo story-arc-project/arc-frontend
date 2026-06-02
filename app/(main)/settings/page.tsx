@@ -2,7 +2,11 @@
 
 import { useAuth } from "@/hooks/useAuth";
 import { api } from "@/lib/api/client";
-import { Button } from "@/components/ui";
+import { Button, Card } from "@/components/ui";
+import { ProfileEditForm } from "@/components/features/settings/ProfileEditForm";
+import { PlanCard } from "@/components/features/settings/PlanCard";
+import { AccountInfoCard } from "@/components/features/settings/AccountInfoCard";
+import { SecurityCard } from "@/components/features/settings/SecurityCard";
 
 export default function SettingsPage() {
   const { user, isLoading } = useAuth();
@@ -20,27 +24,38 @@ export default function SettingsPage() {
     );
   }
 
+  const account = user?.account;
+  const profile = user?.profile ?? null;
+
   return (
-    <div className="max-w-lg mx-auto px-4 py-12">
+    <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 py-10 sm:py-12">
       <h1 className="text-heading-2 text-text-primary mb-8">내 계정</h1>
 
-      <div className="bg-surface border border-border rounded-xl p-6 flex items-center gap-4 mb-4">
-        <div className="w-14 h-14 rounded-full bg-surface-secondary flex items-center justify-center text-heading-2 text-text-tertiary">
-          {user?.profile?.name?.[0] ?? "?"}
+      <Card variant="default" padding="lg" className="mb-6 flex items-center gap-4">
+        <div className="w-14 h-14 rounded-full bg-surface-secondary flex items-center justify-center text-heading-2 text-text-tertiary shrink-0">
+          {profile?.name?.[0] ?? "?"}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-title font-semibold text-text-primary truncate mb-0.5">
-            {user?.profile?.name ?? "이름 없음"}
+            {profile?.name ?? "이름 없음"}
           </p>
-          <p className="text-body-sm text-text-secondary truncate">
-            {user?.account?.email}
-          </p>
+          <p className="text-body-sm text-text-secondary truncate">{account?.email}</p>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-8">
+          <ProfileEditForm profile={profile} />
+        </div>
+        <div className="lg:col-span-4 space-y-6">
+          <PlanCard />
+          {account && <AccountInfoCard account={account} />}
+          {account && <SecurityCard hasPassword={account.has_password} />}
+          <Button variant="destructive" fullWidth onClick={handleLogout}>
+            로그아웃
+          </Button>
         </div>
       </div>
-
-      <Button variant="destructive" fullWidth onClick={handleLogout}>
-        로그아웃
-      </Button>
     </div>
   );
 }
