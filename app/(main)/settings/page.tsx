@@ -1,7 +1,6 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
-import { api } from "@/lib/api/client";
 import { Button, Card } from "@/components/ui";
 import { ProfileEditForm } from "@/components/features/settings/ProfileEditForm";
 import { PlanCard } from "@/components/features/settings/PlanCard";
@@ -9,12 +8,7 @@ import { AccountInfoCard } from "@/components/features/settings/AccountInfoCard"
 import { SecurityCard } from "@/components/features/settings/SecurityCard";
 
 export default function SettingsPage() {
-  const { user, isLoading } = useAuth();
-
-  async function handleLogout() {
-    await api.post("/auth/logout").catch(() => {});
-    window.location.href = "/login";
-  }
+  const { user, isLoading, logout } = useAuth();
 
   if (isLoading) {
     return (
@@ -51,7 +45,7 @@ export default function SettingsPage() {
           <PlanCard />
           {account && <AccountInfoCard account={account} />}
           {account && <SecurityCard hasPassword={account.has_password} />}
-          <Button variant="destructive" fullWidth onClick={handleLogout}>
+          <Button variant="destructive" fullWidth onClick={logout}>
             로그아웃
           </Button>
         </div>

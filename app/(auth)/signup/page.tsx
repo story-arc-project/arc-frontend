@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button, DatePicker, Input, toast, ToastContainer } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
@@ -34,7 +34,6 @@ export default function SignupPage() {
 }
 
 function SignupForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   // 인증 사용자는 온보딩 단계(profile/q1/q2)에서만 머무를 수 있다.
   // start/password/verify 등에서는 /signup?step=profile 으로 보내 흐름을 강제한다.
@@ -157,7 +156,8 @@ function SignupForm() {
       const result = await api.post<VerifyEmailResponse>("/auth/verify-email", { email, code: verifyCode }, { auth: false });
       if (result.data.onboarded) {
         // 이미 온보딩 완료된 유저 (재인증 케이스) — FastAPI 쿠키가 이미 설정됨
-        router.push("/dashboard");
+        // 하드 내비게이션으로 AuthProvider를 재마운트·refetch해야 GNB 계정 메뉴가 노출된다.
+        window.location.assign("/dashboard");
       } else {
         goTo("profile");
       }
@@ -222,7 +222,8 @@ function SignupForm() {
         ...(worries.length > 0   && { worry: worries }),
         ...(interests.length > 0 && { interest: interests }),
       }, { auth: false });
-      router.push("/dashboard");
+      // 하드 내비게이션으로 AuthProvider를 재마운트·refetch해야 온보딩 직후 GNB 계정 메뉴가 노출된다.
+      window.location.assign("/dashboard");
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === "AUTH_TOKEN_EXPIRED") {
@@ -230,8 +231,8 @@ function SignupForm() {
         } else if (e.code === "AUTH_MISSING_COOKIES" || e.code === "AUTH_TOKEN_INVALID") {
           toast.error("로그인 정보가 정확하지 않아요. 다시 로그인해주세요.")
         } else if (e.code === "DUPLICATE_ONBOARDING") {
-          // 이미 온보딩 완료 — 대시보드로 이동
-          router.push("/dashboard");
+          // 이미 온보딩 완료 — 대시보드로 이동 (하드 내비게이션으로 auth 재동기화)
+          window.location.assign("/dashboard");
         } else if (e.code === "INVALID_INPUT") {
           toast.error("입력 정보를 다시 확인해주세요.");
         } else {

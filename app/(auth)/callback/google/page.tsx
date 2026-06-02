@@ -43,7 +43,10 @@ function GoogleCallbackHandler() {
       .post<AuthSuccessResult>("/auth/social-login", { provider : "google", token : code }, { auth: false })
       .then((result) => {
         if (result.data.onboarded) {
-          router.replace("/dashboard");
+          // 하드 내비게이션으로 AuthProvider를 재마운트해 소셜 로그인 직후 user를 다시 불러온다.
+          // (클라이언트 replace만으로는 루트 컨텍스트의 user가 null로 남아 GNB 계정 메뉴가 가려진다.)
+          // replace로 콜백 페이지를 히스토리에 남기지 않는다.
+          window.location.replace("/dashboard");
         } else {
           router.push(`/signup?step=profile&email=${encodeURIComponent(result.data.user.email)}`);
         }
