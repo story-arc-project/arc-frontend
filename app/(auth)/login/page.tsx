@@ -71,7 +71,10 @@ function LoginForm() {
       if (!data.onboarded) {
         router.push(`/signup?step=profile&email=${encodeURIComponent(email)}`);
       } else {
-        router.push(callbackUrl);
+        // 하드 내비게이션으로 AuthProvider를 재마운트해 로그인 직후 user를 다시 불러온다.
+        // (클라이언트 push만으로는 루트 컨텍스트의 user가 null로 남아 GNB 계정 메뉴가 가려진다.)
+        // callbackUrl은 위에서 상대 경로로 검증되어 오픈 리다이렉트에 안전하다.
+        window.location.assign(callbackUrl);
       }
     } catch {
       setError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
