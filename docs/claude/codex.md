@@ -15,7 +15,7 @@
 
 ## Adversarial Review
 ```bash
-/codex:adversarial-review --base main
+/codex:adversarial-review --base dev
 ```
 
 사용:
@@ -25,7 +25,7 @@
 
 ## Final Review
 ```bash
-/codex:review --base main
+/codex:review --base dev
 ```
 
 ## 원칙

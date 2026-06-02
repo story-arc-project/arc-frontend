@@ -126,13 +126,13 @@ npm run build
 - API 변경
 
 ```bash
-/codex:adversarial-review --base main
+/codex:adversarial-review --base dev
 ```
 
 ### 5. Final Review (필수)
 
 ```bash
-/codex:review --base main
+/codex:review --base dev
 ```
 
 ---
