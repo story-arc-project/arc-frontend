@@ -23,7 +23,7 @@
 - 상태/API 구조 변경
 
 ```bash
-/codex:adversarial-review --base main
+/codex:adversarial-review --base dev
 ```
 
 ### 5. UI Quality Check (조건부)
@@ -45,7 +45,7 @@ UI/프론트엔드 변경 시 아래 스킬로 검증:
 
 ### 6. Final Review
 ```bash
-/codex:review --base main
+/codex:review --base dev
 ```
 
 ### 7. Output
