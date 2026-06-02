@@ -17,6 +17,7 @@ const NAV_ITEMS = [
 
 export function GNB() {
   const pathname = usePathname();
+  // logout: 모바일 인라인 섹션 전용. 데스크톱은 <UserMenu>가 자체적으로 처리.
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -59,7 +60,8 @@ export function GNB() {
           <button
             className="sm:hidden p-2 -mr-2 text-text-secondary hover:text-text-primary transition-colors"
             onClick={() => setMobileOpen(!mobileOpen)}
-            aria-label="메뉴 열기"
+            aria-label={mobileOpen ? "메뉴 닫기" : "메뉴 열기"}
+            aria-expanded={mobileOpen}
           >
             {mobileOpen ? <X size={22} /> : <Menu size={22} />}
           </button>

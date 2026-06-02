@@ -35,7 +35,7 @@ export function UserMenu() {
     return (
       <div
         className="h-8 w-8 rounded-full bg-surface-secondary animate-pulse"
-        aria-hidden
+        aria-hidden={true}
       />
     );
   }
@@ -62,7 +62,9 @@ export function UserMenu() {
         <span className="max-w-[8rem] truncate text-body">{displayName}</span>
         <ChevronDown
           size={16}
-          className={`transition-transform ${open ? "rotate-180" : ""}`}
+          className={["transition-transform", open ? "rotate-180" : ""]
+            .filter(Boolean)
+            .join(" ")}
         />
       </button>
 
