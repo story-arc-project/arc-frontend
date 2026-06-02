@@ -35,6 +35,7 @@ export default function AuthProvider({
       await logoutUser();
     } finally {
       setUser(null);
+      window.location.assign("/login");
     }
   }, []);
 
