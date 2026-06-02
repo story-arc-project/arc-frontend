@@ -33,9 +33,13 @@ export default function AuthProvider({
   const logout = useCallback(async () => {
     try {
       await logoutUser();
-    } finally {
+      // 서버에서 httpOnly 쿠키가 실제로 제거된 뒤에만 상태 정리 + 이동한다.
       setUser(null);
       window.location.assign("/login");
+    } catch (err) {
+      // 로그아웃 실패 시 세션이 살아있으므로 이동하지 않고 실패를 노출한다.
+      // (이동하면 /login에서 유효 세션을 재조회해 다시 앱으로 돌려보내 로그아웃이 무력화된다.)
+      setError(err instanceof Error ? err : new Error("로그아웃에 실패했어요. 잠시 후 다시 시도해주세요."));
     }
   }, []);
 
