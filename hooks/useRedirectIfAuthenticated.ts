@@ -17,10 +17,12 @@ export function useRedirectIfAuthenticated({ allowOnboardingFlow = false }: Opti
   const router = useRouter();
   const { isAuthenticated, isOnboarded, isLoading, error } = useAuth();
 
-  // 인증 조회가 실패하면(error) 로그인 여부를 확신할 수 없으므로 리다이렉트하지 않는다.
-  // (error 시 isAuthenticated는 false이지만, "비로그인"으로 단정해 이동하는 것을 명시적으로 막는다.)
+  // 리다이렉트는 인증 상태(isAuthenticated)만으로 판단한다.
+  // - /auth/me 조회 실패(5xx): user=null → isAuthenticated=false라 자연히 리다이렉트되지 않는다.
+  // - 로그아웃 실패: user가 살아있어(인증 상태) error만 set되므로, error로 리다이렉트를 막으면
+  //   유효 세션 사용자가 /login·/signup에 머무는 버그가 생긴다. → error는 가드 조건에 넣지 않는다.
   const shouldRedirect =
-    !isLoading && !error && isAuthenticated && (isOnboarded || !allowOnboardingFlow);
+    !isLoading && isAuthenticated && (isOnboarded || !allowOnboardingFlow);
 
   useEffect(() => {
     if (!shouldRedirect) return;
