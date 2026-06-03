@@ -286,3 +286,161 @@ export const legacyExperience: ExperienceWithFolder = {
 }
 
 export const sampleLegacyExperiences: ExperienceWithFolder[] = [legacyExperience]
+
+// ─── Remaining block fixtures ────────────────────────────────────────────────
+
+export const textareaBlock: Block = {
+  id: "blk-textarea-01",
+  type: "textarea",
+  label: "경험 상세 설명",
+  placeholder: "경험에 대해 자세히 적어주세요",
+  value: { type: "textarea", text: "검색 품질 개선 프로젝트를 리드하며 응답 속도를 85% 단축했습니다.\n팀원 5명과 협업하며 백엔드 아키텍처를 개선했습니다." },
+}
+
+export const emptyTextareaBlock: Block = {
+  id: "blk-textarea-empty",
+  type: "textarea",
+  label: "경험 상세 설명",
+  placeholder: "경험에 대해 자세히 적어주세요",
+  value: { type: "textarea", text: "" },
+}
+
+export const periodBlock: Block = {
+  id: "blk-period-01",
+  type: "period",
+  label: "재직 기간",
+  value: { type: "period", start: "2022-07", end: "", isCurrent: true },
+}
+
+export const periodBlockFinished: Block = {
+  id: "blk-period-02",
+  type: "period",
+  label: "재직 기간",
+  value: { type: "period", start: "2020-03", end: "2022-06", isCurrent: false },
+}
+
+export const emptyPeriodBlock: Block = {
+  id: "blk-period-empty",
+  type: "period",
+  label: "재직 기간",
+  value: { type: "period", start: "", end: "", isCurrent: false },
+}
+
+export const singleSelectBlock: Block = {
+  id: "blk-single-select-01",
+  type: "single-select",
+  label: "고용 형태",
+  value: { type: "single-select", options: ["정규직", "계약직", "인턴", "프리랜서"], selected: "정규직" },
+}
+
+export const emptySingleSelectBlock: Block = {
+  id: "blk-single-select-empty",
+  type: "single-select",
+  label: "고용 형태",
+  value: { type: "single-select", options: ["정규직", "계약직", "인턴", "프리랜서"], selected: "" },
+}
+
+export const tagsBlock: Block = {
+  id: "blk-tags-01",
+  type: "tags",
+  label: "기술 스택",
+  value: { type: "tags", tags: ["React", "TypeScript", "Node.js", "AWS"] },
+}
+
+export const emptyTagsBlock: Block = {
+  id: "blk-tags-empty",
+  type: "tags",
+  label: "기술 스택",
+  value: { type: "tags", tags: [] },
+}
+
+export const linkBlock: Block = {
+  id: "blk-link-01",
+  type: "link",
+  label: "관련 링크",
+  value: {
+    type: "link",
+    url: "https://github.com/example/project",
+    title: "GitHub 레포지토리",
+    description: "검색 품질 개선 프로젝트 소스 코드",
+    linkType: "GitHub",
+  },
+}
+
+export const emptyLinkBlock: Block = {
+  id: "blk-link-empty",
+  type: "link",
+  label: "관련 링크",
+  value: { type: "link", url: "", title: "", description: "", linkType: "" },
+}
+
+export const fileBlock: Block = {
+  id: "blk-file-01",
+  type: "file",
+  label: "첨부 파일",
+  value: {
+    type: "file",
+    fileName: "성과_보고서.pdf",
+    description: "2023년 4분기 성과 보고서",
+    evidenceType: "보고서",
+    fileId: "file-id-readonly-01",
+    mimeType: "application/pdf",
+    size: 1048576,
+    url: "https://example.com/sample.pdf",
+  },
+}
+
+export const emptyFileBlock: Block = {
+  id: "blk-file-empty",
+  type: "file",
+  label: "첨부 파일",
+  value: { type: "file", fileName: "", description: "", evidenceType: "" },
+}
+
+// ─── File preview fixtures ────────────────────────────────────────────────────
+
+// 1×1 transparent PNG data-URI for visual testing without real network requests
+export const sampleImageDataUri =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+export interface SampleFileInfo {
+  name: string
+  size: number
+  url: string
+  mimeType: string
+}
+
+export const sampleImageFile: SampleFileInfo = {
+  name: "프로젝트_스크린샷.png",
+  size: 204800,
+  url: sampleImageDataUri,
+  mimeType: "image/png",
+}
+
+export const sampleAudioFile: SampleFileInfo = {
+  name: "발표_녹음.mp3",
+  size: 3145728,
+  url: "https://example.com/sample-audio.mp3",
+  mimeType: "audio/mpeg",
+}
+
+export const sampleVideoFile: SampleFileInfo = {
+  name: "데모_영상.mp4",
+  size: 10485760,
+  url: "https://example.com/sample-video.mp4",
+  mimeType: "video/mp4",
+}
+
+export const samplePdfFile: SampleFileInfo = {
+  name: "성과_보고서.pdf",
+  size: 1048576,
+  url: "https://example.com/sample.pdf",
+  mimeType: "application/pdf",
+}
+
+export const sampleGenericFile: SampleFileInfo = {
+  name: "프로젝트_자료.zip",
+  size: 5242880,
+  url: "https://example.com/sample.zip",
+  mimeType: "application/zip",
+}
