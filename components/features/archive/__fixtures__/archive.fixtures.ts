@@ -378,15 +378,15 @@ export const fileBlock: Block = {
   id: "blk-file-01",
   type: "file",
   label: "첨부 파일",
+  // No `fileId`: FileBlock's effect calls getFileUrl(fileId) regardless of
+  // readOnly, which would hit the backend and 401→redirect inside Storybook.
+  // The rich file preview (which needs a fileId) is covered by the dedicated
+  // ImagePreview/PdfCard/etc. stories; here we show the readOnly filename row.
   value: {
     type: "file",
     fileName: "성과_보고서.pdf",
     description: "2023년 4분기 성과 보고서",
     evidenceType: "보고서",
-    fileId: "file-id-readonly-01",
-    mimeType: "application/pdf",
-    size: 1048576,
-    url: "https://example.com/sample.pdf",
   },
 }
 

@@ -31,9 +31,9 @@ export const Empty: Story = {
 }
 
 /**
- * ReadOnly view with a PDF attachment.
- * In readOnly mode the resolvedUrl falls back to val.url, so the
- * API call is not triggered and the preview renders from the fixture URL.
+ * ReadOnly view with an attached file shown by name.
+ * The fixture has no `fileId`, so FileBlock's getFileUrl() effect early-returns
+ * and no backend call is made — the story stays deterministic in Storybook.
  */
 export const ReadOnlyWithFile: Story = {
   args: {
