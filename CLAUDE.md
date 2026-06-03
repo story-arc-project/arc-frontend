@@ -100,7 +100,7 @@ docs/         # 프로젝트 문서 (claude 등)
 ## Development Workflow (Mandatory)
 
 > 개발 프로세스는 품질 기준으로 운영한다. "입력 허들 최소화"는 *제품 사용자* 원칙이며 개발 워크플로우와 무관하다.
-> 척추 = superpowers 스킬 · 리뷰 권위 = Codex · git 규약 = `/git-workflow` (skill)
+> 척추 = superpowers 스킬 · 리뷰 권위 = Codex · git 규약 = `git-workflow` 스킬(Git 작업 시 자동 로드)
 
 ### 0. Triage — 복잡도 게이트
 규모에 비례해 단계를 정한다.
@@ -115,7 +115,7 @@ docs/         # 프로젝트 문서 (claude 등)
 `superpowers:writing-plans` 로 단계별 구현 계획 작성. 변경 파일·영향 범위 식별.
 
 ### 3. Isolate
-`superpowers:using-git-worktrees` + `/git-workflow` (skill). **dev에서 분기, PR base = dev.**
+`superpowers:using-git-worktrees` + `git-workflow` 스킬(Git 작업 시 자동 로드되는 가이드라인 — 슬래시 커맨드 아님). **dev에서 분기, PR base = dev.**
 
 ### 4. Implement
 계획을 `superpowers:subagent-driven-development` (SDD)로 실행 — 독립 태스크 단위, 2단계 리뷰(스펙 준수 → 코드 품질).
@@ -144,7 +144,7 @@ UI 변경 시 `/expect` 브라우저 테스트.
 - Codex = 제안자, 실제 수정 = Claude. 반복 실패(2회) / 원인 불명 버그 → `/codex:rescue`.
 
 ### 9. Finish
-`superpowers:finishing-a-development-branch` → PR(base dev) → merge → 브랜치 삭제. (PR 템플릿은 `/git-workflow`)
+`superpowers:finishing-a-development-branch` → PR(base dev) → merge → 브랜치 삭제. (PR 템플릿은 `git-workflow` 스킬 참조)
 
 ### 10. Output
 변경 내용 / 이유 / 수정 파일 / 검증 결과 / 남은 리스크.
@@ -183,5 +183,5 @@ UI 변경 시 `/expect` 브라우저 테스트.
 - checklist: `docs/claude/checklist.md`
 - workflow (요약 포인터): `docs/claude/workflow.md`
 - codex (요약 포인터): `docs/claude/codex.md`
-- git-workflow: `/git-workflow` (skill) — 브랜치 전략·커밋·PR 규약
+- git-workflow: `git-workflow` 스킬 — 브랜치 전략·커밋·PR 규약 (Git 작업 시 자동 로드; `user-invocable: false`라 슬래시 호출 불가)
 - superpowers (skill): `brainstorming` · `writing-plans` · `using-git-worktrees` · `subagent-driven-development` · `test-driven-development` · `requesting-code-review` · `finishing-a-development-branch` · `verification-before-completion` · `systematic-debugging`
