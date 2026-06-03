@@ -7,6 +7,9 @@ const meta: Meta<typeof AnalysisSNB> = {
   component: AnalysisSNB,
   parameters: {
     layout: "fullscreen",
+    nextjs: {
+      appDirectory: true,
+    },
   },
 };
 
