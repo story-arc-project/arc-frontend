@@ -104,7 +104,7 @@ docs/         # 프로젝트 문서 (claude 등)
 
 ### 0. Triage — 복잡도 게이트
 규모에 비례해 단계를 정한다.
-- **Trivial** (1~2파일, UX/상태/API 변화 없음): Brainstorm·Plan·SDD를 생략하고 4 Implement → 5 Validate로 직행한다. 단 **8 Review의 필수 `/codex:review --base dev`는 생략하지 않는다** (조건부 adversarial·6 UI Quality는 해당 시).
+- **Trivial** (1~2파일, UX/상태/API 변화 없음): Brainstorm·Plan·SDD**만** 생략한다. **3 Isolate(dev에서 분기)는 반드시 수행** → 4 Implement → 5 Validate. **8 Review의 필수 `/codex:review --base dev`도 생략하지 않는다** (조건부 adversarial·6 UI Quality는 해당 시). main/dev 직접 커밋 금지는 규모와 무관하게 적용된다.
 - **Standard** (3~5파일 또는 UX/상태 변화): 전체 파이프라인
 - **Large** (6+파일, 새 기능/흐름): 전체 + 설계 문서
 
