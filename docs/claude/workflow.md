@@ -10,7 +10,7 @@
         → 5 Validate → 6 UI Quality → 7 Self-review → 8 Review(Codex) → 9 Finish → 10 Output
 ```
 
-- **Trivial** (1~2파일): 4 → 5 직행
+- **Trivial** (1~2파일): Brainstorm·Plan·SDD 생략, 4 → 5 직행 — 단 8 Review(필수)는 유지
 - **Standard** (3~5파일 / UX·상태 변화): 전체
 - **Large** (6+파일 / 새 기능): 전체 + design doc
 
