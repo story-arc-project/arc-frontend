@@ -31,8 +31,15 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "msw": "^2.14.6",
+    "msw-storybook-addon": "^2.0.7",
     "storybook": "^10.4.2",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }
