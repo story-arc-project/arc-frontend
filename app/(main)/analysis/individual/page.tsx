@@ -86,9 +86,8 @@ export default function IndividualAnalysisPage() {
         ) : (
           <div className="space-y-3" role="tabpanel" id={`individual-panel-${filter}`} aria-labelledby={`individual-tab-${filter}`}>
             {items.map((item) => {
-              const isPending = item.status === "pending";
-              const displayStatus =
-                item.status === "completed" ? "completed" : "pending";
+              const isNavigable = item.status === "completed";
+              const displayStatus = isNavigable ? "completed" : "pending";
 
               const content = (
                 <div className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors">
@@ -99,13 +98,17 @@ export default function IndividualAnalysisPage() {
                           {item.title}
                         </span>
                         <AnalysisStatusBadge status={displayStatus} />
-                        {!isPending && (
+                        {isNavigable && (
                           <ConfidenceBadge confidence={item.overallConfidence} />
                         )}
                       </div>
-                      {isPending ? (
+                      {!isNavigable ? (
                         <p className="text-body-sm text-text-tertiary">
-                          입력 완료 후 자동 분석됩니다
+                          {item.status === "processing"
+                            ? "분석 진행 중..."
+                            : item.status === "failed"
+                            ? "분석에 실패했습니다"
+                            : "입력 완료 후 자동 분석됩니다"}
                         </p>
                       ) : (
                         <p className="text-body-sm text-text-secondary line-clamp-1">
@@ -120,7 +123,7 @@ export default function IndividualAnalysisPage() {
                 </div>
               );
 
-              if (isPending) {
+              if (!isNavigable) {
                 return (
                   <div key={item.id} className="opacity-60 cursor-not-allowed">
                     {content}

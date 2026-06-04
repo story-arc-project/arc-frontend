@@ -199,7 +199,9 @@ export default function HistoryPage() {
           </div>
         ) : (
           <div className="space-y-3" role="tabpanel" id={`history-panel-${filter}`} aria-labelledby={`history-tab-${filter}`}>
-            {items.map((item) => (
+            {items.map((item) => {
+              const isNavigable = item.status === "completed";
+              return (
               <div
                 key={item.id}
                 className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors"
@@ -216,15 +218,19 @@ export default function HistoryPage() {
                           onSave={(v) => handleRename(item.id, v)}
                           onCancel={() => setEditId(null)}
                         />
-                      ) : (
+                      ) : isNavigable ? (
                         <Link
                           href={`${ANALYSIS_DETAIL_PATH[item.type]}/${item.id}`}
                           className="text-body-sm text-text-primary font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
                         >
                           {item.title}
                         </Link>
+                      ) : (
+                        <span className="text-body-sm text-text-primary font-medium opacity-60 cursor-not-allowed">
+                          {item.title}
+                        </span>
                       )}
-                      <ConfidenceBadge confidence={item.overallConfidence} />
+                      {isNavigable && <ConfidenceBadge confidence={item.overallConfidence} />}
                     </div>
                     <p className="text-body-sm text-text-secondary line-clamp-1">
                       {item.summaryText}
@@ -267,7 +273,8 @@ export default function HistoryPage() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

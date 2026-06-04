@@ -13,6 +13,10 @@
 # testing
 /coverage
 
+# storybook
+/storybook-static
+*storybook.log
+
 # next.js
 /.next/
 /out/
@@ -44,3 +48,14 @@ yarn-error.log*
 # local tool state (claude code / oh-my-claudecode)
 .claude/settings.local.json
 .omc/
+
+# AI Agent Related
+.agents/
+
+# Uncommitted Related
+.uncommitted/
+
+# AI tool state / worktrees / local docs
+.antigravitycli/
+.claude/worktrees/
+docs/superpowers/

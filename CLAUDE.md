@@ -99,58 +99,57 @@ docs/         # 프로젝트 문서 (claude 등)
 
 ## Development Workflow (Mandatory)
 
-기본 흐름:
+> 개발 프로세스는 품질 기준으로 운영한다. "입력 허들 최소화"는 *제품 사용자* 원칙이며 개발 워크플로우와 무관하다.
+> 척추 = superpowers 스킬 · 리뷰 권위 = Codex · git 규약 = `git-workflow` 스킬(Git 작업 시 자동 로드)
 
-> 작은 구현 → 검증 → (필요 시) Codex 리뷰 → 마무리
+### 0. Triage — 복잡도 게이트
+규모에 비례해 단계를 정한다.
+- **Trivial** (1~2파일, UX/상태/API 변화 없음): Brainstorm·Plan·SDD**만** 생략한다. **3 Isolate(dev에서 분기)는 반드시 수행** → 4 Implement → 5 Validate. **8 Review의 필수 `/codex:review --base dev`도 생략하지 않는다** (조건부 adversarial·6 UI Quality는 해당 시). main/dev 직접 커밋 금지는 규모와 무관하게 적용된다.
+- **Standard** (3~5파일 또는 UX/상태 변화): 전체 파이프라인
+- **Large** (6+파일, 새 기능/흐름): 전체 + 설계 문서
 
-### 1. Plan
-- 요구사항을 1~2문장으로 정리
-- 변경 파일과 영향 범위 식별
+### 1. Brainstorm (Standard+)
+`superpowers:brainstorming` 으로 의도·요구·설계 정리. Large는 design doc까지.
 
-### 2. Implement
-- 최소 동작 버전 먼저 구현
-- 기존 구조 유지
+### 2. Plan
+`superpowers:writing-plans` 로 단계별 구현 계획 작성. 변경 파일·영향 범위 식별.
 
-### 3. Validate
+### 3. Isolate
+`superpowers:using-git-worktrees` + `git-workflow` 스킬(Git 작업 시 자동 로드되는 가이드라인 — 슬래시 커맨드 아님). **dev에서 분기, PR base = dev.**
+
+### 4. Implement
+계획을 `superpowers:subagent-driven-development` (SDD)로 실행 — 독립 태스크 단위, 2단계 리뷰(스펙 준수 → 코드 품질).
+- 각 태스크는 **TDD** (RED→GREEN→REFACTOR) — **FRT Test Foundation(FRT-22..33) 완료 후 의무화**. 그 전까지는 5 Validate로 대체. *(pending)*
+- 신규 컴포넌트/페이지: **UI Spec 상태 매트릭스** 먼저 (loading/error/empty/partial × 컴포넌트).
+- 기존 패턴 유지, Hard Constraints 준수. Trivial은 SDD 없이 직접 구현.
+
+### 5. Validate
 ```bash
 npm run lint
 npm run build
 ```
+UI 변경 시 `/expect` 브라우저 테스트.
 
-### 4. Adversarial Review (조건부)
+### 6. UI Quality (조건부 — UI 변경)
+- 새 컴포넌트/페이지 → `/audit` + `/critique`
+- 레이아웃·스타일 수정 → `/expect` + `/polish`
+- 디자인 시스템 정합성 의심 → `/normalize`
 
-다음 경우 실행:
-- 3개 이상 파일 변경
-- UX 흐름 변경
-- 상태 구조 변경
-- API 변경
+### 7. Self-review
+`superpowers:requesting-code-review` 체크리스트로 셀프 점검 후 리뷰 요청.
 
-```bash
-/codex:adversarial-review --base main
-```
+### 8. Review (필수) — Codex가 최종 권위
+- 조건부 `/codex:adversarial-review --base dev` (3+파일 / UX / 상태 / API 변경 시)
+- 필수 `/codex:review --base dev`
+- Codex = 제안자, 실제 수정 = Claude. 반복 실패(2회) / 원인 불명 버그 → `/codex:rescue`.
 
-### 5. Final Review (필수)
+### 9. Finish
+`superpowers:finishing-a-development-branch` → PR(base dev) → merge → 브랜치 삭제. (PR 템플릿은 `git-workflow` 스킬 참조)
 
-```bash
-/codex:review --base main
-```
+### 10. Output
+변경 내용 / 이유 / 수정 파일 / 검증 결과 / 남은 리스크.
 
----
-
-## Codex Usage
-
-### 역할
-- Claude: 구현
-- Codex: 리뷰 / 문제 해결
-
-### Rescue
-```bash
-/codex:rescue
-```
-
-사용 조건:
-- 동일 문제 2회 반복
-- 원인 불명 버그
+> 가로지르는 규율: 완료 주장 전 `superpowers:verification-before-completion`(검증 명령 실제 실행), 버그·실패 시 `superpowers:systematic-debugging` 우선.
 
 ---
 
@@ -179,7 +178,10 @@ npm run build
 
 ## References
 
-- workflow: `docs/claude/workflow.md`
-- codex: `docs/claude/codex.md`
+워크플로우 정본은 위 **Development Workflow** 섹션이다. 아래는 보조 자료.
+
 - checklist: `docs/claude/checklist.md`
-- git-workflow: `/git-workflow` (skill)
+- workflow (요약 포인터): `docs/claude/workflow.md`
+- codex (요약 포인터): `docs/claude/codex.md`
+- git-workflow: `git-workflow` 스킬 — 브랜치 전략·커밋·PR 규약 (Git 작업 시 자동 로드; `user-invocable: false`라 슬래시 호출 불가)
+- superpowers (skill): `brainstorming` · `writing-plans` · `using-git-worktrees` · `subagent-driven-development` · `test-driven-development` · `requesting-code-review` · `finishing-a-development-branch` · `verification-before-completion` · `systematic-debugging`

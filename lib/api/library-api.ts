@@ -5,6 +5,7 @@ import type { LibraryFilter } from "@/types/archive";
 import {
   type LibraryDTO,
   toLibraryUpsertPayload,
+  toLibraryFilterDTO,
 } from "@/lib/utils/library-mapper";
 import { isDemoMode } from "@/lib/demo/state";
 import * as demo from "@/lib/demo/handlers";
@@ -38,7 +39,13 @@ export async function createLibrary(payload: {
   if (isDemoMode()) return demo.createLibrary(toLibraryUpsertPayload(payload));
   const res = await api.post<ApiSuccessResponse<LibraryIdData>>(
     "/libraries/",
-    toLibraryUpsertPayload(payload),
+    {
+      name: payload.name,
+      color: payload.color ?? "",
+      icon: payload.icon ?? "",
+      is_system: payload.isSystem ?? false,
+      filter: toLibraryFilterDTO(payload.filter) ?? null,
+    },
   );
   return res.data.id;
 }

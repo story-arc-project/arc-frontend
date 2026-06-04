@@ -102,54 +102,83 @@ export default function KeywordAnalysisPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {items.map((item) => (
-              <div
-                key={item.id}
-                className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <Link
-                    href={`/analysis/keyword/${item.id}`}
-                    className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
-                  >
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-body-sm text-text-primary font-medium">
-                        {item.title}
-                      </span>
-                      <ConfidenceBadge confidence={item.overallConfidence} />
-                    </div>
-                    <p className="text-body-sm text-text-secondary line-clamp-1">
-                      {item.summaryText}
-                    </p>
-                    {item.selectedKeywords && item.selectedKeywords.length > 0 && (
-                      <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                        {item.selectedKeywords.map((kw) => (
-                          <Badge key={kw} variant="outline">{kw}</Badge>
-                        ))}
+            {items.map((item) => {
+              const isNavigable = item.status === "completed";
+              return (
+                <div
+                  key={item.id}
+                  className={[
+                    "bg-surface border border-border rounded-lg p-4",
+                    !isNavigable ? "opacity-60" : "hover:border-brand transition-colors",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    {!isNavigable ? (
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-body-sm text-text-primary font-medium">
+                            {item.title}
+                          </span>
+                        </div>
+                        <p className="text-body-sm text-text-tertiary mt-1">
+                          {item.status === "failed" ? "분석에 실패했습니다" : "분석 진행 중..."}
+                        </p>
+                        {item.selectedKeywords && item.selectedKeywords.length > 0 && (
+                          <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                            {item.selectedKeywords.map((kw) => (
+                              <Badge key={kw} variant="outline">{kw}</Badge>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-caption text-text-tertiary mt-1.5">
+                          {formatDate(item.createdAt)}
+                        </p>
                       </div>
+                    ) : (
+                      <Link
+                        href={`/analysis/keyword/${item.id}`}
+                        className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
+                      >
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-body-sm text-text-primary font-medium">
+                            {item.title}
+                          </span>
+                          <ConfidenceBadge confidence={item.overallConfidence} />
+                        </div>
+                        <p className="text-body-sm text-text-secondary line-clamp-1">
+                          {item.summaryText}
+                        </p>
+                        {item.selectedKeywords && item.selectedKeywords.length > 0 && (
+                          <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                            {item.selectedKeywords.map((kw) => (
+                              <Badge key={kw} variant="outline">{kw}</Badge>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-caption text-text-tertiary mt-1.5">
+                          {formatDate(item.createdAt)}
+                        </p>
+                      </Link>
                     )}
-                    <p className="text-caption text-text-tertiary mt-1.5">
-                      {formatDate(item.createdAt)}
-                    </p>
-                  </Link>
-                  <div className="flex items-center gap-1">
-                    <BookmarkToggle
-                      analysisId={item.id}
-                      isBookmarked={item.isBookmarked}
-                      size="sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setDeleteId(item.id)}
-                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                      aria-label="삭제"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <BookmarkToggle
+                        analysisId={item.id}
+                        isBookmarked={item.isBookmarked}
+                        size="sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setDeleteId(item.id)}
+                        className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                        aria-label="삭제"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

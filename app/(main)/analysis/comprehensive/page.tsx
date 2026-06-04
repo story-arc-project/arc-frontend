@@ -100,24 +100,24 @@ export default function ComprehensiveAnalysisPage() {
         ) : (
           <div className="space-y-3">
             {items.map((item) => {
-              const isProcessing = item.status === "processing";
+              const isNavigable = item.status === "completed";
               return (
                 <div
                   key={item.id}
                   className={[
                     "bg-surface border border-border rounded-lg p-4",
-                    isProcessing ? "opacity-60" : "hover:border-brand transition-colors",
+                    !isNavigable ? "opacity-60" : "hover:border-brand transition-colors",
                   ].join(" ")}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      {isProcessing ? (
+                      {!isNavigable ? (
                         <div>
                           <span className="text-body-sm text-text-primary font-medium">
                             {item.title}
                           </span>
                           <p className="text-body-sm text-text-tertiary mt-1">
-                            분석 진행 중...
+                            {item.status === "failed" ? "분석에 실패했습니다" : "분석 진행 중..."}
                           </p>
                         </div>
                       ) : (
