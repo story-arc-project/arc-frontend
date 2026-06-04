@@ -1,0 +1,46 @@
+name: Chromatic
+
+# Storybook 시각 회귀(visual regression) + 공유. test-runner(storybook-test.yml, FRT-35)는
+# "마운트/렌더가 깨지냐"를 보고, Chromatic은 "픽셀이 바뀌었냐"를 본다(상호보완).
+#
+# 매 PR 자동이 아니라 "필요할 때 수동 실행"으로 운영한다(무료 티어 스냅샷 절약).
+# 실행: GitHub → Actions → Chromatic → "Run workflow"에서 브랜치 선택 후 실행.
+on:
+  workflow_dispatch:
+    inputs:
+      only_changed:
+        description: "변경된 스토리만 스냅샷(TurboSnap, 기본). 끄면 전체 재스냅샷 — baseline 리셋이 필요할 때만."
+        type: boolean
+        default: true
+
+# 같은 ref에서 이전 실행을 취소해 중복 스냅샷 소비를 막는다.
+concurrency:
+  group: chromatic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  chromatic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # TurboSnap(onlyChanged)이 변경 파일을 git history로 감지하므로 전체 히스토리 필요.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run Chromatic
+        uses: chromaui/action@v17
+        with:
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          # TurboSnap: 마지막 빌드 이후 바뀐 스토리만 풀 스냅샷, 나머지는 baseline 복제(1/5 비용).
+          # 수동 dispatch 입력으로 전체 재스냅샷 전환 가능(기본은 절약 모드 = true).
+          onlyChanged: ${{ inputs.only_changed }}
+          # 시각 변경이 감지돼도 실패로 막지 않고 정보성으로만 표시(non-blocking).
+          exitZeroOnChanges: true
+          # buildScriptName 기본값 = build-storybook (package.json에 이미 존재)
