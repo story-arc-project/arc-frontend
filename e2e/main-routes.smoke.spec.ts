@@ -9,10 +9,12 @@ import { type StubScenario, stubApi } from "./fixtures/stub-api";
  * 검증한다. 백엔드 의존 없이(스텁만으로) 결정론적으로 통과한다.
  *
  * 각 화면 검증:
- *  1. /login 리다이렉트 없음 — 화면 고유 랜드마크가 보이고 URL 이 유지된다.
- *     GNB 는 AuthGate 의 형제라 리다이렉트 중에도 보이므로 '리다이렉트 없음'의
- *     1차 근거로 쓰지 않는다. 화면 고유 랜드마크(+URL)가 1차 근거다.
- *  2. (main) layout/GNB 렌더 — 상단 GNB 로고("ARC")가 보인다(2차 확인).
+ *  1. 인증 게이트 통과 — 화면 고유 랜드마크(AuthGate children)가 보인다. 이것이
+ *     load-bearing(1차) 근거다. 인증 실패 시: 401이면 /login 리다이렉트, 404·5xx면
+ *     AuthGate 재시도 화면(이때 URL 은 그대로 유지)이라 **URL·GNB 만으론 거짓 통과**
+ *     한다(GNB 는 AuthGate 형제라 두 실패 모드 모두에서 계속 보임). 랜드마크는 두
+ *     모드 어디서도 렌더되지 않아 확실히 실패를 잡는다(인증 미주입 음성 테스트로 확인).
+ *  2. URL 유지 + (main) GNB 로고("ARC") — 2차 확인.
  *  3. loading → data/empty 기본 상태가 깨지지 않는다.
  *
  * 인증 주입 방식: 빌드타임 플래그(NEXT_PUBLIC_E2E_AUTH) 대신 `/auth/me` 스텁(런타임).
