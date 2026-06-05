@@ -12,8 +12,10 @@
     "build-storybook": "storybook build",
     "test-storybook": "test-storybook --failOnConsole",
     "test-storybook:ci": "node scripts/assert-port-free.mjs 6006 && concurrently -k -s first -n SB,TEST -c magenta,blue \"npm run build-storybook -- --quiet && npx http-server storybook-static --port 6006 --silent\" \"wait-on tcp:127.0.0.1:6006 && npm run test-storybook\"",
+    "pretest:e2e": "playwright install chromium",
     "test:e2e": "playwright test",
     "test:e2e:report": "playwright show-report",
+    "pretest:e2e:ui": "playwright install chromium",
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
