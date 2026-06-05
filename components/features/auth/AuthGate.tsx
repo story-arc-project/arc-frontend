@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/hooks/useAuth";
 
@@ -19,22 +19,28 @@ import { useAuth } from "@/hooks/useAuth";
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, error, isLoading, isOnboarded, refetch } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
   const [retrying, setRetrying] = useState(false);
 
   // 인증/온보딩 가드는 로딩·조회실패가 아닌 '확정된' 상태에서만 판단한다.
   const settled = !isLoading && error === null && !retrying;
-  const redirectTarget = settled
+  const redirect = settled
     ? user === null
-      ? `/login?callbackUrl=${encodeURIComponent(pathname)}`
+      ? "login"
       : !isOnboarded
-        ? "/signup?step=profile"
+        ? "onboard"
         : null
     : null;
 
   useEffect(() => {
-    if (redirectTarget) router.replace(redirectTarget);
-  }, [redirectTarget, router]);
+    if (redirect === "login") {
+      // callbackUrl은 effect(클라이언트 전용)에서 window.location으로 읽는다.
+      // usePathname()은 쿼리스트링을 버려 /archive?id=… 같은 딥링크 복귀를 깨뜨린다.
+      const from = window.location.pathname + window.location.search;
+      router.replace(`/login?callbackUrl=${encodeURIComponent(from)}`);
+    } else if (redirect === "onboard") {
+      router.replace("/signup?step=profile");
+    }
+  }, [redirect, router]);
 
   if (user === null && (error !== null || retrying)) {
     // 재시도 중에는 refetch가 error를 잠시 비워도 보호 페이지가 깜빡이지 않도록 화면을 유지한다.
@@ -69,7 +75,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   // 로딩 중 또는 리다이렉트 대기 중 → 보호 콘텐츠/빈 사용자 UI 노출 없이 로딩 화면 유지(깜빡임 방지).
-  if ((user === null && isLoading) || redirectTarget !== null) {
+  if ((user === null && isLoading) || redirect !== null) {
     return (
       <main
         className="min-h-[calc(100dvh-var(--gnb-h))] flex items-center justify-center px-4"
