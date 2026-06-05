@@ -20,10 +20,16 @@
 //       (Playwright 가 preflight 를 단락시키지만, 일부 환경/비-GET 대비로 OPTIONS
 //        분기도 둔다.)
 //
-// 인증(`/auth/me` 등)은 FRT-24(`NEXT_PUBLIC_E2E_AUTH`) 소관이라 여기서 다루지 않는다.
+// 인증: 기본값은 비인증(`/auth/me` → 404)이라 `/landing` 등 공개 화면 스펙(FRT-28)은
+// 영향받지 않는다. `{ authed: true }` 를 줄 때만 `/auth/me` 를 고정 사용자(seedDemoUser)로
+// fulfill 해, 빌드타임 정적 플래그(`NEXT_PUBLIC_E2E_AUTH`) 없이도 `(main)` 진입을 검증한다.
+// (런타임 주입이라 단일 dev 서버로 인증/비인증 스펙이 공존하고, 실제 auth 경로
+//  `AuthContext → fetchCurrentUser → /auth/me → 봉투 언랩`을 그대로 탄다. 소비처: FRT-30.)
 // ─────────────────────────────────────────────────────────────
 
 import type { Page, Route } from "@playwright/test";
+
+import { seedDemoUser } from "@/lib/demo/seed";
 
 import { API_ORIGIN } from "./api-origin";
 import {
@@ -99,6 +105,12 @@ function corsHeaders(origin: string): Record<string, string> {
 export interface StubApiOptions {
   /** "data"(기본): 채워진 응답 · "empty": 빈 목록으로 빈 상태 검증. */
   scenario?: StubScenario;
+  /**
+   * true 면 `GET /auth/me` 를 고정 사용자(seedDemoUser, onboarded)로 fulfill 해
+   * `(main)` 진입 가드(AuthGate)를 통과시킨다. 기본 false(미인증 → 404)라
+   * `/landing` 등 공개 화면 스펙은 영향받지 않는다.
+   */
+  authed?: boolean;
 }
 
 /**
@@ -106,6 +118,7 @@ export interface StubApiOptions {
  */
 export async function stubApi(page: Page, options: StubApiOptions = {}): Promise<void> {
   const scenario: StubScenario = options.scenario ?? "data";
+  const authed = options.authed ?? false;
 
   await page.route(
     (url) => url.href.startsWith(STUB_API_URL),
@@ -130,6 +143,18 @@ export async function stubApi(page: Page, options: StubApiOptions = {}): Promise
       const pathname = new URL(req.url()).pathname;
 
       if (method === "GET") {
+        // 인증 주입(opt-in): `/auth/me` 를 고정 사용자로 fulfill 해 AuthGate 를 통과시킨다.
+        // fetchCurrentUser 는 응답 봉투의 `.data` 를 읽으므로 `{ data: user }` 형태로 싼다.
+        if (authed && pathname === "/auth/me") {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            headers: corsHeaders(origin),
+            body: JSON.stringify({ data: seedDemoUser }),
+          });
+          return;
+        }
+
         const def = GET_ROUTES.find((r) => r.match.test(pathname));
         if (def) {
           await route.fulfill({
