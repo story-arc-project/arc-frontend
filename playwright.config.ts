@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { API_ORIGIN } from "./e2e/fixtures/api-origin";
+
 /**
  * Playwright E2E 설정 (FRT-23)
  *
@@ -15,8 +17,9 @@ import { defineConfig, devices } from "@playwright/test";
 const BASE_URL = "http://localhost:3000";
 
 // 테스트 환경의 백엔드 origin을 고정값으로 주입한다.
-// 이후 스텁(downstream)이 이 origin을 가로챈다.
-const API_URL = "http://localhost:8000";
+// 스텁(stub-api)도 동일 상수(API_ORIGIN)를 import 해 같은 origin을 가로챈다
+// → dev 서버가 fetch하는 origin과 스텁이 가로채는 origin이 갈라지지 않는다.
+const API_URL = API_ORIGIN;
 
 export default defineConfig({
   testDir: "./e2e",
