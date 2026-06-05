@@ -40,7 +40,7 @@ export function UserMenu() {
     );
   }
 
-  // 라우트가 proxy.ts 쿠키로 보호되므로 user 없음은 비정상. 방어적으로 렌더 생략.
+  // 라우트가 AuthGate로 보호되므로(비인증 시 /login) user 없음은 비정상. 방어적으로 렌더 생략.
   if (!user) return null;
 
   const displayName = user.profile?.name ?? user.account?.email ?? "사용자";
