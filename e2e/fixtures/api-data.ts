@@ -29,8 +29,8 @@ import type { ResumeListItem, ResumeVersion } from "@/types/resume";
 
 export type StubScenario = "data" | "empty";
 
-/** ApiSuccessResponse 봉투로 감싼다. */
-function success<T>(data: T): ApiSuccessResponse<T> {
+/** ApiSuccessResponse 봉투로 감싼다(stub-api 의 변이 응답도 이 단일 출처를 쓴다). */
+export function success<T>(data: T): ApiSuccessResponse<T> {
   return { status: "success", message: "ok", data };
 }
 
