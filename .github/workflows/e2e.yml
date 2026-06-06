@@ -1,0 +1,54 @@
+name: E2E
+
+# (main) 스모크 E2E(FRT-30)를 PR CI 게이트로 연결한다(FRT-31).
+# 백엔드 없이 API 스텁(FRT-28) + 런타임 /auth/me 스텁만으로 결정론적으로 통과하며,
+# 실패 시 체크가 red 가 되어 PR 머지를 막는다(브랜치 보호의 required check 로 지정 시).
+#
+# lint/typecheck/build(ci.yml), Storybook test-runner(storybook-test.yml) 와 동일하게
+# 관심사별로 워크플로를 분리한다 — 느린 E2E 가 빠른 정적 검사 피드백을 막지 않도록.
+on:
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    # dev 서버 콜드 컴파일 + 스모크 25케이스(CI: workers=1, retries=2)라 기본 잡보다 길다.
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # CI(ubuntu)는 chromium 실행에 OS 의존성이 필요하다(`--with-deps`).
+      # pretest:e2e 훅의 `playwright install chromium`(의존성 없음)만으론 브라우저가 안 뜬다.
+      - name: Install Playwright (chromium)
+        run: npx playwright install --with-deps chromium
+
+      # playwright.config.ts 가 dev 서버를 기동(CI 에선 reuseExistingServer=false)하고
+      # NEXT_PUBLIC_API_URL 을 주입한다. 인증은 스펙별 런타임 /auth/me 스텁(FRT-30)으로
+      # 주입하므로 빌드타임 플래그(NEXT_PUBLIC_E2E_AUTH)는 의도적으로 설정하지 않는다 —
+      # 잡 전역으로 켜면 fetchCurrentUser 가 항상 인증 사용자를 반환해, /landing 공개
+      # 화면 스펙(smoke.spec.ts)이 useRedirectIfAuthenticated 로 /dashboard 에 튕겨 깨진다.
+      - name: Run Playwright smoke E2E
+        run: npm run test:e2e
+
+      # 실패 디버깅용 아티팩트(리포트/영상/trace). 성공 시에도 보존(if: always()).
+      # 다운로드 후 로컬에서 `npx playwright show-report` / `show-trace` 로 재생·추적 가능.
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          # 전부 통과한 run 은 test-results/ 가 비어 경고만 나므로 무시한다.
+          if-no-files-found: ignore
