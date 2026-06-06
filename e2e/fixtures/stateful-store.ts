@@ -55,6 +55,8 @@ export interface ExperienceStore {
   create(payload: ExperienceSavePayload): string;
   update(id: string, payload: ExperienceUpdatePayload): boolean;
   remove(id: string): boolean;
+  /** 기존 경험을 복제한다. 원본이 없으면 undefined(호출부가 404 로 매핑). */
+  duplicate(id: string): string | undefined;
 }
 
 function createExperienceStore(scenario: StubScenario): ExperienceStore {
@@ -103,6 +105,19 @@ function createExperienceStore(scenario: StubScenario): ExperienceStore {
       items = items.filter((e) => e.id !== id);
       return items.length < before;
     },
+    duplicate(id) {
+      const src = items.find((e) => e.id === id);
+      if (!src) return undefined;
+      const newId = `e2e-exp-new-${++seq}`;
+      const copied: Experience = {
+        ...clone(src),
+        id: newId,
+        created_at: CREATED_AT,
+        updated_at: CREATED_AT,
+      };
+      items = [copied, ...items];
+      return newId;
+    },
   };
 }
 
@@ -115,6 +130,8 @@ export interface BookmarkStore {
   /** 북마크를 추가한다. 알 수 없는 분석 id 면 false(호출부가 404 로 매핑). 멱등. */
   add(id: string): boolean;
   remove(id: string): boolean;
+  /** 분석 목록 GET 의 isBookmarked 플래그를 라이브 상태와 동기화하는 데 쓴다. */
+  isBookmarked(id: string): boolean;
 }
 
 function toBookmarked(snapshot: AnalysisSnapshot): BookmarkedSnapshot {
@@ -150,6 +167,9 @@ function createBookmarkStore(scenario: StubScenario): BookmarkStore {
     },
     remove(id) {
       return bookmarked.delete(id);
+    },
+    isBookmarked(id) {
+      return bookmarked.has(id);
     },
   };
 }

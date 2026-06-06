@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import type { ApiSuccessResponse } from "@/types/api";
 import type { Experience, ExperienceListData } from "@/types/experience";
-import type { BookmarkedSnapshot } from "@/types/analysis";
+import type { AnalysisSnapshot, BookmarkedSnapshot } from "@/types/analysis";
 import type { ResumeListItem, ResumeVersion } from "@/types/resume";
 
 import { STUB_API_URL, stubApi } from "./fixtures/stub-api";
@@ -135,6 +135,26 @@ test.describe("FRT-42 Stateful E2E mock", () => {
     expect(detail.status).toBe(404);
   });
 
+  test("experiences: duplicate → 복제본이 목록에 추가된다", async ({ page }) => {
+    const stub = await stubApi(page, { authed: true });
+    await page.goto("/landing");
+
+    const created = await apiFetch(page, "POST", "/experiences/exp-e2e-1/duplicate");
+    expect(created.ok).toBe(true);
+    const newId = data<{ id: string }>(created).id;
+    expect(newId).not.toBe("exp-e2e-1");
+
+    const after = data<ExperienceListData>(await apiFetch(page, "GET", "/experiences/"));
+    expect(after.count).toBe(3);
+    const copy = data<Experience>(await apiFetch(page, "GET", `/experiences/${newId}`));
+    expect(copy.content.title).toBe("교내 개발 동아리 운영진"); // 원본 content 복제
+
+    const dups = stub.mutations.filter(
+      (m) => m.method === "POST" && m.path === "/experiences/exp-e2e-1/duplicate",
+    );
+    expect(dups).toHaveLength(1);
+  });
+
   // ── Bookmarks ───────────────────────────────────────────────
 
   test("bookmarks: add → 목록에 보이고, remove → 사라진다", async ({ page }) => {
@@ -160,6 +180,30 @@ test.describe("FRT-42 Stateful E2E mock", () => {
       await apiFetch(page, "GET", "/analysis/bookmarks"),
     );
     expect(afterRemove.map((b) => b.id)).toEqual(["comp-1"]);
+  });
+
+  test("bookmarks: 토글이 분석 목록의 isBookmarked 와 동기화된다", async ({ page }) => {
+    await stubApi(page, { authed: true });
+    await page.goto("/landing");
+
+    // 시드: ind-1 은 북마크됨 → individual 목록도 isBookmarked=true.
+    const individualSeed = data<AnalysisSnapshot[]>(
+      await apiFetch(page, "GET", "/analysis/individual"),
+    );
+    expect(individualSeed.find((s) => s.id === "ind-1")?.isBookmarked).toBe(true);
+
+    // comp-1 은 미북마크 → comprehensive 목록 isBookmarked=false.
+    const before = data<AnalysisSnapshot[]>(
+      await apiFetch(page, "GET", "/analysis/comprehensive"),
+    );
+    expect(before.find((s) => s.id === "comp-1")?.isBookmarked).toBe(false);
+
+    // 북마크 추가 후 목록 플래그가 true 로 동기화된다.
+    await apiFetch(page, "POST", "/analysis/bookmarks/comp-1");
+    const after = data<AnalysisSnapshot[]>(
+      await apiFetch(page, "GET", "/analysis/comprehensive"),
+    );
+    expect(after.find((s) => s.id === "comp-1")?.isBookmarked).toBe(true);
   });
 
   // ── Resume (Export) ─────────────────────────────────────────

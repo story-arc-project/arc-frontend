@@ -38,6 +38,7 @@ import type {
   ExperienceSavePayload,
   ExperienceUpdatePayload,
 } from "@/types/experience";
+import type { AnalysisSnapshot } from "@/types/analysis";
 import type { ResumeLanguage, ResumeVersion } from "@/types/resume";
 import { seedDemoUser } from "@/lib/demo/seed";
 
@@ -81,17 +82,16 @@ interface RouteDef {
 
 // 정적 GET 라우트 테이블 (변이 대상이 아닌 엔드포인트). 각 정규식은 `^…$` 앵커링되어
 // 목록/상세가 겹치지 않는다. experiences·bookmarks·resume 은 stateful 라우터가 다룬다.
+// analysis 목록(individual/comprehensive/keyword)도 isBookmarked 플래그를 라이브 북마크
+// 상태와 동기화하려 stateful 라우터에서 다룬다(상세·status 는 정적 유지).
 const GET_ROUTES: RouteDef[] = [
   { match: /^\/libraries\/$/, build: libraryList },
   { match: /^\/libraries\/[^/]+\/experiences$/, build: libraryExperiences },
 
   { match: /^\/presets\/$/, build: presetList },
 
-  { match: /^\/analysis\/individual$/, build: individualList },
   { match: /^\/analysis\/individual\/[^/]+$/, build: individualDetail },
-  { match: /^\/analysis\/comprehensive$/, build: comprehensiveList },
   { match: /^\/analysis\/comprehensive\/[^/]+$/, build: comprehensiveDetail },
-  { match: /^\/analysis\/keyword$/, build: keywordList },
   { match: /^\/analysis\/keyword\/[^/]+$/, build: keywordDetail },
   { match: /^\/analysis\/status\/[^/]+$/, build: analysisStatus },
 ];
@@ -133,11 +133,23 @@ const RESPOND_OK = (payload: unknown): StatefulResult => ({
   payload,
 });
 
+/** 분석 목록 스냅샷의 isBookmarked 를 라이브 북마크 상태로 덮어쓴다. */
+function withBookmarkFlags(
+  snapshots: AnalysisSnapshot[],
+  store: StatefulStore,
+): AnalysisSnapshot[] {
+  return snapshots.map((s) => ({
+    ...s,
+    isBookmarked: store.bookmarks.isBookmarked(s.id),
+  }));
+}
+
 function routeStateful(
   method: string,
   pathname: string,
   body: unknown,
   store: StatefulStore,
+  scenario: StubScenario,
 ): StatefulResult {
   // experiences 목록 / 생성
   if (/^\/experiences\/$/.test(pathname)) {
@@ -145,6 +157,16 @@ function routeStateful(
     if (method === "POST") {
       const id = store.experiences.create(body as ExperienceSavePayload);
       return RESPOND_OK(success({ id }));
+    }
+    return { kind: "notfound" };
+  }
+
+  // experiences 복제 (POST /experiences/:id/duplicate)
+  const expDuplicate = pathname.match(/^\/experiences\/([^/]+)\/duplicate$/);
+  if (expDuplicate) {
+    if (method === "POST") {
+      const newId = store.experiences.duplicate(expDuplicate[1]);
+      return newId ? RESPOND_OK(success({ id: newId })) : { kind: "notfound" };
     }
     return { kind: "notfound" };
   }
@@ -187,6 +209,23 @@ function routeStateful(
       return RESPOND_OK(success(null));
     }
     return { kind: "notfound" };
+  }
+
+  // analysis 목록 — 정적 픽스처에 라이브 isBookmarked 를 덮어쓴다(상세·status 는 정적).
+  if (/^\/analysis\/individual$/.test(pathname)) {
+    if (method === "GET")
+      return RESPOND_OK(success(withBookmarkFlags(individualList(scenario).data, store)));
+    return { kind: "skip" };
+  }
+  if (/^\/analysis\/comprehensive$/.test(pathname)) {
+    if (method === "GET")
+      return RESPOND_OK(success(withBookmarkFlags(comprehensiveList(scenario).data, store)));
+    return { kind: "skip" };
+  }
+  if (/^\/analysis\/keyword$/.test(pathname)) {
+    if (method === "GET")
+      return RESPOND_OK(success(withBookmarkFlags(keywordList(scenario).data, store)));
+    return { kind: "skip" };
   }
 
   // resume 목록 / 생성
@@ -312,8 +351,8 @@ export async function stubApi(
         return;
       }
 
-      // experiences · bookmarks · resume → stateful 라우터.
-      const result = routeStateful(method, pathname, body, store);
+      // experiences · bookmarks · resume · analysis 목록 → stateful 라우터.
+      const result = routeStateful(method, pathname, body, store, scenario);
       if (result.kind === "respond") {
         await fulfillJson(result.status, result.payload);
         return;
