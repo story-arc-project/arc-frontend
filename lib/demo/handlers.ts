@@ -136,6 +136,15 @@ export async function logoutUser(): Promise<void> {
   await delay(undefined);
 }
 
+export async function deleteAccountWithPassword(): Promise<void> {
+  // 데모에서는 실제 삭제가 없다.
+  await delay(undefined);
+}
+
+export async function deleteAccountWithSocial(): Promise<void> {
+  await delay(undefined);
+}
+
 // ─── Resume (Export) ────────────────────────────────────────
 
 export async function createResume(params: { language: ResumeLanguage }): Promise<ResumeVersion> {
