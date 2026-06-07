@@ -31,3 +31,26 @@ export async function logoutUser(): Promise<void> {
   if (isDemoMode()) return demo.logoutUser();
   await api.post("/auth/logout", undefined, { auth: false });
 }
+
+/**
+ * DELETE /auth/account/password - 비밀번호 계정 탈퇴(현재 비밀번호 재확인).
+ * auth:false 로 보내 오답(401/4xx) 시 client.ts 의 자동 로그아웃 리다이렉트를 피한다.
+ */
+export async function deleteAccountWithPassword(password: string): Promise<void> {
+  if (isDemoMode()) return demo.deleteAccountWithPassword();
+  await api.delete("/auth/account/password", {
+    auth: false,
+    body: JSON.stringify({ password }),
+  });
+}
+
+/**
+ * DELETE /auth/account/social - 소셜 계정 탈퇴(OAuth 재실행으로 받은 code 재확인).
+ */
+export async function deleteAccountWithSocial(token: string): Promise<void> {
+  if (isDemoMode()) return demo.deleteAccountWithSocial();
+  await api.delete("/auth/account/social", {
+    auth: false,
+    body: JSON.stringify({ social: token }),
+  });
+}

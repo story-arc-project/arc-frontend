@@ -298,6 +298,7 @@ export async function stubApi(
   // 테스트별 fresh store (이 클로저에만 상태가 존재 → 전역 누수 0).
   const store = createStatefulStore(scenario);
   const mutations: CapturedMutation[] = [];
+  let accountDeleted = false;
 
   await page.route(
     (url) => url.href.startsWith(STUB_API_URL),
@@ -347,7 +348,22 @@ export async function stubApi(
       // 인증 주입(opt-in): `/auth/me` 를 고정 사용자로 fulfill 해 AuthGate 를 통과시킨다.
       // fetchCurrentUser 는 응답 봉투의 `.data` 를 읽으므로 `{ data: user }` 형태로 싼다.
       if (method === "GET" && authed && pathname === "/auth/me") {
+        // 계정 삭제(FRT-9) 후에는 세션이 사라진 것처럼 401 을 돌려준다.
+        if (accountDeleted) {
+          await fulfillJson(401, { status: "error", message: "deleted", code: "UNAUTHORIZED" });
+          return;
+        }
         await fulfillJson(200, success(seedDemoUser));
+        return;
+      }
+
+      // 계정 삭제(FRT-9): 성공 후 /auth/me 가 401 이 되도록 플래그를 세운다.
+      if (
+        method === "DELETE" &&
+        (pathname === "/auth/account/password" || pathname === "/auth/account/social")
+      ) {
+        accountDeleted = true;
+        await fulfillJson(200, success(null));
         return;
       }
 
