@@ -52,6 +52,7 @@ function LoginForm() {
 
   // 소셜 로그인 콜백 에러 처리
   const errorParam = searchParams.get("error") ?? "";
+  const deleted = searchParams.get("deleted") === "1";
   const [socialError, setSocialError] = useState<string | null>(
     SOCIAL_ERROR_MESSAGES[errorParam] ?? null
   );
@@ -134,6 +135,14 @@ function LoginForm() {
             <h1 className="text-heading-2 text-text-primary mb-1">반가워요</h1>
             <p className="text-body text-text-secondary">이메일로 로그인하세요</p>
           </motion.div>
+
+          {deleted && (
+            <motion.div variants={loginItem} className="mb-6">
+              <p className="rounded-lg bg-surface-success px-4 py-3 text-center text-body-sm text-success">
+                회원 탈퇴가 완료되었어요. 이용해주셔서 감사했어요.
+              </p>
+            </motion.div>
+          )}
 
           <motion.div variants={loginItem} className="flex flex-col gap-4">
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
