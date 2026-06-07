@@ -185,3 +185,13 @@ UI 변경 시 `/expect` 브라우저 테스트.
 - codex (요약 포인터): `docs/claude/codex.md`
 - git-workflow: `git-workflow` 스킬 — 브랜치 전략·커밋·PR 규약 (Git 작업 시 자동 로드; `user-invocable: false`라 슬래시 호출 불가)
 - superpowers (skill): `brainstorming` · `writing-plans` · `using-git-worktrees` · `subagent-driven-development` · `test-driven-development` · `requesting-code-review` · `finishing-a-development-branch` · `verification-before-completion` · `systematic-debugging`
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
