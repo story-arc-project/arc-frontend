@@ -6,6 +6,7 @@ import { ProfileEditForm } from "@/components/features/settings/ProfileEditForm"
 import { PlanCard } from "@/components/features/settings/PlanCard";
 import { AccountInfoCard } from "@/components/features/settings/AccountInfoCard";
 import { SecurityCard } from "@/components/features/settings/SecurityCard";
+import { DeleteAccountCard } from "@/components/features/settings/DeleteAccountCard";
 
 export default function SettingsPage() {
   const { user, isLoading, logout } = useAuth();
@@ -19,6 +20,7 @@ export default function SettingsPage() {
   }
 
   const account = user?.account;
+  const isSocialAccount = (account?.connected_oauth ?? []).length > 0;
   const profile = user?.profile ?? null;
 
   return (
@@ -48,6 +50,12 @@ export default function SettingsPage() {
           <Button variant="destructive" fullWidth onClick={logout}>
             로그아웃
           </Button>
+          {account && (
+            <DeleteAccountCard
+              isSocialAccount={isSocialAccount}
+              connectedOauth={account.connected_oauth ?? []}
+            />
+          )}
         </div>
       </div>
     </div>
