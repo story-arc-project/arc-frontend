@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARC 대시보드 프로토타입 · 상태 A/B/C</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  body { background: var(--color-surface-tertiary); }
+  .toolbar { position: sticky; top: 0; z-index: 50; background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border); padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+  .toolbar .brand { font-size: 18px; font-weight: 800; color: var(--color-brand); }
+  .toolbar .ttl { font-size: 14px; font-weight: 600; color: var(--color-text-primary); }
+  .toolbar .desc { font-size: 12px; color: var(--color-text-tertiary); }
+  .seg { display: inline-flex; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
+  .seg button { border: 0; background: transparent; padding: 8px 16px; font-family: inherit; font-size: 13px; font-weight: 600;
+    color: var(--color-text-secondary); cursor: pointer; transition: all .15s; }
+  .seg button + button { border-left: 1px solid var(--color-border); }
+  .seg button.active { background: var(--color-brand); color: #fff; }
+  .spacer { flex: 1; }
+  .frame-wrap { height: calc(100vh - 57px); }
+  iframe { width: 100%; height: 100%; border: 0; display: none; background: #fff; }
+  iframe.active { display: block; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="brand">ARC</span>
+    <div>
+      <div class="ttl">대시보드 프로토타입</div>
+      <div class="desc">사용자 상태 분기 A / B / C — 기획안 v1.0 기준</div>
+    </div>
+    <span class="spacer"></span>
+    <div class="seg" role="tablist">
+      <button id="t-a" class="active" onclick="show('a')">상태 A · 온보딩</button>
+      <button id="t-b" onclick="show('b')">상태 B · 초기 기록</button>
+      <button id="t-c" onclick="show('c')">상태 C · 성장</button>
+    </div>
+  </div>
+  <div class="frame-wrap">
+    <iframe id="f-a" class="active" src="state-a.html" title="상태 A"></iframe>
+    <iframe id="f-b" src="state-b.html" title="상태 B"></iframe>
+    <iframe id="f-c" src="state-c.html" title="상태 C"></iframe>
+  </div>
+  <script>
+    function show(s){
+      ['a','b','c'].forEach(function(k){
+        document.getElementById('f-'+k).classList.toggle('active', k===s);
+        document.getElementById('t-'+k).classList.toggle('active', k===s);
+      });
+    }
+  </script>
+</body>
+</html>

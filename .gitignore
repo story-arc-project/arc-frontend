@@ -69,8 +69,6 @@ docs/superpowers/
 # playwright MCP scratch output
 .playwright-mcp/
 
-# local design prototypes (not committed on this branch)
-docs/prototypes/
 
 # graphify: commit shareable outputs (graph.json, graph.html, GRAPH_REPORT.md);
 # ignore machine-specific / regenerable state
