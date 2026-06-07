@@ -1,9 +1,9 @@
-import { createOAuthState, setOAuthIntent } from "./oauth-state";
+import { createOAuthState } from "./oauth-state";
 
 /** 재인증 OAuth 를 지원하는 provider. 향후 "kakao" | "naver" 확장 지점. */
 export type OAuthProvider = "google";
 
-/** 탈퇴용 OAuth 왕복임을 콜백에 알리는 intent 값. */
+/** 탈퇴용 OAuth 왕복임을 콜백에 알리는 state 접두사(state 에 바인딩). */
 export const DELETE_INTENT = "delete";
 
 export const PROVIDER_LABELS: Record<OAuthProvider, string> = {
@@ -53,16 +53,16 @@ export function pickReauthProvider(connected: readonly string[]): OAuthProvider 
 }
 
 /**
- * 탈퇴 재인증용 OAuth 를 시작한다. intent 쿠키를 심고 provider authorize 로 리다이렉트.
- * client_id 미설정이면 리다이렉트하지 않고 false 를 반환한다(호출부가 인라인 에러).
+ * 탈퇴 재인증용 OAuth 를 시작한다. 탈퇴 의도를 state 에 바인딩(접두사)해 provider
+ * authorize 로 리다이렉트한다. client_id 미설정이면 리다이렉트하지 않고 false 를
+ * 반환한다(호출부가 인라인 에러).
  */
 export function startOAuthReauth(provider: OAuthProvider): boolean {
   const config = REGISTRY[provider];
   const clientId = config.getClientId();
   if (!clientId) return false;
   const redirectUri = `${window.location.origin}${config.callbackPath}`;
-  const url = config.buildAuthUrl({ clientId, redirectUri, state: createOAuthState() });
-  setOAuthIntent(DELETE_INTENT);
-  window.location.href = url;
+  const state = createOAuthState(DELETE_INTENT);
+  window.location.href = config.buildAuthUrl({ clientId, redirectUri, state });
   return true;
 }

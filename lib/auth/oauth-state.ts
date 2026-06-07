@@ -1,5 +1,4 @@
 const COOKIE_NAME = "oauth_state";
-const INTENT_COOKIE_NAME = "oauth_intent";
 const MAX_AGE_SECONDS = 600;
 
 function isSecureContext(): boolean {
@@ -22,8 +21,16 @@ function readCookie(name: string): string | null {
   return value || null;
 }
 
-export function createOAuthState(): string {
-  const state = crypto.randomUUID();
+/**
+ * OAuth state(CSRF 토큰)를 생성·저장하고 반환한다.
+ * `prefix`를 주면 state 값에 `${prefix}:` 를 붙여 흐름 의도를 state 에 **바인딩**한다.
+ * (별도 intent 쿠키를 쓰지 않는 이유: 중단된 흐름의 잔여 intent 가 이후 OAuth 콜백에
+ *  누수되는 것을 막는다. state 는 매 시도마다 덮어써지고 provider 가 그대로 echo 하므로
+ *  의도가 해당 요청에만 적용된다.)
+ */
+export function createOAuthState(prefix?: string): string {
+  const token = crypto.randomUUID();
+  const state = prefix ? `${prefix}:${token}` : token;
   setCookie(COOKIE_NAME, state, MAX_AGE_SECONDS);
   return state;
 }
@@ -34,16 +41,4 @@ export function readOAuthState(): string | null {
 
 export function clearOAuthState(): void {
   setCookie(COOKIE_NAME, "", 0);
-}
-
-export function setOAuthIntent(value: string): void {
-  setCookie(INTENT_COOKIE_NAME, value, MAX_AGE_SECONDS);
-}
-
-export function readOAuthIntent(): string | null {
-  return readCookie(INTENT_COOKIE_NAME);
-}
-
-export function clearOAuthIntent(): void {
-  setCookie(INTENT_COOKIE_NAME, "", 0);
 }

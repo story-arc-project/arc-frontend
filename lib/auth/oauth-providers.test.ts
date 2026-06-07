@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@/lib/auth/oauth-state", () => ({
-  createOAuthState: vi.fn(() => "state-123"),
-  setOAuthIntent: vi.fn(),
+  createOAuthState: vi.fn((prefix?: string) => (prefix ? `${prefix}:state-123` : "state-123")),
 }))
 
-import { createOAuthState, setOAuthIntent } from "@/lib/auth/oauth-state"
+import { createOAuthState } from "@/lib/auth/oauth-state"
 import {
   pickReauthProvider,
   startOAuthReauth,
@@ -43,25 +42,26 @@ describe("pickReauthProvider", () => {
 })
 
 describe("startOAuthReauth", () => {
-  it("intent 를 설정하고 google authorize URL 로 리다이렉트한다", () => {
+  it("탈퇴 의도를 state 에 바인딩하고 google authorize URL 로 리다이렉트한다", () => {
     const ok = startOAuthReauth("google")
     expect(ok).toBe(true)
-    expect(setOAuthIntent).toHaveBeenCalledWith(DELETE_INTENT)
-    expect(createOAuthState).toHaveBeenCalledTimes(1)
+    // 의도는 state 접두사로 전달된다(별도 intent 쿠키 없음 → 누수 불가).
+    expect(createOAuthState).toHaveBeenCalledWith(DELETE_INTENT)
     expect(window.location.href).toContain("https://accounts.google.com/o/oauth2/v2/auth")
     expect(window.location.href).toContain("client_id=client-xyz")
     expect(window.location.href).toContain(
       `redirect_uri=${encodeURIComponent("https://app.test/callback/google")}`,
     )
-    expect(window.location.href).toContain("state=state-123")
+    // state 파라미터는 delete 접두사를 포함한다(콜백이 이걸로 탈퇴 흐름을 식별).
+    expect(window.location.href).toContain(`state=${encodeURIComponent("delete:state-123")}`)
   })
 
-  it("client_id 가 없으면 false 를 반환하고 리다이렉트하지 않는다", () => {
+  it("client_id 가 없으면 false 를 반환하고 state 생성·리다이렉트를 하지 않는다", () => {
     vi.stubEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "")
     const ok = startOAuthReauth("google")
     expect(ok).toBe(false)
     expect(window.location.href).toBe("")
-    expect(setOAuthIntent).not.toHaveBeenCalled()
+    expect(createOAuthState).not.toHaveBeenCalled()
   })
 })
 
