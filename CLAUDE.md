@@ -49,9 +49,13 @@ docs/         # 프로젝트 문서 (claude 등)
 
 ## Commands
 
-- `npm run dev`
-- `npm run build`
-- `npm run lint`
+개발
+- `npm run dev` · `npm run build` · `npm run lint` · `npm run typecheck`
+
+테스트 (상세 → `docs/frontend-testing.md`)
+- 유닛: `npm run test:unit` (Vitest) · `npm run test:unit:watch`
+- Storybook: `npm run storybook` · `npm run build-storybook` · `npm run test-storybook` · `npm run test-storybook:ci`
+- E2E: `npm run test:e2e` (Playwright) · `npm run test:e2e:ui` · `npm run test:e2e:report`
 
 ---
 
@@ -103,7 +107,7 @@ docs/         # 프로젝트 문서 (claude 등)
 > 척추 = superpowers 스킬 · 리뷰 권위 = Codex · git 규약 = `git-workflow` 스킬(Git 작업 시 자동 로드)
 
 ### 0. Triage — 복잡도 게이트
-규모에 비례해 단계를 정한다.
+규모에 비례해 단계를 정한다. **기본값은 Standard** — 분류가 애매하면 Standard로 올린다. Trivial은 아래 조건이 *명백할 때만* 적용한다(탈출구를 넓게 쓰지 않는다).
 - **Trivial** (1~2파일, UX/상태/API 변화 없음): Brainstorm·Plan·SDD**만** 생략한다. **3 Isolate(dev에서 분기)는 반드시 수행** → 4 Implement → 5 Validate. **8 Review의 필수 `/codex:review --base dev`도 생략하지 않는다** (조건부 adversarial·6 UI Quality는 해당 시). main/dev 직접 커밋 금지는 규모와 무관하게 적용된다.
 - **Standard** (3~5파일 또는 UX/상태 변화): 전체 파이프라인
 - **Large** (6+파일, 새 기능/흐름): 전체 + 설계 문서
@@ -119,20 +123,22 @@ docs/         # 프로젝트 문서 (claude 등)
 
 ### 4. Implement
 계획을 `superpowers:subagent-driven-development` (SDD)로 실행 — 독립 태스크 단위, 2단계 리뷰(스펙 준수 → 코드 품질).
-- 각 태스크는 **TDD** (RED→GREEN→REFACTOR) — **FRT Test Foundation(FRT-22..33) 완료 후 의무화**. 그 전까지는 5 Validate로 대체. *(pending)*
+- 각 태스크는 **테스트 전략 매트릭스**(`docs/frontend-testing.md`)에 따라 검증한다 — 로직·매퍼·방어 파싱은 **TDD**(RED→GREEN→REFACTOR) 의무, 컴포넌트는 Storybook 스토리, `(main)` 흐름은 Playwright 스모크. (FRT Test Foundation 완료로 **활성**; 2차 통합 E2E(FRT-33)는 deferred.)
 - 신규 컴포넌트/페이지: **UI Spec 상태 매트릭스** 먼저 (loading/error/empty/partial × 컴포넌트).
 - 기존 패턴 유지, Hard Constraints 준수. Trivial은 SDD 없이 직접 구현.
 
 ### 5. Validate
 ```bash
 npm run lint
+npm run typecheck
+npm run test:unit
 npm run build
 ```
-UI 변경 시 `/expect` 브라우저 테스트.
+UI 변경 시 Storybook(`play`)·Playwright로 동작 확인 (→ `docs/frontend-testing.md`).
 
 ### 6. UI Quality (조건부 — UI 변경)
 - 새 컴포넌트/페이지 → `/audit` + `/critique`
-- 레이아웃·스타일 수정 → `/expect` + `/polish`
+- 레이아웃·스타일 수정 → `/polish` (+ Storybook 시각 확인)
 - 디자인 시스템 정합성 의심 → `/normalize`
 
 ### 7. Self-review
@@ -181,6 +187,7 @@ UI 변경 시 `/expect` 브라우저 테스트.
 워크플로우 정본은 위 **Development Workflow** 섹션이다. 아래는 보조 자료.
 
 - checklist: `docs/claude/checklist.md`
+- frontend-testing: `docs/frontend-testing.md` — 테스트 워크플로·전략 매트릭스 (story·E2E·유닛 작성법)
 - workflow (요약 포인터): `docs/claude/workflow.md`
 - codex (요약 포인터): `docs/claude/codex.md`
 - git-workflow: `git-workflow` 스킬 — 브랜치 전략·커밋·PR 규약 (Git 작업 시 자동 로드; `user-invocable: false`라 슬래시 호출 불가)
