@@ -40,7 +40,8 @@ const REGISTRY: Record<OAuthProvider, OAuthProviderConfig> = {
   },
 };
 
-const SUPPORTED: readonly OAuthProvider[] = ["google"];
+// REGISTRY 키에서 파생한다 → provider 추가 시 SUPPORTED 갱신 누락(조용한 null)을 막는다.
+const SUPPORTED = Object.keys(REGISTRY) as readonly OAuthProvider[];
 
 /** connected_oauth 중 현재 재인증을 지원하는 첫 provider 를 반환(없으면 null). */
 export function pickReauthProvider(connected: readonly string[]): OAuthProvider | null {

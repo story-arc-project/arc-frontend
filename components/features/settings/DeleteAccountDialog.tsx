@@ -28,6 +28,18 @@ export function DeleteAccountDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const provider = isSocialAccount ? pickReauthProvider(connectedOauth) : null;
+  const providerLabel = provider ? PROVIDER_LABELS[provider] : "소셜";
+
+  // 제출/리다이렉트 중에는 닫기를 막고(취소처럼 보여도 OAuth 왕복은 계속되므로),
+  // 닫을 때 입력·에러를 초기화해 다시 열었을 때 이전 시도 상태가 남지 않게 한다.
+  function handleClose() {
+    if (isSubmitting) return;
+    setPassword("");
+    setError(null);
+    onClose();
+  }
+
   async function handlePasswordDelete() {
     setIsSubmitting(true);
     setError(null);
@@ -46,12 +58,11 @@ export function DeleteAccountDialog({
   }
 
   function handleSocialDelete() {
-    setError(null);
-    const provider = pickReauthProvider(connectedOauth);
     if (!provider) {
       setError("지원하지 않는 로그인 방식이에요.");
       return;
     }
+    setError(null);
     setIsSubmitting(true);
     const ok = startOAuthReauth(provider);
     if (!ok) {
@@ -61,11 +72,8 @@ export function DeleteAccountDialog({
     // ok 이면 리다이렉트가 일어나므로 이후 상태 변경 없음.
   }
 
-  const provider = isSocialAccount ? pickReauthProvider(connectedOauth) : null;
-  const providerLabel = provider ? PROVIDER_LABELS[provider] : "소셜";
-
   return (
-    <Dialog open={open} onClose={onClose} ariaLabel="회원 탈퇴 확인">
+    <Dialog open={open} onClose={handleClose} ariaLabel="회원 탈퇴 확인">
       <h2 className="text-title font-semibold text-text-primary mb-2">회원 탈퇴</h2>
       <p className="text-body-sm text-text-secondary mb-4">
         탈퇴하면 계정과 작성한 모든 경험·분석 데이터가 삭제됩니다. 이 작업은 되돌릴 수 없어요.
@@ -91,7 +99,7 @@ export function DeleteAccountDialog({
       {error && <p className="text-body-sm text-error mb-4">{error}</p>}
 
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
+        <Button variant="ghost" onClick={handleClose} disabled={isSubmitting}>
           취소
         </Button>
         {isSocialAccount ? (
