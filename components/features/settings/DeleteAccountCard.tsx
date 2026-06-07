@@ -19,6 +19,9 @@ export function DeleteAccountCard({ isSocialAccount, connectedOauth }: DeleteAcc
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("deleteError") === "1") {
+      // 마운트 후 1회 브라우저 전용 쿼리(deleteError)를 읽어 동기화한다.
+      // 렌더 중 window 읽기는 SSR 하이드레이션 불일치를 유발하므로 effect가 올바른 위치다.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRedirectError(true);
       params.delete("deleteError");
       const qs = params.toString();
