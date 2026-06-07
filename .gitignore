@@ -65,3 +65,14 @@ yarn-error.log*
 .antigravitycli/
 .claude/worktrees/
 docs/superpowers/
+
+# playwright MCP scratch output
+.playwright-mcp/
+
+
+# graphify: commit shareable outputs (graph.json, graph.html, GRAPH_REPORT.md);
+# ignore machine-specific / regenerable state
+graphify-out/.graphify_*
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/manifest.json

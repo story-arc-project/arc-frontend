@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARC 대시보드 · 상태 A (온보딩 시작)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="app.css?v=2" />
+</head>
+<body>
+
+<header class="gnb">
+  <div class="gnb-inner">
+    <span class="gnb-logo">ARC</span>
+    <nav class="gnb-nav">
+      <a class="active" href="#">대시보드</a>
+      <a href="#">아카이브</a>
+      <a href="#">분석</a>
+      <a href="#">익스포트</a>
+    </nav>
+    <span class="gnb-spacer"></span>
+    <span class="gnb-avatar">상협</span>
+  </div>
+</header>
+
+<main class="page">
+  <div class="container">
+
+    <!-- ── Hero (온보딩 톤) ── -->
+    <section class="hero">
+      <div class="between">
+        <span class="state-pill">● 상태 A · 온보딩 시작 (기록 0개)</span>
+        <span class="text-caption">2026년 6월 6일 토요일</span>
+      </div>
+      <h1 class="text-heading-1" style="margin:14px 0 6px;">지금 첫 경험을 기록하면,<br/>ARC가 당신만의 <span style="color:var(--color-brand-dark)">강점 지도</span>를 그려드릴게요.</h1>
+      <p class="text-body-lg muted" style="margin:0;">2분이면 첫 기록을 남길 수 있어요.</p>
+    </section>
+
+    <!-- ── 빅 CTA (블록 2 대체) ── -->
+    <section class="big-cta">
+      <div style="width:56px;height:56px;border-radius:var(--radius-full);background:var(--color-brand);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </div>
+      <h2 class="text-heading-3" style="margin:0 0 6px;">첫 경험을 기록해볼까요?</h2>
+      <p class="text-body muted" style="margin:0 0 22px;">완벽하지 않아도 괜찮아요. 경험 이름만 적어도 ARC가 정리해드려요.</p>
+      <div class="row" style="justify-content:center;gap:12px;flex-wrap:wrap;">
+        <a class="btn primary lg" href="#">나의 첫 기록 시작하기 →</a>
+        <a class="btn secondary lg" href="#">경험 이름만 리스트업하기</a>
+      </div>
+    </section>
+
+    <!-- ── 온보딩 가이드 카드 ── -->
+    <section class="guide-grid">
+      <!-- 어떤 경험을 기록할 수 있나요 -->
+      <div class="card pad-lg">
+        <span class="eyebrow">기록할 수 있는 경험</span>
+        <p class="text-title" style="margin:8px 0 4px;">어떤 경험이든 괜찮아요</p>
+        <p class="text-body-sm muted" style="margin:0 0 14px;">거창하지 않아도 돼요. 18가지 유형 중에서 떠오르는 걸 골라보세요.</p>
+        <div class="type-pills">
+          <span class="type-pill">동아리·학회</span>
+          <span class="type-pill">프로젝트</span>
+          <span class="type-pill">인턴</span>
+          <span class="type-pill">대외활동</span>
+          <span class="type-pill">공모전</span>
+          <span class="type-pill">봉사활동</span>
+          <span class="type-pill">아르바이트</span>
+          <span class="type-pill">수업·과제</span>
+          <span class="type-pill">자격증</span>
+          <span class="type-pill tertiary">+ 9가지 더</span>
+        </div>
+      </div>
+
+      <!-- 기록하면 이런 것들이 가능해져요 (샘플 미리보기) -->
+      <div class="card pad-lg" style="background:linear-gradient(135deg,#fffaf3,#fff);border-color:#ffe3c2;">
+        <span class="eyebrow">기록하면 가능해져요</span>
+        <p class="text-title" style="margin:8px 0 14px;">쌓인 경험이 이렇게 보여요</p>
+        <!-- sample preview: faded charts -->
+        <div class="row" style="gap:16px;align-items:center;opacity:.85;">
+          <div style="position:relative;width:84px;height:84px;flex:none;">
+            <div style="width:84px;height:84px;border-radius:50%;background:conic-gradient(var(--color-brand) 0 40%, #ffc940 40% 68%, #2dd4bf 68% 88%, var(--gray-300) 88% 100%);"></div>
+            <div style="position:absolute;inset:18px;background:var(--color-surface);border-radius:50%;"></div>
+          </div>
+          <div class="grow">
+            <div class="bars" style="gap:8px;">
+              <div class="bar-row"><div class="bar-track"><div class="bar-fill" style="width:90%"></div></div></div>
+              <div class="bar-row"><div class="bar-track"><div class="bar-fill" style="width:65%"></div></div></div>
+              <div class="bar-row"><div class="bar-track"><div class="bar-fill" style="width:45%"></div></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="stack-3" style="margin-top:16px;">
+          <span class="row text-body-sm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> AI가 강점 키워드를 자동으로 분석해줘요</span>
+          <span class="row text-body-sm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> 이력서·자기소개서로 바로 내보낼 수 있어요</span>
+          <span class="row text-body-sm"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> 부족한 역량을 채울 활동을 추천받아요</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── AI 챗봇 진입점 (크게) ── -->
+    <section class="card" style="background:linear-gradient(135deg,#f7faff,#eef5ff);border-color:#d6e6ff;">
+      <div class="action-card">
+        <span class="ic-lg" style="background:#e1edff;color:var(--color-info);">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-4.2A8.38 8.38 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z"/></svg>
+        </span>
+        <div class="body">
+          <p class="text-title" style="margin:0 0 2px;">어떤 경험을 기록할지 막막하다면?</p>
+          <p class="text-body-sm muted" style="margin:0;">AI 도우미가 질문을 던지며 첫 기록을 함께 정리해드려요.</p>
+        </div>
+        <a class="btn secondary md" href="#" style="flex:none;">챗봇 시작 →</a>
+      </div>
+    </section>
+
+    <!-- ── 블로그 (상태 A에서 유일하게 표시되는 확장 콘텐츠) ── -->
+    <section>
+      <div class="section-head"><span class="card-title">읽을거리</span><a class="link" href="#">블로그 →</a></div>
+      <div class="connect-grid">
+        <div class="card hover">
+          <div class="thumb"></div>
+          <div class="row" style="gap:6px;margin-bottom:6px;"><span class="badge default">기록법</span><span class="text-caption">· 4분 읽기</span></div>
+          <p class="text-body" style="margin:0;font-weight:600;">경험을 강점으로 바꾸는 기록의 기술</p>
+        </div>
+        <div class="card hover">
+          <div class="thumb b"></div>
+          <div class="row" style="gap:6px;margin-bottom:6px;"><span class="badge default">진로</span><span class="text-caption">· 5분 읽기</span></div>
+          <p class="text-body" style="margin:0;font-weight:600;">진로가 안 정해졌을 때 먼저 할 일</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-note">
+      <h4>프로토타입 노트 — 상태 A</h4>
+      <ul>
+        <li>기획 원칙대로 <b>빈 화면을 노출하지 않습니다</b> — 시각화 영역 대신 ‘온보딩 가이드 + 샘플 미리보기’로 채웠습니다.</li>
+        <li>핵심 지표·도넛·막대·레이더·갭레이더·설계 블록은 <b>전부 숨김</b>. 확장 블록 중 <b>블로그만</b> 노출됩니다.</li>
+        <li>상태 A 사용자에게는 <b>채용공고·광고를 노출하지 않습니다</b>(명세서 특이사항).</li>
+      </ul>
+    </section>
+
+  </div>
+</main>
+</body>
+</html>
