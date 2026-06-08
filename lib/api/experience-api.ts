@@ -51,6 +51,20 @@ export async function updateExperience(
   );
 }
 
+// 중요도 단독 변경은 전용 PATCH 엔드포인트로 보낸다.
+// PUT /experiences/{id} 는 content 만 받고 importance 를 무시하므로
+// (FRT-39) 인라인 별점 변경은 반드시 이 경로를 사용해야 persist 된다.
+export async function updateExperienceImportance(
+  id: string,
+  importance: number | null,
+): Promise<void> {
+  if (isDemoMode()) return demo.updateExperienceImportance(id, importance);
+  await api.patch<ApiSuccessResponse<undefined>>(
+    `/experiences/${id}/importance`,
+    { importance },
+  );
+}
+
 export async function deleteExperience(id: string): Promise<void> {
   if (isDemoMode()) return demo.deleteExperience(id);
   await api.delete<void>(`/experiences/${id}`);

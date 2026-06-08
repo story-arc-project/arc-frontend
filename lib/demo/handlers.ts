@@ -46,6 +46,11 @@ export async function updateExperience(id: string, payload: ExperienceUpdatePayl
   await delay(undefined);
 }
 
+export async function updateExperienceImportance(id: string, importance: number | null): Promise<void> {
+  experienceStore.update(id, { importance });
+  await delay(undefined);
+}
+
 export async function deleteExperience(id: string): Promise<void> {
   experienceStore.delete(id);
   await delay(undefined);
