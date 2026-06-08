@@ -4,6 +4,8 @@ export { Card, CardHeader, CardTitle, CardDescription, CardFooter } from "./card
 
 export { Input } from "./input";
 
+export { Checkbox } from "./checkbox";
+
 export { Badge } from "./badge";
 
 export { Chip } from "./chip";
