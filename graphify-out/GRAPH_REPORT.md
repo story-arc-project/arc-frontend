@@ -1,16 +1,16 @@
-# Graph Report - frt-9-account-deletion  (2026-06-07)
+# Graph Report - frt-5-consent  (2026-06-09)
 
 ## Corpus Check
-- 311 files · ~167,595 words
+- 319 files · ~173,242 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2196 nodes · 4175 edges · 172 communities (145 shown, 27 thin omitted)
+- 2253 nodes · 4267 edges · 173 communities (147 shown, 26 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 78 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c136e675`
+- Built from commit: `8047504c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -170,10 +170,11 @@
 - [[_COMMUNITY_Community 169|Community 169]]
 - [[_COMMUNITY_Community 170|Community 170]]
 - [[_COMMUNITY_Community 171|Community 171]]
+- [[_COMMUNITY_Community 172|Community 172]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Block` - 43 edges
-2. `Button` - 39 edges
+2. `Button` - 40 edges
 3. `isDemoMode()` - 36 edges
 4. `delay()` - 29 edges
 5. `asRecord()` - 25 edges
@@ -192,8 +193,8 @@
   app/(main)/analysis/comprehensive/[analysisId]/page.tsx → lib/utils/use-base-path.ts
 - `IndividualAnalysisDetailPage()` --calls--> `useBasePath()`  [INFERRED]
   app/(main)/analysis/individual/[analysisId]/page.tsx → lib/utils/use-base-path.ts
-- `KeywordDetailPage()` --calls--> `useBasePath()`  [INFERRED]
-  app/(main)/analysis/keyword/[analysisId]/page.tsx → lib/utils/use-base-path.ts
+- `KeywordDetailPage()` --calls--> `formatDateTime()`  [INFERRED]
+  app/(main)/analysis/keyword/[analysisId]/page.tsx → lib/utils/date-utils.ts
 
 ## Import Cycles
 - 1-file cycle: `app/demo/analysis/comprehensive/[analysisId]/page.tsx -> app/demo/analysis/comprehensive/[analysisId]/page.tsx`
@@ -212,35 +213,35 @@
 - **ARC Review Triad: Codex Review + Adversarial Review + Rescue** — codex_review, codex_adversarial_review, codex_rescue [EXTRACTED 1.00]
 - **Phase 1 Core Service Loop: Archive to Analysis to Export** — phase_1_archive, phase_1_analysis, phase_1_export [EXTRACTED 1.00]
 
-## Communities (172 total, 27 thin omitted)
+## Communities (173 total, 26 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.10
-Nodes (34): ArchiveSidebar(), ArchiveSidebarProps, ExperienceDetail(), ExperienceDetailProps, formatDate(), ExperienceForm(), ExperienceFormProps, ExperienceItem() (+26 more)
+Cohesion: 0.18
+Nodes (18): ArchiveSidebar(), ArchiveSidebarProps, ExperienceDetailProps, ExperienceFormProps, ExperienceItem(), ExperienceItemProps, FolderContextMenu(), FolderContextMenuProps (+10 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.13
-Nodes (18): COMPREHENSIVE_SNAPSHOTS, comprehensiveDetail(), CUSTOM_LIBRARIES, EXPERIENCE_1, EXPERIENCE_2, experienceDetail(), INDIVIDUAL_SNAPSHOTS, individualDetail() (+10 more)
+Cohesion: 0.15
+Nodes (23): activeConsentItems(), allRequiredGranted(), buildConsentPayload(), CONSENT_ITEMS, ConsentId, ConsentItem, ConsentPayload, ConsentPayloadItem (+15 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.13
-Nodes (49): RepeatableCellBlockProps, academicSocietyExtensions(), awardExtensions(), buildCommonCore(), buildExtendedSection(), buildTemplate(), careerExtensions(), certificationExtensions() (+41 more)
+Cohesion: 0.27
+Nodes (32): academicSocietyExtensions(), awardExtensions(), buildCommonCore(), buildExtendedSection(), careerExtensions(), certificationExtensions(), clubExtensions(), creativeWorkExtensions() (+24 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.05
-Nodes (26): priorityVariant, severityVariant, severityVariant, AdditionalRecommendations, ComprehensiveWeakness, ContentQualityIssue, CriticalDiagnosis, ExperienceInsights (+18 more)
+Cohesion: 0.04
+Nodes (41): AnalysisHomePage(), ComprehensiveDetailPage(), confidenceVariant(), ExperienceCard(), IndividualAnalysisDetailPage(), KeywordDetailPage(), priorityVariant, severityVariant (+33 more)
 
 ### Community 4 - "Community 4"
 Cohesion: 0.06
 Nodes (43): API & Configuration Notes (next.config.ts proxy), Build, Test, and Development Commands, Build, Test, and Development Commands, Coding Style & Naming Conventions, Coding Style & Naming Conventions, Commit & Pull Request Guidelines, Commit & Pull Request Guidelines, Configuration & API Notes (+35 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.06
-Nodes (31): AnalysisHomePage(), QUICK_ACTIONS, STAT_COLORS, STAT_ICONS, TabKey, TABS, KeywordDetailPage(), FilterKey (+23 more)
+Cohesion: 0.07
+Nodes (28): QUICK_ACTIONS, STAT_COLORS, STAT_ICONS, TabKey, TABS, FilterKey, BookmarkToggleProps, sizeMap (+20 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.08
-Nodes (41): Props, ResumeEditorPanel(), SectionAccordion(), SectionAccordionProps, ActivityListEditor(), Props, AwardListEditor(), Props (+33 more)
+Cohesion: 0.07
+Nodes (51): Props, ResumeEditorPanel(), SectionAccordion(), SectionAccordionProps, ActivityListEditor(), AwardListEditor(), Props, CareerListEditor() (+43 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.22
@@ -251,20 +252,20 @@ Cohesion: 0.12
 Nodes (14): CardDescription(), CardFooter(), CardProps, CardVariant, paddingClasses, AllVariants, Bordered, Default (+6 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.17
-Nodes (35): asAnalysisType(), asArray(), asBoolean(), asConfidence(), asNumber(), asRecord(), asString(), asStringArray() (+27 more)
+Cohesion: 0.15
+Nodes (37): asAnalysisType(), asArray(), asBoolean(), asConfidence(), asNumber(), asRecord(), asString(), asStringArray() (+29 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.09
-Nodes (24): AppliedPreset, FormSectionProps, ImportanceSelectorProps, LEVEL_DOT_CLASS, SavePresetModalProps, BlockRendererProps, ChecklistBlockProps, SingleSelectBlockProps (+16 more)
+Cohesion: 0.10
+Nodes (22): FormSectionProps, BlockRendererProps, ChecklistBlockProps, DateBlockProps, SingleSelectBlockProps, TableBlockProps, TagsBlockProps, TextareaBlockProps (+14 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.12
-Nodes (8): confidenceVariant(), ExperienceCard(), KeywordCoverage, KeywordDefinition, KeywordImprovementGuide, KeywordMatchedGroup, KeywordStoryline, MatchedExperience
+Cohesion: 0.13
+Nodes (18): CustomFieldList(), CustomFieldListProps, FIELD_TYPE_OPTIONS, ExperienceDetail(), formatDate(), ExperienceForm(), TemplateChips(), TemplateChipsProps (+10 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.10
-Nodes (30): ResumePreview(), ResumePreviewProps, Props, Props, Props, PreviewActivity(), Props, PreviewAward() (+22 more)
+Cohesion: 0.15
+Nodes (21): PreviewActivity(), PreviewAward(), PreviewCareer(), PreviewCertification(), PreviewClub(), PreviewEducation(), Props, PreviewLanguage() (+13 more)
 
 ### Community 13 - "Community 13"
 Cohesion: 0.07
@@ -279,60 +280,60 @@ Cohesion: 0.07
 Nodes (28): Default, Draft, EmptyState, meta, NoLibraries, Selected, Story, DraftStatus (+20 more)
 
 ### Community 16 - "Community 16"
-Cohesion: 0.22
-Nodes (15): createExperience(), deleteExperience(), duplicateExperience(), getExperience(), getExperiences(), updateExperience(), getPreset(), isDemoMode() (+7 more)
+Cohesion: 0.16
+Nodes (16): createExperience(), deleteExperience(), duplicateExperience(), getExperience(), getExperiences(), updateExperience(), FetchResult, Method (+8 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.15
-Nodes (16): EmptyResumeState(), Props, Props, RegenerateConfirmDialog(), clearDraft(), isDraftNewer(), key(), readDraft() (+8 more)
+Cohesion: 0.10
+Nodes (23): DraftRestoreBanner(), formatTime(), Props, EmptyResumeState(), Props, ParsingWarningsBanner(), Props, Props (+15 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.13
-Nodes (14): ComprehensiveDetailPage(), IndividualAnalysisDetailPage(), createResume(), CreateResumeModal(), CreateResumeModalProps, RecentResumeList(), MESSAGES, ResumeGenerationOverlay() (+6 more)
+Cohesion: 0.19
+Nodes (12): createResume(), deleteResume(), getResume(), isUnsupportedStatus(), sliceSummary(), toListItem(), updateResume(), CreateResumeModalProps (+4 more)
 
 ### Community 19 - "Community 19"
 Cohesion: 0.12
 Nodes (30): addExperienceToLibrary(), createExperience(), createLibrary(), createPreset(), createResume(), delay(), deleteAccountWithPassword(), deleteAccountWithSocial() (+22 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.15
-Nodes (21): addExperienceToLibrary(), createLibrary(), deleteLibrary(), getLibraries(), getLibraryExperiences(), LibraryIdData, LibraryListData, removeExperienceFromLibrary() (+13 more)
+Cohesion: 0.17
+Nodes (23): addExperienceToLibrary(), createLibrary(), deleteLibrary(), getLibraries(), getLibraryExperiences(), LibraryIdData, LibraryListData, removeExperienceFromLibrary() (+15 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.12
-Nodes (21): ExperienceCard(), ExperienceCardProps, formatDate(), countMatches(), LIBRARY_COLORS, LibrarySidebarProps, ArchivePage(), MobileView (+13 more)
+Cohesion: 0.24
+Nodes (10): ArchivePage(), MobileView, useExperiences(), useLibraries(), useLibraryFilter(), usePresets(), isImportanceLevel(), toExperienceV2() (+2 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.20
-Nodes (9): HighImportance, LowImportance, MediumImportance, meta, ReadOnly, ReadOnlyUnset, SmallSize, Story (+1 more)
+Cohesion: 0.11
+Nodes (19): ExperienceDetailV2(), ExperienceDetailV2Props, formatDate(), ImportanceSelectorProps, LEVEL_DOT_CLASS, HighImportance, LowImportance, MediumImportance (+11 more)
 
 ### Community 23 - "Community 23"
-Cohesion: 0.16
-Nodes (11): DateBlockProps, DateBlockValue, DatePicker, DatePickerProps, DateMode, Disabled, meta, MonthMode (+3 more)
+Cohesion: 0.19
+Nodes (12): RepeatableCellBlockProps, BlockRow, RepeatableCellBlockValue, cloneBlock(), createBlock(), createChecklistField(), createEmptyRow(), createTableField() (+4 more)
 
 ### Community 24 - "Community 24"
 Cohesion: 0.10
 Nodes (20): ChecklistEditable, ChecklistReadOnly, DateBlockEditable, DateBlockReadOnly, EmptyChecklist, EmptyTable, meta, Story (+12 more)
 
 ### Community 25 - "Community 25"
-Cohesion: 0.08
-Nodes (21): CATEGORIES, KeywordSelectorProps, SelectedKeyword, AtMaxCount, Empty, meta, NoSuggestions, OneSelected (+13 more)
+Cohesion: 0.11
+Nodes (15): CATEGORIES, KeywordSelectorProps, SelectedKeyword, AtMaxCount, Empty, meta, NoSuggestions, OneSelected (+7 more)
 
 ### Community 26 - "Community 26"
-Cohesion: 0.11
-Nodes (15): CustomFieldList(), CustomFieldListProps, FIELD_TYPE_OPTIONS, CustomField, CustomFieldType, Default, Disabled, meta (+7 more)
+Cohesion: 0.13
+Nodes (12): QualitativeSection(), QualitativeSectionProps, Default, Disabled, meta, Story, WithDefaultValue, WithError (+4 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.11
-Nodes (15): ExperienceDetailV2(), ExperienceDetailV2Props, formatDate(), ButtonProps, ButtonSize, ButtonVariant, sizeClasses, variantClasses (+7 more)
+Cohesion: 0.18
+Nodes (6): DialogProps, Controlled, Destructive, meta, OpenByDefault, Story
 
 ### Community 28 - "Community 28"
-Cohesion: 0.09
-Nodes (19): ApplyPresetModalProps, meta, NoPresets, secondPreset, Story, WithPresets, PresetManagerProps, Empty (+11 more)
+Cohesion: 0.06
+Nodes (27): ApplyPresetModalProps, meta, NoPresets, secondPreset, Story, WithPresets, PresetManagerProps, Empty (+19 more)
 
 ### Community 29 - "Community 29"
-Cohesion: 0.18
-Nodes (13): FilterBarProps, SORT_OPTIONS, getIcon(), LucideIcon, TypeSelector(), TypeSelectorProps, EXPERIENCE_TYPES, TYPE_CATEGORIES (+5 more)
+Cohesion: 0.11
+Nodes (18): FilterBarProps, SORT_OPTIONS, getIcon(), LucideIcon, meta, NoneSelected, NoneSelectedDisabled, Selected (+10 more)
 
 ### Community 30 - "Community 30"
 Cohesion: 0.12
@@ -347,12 +348,12 @@ Cohesion: 0.10
 Nodes (19): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModules, jsx, lib, module (+11 more)
 
 ### Community 33 - "Community 33"
-Cohesion: 0.09
-Nodes (23): Empty, ItemSelected, meta, Story, WithData, Empty, meta, NoSaveOption (+15 more)
+Cohesion: 0.07
+Nodes (28): Empty, ItemSelected, meta, Story, WithData, Empty, meta, NoSaveOption (+20 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.13
-Nodes (15): Props, Props, PreviewLanguage(), Props, Education, LanguageItem, Linkage, ResumeFormat (+7 more)
+Cohesion: 0.11
+Nodes (17): Props, TagArrayEditor(), Props, SkillsEditor(), Props, Props, Certification, Linkage (+9 more)
 
 ### Community 35 - "Community 35"
 Cohesion: 0.21
@@ -379,12 +380,12 @@ Cohesion: 0.07
 Nodes (27): 0. Triage — 복잡도 게이트, 10. Output, 1. Brainstorm (Standard+), 2. Plan, 3. Isolate, 4. Implement, 5. Validate, 6. UI Quality (조건부 — UI 변경) (+19 more)
 
 ### Community 41 - "Community 41"
-Cohesion: 0.19
-Nodes (8): ExperienceFormV2Props, getSemanticGroup(), hasEquivalentIn(), SEMANTIC_GROUPS, ArchiveModeV2, RightPanelV2Props, UsePresetsReturn, TemplateV2
+Cohesion: 0.16
+Nodes (10): AppliedPreset, ExperienceFormV2Props, getSemanticGroup(), hasEquivalentIn(), SEMANTIC_GROUPS, ArchiveModeV2, RightPanelV2Props, UsePresetsReturn (+2 more)
 
 ### Community 42 - "Community 42"
-Cohesion: 0.12
-Nodes (15): Editable, Empty, meta, ReadOnly, Story, WithAddAndReorder, Empty, meta (+7 more)
+Cohesion: 0.13
+Nodes (14): Editable, Empty, meta, ReadOnly, Story, WithAddAndReorder, Empty, meta (+6 more)
 
 ### Community 43 - "Community 43"
 Cohesion: 0.23
@@ -395,16 +396,16 @@ Cohesion: 0.08
 Nodes (18): ExperienceSelectorProps, AllSelected, BelowMinCount, INCOMPLETE_ONLY, meta, MinCountMet, NoCompleteExperiences, NoneSelected (+10 more)
 
 ### Community 45 - "Community 45"
-Cohesion: 0.31
-Nodes (10): createPreset(), deletePreset(), duplicatePreset(), getPresets(), PresetIdData, PresetListData, updatePreset(), PresetDTO (+2 more)
+Cohesion: 0.27
+Nodes (11): createPreset(), deletePreset(), duplicatePreset(), getPreset(), getPresets(), PresetIdData, PresetListData, updatePreset() (+3 more)
 
 ### Community 46 - "Community 46"
 Cohesion: 0.08
 Nodes (23): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+15 more)
 
 ### Community 47 - "Community 47"
-Cohesion: 0.07
-Nodes (12): CATEGORY_LABEL, DemoExperience, DemoTypeId, KEYWORD_CATEGORY, KEYWORD_RULES, KeywordKey, SEED_EXPERIENCES, StepKey (+4 more)
+Cohesion: 0.11
+Nodes (5): Options, useRedirectIfAuthenticated(), LandingPage(), steps, SignupForm()
 
 ### Community 48 - "Community 48"
 Cohesion: 0.12
@@ -415,36 +416,36 @@ Cohesion: 0.14
 Nodes (8): SNB_ITEMS, BookmarksActive, ComprehensiveActive, HomeActive, IndividualActive, KeywordActive, meta, Story
 
 ### Community 50 - "Community 50"
-Cohesion: 0.16
-Nodes (11): deleteAccountWithPassword(), fetchCurrentUser(), logoutUser(), apiMock, metadata, AuthContext, seedDemoUser, AuthContextValue (+3 more)
+Cohesion: 0.26
+Nodes (8): fetchCurrentUser(), logoutUser(), AuthContext, seedDemoUser, AuthContextValue, AuthSuccessResult, AuthUser, VerifyEmailResponse
 
 ### Community 51 - "Community 51"
-Cohesion: 0.24
-Nodes (9): AuthGate(), useAuth(), Options, useRedirectIfAuthenticated(), GNB(), NAV_ITEMS, UserMenu(), SettingsPage() (+1 more)
+Cohesion: 0.33
+Nodes (6): AuthGate(), useAuth(), GNB(), NAV_ITEMS, UserMenu(), SettingsPage()
 
 ### Community 52 - "Community 52"
-Cohesion: 0.19
-Nodes (14): Phase, AccountInfoCard(), AccountInfoCardProps, OAUTH_LABELS, DeleteAccountCard(), DeleteAccountCardProps, PlanCard(), SecurityCard() (+6 more)
+Cohesion: 0.20
+Nodes (15): AccountInfoCard(), AccountInfoCardProps, OAUTH_LABELS, DeleteAccountCard(), DeleteAccountCardProps, PlanCard(), SecurityCard(), SecurityCardProps (+7 more)
 
 ### Community 53 - "Community 53"
-Cohesion: 0.16
-Nodes (11): listeners, AllTypes, Error, Info, meta, Story, Success, toast (+3 more)
+Cohesion: 0.13
+Nodes (12): metadata, listeners, AllTypes, Error, Info, meta, Story, Success (+4 more)
 
 ### Community 54 - "Community 54"
-Cohesion: 0.19
-Nodes (15): bookmarkList(), experienceList(), individualList(), keywordList(), resumeDetail(), resumeList(), BookmarkStore, clone() (+7 more)
+Cohesion: 0.15
+Nodes (13): OAuthProvider, OAuthProviderConfig, pickReauthProvider(), PROVIDER_LABELS, REGISTRY, SUPPORTED, DeleteAccountDialog(), DeleteAccountDialogProps (+5 more)
 
 ### Community 55 - "Community 55"
 Cohesion: 0.09
 Nodes (22): 0. 배경 (이 문서가 생긴 이유), 1. 테스트 3층 개요, 2. 로컬 실행, 3. 테스트 전략 매트릭스, 4.1 위치·네이밍, 4.2 기본 형태 (`Meta` / `StoryObj`), 4.3 API 모킹 — MSW (`__mocks__` 아님), 4.4 인터랙션 테스트 (`play`) (+14 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 0.22
-Nodes (8): ConfidenceBadgeProps, AllLevels, Insufficient, meta, Partial, Story, Sufficient, ConfidenceLevel
+Cohesion: 0.29
+Nodes (6): AllLevels, Insufficient, meta, Partial, Story, Sufficient
 
 ### Community 57 - "Community 57"
-Cohesion: 0.18
-Nodes (11): deleteResume(), getResume(), getResumeList(), isUnsupportedStatus(), ResumeMutationUnsupportedError, sliceSummary(), toListItem(), updateResume() (+3 more)
+Cohesion: 0.15
+Nodes (8): getResumeList(), ResumeMutationUnsupportedError, CreateResumeModal(), languageFlag, RecentResumeList(), RecentResumeListProps, TrackCard(), TrackCardProps
 
 ### Community 58 - "Community 58"
 Cohesion: 0.31
@@ -459,8 +460,8 @@ Cohesion: 0.17
 Nodes (9): AnalysisStatusBadgeProps, config, DisplayStatus, AllStates, Completed, meta, Pending, Story (+1 more)
 
 ### Community 61 - "Community 61"
-Cohesion: 0.12
-Nodes (15): mocks(), mockAnalysisHomeSummary, mockBookmarks, mockComprehensiveList, mockComprehensiveResult, mockHistory, mockIndividualAnalysisList, mockIndividualAnalysisResult (+7 more)
+Cohesion: 0.08
+Nodes (23): mocks(), FetchResult, BookmarkStore, ExperienceStore, ResumeStore, mockAnalysisHomeSummary, mockBookmarks, mockComprehensiveList (+15 more)
 
 ### Community 62 - "Community 62"
 Cohesion: 0.18
@@ -472,7 +473,7 @@ Nodes (8): BlockEditConfig, BlockEditModalProps, TYPE_LABELS, BlockListProps, BL
 
 ### Community 64 - "Community 64"
 Cohesion: 0.27
-Nodes (9): getFileUrl(), UploadedFile, FileBlock(), FileBlockProps, pickPreview(), UploadState, useFileUpload(), UseFileUploadResult (+1 more)
+Nodes (7): getFileUrl(), FileBlock(), FileBlockProps, pickPreview(), VideoPreviewProps, useFileUpload(), FileBlockValue
 
 ### Community 65 - "Community 65"
 Cohesion: 0.20
@@ -483,8 +484,8 @@ Cohesion: 0.33
 Nodes (10): ARC Dashboard State A — Empty/Onboarding State, AI-Powered Experience Recording Suggestion CTA, Empty State Design Pattern — Guided Onboarding, Experience List — Empty State Placeholder Cards, Experience Type Selection Guide, First Experience CTA — Record First Experience, How ARC Works — Process Explanation Panel, Top Navigation Bar (+2 more)
 
 ### Community 67 - "Community 67"
-Cohesion: 0.13
-Nodes (25): deleteAccountWithSocial(), OAuthProvider, OAuthProviderConfig, pickReauthProvider(), PROVIDER_LABELS, REGISTRY, startOAuthReauth(), SUPPORTED (+17 more)
+Cohesion: 0.31
+Nodes (12): deleteAccountWithSocial(), startOAuthReauth(), clearOAuthIntent(), clearOAuthState(), createOAuthState(), isSecureContext(), readCookie(), readOAuthIntent() (+4 more)
 
 ### Community 68 - "Community 68"
 Cohesion: 0.22
@@ -495,8 +496,8 @@ Cohesion: 0.22
 Nodes (8): Empty, meta, ReadOnly, ReadOnlyEmpty, Story, WithData, emptySingleSelectBlock, singleSelectBlock
 
 ### Community 70 - "Community 70"
-Cohesion: 0.25
-Nodes (7): Empty, meta, ReadOnly, ReadOnlyEmpty, Story, WithData, emptyTableBlock
+Cohesion: 0.22
+Nodes (8): Empty, meta, ReadOnly, ReadOnlyEmpty, Story, WithData, emptyTableBlock, tableBlock
 
 ### Community 71 - "Community 71"
 Cohesion: 0.22
@@ -527,36 +528,36 @@ Cohesion: 0.25
 Nodes (7): EditWithData, meta, NewEmpty, NewWithPresets, Story, emptyPresetsHook, mockPresetsHook
 
 ### Community 78 - "Community 78"
-Cohesion: 0.18
-Nodes (9): Input, InputProps, Default, Disabled, meta, Story, WithError, WithHint (+1 more)
+Cohesion: 0.16
+Nodes (10): SavePresetModalProps, Input, InputProps, Default, Disabled, meta, Story, WithError (+2 more)
 
 ### Community 79 - "Community 79"
 Cohesion: 0.18
 Nodes (9): Chip(), ChipProps, Default, Disabled, DisabledSelected, meta, Selected, Story (+1 more)
 
 ### Community 80 - "Community 80"
-Cohesion: 0.40
-Nodes (5): TagArrayEditor(), Props, SkillsEditor(), Props, Skills
+Cohesion: 0.13
+Nodes (14): 10. 참고, 14세 게이트, 1. 배경 & 목표, 2. 의사결정 요약 (PM 피드백 ↔ 합의), 3.1 필수 "개인정보 수집·이용 (서비스 제공 목적)" — 처리 상세, 3. 동의 항목 세트 (config-driven), 4. 플로우, 5. UI 설계 (+6 more)
 
 ### Community 81 - "Community 81"
-Cohesion: 0.18
-Nodes (8): PdfCardProps, Default, meta, NoSize, NoUrl, Story, WithDeleteButton, samplePdfFile
+Cohesion: 0.25
+Nodes (7): Default, meta, NoSize, NoUrl, Story, WithDeleteButton, samplePdfFile
 
 ### Community 82 - "Community 82"
-Cohesion: 0.17
-Nodes (8): AnalysisFilterKey, AnalysisTypeFilter, CustomOptions, IndividualSelected, meta, STATUS_OPTIONS, StatusKey, Story
+Cohesion: 0.10
+Nodes (13): FilterBarProps, FilterOption, AnalysisFilterKey, AnalysisTypeFilter, CustomOptions, IndividualSelected, meta, STATUS_OPTIONS (+5 more)
 
 ### Community 83 - "Community 83"
-Cohesion: 0.12
-Nodes (14): apiMock, ApiError, api, logRequest(), logResponse(), RefreshResult, request(), RequestOptions (+6 more)
+Cohesion: 0.19
+Nodes (6): ApiError, fetchMock, api, logRequest(), logResponse(), request()
 
 ### Community 84 - "Community 84"
 Cohesion: 0.18
 Nodes (10): 0. 랜딩 (`app/landing/`), 1. 계정·설정 (`app/(auth)/`), 2. 커리어 아카이브 (`app/(main)/archive/`), 3. 커리어 분석 (`app/(main)/analysis/`), 5. 익스포트 (`app/(main)/export/`), 6. 커리어 대시보드 (`app/(main)/dashboard/`), Phase 1 — 대회용 구현, 기능 명세 (+2 more)
 
 ### Community 85 - "Community 85"
-Cohesion: 0.29
-Nodes (6): meta, NoneSelected, NoneSelectedDisabled, Selected, SelectedDisabled, Story
+Cohesion: 0.14
+Nodes (12): ButtonProps, ButtonSize, ButtonVariant, sizeClasses, Destructive, Ghost, meta, Primary (+4 more)
 
 ### Community 86 - "Community 86"
 Cohesion: 0.43
@@ -571,20 +572,20 @@ Cohesion: 0.20
 Nodes (10): 1. 디자인 철학, 3. 타이포그래피, 5. Border Radius, 6. Shadow, 9. 아이콘, ARC UI Guidelines, 목차, 브랜드 컬러 교체 방법 (+2 more)
 
 ### Community 89 - "Community 89"
-Cohesion: 0.14
-Nodes (11): formatPeriodToString(), PeriodBlock(), PeriodBlockProps, PeriodBlockValue, PeriodPicker(), PeriodPickerProps, CurrentlyWorking, Default (+3 more)
+Cohesion: 0.10
+Nodes (16): DatePicker, DatePickerProps, DateMode, Disabled, meta, MonthMode, Story, WithError (+8 more)
 
 ### Community 90 - "Community 90"
-Cohesion: 0.33
-Nodes (5): Default, meta, Story, WithDeleteButton, sampleVideoFile
+Cohesion: 0.24
+Nodes (10): ExperienceCard(), ExperienceCardProps, formatDate(), countMatches(), LIBRARY_COLORS, LibrarySidebarProps, EXPERIENCE_TYPE_MAP, matchesFilter() (+2 more)
 
 ### Community 91 - "Community 91"
 Cohesion: 0.33
 Nodes (5): msw, workerDirectory, name, private, version
 
 ### Community 92 - "Community 92"
-Cohesion: 0.12
-Nodes (13): SubRouteCase, SUBROUTES, analysisStatus(), comprehensiveList(), CapturedMutation, GET_ROUTES, RESPOND_OK(), resumeLanguage() (+5 more)
+Cohesion: 0.06
+Nodes (49): RouteCase, ROUTES, SCENARIOS, SubRouteCase, SUBROUTES, analysisStatus(), bookmarkList(), COMPREHENSIVE_SNAPSHOTS (+41 more)
 
 ### Community 93 - "Community 93"
 Cohesion: 0.50
@@ -599,8 +600,8 @@ Cohesion: 0.50
 Nodes (3): enabledPlugins, hooks, PreToolUse
 
 ### Community 96 - "Community 96"
-Cohesion: 0.19
-Nodes (7): FetchResult, FetchResult, Method, STUB_API_URL, AnalysisSnapshot, AnalysisStatus, BookmarkedSnapshot
+Cohesion: 0.15
+Nodes (10): CATEGORY_LABEL, DemoExperience, DemoTypeId, KEYWORD_CATEGORY, KEYWORD_RULES, KeywordKey, SEED_EXPERIENCES, StepKey (+2 more)
 
 ### Community 98 - "Community 98"
 Cohesion: 0.67
@@ -615,8 +616,8 @@ Cohesion: 0.22
 Nodes (9): 2. 색상, 그레이 스케일, 보더, 브랜드 컬러, 사용 원칙, 상태 색상, 서피스, 시맨틱 컬러 (+1 more)
 
 ### Community 136 - "Community 136"
-Cohesion: 0.20
-Nodes (9): AllVariants, Brand, Default, Error, meta, Outline, Story, Success (+1 more)
+Cohesion: 0.18
+Nodes (10): File Structure, FRT-5 회원가입 약관·개인정보 동의 — 구현 계획 (프론트엔드), Self-Review (작성자 점검 완료), Task 1: 동의 config + 순수 로직 (TDD), Task 2: Checkbox UI 컴포넌트, Task 3: ConsentStep 컴포넌트 + Storybook, Task 4: 가입 흐름에 consent 스텝 편입, Task 5: E2E 목 + 동의 스텝 스모크 (+2 more)
 
 ### Community 137 - "Community 137"
 Cohesion: 0.25
@@ -631,8 +632,8 @@ Cohesion: 0.25
 Nodes (7): graphify reference: extra exports and benchmark, Step 6b - Wiki (only if --wiki flag), Step 7 - Neo4j export (only if --neo4j or --neo4j-push flag), Step 7b - SVG export (only if --svg flag), Step 7c - GraphML export (only if --graphml flag), Step 7d - MCP server (only if --mcp flag), Step 8 - Token reduction benchmark (only if total_words > 5000)
 
 ### Community 140 - "Community 140"
-Cohesion: 0.22
-Nodes (8): Empty, meta, ReadOnly, ReadOnlyEmpty, Story, WithData, dateBlock, emptyDateBlock
+Cohesion: 0.27
+Nodes (8): deleteAccountWithPassword(), apiMock, logRequest(), logResponse(), RefreshResult, request(), RequestOptions, tryRefresh()
 
 ### Community 141 - "Community 141"
 Cohesion: 0.25
@@ -643,12 +644,12 @@ Cohesion: 0.29
 Nodes (7): 4. 적응형 · 모바일, 그리드, 모바일 카드 처리, 브레이크포인트, 콘텐츠 너비, 터치 타겟, 텍스트 적응
 
 ### Community 143 - "Community 143"
-Cohesion: 0.38
-Nodes (5): Props, PreviewPersonalInfo(), Props, PersonalInfo, isSafeHttpUrl()
+Cohesion: 0.67
+Nodes (3): Props, Props, PersonalInfo
 
 ### Community 144 - "Community 144"
-Cohesion: 0.25
-Nodes (6): RouteCase, ROUTES, SCENARIOS, StubScenario, RouteDef, StubApiOptions
+Cohesion: 0.22
+Nodes (8): Empty, meta, ReadOnly, ReadOnlyEmpty, Story, WithData, checklistBlock, emptyChecklistBlock
 
 ### Community 145 - "Community 145"
 Cohesion: 0.33
@@ -660,7 +661,7 @@ Nodes (6): 8. 애니메이션, Easing, Reveal 컴포넌트 (스크롤 진입 애
 
 ### Community 147 - "Community 147"
 Cohesion: 0.47
-Nodes (4): Props, PreviewProject(), Props, Project
+Nodes (4): formatPeriodToString(), PeriodBlock(), PeriodBlockProps, PeriodBlockValue
 
 ### Community 148 - "Community 148"
 Cohesion: 0.33
@@ -692,7 +693,7 @@ Nodes (3): Codex Rules — ARC, 사용, 역할
 
 ### Community 155 - "Community 155"
 Cohesion: 0.67
-Nodes (3): DraftRestoreBanner(), formatTime(), Props
+Nodes (3): UploadedFile, UploadState, UseFileUploadResult
 
 ### Community 156 - "Community 156"
 Cohesion: 0.50
@@ -714,6 +715,10 @@ Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphif
 Cohesion: 0.50
 Nodes (3): 상세 규칙 위치 (UI-GUIDELINES.md), 절대 금지, 항상 사용
 
+### Community 161 - "Community 161"
+Cohesion: 0.67
+Nodes (3): Props, Props, Activity
+
 ### Community 162 - "Community 162"
 Cohesion: 0.67
 Nodes (3): 10. 해야 할 것 · 하지 말아야 할 것, ❌ 하지 말아야 할 것, ✅ 해야 할 것
@@ -726,25 +731,29 @@ Nodes (4): meta, NoBlocks, Story, WithBlocks
 Cohesion: 0.29
 Nodes (6): Default, meta, NoSize, Story, WithDeleteButton, sampleAudioFile
 
+### Community 171 - "Community 171"
+Cohesion: 0.67
+Nodes (3): Props, Props, Club
+
 ## Knowledge Gaps
-- **886 isolated node(s):** `enabledPlugins`, `PreToolUse`, `config`, `preview`, `listenerAttached` (+881 more)
+- **917 isolated node(s):** `enabledPlugins`, `PreToolUse`, `config`, `preview`, `listenerAttached` (+912 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **27 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **26 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Button` connect `Community 52` to `Community 0`, `Community 2`, `Community 5`, `Community 8`, `Community 10`, `Community 17`, `Community 18`, `Community 21`, `Community 25`, `Community 155`, `Community 27`, `Community 28`, `Community 30`, `Community 41`, `Community 44`, `Community 53`, `Community 57`, `Community 63`, `Community 67`, `Community 78`?**
-  _High betweenness centrality (0.061) - this node is a cross-community bridge._
-- **Why does `Block` connect `Community 10` to `Community 64`, `Community 33`, `Community 2`, `Community 41`, `Community 45`, `Community 78`, `Community 13`, `Community 21`, `Community 86`, `Community 23`, `Community 89`, `Community 63`?**
-  _High betweenness centrality (0.030) - this node is a cross-community bridge._
-- **Why does `Input` connect `Community 78` to `Community 0`, `Community 64`, `Community 67`, `Community 8`, `Community 10`, `Community 52`, `Community 86`, `Community 25`, `Community 26`, `Community 30`?**
-  _High betweenness centrality (0.022) - this node is a cross-community bridge._
+- **Why does `Button` connect `Community 52` to `Community 0`, `Community 1`, `Community 5`, `Community 8`, `Community 10`, `Community 11`, `Community 17`, `Community 18`, `Community 21`, `Community 22`, `Community 23`, `Community 25`, `Community 27`, `Community 28`, `Community 30`, `Community 41`, `Community 44`, `Community 53`, `Community 54`, `Community 57`, `Community 63`, `Community 78`, `Community 85`, `Community 90`?**
+  _High betweenness centrality (0.073) - this node is a cross-community bridge._
+- **Why does `Block` connect `Community 10` to `Community 64`, `Community 33`, `Community 41`, `Community 45`, `Community 78`, `Community 13`, `Community 147`, `Community 21`, `Community 86`, `Community 23`, `Community 63`?**
+  _High betweenness centrality (0.027) - this node is a cross-community bridge._
+- **Why does `Input` connect `Community 78` to `Community 64`, `Community 8`, `Community 10`, `Community 11`, `Community 52`, `Community 86`, `Community 54`, `Community 25`, `Community 30`?**
+  _High betweenness centrality (0.017) - this node is a cross-community bridge._
 - **What connects `enabledPlugins`, `PreToolUse`, `config` to the rest of the system?**
-  _890 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Community 0` be split into smaller, more focused modules?**
-  _Cohesion score 0.09898242368177614 - nodes in this community are weakly interconnected._
-- **Should `Community 1` be split into smaller, more focused modules?**
-  _Cohesion score 0.12857142857142856 - nodes in this community are weakly interconnected._
-- **Should `Community 2` be split into smaller, more focused modules?**
-  _Cohesion score 0.13345864661654136 - nodes in this community are weakly interconnected._
+  _921 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Community 3` be split into smaller, more focused modules?**
+  _Cohesion score 0.03614035087719298 - nodes in this community are weakly interconnected._
+- **Should `Community 4` be split into smaller, more focused modules?**
+  _Cohesion score 0.05708245243128964 - nodes in this community are weakly interconnected._
+- **Should `Community 5` be split into smaller, more focused modules?**
+  _Cohesion score 0.06588235294117648 - nodes in this community are weakly interconnected._
