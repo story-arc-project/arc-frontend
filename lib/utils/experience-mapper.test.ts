@@ -4,7 +4,6 @@ import type { Experience } from "@/types/experience"
 import {
   toExperienceV2,
   toSavePayload,
-  toUpdateImportancePayload,
 } from "@/lib/utils/experience-mapper"
 
 function makeExperience(overrides: Partial<Experience> = {}): Experience {
@@ -138,12 +137,5 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
     expect(payload.content).toEqual(original.content)
     expect(payload.importance).toBe(2)
     expect(payload.type).toBe(original.type)
-  })
-})
-
-describe("toUpdateImportancePayload", () => {
-  it("값을 그대로, undefined 는 null 로 보낸다", () => {
-    expect(toUpdateImportancePayload(3)).toEqual({ importance: 3 })
-    expect(toUpdateImportancePayload(undefined)).toEqual({ importance: null })
   })
 })
