@@ -113,8 +113,10 @@ export interface ConsentItem {
 기존(온보딩 완료) 회원: consent 안 봄 → dashboard
 ```
 
-- `app/(auth)/constants.ts`: `ONBOARDING_STEPS = ["consent","profile","q1","q2"]`, `STEP_ORDER`에 `verify` 다음 `consent` 삽입.
-- `signup/page.tsx`: `handleVerify` 성공(미온보딩) 시 `goTo("profile")` → `goTo("consent")`. consent 제출 성공 시 `goTo("profile")`.
+**배포 게이트 — `NEXT_PUBLIC_CONSENT_ENABLED` (기본 off)**: BE `POST /auth/consent`가 라이브되기 전에 FE만 배포되면 consent 스텝이 미배포 API에 의존해 온보딩이 막힌다(404). 그래서 플래그가 **off(기본)면 consent 스텝을 건너뛰어 기존 온보딩 경로(verify→profile)를 그대로 쓰고**, BE 라이브 후 `NEXT_PUBLIC_CONSENT_ENABLED=true`로 켠다. 첫 온보딩 스텝은 `FIRST_ONBOARDING_STEP`(플래그 off=`profile`, on=`consent`) 한 곳에서 결정되며, 모든 온보딩 재진입 리다이렉트(`signup`·`callback`·`useRedirectIfAuthenticated`·`AuthGate`·`login`)가 이 상수를 참조한다. E2E는 `playwright.config` webServer env에서 플래그 on으로 검증한다.
+
+- `app/(auth)/constants.ts`: 플래그 on 시 `ONBOARDING_STEPS = ["consent","profile","q1","q2"]`, `STEP_ORDER`에 `verify` 다음 `consent` 삽입. off면 기존(`profile`부터).
+- `signup/page.tsx`: `handleVerify` 성공(미온보딩) 시 `goTo(FIRST_ONBOARDING_STEP)`. consent 제출 성공 시 `goTo("profile")`.
 - `callback/google/page.tsx`: 신규 사용자 라우팅을 `?step=profile` → `?step=consent` 로 변경(현 라우팅 구현 확인 필요).
 - 뒤로가기: consent는 첫 온보딩 스텝 → 인증된 사용자는 verify/password로 못 돌아감(기존 `ONBOARDING_STEPS` 가드가 처리).
 

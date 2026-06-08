@@ -8,7 +8,7 @@ import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
-import { API_URL, SOCIAL_ERROR_MESSAGES, loginContainer, loginItem } from "../constants";
+import { API_URL, SOCIAL_ERROR_MESSAGES, FIRST_ONBOARDING_STEP, loginContainer, loginItem } from "../constants";
 
 // 오픈 리다이렉트 방지: 동일 출처 기준으로 정규화해 상대 경로만 허용한다.
 // 절대 URL(`https://evil.com`), 프로토콜 상대(`//evil.com`), 역슬래시 우회(`/\evil.com`),
@@ -86,7 +86,7 @@ function LoginForm() {
       const { data } = await loginRes.json();
 
       if (!data.onboarded) {
-        router.push(`/signup?step=consent&email=${encodeURIComponent(email)}`);
+        router.push(`/signup?step=${FIRST_ONBOARDING_STEP}&email=${encodeURIComponent(email)}`);
       } else {
         // 하드 내비게이션으로 AuthProvider를 재마운트해 로그인 직후 user를 다시 불러온다.
         // (클라이언트 push만으로는 루트 컨텍스트의 user가 null로 남아 GNB 계정 메뉴가 가려진다.)

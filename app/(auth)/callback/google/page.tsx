@@ -7,6 +7,7 @@ import { clearOAuthState, readOAuthState } from "@/lib/auth/oauth-state";
 import { deleteAccountWithSocial } from "@/lib/api/auth-api";
 import { DELETE_INTENT } from "@/lib/auth/oauth-providers";
 import { AuthSuccessResult } from "@/types/auth";
+import { FIRST_ONBOARDING_STEP } from "@/app/(auth)/constants";
 
 export default function GoogleCallbackPage() {
   return (
@@ -70,7 +71,7 @@ function GoogleCallbackHandler() {
           // replace로 콜백 페이지를 히스토리에 남기지 않는다.
           window.location.replace("/dashboard");
         } else {
-          router.push(`/signup?step=consent&email=${encodeURIComponent(result.data.user.email)}`);
+          router.push(`/signup?step=${FIRST_ONBOARDING_STEP}&email=${encodeURIComponent(result.data.user.email)}`);
         }
       })
       .catch((e) => {

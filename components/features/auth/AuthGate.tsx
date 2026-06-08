@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/hooks/useAuth";
+import { FIRST_ONBOARDING_STEP } from "@/app/(auth)/constants";
 
 /**
  * 보호 영역(/(main)) 진입 가드.
@@ -38,7 +39,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       const from = window.location.pathname + window.location.search;
       router.replace(`/login?callbackUrl=${encodeURIComponent(from)}`);
     } else if (redirect === "onboard") {
-      router.replace("/signup?step=consent");
+      router.replace(`/signup?step=${FIRST_ONBOARDING_STEP}`);
     }
   }, [redirect, router]);
 

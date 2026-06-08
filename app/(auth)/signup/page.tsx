@@ -16,6 +16,7 @@ import { type ConsentPayload } from "@/lib/auth/consent";
 import {
   type Step,
   type AffiliationStatus,
+  FIRST_ONBOARDING_STEP,
   ONBOARDING_STEPS,
   STEP_ORDER,
   Q1_OPTIONS,
@@ -101,7 +102,7 @@ function SignupForm() {
   // 이미 인증된 사용자가 verify 단계에 머무르지 않도록 강제 이탈 → 첫 온보딩 스텝(consent)
   useEffect(() => {
     if (step === "verify" && !isAuthLoading && isAuthenticated) {
-      goTo("consent");
+      goTo(FIRST_ONBOARDING_STEP);
     }
   }, [step, isAuthenticated, isAuthLoading]);
 
@@ -162,7 +163,7 @@ function SignupForm() {
         // 하드 내비게이션으로 AuthProvider를 재마운트·refetch해야 GNB 계정 메뉴가 노출된다.
         window.location.assign("/dashboard");
       } else {
-        goTo("consent");
+        goTo(FIRST_ONBOARDING_STEP);
       }
     } catch (e) {
       if (e instanceof ApiError) {
@@ -285,7 +286,7 @@ function SignupForm() {
     <div className="w-full max-w-lg">
       {/* Back */}
       <div className="h-8 mb-3 flex items-center">
-        {step !== "start" && !((isAuthenticated || isAuthLoading) && step === "consent") && (
+        {step !== "start" && !((isAuthenticated || isAuthLoading) && step === FIRST_ONBOARDING_STEP) && (
           <button
             type="button"
             onClick={goBack}

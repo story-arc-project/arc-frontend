@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/hooks/useAuth";
+import { FIRST_ONBOARDING_STEP } from "@/app/(auth)/constants";
 
 type Options = {
   /**
@@ -26,7 +27,7 @@ export function useRedirectIfAuthenticated({ allowOnboardingFlow = false }: Opti
 
   useEffect(() => {
     if (!shouldRedirect) return;
-    router.replace(isOnboarded ? "/dashboard" : "/signup?step=consent");
+    router.replace(isOnboarded ? "/dashboard" : `/signup?step=${FIRST_ONBOARDING_STEP}`);
   }, [shouldRedirect, isOnboarded, router]);
 
   return { isLoading, shouldRedirect, error };
