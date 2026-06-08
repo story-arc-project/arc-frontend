@@ -86,7 +86,7 @@ function LoginForm() {
       const { data } = await loginRes.json();
 
       if (!data.onboarded) {
-        router.push(`/signup?step=profile&email=${encodeURIComponent(email)}`);
+        router.push(`/signup?step=consent&email=${encodeURIComponent(email)}`);
       } else {
         // 하드 내비게이션으로 AuthProvider를 재마운트해 로그인 직후 user를 다시 불러온다.
         // (클라이언트 push만으로는 루트 컨텍스트의 user가 null로 남아 GNB 계정 메뉴가 가려진다.)

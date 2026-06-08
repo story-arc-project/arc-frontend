@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
  *
  * 인증 상태가 확정되기 전까지 보호 콘텐츠를 가리고, 확정된 뒤 분기한다:
  * - 비인증(정상 401)          → /login?callbackUrl=<현재 경로>
- * - 인증됐으나 온보딩 미완료   → /signup?step=profile
+ * - 인증됐으나 온보딩 미완료   → /signup?step=consent
  * - 인증 + 온보딩 완료        → children 통과
  *
  * /auth/me가 네트워크·5xx로 실패하면(error≠null) 비인증으로 단정하지 않고 재시도 화면을 보여준다.
@@ -38,7 +38,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       const from = window.location.pathname + window.location.search;
       router.replace(`/login?callbackUrl=${encodeURIComponent(from)}`);
     } else if (redirect === "onboard") {
-      router.replace("/signup?step=profile");
+      router.replace("/signup?step=consent");
     }
   }, [redirect, router]);
 

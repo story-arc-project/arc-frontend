@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/useAuth";
 type Options = {
   /**
    * 온보딩 미완료 인증 사용자에게 페이지 접근을 허용한다.
-   * 예: /signup?step=profile 흐름에서 사용.
+   * 예: /signup?step=consent 흐름에서 사용.
    */
   allowOnboardingFlow?: boolean;
 };
@@ -26,7 +26,7 @@ export function useRedirectIfAuthenticated({ allowOnboardingFlow = false }: Opti
 
   useEffect(() => {
     if (!shouldRedirect) return;
-    router.replace(isOnboarded ? "/dashboard" : "/signup?step=profile");
+    router.replace(isOnboarded ? "/dashboard" : "/signup?step=consent");
   }, [shouldRedirect, isOnboarded, router]);
 
   return { isLoading, shouldRedirect, error };

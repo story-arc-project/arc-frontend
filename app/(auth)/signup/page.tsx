@@ -37,8 +37,8 @@ export default function SignupPage() {
 
 function SignupForm() {
   const searchParams = useSearchParams();
-  // 인증 사용자는 온보딩 단계(profile/q1/q2)에서만 머무를 수 있다.
-  // start/password/verify 등에서는 /signup?step=profile 으로 보내 흐름을 강제한다.
+  // 인증 사용자는 온보딩 단계(consent/profile/q1/q2)에서만 머무를 수 있다.
+  // start/password/verify 등에서는 /signup?step=consent 으로 보내 흐름을 강제한다.
   const stepParam = searchParams.get("step") as Step | null;
   const isOnOnboardingStep = stepParam !== null && ONBOARDING_STEPS.includes(stepParam);
   const { shouldRedirect } = useRedirectIfAuthenticated({ allowOnboardingFlow: isOnOnboardingStep });
