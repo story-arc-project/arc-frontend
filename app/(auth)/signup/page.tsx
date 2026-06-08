@@ -11,6 +11,8 @@ import { api, ApiError } from "@/lib/api/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { VerifyEmailResponse } from "@/types/auth";
+import { ConsentStep } from "@/components/features/auth/ConsentStep";
+import { type ConsentPayload } from "@/lib/auth/consent";
 import {
   type Step,
   type AffiliationStatus,
@@ -85,6 +87,7 @@ function SignupForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
   const [socialError, setSocialError] = useState<string | null>(null);
+  const [consentError, setConsentError] = useState<string | null>(null);
 
   // 로그인 페이지에서 리다이렉트된 경우 URL 파라미터로 상태 복원
   useEffect(() => {
@@ -95,10 +98,10 @@ function SignupForm() {
     if (stepParam && STEP_ORDER.includes(stepParam)) setStep(stepParam);
   }, [searchParams]);
 
-  // 이미 인증된 사용자가 verify 단계에 머무르지 않도록 강제 이탈
+  // 이미 인증된 사용자가 verify 단계에 머무르지 않도록 강제 이탈 → 첫 온보딩 스텝(consent)
   useEffect(() => {
     if (step === "verify" && !isAuthLoading && isAuthenticated) {
-      goTo("profile");
+      goTo("consent");
     }
   }, [step, isAuthenticated, isAuthLoading]);
 
@@ -159,7 +162,7 @@ function SignupForm() {
         // 하드 내비게이션으로 AuthProvider를 재마운트·refetch해야 GNB 계정 메뉴가 노출된다.
         window.location.assign("/dashboard");
       } else {
-        goTo("profile");
+        goTo("consent");
       }
     } catch (e) {
       if (e instanceof ApiError) {
@@ -167,6 +170,28 @@ function SignupForm() {
         else setVerifyError(e.message);
       } else {
         setVerifyError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleConsent(payload: ConsentPayload) {
+    setIsLoading(true);
+    setConsentError(null);
+
+    try {
+      await api.post("/auth/consent", payload, { auth: true });
+      goTo("profile");
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.code === "AUTH_TOKEN_EXPIRED" || e.code === "AUTH_MISSING_COOKIES" || e.code === "AUTH_TOKEN_INVALID") {
+          setConsentError("로그인 정보가 만료되었어요. 다시 로그인해주세요.");
+        } else {
+          setConsentError(e.message);
+        }
+      } else {
+        setConsentError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
       }
     } finally {
       setIsLoading(false);
@@ -260,7 +285,7 @@ function SignupForm() {
     <div className="w-full max-w-lg">
       {/* Back */}
       <div className="h-8 mb-3 flex items-center">
-        {step !== "start" && !((isAuthenticated || isAuthLoading) && step === "profile") && (
+        {step !== "start" && !((isAuthenticated || isAuthLoading) && step === "consent") && (
           <button
             type="button"
             onClick={goBack}
@@ -459,6 +484,11 @@ function SignupForm() {
                   </button>
                 </div>
               </div>
+            )}
+
+            {/* ── consent ──────────────────────────── */}
+            {step === "consent" && (
+              <ConsentStep onSubmit={handleConsent} isLoading={isLoading} error={consentError} />
             )}
 
             {/* ── profile ──────────────────────────── */}

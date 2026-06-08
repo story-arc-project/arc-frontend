@@ -11,10 +11,10 @@ export const SOCIAL_ERROR_MESSAGES: Record<string, string> = {
 };
 
 /* ── Signup steps ─────────────────────────────────────── */
-export type Step = "start" | "password" | "verify" | "profile" | "q1" | "q2";
+export type Step = "start" | "password" | "verify" | "consent" | "profile" | "q1" | "q2";
 
-export const ONBOARDING_STEPS: Step[] = ["profile", "q1", "q2"];
-export const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "q1", "q2"];
+export const ONBOARDING_STEPS: Step[] = ["consent", "profile", "q1", "q2"];
+export const STEP_ORDER: Step[] = ["start", "password", "verify", "consent", "profile", "q1", "q2"];
 
 /* ── Affiliation status (profile step) ────────────────── */
 export type AffiliationStatus = "student" | "employed" | "jobseeker" | "other";

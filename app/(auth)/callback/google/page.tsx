@@ -70,7 +70,7 @@ function GoogleCallbackHandler() {
           // replace로 콜백 페이지를 히스토리에 남기지 않는다.
           window.location.replace("/dashboard");
         } else {
-          router.push(`/signup?step=profile&email=${encodeURIComponent(result.data.user.email)}`);
+          router.push(`/signup?step=consent&email=${encodeURIComponent(result.data.user.email)}`);
         }
       })
       .catch((e) => {
