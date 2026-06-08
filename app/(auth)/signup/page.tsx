@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Button, DatePicker, Input, toast, ToastContainer } from "@/components/ui";
+import { Button, DatePicker, Input, toast } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { api, ApiError } from "@/lib/api/client";
@@ -258,7 +258,6 @@ function SignupForm() {
 
   return (
     <div className="w-full max-w-lg">
-      <ToastContainer />
       {/* Back */}
       <div className="h-8 mb-3 flex items-center">
         {step !== "start" && !((isAuthenticated || isAuthLoading) && step === "profile") && (

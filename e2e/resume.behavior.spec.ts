@@ -54,9 +54,10 @@ test.describe("FRT-43 레쥬메 생성·편집 동작", () => {
     await expect(saveButton).toBeEnabled();
     await saveButton.click();
 
-    // 저장 커밋 결과: dirty 해제로 저장 버튼이 다시 비활성화된다.
-    // (성공 토스트 "저장됐어요"는 ToastContainer 가 (main) 레이아웃에 미마운트라 렌더되지
-    //  않는다 — 앱 잠재 버그, FRT-43 범위 밖. 결과는 payload·상세·목록 반영으로 단언한다.)
+    // 저장 커밋 결과: 성공 토스트가 (main) 전역에 표시되고, dirty 해제로 저장 버튼이
+    // 다시 비활성화된다. (FRT-45 회귀 가드: ToastContainer 를 루트 레이아웃에 전역
+    //  마운트 — 토스트는 3.5s 후 자동 소멸하므로 리로드 전에 단언한다.)
+    await expect(page.getByText("저장됐어요")).toBeVisible();
     await expect(saveButton).toBeDisabled();
 
     // 변이 payload 단언: PATCH /export/resume/{newId} 에 수정된 요약이 전송된다.

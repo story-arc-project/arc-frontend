@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+import { ToastContainer } from "@/components/ui";
 import AuthProvider from "@/contexts/AuthContext";
 
 export const metadata: Metadata = {
@@ -24,6 +25,8 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <AuthProvider>
           {children}
+          {/* 앱 전역 토스트 표시 지점 — (auth)·(main) 모두 커버 (FRT-45). */}
+          <ToastContainer />
         </AuthProvider>
       </body>
     </html>
