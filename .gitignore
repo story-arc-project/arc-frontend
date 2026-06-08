@@ -70,9 +70,7 @@ docs/superpowers/
 .playwright-mcp/
 
 
-# graphify: commit shareable outputs (graph.json, graph.html, GRAPH_REPORT.md);
-# ignore machine-specific / regenerable state
-graphify-out/.graphify_*
-graphify-out/cache/
-graphify-out/cost.json
-graphify-out/manifest.json
+# graphify: 로컬 전용 지식그래프 산출물 — 전부 ignore.
+# graph.json(~3.4MB) 등은 브랜치마다 재생성되어 동시 작업 시 충돌이 잦으므로 커밋하지 않는다.
+# 로컬에서 `graphify update .` 후 query/explain 용도로만 사용한다.
+graphify-out/
