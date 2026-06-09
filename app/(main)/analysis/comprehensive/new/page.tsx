@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { toast } from "@/components/ui/toast";
 import type { SelectableExperience } from "@/types/analysis";
 import {
   getSelectableExperiences,
@@ -15,6 +17,7 @@ import ExperienceSelector from "@/components/features/analysis/ExperienceSelecto
 type Phase = "select" | "loading" | "error";
 
 export default function ComprehensiveNewPage() {
+  const router = useRouter();
   const [experiences, setExperiences] = useState<SelectableExperience[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [phase, setPhase] = useState<Phase>("select");
@@ -58,12 +61,19 @@ export default function ComprehensiveNewPage() {
     setPhase("loading");
     try {
       const { analysisId: id } = await createComprehensiveAnalysis(selected);
-      setAnalysisId(id);
+      if (id) {
+        setAnalysisId(id);
+        return;
+      }
+      // 백엔드가 아직 분석 id 를 반환하지 않는다(FRT-38). 폴링 대상을 특정할 수 없으므로
+      // 가짜 오류 화면 대신 목록으로 보내 진행 상황을 보게 한다.
+      toast("분석을 시작했어요. 목록에서 진행 상황을 확인하세요.", "success");
+      router.push("/analysis/comprehensive");
     } catch {
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selected]);
+  }, [selected, router]);
 
   if (phase === "loading") {
     return (

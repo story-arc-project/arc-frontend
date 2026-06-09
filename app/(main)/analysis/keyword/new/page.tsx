@@ -2,8 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { toast } from "@/components/ui/toast";
 import type { KeywordSuggestion, KeywordCategory } from "@/types/analysis";
 import {
   getKeywordSuggestions,
@@ -15,6 +17,7 @@ import KeywordSelector from "@/components/features/analysis/KeywordSelector";
 type Phase = "select" | "loading" | "error";
 
 export default function KeywordNewPage() {
+  const router = useRouter();
   const [suggestions, setSuggestions] = useState<KeywordSuggestion[]>([]);
   const [selectedKeywords, setSelectedKeywords] = useState<
     { label: string; category: KeywordCategory }[]
@@ -61,12 +64,19 @@ export default function KeywordNewPage() {
     try {
       const labels = selectedKeywords.map((k) => k.label);
       const { analysisId: id } = await createKeywordAnalysis(labels);
-      setAnalysisId(id);
+      if (id) {
+        setAnalysisId(id);
+        return;
+      }
+      // 백엔드가 아직 분석 id 를 반환하지 않는다(FRT-38). 폴링 대상을 특정할 수 없으므로
+      // 가짜 오류 화면 대신 목록으로 보내 진행 상황을 보게 한다.
+      toast("분석을 시작했어요. 목록에서 진행 상황을 확인하세요.", "success");
+      router.push("/analysis/keyword");
     } catch {
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selectedKeywords]);
+  }, [selectedKeywords, router]);
 
   if (phase === "loading") {
     return (
