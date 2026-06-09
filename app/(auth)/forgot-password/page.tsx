@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,7 +9,7 @@ import { ApiError } from "@/lib/api/client";
 import { requestPasswordReset, verifyResetCode, resetPassword } from "@/lib/api/auth-api";
 import { passwordChecks, isPasswordValid } from "@/lib/auth/password";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
-import { stepVariants, stepTransition } from "../constants";
+import { PASSWORD_RESET_ENABLED, stepVariants, stepTransition } from "../constants";
 
 /* ── Steps ───────────────────────────────────────────────── */
 type ResetStep = "email" | "code" | "password";
@@ -27,6 +27,12 @@ export default function ForgotPasswordPage() {
 function ForgotPasswordForm() {
   const router = useRouter();
   const { shouldRedirect } = useRedirectIfAuthenticated();
+
+  // 플래그 off(기본·BAC-2 미배포)면 라우트 자체를 막는다. 로그인 링크 숨김만으로는
+  // 북마크/수동 URL 진입을 못 막아 깨진 흐름이 노출된다(Codex P2).
+  useEffect(() => {
+    if (!PASSWORD_RESET_ENABLED) router.replace("/login");
+  }, [router]);
 
   const [step, setStep] = useState<ResetStep>("email");
   const [dir, setDir] = useState(1);
@@ -96,7 +102,10 @@ function ForgotPasswordForm() {
       if (e instanceof ApiError) {
         if (e.status === 410) setCodeError("인증 코드가 만료되었어요. 재발송 후 다시 시도해주세요.");
         else if (e.status === 429) setCodeError("시도 횟수를 초과했어요. 잠시 후 다시 시도해주세요.");
-        else setCodeError("인증 코드가 올바르지 않아요.");
+        else if (e.status === 400 || e.status === 401 || e.code === "INVALID_CODE")
+          setCodeError("인증 코드가 올바르지 않아요.");
+        // 그 외(500/503/404 등)는 코드 문제가 아니므로 코드 오답으로 오인시키지 않는다.
+        else setCodeError("일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
       } else {
         setCodeError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
       }
@@ -129,8 +138,11 @@ function ForgotPasswordForm() {
       if (e instanceof ApiError) {
         if (e.code === "WEAK_PASSWORD") {
           setPwError("더 강한 비밀번호를 시도해주세요.");
-        } else if (e.status === 410 || e.status === 429 || e.code === "INVALID_CODE") {
-          // 검증~설정 사이 코드가 만료·무효화된 경우 코드 단계로 되돌린다.
+        } else if (e.status === 429) {
+          // rate limit 은 새 코드로 해결되지 않는다 — 비번 단계를 버리지 않고 대기 안내.
+          setPwError("시도 횟수를 초과했어요. 잠시 후 다시 시도해주세요.");
+        } else if (e.status === 410 || e.code === "INVALID_CODE") {
+          // 검증~설정 사이 코드가 만료·무효화된 경우에만 코드 단계로 되돌린다.
           setCodeError("인증 코드가 만료되었어요. 코드를 다시 받아주세요.");
           goTo("code", -1);
         } else {
@@ -144,7 +156,7 @@ function ForgotPasswordForm() {
     }
   }
 
-  if (shouldRedirect) return null;
+  if (shouldRedirect || !PASSWORD_RESET_ENABLED) return null;
 
   return (
     <div className="w-full max-w-lg">
@@ -236,8 +248,10 @@ function ForgotPasswordForm() {
                   <button
                     type="button"
                     onClick={handleResendCode}
+                    disabled={isLoading}
                     className="w-full h-12 rounded-md border border-border text-text-secondary
-                               text-body font-medium hover:bg-surface-secondary transition-colors cursor-pointer"
+                               text-body font-medium hover:bg-surface-secondary transition-colors cursor-pointer
+                               disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                   >
                     코드 재발송
                   </button>
