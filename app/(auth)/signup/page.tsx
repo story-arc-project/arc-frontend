@@ -16,6 +16,7 @@ import { type ConsentPayload } from "@/lib/auth/consent";
 import {
   type Step,
   type AffiliationStatus,
+  CONSENT_ENABLED,
   FIRST_ONBOARDING_STEP,
   ONBOARDING_STEPS,
   STEP_ORDER,
@@ -96,7 +97,14 @@ function SignupForm() {
     const emailParam = searchParams.get("email");
     // URLSearchParams.get()은 이미 디코딩된 값을 반환하므로 decodeURIComponent 불필요
     if (emailParam) setEmail(emailParam);
-    if (stepParam && STEP_ORDER.includes(stepParam)) setStep(stepParam);
+    if (stepParam && STEP_ORDER.includes(stepParam)) {
+      // 동의 활성 시, URL로 후속 온보딩 스텝(profile/q1/q2)에 직접 진입하는 것(stale 링크·수동 URL)을
+      // consent 로 되돌려 동의 없이 프로필 단계로 들어가지 못하게 한다(서버 강제의 UX 보조).
+      // 정상 흐름은 consent 제출 후 goTo 로 진행하므로 영향받지 않는다.
+      const bypassesConsent =
+        CONSENT_ENABLED && stepParam !== "consent" && ONBOARDING_STEPS.includes(stepParam);
+      setStep(bypassesConsent ? "consent" : stepParam);
+    }
   }, [searchParams]);
 
   // 이미 인증된 사용자가 verify 단계에 머무르지 않도록 강제 이탈 → 첫 온보딩 스텝(consent)

@@ -32,3 +32,12 @@ test("동의 스텝: 선택 미동의해도 필수만 충족하면 진행 가능
 
   await expect(page.getByRole("button", { name: "다음" })).toBeEnabled();
 });
+
+test("동의 활성 시 profile 직접 진입(URL)은 consent로 되돌린다 (우회 차단)", async ({ page }) => {
+  await stubApi(page, { authed: true, onboarded: false });
+  await page.goto("/signup?step=profile");
+
+  // 동의를 건너뛴 직접 URL → consent 스텝으로 강제, profile 헤딩은 보이지 않는다.
+  await expect(page.getByRole("heading", { name: "약관에 동의해주세요" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "기본 정보를 알려주세요" })).toHaveCount(0);
+});
