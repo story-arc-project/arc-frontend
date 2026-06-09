@@ -50,6 +50,8 @@ export default defineConfig({
     timeout: 120_000, // dev 콜드 컴파일 여유
     env: {
       NEXT_PUBLIC_API_URL: API_URL,
+      // 동의 스텝 E2E는 플래그 ON에서 검증한다(프로덕션 기본값 off, BE 라이브 후 켬).
+      NEXT_PUBLIC_CONSENT_ENABLED: "true",
     },
   },
 });
