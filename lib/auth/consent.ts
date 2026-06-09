@@ -37,7 +37,7 @@ export type ConsentState = Record<ConsentId, boolean>;
  *
  * summary 는 PIPA 표준 동의서 4요소(목적·항목·보유기간·거부권)와 정보통신망법 표기를 반영한
  * **잠정 초안**이다(법무 검토 전). 약관·처리방침 전문은 docs/legal/terms-of-service.draft.md ·
- * docs/legal/privacy-policy.draft.md 에 있으며, /terms·/privacy 라우트 신설 후 detailHref 로 연결한다.
+ * docs/legal/privacy-policy.draft.md 에 있고, /terms·/privacy 페이지가 이를 렌더하며 detailHref 로 연결돼 있다.
  */
 export const CONSENT_ITEMS: ConsentItem[] = [
   {
@@ -48,6 +48,7 @@ export const CONSENT_ITEMS: ConsentItem[] = [
     version: "2026-06-08",
     summary:
       "ARC 서비스 이용약관입니다. 서비스 이용 조건과 회원의 권리·의무, 회원이 작성한 경험 기록·업로드 콘텐츠의 권리 귀속(회원 소유)과 서비스 제공·AI 분석을 위한 이용 라이선스, AI 분석·요약 결과물의 성격(참고용·정확성 비보증, AI 생성물 표시), 책임 제한, 해지·탈퇴, 준거법(대한민국)을 포함합니다.",
+    detailHref: "/terms",
   },
   {
     id: "privacyRequired",
@@ -57,6 +58,7 @@ export const CONSENT_ITEMS: ConsentItem[] = [
     version: "2026-06-08",
     summary:
       "서비스 제공을 위해 개인정보를 수집·이용합니다. · 목적: 계정 생성·본인확인, 경험 기록 저장·관리(아카이빙), 대시보드 제공, AI 기반 분석·요약, 자기소개서·이력서 등 산출물 내보내기(엑스포트) · 수집 항목: 이메일·비밀번호·이름·생년월일·전화번호, 경험 기록(자유 서술)·업로드 파일, 서비스 이용 기록 · 보유 기간: 회원 탈퇴 시까지(관계 법령상 의무 보존 항목 제외) · 동의를 거부할 권리가 있으나, 필수 항목 미동의 시 서비스 이용이 제한됩니다.",
+    detailHref: "/privacy",
   },
   {
     id: "age14",
