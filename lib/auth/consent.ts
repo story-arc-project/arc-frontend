@@ -33,8 +33,11 @@ export type ConsentState = Record<ConsentId, boolean>;
 
 /**
  * 활성 항목만 UI에 노출·전송한다. 맞춤광고·데이터사업은 처리 실체·법무 문구가
- * 확정되면 active: true 로 전환한다("구조 지금, 활성화 나중"). 문구·version·detailHref
- * 실값은 법무 확정 후 채운다.
+ * 확정되면 active: true 로 전환한다("구조 지금, 활성화 나중").
+ *
+ * summary 는 PIPA 표준 동의서 4요소(목적·항목·보유기간·거부권)와 정보통신망법 표기를 반영한
+ * **잠정 초안**이다(법무 검토 전). 약관·처리방침 전문은 docs/legal/terms-of-service.draft.md ·
+ * docs/legal/privacy-policy.draft.md 에 있으며, /terms·/privacy 라우트 신설 후 detailHref 로 연결한다.
  */
 export const CONSENT_ITEMS: ConsentItem[] = [
   {
@@ -43,7 +46,8 @@ export const CONSENT_ITEMS: ConsentItem[] = [
     required: true,
     active: true,
     version: "2026-06-08",
-    summary: "ARC 서비스 이용에 관한 기본 약관입니다.",
+    summary:
+      "ARC 서비스 이용약관입니다. 서비스 이용 조건과 회원의 권리·의무, 회원이 작성한 경험 기록·업로드 콘텐츠의 권리 귀속(회원 소유)과 서비스 제공·AI 분석을 위한 이용 라이선스, AI 분석·요약 결과물의 성격(참고용·정확성 비보증, AI 생성물 표시), 책임 제한, 해지·탈퇴, 준거법(대한민국)을 포함합니다.",
   },
   {
     id: "privacyRequired",
@@ -52,7 +56,7 @@ export const CONSENT_ITEMS: ConsentItem[] = [
     active: true,
     version: "2026-06-08",
     summary:
-      "계정·프로필과 경험 기록·업로드 파일을 아카이빙·대시보드·분석·엑스포트 등 서비스 제공을 위해 수집·이용합니다.",
+      "서비스 제공을 위해 개인정보를 수집·이용합니다. · 목적: 계정 생성·본인확인, 경험 기록 저장·관리(아카이빙), 대시보드 제공, AI 기반 분석·요약, 자기소개서·이력서 등 산출물 내보내기(엑스포트) · 수집 항목: 이메일·비밀번호·이름·생년월일·전화번호, 경험 기록(자유 서술)·업로드 파일, 서비스 이용 기록 · 보유 기간: 회원 탈퇴 시까지(관계 법령상 의무 보존 항목 제외) · 동의를 거부할 권리가 있으나, 필수 항목 미동의 시 서비스 이용이 제한됩니다.",
   },
   {
     id: "age14",
@@ -67,7 +71,8 @@ export const CONSENT_ITEMS: ConsentItem[] = [
     required: false,
     active: true,
     version: "2026-06-08",
-    summary: "이용 패턴을 분석해 추천·개인화를 제공합니다. 동의하지 않아도 가입할 수 있어요.",
+    summary:
+      "맞춤 추천·개인화를 위해 서비스 이용·활동 기록과 관심사·고민 등 입력 정보를 분석합니다. · 보유 기간: 동의 철회 또는 탈퇴 시까지 · 선택 항목으로, 동의하지 않아도 서비스의 핵심 기능은 그대로 이용할 수 있습니다.",
   },
   {
     id: "marketing",
@@ -75,7 +80,8 @@ export const CONSENT_ITEMS: ConsentItem[] = [
     required: false,
     active: true,
     version: "2026-06-08",
-    summary: "이벤트·소식을 이메일 등으로 보내드립니다. 동의하지 않아도 가입할 수 있어요.",
+    summary:
+      "전송자 ARC가 이벤트·혜택·신규 기능 등 광고성 정보를 이메일·앱 알림 등으로 보내드립니다. · 보유·이용: 동의 철회 또는 탈퇴 시까지 · 수신 동의는 마이페이지에서 언제든 철회할 수 있으며, 미동의해도 서비스 이용에 제한이 없습니다.",
   },
   // 아래는 처리 실체·법무 문구 확정 후 active: true 로 전환
   {
