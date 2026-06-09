@@ -21,6 +21,15 @@ export type Step = "start" | "password" | "verify" | "consent" | "profile" | "q1
  */
 export const CONSENT_ENABLED = process.env.NEXT_PUBLIC_CONSENT_ENABLED === "true";
 
+/**
+ * 비밀번호 재설정(forgot/reset) 진입점 활성화 플래그 (FRT-8).
+ * BE `POST /auth/forgot-password`·`/auth/reset-password`(BAC-2)가 라이브된 뒤
+ * `NEXT_PUBLIC_PASSWORD_RESET_ENABLED=true`로 켠다.
+ * off(기본)면 로그인 화면의 「비밀번호를 잊으셨나요?」 링크를 숨겨, 백엔드 미배포 상태에서
+ * 깨진 흐름으로 진입하지 못하게 한다. (consent 플래그와 동일 패턴)
+ */
+export const PASSWORD_RESET_ENABLED = process.env.NEXT_PUBLIC_PASSWORD_RESET_ENABLED === "true";
+
 /** 첫 온보딩 스텝. 플래그 off면 consent를 건너뛰고 profile부터 시작한다. */
 export const FIRST_ONBOARDING_STEP: Step = CONSENT_ENABLED ? "consent" : "profile";
 

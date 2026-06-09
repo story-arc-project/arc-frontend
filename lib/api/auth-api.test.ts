@@ -12,7 +12,13 @@ vi.mock("@/lib/api/client", () => ({
 }))
 
 import { api } from "@/lib/api/client"
-import { deleteAccountWithPassword, deleteAccountWithSocial } from "@/lib/api/auth-api"
+import {
+  deleteAccountWithPassword,
+  deleteAccountWithSocial,
+  requestPasswordReset,
+  verifyResetCode,
+  resetPassword,
+} from "@/lib/api/auth-api"
 
 const apiMock = vi.mocked(api)
 
@@ -39,5 +45,41 @@ describe("deleteAccountWithSocial", () => {
       auth: false,
       body: JSON.stringify({ social: "code-abc" }),
     })
+  })
+})
+
+describe("requestPasswordReset", () => {
+  it("POST /auth/forgot-password 를 email 바디·auth:false 로 호출한다", async () => {
+    apiMock.post.mockResolvedValue(undefined)
+    await requestPasswordReset("user@example.com")
+    expect(apiMock.post).toHaveBeenCalledWith(
+      "/auth/forgot-password",
+      { email: "user@example.com" },
+      { auth: false }
+    )
+  })
+})
+
+describe("verifyResetCode", () => {
+  it("POST /auth/reset-password/verify 를 email·code 바디·auth:false 로 호출한다", async () => {
+    apiMock.post.mockResolvedValue(undefined)
+    await verifyResetCode("user@example.com", "123456")
+    expect(apiMock.post).toHaveBeenCalledWith(
+      "/auth/reset-password/verify",
+      { email: "user@example.com", code: "123456" },
+      { auth: false }
+    )
+  })
+})
+
+describe("resetPassword", () => {
+  it("POST /auth/reset-password 를 email·code·newPassword 바디·auth:false 로 호출한다", async () => {
+    apiMock.post.mockResolvedValue(undefined)
+    await resetPassword("user@example.com", "123456", "newpw123")
+    expect(apiMock.post).toHaveBeenCalledWith(
+      "/auth/reset-password",
+      { email: "user@example.com", code: "123456", newPassword: "newpw123" },
+      { auth: false }
+    )
   })
 })

@@ -54,3 +54,37 @@ export async function deleteAccountWithSocial(token: string): Promise<void> {
     body: JSON.stringify({ social: token }),
   });
 }
+
+/* ── 비밀번호 재설정 (FRT-8 / BAC-2) ──────────────────────────
+ * 비인증 흐름(로그인 전)이므로 전부 auth:false 로 보내 401 자동 로그아웃 리다이렉트를 피한다.
+ * 데모(`/demo`) 밖 전용 흐름이라 isDemoMode 분기는 두지 않는다.
+ */
+
+/**
+ * POST /auth/forgot-password - 재설정 코드(6자리) 이메일 발송.
+ * 가입 여부와 무관하게 항상 성공 처리한다(enumeration 방지) — 호출부도 결과를 분기하지 않는다.
+ * 발송 rate limit 초과 시 429(ApiError)로 호출부에서 안내한다.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await api.post("/auth/forgot-password", { email }, { auth: false });
+}
+
+/**
+ * POST /auth/reset-password/verify - 코드 유효성만 검사(소모하지 않음).
+ * 코드 입력 단계에서 즉시 피드백을 주기 위한 전용 엔드포인트.
+ */
+export async function verifyResetCode(email: string, code: string): Promise<void> {
+  await api.post("/auth/reset-password/verify", { email, code }, { auth: false });
+}
+
+/**
+ * POST /auth/reset-password - 코드 재검증 후 새 비밀번호 설정.
+ * code-vs-token 계약의 단일 격리 지점 — 백엔드가 토큰 방식을 택하면 이 함수 시그니처/바디만 바뀐다.
+ */
+export async function resetPassword(
+  email: string,
+  code: string,
+  newPassword: string
+): Promise<void> {
+  await api.post("/auth/reset-password", { email, code, newPassword }, { auth: false });
+}
