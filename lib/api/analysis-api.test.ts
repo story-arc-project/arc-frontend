@@ -78,6 +78,19 @@ describe("getIndividualAnalysisList — 방어적 파싱", () => {
     const list = await getIndividualAnalysisList({ status: "completed" })
     expect(list.map((s) => s.id)).toEqual(["a1"])
   })
+
+  it("'pending' 필터는 queued(→processing) 와 pending 을 모두 포함한다 (FRT-41 회귀)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope([
+        { id: "a1", status: "queued" }, // → processing (대기 중)
+        { id: "a2", status: "pending" }, // → pending (대기 중)
+        { id: "a3", status: "success" }, // → completed (제외)
+        { id: "a4", status: "failed" }, // → failed (제외)
+      ]),
+    )
+    const list = await getIndividualAnalysisList({ status: "pending" })
+    expect(list.map((s) => s.id)).toEqual(["a1", "a2"])
+  })
 })
 
 describe("unwrapList — 목록 봉투 형태 수용", () => {
