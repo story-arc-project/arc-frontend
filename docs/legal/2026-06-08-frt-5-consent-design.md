@@ -169,6 +169,8 @@ POST /auth/consent        (신규 — BE 작업 필요, authenticated)
 
 > BE에 넘길 항목: `POST /auth/consent` 스펙, 동의 원장 스키마, 서버측 필수동의 강제, pending 계정 파기 정책. (별도 BAC 이슈로 연결 — 본 작업 산출물에서는 제외, 추후 생성)
 
+**알려진 잠재 이슈 — 동의 후 새로고침 시 스텝 복원 (Codex P2, PR #108):** consent 제출은 `goTo("profile")`로 로컬 상태만 바꾸고 URL은 `?step=consent`로 남는다. `CONSENT_ENABLED=on` + `/auth/consent` 라이브 이후, profile 단계에서 새로고침하면 URL 복원 effect가 다시 consent로 되돌려 중복 `POST /auth/consent`가 발생할 수 있다. 현재는 **발동 불가(latent)** — 플래그가 기본 off이고 엔드포인트가 미배포라 `handleConsent`의 성공 분기(`goTo("profile")`)에 도달하지 못한다. 올바른 수정은 클라 sessionStorage 우회가 아니라 **서버 동의 상태 기반 스텝 복원**(복원 가드·`useRedirectIfAuthenticated`가 `/auth/me`의 consent 상태를 참조)이며, **BAC `/auth/consent` 연동과 함께** 반영한다. URL 정적 유지 가드(`bypassesConsent`)와 충돌하므로 클라 단독 URL 동기화로는 해결되지 않는다.
+
 ---
 
 ## 7. 범위 경계
