@@ -98,6 +98,16 @@ function mapStatus(value: unknown): AnalysisStatus {
   return "pending";
 }
 
+/**
+ * 목록 status 필터 술어. 필터 키는 매핑된(프런트) status 와 비교한다.
+ * '대기 중'(pending) 탭은 백엔드 queued(→processing) 와 pending 을 모두 포함한다.
+ * (FRT-41: queued 항목이 "pending" 키와 일치하지 않아 '대기 중' 탭이 항상 비던 버그)
+ */
+function matchesStatusFilter(status: AnalysisStatus, filter: string): boolean {
+  if (filter === "pending") return status === "pending" || status === "processing";
+  return status === filter;
+}
+
 function asAnalysisType(value: unknown, fallback: AnalysisType = "individual"): AnalysisType {
   return value === "individual" || value === "comprehensive" || value === "keyword"
     ? value
@@ -518,17 +528,18 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
 export async function getIndividualAnalysisList(params?: {
   status?: string;
 }): Promise<AnalysisSnapshot[]> {
+  const status = params?.status;
   if (shouldMock())
     return mock(async () => {
       const { mockIndividualAnalysisList } = await mocks();
-      if (params?.status && params.status !== "all")
-        return mockIndividualAnalysisList.filter((s) => s.status === params.status);
+      if (status && status !== "all")
+        return mockIndividualAnalysisList.filter((s) => matchesStatusFilter(s.status, status));
       return mockIndividualAnalysisList;
     });
   const res = await api.get<ApiSuccessResponse<unknown>>("/analysis/individual");
   const items = unwrapList(res.data).map((dto) => mapSnapshot(dto, "individual")).filter((s) => s.id);
-  if (params?.status && params.status !== "all") {
-    return items.filter((s) => s.status === params.status);
+  if (status && status !== "all") {
+    return items.filter((s) => matchesStatusFilter(s.status, status));
   }
   return items;
 }
