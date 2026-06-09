@@ -45,6 +45,7 @@ function ForgotPasswordForm() {
   const [showConfirmPw, setShowConfirmPw] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [resendNotice, setResendNotice] = useState<string | null>(null);
@@ -114,7 +115,11 @@ function ForgotPasswordForm() {
     }
   }
 
+  // 재발송은 자체 in-flight 상태로 막는다. 빠른 더블탭이 forgot-password 를 동시
+  // 호출하면 백엔드가 코드를 새로 발급/무효화하거나 즉시 rate limit 될 수 있다(Codex P2).
   async function handleResendCode() {
+    if (isResending) return;
+    setIsResending(true);
     setResendNotice(null);
     setCodeError(null);
     try {
@@ -123,6 +128,8 @@ function ForgotPasswordForm() {
     } catch (e) {
       if (e instanceof ApiError && e.status === 429) setResendNotice("5분 후 재발송 가능해요.");
       else setResendNotice("재발송에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setIsResending(false);
     }
   }
 
@@ -248,12 +255,12 @@ function ForgotPasswordForm() {
                   <button
                     type="button"
                     onClick={handleResendCode}
-                    disabled={isLoading}
+                    disabled={isLoading || isResending}
                     className="w-full h-12 rounded-md border border-border text-text-secondary
                                text-body font-medium hover:bg-surface-secondary transition-colors cursor-pointer
                                disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                   >
-                    코드 재발송
+                    {isResending ? "보내는 중..." : "코드 재발송"}
                   </button>
                 </div>
               </div>
