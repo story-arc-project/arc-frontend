@@ -52,6 +52,8 @@ export default defineConfig({
       NEXT_PUBLIC_API_URL: API_URL,
       // 동의 스텝 E2E는 플래그 ON에서 검증한다(프로덕션 기본값 off, BE 라이브 후 켬).
       NEXT_PUBLIC_CONSENT_ENABLED: "true",
+      // 비밀번호 재설정(FRT-8)도 동일 — 진입점/흐름을 플래그 ON에서 검증한다(BAC-2 라이브 후 켬).
+      NEXT_PUBLIC_PASSWORD_RESET_ENABLED: "true",
     },
   },
 });

@@ -385,6 +385,26 @@ export async function stubApi(
         return;
       }
 
+      // 비밀번호 재설정(FRT-8): forgot → verify → reset.
+      // 코드 "000000" 은 무효 코드로 취급해 검증 실패 분기를 결정론적으로 노출한다.
+      if (method === "POST" && pathname === "/auth/forgot-password") {
+        await fulfillJson(200, success(null));
+        return;
+      }
+      if (method === "POST" && pathname === "/auth/reset-password/verify") {
+        const code = (body as { code?: string } | undefined)?.code;
+        if (code === "000000") {
+          await fulfillJson(400, { status: "error", message: "invalid code", code: "INVALID_CODE" });
+          return;
+        }
+        await fulfillJson(200, success(null));
+        return;
+      }
+      if (method === "POST" && pathname === "/auth/reset-password") {
+        await fulfillJson(200, success(null));
+        return;
+      }
+
       // experiences · bookmarks · resume · analysis 목록 → stateful 라우터.
       const result = routeStateful(method, pathname, body, store, scenario);
       if (result.kind === "respond") {

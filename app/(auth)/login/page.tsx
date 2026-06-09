@@ -8,7 +8,7 @@ import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
-import { API_URL, SOCIAL_ERROR_MESSAGES, FIRST_ONBOARDING_STEP, loginContainer, loginItem } from "../constants";
+import { API_URL, SOCIAL_ERROR_MESSAGES, FIRST_ONBOARDING_STEP, PASSWORD_RESET_ENABLED, loginContainer, loginItem } from "../constants";
 
 // 오픈 리다이렉트 방지: 동일 출처 기준으로 정규화해 상대 경로만 허용한다.
 // 절대 URL(`https://evil.com`), 프로토콜 상대(`//evil.com`), 역슬래시 우회(`/\evil.com`),
@@ -53,6 +53,7 @@ function LoginForm() {
   // 소셜 로그인 콜백 에러 처리
   const errorParam = searchParams.get("error") ?? "";
   const deleted = searchParams.get("deleted") === "1";
+  const reset = searchParams.get("reset") === "1";
   const [socialError, setSocialError] = useState<string | null>(
     SOCIAL_ERROR_MESSAGES[errorParam] ?? null
   );
@@ -144,6 +145,14 @@ function LoginForm() {
             </motion.div>
           )}
 
+          {reset && (
+            <motion.div variants={loginItem} className="mb-6">
+              <p className="rounded-lg bg-surface-success px-4 py-3 text-center text-body-sm text-success">
+                비밀번호가 변경되었어요. 새 비밀번호로 로그인해주세요.
+              </p>
+            </motion.div>
+          )}
+
           <motion.div variants={loginItem} className="flex flex-col gap-4">
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <Input
@@ -173,6 +182,16 @@ function LoginForm() {
                   {showPw ? "숨기기" : "보기"}
                 </button>
               </div>
+              {PASSWORD_RESET_ENABLED && (
+                <div className="-mt-1 text-right">
+                  <Link
+                    href="/forgot-password"
+                    className="text-body-sm text-text-tertiary hover:text-text-secondary transition-colors"
+                  >
+                    비밀번호를 잊으셨나요?
+                  </Link>
+                </div>
+              )}
               {error && (
                 <p className="text-body-sm text-error">{error}</p>
               )}
