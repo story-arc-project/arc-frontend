@@ -69,12 +69,10 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
     })
   })
 
-  // 회귀: API 로드 레코드가 title 은 있으나 coreBlocks 가 비어 편집 폼에 "경험명"
-  // 입력이 렌더되지 않는 경우, 가드가 빈 title 로 저장을 막거나 기존 title 을 덮어쓰면 안 된다.
-  it("경험명 블록이 없는 편집 레코드는 기존 title 을 보존해 저장된다", async () => {
-    const user = userEvent.setup()
-    const onSave = vi.fn()
-    const existing: ExperienceV2 = {
+  // 회귀(Codex P2 #1): coreBlocks 가 비어 "경험명" 블록이 없는 레코드도, 편집 모드에서
+  // 경험명 블록을 materialize 해 입력란을 기존 title 로 채워 렌더하고, 저장 시 title 을 보존한다.
+  function legacyRecord(overrides: Partial<ExperienceV2> = {}): ExperienceV2 {
+    return {
       id: "exp-1",
       userId: "u1",
       typeId: "extracurricular",
@@ -88,26 +86,59 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
       customBlocks: [],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
     }
+  }
+
+  it("경험명 블록이 없는 편집 레코드는 입력란을 기존 title 로 채워 렌더하고 저장 시 보존한다", async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
     render(
       <ExperienceFormV2
         mode="edit"
-        initialExperience={existing}
+        initialExperience={legacyRecord()}
         presetsHook={emptyPresetsHook}
         onSave={onSave}
         onCancel={() => {}}
       />,
     )
 
-    // "경험명" 입력란이 없어도 '완료' 저장이 차단되지 않고 기존 title 이 유지된다.
-    expect(screen.queryByRole("textbox", { name: "경험명" })).toBeNull()
-    await user.click(screen.getByRole("button", { name: "완료" }))
+    const titleInput = screen.getByRole("textbox", {
+      name: "경험명",
+    }) as HTMLInputElement
+    expect(titleInput.value).toBe("교내 개발 동아리 운영진")
 
-    expect(screen.queryByText("경험명을 입력해주세요.")).toBeNull()
+    await user.click(screen.getByRole("button", { name: "완료" }))
     expect(onSave).toHaveBeenCalledTimes(1)
     expect(onSave.mock.calls[0][0]).toMatchObject({
       title: "교내 개발 동아리 운영진",
       status: "complete",
     })
+  })
+
+  // 회귀(Codex P2 #2): title 까지 빈 레거시 레코드도 입력란이 렌더돼 복구 가능해야 한다.
+  it("title 까지 빈 레거시 레코드는 입력란으로 복구해 저장할 수 있다", async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={legacyRecord({ title: "" })}
+        presetsHook={emptyPresetsHook}
+        onSave={onSave}
+        onCancel={() => {}}
+      />,
+    )
+
+    // 빈 채로 '완료' → 차단·에러. (이전엔 입력란이 없어 영구 차단이었음)
+    await user.click(screen.getByRole("button", { name: "완료" }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(screen.getByText("경험명을 입력해주세요.")).toBeInTheDocument()
+
+    // 입력란에 제목을 적어 복구 → 저장 진행.
+    await user.type(screen.getByRole("textbox", { name: "경험명" }), "복구한 제목")
+    await user.click(screen.getByRole("button", { name: "완료" }))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).toMatchObject({ title: "복구한 제목" })
   })
 })

@@ -131,10 +131,18 @@ export default function ExperienceFormV2({
         }))
       )
     } else {
-      // Edit mode: keep existing data, use template for structure reference
-      if (coreBlocks.length === 0) {
-        setCoreBlocks(initialExperience.coreBlocks)
-      }
+      // Edit mode: keep existing data, use template for structure reference.
+      // 레거시/부분 레코드는 coreBlocks 에 "경험명"이 없어 헤더 입력이 렌더되지 않는다
+      // (제목 수정·복구 불가). 템플릿의 경험명 블록을 기존 title 로 채워 항상 편집 가능하게 한다.
+      setCoreBlocks(prev => {
+        const base = prev.length === 0 ? initialExperience.coreBlocks : prev
+        if (base.some(b => b.label === "경험명")) return base
+        const titleTemplate = tmpl.commonCore.blocks.find(b => b.label === "경험명")
+        if (!titleTemplate) return base
+        const [seeded] = cloneBlocks([titleTemplate])
+        seeded.value = { type: "text", text: initialExperience.title ?? "" }
+        return [seeded, ...base]
+      })
       if (extensionSections.length === 0) {
         const savedBlocks = initialExperience.extensionBlocks
         // Distribute saved extension blocks across template sections by matching labels
@@ -320,14 +328,11 @@ export default function ExperienceFormV2({
       return
     }
 
-    // Extract title from first core text block
+    // Extract title from first core text block. 편집 모드에서는 로드 시 "경험명"
+    // 블록을 항상 materialize 하므로(아래 useEffect), 모든 레코드에서 이 블록이 존재한다.
     const titleBlock = coreBlocks.find(b => b.label === "경험명")
     const titleVal = titleBlock?.value
-    const blockTitle = titleVal && titleVal.type === "text" ? titleVal.text : ""
-    // 편집 가능한 "경험명" 블록이 없는 레코드(coreBlocks 없이 로드된 기존 데이터)는
-    // 헤더에 입력란이 렌더되지 않으므로, 기존 title 을 보존한다 — 빈 값으로 덮어쓰거나
-    // 고칠 수 없는 에러로 저장을 막지 않도록.
-    const title = titleBlock ? blockTitle : (initialExperience?.title ?? "")
+    const title = titleVal && titleVal.type === "text" ? titleVal.text : ""
 
     // 초안·완료 모두 경험명은 필수다(빈 제목 저장 → "(제목 없음)"·분석 품질 저하 방지).
     if (!title.trim()) {
