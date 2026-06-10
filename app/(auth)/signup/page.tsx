@@ -84,6 +84,7 @@ function SignupForm() {
   const [verifyCode, setVerifyCode] = useState("");
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
+  const [isResending, setIsResending] = useState(false);
 
   // UI state
   const [isLoading, setIsLoading] = useState(false);
@@ -207,7 +208,11 @@ function SignupForm() {
     }
   }
 
+  // 재발송은 자체 in-flight 상태로 막는다. 빠른 더블탭이 resend-verification 을 동시
+  // 호출하면 백엔드가 코드를 새로 발급/무효화하거나 즉시 rate limit 될 수 있다.
   async function handleResendCode() {
+    if (isResending) return;
+    setIsResending(true);
     setResendError(null);
     try {
       await api.post("/auth/resend-verification", { email }, { auth: false });
@@ -217,6 +222,8 @@ function SignupForm() {
         else if (e.status === 400) setResendError("이미 인증된 이메일이에요.");
         else setResendError(e.message);
       }
+    } finally {
+      setIsResending(false);
     }
   }
 
@@ -486,10 +493,12 @@ function SignupForm() {
                   <button
                     type="button"
                     onClick={handleResendCode}
+                    disabled={isLoading || isResending}
                     className="w-full h-12 rounded-md border border-border text-text-secondary
-                               text-body font-medium hover:bg-surface-secondary transition-colors cursor-pointer"
+                               text-body font-medium hover:bg-surface-secondary transition-colors cursor-pointer
+                               disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                   >
-                    코드 재발송
+                    {isResending ? "보내는 중..." : "코드 재발송"}
                   </button>
                 </div>
               </div>
