@@ -108,6 +108,7 @@ export default function ExperienceFormV2({
     initialExperience?.importance,
   )
   const [typeError, setTypeError] = useState(false)
+  const [titleError, setTitleError] = useState(false)
   const [savePresetOpen, setSavePresetOpen] = useState(false)
   const [applyPresetOpen, setApplyPresetOpen] = useState(false)
   const [managePresetOpen, setManagePresetOpen] = useState(false)
@@ -130,10 +131,18 @@ export default function ExperienceFormV2({
         }))
       )
     } else {
-      // Edit mode: keep existing data, use template for structure reference
-      if (coreBlocks.length === 0) {
-        setCoreBlocks(initialExperience.coreBlocks)
-      }
+      // Edit mode: keep existing data, use template for structure reference.
+      // 레거시/부분 레코드는 coreBlocks 에 "경험명"이 없어 헤더 입력이 렌더되지 않는다
+      // (제목 수정·복구 불가). 템플릿의 경험명 블록을 기존 title 로 채워 항상 편집 가능하게 한다.
+      setCoreBlocks(prev => {
+        const base = prev.length === 0 ? initialExperience.coreBlocks : prev
+        if (base.some(b => b.label === "경험명")) return base
+        const titleTemplate = tmpl.commonCore.blocks.find(b => b.label === "경험명")
+        if (!titleTemplate) return base
+        const [seeded] = cloneBlocks([titleTemplate])
+        seeded.value = { type: "text", text: initialExperience.title ?? "" }
+        return [seeded, ...base]
+      })
       if (extensionSections.length === 0) {
         const savedBlocks = initialExperience.extensionBlocks
         // Distribute saved extension blocks across template sections by matching labels
@@ -319,16 +328,18 @@ export default function ExperienceFormV2({
       return
     }
 
-    // Extract title from first core text block
+    // Extract title from first core text block. 편집 모드에서는 로드 시 "경험명"
+    // 블록을 항상 materialize 하므로(아래 useEffect), 모든 레코드에서 이 블록이 존재한다.
     const titleBlock = coreBlocks.find(b => b.label === "경험명")
     const titleVal = titleBlock?.value
     const title = titleVal && titleVal.type === "text" ? titleVal.text : ""
 
-    if (status === "draft" && !title.trim()) {
-      // Even draft needs a title
-      setTypeError(false)
+    // 초안·완료 모두 경험명은 필수다(빈 제목 저장 → "(제목 없음)"·분석 품질 저하 방지).
+    if (!title.trim()) {
+      setTitleError(true)
       return
     }
+    setTitleError(false)
 
     // Extract summary
     const summaryBlock = coreBlocks.find(b => b.label === "한 줄 요약")
@@ -380,17 +391,25 @@ export default function ExperienceFormV2({
               placeholder={formLayout.titleBlock.placeholder ?? (mode === "new" ? "새 경험 추가" : "경험명")}
               value={titleText}
               aria-label="경험명"
-              onChange={e =>
+              aria-invalid={titleError}
+              onChange={e => {
+                if (titleError) setTitleError(false)
                 handleCoreBlockChange(formLayout.titleBlock!.id, {
                   type: "text",
                   text: e.target.value,
                 })
-              }
+              }}
             />
           ) : (
             <h2 className="text-heading-3 text-text-primary">
               {mode === "new" ? "새 경험 추가" : "경험 수정"}
             </h2>
+          )}
+
+          {titleError && (
+            <p className="text-body-sm text-error mt-1" role="alert">
+              경험명을 입력해주세요.
+            </p>
           )}
 
           {template && formLayout?.summaryBlock && summaryValue?.type === "text" ? (
