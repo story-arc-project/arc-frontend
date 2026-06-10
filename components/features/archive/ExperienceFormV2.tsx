@@ -108,6 +108,7 @@ export default function ExperienceFormV2({
     initialExperience?.importance,
   )
   const [typeError, setTypeError] = useState(false)
+  const [titleError, setTitleError] = useState(false)
   const [savePresetOpen, setSavePresetOpen] = useState(false)
   const [applyPresetOpen, setApplyPresetOpen] = useState(false)
   const [managePresetOpen, setManagePresetOpen] = useState(false)
@@ -324,11 +325,12 @@ export default function ExperienceFormV2({
     const titleVal = titleBlock?.value
     const title = titleVal && titleVal.type === "text" ? titleVal.text : ""
 
-    if (status === "draft" && !title.trim()) {
-      // Even draft needs a title
-      setTypeError(false)
+    // 초안·완료 모두 경험명은 필수다(빈 제목 저장 → "(제목 없음)"·분석 품질 저하 방지).
+    if (!title.trim()) {
+      setTitleError(true)
       return
     }
+    setTitleError(false)
 
     // Extract summary
     const summaryBlock = coreBlocks.find(b => b.label === "한 줄 요약")
@@ -380,17 +382,25 @@ export default function ExperienceFormV2({
               placeholder={formLayout.titleBlock.placeholder ?? (mode === "new" ? "새 경험 추가" : "경험명")}
               value={titleText}
               aria-label="경험명"
-              onChange={e =>
+              aria-invalid={titleError}
+              onChange={e => {
+                if (titleError) setTitleError(false)
                 handleCoreBlockChange(formLayout.titleBlock!.id, {
                   type: "text",
                   text: e.target.value,
                 })
-              }
+              }}
             />
           ) : (
             <h2 className="text-heading-3 text-text-primary">
               {mode === "new" ? "새 경험 추가" : "경험 수정"}
             </h2>
+          )}
+
+          {titleError && (
+            <p className="text-body-sm text-error mt-1" role="alert">
+              경험명을 입력해주세요.
+            </p>
           )}
 
           {template && formLayout?.summaryBlock && summaryValue?.type === "text" ? (
