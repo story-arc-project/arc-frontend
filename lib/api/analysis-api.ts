@@ -68,6 +68,21 @@ function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
+/**
+ * 분석 생성 응답에서 id 를 추출한다(FRT-38).
+ * 백엔드가 id 를 `data` 봉투 안(`{ data: { id } }`)에 넣을지, 기존 `{ status, message }`
+ * 와 같은 최상위(`{ status, message, id }`)에 둘지 확정 전이므로 두 위치를 모두 본다.
+ * 부재 시 null → 호출부는 "큐 적재됨"으로 보고 목록으로 안내한다.
+ */
+function extractAnalysisId(res: unknown): string | null {
+  const root = asRecord(res);
+  const data = asRecord(root.data);
+  const id =
+    asString(data.id ?? data.analysisId ?? data.analysis_id) ||
+    asString(root.id ?? root.analysisId ?? root.analysis_id);
+  return id || null;
+}
+
 function asBoolean(value: unknown, fallback = false): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
@@ -581,9 +596,7 @@ export async function createComprehensiveAnalysis(
     "/analysis/comprehensive",
     { experiences: experienceIds },
   );
-  const data = asRecord(res.data);
-  const analysisId = asString(data.id ?? data.analysisId ?? data.analysis_id);
-  return { analysisId: analysisId || null };
+  return { analysisId: extractAnalysisId(res) };
 }
 
 export async function getComprehensiveResult(
@@ -646,9 +659,7 @@ export async function createKeywordAnalysis(
     "/analysis/keyword",
     { keywords: keywordLabels },
   );
-  const data = asRecord(res.data);
-  const analysisId = asString(data.id ?? data.analysisId ?? data.analysis_id);
-  return { analysisId: analysisId || null };
+  return { analysisId: extractAnalysisId(res) };
 }
 
 export async function getKeywordResult(
