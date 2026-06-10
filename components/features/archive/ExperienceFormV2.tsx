@@ -323,7 +323,11 @@ export default function ExperienceFormV2({
     // Extract title from first core text block
     const titleBlock = coreBlocks.find(b => b.label === "경험명")
     const titleVal = titleBlock?.value
-    const title = titleVal && titleVal.type === "text" ? titleVal.text : ""
+    const blockTitle = titleVal && titleVal.type === "text" ? titleVal.text : ""
+    // 편집 가능한 "경험명" 블록이 없는 레코드(coreBlocks 없이 로드된 기존 데이터)는
+    // 헤더에 입력란이 렌더되지 않으므로, 기존 title 을 보존한다 — 빈 값으로 덮어쓰거나
+    // 고칠 수 없는 에러로 저장을 막지 않도록.
+    const title = titleBlock ? blockTitle : (initialExperience?.title ?? "")
 
     // 초안·완료 모두 경험명은 필수다(빈 제목 저장 → "(제목 없음)"·분석 품질 저하 방지).
     if (!title.trim()) {
