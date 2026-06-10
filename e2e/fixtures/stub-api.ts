@@ -306,6 +306,8 @@ export async function stubApi(
   const store = createStatefulStore(scenario);
   const mutations: CapturedMutation[] = [];
   let accountDeleted = false;
+  // 프로필 수정(FRT-21): PATCH 로 받은 변경분을 누적해 이후 /auth/me 가 반영하게 한다.
+  let profilePatch: Record<string, unknown> = {};
 
   await page.route(
     (url) => url.href.startsWith(STUB_API_URL),
@@ -361,11 +363,22 @@ export async function stubApi(
           return;
         }
         // onboarded: false 옵션 — 온보딩 미완료 사용자(소셜 콜백/이메일 인증 직후)를 시뮬레이션.
-        const meUser =
-          onboardedOverride === false
-            ? { ...seedDemoUser, onboarded: false }
-            : seedDemoUser;
+        // 프로필 수정(FRT-21)으로 누적된 변경분을 profile 에 병합해 refetch 가 갱신을 반영하게 한다.
+        const meUser = {
+          ...seedDemoUser,
+          ...(onboardedOverride === false ? { onboarded: false } : {}),
+          profile: seedDemoUser.profile
+            ? { ...seedDemoUser.profile, ...profilePatch }
+            : seedDemoUser.profile,
+        };
         await fulfillJson(200, success(meUser));
+        return;
+      }
+
+      // 프로필 수정(FRT-21): PATCH /auth/profile — 변경분을 누적하고 성공을 돌려준다.
+      if (method === "PATCH" && pathname === "/auth/profile") {
+        profilePatch = { ...profilePatch, ...(body as Record<string, unknown>) };
+        await fulfillJson(200, success(null));
         return;
       }
 
