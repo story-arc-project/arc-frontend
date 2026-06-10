@@ -117,12 +117,21 @@ export function ProfileEditForm({ profile }: ProfileEditFormProps) {
     setSaving(true);
     try {
       await updateProfile(patch);
-      await refetch();
-      toast.success("프로필을 저장했어요.");
     } catch (e) {
       toast.error(
         e instanceof ApiError ? e.message : "저장에 실패했어요. 잠시 후 다시 시도해주세요."
       );
+      setSaving(false);
+      return;
+    }
+
+    // 저장 성공 — 헤더(이름/아바타) 동기화를 위해 refetch 하되, 동기화 실패가
+    // 저장 성공을 뒤집지 않도록 분리한다(실패해도 다음 로드 시 갱신된다).
+    toast.success("프로필을 저장했어요.");
+    try {
+      await refetch();
+    } catch {
+      // 저장은 반영됨. 동기화 실패는 조용히 무시한다.
     } finally {
       setSaving(false);
     }

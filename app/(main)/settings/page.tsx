@@ -11,7 +11,10 @@ import { DeleteAccountCard } from "@/components/features/settings/DeleteAccountC
 export default function SettingsPage() {
   const { user, isLoading, logout } = useAuth();
 
-  if (isLoading) {
+  // 최초 로드(아직 user 미확정)에서만 전체 스피너를 노출한다.
+  // refetch(예: 프로필 저장 후 동기화)는 isLoading을 토글하므로, user 가 있으면 화면을
+  // 유지해 페이지가 스피너로 깜빡이지 않게 한다. (AuthGate의 `user===null && isLoading`과 동일 패턴)
+  if (isLoading && !user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <p className="text-body text-text-tertiary">불러오는 중...</p>
