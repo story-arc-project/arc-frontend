@@ -68,6 +68,21 @@ function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
+/**
+ * 분석 생성 응답에서 id 를 추출한다(FRT-38).
+ * 백엔드가 id 를 `data` 봉투 안(`{ data: { id } }`)에 넣을지, 기존 `{ status, message }`
+ * 와 같은 최상위(`{ status, message, id }`)에 둘지 확정 전이므로 두 위치를 모두 본다.
+ * 부재 시 null → 호출부는 "큐 적재됨"으로 보고 목록으로 안내한다.
+ */
+function extractAnalysisId(res: unknown): string | null {
+  const root = asRecord(res);
+  const data = asRecord(root.data);
+  const id =
+    asString(data.id ?? data.analysisId ?? data.analysis_id) ||
+    asString(root.id ?? root.analysisId ?? root.analysis_id);
+  return id || null;
+}
+
 function asBoolean(value: unknown, fallback = false): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
@@ -567,25 +582,21 @@ export async function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
  * POST /analysis/comprehensive
  * body: `{ experiences: string[] }`
  *
- * 백엔드 스펙상 응답은 `{ status, message }`만 반환하고 id 는 포함되지 않는다.
- * 호출부가 후속 폴링을 위해 id 를 필요로 하므로, 서버가 id 를 확장 포함할 때만
- * 해당 값을 사용하고 부재 시 에러를 던진다.
+ * 백엔드 스펙상 응답은 `{ status, message }`만 반환하고 id 는 포함되지 않는다(FRT-38).
+ * 서버가 id 를 확장 포함하면 그 값으로 후속 폴링을 진행하고, 부재 시 `analysisId: null`
+ * 을 반환한다. 호출부는 null 을 오류가 아니라 "큐 적재됨"으로 보고 목록으로 안내한다.
+ * (id 없이 목록에서 폴링 대상을 추측하는 우회는 race 때문에 하지 않는다.)
  */
 export async function createComprehensiveAnalysis(
   experienceIds: string[],
-): Promise<{ analysisId: string }> {
+): Promise<{ analysisId: string | null }> {
   if (shouldMock())
     return mock(async () => ({ analysisId: "comp-new-" + Date.now() }));
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/comprehensive",
     { experiences: experienceIds },
   );
-  const data = asRecord(res.data);
-  const analysisId = asString(data.id ?? data.analysisId ?? data.analysis_id);
-  if (!analysisId) {
-    throw new Error("분석 생성 응답에서 ID를 찾을 수 없습니다.");
-  }
-  return { analysisId };
+  return { analysisId: extractAnalysisId(res) };
 }
 
 export async function getComprehensiveResult(
@@ -634,25 +645,21 @@ export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
  * POST /analysis/keyword
  * body: `{ keywords: string[] }`
  *
- * 백엔드 스펙상 응답은 `{ status, message }`만 반환하고 id 는 포함되지 않는다.
- * 호출부가 후속 폴링을 위해 id 를 필요로 하므로, 서버가 id 를 확장 포함할 때만
- * 해당 값을 사용하고 부재 시 에러를 던진다.
+ * 백엔드 스펙상 응답은 `{ status, message }`만 반환하고 id 는 포함되지 않는다(FRT-38).
+ * 서버가 id 를 확장 포함하면 그 값으로 후속 폴링을 진행하고, 부재 시 `analysisId: null`
+ * 을 반환한다. 호출부는 null 을 오류가 아니라 "큐 적재됨"으로 보고 목록으로 안내한다.
+ * (id 없이 목록에서 폴링 대상을 추측하는 우회는 race 때문에 하지 않는다.)
  */
 export async function createKeywordAnalysis(
   keywordLabels: string[],
-): Promise<{ analysisId: string }> {
+): Promise<{ analysisId: string | null }> {
   if (shouldMock())
     return mock(async () => ({ analysisId: "kw-new-" + Date.now() }));
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/keyword",
     { keywords: keywordLabels },
   );
-  const data = asRecord(res.data);
-  const analysisId = asString(data.id ?? data.analysisId ?? data.analysis_id);
-  if (!analysisId) {
-    throw new Error("분석 생성 응답에서 ID를 찾을 수 없습니다.");
-  }
-  return { analysisId };
+  return { analysisId: extractAnalysisId(res) };
 }
 
 export async function getKeywordResult(

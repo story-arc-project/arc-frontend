@@ -135,12 +135,10 @@ describe("getBookmarks — isBookmarked/bookmarkedAt 폴백", () => {
   })
 })
 
-describe("create*Analysis — 응답 ID 부재 가드 (FRT-38 회귀)", () => {
-  it("종합 분석: 응답에 id 가 없으면 에러를 던진다", async () => {
+describe("create*Analysis — 응답 ID 부재 처리 (FRT-38)", () => {
+  it("종합 분석: 응답에 id 가 없으면 analysisId: null 을 반환한다 (오류로 보지 않음)", async () => {
     apiMock.post.mockResolvedValue(envelope({ status: "queued", message: "시작됨" }))
-    await expect(createComprehensiveAnalysis(["e1"])).rejects.toThrow(
-      "ID를 찾을 수 없습니다",
-    )
+    expect(await createComprehensiveAnalysis(["e1"])).toEqual({ analysisId: null })
   })
 
   it("종합 분석: id 또는 analysis_id 가 있으면 analysisId 를 반환한다", async () => {
@@ -151,15 +149,23 @@ describe("create*Analysis — 응답 ID 부재 가드 (FRT-38 회귀)", () => {
     expect(await createComprehensiveAnalysis(["e1"])).toEqual({ analysisId: "comp-2" })
   })
 
-  it("키워드 분석: 응답에 id 가 없으면 에러를 던진다", async () => {
+  it("종합 분석: id 가 최상위(`{ status, message, id }`)에 와도 추출한다 (BE 문서 스펙)", async () => {
+    apiMock.post.mockResolvedValue({ status: "success", message: "시작됨", id: "comp-top" })
+    expect(await createComprehensiveAnalysis(["e1"])).toEqual({ analysisId: "comp-top" })
+  })
+
+  it("키워드 분석: 응답에 id 가 없으면 analysisId: null 을 반환한다 (오류로 보지 않음)", async () => {
     apiMock.post.mockResolvedValue(envelope({ status: "queued" }))
-    await expect(createKeywordAnalysis(["성장"])).rejects.toThrow(
-      "ID를 찾을 수 없습니다",
-    )
+    expect(await createKeywordAnalysis(["성장"])).toEqual({ analysisId: null })
   })
 
   it("키워드 분석: id 가 있으면 analysisId 를 반환한다", async () => {
     apiMock.post.mockResolvedValueOnce(envelope({ id: "kw-1" }))
     expect(await createKeywordAnalysis(["성장"])).toEqual({ analysisId: "kw-1" })
+  })
+
+  it("키워드 분석: id 가 최상위(`{ status, message, id }`)에 와도 추출한다 (BE 문서 스펙)", async () => {
+    apiMock.post.mockResolvedValue({ status: "success", message: "시작됨", id: "kw-top" })
+    expect(await createKeywordAnalysis(["성장"])).toEqual({ analysisId: "kw-top" })
   })
 })
