@@ -543,6 +543,7 @@ function SignupForm() {
                     label="전화번호"
                     type="tel"
                     placeholder="010-0000-0000"
+                    hint="필수 입력이에요"
                     value={formatPhone(phone)}
                     onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
                   />
