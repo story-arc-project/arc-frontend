@@ -212,7 +212,7 @@ function LoginForm() {
           <motion.div variants={loginItem}>
             <SocialLoginButtons onLogin={handleSocialLogin} action="계속하기" />
             {socialError && (
-              <p className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
+              <p className="mt-2 text-center text-body-sm text-error">{socialError}</p>
             )}
           </motion.div>
 
