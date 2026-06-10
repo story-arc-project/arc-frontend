@@ -33,6 +33,31 @@ export async function logoutUser(): Promise<void> {
 }
 
 /**
+ * PATCH /auth/profile 요청 바디 (BAC-5). 전부 optional — 바뀐 필드만 보낸다.
+ * 백엔드 검증: phone 은 11자리 숫자, name 비어있을 수 없음, birth=YYYY-MM-DD.
+ * affiliation 동봉 시 student 만 school/department 허용(교차검증) → buildProfilePatch 가 보장.
+ */
+export interface ProfilePatchPayload {
+  name?: string;
+  birth?: string;
+  phone?: string;
+  affiliation?: string;
+  school?: string;
+  department?: string;
+  worry?: string[];
+  interest?: string[];
+}
+
+/**
+ * PATCH /auth/profile - 마이페이지 프로필 수정 (FRT-21 / BAC-5).
+ * 인증 흐름이므로 기본 auth:true — 401 시 refresh 후 재시도, 진짜 만료면 /login 으로 보낸다.
+ */
+export async function updateProfile(payload: ProfilePatchPayload): Promise<void> {
+  if (isDemoMode()) return demo.updateProfile();
+  await api.patch("/auth/profile", payload);
+}
+
+/**
  * DELETE /auth/account/password - 비밀번호 계정 탈퇴(현재 비밀번호 재확인).
  * auth:false 로 보내 오답(401/4xx) 시 client.ts 의 자동 로그아웃 리다이렉트를 피한다.
  */
