@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Input,
   DatePicker,
@@ -9,6 +9,7 @@ import {
   Card,
   CardHeader,
   CardTitle,
+  toast,
 } from "@/components/ui";
 import {
   AFFILIATION_OPTIONS,
@@ -17,40 +18,123 @@ import {
   formatPhone,
   type AffiliationStatus,
 } from "@/app/(auth)/constants";
+import { updateProfile } from "@/lib/api/auth-api";
+import { ApiError } from "@/lib/api/client";
+import { useAuth } from "@/hooks/useAuth";
 import type { Profile } from "@/types/auth";
+import { buildProfilePatch, type ProfileFormState } from "./profile-patch";
 
 interface ProfileEditFormProps {
   profile: Profile | null;
 }
 
-/** 읽기 포맷(education)이 AFFILIATION_OPTIONS.value 와 일치할 때만 매핑, 아니면 미선택 */
-function toAffiliation(education: string | undefined): AffiliationStatus | "" {
-  const match = AFFILIATION_OPTIONS.find((o) => o.value === education);
+/** 읽기 포맷(affiliation)이 AFFILIATION_OPTIONS.value 와 일치할 때만 매핑, 아니면 미선택 */
+function toAffiliation(affiliation: string | undefined): AffiliationStatus | "" {
+  const match = AFFILIATION_OPTIONS.find((o) => o.value === affiliation);
   return match ? match.value : "";
 }
 
-export function ProfileEditForm({ profile }: ProfileEditFormProps) {
-  const [name, setName] = useState(profile?.name ?? "");
-  const [birth, setBirth] = useState(profile?.birth ?? "");
-  const [phone, setPhone] = useState((profile?.phone ?? "").replace(/\D/g, ""));
-  const [affiliation, setAffiliation] = useState<AffiliationStatus | "">(
-    toAffiliation(profile?.education)
-  );
-  const [school, setSchool] = useState(profile?.school ?? "");
-  const [department, setDepartment] = useState(profile?.department ?? "");
-  const [worry, setWorry] = useState<string[]>(
-    (profile?.worry ?? []).filter((w) => (Q1_OPTIONS as readonly string[]).includes(w))
-  );
-  const [interest, setInterest] = useState<string[]>(
-    (profile?.interest ?? []).filter((i) =>
+/** profile(읽기 응답) → 폼 비교 스냅샷. 옵션 외 값은 걸러 폼이 표시 가능한 값만 남긴다. */
+function toFormState(profile: Profile | null): ProfileFormState {
+  return {
+    name: profile?.name ?? "",
+    birth: profile?.birth ?? "",
+    phone: (profile?.phone ?? "").replace(/\D/g, ""),
+    affiliation: toAffiliation(profile?.affiliation),
+    school: profile?.school ?? "",
+    department: profile?.department ?? "",
+    worry: (profile?.worry ?? []).filter((w) =>
+      (Q1_OPTIONS as readonly string[]).includes(w)
+    ),
+    interest: (profile?.interest ?? []).filter((i) =>
       (INTEREST_OPTIONS as readonly string[]).includes(i)
-    )
-  );
+    ),
+  };
+}
 
-  const showSchoolFields = affiliation === "student" || !!school || !!department;
+export function ProfileEditForm({ profile }: ProfileEditFormProps) {
+  const { refetch } = useAuth();
+  const initial = useMemo(() => toFormState(profile), [profile]);
+
+  const [name, setName] = useState(initial.name);
+  const [birth, setBirth] = useState(initial.birth);
+  const [phone, setPhone] = useState(initial.phone);
+  const [affiliation, setAffiliation] = useState<AffiliationStatus | "">(initial.affiliation);
+  const [school, setSchool] = useState(initial.school);
+  const [department, setDepartment] = useState(initial.department);
+  const [worry, setWorry] = useState<string[]>(initial.worry);
+  const [interest, setInterest] = useState<string[]>(initial.interest);
+  const [saving, setSaving] = useState(false);
+
+  // 저장 후 refetch 로 profile 이 갱신되면 폼/baseline 을 재동기화해 dirty 를 초기화한다.
+  useEffect(() => {
+    setName(initial.name);
+    setBirth(initial.birth);
+    setPhone(initial.phone);
+    setAffiliation(initial.affiliation);
+    setSchool(initial.school);
+    setDepartment(initial.department);
+    setWorry(initial.worry);
+    setInterest(initial.interest);
+  }, [initial]);
+
+  // 학생일 때만 학교/학과를 노출한다 — 백엔드 교차검증(student→school/department만 허용)과 정합.
+  const showSchoolFields = affiliation === "student";
+
+  const current: ProfileFormState = {
+    name,
+    birth,
+    phone,
+    affiliation,
+    school,
+    department,
+    worry,
+    interest,
+  };
+  const patch = buildProfilePatch(initial, current);
+  const isDirty = Object.keys(patch).length > 0;
 
   function toggle(list: string[], setList: (v: string[]) => void, value: string) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+  }
+
+  async function handleSave() {
+    if (!isDirty || saving) return;
+
+    if (patch.name !== undefined && patch.name.trim() === "") {
+      toast.error("이름을 입력해주세요.");
+      return;
+    }
+    if (patch.birth !== undefined && patch.birth === "") {
+      toast.error("생년월일을 입력해주세요.");
+      return;
+    }
+    if (patch.phone !== undefined && patch.phone.length !== 11) {
+      toast.error("전화번호를 정확히 입력해주세요. (숫자 11자리)");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await updateProfile(patch);
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "저장에 실패했어요. 잠시 후 다시 시도해주세요."
+      );
+      setSaving(false);
+      return;
+    }
+
+    // 저장 성공 — 헤더(이름/아바타) 동기화를 위해 refetch 하되, 동기화 실패가
+    // 저장 성공을 뒤집지 않도록 분리한다(실패해도 다음 로드 시 갱신된다).
+    toast.success("프로필을 저장했어요.");
+    try {
+      await refetch();
+    } catch {
+      // 저장은 반영됨. 동기화 실패는 조용히 무시한다.
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -153,11 +237,14 @@ export function ProfileEditForm({ profile }: ProfileEditFormProps) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 pt-1">
-          <p className="text-body-sm text-text-tertiary">프로필 저장 기능은 곧 제공돼요.</p>
-          {/* TODO(BAC-5): lib/api/auth-api.ts 에 updateProfile() 추가 후 onSave 연동 + disabled 해제 */}
-          <Button variant="primary" disabled className="sm:self-start">
-            저장
+        <div className="pt-1">
+          <Button
+            variant="primary"
+            onClick={handleSave}
+            disabled={!isDirty || saving}
+            className="sm:self-start"
+          >
+            {saving ? "저장 중..." : "저장"}
           </Button>
         </div>
       </div>

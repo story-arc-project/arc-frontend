@@ -24,7 +24,8 @@ export interface Profile {
   name: string;
   birth: string;
   phone: string;
-  education: string;
+  /** "student" | "employed" | "jobseeker" | "other" (BAC-5 `/auth/me`·PATCH 공통 필드명) */
+  affiliation: string;
   school: string;
   department: string;
   worry: string[];
