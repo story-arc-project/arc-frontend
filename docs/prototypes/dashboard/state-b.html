@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARC 대시보드 · 상태 B (초기 기록)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="app.css?v=2" />
+</head>
+<body>
+
+<header class="gnb">
+  <div class="gnb-inner">
+    <span class="gnb-logo">ARC</span>
+    <nav class="gnb-nav">
+      <a class="active" href="#">대시보드</a>
+      <a href="#">아카이브</a>
+      <a href="#">분석</a>
+      <a href="#">익스포트</a>
+    </nav>
+    <span class="gnb-spacer"></span>
+    <span class="gnb-avatar">상협</span>
+  </div>
+</header>
+
+<main class="page">
+  <div class="container">
+
+    <!-- ── Hero (격려 톤) ── -->
+    <section class="hero">
+      <div class="between">
+        <span class="state-pill">● 상태 B · 초기 기록 (기록 1~3개)</span>
+        <span class="text-caption">2026년 6월 6일 토요일</span>
+      </div>
+      <h1 class="text-heading-2" style="margin:14px 0 4px;">상협님, 벌써 <span style="color:var(--color-brand-dark)">2개</span>의 경험을 기록했어요!</h1>
+      <p class="text-body-lg muted" style="margin:0;"><b style="color:var(--color-text-primary)">2개</b> 더 쌓이면 AI 강점 분석이 시작돼요.</p>
+    </section>
+
+    <!-- ════════ BLOCK 1 · 거울 (Reflect) ════════ -->
+    <div class="block-rail">
+      <span class="num">1</span><span class="ko">거울</span><span class="en">Reflect</span><span class="line"></span>
+      <span class="text-caption">기록이 쌓일수록 정교해져요</span>
+    </div>
+
+    <!-- KPI cards -->
+    <section class="kpi-grid">
+      <div class="kpi">
+        <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+        <span class="num">2<small>건</small></span>
+        <span class="lbl">누적 경험</span>
+      </div>
+      <div class="kpi">
+        <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.5 12.5 17 22l-5-3-5 3 1.5-9.5"/></svg></span>
+        <span class="num">1<small>개</small></span>
+        <span class="lbl">강점 <span class="tertiary">· 분석 시작 전</span></span>
+      </div>
+      <div class="kpi">
+        <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10z"/></svg></span>
+        <span class="num">4<small>개</small></span>
+        <span class="lbl">키워드</span>
+      </div>
+    </section>
+
+    <!-- Donut (부분 표시) -->
+    <section class="card">
+      <div class="between" style="margin-bottom:16px;">
+        <span class="card-title">경험 유형 분포</span>
+        <span class="badge default">전체 2건</span>
+      </div>
+      <div class="donut-wrap">
+        <div style="position:relative;width:140px;height:140px;flex:none;">
+          <div style="width:140px;height:140px;border-radius:50%;background:conic-gradient(var(--color-brand) 0 50%, #ffc940 50% 100%);"></div>
+          <div style="position:absolute;inset:28px;background:var(--color-surface);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+            <span style="font-size:24px;font-weight:700;line-height:1;">2</span>
+            <span class="text-caption">총 경험</span>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="legend" style="margin-bottom:12px;">
+            <div class="legend-row"><span class="dot" style="background:var(--color-brand)"></span><span class="name">프로젝트</span><span class="cnt">1건</span></div>
+            <div class="legend-row"><span class="dot" style="background:#ffc940"></span><span class="name">동아리·학회</span><span class="cnt">1건</span></div>
+          </div>
+          <div class="row" style="gap:8px;background:var(--color-surface-secondary);border-radius:var(--radius-md);padding:10px 12px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span class="text-body-sm muted">더 기록하면 분포가 더 정교해져요.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Locked charts row -->
+    <section class="viz-grid-3">
+      <!-- 막대그래프 잠금 -->
+      <div class="card">
+        <div class="between" style="margin-bottom:16px;">
+          <span class="card-title">역량 키워드 빈도</span>
+          <span class="badge default">🔒 잠금</span>
+        </div>
+        <div class="locked">
+          <div class="behind bars">
+            <div class="bar-row"><div class="bar-top"><span class="bar-name">문제해결</span></div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div></div>
+            <div class="bar-row"><div class="bar-top"><span class="bar-name">협업</span></div><div class="bar-track"><div class="bar-fill" style="width:70%"></div></div></div>
+            <div class="bar-row"><div class="bar-top"><span class="bar-name">기획</span></div><div class="bar-track"><div class="bar-fill" style="width:55%"></div></div></div>
+            <div class="bar-row"><div class="bar-top"><span class="bar-name">분석</span></div><div class="bar-track"><div class="bar-fill" style="width:40%"></div></div></div>
+          </div>
+          <div class="veil">
+            <span class="lock-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+            <span class="msg">AI 분석이 완료된 경험이 쌓이면 나타나요</span>
+          </div>
+        </div>
+      </div>
+      <!-- 레이더 잠금 -->
+      <div class="card">
+        <div class="between" style="margin-bottom:16px;">
+          <span class="card-title">역량 프로파일</span>
+          <span class="badge default">🔒 잠금</span>
+        </div>
+        <div class="locked">
+          <div class="behind center">
+            <svg width="180" height="170" viewBox="-30 -14 280 248" style="max-width:100%;">
+              <polygon points="110,22 186.2,66 186.2,154 110,198 33.8,154 33.8,66" fill="none" stroke="var(--color-border-strong)" stroke-width="1"/>
+              <polygon points="110,51.9 160.3,80.95 160.3,139.05 110,168.1 59.7,139.05 59.7,80.95" fill="none" stroke="var(--color-border)" stroke-width="1"/>
+              <polygon points="110,70 150,90 150,130 110,150 70,130 70,90" fill="rgba(251,132,8,0.14)" stroke="var(--color-brand)" stroke-width="2"/>
+            </svg>
+          </div>
+          <div class="veil">
+            <span class="lock-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+            <span class="msg">기록이 4개 이상 쌓이면 활성화돼요</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 갭 레이더 (부분) -->
+    <section class="card">
+      <div class="between" style="margin-bottom:14px;">
+        <span class="card-title">4분류 키워드 진단</span>
+        <span class="badge warning">갭 레이더 · 준비 중</span>
+      </div>
+      <div class="row" style="gap:12px;background:var(--color-surface-warning);border-radius:var(--radius-md);padding:16px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:none;"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div class="grow">
+          <p class="text-body" style="margin:0 0 2px;font-weight:600;">아직 분석이 충분하지 않아요</p>
+          <p class="text-body-sm muted" style="margin:0;">기록이 더 있어야 정확한 역량 진단을 보여드릴 수 있어요.</p>
+        </div>
+        <a class="btn primary sm" href="#" style="flex:none;">기록하기 →</a>
+      </div>
+    </section>
+
+    <!-- ════════ BLOCK 2 · 행동 (Act) ════════ -->
+    <div class="block-rail">
+      <span class="num">2</span><span class="ko">행동</span><span class="en">Act</span><span class="line"></span>
+      <span class="text-caption">오늘 할 한 가지</span>
+    </div>
+
+    <!-- 오늘의 한 가지 -->
+    <section class="card pad-lg action-card" style="border-color:#ffe3c2;background:var(--color-surface-brand);">
+      <span class="ic-lg"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span>
+      <div class="body">
+        <span class="badge brand" style="margin-bottom:6px;">오늘의 한 가지</span>
+        <p class="text-title" style="margin:4px 0 2px;">미완성 기록이 있어요. ‘동아리 운영진 경험’을 이어서 완성해볼까요?</p>
+        <p class="text-body-sm muted" style="margin:0;">2분이면 충분해요. 완성할수록 분석이 정확해져요.</p>
+      </div>
+      <a class="btn primary md" href="#" style="flex:none;">이어서 작성 →</a>
+    </section>
+
+    <!-- 분석 진척 프로그레스 -->
+    <section class="card">
+      <div class="progress">
+        <div class="pmeta">
+          <span class="text-body" style="font-weight:600;">AI 종합 분석까지</span>
+          <span class="text-body" style="color:var(--color-brand-dark);font-weight:700;">2 / 4</span>
+        </div>
+        <div class="ptrack"><div class="pfill" style="width:50%"></div></div>
+        <span class="text-body-sm muted">2개 더 기록하면 AI 종합 분석을 받을 수 있어요.</span>
+      </div>
+    </section>
+
+    <section class="viz-grid">
+      <!-- 기록 바로가기 -->
+      <div class="card">
+        <span class="card-title">기록 바로가기</span>
+        <div class="stack-3" style="margin-top:14px;">
+          <div class="row-item"><div><div class="ttl">동아리 운영진 경험</div><div class="meta">최근 기록 · 1일 전</div></div><span class="badge warning">작성 중</span></div>
+          <div class="row-item"><div><div class="ttl">교내 공모전 참가</div><div class="meta">3일 전</div></div><span class="badge outline">보기</span></div>
+        </div>
+        <a class="link mt-4" href="#">전체 아카이브 →</a>
+      </div>
+      <!-- AI 챗봇 진입점 (크게) -->
+      <div class="card" style="background:linear-gradient(135deg,#f7faff,#eef5ff);border-color:#d6e6ff;display:flex;flex-direction:column;justify-content:center;">
+        <span class="row" style="gap:8px;color:var(--color-info);font-weight:600;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-4.2A8.38 8.38 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z"/></svg>
+          AI 기록 도우미
+        </span>
+        <p class="text-body" style="margin:8px 0 14px;color:var(--color-text-primary);">어떤 경험을 기록할지 막막하다면, AI에게 물어보며 같이 정리해봐요.</p>
+        <a class="btn secondary md" href="#" style="align-self:flex-start;">챗봇 시작 →</a>
+      </div>
+    </section>
+
+    <!-- ════════ BLOCK 4 · 확장 (Connect) ════════ -->
+    <div class="block-rail">
+      <span class="num">4</span><span class="ko">확장</span><span class="en">Connect</span><span class="line"></span>
+      <span class="text-caption">밖으로 연결해요</span>
+    </div>
+
+    <section>
+      <div class="section-head"><span class="card-title">추천 활동</span><a class="link" href="#">더 보기 →</a></div>
+      <div class="connect-grid">
+        <div class="card hover">
+          <div class="row" style="gap:6px;margin-bottom:8px;"><span class="badge brand">공모전</span><span class="badge default">D-12</span></div>
+          <p class="text-body" style="margin:0 0 6px;font-weight:600;">대학생 데이터 분석 경진대회</p>
+          <p class="text-body-sm muted" style="margin:0 0 10px;">참여하면 새로운 경험 기록이 생겨요.</p>
+          <a class="link" href="#">바로 보기 →</a>
+        </div>
+        <div class="card hover">
+          <div class="row" style="gap:6px;margin-bottom:8px;"><span class="badge success">대외활동</span><span class="badge default">상시</span></div>
+          <p class="text-body" style="margin:0 0 6px;font-weight:600;">비영리 기획 서포터즈</p>
+          <p class="text-body-sm muted" style="margin:0 0 10px;">기록 습관을 만들기 좋은 활동이에요.</p>
+          <a class="link" href="#">바로 보기 →</a>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head"><span class="card-title">읽을거리</span><a class="link" href="#">블로그 →</a></div>
+      <div class="connect-grid">
+        <div class="card hover">
+          <div class="thumb"></div>
+          <div class="row" style="gap:6px;margin-bottom:6px;"><span class="badge default">기록법</span><span class="text-caption">· 4분 읽기</span></div>
+          <p class="text-body" style="margin:0;font-weight:600;">경험을 강점으로 바꾸는 기록의 기술</p>
+        </div>
+        <div class="card hover">
+          <div class="thumb b"></div>
+          <div class="row" style="gap:6px;margin-bottom:6px;"><span class="badge default">진로</span><span class="text-caption">· 5분 읽기</span></div>
+          <p class="text-body" style="margin:0;font-weight:600;">처음 기록을 시작하는 사람을 위한 가이드</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="proto-note">
+      <h4>프로토타입 노트 — 상태 B</h4>
+      <ul>
+        <li>막대그래프·레이더는 <b>🔒 잠금(흐린 미리보기 + 안내 오버레이)</b>로 표현 — 명세서의 “데이터가 쌓일수록 정교해지는” 진행 장치입니다.</li>
+        <li>주간 다이제스트·강점 재발견·설계(Plan)·채용공고는 상태 B에서 숨김 처리했습니다.</li>
+        <li>AI 챗봇 진입점은 상태 B에서 ‘크게’ 노출(주요 기록 경로) — 상태 C에서는 행동 블록 하단 서브 옵션으로 내려갑니다.</li>
+      </ul>
+    </section>
+
+  </div>
+</main>
+</body>
+</html>

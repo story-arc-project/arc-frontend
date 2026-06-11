@@ -7,6 +7,7 @@ import {
   getExperience,
   createExperience as apiCreateExperience,
   updateExperience as apiUpdateExperience,
+  updateExperienceImportance as apiUpdateExperienceImportance,
   deleteExperience as apiDeleteExperience,
   duplicateExperience as apiDuplicateExperience,
 } from "@/lib/api/experience-api";
@@ -86,6 +87,14 @@ export function useExperiences() {
     [refetch],
   );
 
+  const updateImportance = useCallback(
+    async (id: string, importance: number | null): Promise<void> => {
+      await apiUpdateExperienceImportance(id, importance);
+      await refetch();
+    },
+    [refetch],
+  );
+
   const deleteExperience = useCallback(
     async (id: string): Promise<void> => {
       await apiDeleteExperience(id);
@@ -131,6 +140,7 @@ export function useExperiences() {
     refetch,
     createExperience,
     updateExperience,
+    updateImportance,
     deleteExperience,
     duplicateExperience,
   };

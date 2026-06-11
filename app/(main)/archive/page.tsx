@@ -17,7 +17,6 @@ import { useLibraries } from "@/hooks/useLibraries"
 import {
   toExperienceV2,
   toSavePayload,
-  toUpdateImportancePayload,
 } from "@/lib/utils/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { usePresets } from "@/hooks/usePresets"
@@ -50,6 +49,7 @@ export default function ArchivePage() {
     refetch: refetchExperiences,
     createExperience: apiCreate,
     updateExperience: apiUpdate,
+    updateImportance: apiUpdateImportance,
     deleteExperience: apiDelete,
     duplicateExperience: apiDuplicate,
   } = useExperiences()
@@ -223,13 +223,13 @@ export default function ArchivePage() {
   const handleUpdateImportance = useCallback(
     async (id: string, value: ImportanceLevel | undefined) => {
       try {
-        await apiUpdate(id, toUpdateImportancePayload(value))
+        await apiUpdateImportance(id, value ?? null)
       } catch (err) {
         const message = err instanceof Error ? err.message : "중요도를 변경하지 못했어요"
         setExperienceActionError(message)
       }
     },
-    [apiUpdate],
+    [apiUpdateImportance],
   )
 
   const handleDelete = useCallback(

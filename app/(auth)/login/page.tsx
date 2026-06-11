@@ -8,7 +8,7 @@ import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
-import { API_URL, SOCIAL_ERROR_MESSAGES, loginContainer, loginItem } from "../constants";
+import { API_URL, SOCIAL_ERROR_MESSAGES, FIRST_ONBOARDING_STEP, PASSWORD_RESET_ENABLED, loginContainer, loginItem } from "../constants";
 
 // 오픈 리다이렉트 방지: 동일 출처 기준으로 정규화해 상대 경로만 허용한다.
 // 절대 URL(`https://evil.com`), 프로토콜 상대(`//evil.com`), 역슬래시 우회(`/\evil.com`),
@@ -52,6 +52,8 @@ function LoginForm() {
 
   // 소셜 로그인 콜백 에러 처리
   const errorParam = searchParams.get("error") ?? "";
+  const deleted = searchParams.get("deleted") === "1";
+  const reset = searchParams.get("reset") === "1";
   const [socialError, setSocialError] = useState<string | null>(
     SOCIAL_ERROR_MESSAGES[errorParam] ?? null
   );
@@ -85,7 +87,7 @@ function LoginForm() {
       const { data } = await loginRes.json();
 
       if (!data.onboarded) {
-        router.push(`/signup?step=profile&email=${encodeURIComponent(email)}`);
+        router.push(`/signup?step=${FIRST_ONBOARDING_STEP}&email=${encodeURIComponent(email)}`);
       } else {
         // 하드 내비게이션으로 AuthProvider를 재마운트해 로그인 직후 user를 다시 불러온다.
         // (클라이언트 push만으로는 루트 컨텍스트의 user가 null로 남아 GNB 계정 메뉴가 가려진다.)
@@ -135,6 +137,22 @@ function LoginForm() {
             <p className="text-body text-text-secondary">이메일로 로그인하세요</p>
           </motion.div>
 
+          {deleted && (
+            <motion.div variants={loginItem} className="mb-6">
+              <p className="rounded-lg bg-surface-success px-4 py-3 text-center text-body-sm text-success">
+                회원 탈퇴가 완료되었어요. 이용해주셔서 감사했어요.
+              </p>
+            </motion.div>
+          )}
+
+          {reset && (
+            <motion.div variants={loginItem} className="mb-6">
+              <p className="rounded-lg bg-surface-success px-4 py-3 text-center text-body-sm text-success">
+                비밀번호가 변경되었어요. 새 비밀번호로 로그인해주세요.
+              </p>
+            </motion.div>
+          )}
+
           <motion.div variants={loginItem} className="flex flex-col gap-4">
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <Input
@@ -164,6 +182,16 @@ function LoginForm() {
                   {showPw ? "숨기기" : "보기"}
                 </button>
               </div>
+              {PASSWORD_RESET_ENABLED && (
+                <div className="-mt-1 text-right">
+                  <Link
+                    href="/forgot-password"
+                    className="text-body-sm text-text-tertiary hover:text-text-secondary transition-colors"
+                  >
+                    비밀번호를 잊으셨나요?
+                  </Link>
+                </div>
+              )}
               {error && (
                 <p className="text-body-sm text-error">{error}</p>
               )}
@@ -184,7 +212,7 @@ function LoginForm() {
           <motion.div variants={loginItem}>
             <SocialLoginButtons onLogin={handleSocialLogin} action="계속하기" />
             {socialError && (
-              <p className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
+              <p className="mt-2 text-center text-body-sm text-error">{socialError}</p>
             )}
           </motion.div>
 

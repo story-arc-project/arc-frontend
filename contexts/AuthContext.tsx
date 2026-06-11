@@ -26,8 +26,10 @@ export default function AuthProvider({
       const data = await fetchCurrentUser();
       setUser(data);
     } catch (err) {
+      // 일시 장애(네트워크·5xx)로 재조회가 실패해도 기존 user 를 비우지 않는다.
+      // (프로필 저장 직후 동기화 refetch 가 실패해도 이미 인증된 사용자를 로그아웃/에러 화면으로
+      //  내몰지 않기 위함 — 다음 정상 조회에서 갱신된다. 최초 로드는 아래 load() 가 별도 처리.)
       setError(err instanceof Error ? err : new Error("사용자 정보를 불러오지 못했어요."));
-      setUser(null);
     } finally {
       setIsLoading(false);
     }

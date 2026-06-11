@@ -581,7 +581,7 @@ export const seedDemoUser: AuthUser = {
     name: "데모 사용자",
     birth: "2002-03-15",
     phone: "",
-    education: "재학",
+    affiliation: "student",
     school: "한양대학교",
     department: "컴퓨터소프트웨어학부",
     worry: [],

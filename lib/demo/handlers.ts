@@ -46,6 +46,11 @@ export async function updateExperience(id: string, payload: ExperienceUpdatePayl
   await delay(undefined);
 }
 
+export async function updateExperienceImportance(id: string, importance: number | null): Promise<void> {
+  experienceStore.update(id, { importance });
+  await delay(undefined);
+}
+
 export async function deleteExperience(id: string): Promise<void> {
   experienceStore.delete(id);
   await delay(undefined);
@@ -133,6 +138,21 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
 
 export async function logoutUser(): Promise<void> {
   // 데모에서는 로그아웃이 의미가 없다.
+  await delay(undefined);
+}
+
+export async function updateProfile(): Promise<void> {
+  // 데모는 비인증(fetchCurrentUser→null)이라 설정 페이지에 도달하지 않는다.
+  // auth-api 의 isDemoMode 분기 대칭을 위해 no-op 으로 둔다.
+  await delay(undefined);
+}
+
+export async function deleteAccountWithPassword(): Promise<void> {
+  // 데모에서는 실제 삭제가 없다.
+  await delay(undefined);
+}
+
+export async function deleteAccountWithSocial(): Promise<void> {
   await delay(undefined);
 }
 

@@ -11,10 +11,34 @@ export const SOCIAL_ERROR_MESSAGES: Record<string, string> = {
 };
 
 /* ── Signup steps ─────────────────────────────────────── */
-export type Step = "start" | "password" | "verify" | "profile" | "q1" | "q2";
+export type Step = "start" | "password" | "verify" | "consent" | "profile" | "q1" | "q2";
 
-export const ONBOARDING_STEPS: Step[] = ["profile", "q1", "q2"];
-export const STEP_ORDER: Step[] = ["start", "password", "verify", "profile", "q1", "q2"];
+/**
+ * 동의(consent) 스텝 활성화 플래그.
+ * BE `POST /auth/consent`(BAC)가 라이브된 뒤 `NEXT_PUBLIC_CONSENT_ENABLED=true`로 켠다.
+ * off(기본)면 consent 스텝을 건너뛰어(verify→profile) 기존 온보딩 경로를 그대로 쓴다
+ * → 백엔드 미배포 환경에서 동의 API 404로 온보딩이 막히지 않는다.
+ */
+export const CONSENT_ENABLED = process.env.NEXT_PUBLIC_CONSENT_ENABLED === "true";
+
+/**
+ * 비밀번호 재설정(forgot/reset) 진입점 활성화 플래그 (FRT-8).
+ * BE `POST /auth/forgot-password`·`/auth/reset-password`(BAC-2)가 라이브된 뒤
+ * `NEXT_PUBLIC_PASSWORD_RESET_ENABLED=true`로 켠다.
+ * off(기본)면 로그인 화면의 「비밀번호를 잊으셨나요?」 링크를 숨겨, 백엔드 미배포 상태에서
+ * 깨진 흐름으로 진입하지 못하게 한다. (consent 플래그와 동일 패턴)
+ */
+export const PASSWORD_RESET_ENABLED = process.env.NEXT_PUBLIC_PASSWORD_RESET_ENABLED === "true";
+
+/** 첫 온보딩 스텝. 플래그 off면 consent를 건너뛰고 profile부터 시작한다. */
+export const FIRST_ONBOARDING_STEP: Step = CONSENT_ENABLED ? "consent" : "profile";
+
+export const ONBOARDING_STEPS: Step[] = CONSENT_ENABLED
+  ? ["consent", "profile", "q1", "q2"]
+  : ["profile", "q1", "q2"];
+export const STEP_ORDER: Step[] = CONSENT_ENABLED
+  ? ["start", "password", "verify", "consent", "profile", "q1", "q2"]
+  : ["start", "password", "verify", "profile", "q1", "q2"];
 
 /* ── Affiliation status (profile step) ────────────────── */
 export type AffiliationStatus = "student" | "employed" | "jobseeker" | "other";

@@ -4,7 +4,10 @@ import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api/client";
 import { clearOAuthState, readOAuthState } from "@/lib/auth/oauth-state";
+import { deleteAccountWithSocial } from "@/lib/api/auth-api";
+import { DELETE_INTENT } from "@/lib/auth/oauth-providers";
 import { AuthSuccessResult } from "@/types/auth";
+import { FIRST_ONBOARDING_STEP } from "@/app/(auth)/constants";
 
 export default function GoogleCallbackPage() {
   return (
@@ -29,6 +32,26 @@ function GoogleCallbackHandler() {
     const storedState = readOAuthState();
     clearOAuthState();
 
+    // ── 탈퇴(재인증) 분기 ──────────────────────────────
+    // 소셜 계정 탈퇴는 OAuth 재실행으로 본인 확인 후 이 콜백으로 돌아온다(FRT-9).
+    // 의도는 state 값(`delete:` 접두사)에 바인딩돼 provider 가 그대로 echo 하므로,
+    // 중단된 탈퇴의 잔여 의도가 이후 일반 로그인 콜백에 누수되지 않는다(별도 intent 쿠키 없음).
+    if (returnedState?.startsWith(`${DELETE_INTENT}:`)) {
+      if (error || !code || !returnedState || !storedState || returnedState !== storedState) {
+        router.replace("/settings?deleteError=1");
+        return;
+      }
+      deleteAccountWithSocial(code)
+        .then(() => {
+          // 하드 내비게이션으로 AuthProvider 재마운트 → 컨텍스트 상태 정리.
+          window.location.replace("/login?deleted=1");
+        })
+        .catch(() => {
+          router.replace("/settings?deleteError=1");
+        });
+      return;
+    }
+
     if (error || !code) {
       router.replace("/login?error=social_cancelled");
       return;
@@ -48,7 +71,7 @@ function GoogleCallbackHandler() {
           // replace로 콜백 페이지를 히스토리에 남기지 않는다.
           window.location.replace("/dashboard");
         } else {
-          router.push(`/signup?step=profile&email=${encodeURIComponent(result.data.user.email)}`);
+          router.push(`/signup?step=${FIRST_ONBOARDING_STEP}&email=${encodeURIComponent(result.data.user.email)}`);
         }
       })
       .catch((e) => {

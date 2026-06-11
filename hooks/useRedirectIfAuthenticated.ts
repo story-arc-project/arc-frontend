@@ -4,11 +4,12 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/hooks/useAuth";
+import { FIRST_ONBOARDING_STEP } from "@/app/(auth)/constants";
 
 type Options = {
   /**
    * 온보딩 미완료 인증 사용자에게 페이지 접근을 허용한다.
-   * 예: /signup?step=profile 흐름에서 사용.
+   * 예: /signup?step=consent 흐름에서 사용.
    */
   allowOnboardingFlow?: boolean;
 };
@@ -26,7 +27,7 @@ export function useRedirectIfAuthenticated({ allowOnboardingFlow = false }: Opti
 
   useEffect(() => {
     if (!shouldRedirect) return;
-    router.replace(isOnboarded ? "/dashboard" : "/signup?step=profile");
+    router.replace(isOnboarded ? "/dashboard" : `/signup?step=${FIRST_ONBOARDING_STEP}`);
   }, [shouldRedirect, isOnboarded, router]);
 
   return { isLoading, shouldRedirect, error };

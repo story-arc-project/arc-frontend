@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ARC 대시보드 · 상태 C (성장)</title>
+<link rel="stylesheet" href="tokens.css" />
+<link rel="stylesheet" href="app.css?v=2" />
+</head>
+<body>
+
+<!-- ── GNB ── -->
+<header class="gnb">
+  <div class="gnb-inner">
+    <span class="gnb-logo">ARC</span>
+    <nav class="gnb-nav">
+      <a class="active" href="#">대시보드</a>
+      <a href="#">아카이브</a>
+      <a href="#">분석</a>
+      <a href="#">익스포트</a>
+    </nav>
+    <span class="gnb-spacer"></span>
+    <span class="gnb-avatar">상협</span>
+  </div>
+</header>
+
+<main class="page">
+  <div class="container">
+
+    <!-- ── Hero (발견·확인 톤) ── -->
+    <section class="hero-brandcard">
+      <div class="between">
+        <span class="state-pill">● 상태 C · 성장 (기록 4개 이상)</span>
+        <span class="text-caption">2026년 6월 6일 토요일</span>
+      </div>
+      <h1 class="text-heading-1" style="margin:14px 0 6px;">상협님, 이번 달 강점 키워드가<br/><span style="color:var(--color-brand-dark)">5개</span> 새롭게 발견됐어요.</h1>
+      <p class="text-body-lg muted" style="margin:0;">AI가 이번 주 인사이트를 준비했어요. 아래에서 확인해보세요.</p>
+    </section>
+
+    <!-- ════════ BLOCK 1 · 거울 (Reflect) ════════ -->
+    <div class="block-rail">
+      <span class="num">1</span><span class="ko">거울</span><span class="en">Reflect</span><span class="line"></span>
+      <span class="text-caption">나의 강점을 비춰봐요</span>
+    </div>
+
+    <!-- KPI cards (spec: 3 cards) -->
+    <section class="kpi-grid">
+      <div class="kpi">
+        <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+        <span class="num">14<small>건</small></span>
+        <span class="lbl">누적 경험</span>
+        <span class="delta">↑ 이번 달 +3</span>
+      </div>
+      <div class="kpi">
+        <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.5 12.5 17 22l-5-3-5 3 1.5-9.5"/></svg></span>
+        <span class="num">9<small>개</small></span>
+        <span class="lbl">강점</span>
+        <span class="delta">↑ 새로 발견 +2</span>
+      </div>
+      <div class="kpi">
+        <span class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10z"/></svg></span>
+        <span class="num">23<small>개</small></span>
+        <span class="lbl">키워드 <span class="tertiary">· 직종·직무·성향·가치관</span></span>
+        <span class="delta">↑ 이번 달 +5</span>
+      </div>
+    </section>
+
+    <!-- Visualization row 1: Donut + Radar -->
+    <section class="viz-grid">
+      <div class="card">
+        <div class="between" style="margin-bottom:16px;">
+          <span class="card-title">경험 유형 분포</span>
+          <span class="badge default">전체 14건</span>
+        </div>
+        <div class="donut-wrap">
+          <div style="position:relative;width:150px;height:150px;flex:none;">
+            <div style="width:150px;height:150px;border-radius:50%;background:conic-gradient(var(--color-brand) 0 35.7%, #ffc940 35.7% 64.3%, #2dd4bf 64.3% 85.7%, #3182f6 85.7% 92.9%, var(--gray-300) 92.9% 100%);"></div>
+            <div style="position:absolute;inset:30px;background:var(--color-surface);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+              <span style="font-size:26px;font-weight:700;line-height:1;">14</span>
+              <span class="text-caption">총 경험</span>
+            </div>
+          </div>
+          <div class="legend grow">
+            <div class="legend-row"><span class="dot" style="background:var(--color-brand)"></span><span class="name">동아리·학회</span><span class="cnt">5건</span></div>
+            <div class="legend-row"><span class="dot" style="background:#ffc940"></span><span class="name">프로젝트</span><span class="cnt">4건</span></div>
+            <div class="legend-row"><span class="dot" style="background:#2dd4bf"></span><span class="name">대외활동</span><span class="cnt">3건</span></div>
+            <div class="legend-row"><span class="dot" style="background:#3182f6"></span><span class="name">인턴</span><span class="cnt">1건</span></div>
+            <div class="legend-row"><span class="dot" style="background:var(--gray-300)"></span><span class="name">기타</span><span class="cnt">1건</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="between" style="margin-bottom:8px;">
+          <span class="card-title">역량 프로파일</span>
+          <span class="badge brand">6축 레이더</span>
+        </div>
+        <div class="center">
+          <svg width="240" height="220" viewBox="-30 -14 280 248" style="max-width:100%;">
+            <!-- rings -->
+            <polygon points="110,22 186.2,66 186.2,154 110,198 33.8,154 33.8,66" fill="none" stroke="var(--color-border-strong)" stroke-width="1"/>
+            <polygon points="110,51.9 160.3,80.95 160.3,139.05 110,168.1 59.7,139.05 59.7,80.95" fill="none" stroke="var(--color-border)" stroke-width="1"/>
+            <polygon points="110,81 135.1,95.5 135.1,124.5 110,139 84.9,124.5 84.9,95.5" fill="none" stroke="var(--color-border)" stroke-width="1"/>
+            <!-- spokes -->
+            <g stroke="var(--color-border)" stroke-width="1">
+              <line x1="110" y1="110" x2="110" y2="22"/><line x1="110" y1="110" x2="186.2" y2="66"/>
+              <line x1="110" y1="110" x2="186.2" y2="154"/><line x1="110" y1="110" x2="110" y2="198"/>
+              <line x1="110" y1="110" x2="33.8" y2="154"/><line x1="110" y1="110" x2="33.8" y2="66"/>
+            </g>
+            <!-- data polygon -->
+            <polygon points="110,46.6 159.5,81.4 171,145.2 110,149.6 81.1,126.7 64.3,83.6" fill="rgba(251,132,8,0.18)" stroke="var(--color-brand)" stroke-width="2"/>
+            <g fill="var(--color-brand)">
+              <circle cx="110" cy="46.6" r="3.5"/><circle cx="159.5" cy="81.4" r="3.5"/><circle cx="171" cy="145.2" r="3.5"/>
+              <circle cx="110" cy="149.6" r="3.5"/><circle cx="81.1" cy="126.7" r="3.5"/><circle cx="64.3" cy="83.6" r="3.5"/>
+            </g>
+            <!-- labels -->
+            <g font-size="11" fill="var(--color-text-secondary)" font-family="var(--font-sans)">
+              <text x="110" y="8" text-anchor="middle">직종 적합성</text>
+              <text x="196" y="62" text-anchor="start">직무 역량</text>
+              <text x="196" y="160" text-anchor="start">협업 성향</text>
+              <text x="110" y="216" text-anchor="middle">가치관</text>
+              <text x="24" y="160" text-anchor="end">리더십</text>
+              <text x="24" y="62" text-anchor="end">성장 지향</text>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- Visualization row 2: Bar + Gap radar -->
+    <section class="viz-grid-3">
+      <div class="card">
+        <div class="between" style="margin-bottom:16px;">
+          <span class="card-title">역량 키워드 빈도</span>
+          <span class="badge default">Top 5</span>
+        </div>
+        <div class="bars">
+          <div class="bar-row"><div class="bar-top"><span class="bar-name">문제해결</span><span class="bar-cnt">8건</span></div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div></div>
+          <div class="bar-row"><div class="bar-top"><span class="bar-name">협업</span><span class="bar-cnt">6건</span></div><div class="bar-track"><div class="bar-fill" style="width:75%"></div></div></div>
+          <div class="bar-row"><div class="bar-top"><span class="bar-name">데이터 분석</span><span class="bar-cnt">5건</span></div><div class="bar-track"><div class="bar-fill" style="width:62%"></div></div></div>
+          <div class="bar-row"><div class="bar-top"><span class="bar-name">기획</span><span class="bar-cnt">4건</span></div><div class="bar-track"><div class="bar-fill" style="width:50%"></div></div></div>
+          <div class="bar-row"><div class="bar-top"><span class="bar-name">커뮤니케이션</span><span class="bar-cnt">3건</span></div><div class="bar-track"><div class="bar-fill" style="width:37%"></div></div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="between" style="margin-bottom:16px;">
+          <span class="card-title">4분류 키워드 진단</span>
+          <span class="badge warning">갭 레이더</span>
+        </div>
+        <div class="gap-list">
+          <div class="gap-row"><div class="gap-top"><span class="gap-name">직무</span><span class="gap-pct">82%</span></div><div class="gap-track"><div class="gap-fill" style="width:82%"></div></div></div>
+          <div class="gap-row"><div class="gap-top"><span class="gap-name">성향</span><span class="gap-pct">70%</span></div><div class="gap-track"><div class="gap-fill" style="width:70%"></div></div></div>
+          <div class="gap-row"><div class="gap-top"><span class="gap-name">직종</span><span class="gap-pct">55%</span></div><div class="gap-track"><div class="gap-fill" style="width:55%"></div></div></div>
+          <div class="gap-row low"><div class="gap-top"><span class="gap-name">가치관</span><span class="gap-pct">31%</span></div><div class="gap-track"><div class="gap-fill low" style="width:31%"></div></div></div>
+        </div>
+        <div class="gap-callout">
+          <span class="t"><b>가치관</b> 기록이 부족해요. 보완 활동을 추천해드릴까요?</span>
+          <a class="link" href="#" style="color:#c0303b;flex:none;">추천 보기 →</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Weekly digest -->
+    <section class="card">
+      <div class="between">
+        <span class="card-title">📬 이번 주 다이제스트</span>
+        <span class="text-caption">매주 월요일 메일로도 보내드려요</span>
+      </div>
+      <div class="digest-grid">
+        <div class="digest-cell"><div class="n">3</div><div class="l">이번 주 기록</div></div>
+        <div class="digest-cell"><div class="n">5</div><div class="l">새 키워드</div></div>
+        <div class="digest-cell"><div class="n">2</div><div class="l">AI 분석 완료</div></div>
+      </div>
+      <p class="text-body muted" style="margin:0;">이번 주는 <b style="color:var(--color-text-primary)">‘협업’</b> 강점이 두드러졌어요. 다음 주엔 가치관 관련 경험을 한 번 기록해볼까요?</p>
+    </section>
+
+    <!-- Strength discovery -->
+    <section class="card" style="border-color:#ffe3c2;background:linear-gradient(135deg,#fffaf3,#fff);">
+      <span class="eyebrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10z"/></svg> 오늘의 발견</span>
+      <p class="text-body-lg" style="margin:10px 0 8px;">당신의 <b>‘교내 해커톤 PM’</b> 기록에서 <b style="color:var(--color-brand-dark)">리더십</b>이 보여요.</p>
+      <blockquote style="margin:0 0 12px;padding:10px 14px;border-left:3px solid var(--color-brand);background:var(--color-surface-secondary);border-radius:0 8px 8px 0;">
+        <span class="text-body-sm muted">“팀 5명의 역할을 직접 분배하고 마감 일정을 조율해 48시간 안에 결과물을 완성했다.”</span>
+      </blockquote>
+      <a class="link" href="#">이 경험 전체 보기 →</a>
+    </section>
+
+    <!-- ════════ BLOCK 2 · 행동 (Act) ════════ -->
+    <div class="block-rail">
+      <span class="num">2</span><span class="ko">행동</span><span class="en">Act</span><span class="line"></span>
+      <span class="text-caption">오늘 할 한 가지</span>
+    </div>
+
+    <section class="card pad-lg action-card" style="border-color:#ffe3c2;background:var(--color-surface-brand);">
+      <span class="ic-lg"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+      <div class="body">
+        <span class="badge brand" style="margin-bottom:6px;">오늘의 한 가지</span>
+        <p class="text-title" style="margin:4px 0 2px;">‘가치관’ 근거가 부족해요. 이런 경험을 기록해보면 어때요?</p>
+        <p class="text-body-sm muted" style="margin:0;">봉사·가치 중심 활동 1건이면 레이더가 더 균형 잡혀요.</p>
+      </div>
+      <a class="btn primary md" href="#" style="flex:none;">기록 완성하기 →</a>
+    </section>
+
+    <section class="viz-grid">
+      <!-- 기록 바로가기 -->
+      <div class="card">
+        <span class="card-title">기록 바로가기</span>
+        <div class="stack-3" style="margin-top:14px;">
+          <div class="row-item"><div><div class="ttl">교내 해커톤 PM</div><div class="meta">최근 기록 · 2일 전</div></div><span class="badge outline">보기</span></div>
+          <div class="row-item"><div><div class="ttl">작성 중인 기록</div><div class="meta">이어서 완성하면 분석에 반영돼요</div></div><span class="badge warning">2건</span></div>
+          <div class="row-item"><div><div class="ttl">보완 필요</div><div class="meta">AI가 근거 보완을 제안한 기록</div></div><span class="badge error" style="background:var(--color-surface-error);color:var(--color-error);">1건</span></div>
+        </div>
+      </div>
+      <!-- 분석·엑스포트 넛지 -->
+      <div class="card">
+        <span class="card-title">분석 · 익스포트</span>
+        <div class="stack-3" style="margin-top:14px;">
+          <div class="card" style="padding:14px;background:var(--color-surface-secondary);border:0;">
+            <div class="between"><span class="text-body-sm"><b>2건</b>이 아직 분석되지 않았어요</span><a class="link" href="#">분석 실행 →</a></div>
+          </div>
+          <div class="card" style="padding:14px;background:var(--color-surface-brand);border:0;">
+            <div class="between"><span class="text-body-sm" style="color:var(--color-brand-dark)">레쥬메 출력 준비가 됐어요 🎉</span><a class="link" href="#">익스포트 →</a></div>
+          </div>
+        </div>
+        <!-- AI chatbot sub-entry -->
+        <div class="row mt-4" style="gap:8px;color:var(--color-text-secondary);">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-4.2A8.38 8.38 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z"/></svg>
+          <span class="text-body-sm">막막하면 <a class="link" href="#" style="display:inline">AI에게 물어보기</a></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════════ BLOCK 3 · 설계 (Plan) ════════ -->
+    <div class="block-rail">
+      <span class="num">3</span><span class="ko">설계</span><span class="en">Plan</span><span class="line"></span>
+      <span class="text-caption">다음을 계획해요</span>
+    </div>
+
+    <section class="viz-grid">
+      <div class="card">
+        <span class="card-title">이번 달 기록 계획</span>
+        <div class="stack-3" style="margin-top:14px;">
+          <div class="row-item"><div><div class="ttl">동아리 발표 준비</div><div class="meta">6월 12일 예정</div></div><span class="badge default">메모</span></div>
+          <div class="row-item"><div><div class="ttl">+ 다음에 기록할 경험 추가</div><div class="meta tertiary">간단히 적어두면 리마인더로 챙겨드려요</div></div></div>
+        </div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center;">
+        <span class="eyebrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88"/></svg> 커리어 설계</span>
+        <p class="text-body muted" style="margin:8px 0 14px;">직종 시나리오별로 앞으로의 커리어를 설계해보세요.</p>
+        <a class="btn secondary md" href="#" style="align-self:flex-start;">커리어 계획 설계하기 →</a>
+      </div>
+    </section>
+
+    <!-- ════════ BLOCK 4 · 확장 (Connect) ════════ -->
+    <div class="block-rail">
+      <span class="num">4</span><span class="ko">확장</span><span class="en">Connect</span><span class="line"></span>
+      <span class="text-caption">밖으로 연결해요</span>
+    </div>
+
+    <!-- 추천 활동 -->
+    <section>
+      <div class="section-head"><span class="card-title">추천 활동</span><a class="link" href="#">더 보기 →</a></div>
+      <div class="connect-grid">
+        <div class="card hover">
+          <div class="row" style="gap:6px;margin-bottom:8px;"><span class="badge brand">공모전</span><span class="badge default">D-12</span></div>
+          <p class="text-body" style="margin:0 0 6px;font-weight:600;">대학생 데이터 분석 경진대회</p>
+          <p class="text-body-sm muted" style="margin:0 0 10px;">‘데이터 분석’ 강점을 한 번 더 증명하기 좋아요.</p>
+          <a class="link" href="#">바로 보기 →</a>
+        </div>
+        <div class="card hover">
+          <div class="row" style="gap:6px;margin-bottom:8px;"><span class="badge success">대외활동</span><span class="badge default">상시</span></div>
+          <p class="text-body" style="margin:0 0 6px;font-weight:600;">비영리 기획 서포터즈</p>
+          <p class="text-body-sm muted" style="margin:0 0 10px;">부족한 <b>‘가치관’</b> 기록을 보완하는 데 도움이 돼요.</p>
+          <a class="link" href="#">바로 보기 →</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 블로그 -->
+    <section>
+      <div class="section-head"><span class="card-title">읽을거리</span><a class="link" href="#">블로그 →</a></div>
+      <div class="connect-grid">
+        <div class="card hover">
+          <div class="thumb"></div>
+          <div class="row" style="gap:6px;margin-bottom:6px;"><span class="badge default">기록법</span><span class="text-caption">· 4분 읽기</span></div>
+          <p class="text-body" style="margin:0;font-weight:600;">경험을 강점으로 바꾸는 기록의 기술</p>
+        </div>
+        <div class="card hover">
+          <div class="thumb b"></div>
+          <div class="row" style="gap:6px;margin-bottom:6px;"><span class="badge default">커리어</span><span class="text-caption">· 6분 읽기</span></div>
+          <p class="text-body" style="margin:0;font-weight:600;">진로가 안 정해졌을 때 먼저 할 일</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 채용공고 (조건부) -->
+    <section class="card" style="border-style:dashed;">
+      <div class="between">
+        <div>
+          <span class="badge outline" style="margin-bottom:6px;">조건부 노출</span>
+          <p class="text-body" style="margin:4px 0 2px;font-weight:600;">맞춤 채용공고</p>
+          <p class="text-body-sm muted" style="margin:0;">‘취업 준비 중’으로 설정하고 목표 직종을 입력하면 맞춤 공고를 보여드려요.</p>
+        </div>
+        <a class="btn secondary sm" href="#" style="flex:none;">설정하기</a>
+      </div>
+    </section>
+
+    <!-- prototype note -->
+    <section class="proto-note">
+      <h4>프로토타입 노트 — 기획안 vs 현재 화면</h4>
+      <ul>
+        <li>핵심 지표 위젯을 기획안대로 <b>3카드(누적 경험·강점·키워드)</b>로 그렸습니다. 현재 운영 대시보드는 4카드(총 경험·이번 달·기록 기간·분석 완료)입니다.</li>
+        <li>육각 레이더(역량 프로파일)·강점 재발견·주간 다이제스트는 기획안 기준으로 포함했고, 명세서상 <b>Phase 1.5</b> 항목입니다.</li>
+        <li>경험 유형 18종 컬러맵은 미정 — 임시 팔레트(브랜드 오렌지 계열)로 표현했습니다.</li>
+        <li>모든 수치는 예시 더미 데이터입니다.</li>
+      </ul>
+    </section>
+
+  </div>
+</main>
+</body>
+</html>

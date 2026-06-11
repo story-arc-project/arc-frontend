@@ -4,6 +4,11 @@ import { withSentryConfig } from "@sentry/nextjs";
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 const nextConfig: NextConfig = {
+  // /terms·/privacy 가 빌드 시 읽는 법적 문서를 서버 번들에 포함(프로덕션 안전장치).
+  outputFileTracingIncludes: {
+    "/terms": ["./docs/legal/terms-of-service.draft.md"],
+    "/privacy": ["./docs/legal/privacy-policy.draft.md"],
+  },
   async rewrites() {
     return [
       {

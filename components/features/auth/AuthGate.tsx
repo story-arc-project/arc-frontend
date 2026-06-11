@@ -1,27 +1,47 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/hooks/useAuth";
+import { FIRST_ONBOARDING_STEP } from "@/app/(auth)/constants";
 
 /**
- * 보호 영역(/(main)) 진입 시 인증 상태가 확정될 때까지 보호 콘텐츠를 가린다.
+ * 보호 영역(/(main)) 진입 가드.
  *
- * /auth/me가 네트워크·5xx로 실패하면 user=null·error!=null이 되는데, 이때 깨진 화면
- * (이름 없음·빈 계정 정보 등)이나 잘못된 리다이렉트 대신 재시도 화면을 보여준다.
+ * 인증 상태가 확정되기 전까지 보호 콘텐츠를 가리고, 확정된 뒤 분기한다:
+ * - 비인증(정상 401)          → /login?callbackUrl=<현재 경로>
+ * - 인증됐으나 온보딩 미완료   → /signup?step=consent
+ * - 인증 + 온보딩 완료        → children 통과
  *
- * user === null 동안의 분기:
- * - 조회 실패(error!=null) 또는 수동 재시도 중(retrying): 재시도 화면
- * - 조회 진행 중(isLoading, 초기 자동 재시도 포함): 로딩 화면
- *   → user=null 상태의 children(빈 사용자 UI)을 노출하지 않는다.
- * - 그 외(정상 401: error=null·!isLoading): 통과 (서버 프록시가 라우트 보호)
- *
- * 로그인 사용자(user!=null)는 항상 통과한다. 로그아웃 실패는 user가 살아있어(error만 set)
- * 보호 영역을 가리지 않는다.
+ * /auth/me가 네트워크·5xx로 실패하면(error≠null) 비인증으로 단정하지 않고 재시도 화면을 보여준다.
+ * (일시 장애를 /login으로 튕기면 유효 세션 사용자를 로그아웃시키는 셈이 된다. FRT-12 보존.)
  */
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { user, error, isLoading, refetch } = useAuth();
+  const { user, error, isLoading, isOnboarded, refetch } = useAuth();
+  const router = useRouter();
   const [retrying, setRetrying] = useState(false);
+
+  // 인증/온보딩 가드는 로딩·조회실패가 아닌 '확정된' 상태에서만 판단한다.
+  const settled = !isLoading && error === null && !retrying;
+  const redirect = settled
+    ? user === null
+      ? "login"
+      : !isOnboarded
+        ? "onboard"
+        : null
+    : null;
+
+  useEffect(() => {
+    if (redirect === "login") {
+      // callbackUrl은 effect(클라이언트 전용)에서 window.location으로 읽는다.
+      // usePathname()은 쿼리스트링을 버려 /archive?id=… 같은 딥링크 복귀를 깨뜨린다.
+      const from = window.location.pathname + window.location.search;
+      router.replace(`/login?callbackUrl=${encodeURIComponent(from)}`);
+    } else if (redirect === "onboard") {
+      router.replace(`/signup?step=${FIRST_ONBOARDING_STEP}`);
+    }
+  }, [redirect, router]);
 
   if (user === null && (error !== null || retrying)) {
     // 재시도 중에는 refetch가 error를 잠시 비워도 보호 페이지가 깜빡이지 않도록 화면을 유지한다.
@@ -55,7 +75,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (user === null && isLoading) {
+  // 로딩 중 또는 리다이렉트 대기 중 → 보호 콘텐츠/빈 사용자 UI 노출 없이 로딩 화면 유지(깜빡임 방지).
+  if ((user === null && isLoading) || redirect !== null) {
     return (
       <main
         className="min-h-[calc(100dvh-var(--gnb-h))] flex items-center justify-center px-4"

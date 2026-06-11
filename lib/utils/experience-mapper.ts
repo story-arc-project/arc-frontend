@@ -1,14 +1,12 @@
 import type {
   Experience,
   ExperienceSavePayload,
-  ExperienceUpdatePayload,
 } from "@/types/experience"
 import type {
   ExperienceV2,
   ExperienceTypeId,
   ExperienceStatus,
   Block,
-  ImportanceLevel,
 } from "@/types/archive"
 import { isImportanceLevel } from "@/types/archive"
 
@@ -62,17 +60,5 @@ export function toSavePayload(exp: ExperienceV2): ExperienceSavePayload {
       extensionBlocks: exp.extensionBlocks,
       customBlocks: exp.customBlocks,
     },
-  }
-}
-
-/**
- * 중요도 인라인 변경용 경량 업데이트 payload.
- * content 를 포함하지 않고 importance 필드만 전송한다.
- */
-export function toUpdateImportancePayload(
-  value: ImportanceLevel | undefined,
-): ExperienceUpdatePayload {
-  return {
-    importance: value ?? null,
   }
 }

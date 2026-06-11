@@ -13,6 +13,12 @@
 # testing
 /coverage
 
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
 # storybook
 /storybook-static
 *storybook.log
@@ -59,3 +65,12 @@ yarn-error.log*
 .antigravitycli/
 .claude/worktrees/
 docs/superpowers/
+
+# playwright MCP scratch output
+.playwright-mcp/
+
+
+# graphify: 로컬 전용 지식그래프 산출물 — 전부 ignore.
+# graph.json(~3.4MB) 등은 브랜치마다 재생성되어 동시 작업 시 충돌이 잦으므로 커밋하지 않는다.
+# 로컬에서 `graphify update .` 후 query/explain 용도로만 사용한다.
+graphify-out/
