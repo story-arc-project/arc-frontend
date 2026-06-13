@@ -142,3 +142,75 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
     expect(onSave.mock.calls[0][0]).toMatchObject({ title: "복구한 제목" })
   })
 })
+
+/**
+ * FRT-52 — 편집 모드 진입 직후 dirty(hasUnsaved) 위양성 방지.
+ *
+ * 버그: edit 모드에서 initialExperience 로 coreBlocks 를 초기화하면 dirty 추적이
+ * "데이터 존재 여부"만 보고 즉시 onUnsavedChange(true) 를 호출했다. 사용자가
+ * 아무것도 수정하지 않아도 hasUnsaved=true 가 되어 다른 카드 클릭 시 항상 가드
+ * 모달이 떴다.
+ * 수정: 로드된 baseline 대비 실제 변경 여부로 dirty 를 판정한다.
+ */
+describe("FRT-52 편집 진입 직후 dirty 위양성 방지", () => {
+  function editRecord(overrides: Partial<ExperienceV2> = {}): ExperienceV2 {
+    return {
+      id: "exp-edit-1",
+      userId: "u1",
+      typeId: "extracurricular",
+      title: "교내 개발 동아리 운영진",
+      summary: "12명 규모 동아리 운영",
+      status: "complete",
+      tags: ["리더십"],
+      importance: 4,
+      coreBlocks: [],
+      extensionBlocks: [],
+      customBlocks: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    }
+  }
+
+  it("수정 없이 편집 모드로 진입하면 hasUnsaved=true 가 보고되지 않는다", async () => {
+    const onUnsavedChange = vi.fn()
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={editRecord()}
+        presetsHook={emptyPresetsHook}
+        onSave={() => {}}
+        onCancel={() => {}}
+        onUnsavedChange={onUnsavedChange}
+      />,
+    )
+
+    // 폼(템플릿) 로드 + 경험명 materialize 가 끝날 때까지 대기.
+    expect(
+      (screen.getByRole("textbox", { name: "경험명" }) as HTMLInputElement).value,
+    ).toBe("교내 개발 동아리 운영진")
+
+    // 사용자 변경이 없으므로 dirty 가 한 번도 true 로 보고되면 안 된다.
+    expect(onUnsavedChange).not.toHaveBeenCalledWith(true)
+  })
+
+  it("편집 모드에서 사용자가 내용을 바꾸면 hasUnsaved=true 가 보고된다", async () => {
+    const user = userEvent.setup()
+    const onUnsavedChange = vi.fn()
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={editRecord()}
+        presetsHook={emptyPresetsHook}
+        onSave={() => {}}
+        onCancel={() => {}}
+        onUnsavedChange={onUnsavedChange}
+      />,
+    )
+
+    const titleInput = screen.getByRole("textbox", { name: "경험명" })
+    await user.type(titleInput, " 보강")
+
+    expect(onUnsavedChange).toHaveBeenLastCalledWith(true)
+  })
+})
