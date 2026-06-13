@@ -113,3 +113,112 @@ test.describe("FRT-43 경험 CRUD 동작", () => {
     ).toBeVisible();
   });
 });
+
+/**
+ * FRT-53 — 편집 중 다른 카드 복제/삭제 시 unsaved 가드.
+ *
+ * `handleSelectExperience`/`handleNewExperience` 만 가드를 걸고 복제·삭제는
+ * 바로 실행돼 편집 내용이 소실되던 버그의 회귀 가드. 새 경험을 만들다(미저장)
+ * 다른 카드의 컨텍스트 메뉴로 삭제·복제를 시도하면 가드 모달이 떠야 하고,
+ * '취소' 시 변이 요청이 나가지 않고 작성 중 내용이 보존, '나가기' 후에만 실행돼야 한다.
+ */
+test.describe("FRT-53 편집 중 복제/삭제 가드", () => {
+  // 미저장 편집(hasUnsaved) 상태를 만들고 시드 카드의 컨텍스트 메뉴를 연다.
+  // 컨텍스트 메뉴 '삭제'/'복제'는 텍스트 버튼이라, aria-label 만 가진 아이콘형
+  // '삭제'(라이브러리 행) 버튼과 구분하려 getByText 로 메뉴 항목만 정확히 집는다.
+  async function arrangeUnsavedThenOpenMenu(page: import("@playwright/test").Page) {
+    const seedCard = page.getByRole("heading", {
+      level: 3,
+      name: "교내 개발 동아리 운영진",
+    });
+    await expect(seedCard).toBeVisible();
+
+    await page
+      .getByRole("button", { name: "새 경험 추가", exact: true })
+      .first()
+      .click();
+    await page.getByRole("button", { name: "대외활동", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "경험명" })
+      .fill("가드 검증 작성 중 경험");
+
+    await seedCard
+      .locator("..")
+      .getByRole("button", { name: "더보기", exact: true })
+      .click();
+    return seedCard;
+  }
+
+  test("미저장 편집 중 다른 카드 삭제 시 가드 모달이 뜨고 '취소'하면 보존된다", async ({
+    page,
+  }) => {
+    const stub = await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/archive");
+
+    const seedCard = await arrangeUnsavedThenOpenMenu(page);
+    await page.getByText("삭제", { exact: true }).click();
+
+    // 즉시 삭제되지 않고 unsaved 가드 모달이 뜬다.
+    const guard = page.getByRole("dialog", { name: "저장하지 않고 나갈까요?" });
+    await expect(guard).toBeVisible();
+
+    // '취소' → 삭제 요청은 나가지 않고, 작성 중 내용과 시드 카드가 그대로 남는다.
+    await guard.getByRole("button", { name: "취소", exact: true }).click();
+    await expect(guard).toBeHidden();
+    expect(
+      stub.mutations.filter(
+        (m) => m.method === "DELETE" && m.path.startsWith("/experiences/"),
+      ),
+    ).toHaveLength(0);
+    await expect(page.getByRole("textbox", { name: "경험명" })).toHaveValue(
+      "가드 검증 작성 중 경험",
+    );
+    await expect(seedCard).toBeVisible();
+  });
+
+  test("미저장 편집 중 다른 카드 삭제 시 '나가기' 후에만 삭제가 실행된다", async ({
+    page,
+  }) => {
+    const stub = await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/archive");
+
+    const seedCard = await arrangeUnsavedThenOpenMenu(page);
+    await page.getByText("삭제", { exact: true }).click();
+
+    const guard = page.getByRole("dialog", { name: "저장하지 않고 나갈까요?" });
+    await expect(guard).toBeVisible();
+    await guard.getByRole("button", { name: "나가기", exact: true }).click();
+
+    // '나가기' 확인 후 비로소 시드 카드가 삭제되고 DELETE 요청이 한 번 나간다.
+    await expect(seedCard).toHaveCount(0);
+    expect(
+      stub.mutations.filter(
+        (m) => m.method === "DELETE" && m.path.startsWith("/experiences/"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  test("미저장 편집 중 다른 카드 복제 시 '나가기' 후에만 복제가 실행된다", async ({
+    page,
+  }) => {
+    const stub = await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/archive");
+
+    await arrangeUnsavedThenOpenMenu(page);
+    await page.getByText("복제", { exact: true }).click();
+
+    const guard = page.getByRole("dialog", { name: "저장하지 않고 나갈까요?" });
+    await expect(guard).toBeVisible();
+    await guard.getByRole("button", { name: "나가기", exact: true }).click();
+
+    // '나가기' 확인 후 비로소 복제 POST(/experiences/{id}/duplicate)가 한 번 나간다.
+    await expect(
+      page.getByRole("heading", { level: 2, name: "교내 개발 동아리 운영진" }),
+    ).toBeVisible();
+    expect(
+      stub.mutations.filter(
+        (m) => m.method === "POST" && /\/experiences\/.+\/duplicate/.test(m.path),
+      ),
+    ).toHaveLength(1);
+  });
+});
