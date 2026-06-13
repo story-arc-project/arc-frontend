@@ -28,6 +28,17 @@ export type ArchiveMode = "empty" | "new" | "detail" | "edit"
 
 type MobileView = "list" | "panel"
 
+/**
+ * Deferred action queued behind the unsaved-changes guard. When the user is
+ * mid-edit (`hasUnsaved`), navigation/CRUD intents are parked here and only run
+ * once they confirm discard in the guard modal.
+ */
+type PendingAction =
+  | { kind: "select"; id: string }
+  | { kind: "new" }
+  | { kind: "delete"; id: string }
+  | { kind: "duplicate"; exp: ExperienceV2 }
+
 export default function ArchivePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -37,7 +48,7 @@ export default function ArchivePage() {
   const [mobileView, setMobileView] = useState<MobileView>("list")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
-  const [pendingSelectId, setPendingSelectId] = useState<string | null | undefined>(undefined)
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [showGuardModal, setShowGuardModal] = useState(false)
 
   const [middleCollapsed, setMiddleCollapsed] = useState(false)
@@ -167,7 +178,7 @@ export default function ArchivePage() {
   const handleSelectExperience = useCallback(
     (id: string) => {
       if (hasUnsaved) {
-        setPendingSelectId(id)
+        setPendingAction({ kind: "select", id })
         setShowGuardModal(true)
         return
       }
@@ -181,7 +192,7 @@ export default function ArchivePage() {
 
   const handleNewExperience = useCallback(() => {
     if (hasUnsaved) {
-      setPendingSelectId(null)
+      setPendingAction({ kind: "new" })
       setShowGuardModal(true)
       return
     }
@@ -232,7 +243,7 @@ export default function ArchivePage() {
     [apiUpdateImportance],
   )
 
-  const handleDelete = useCallback(
+  const performDelete = useCallback(
     async (id: string) => {
       try {
         await apiDelete(id)
@@ -250,7 +261,22 @@ export default function ArchivePage() {
     [apiDelete, router, basePath]
   )
 
-  const handleDuplicate = useCallback(
+  // Guard duplicate/delete the same way selection does: deleting or duplicating
+  // another card while mid-edit would silently drop unsaved changes, so park the
+  // intent behind the discard modal and only run it after `confirmDiscard`.
+  const handleDelete = useCallback(
+    (id: string) => {
+      if (hasUnsaved) {
+        setPendingAction({ kind: "delete", id })
+        setShowGuardModal(true)
+        return
+      }
+      void performDelete(id)
+    },
+    [hasUnsaved, performDelete]
+  )
+
+  const performDuplicate = useCallback(
     async (exp: ExperienceV2) => {
       try {
         const newId = await apiDuplicate(exp.id)
@@ -264,6 +290,18 @@ export default function ArchivePage() {
       }
     },
     [apiDuplicate, router, basePath]
+  )
+
+  const handleDuplicate = useCallback(
+    (exp: ExperienceV2) => {
+      if (hasUnsaved) {
+        setPendingAction({ kind: "duplicate", exp })
+        setShowGuardModal(true)
+        return
+      }
+      void performDuplicate(exp)
+    },
+    [hasUnsaved, performDuplicate]
   )
 
   const handleCancel = useCallback(() => {
@@ -363,22 +401,42 @@ export default function ArchivePage() {
   }, [createLibrary, filter, runLibraryAction])
 
   // ── Unsaved guard ─────────────────────────────────────────────────
+  // Dismissing the modal must drop the parked intent so it can't leak into a
+  // later confirm; the edit in progress stays untouched.
+  const cancelDiscard = useCallback(() => {
+    setShowGuardModal(false)
+    setPendingAction(null)
+  }, [])
+
   const confirmDiscard = useCallback(() => {
     setShowGuardModal(false)
     setHasUnsaved(false)
-    if (pendingSelectId === null) {
-      setSelectedId(null)
-      setMode("new")
-      setMobileView("panel")
-      router.push(`${basePath}/archive`, { scroll: false })
-    } else if (pendingSelectId !== undefined) {
-      setSelectedId(pendingSelectId)
-      setMode("detail")
-      setMobileView("panel")
-      router.push(`${basePath}/archive?id=${pendingSelectId}`, { scroll: false })
+    const action = pendingAction
+    setPendingAction(null)
+    if (!action) return
+    switch (action.kind) {
+      case "new":
+        setSelectedId(null)
+        setMode("new")
+        setMobileView("panel")
+        router.push(`${basePath}/archive`, { scroll: false })
+        break
+      case "select":
+        setSelectedId(action.id)
+        setMode("detail")
+        setMobileView("panel")
+        router.push(`${basePath}/archive?id=${action.id}`, { scroll: false })
+        break
+      case "delete":
+        // perform* bypasses the guard wrapper so the already-confirmed action
+        // doesn't re-trigger the modal off the stale `hasUnsaved` closure.
+        void performDelete(action.id)
+        break
+      case "duplicate":
+        void performDuplicate(action.exp)
+        break
     }
-    setPendingSelectId(undefined)
-  }, [pendingSelectId, router, basePath])
+  }, [pendingAction, router, basePath, performDelete, performDuplicate])
 
   // ── Derived ───────────────────────────────────────────────────────
   const selectedExperience = experiences.find(e => e.id === selectedId) ?? null
@@ -623,13 +681,13 @@ export default function ArchivePage() {
       </div>
 
       {/* ── Unsaved changes guard modal ───────────────────────── */}
-      <Dialog open={showGuardModal} onClose={() => setShowGuardModal(false)} ariaLabel="저장하지 않고 나갈까요?">
+      <Dialog open={showGuardModal} onClose={cancelDiscard} ariaLabel="저장하지 않고 나갈까요?">
         <h3 className="text-title text-text-primary mb-2">저장하지 않고 나갈까요?</h3>
         <p className="text-body-sm text-text-secondary mb-6 leading-relaxed">
           작성 중인 내용이 있어요. 나가면 사라져요.
         </p>
         <div className="flex gap-2 justify-end">
-          <Button variant="ghost" size="sm" onClick={() => setShowGuardModal(false)}>
+          <Button variant="ghost" size="sm" onClick={cancelDiscard}>
             취소
           </Button>
           <Button variant="destructive" size="sm" onClick={confirmDiscard}>
