@@ -319,6 +319,13 @@ export const periodBlockFinished: Block = {
   value: { type: "period", start: "2020-03", end: "2022-06", isCurrent: false },
 }
 
+export const periodBlockDay: Block = {
+  id: "blk-period-day",
+  type: "period",
+  label: "프로젝트 기간",
+  value: { type: "period", start: "2023-03-15", end: "2024-01-20", isCurrent: false },
+}
+
 export const emptyPeriodBlock: Block = {
   id: "blk-period-empty",
   type: "period",
