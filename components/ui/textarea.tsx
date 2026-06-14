@@ -44,7 +44,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     return (
       <div className="flex flex-col gap-1.5">
         {label && (
-          <label htmlFor={textareaId} className="text-label text-text-primary">
+          <label htmlFor={textareaId} className="text-field-label text-text-primary">
             {label}
           </label>
         )}

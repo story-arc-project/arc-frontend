@@ -20,7 +20,7 @@ export const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(
     return (
       <div className={`flex flex-col gap-1.5 min-w-0 ${wrapperClassName}`.trim()}>
         {label && (
-          <label htmlFor={inputId} className="text-label text-text-primary">
+          <label htmlFor={inputId} className="text-field-label text-text-primary">
             {label}
           </label>
         )}
