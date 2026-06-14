@@ -192,6 +192,12 @@ body {
   line-height: 1.4;
 }
 
+.text-field-label {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 input[type="date"]{
   appearance:none ;
   -webkit-appearance: none;

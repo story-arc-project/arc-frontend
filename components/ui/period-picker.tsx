@@ -30,7 +30,7 @@ export function PeriodPicker({ label, value, onChange }: PeriodPickerProps) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      {label && <label className="text-label text-text-primary">{label}</label>}
+      {label && <label className="text-field-label text-text-primary">{label}</label>}
       <div className="flex items-center gap-2">
         <DatePicker
           mode="month"
