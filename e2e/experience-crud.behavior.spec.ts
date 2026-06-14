@@ -66,16 +66,9 @@ test.describe("FRT-43 경험 CRUD 동작", () => {
     await titleInput.fill("E2E 수정된 경험");
     await page.getByRole("button", { name: "완료", exact: true }).click();
 
-    // 변이 payload 단언: PUT /experiences/{newId} 에 수정된 content 가 전송된다.
-    const updates = stub.mutations.filter(
-      (m) => m.method === "PUT" && m.path.startsWith("/experiences/"),
-    );
-    expect(updates).toHaveLength(1);
-    expect(updates[0].body).toMatchObject({
-      content: { title: "E2E 수정된 경험" },
-    });
-
-    // 결과: 옛 제목은 사라지고 새 제목이 목록·상세에 반영된다.
+    // 결과(관찰 가능한 UI 효과)를 먼저 await 한다: 옛 제목은 사라지고 새 제목이
+    // 목록·상세에 반영된다. PUT 은 비동기로 기록되므로, 캡처된 변이를 동기적으로
+    // 읽기 전에 web-first 단언으로 반영을 기다려야 결정론적이다.
     await expect(
       page.getByRole("heading", { level: 3, name: "E2E 수정된 경험" }),
     ).toBeVisible();
@@ -85,6 +78,15 @@ test.describe("FRT-43 경험 CRUD 동작", () => {
     await expect(
       page.getByRole("heading", { level: 3, name: "E2E 동작 검증 경험" }),
     ).toHaveCount(0);
+
+    // 변이 payload 단언: PUT /experiences/{newId} 에 수정된 content 가 전송된다.
+    const updates = stub.mutations.filter(
+      (m) => m.method === "PUT" && m.path.startsWith("/experiences/"),
+    );
+    expect(updates).toHaveLength(1);
+    expect(updates[0].body).toMatchObject({
+      content: { title: "E2E 수정된 경험" },
+    });
 
     // ── DELETE ─────────────────────────────────────────────────────────────
     // 라이브러리 사이드바(nav)에도 "삭제" 버튼이 있어, 상세 헤더 액션바(수정·복제·삭제)
@@ -98,19 +100,20 @@ test.describe("FRT-43 경험 CRUD 동작", () => {
       .getByRole("button", { name: "삭제", exact: true })
       .click();
 
-    // 변이 payload 단언: DELETE /experiences/{newId} 가 전송된다.
-    const deletes = stub.mutations.filter(
-      (m) => m.method === "DELETE" && m.path.startsWith("/experiences/"),
-    );
-    expect(deletes).toHaveLength(1);
-
-    // 결과: 삭제한 경험 카드는 목록에서 사라지고, 시드 2건은 남는다.
+    // 결과(관찰 가능한 UI 효과)를 먼저 await: 삭제한 경험 카드는 목록에서 사라지고,
+    // 시드 2건은 남는다. (캡처된 DELETE 변이를 동기적으로 읽기 전에 반영을 기다린다.)
     await expect(
       page.getByRole("heading", { level: 3, name: "E2E 수정된 경험" }),
     ).toHaveCount(0);
     await expect(
       page.getByRole("heading", { level: 3, name: "교내 개발 동아리 운영진" }),
     ).toBeVisible();
+
+    // 변이 payload 단언: DELETE /experiences/{newId} 가 전송된다.
+    const deletes = stub.mutations.filter(
+      (m) => m.method === "DELETE" && m.path.startsWith("/experiences/"),
+    );
+    expect(deletes).toHaveLength(1);
   });
 });
 
@@ -220,5 +223,99 @@ test.describe("FRT-53 편집 중 복제/삭제 가드", () => {
         (m) => m.method === "POST" && /\/experiences\/.+\/duplicate/.test(m.path),
       ),
     ).toHaveLength(1);
+  });
+});
+
+/**
+ * FRT-52 — 편집 모드 진입 즉시 dirty 위양성 + onEdit setTimeout race 회귀 가드.
+ *
+ * 버그 1: 편집 모드 진입 시 아무것도 안 바꿔도 hasUnsaved=true 가 되어, 다른 카드로
+ * 이동하면 항상 가드 모달이 떴다.
+ * 버그 2: 카드의 '편집'(onEdit) 이 select 후 `setTimeout(setMode("edit"))` 을 무조건
+ * 실행해, 가드에 막혀도 잘못된 selectedId 로 edit 폼이 마운트됐다.
+ *
+ * 두 버그가 결합돼, 한 카드를 편집하다 다른 카드를 편집하려 하면 가드가 떠 막혔다.
+ * 수정 후에는: 수정이 없으면 가드 없이 곧장 대상 카드로 전환된다.
+ */
+test.describe("FRT-52 편집 진입 dirty 위양성 / onEdit race", () => {
+  // 카드의 '더보기' 메뉴를 열고 '편집' 을 눌러 그 카드의 편집 모드로 진입한다.
+  async function openCardEdit(
+    page: import("@playwright/test").Page,
+    cardName: string,
+  ) {
+    await page
+      .getByRole("heading", { level: 3, name: cardName })
+      .locator("..")
+      .getByRole("button", { name: "더보기", exact: true })
+      .click();
+    await page.getByText("편집", { exact: true }).click();
+  }
+
+  test("카드 '편집' 은 가드/race 없이 그 카드의 편집 폼을 연다", async ({ page }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/archive");
+
+    await openCardEdit(page, "교내 개발 동아리 운영진");
+
+    // 올바른 카드가 편집 모드로 열린다(경험명 입력 + 완료 버튼 존재).
+    await expect(page.getByRole("textbox", { name: "경험명" })).toHaveValue(
+      "교내 개발 동아리 운영진",
+    );
+    await expect(
+      page.getByRole("button", { name: "완료", exact: true }),
+    ).toBeVisible();
+    // 진입 즉시 가드 모달이 뜨면 안 된다.
+    await expect(
+      page.getByRole("dialog", { name: "저장하지 않고 나갈까요?" }),
+    ).toBeHidden();
+  });
+
+  test("수정 없이 편집 진입 후 다른 카드를 선택하면 가드 없이 전환된다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/archive");
+
+    // 한 카드를 편집 모드로 열되 아무것도 수정하지 않는다.
+    await openCardEdit(page, "교내 개발 동아리 운영진");
+    await expect(page.getByRole("textbox", { name: "경험명" })).toHaveValue(
+      "교내 개발 동아리 운영진",
+    );
+
+    // 다른 카드를 클릭 → 미수정이므로 가드 없이 상세로 전환된다.
+    await page
+      .getByRole("heading", { level: 3, name: "캡스톤 팀 프로젝트" })
+      .click();
+
+    await expect(
+      page.getByRole("dialog", { name: "저장하지 않고 나갈까요?" }),
+    ).toBeHidden();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "캡스톤 팀 프로젝트" }),
+    ).toBeVisible();
+  });
+
+  test("수정 없이 편집 진입 후 다른 카드를 편집해도 가드 없이 그 카드가 열린다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/archive");
+
+    await openCardEdit(page, "교내 개발 동아리 운영진");
+    await expect(page.getByRole("textbox", { name: "경험명" })).toHaveValue(
+      "교내 개발 동아리 운영진",
+    );
+
+    // 수정 없이 다른 카드 '편집' → 가드 없이 그 카드 편집 폼으로 전환된다.
+    await openCardEdit(page, "캡스톤 팀 프로젝트");
+    await expect(
+      page.getByRole("dialog", { name: "저장하지 않고 나갈까요?" }),
+    ).toBeHidden();
+    await expect(page.getByRole("textbox", { name: "경험명" })).toHaveValue(
+      "캡스톤 팀 프로젝트",
+    );
+    // 편집 모드는 유지되면서 URL ?id 도 대상 카드로 동기화된다(새로고침/공유 정합).
+    // render-sync 가 edit 을 detail 로 덮지 않는지도 함께 보장한다.
+    await expect(page).toHaveURL(/id=exp-e2e-2/);
   });
 });

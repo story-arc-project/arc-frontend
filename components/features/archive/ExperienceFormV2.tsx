@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { BookOpen, Save, Settings, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -165,21 +165,51 @@ export default function ExperienceFormV2({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeId])
 
+  // Snapshot of the loaded form state, captured once after the template loads
+  // and "경험명" materializes (edit mode only). Dirty is judged against this
+  // baseline so opening an existing experience without editing isn't flagged.
+  const dirtyBaselineRef = useRef<string | null>(null)
+
   // Track dirty state
   useEffect(() => {
     const hasBlockData = (blocks: Block[]) => blocks.some(b => !isBlockEmpty(b))
-    const extensionBlocks = extensionSections.flatMap(s => s.blocks)
-    const presetBlocks = appliedPresets.flatMap(p => p.blocks)
-    const importanceChanged = importance !== initialExperience?.importance
-    const hasData =
-      hasBlockData(coreBlocks) ||
-      hasBlockData(extensionBlocks) ||
-      customBlocks.length > 0 ||
-      presetBlocks.length > 0 ||
-      tags.length > 0 ||
-      importanceChanged
-    onUnsavedChange?.(hasData)
-  }, [coreBlocks, extensionSections, customBlocks, appliedPresets, tags, importance, initialExperience, onUnsavedChange])
+
+    // New mode (or no initial record): any entered data counts as unsaved.
+    if (mode === "new" || !initialExperience) {
+      const extensionBlocks = extensionSections.flatMap(s => s.blocks)
+      const presetBlocks = appliedPresets.flatMap(p => p.blocks)
+      const importanceChanged = importance !== initialExperience?.importance
+      const hasData =
+        hasBlockData(coreBlocks) ||
+        hasBlockData(extensionBlocks) ||
+        customBlocks.length > 0 ||
+        presetBlocks.length > 0 ||
+        tags.length > 0 ||
+        importanceChanged
+      onUnsavedChange?.(hasData)
+      return
+    }
+
+    // Edit mode: an existing record is loaded with data, so "has data" can't mean
+    // "dirty". Compare the current form state against the loaded baseline instead.
+    // Wait until the template loads (and the load effect materializes blocks) so
+    // the baseline reflects the settled, post-materialization state.
+    if (!template) return
+    const snapshot = JSON.stringify({
+      core: coreBlocks,
+      ext: extensionSections.map(s => s.blocks),
+      custom: customBlocks,
+      presets: appliedPresets.map(p => p.blocks),
+      tags,
+      importance: importance ?? null,
+    })
+    if (dirtyBaselineRef.current === null) {
+      dirtyBaselineRef.current = snapshot
+      onUnsavedChange?.(false)
+      return
+    }
+    onUnsavedChange?.(snapshot !== dirtyBaselineRef.current)
+  }, [coreBlocks, extensionSections, customBlocks, appliedPresets, tags, importance, mode, template, initialExperience, onUnsavedChange])
 
   const handleTypeSelect = useCallback((id: ExperienceTypeId) => {
     setTypeId(id)

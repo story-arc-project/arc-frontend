@@ -35,6 +35,7 @@ type MobileView = "list" | "panel"
  */
 type PendingAction =
   | { kind: "select"; id: string }
+  | { kind: "edit"; id: string }
   | { kind: "new" }
   | { kind: "delete"; id: string }
   | { kind: "duplicate"; exp: ExperienceV2 }
@@ -170,8 +171,15 @@ export default function ArchivePage() {
   const idParam = searchParams.get("id")
   if (idParam && idParam !== syncedForParams && experiences.find(e => e.id === idParam)) {
     setSyncedForParams(idParam)
-    setSelectedId(idParam)
-    setMode("detail")
+    // Only hijack into detail view for an id we haven't already selected — a
+    // fresh deep-link or external navigation. If it's already the selected
+    // experience, respect the current mode: e.g. the user just entered edit on
+    // a freshly-created experience whose `?id` push lands a render later;
+    // forcing detail here would clobber edit (a sibling of the FRT-52 races).
+    if (selectedId !== idParam) {
+      setSelectedId(idParam)
+      setMode("detail")
+    }
   }
 
   // ── Selection ──────────────────────────────────────────────────────
@@ -201,6 +209,30 @@ export default function ArchivePage() {
     setMobileView("panel")
     router.push(`${basePath}/archive`, { scroll: false })
   }, [hasUnsaved, router, basePath])
+
+  // Editing a card jumps straight into edit mode for that experience. Like
+  // selection it must respect the unsaved guard; previously it fired
+  // `handleSelectExperience` then a `setTimeout(setMode("edit"), 0)` that ran
+  // unconditionally — so when the guard blocked the select, the timer still
+  // forced edit mode onto the wrong (stale) selectedId.
+  //
+  // Pushing `?id` keeps the URL in sync (refresh/share land on this card). It's
+  // safe against the `?id` render-sync below because we set `selectedId` first,
+  // so the sync sees `selectedId === idParam` and won't clobber edit → detail.
+  const handleEditExperience = useCallback(
+    (id: string) => {
+      if (hasUnsaved) {
+        setPendingAction({ kind: "edit", id })
+        setShowGuardModal(true)
+        return
+      }
+      setSelectedId(id)
+      setMode("edit")
+      setMobileView("panel")
+      router.push(`${basePath}/archive?id=${id}`, { scroll: false })
+    },
+    [hasUnsaved, router, basePath]
+  )
 
   // ── CRUD ──────────────────────────────────────────────────────────
   const handleSave = useCallback(
@@ -427,6 +459,12 @@ export default function ArchivePage() {
         setMobileView("panel")
         router.push(`${basePath}/archive?id=${action.id}`, { scroll: false })
         break
+      case "edit":
+        setSelectedId(action.id)
+        setMode("edit")
+        setMobileView("panel")
+        router.push(`${basePath}/archive?id=${action.id}`, { scroll: false })
+        break
       case "delete":
         // perform* bypasses the guard wrapper so the already-confirmed action
         // doesn't re-trigger the modal off the stale `hasUnsaved` closure.
@@ -561,7 +599,7 @@ export default function ArchivePage() {
               selected={exp.id === selectedId}
               libraries={librariesForCard}
               onClick={() => handleSelectExperience(exp.id)}
-              onEdit={() => { handleSelectExperience(exp.id); setTimeout(() => setMode("edit"), 0) }}
+              onEdit={() => handleEditExperience(exp.id)}
               onDuplicate={() => handleDuplicate(exp)}
               onDelete={() => handleDelete(exp.id)}
               onMoveToLibrary={(libId) => handleMoveToLibrary(exp.id, libId)}

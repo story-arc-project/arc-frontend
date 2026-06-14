@@ -62,6 +62,9 @@ export default function RightPanelV2({
 
       {mode === "edit" && selectedExperience && (
         <ExperienceFormV2
+          // Remount when the edited experience changes so the form re-seeds from
+          // the new record (switching edit directly between cards).
+          key={selectedExperience.id}
           mode="edit"
           initialExperience={selectedExperience}
           presetsHook={presetsHook}
