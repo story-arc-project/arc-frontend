@@ -6,7 +6,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { ApiError } from "@/lib/api/client";
-import { requestPasswordReset, verifyResetCode, resetPassword } from "@/lib/api/auth-api";
+import {
+  requestPasswordReset,
+  verifyResetCode,
+  resetPassword,
+  logoutUser,
+} from "@/lib/api/auth-api";
 import { passwordChecks, isPasswordValid } from "@/lib/auth/password";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { PASSWORD_RESET_ENABLED, stepVariants, stepTransition } from "../constants";
@@ -14,6 +19,9 @@ import { PASSWORD_RESET_ENABLED, stepVariants, stepTransition } from "../constan
 /* ── Steps ───────────────────────────────────────────────── */
 type ResetStep = "email" | "code" | "password";
 const STEP_ORDER: ResetStep[] = ["email", "code", "password"];
+
+// 재설정 성공 후 도착지. 로그인 화면에서 ?reset=1 배너를 표시한다.
+const RESET_SUCCESS_URL = "/login?reset=1";
 
 /* ── Page ────────────────────────────────────────────────── */
 export default function ForgotPasswordPage() {
@@ -26,9 +34,11 @@ export default function ForgotPasswordPage() {
 
 function ForgotPasswordForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   // 설정 → 비밀번호 변경(FRT-49) 진입은 로그인 상태이므로, 이 흐름에서만 가드를 풀어
   // /dashboard 로 튕기지 않게 한다. (그 외 직접/북마크 진입은 기존대로 인증 사용자를 리다이렉트)
-  const fromSettings = useSearchParams().get("from") === "settings";
+  // 흐름 도중 URL 이 ?from 을 잃어도(외부 리다이렉트 등) 분기가 뒤집히지 않도록 마운트 시 1회 고정한다.
+  const [fromSettings] = useState(() => searchParams.get("from") === "settings");
   const { shouldRedirect } = useRedirectIfAuthenticated({ allowAuthenticated: fromSettings });
 
   // 플래그 off(기본·BAC-2 미배포)면 라우트 자체를 막는다. 로그인 링크 숨김만으로는
@@ -143,13 +153,19 @@ function ForgotPasswordForm() {
     try {
       await resetPassword(email, code.trim(), password);
       // 성공 배너는 로그인 화면에서 ?reset=1 로 표시한다(내비게이션 후에도 살아남음).
-      // 설정發 흐름은 로그인 상태로 진입했으므로, 비밀번호 변경 후 재로그인을 유도한다.
-      // 하드 내비게이션으로 AuthProvider 를 재초기화해 무효화된 세션을 /auth/me 로 재확인하게 한다.
-      // (client push 면 메모리의 user 가 남아 /login 가드가 다시 /dashboard 로 튕긴다.)
       if (fromSettings) {
-        window.location.assign("/login?reset=1");
+        // 설정發 흐름은 로그인 상태로 진입했으므로 비밀번호 변경 후 재로그인을 유도한다.
+        // 세션을 직접 정리(best-effort)해 백엔드의 reset-password 세션 무효화 여부에 의존하지 않는다.
+        // (정리하지 않으면 /login 가드가 살아있는 세션을 보고 다시 /dashboard 로 튕겨 배너를 못 본다.)
+        // 이후 하드 내비게이션으로 AuthProvider 를 재초기화해 /auth/me 를 다시 확인하게 한다.
+        try {
+          await logoutUser();
+        } catch {
+          // 이미 무효화됐을 수 있음 — 재로그인 유도가 목적이므로 실패해도 그대로 진행한다.
+        }
+        window.location.assign(RESET_SUCCESS_URL);
       } else {
-        router.push("/login?reset=1");
+        router.push(RESET_SUCCESS_URL);
       }
     } catch (e) {
       if (e instanceof ApiError) {

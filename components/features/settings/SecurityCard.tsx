@@ -16,6 +16,11 @@ export function SecurityCard({ hasPassword }: SecurityCardProps) {
     ? "비밀번호를 변경할 수 있어요."
     : "소셜 로그인 계정이에요. 비밀번호를 설정하면 이메일로도 로그인할 수 있어요.";
 
+  // forgot-password 는 기존 비밀번호 보유 계정의 재설정(이메일 코드) 흐름이다.
+  // 비밀번호가 없는 소셜 전용 계정의 최초 '설정'은 별도 흐름이 필요하므로 아직 활성화하지 않는다.
+  const enabled = PASSWORD_RESET_ENABLED && hasPassword;
+  const buttonLabel = enabled ? label : `${label} (준비 중)`;
+
   return (
     <Card variant="default" padding="lg">
       <CardHeader>
@@ -26,10 +31,10 @@ export function SecurityCard({ hasPassword }: SecurityCardProps) {
         variant="secondary"
         size="sm"
         fullWidth
-        disabled={!PASSWORD_RESET_ENABLED}
+        disabled={!enabled}
         onClick={() => router.push("/forgot-password?from=settings")}
       >
-        {PASSWORD_RESET_ENABLED ? label : `${label} (준비 중)`}
+        {buttonLabel}
       </Button>
     </Card>
   );

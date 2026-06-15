@@ -422,6 +422,13 @@ export async function stubApi(
         return;
       }
 
+      // 로그아웃(FRT-49 설정發 재설정의 best-effort 세션 정리 포함): /auth/me 가 401 이 되게 한다.
+      if (method === "POST" && pathname === "/auth/logout") {
+        sessionInvalidated = true;
+        await fulfillJson(200, success(null));
+        return;
+      }
+
       // experiences · bookmarks · resume · analysis 목록 → stateful 라우터.
       const result = routeStateful(method, pathname, body, store, scenario);
       if (result.kind === "respond") {
