@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { ApiError } from "@/lib/api/client";
@@ -26,7 +26,10 @@ export default function ForgotPasswordPage() {
 
 function ForgotPasswordForm() {
   const router = useRouter();
-  const { shouldRedirect } = useRedirectIfAuthenticated();
+  // 설정 → 비밀번호 변경(FRT-49) 진입은 로그인 상태이므로, 이 흐름에서만 가드를 풀어
+  // /dashboard 로 튕기지 않게 한다. (그 외 직접/북마크 진입은 기존대로 인증 사용자를 리다이렉트)
+  const fromSettings = useSearchParams().get("from") === "settings";
+  const { shouldRedirect } = useRedirectIfAuthenticated({ allowAuthenticated: fromSettings });
 
   // 플래그 off(기본·BAC-2 미배포)면 라우트 자체를 막는다. 로그인 링크 숨김만으로는
   // 북마크/수동 URL 진입을 못 막아 깨진 흐름이 노출된다(Codex P2).
@@ -140,7 +143,14 @@ function ForgotPasswordForm() {
     try {
       await resetPassword(email, code.trim(), password);
       // 성공 배너는 로그인 화면에서 ?reset=1 로 표시한다(내비게이션 후에도 살아남음).
-      router.push("/login?reset=1");
+      // 설정發 흐름은 로그인 상태로 진입했으므로, 비밀번호 변경 후 재로그인을 유도한다.
+      // 하드 내비게이션으로 AuthProvider 를 재초기화해 무효화된 세션을 /auth/me 로 재확인하게 한다.
+      // (client push 면 메모리의 user 가 남아 /login 가드가 다시 /dashboard 로 튕긴다.)
+      if (fromSettings) {
+        window.location.assign("/login?reset=1");
+      } else {
+        router.push("/login?reset=1");
+      }
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === "WEAK_PASSWORD") {

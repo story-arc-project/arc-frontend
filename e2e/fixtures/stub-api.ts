@@ -306,6 +306,8 @@ export async function stubApi(
   const store = createStatefulStore(scenario);
   const mutations: CapturedMutation[] = [];
   let accountDeleted = false;
+  // 비밀번호 재설정(FRT-49): 재설정 성공 후 기존 세션이 무효화된 것처럼 /auth/me 가 401 이 되게 한다.
+  let sessionInvalidated = false;
   // 프로필 수정(FRT-21): PATCH 로 받은 변경분을 누적해 이후 /auth/me 가 반영하게 한다.
   let profilePatch: Record<string, unknown> = {};
 
@@ -357,8 +359,8 @@ export async function stubApi(
       // 인증 주입(opt-in): `/auth/me` 를 고정 사용자로 fulfill 해 AuthGate 를 통과시킨다.
       // fetchCurrentUser 는 응답 봉투의 `.data` 를 읽으므로 `{ data: user }` 형태로 싼다.
       if (method === "GET" && authed && pathname === "/auth/me") {
-        // 계정 삭제(FRT-9) 후에는 세션이 사라진 것처럼 401 을 돌려준다.
-        if (accountDeleted) {
+        // 계정 삭제(FRT-9)·비밀번호 재설정(FRT-49) 후에는 세션이 사라진 것처럼 401 을 돌려준다.
+        if (accountDeleted || sessionInvalidated) {
           await fulfillJson(401, { status: "error", message: "deleted", code: "UNAUTHORIZED" });
           return;
         }
@@ -414,6 +416,8 @@ export async function stubApi(
         return;
       }
       if (method === "POST" && pathname === "/auth/reset-password") {
+        // 재설정 성공 → 기존 세션 무효화(설정發 흐름의 재로그인 유도를 모델링).
+        sessionInvalidated = true;
         await fulfillJson(200, success(null));
         return;
       }
