@@ -23,8 +23,12 @@ test("설정發 비밀번호 변경: 진입 → 재설정 → /login?reset=1 재
   await expect(page).toHaveURL(/\/forgot-password\?from=settings$/);
   await expect(page.getByRole("heading", { name: "비밀번호를 잊으셨나요?" })).toBeVisible();
 
-  // 재설정 흐름: 이메일 → 코드 → 새 비밀번호
-  await page.getByPlaceholder("name@example.com").fill("user@example.com");
+  // 이메일은 현재 계정으로 고정(prefill+lock) — 임의 이메일로 다른 계정을 재설정하는 오인 방지
+  const emailInput = page.getByPlaceholder("name@example.com");
+  await expect(emailInput).toHaveValue("demo@story-arc.org");
+  await expect(emailInput).toBeDisabled();
+
+  // 재설정 흐름: 코드 → 새 비밀번호 (이메일은 고정값으로 전송)
   await page.getByRole("button", { name: "재설정 코드 받기" }).click();
   await page.getByPlaceholder("코드 6자리 입력").fill("123456");
   await page.getByRole("button", { name: "확인" }).click();
@@ -38,11 +42,12 @@ test("설정發 비밀번호 변경: 진입 → 재설정 → /login?reset=1 재
     page.getByText("비밀번호가 변경되었어요. 새 비밀번호로 로그인해주세요."),
   ).toBeVisible();
 
+  // 변경 대상 이메일이 로그인 계정으로 고정되었는지 단언
   expect(stub.mutations).toContainEqual(
     expect.objectContaining({
       method: "POST",
       path: "/auth/reset-password",
-      body: { email: "user@example.com", code: "123456", newPassword: "newpass123" },
+      body: { email: "demo@story-arc.org", code: "123456", newPassword: "newpass123" },
     }),
   );
 });

@@ -14,6 +14,7 @@ import {
 } from "@/lib/api/auth-api";
 import { passwordChecks, isPasswordValid } from "@/lib/auth/password";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
+import { useAuth } from "@/hooks/useAuth";
 import { PASSWORD_RESET_ENABLED, stepVariants, stepTransition } from "../constants";
 
 /* ── Steps ───────────────────────────────────────────────── */
@@ -22,6 +23,19 @@ const STEP_ORDER: ResetStep[] = ["email", "code", "password"];
 
 // 재설정 성공 후 도착지. 로그인 화면에서 ?reset=1 배너를 표시한다.
 const RESET_SUCCESS_URL = "/login?reset=1";
+
+// 세션 정리(로그아웃)를 짧게 재시도한다. 일시적 실패가 곧바로 무방비 진행으로 이어지지 않게 한다.
+async function logoutWithRetry(attempts = 2): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await logoutUser();
+      return true;
+    } catch {
+      // 다음 시도로 넘어간다.
+    }
+  }
+  return false;
+}
 
 /* ── Page ────────────────────────────────────────────────── */
 export default function ForgotPasswordPage() {
@@ -40,6 +54,12 @@ function ForgotPasswordForm() {
   // 흐름 도중 URL 이 ?from 을 잃어도(외부 리다이렉트 등) 분기가 뒤집히지 않도록 마운트 시 1회 고정한다.
   const [fromSettings] = useState(() => searchParams.get("from") === "settings");
   const { shouldRedirect } = useRedirectIfAuthenticated({ allowAuthenticated: fromSettings });
+
+  // 설정發 흐름은 현재 로그인 계정의 비밀번호 변경이다. 임의 이메일 입력을 막기 위해
+  // 로그인 세션의 계정 이메일로 고정(prefill+lock)한다 — 다른 계정을 재설정한 뒤 현재 계정이
+  // 변경된 것처럼 성공 배너가 뜨는 오인을 방지한다(Codex P2).
+  const { user } = useAuth();
+  const lockedEmail = fromSettings ? (user?.account.email ?? "") : "";
 
   // 플래그 off(기본·BAC-2 미배포)면 라우트 자체를 막는다. 로그인 링크 숨김만으로는
   // 북마크/수동 URL 진입을 못 막아 깨진 흐름이 노출된다(Codex P2).
@@ -63,6 +83,11 @@ function ForgotPasswordForm() {
   const [codeError, setCodeError] = useState<string | null>(null);
   const [resendNotice, setResendNotice] = useState<string | null>(null);
   const [pwError, setPwError] = useState<string | null>(null);
+
+  // 세션 로드 후 계정 이메일을 채운다(설정發 흐름 한정·lockedEmail 있을 때만).
+  useEffect(() => {
+    if (lockedEmail) setEmail(lockedEmail);
+  }, [lockedEmail]);
 
   // 비밀번호 강도(공용 규칙) + 확인 일치
   const pwChecks = passwordChecks(password);
@@ -155,18 +180,20 @@ function ForgotPasswordForm() {
       // 성공 배너는 로그인 화면에서 ?reset=1 로 표시한다(내비게이션 후에도 살아남음).
       if (fromSettings) {
         // 설정發 흐름은 로그인 상태로 진입했으므로 비밀번호 변경 후 재로그인을 유도한다.
-        // 세션을 직접 정리(best-effort)해 백엔드의 reset-password 세션 무효화 여부에 의존하지 않는다.
-        // (정리하지 않으면 /login 가드가 살아있는 세션을 보고 다시 /dashboard 로 튕겨 배너를 못 본다.)
-        // 이후 하드 내비게이션으로 AuthProvider 를 재초기화해 /auth/me 를 다시 확인하게 한다.
-        try {
-          await logoutUser();
-        } catch {
-          // 이미 무효화됐을 수 있음 — 재로그인 유도가 목적이므로 실패해도 그대로 진행한다.
+        // 세션을 직접 정리해 백엔드의 reset-password 세션 무효화 여부에 의존하지 않는다.
+        // (정리하지 않고 /login 으로 가면 가드가 살아있는 세션을 보고 다시 /dashboard 로 튕긴다.)
+        const loggedOut = await logoutWithRetry();
+        if (loggedOut) {
+          // 하드 내비게이션으로 AuthProvider 를 재초기화해 무효화된 세션을 /auth/me 로 재확인하게 한다.
+          window.location.assign(RESET_SUCCESS_URL);
+          return;
         }
-        window.location.assign(RESET_SUCCESS_URL);
-      } else {
-        router.push(RESET_SUCCESS_URL);
+        // 정리 실패(세션 살아있음): 자동 진행하면 /dashboard 로 조용히 튕겨 변경이 안 된 것처럼
+        // 보인다. 변경은 성공했음을 알리고 수동 재로그인을 안내한다(silent 오인 방지).
+        setPwError("비밀번호는 변경됐어요. 보안을 위해 로그아웃 후 새 비밀번호로 로그인해주세요.");
+        return;
       }
+      router.push(RESET_SUCCESS_URL);
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === "WEAK_PASSWORD") {
@@ -238,6 +265,8 @@ function ForgotPasswordForm() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && email && !isLoading && handleRequestCode()}
+                    disabled={fromSettings}
+                    hint={fromSettings ? "현재 로그인한 계정으로 코드를 보내요." : undefined}
                   />
                   {emailError && <p className="text-body-sm text-error">{emailError}</p>}
                   <Button onClick={handleRequestCode} disabled={!email || isLoading}>
