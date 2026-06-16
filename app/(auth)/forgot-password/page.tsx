@@ -61,11 +61,15 @@ function ForgotPasswordForm() {
   // 설정發 흐름은 현재 로그인 계정의 비밀번호 변경이다. 임의 이메일 입력을 막기 위해
   // 로그인 세션의 계정 이메일로 고정(prefill+lock)한다 — 다른 계정을 재설정한 뒤 현재 계정이
   // 변경된 것처럼 성공 배너가 뜨는 오인을 방지한다(Codex P2).
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const lockedEmail = fromSettings ? (user?.account.email ?? "") : "";
   // 계정 이메일이 실제로 로드됐을 때만 잠근다. 세션 없이 ?from=settings 로 진입한 경우
   // (만료·새 프로필·공유 URL)엔 잠그지 않아 일반 공개 재설정 폼으로 동작한다(스트랜딩 방지, Codex P2).
   const emailLocked = lockedEmail !== "";
+  // 단, 세션 로딩이 끝나기 전엔 입력을 열어두지 않는다. 로딩 중 임의 이메일을 입력·제출하면 코드가
+  // 그 주소로 발송된 뒤 prefill 이 계정 이메일로 덮어써 verify/reset 대상이 어긋난다(Codex P3).
+  // 로딩이 끝나 세션이 없다고 확정되면 잠금을 풀어 공개 폼으로 떨어진다.
+  const emailFieldLocked = emailLocked || (fromSettings && authLoading);
 
   // 플래그 off(기본·BAC-2 미배포)면 라우트 자체를 막는다. 로그인 링크 숨김만으로는
   // 북마크/수동 URL 진입을 못 막아 깨진 흐름이 노출된다(Codex P2).
@@ -271,7 +275,7 @@ function ForgotPasswordForm() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && email && !isLoading && handleRequestCode()}
-                    disabled={emailLocked}
+                    disabled={emailFieldLocked}
                     hint={emailLocked ? "현재 로그인한 계정으로 코드를 보내요." : undefined}
                   />
                   {emailError && <p className="text-body-sm text-error">{emailError}</p>}
