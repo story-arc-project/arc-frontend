@@ -11,7 +11,7 @@ const meta: Meta<typeof AnalysisStatusBadge> = {
   argTypes: {
     status: {
       control: "inline-radio",
-      options: ["pending", "completed", "updated"],
+      options: ["pending", "completed", "updated", "failed"],
     },
   },
   args: {
@@ -35,12 +35,17 @@ export const Updated: Story = {
   args: { status: "updated" },
 };
 
+export const Failed: Story = {
+  args: { status: "failed" },
+};
+
 export const AllStates: Story = {
   render: () => (
     <div className="flex items-center gap-3">
       <AnalysisStatusBadge status="pending" />
       <AnalysisStatusBadge status="completed" />
       <AnalysisStatusBadge status="updated" />
+      <AnalysisStatusBadge status="failed" />
     </div>
   ),
 };

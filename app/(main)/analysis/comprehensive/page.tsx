@@ -148,6 +148,13 @@ export default function ComprehensiveAnalysisPage() {
                       <BookmarkToggle
                         analysisId={item.id}
                         isBookmarked={item.isBookmarked}
+                        onToggled={(next) =>
+                          setItems((prev) =>
+                            prev.map((i) =>
+                              i.id === item.id ? { ...i, isBookmarked: next } : i,
+                            ),
+                          )
+                        }
                         size="sm"
                       />
                       <button

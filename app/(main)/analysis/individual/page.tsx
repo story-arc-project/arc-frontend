@@ -87,7 +87,12 @@ export default function IndividualAnalysisPage() {
           <div className="space-y-3" role="tabpanel" id={`individual-panel-${filter}`} aria-labelledby={`individual-tab-${filter}`}>
             {items.map((item) => {
               const isNavigable = item.status === "completed";
-              const displayStatus = isNavigable ? "completed" : "pending";
+              const displayStatus =
+                item.status === "failed"
+                  ? "failed"
+                  : isNavigable
+                  ? "completed"
+                  : "pending";
 
               const content = (
                 <div className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors">
