@@ -1,5 +1,6 @@
 "use client"
 
+import { Button } from "@/components/ui/button"
 import ExperienceFormV2 from "./ExperienceFormV2"
 import ExperienceDetailV2 from "./ExperienceDetailV2"
 import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
@@ -79,21 +80,17 @@ export default function RightPanelV2({
 
 function EmptyState({ onNewExperience }: { onNewExperience: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 text-text-tertiary px-4">
+    <div className="flex flex-col items-center justify-center h-full gap-3 px-4 text-center text-text-tertiary">
       <div className="w-12 h-12 rounded-xl bg-surface-secondary flex items-center justify-center text-2xl mb-1">
         📋
       </div>
       <p className="text-heading-3 text-text-secondary">기록을 시작해보세요</p>
-      <p className="text-body-lg text-text-tertiary text-center leading-relaxed">
-        좌측에서 경험을 선택하거나{" "}
-        <button
-          onClick={onNewExperience}
-          className="text-brand font-medium hover:text-brand-dark transition-colors"
-        >
-          새 경험 추가
-        </button>
-        를 눌러보세요
+      <p className="text-body-lg text-text-tertiary leading-relaxed">
+        새 경험을 추가해 기록을 남겨보세요
       </p>
+      <Button variant="primary" size="lg" onClick={onNewExperience} className="mt-2">
+        새 경험 추가하기
+      </Button>
     </div>
   )
 }

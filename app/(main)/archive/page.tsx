@@ -182,6 +182,25 @@ export default function ArchivePage() {
     }
   }
 
+  // Auto-select the first experience once loaded so the desktop detail panel
+  // isn't left idle (mobile stays on the list — mobileView gates that
+  // independently). We don't push `?id`: this is a view default, not user
+  // navigation, so polluting history would be wrong. One-shot — never fights a
+  // later new/cancel/delete the user drives.
+  const [didAutoSelect, setDidAutoSelect] = useState(false)
+  if (
+    !didAutoSelect &&
+    !idParam &&
+    selectedId === null &&
+    mode === "empty" &&
+    !isLoading &&
+    filteredExperiences.length > 0
+  ) {
+    setDidAutoSelect(true)
+    setSelectedId(filteredExperiences[0].id)
+    setMode("detail")
+  }
+
   // ── Selection ──────────────────────────────────────────────────────
   const handleSelectExperience = useCallback(
     (id: string) => {
@@ -582,14 +601,17 @@ export default function ArchivePage() {
             </button>
           </div>
         ) : filteredExperiences.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-text-tertiary">
-            <p className="text-body">경험이 없습니다</p>
-            <button
+          <div className="flex flex-col items-center justify-center py-16 px-4 gap-4 text-center text-text-tertiary">
+            <p className="text-body">아직 기록한 경험이 없어요</p>
+            {/* 모바일 전용 CTA — 데스크톱은 우측 패널 히어로가 유일 CTA(이중 공허 메시지 제거). */}
+            <Button
+              variant="primary"
+              size="lg"
               onClick={handleNewExperience}
-              className="text-brand text-body-sm mt-2 hover:text-brand-dark transition-colors"
+              className="md:hidden"
             >
               새 경험 추가하기
-            </button>
+            </Button>
           </div>
         ) : (
           filteredExperiences.map(exp => (
