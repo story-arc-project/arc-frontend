@@ -176,7 +176,7 @@ function Navbar() {
       <nav className="max-w-5xl mx-auto px-6 h-[72px] flex items-center justify-between">
         <div className="flex items-center gap-6">
           <span className="text-heading-3 font-bold tracking-widest text-text-primary">ARC</span>
-          <div className="hidden sm:flex items-center gap-7 text-body-large text-text-secondary font-medium">
+          <div className="hidden sm:flex items-center gap-7 text-body-lg text-text-secondary font-medium">
             <Link href="#features" className="hover:text-text-primary transition-colors">기능</Link>
             <Link href="#demo" className="hover:text-text-primary transition-colors">체험</Link>
             <Link href="#how" className="hover:text-text-primary transition-colors">사용법</Link>

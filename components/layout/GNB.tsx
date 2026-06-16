@@ -37,7 +37,7 @@ export function GNB() {
                 key={item.href}
                 href={item.href}
                 className={[
-                  "px-3 py-1.5 rounded-md text-body-large transition-colors duration-150",
+                  "px-3 py-1.5 rounded-md text-body-lg transition-colors duration-150",
                   isActive
                     ? "text-brand font-semibold bg-surface-brand"
                     : "text-text-secondary hover:text-text-primary hover:bg-surface-tertiary",
@@ -79,7 +79,7 @@ export function GNB() {
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
                 className={[
-                  "block px-3 py-2.5 rounded-md text-body-large transition-colors duration-150",
+                  "block px-3 py-2.5 rounded-md text-body-lg transition-colors duration-150",
                   isActive
                     ? "text-brand font-semibold bg-surface-brand"
                     : "text-text-secondary hover:text-text-primary hover:bg-surface-tertiary",
