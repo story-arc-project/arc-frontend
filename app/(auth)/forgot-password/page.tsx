@@ -2,18 +2,43 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { ApiError } from "@/lib/api/client";
-import { requestPasswordReset, verifyResetCode, resetPassword } from "@/lib/api/auth-api";
+import {
+  requestPasswordReset,
+  verifyResetCode,
+  resetPassword,
+  logoutUser,
+} from "@/lib/api/auth-api";
 import { passwordChecks, isPasswordValid } from "@/lib/auth/password";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
+import { useAuth } from "@/hooks/useAuth";
 import { PASSWORD_RESET_ENABLED, stepVariants, stepTransition } from "../constants";
 
 /* ── Steps ───────────────────────────────────────────────── */
 type ResetStep = "email" | "code" | "password";
 const STEP_ORDER: ResetStep[] = ["email", "code", "password"];
+
+// 재설정 성공 후 도착지. 로그인 화면에서 ?reset=1 배너를 표시한다.
+const RESET_SUCCESS_URL = "/login?reset=1";
+
+// 세션 정리(로그아웃)를 짧게 재시도한다. 일시적 실패가 곧바로 무방비 진행으로 이어지지 않게 한다.
+// reset-password 가 현재 세션을 무효화하면(표준 동작) 뒤이은 logout 은 쿠키가 이미 없어 401 이
+// 날 수 있다 — 이는 "이미 로그아웃됨"이므로 목적 달성으로 간주한다(스트랜딩 방지).
+async function logoutWithRetry(attempts = 2): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await logoutUser();
+      return true;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return true;
+      // 그 외(네트워크·5xx 등)는 일시적일 수 있으니 재시도한다.
+    }
+  }
+  return false;
+}
 
 /* ── Page ────────────────────────────────────────────────── */
 export default function ForgotPasswordPage() {
@@ -26,13 +51,48 @@ export default function ForgotPasswordPage() {
 
 function ForgotPasswordForm() {
   const router = useRouter();
-  const { shouldRedirect } = useRedirectIfAuthenticated();
+  const searchParams = useSearchParams();
+  // 설정 → 비밀번호 변경(FRT-49) 진입은 로그인 상태이므로, 이 흐름에서만 가드를 풀어
+  // /dashboard 로 튕기지 않게 한다. (그 외 직접/북마크 진입은 기존대로 인증 사용자를 리다이렉트)
+  // 흐름 도중 URL 이 ?from 을 잃어도(외부 리다이렉트 등) 분기가 뒤집히지 않도록 마운트 시 1회 고정한다.
+  const [fromSettings] = useState(() => searchParams.get("from") === "settings");
+  const { shouldRedirect } = useRedirectIfAuthenticated({ allowAuthenticated: fromSettings });
+
+  // 설정發 흐름은 현재 로그인 계정의 비밀번호 변경이다. 임의 이메일 입력을 막기 위해
+  // 로그인 세션의 계정 이메일로 고정(prefill+lock)한다 — 다른 계정을 재설정한 뒤 현재 계정이
+  // 변경된 것처럼 성공 배너가 뜨는 오인을 방지한다(Codex P2).
+  const { user, isLoading: authLoading } = useAuth();
+  const lockedEmail = fromSettings ? (user?.account.email ?? "") : "";
+  const emailLocked = lockedEmail !== "";
+
+  // 설정發 진입은 인증 세션을 신뢰원으로 삼는다 — ?from=settings 쿼리스트링만으로 흐름을
+  // 허용하지 않는다. 인증 결과가 확정된 뒤(authLoading=false) 유효한 "비번 계정" 세션이
+  // 아니면 공개 폼으로 떨어지지 않고 적절한 곳으로 돌려보낸다(Codex P2).
+  //  - user=null (비인증 401 또는 /auth/me 조회 실패): 신원 불확실 → /login
+  //    (살아있는 세션을 임의 이메일로 오인 재설정하거나 빈 폼에 갇히는 것 방지)
+  //  - 소셜 전용 계정(has_password=false): 이 흐름 미지원 → /settings (SecurityCard 게이팅과 정합)
+  //  - 인증된 비번 계정: 그대로 잠긴 설정 흐름 진행
+  const settingsRedirect = (() => {
+    if (!fromSettings || authLoading) return null;
+    if (!user) return "/login";
+    if (user.account.has_password === false) return "/settings";
+    return null;
+  })();
+
+  // 세션 로딩 중엔 입력을 열어두지 않는다. 열어두면 그 창에서 임의 이메일을 입력·제출한 뒤
+  // prefill 이 계정 이메일로 덮어써 verify/reset 대상이 어긋난다(Codex P3).
+  const emailFieldLocked = emailLocked || (fromSettings && authLoading);
 
   // 플래그 off(기본·BAC-2 미배포)면 라우트 자체를 막는다. 로그인 링크 숨김만으로는
   // 북마크/수동 URL 진입을 못 막아 깨진 흐름이 노출된다(Codex P2).
   useEffect(() => {
     if (!PASSWORD_RESET_ENABLED) router.replace("/login");
   }, [router]);
+
+  // 설정發 진입이 유효한 비번 계정 세션이 아니면 돌려보낸다(위 settingsRedirect 참조).
+  useEffect(() => {
+    if (settingsRedirect) router.replace(settingsRedirect);
+  }, [settingsRedirect, router]);
 
   const [step, setStep] = useState<ResetStep>("email");
   const [dir, setDir] = useState(1);
@@ -50,6 +110,11 @@ function ForgotPasswordForm() {
   const [codeError, setCodeError] = useState<string | null>(null);
   const [resendNotice, setResendNotice] = useState<string | null>(null);
   const [pwError, setPwError] = useState<string | null>(null);
+
+  // 세션 로드 후 계정 이메일을 채운다(설정發 흐름 한정·lockedEmail 있을 때만).
+  useEffect(() => {
+    if (lockedEmail) setEmail(lockedEmail);
+  }, [lockedEmail]);
 
   // 비밀번호 강도(공용 규칙) + 확인 일치
   const pwChecks = passwordChecks(password);
@@ -140,7 +205,22 @@ function ForgotPasswordForm() {
     try {
       await resetPassword(email, code.trim(), password);
       // 성공 배너는 로그인 화면에서 ?reset=1 로 표시한다(내비게이션 후에도 살아남음).
-      router.push("/login?reset=1");
+      if (fromSettings) {
+        // 설정發 흐름은 로그인 상태로 진입했으므로 비밀번호 변경 후 재로그인을 유도한다.
+        // 세션을 직접 정리해 백엔드의 reset-password 세션 무효화 여부에 의존하지 않는다.
+        // (정리하지 않고 /login 으로 가면 가드가 살아있는 세션을 보고 다시 /dashboard 로 튕긴다.)
+        const loggedOut = await logoutWithRetry();
+        if (loggedOut) {
+          // 하드 내비게이션으로 AuthProvider 를 재초기화해 무효화된 세션을 /auth/me 로 재확인하게 한다.
+          window.location.assign(RESET_SUCCESS_URL);
+          return;
+        }
+        // 정리 실패(세션 살아있음): 자동 진행하면 /dashboard 로 조용히 튕겨 변경이 안 된 것처럼
+        // 보인다. 변경은 성공했음을 알리고 수동 재로그인을 안내한다(silent 오인 방지).
+        setPwError("비밀번호는 변경됐어요. 보안을 위해 로그아웃 후 새 비밀번호로 로그인해주세요.");
+        return;
+      }
+      router.push(RESET_SUCCESS_URL);
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === "WEAK_PASSWORD") {
@@ -163,7 +243,7 @@ function ForgotPasswordForm() {
     }
   }
 
-  if (shouldRedirect || !PASSWORD_RESET_ENABLED) return null;
+  if (shouldRedirect || !PASSWORD_RESET_ENABLED || settingsRedirect) return null;
 
   return (
     <div className="w-full max-w-lg">
@@ -212,6 +292,8 @@ function ForgotPasswordForm() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && email && !isLoading && handleRequestCode()}
+                    disabled={emailFieldLocked}
+                    hint={emailLocked ? "현재 로그인한 계정으로 코드를 보내요." : undefined}
                   />
                   {emailError && <p className="text-body-sm text-error">{emailError}</p>}
                   <Button onClick={handleRequestCode} disabled={!email || isLoading}>
