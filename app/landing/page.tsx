@@ -585,7 +585,8 @@ function Footer() {
         <div className="flex gap-6 text-[14px] text-text-secondary">
           <Link href="#features" className="hover:text-text-primary transition-colors">기능</Link>
           <Link href="#pricing" className="hover:text-text-primary transition-colors">요금</Link>
-          <Link href="/ui-test" className="hover:text-text-primary transition-colors">UI 테스트</Link>
+          <Link href="/privacy" className="hover:text-text-primary transition-colors">개인정보처리방침</Link>
+          <Link href="/terms" className="hover:text-text-primary transition-colors">이용약관</Link>
         </div>
       </div>
       <div className="max-w-5xl mx-auto mt-8 pt-6 border-t border-border">
