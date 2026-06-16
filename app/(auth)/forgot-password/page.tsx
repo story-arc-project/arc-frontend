@@ -63,12 +63,24 @@ function ForgotPasswordForm() {
   // 변경된 것처럼 성공 배너가 뜨는 오인을 방지한다(Codex P2).
   const { user, isLoading: authLoading } = useAuth();
   const lockedEmail = fromSettings ? (user?.account.email ?? "") : "";
-  // 계정 이메일이 실제로 로드됐을 때만 잠근다. 세션 없이 ?from=settings 로 진입한 경우
-  // (만료·새 프로필·공유 URL)엔 잠그지 않아 일반 공개 재설정 폼으로 동작한다(스트랜딩 방지, Codex P2).
   const emailLocked = lockedEmail !== "";
-  // 단, 세션 로딩이 끝나기 전엔 입력을 열어두지 않는다. 로딩 중 임의 이메일을 입력·제출하면 코드가
-  // 그 주소로 발송된 뒤 prefill 이 계정 이메일로 덮어써 verify/reset 대상이 어긋난다(Codex P3).
-  // 로딩이 끝나 세션이 없다고 확정되면 잠금을 풀어 공개 폼으로 떨어진다.
+
+  // 설정發 진입은 인증 세션을 신뢰원으로 삼는다 — ?from=settings 쿼리스트링만으로 흐름을
+  // 허용하지 않는다. 인증 결과가 확정된 뒤(authLoading=false) 유효한 "비번 계정" 세션이
+  // 아니면 공개 폼으로 떨어지지 않고 적절한 곳으로 돌려보낸다(Codex P2).
+  //  - user=null (비인증 401 또는 /auth/me 조회 실패): 신원 불확실 → /login
+  //    (살아있는 세션을 임의 이메일로 오인 재설정하거나 빈 폼에 갇히는 것 방지)
+  //  - 소셜 전용 계정(has_password=false): 이 흐름 미지원 → /settings (SecurityCard 게이팅과 정합)
+  //  - 인증된 비번 계정: 그대로 잠긴 설정 흐름 진행
+  const settingsRedirect = (() => {
+    if (!fromSettings || authLoading) return null;
+    if (!user) return "/login";
+    if (user.account.has_password === false) return "/settings";
+    return null;
+  })();
+
+  // 세션 로딩 중엔 입력을 열어두지 않는다. 열어두면 그 창에서 임의 이메일을 입력·제출한 뒤
+  // prefill 이 계정 이메일로 덮어써 verify/reset 대상이 어긋난다(Codex P3).
   const emailFieldLocked = emailLocked || (fromSettings && authLoading);
 
   // 플래그 off(기본·BAC-2 미배포)면 라우트 자체를 막는다. 로그인 링크 숨김만으로는
@@ -76,6 +88,11 @@ function ForgotPasswordForm() {
   useEffect(() => {
     if (!PASSWORD_RESET_ENABLED) router.replace("/login");
   }, [router]);
+
+  // 설정發 진입이 유효한 비번 계정 세션이 아니면 돌려보낸다(위 settingsRedirect 참조).
+  useEffect(() => {
+    if (settingsRedirect) router.replace(settingsRedirect);
+  }, [settingsRedirect, router]);
 
   const [step, setStep] = useState<ResetStep>("email");
   const [dir, setDir] = useState(1);
@@ -226,7 +243,7 @@ function ForgotPasswordForm() {
     }
   }
 
-  if (shouldRedirect || !PASSWORD_RESET_ENABLED) return null;
+  if (shouldRedirect || !PASSWORD_RESET_ENABLED || settingsRedirect) return null;
 
   return (
     <div className="w-full max-w-lg">

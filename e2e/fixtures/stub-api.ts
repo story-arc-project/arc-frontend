@@ -274,6 +274,12 @@ export interface StubApiOptions {
    * 기본값은 seedDemoUser 의 값(true)을 그대로 사용하므로 기존 스펙에 영향 없음.
    */
   onboarded?: boolean;
+  /**
+   * `authed: true` 와 함께 사용. false 를 지정하면 `/auth/me` 응답의 `account.has_password` 를
+   * false(+소셜 연결)로 덮어써 소셜 전용 계정을 시뮬레이션한다(FRT-49 설정發 재설정 게이팅 검증).
+   * 기본값은 seedDemoUser(true)를 그대로 사용한다.
+   */
+  hasPassword?: boolean;
 }
 
 /** OPTIONS·GET 을 제외한, 앱이 보낸 변이 요청을 도착 순서대로 캡처한다(payload 단언용). */
@@ -301,6 +307,7 @@ export async function stubApi(
   const scenario: StubScenario = options.scenario ?? "data";
   const authed = options.authed ?? false;
   const onboardedOverride = options.onboarded;
+  const hasPasswordOverride = options.hasPassword;
 
   // 테스트별 fresh store (이 클로저에만 상태가 존재 → 전역 누수 0).
   const store = createStatefulStore(scenario);
@@ -369,6 +376,10 @@ export async function stubApi(
         const meUser = {
           ...seedDemoUser,
           ...(onboardedOverride === false ? { onboarded: false } : {}),
+          account:
+            hasPasswordOverride === false
+              ? { ...seedDemoUser.account, has_password: false, connected_oauth: ["google"] }
+              : seedDemoUser.account,
           profile: seedDemoUser.profile
             ? { ...seedDemoUser.profile, ...profilePatch }
             : seedDemoUser.profile,
