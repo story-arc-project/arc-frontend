@@ -63,6 +63,9 @@ function ForgotPasswordForm() {
   // 변경된 것처럼 성공 배너가 뜨는 오인을 방지한다(Codex P2).
   const { user } = useAuth();
   const lockedEmail = fromSettings ? (user?.account.email ?? "") : "";
+  // 계정 이메일이 실제로 로드됐을 때만 잠근다. 세션 없이 ?from=settings 로 진입한 경우
+  // (만료·새 프로필·공유 URL)엔 잠그지 않아 일반 공개 재설정 폼으로 동작한다(스트랜딩 방지, Codex P2).
+  const emailLocked = lockedEmail !== "";
 
   // 플래그 off(기본·BAC-2 미배포)면 라우트 자체를 막는다. 로그인 링크 숨김만으로는
   // 북마크/수동 URL 진입을 못 막아 깨진 흐름이 노출된다(Codex P2).
@@ -268,8 +271,8 @@ function ForgotPasswordForm() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && email && !isLoading && handleRequestCode()}
-                    disabled={fromSettings}
-                    hint={fromSettings ? "현재 로그인한 계정으로 코드를 보내요." : undefined}
+                    disabled={emailLocked}
+                    hint={emailLocked ? "현재 로그인한 계정으로 코드를 보내요." : undefined}
                   />
                   {emailError && <p className="text-body-sm text-error">{emailError}</p>}
                   <Button onClick={handleRequestCode} disabled={!email || isLoading}>

@@ -52,3 +52,21 @@ test("설정發 비밀번호 변경: 진입 → 재설정 → /login?reset=1 재
     }),
   );
 });
+
+// 세션 없이 ?from=settings 로 직접 진입(만료·공유 URL)해도 잠금에 갇히지 않고
+// 일반 공개 재설정 폼으로 동작해야 한다(스트랜딩 방지, Codex P2).
+test("세션 없는 ?from=settings 진입: 이메일 잠금 없이 재설정 진행 가능", async ({ page }) => {
+  await stubApi(page); // 비인증(/auth/me 404)
+  await page.goto("/forgot-password?from=settings");
+
+  await expect(page.getByRole("heading", { name: "비밀번호를 잊으셨나요?" })).toBeVisible();
+
+  // 계정 이메일이 없으므로 입력은 잠기지 않고 직접 입력할 수 있어야 한다
+  const emailInput = page.getByPlaceholder("name@example.com");
+  await expect(emailInput).toBeEnabled();
+  await emailInput.fill("someone@example.com");
+  await page.getByRole("button", { name: "재설정 코드 받기" }).click();
+
+  // 코드 단계로 진행 = 폼이 막히지 않았다
+  await expect(page.getByRole("heading", { name: "인증 코드를 입력해주세요" })).toBeVisible();
+});
