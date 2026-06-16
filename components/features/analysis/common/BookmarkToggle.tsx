@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
 import { addBookmark, removeBookmark } from "@/lib/api/analysis-api";
 
@@ -21,6 +21,12 @@ export default function BookmarkToggle({
 }: BookmarkToggleProps) {
   const [bookmarked, setBookmarked] = useState(initialBookmarked);
   const [busy, setBusy] = useState(false);
+
+  // 부모 items 가 loadData 재호출로 갱신되면 서버 상태와 동기화한다.
+  // (없으면 동일 key 인스턴스가 stale 상태를 유지 — FRT-55)
+  useEffect(() => {
+    setBookmarked(initialBookmarked);
+  }, [initialBookmarked]);
 
   async function handleToggle() {
     if (busy) return;

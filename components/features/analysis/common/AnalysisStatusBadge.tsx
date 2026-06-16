@@ -1,4 +1,4 @@
-type DisplayStatus = "pending" | "completed" | "updated";
+type DisplayStatus = "pending" | "completed" | "updated" | "failed";
 
 const config: Record<DisplayStatus, { label: string; className: string }> = {
   pending: {
@@ -12,6 +12,10 @@ const config: Record<DisplayStatus, { label: string; className: string }> = {
   updated: {
     label: "업데이트됨",
     className: "bg-surface-brand text-brand",
+  },
+  failed: {
+    label: "분석 실패",
+    className: "bg-surface-error text-error",
   },
 };
 
