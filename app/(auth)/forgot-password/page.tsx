@@ -25,13 +25,16 @@ const STEP_ORDER: ResetStep[] = ["email", "code", "password"];
 const RESET_SUCCESS_URL = "/login?reset=1";
 
 // 세션 정리(로그아웃)를 짧게 재시도한다. 일시적 실패가 곧바로 무방비 진행으로 이어지지 않게 한다.
+// reset-password 가 현재 세션을 무효화하면(표준 동작) 뒤이은 logout 은 쿠키가 이미 없어 401 이
+// 날 수 있다 — 이는 "이미 로그아웃됨"이므로 목적 달성으로 간주한다(스트랜딩 방지).
 async function logoutWithRetry(attempts = 2): Promise<boolean> {
   for (let i = 0; i < attempts; i++) {
     try {
       await logoutUser();
       return true;
-    } catch {
-      // 다음 시도로 넘어간다.
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) return true;
+      // 그 외(네트워크·5xx 등)는 일시적일 수 있으니 재시도한다.
     }
   }
   return false;

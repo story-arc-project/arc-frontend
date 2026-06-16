@@ -8,6 +8,7 @@ import { stubApi } from "./fixtures/stub-api";
  *  1) 버튼이 활성화되고 /forgot-password 로 이동한다
  *  2) 로그인 상태여도 가드(authed→/dashboard)에 튕기지 않는다(?from=settings opt-in)
  *  3) 재설정 완료 후 세션이 무효화되어 /login?reset=1 재로그인 화면에 도달한다
+ *     (reset 이 세션을 무효화 → 뒤이은 logout 이 401 이어도 "이미 로그아웃"으로 간주해 진행)
  * seedDemoUser 는 has_password=true → 라벨 "비밀번호 변경".
  */
 test("설정發 비밀번호 변경: 진입 → 재설정 → /login?reset=1 재로그인", async ({ page }) => {

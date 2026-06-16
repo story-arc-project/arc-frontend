@@ -422,10 +422,22 @@ export async function stubApi(
         return;
       }
 
-      // 로그아웃(FRT-49 설정發 재설정의 best-effort 세션 정리 포함): /auth/me 가 401 이 되게 한다.
+      // 로그아웃(FRT-49 설정發 재설정의 세션 정리 포함): /auth/me 가 401 이 되게 한다.
       if (method === "POST" && pathname === "/auth/logout") {
+        // reset-password 가 이미 세션을 무효화했다면 쿠키가 없어 401 — 실제 백엔드 동작을 모델링.
+        if (sessionInvalidated) {
+          await fulfillJson(401, { status: "error", message: "no session", code: "UNAUTHORIZED" });
+          return;
+        }
         sessionInvalidated = true;
         await fulfillJson(200, success(null));
+        return;
+      }
+
+      // 토큰 갱신: 세션이 무효화된 뒤엔 refresh 토큰도 무효 → 401(재인증 필요).
+      // (api client 가 401 응답에 대해 /auth/refresh 를 시도하므로, 무효 세션을 정확히 모델링한다.)
+      if (method === "POST" && pathname === "/auth/refresh" && (sessionInvalidated || accountDeleted)) {
+        await fulfillJson(401, { status: "error", message: "no session", code: "UNAUTHORIZED" });
         return;
       }
 
