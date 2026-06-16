@@ -192,8 +192,8 @@ function Navbar() {
           </Link>
           <Link
             href="/signup"
-            className="h-8 px-4 bg-gray-950 text-white text-[13px] font-semibold rounded-lg
-                       hover:bg-gray-800 transition-colors inline-flex items-center"
+            className="h-8 px-4 bg-brand text-white text-[13px] font-semibold rounded-lg
+                       hover:bg-brand-dark transition-colors inline-flex items-center"
           >
             시작하기
           </Link>
