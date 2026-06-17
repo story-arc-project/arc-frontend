@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
-import type { ExperienceV2 } from "@/types/archive"
+import type { Block, BlockValue, ExperienceV2 } from "@/types/archive"
 import type { Experience } from "@/types/experience"
+import { getTemplateForType, TEMPLATE_VERSION } from "@/lib/constants/templates-v2"
 import {
   toExperienceV2,
   toSavePayload,
@@ -16,6 +17,22 @@ function makeExperience(overrides: Partial<Experience> = {}): Experience {
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-02T00:00:00Z",
     ...overrides,
+  }
+}
+
+function text(t: string): BlockValue {
+  return { type: "text", text: t }
+}
+function textarea(t: string): BlockValue {
+  return { type: "textarea", text: t }
+}
+
+/** career 템플릿에서 키를 가진 core/extension 블록 배열을 만든다(폼 로드 결과 모사). */
+function careerBlocks(): { coreBlocks: Block[]; extensionBlocks: Block[] } {
+  const tmpl = getTemplateForType("career")
+  return {
+    coreBlocks: tmpl.commonCore.blocks,
+    extensionBlocks: tmpl.extensions.flatMap(s => s.blocks),
   }
 }
 
@@ -39,7 +56,7 @@ function makeExperienceV2(overrides: Partial<ExperienceV2> = {}): ExperienceV2 {
 }
 
 describe("toExperienceV2", () => {
-  it("content 가 비어 있으면 모든 필드를 안전 기본값으로 채운다", () => {
+  it("content 가 비어 있으면(v1 빈 레코드) 모든 필드를 안전 기본값으로 채운다", () => {
     const v2 = toExperienceV2(makeExperience({ content: {} }))
     expect(v2).toMatchObject({
       id: "exp-1",
@@ -52,8 +69,6 @@ describe("toExperienceV2", () => {
       coreBlocks: [],
       extensionBlocks: [],
       customBlocks: [],
-      createdAt: "2024-01-01T00:00:00Z",
-      updatedAt: "2024-01-02T00:00:00Z",
     })
     expect(v2.importance).toBeUndefined()
   })
@@ -66,7 +81,7 @@ describe("toExperienceV2", () => {
     expect(v2.coreBlocks).toEqual([])
   })
 
-  it("snake_case API 필드를 camelCase 로 매핑하고 content 값을 보존한다", () => {
+  it("v1 레거시: snake_case 매핑 + content 스칼라 보존", () => {
     const v2 = toExperienceV2(
       makeExperience({
         content: {
@@ -94,48 +109,197 @@ describe("toExperienceV2", () => {
     expect(toExperienceV2(makeExperience({ importance: 2.5 })).importance).toBeUndefined()
     expect(toExperienceV2(makeExperience({ importance: null })).importance).toBeUndefined()
   })
+
+  it("v1 레거시: 저장된 블록 배열에 레지스트리 라벨매칭으로 안정키를 주입한다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          title: "T",
+          summary: "S",
+          status: "draft",
+          tags: [],
+          coreBlocks: [
+            { id: "b1", type: "text", label: "경험명", value: text("T") },
+            { id: "b2", type: "textarea", label: "핵심 성과", value: textarea("성과!") },
+          ],
+          extensionBlocks: [
+            { id: "b3", type: "text", label: "회사명", value: text("ARC") },
+          ],
+          customBlocks: [],
+        },
+      }),
+    )
+    expect(v2.coreBlocks.find(b => b.label === "핵심 성과")?.key).toBe("core.핵심 성과")
+    expect(v2.extensionBlocks.find(b => b.label === "회사명")?.key).toBe("career-info.회사명")
+  })
+
+  it("v2: fields 맵을 레지스트리 순서대로 블록으로 재구성하고 title/summary 를 헤더 블록에 주입한다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "v2 타이틀",
+          summary: "v2 요약",
+          status: "complete",
+          tags: ["t"],
+          fields: {
+            "core.핵심 성과": textarea("성과 v2"),
+            "career-info.회사명": text("ARC Inc"),
+          },
+          custom: [],
+        },
+        importance: 5,
+      }),
+    )
+    expect(v2.title).toBe("v2 타이틀")
+    expect(v2.summary).toBe("v2 요약")
+    expect(v2.status).toBe("complete")
+    expect(v2.importance).toBe(5)
+    // 헤더 값이 core 경험명/요약 블록에 주입됨
+    expect(v2.coreBlocks.find(b => b.key === "core.경험명")?.value).toEqual(text("v2 타이틀"))
+    expect(v2.coreBlocks.find(b => b.key === "core.한 줄 요약")?.value).toEqual(text("v2 요약"))
+    // fields 값 주입
+    expect(v2.coreBlocks.find(b => b.key === "core.핵심 성과")?.value).toEqual(textarea("성과 v2"))
+    expect(v2.extensionBlocks.find(b => b.key === "career-info.회사명")?.value).toEqual(text("ARC Inc"))
+    // 모든 템플릿 블록에 key 가 존재
+    expect(v2.coreBlocks.every(b => !!b.key)).toBe(true)
+    expect(v2.extensionBlocks.every(b => !!b.key)).toBe(true)
+  })
+
+  it("v2: custom[] field 항목을 customBlocks 로 복원한다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "T",
+          summary: "",
+          status: "draft",
+          tags: [],
+          fields: {},
+          custom: [
+            { key: "custom-1", entryType: "field", type: "text", label: "나만의 메모", value: text("hi") },
+          ],
+        },
+      }),
+    )
+    expect(v2.customBlocks).toHaveLength(1)
+    expect(v2.customBlocks[0]).toMatchObject({ key: "custom-1", label: "나만의 메모", type: "text" })
+    expect(v2.customBlocks[0].value).toEqual(text("hi"))
+  })
 })
 
 describe("toSavePayload", () => {
-  it("ExperienceV2 를 저장 payload 형태로 묶는다", () => {
+  it("빈 ExperienceV2 를 v2 content 로 직렬화한다", () => {
     const payload = toSavePayload(makeExperienceV2())
-    expect(payload).toEqual({
-      type: "career",
-      importance: 4,
-      content: {
-        title: "타이틀",
-        summary: "요약",
-        status: "draft",
-        tags: ["a"],
-        coreBlocks: [],
-        extensionBlocks: [],
-        customBlocks: [],
-      },
+    expect(payload.type).toBe("career")
+    expect(payload.importance).toBe(4)
+    expect(payload.content).toMatchObject({
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "타이틀",
+      summary: "요약",
+      status: "draft",
+      tags: ["a"],
+      fields: {},
+      custom: [],
     })
   })
 
   it("importance 가 undefined 면 null 로 강제한다", () => {
     expect(toSavePayload(makeExperienceV2({ importance: undefined })).importance).toBeNull()
   })
+
+  it("키 있는 블록은 fields 맵으로, title/summary 블록은 제외한다", () => {
+    const { coreBlocks, extensionBlocks } = careerBlocks()
+    // 값 채우기
+    const filledCore = coreBlocks.map(b =>
+      b.key === "core.핵심 성과" ? { ...b, value: textarea("성과!") } : b,
+    )
+    const filledExt = extensionBlocks.map(b =>
+      b.key === "career-info.회사명" ? { ...b, value: text("ARC") } : b,
+    )
+    const payload = toSavePayload(
+      makeExperienceV2({ coreBlocks: filledCore, extensionBlocks: filledExt }),
+    )
+    const content = payload.content as Record<string, unknown>
+    const fields = content.fields as Record<string, BlockValue>
+    expect(fields["core.핵심 성과"]).toEqual(textarea("성과!"))
+    expect(fields["career-info.회사명"]).toEqual(text("ARC"))
+    // 헤더 소유 필드는 fields 에 중복 저장하지 않음
+    expect(fields["core.경험명"]).toBeUndefined()
+    expect(fields["core.한 줄 요약"]).toBeUndefined()
+  })
 })
 
 describe("round-trip (toExperienceV2 → toSavePayload)", () => {
-  it("content·importance 가 왕복 후에도 보존된다", () => {
+  it("v2 스칼라·importance 가 왕복 후 보존된다", () => {
     const original = makeExperience({
       content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
         title: "T",
         summary: "S",
-        status: "draft",
+        status: "complete",
         tags: ["x"],
-        coreBlocks: [],
-        extensionBlocks: [],
-        customBlocks: [],
+        fields: {},
+        custom: [],
       },
       importance: 2,
     })
     const payload = toSavePayload(toExperienceV2(original))
-    expect(payload.content).toEqual(original.content)
+    expect(payload.content).toMatchObject({
+      schema_version: 2,
+      title: "T",
+      summary: "S",
+      status: "complete",
+      tags: ["x"],
+    })
     expect(payload.importance).toBe(2)
-    expect(payload.type).toBe(original.type)
+    expect(payload.type).toBe("career")
+  })
+
+  it("저장순서=화면순서: extensionBlocks 가 왕복 후에도 레지스트리 순서를 유지한다", () => {
+    const { coreBlocks, extensionBlocks } = careerBlocks()
+    const expectedKeys = extensionBlocks.map(b => b.key)
+    const v2In = makeExperienceV2({ coreBlocks, extensionBlocks })
+    const payload = toSavePayload(v2In)
+    const reloaded = toExperienceV2(
+      makeExperience({ content: payload.content, importance: payload.importance }),
+    )
+    expect(reloaded.extensionBlocks.map(b => b.key)).toEqual(expectedKeys)
+  })
+
+  it("필드 값이 키 기준으로 왕복 보존된다(라벨 충돌 무관)", () => {
+    const { coreBlocks, extensionBlocks } = careerBlocks()
+    const filledExt = extensionBlocks.map(b =>
+      b.key === "career-tasks.업무내용"
+        ? b
+        : b.key === "career-info.회사명"
+          ? { ...b, value: text("ARC") }
+          : b,
+    )
+    const v2In = makeExperienceV2({ coreBlocks, extensionBlocks: filledExt, title: "헤더T" })
+    const payload = toSavePayload(v2In)
+    const reloaded = toExperienceV2(
+      makeExperience({ content: payload.content, importance: payload.importance }),
+    )
+    expect(reloaded.extensionBlocks.find(b => b.key === "career-info.회사명")?.value).toEqual(text("ARC"))
+    expect(reloaded.title).toBe("헤더T")
+    expect(reloaded.coreBlocks.find(b => b.key === "core.경험명")?.value).toEqual(text("헤더T"))
+  })
+
+  it("custom 블록이 왕복 보존된다", () => {
+    const custom: Block[] = [
+      { id: "c1", key: "custom-1", type: "text", label: "메모", value: text("note") },
+    ]
+    const payload = toSavePayload(makeExperienceV2({ customBlocks: custom }))
+    const reloaded = toExperienceV2(
+      makeExperience({ content: payload.content, importance: payload.importance }),
+    )
+    expect(reloaded.customBlocks).toHaveLength(1)
+    expect(reloaded.customBlocks[0]).toMatchObject({ label: "메모", type: "text" })
+    expect(reloaded.customBlocks[0].value).toEqual(text("note"))
   })
 })

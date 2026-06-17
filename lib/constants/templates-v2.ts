@@ -689,6 +689,24 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
   'goal': goalExtensions,
 }
 
+/**
+ * 템플릿 스키마 버전. content.template_version 으로 저장되어 향후 필드 셋 변경 추적에 쓰인다.
+ * (안정키 기반 additive 변경은 마이그레이션 불필요 — 키가 곧 정체성)
+ */
+export const TEMPLATE_VERSION = 1
+
+/**
+ * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.
+ * sectionId 는 타입별로 고정·고유하고, 섹션 내 라벨도 고유하므로 레코드 내 충돌이 없다.
+ * 키는 라벨에서 파생되지만, 시스템 템플릿 라벨은 코드 변경으로만 바뀌므로 안정적이다.
+ */
+function withSectionKeys(section: TemplateSection): TemplateSection {
+  return {
+    ...section,
+    blocks: section.blocks.map(b => ({ ...b, key: `${section.id}.${b.label}` })),
+  }
+}
+
 function buildTemplate(typeId: ExperienceTypeId): TemplateV2 {
   const info = EXPERIENCE_TYPE_MAP[typeId]
   const typeExtensions = extensionMap[typeId]()
@@ -697,8 +715,8 @@ function buildTemplate(typeId: ExperienceTypeId): TemplateV2 {
     typeId,
     label: info.label,
     icon: info.icon,
-    commonCore: buildCommonCore(),
-    extensions: [buildExtendedSection(), ...typeExtensions],
+    commonCore: withSectionKeys(buildCommonCore()),
+    extensions: [buildExtendedSection(), ...typeExtensions].map(withSectionKeys),
     isSystem: true,
   }
 }
