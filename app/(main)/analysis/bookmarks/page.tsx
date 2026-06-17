@@ -6,7 +6,7 @@ import type { BookmarkedSnapshot, AnalysisType } from "@/types/analysis";
 import { analysisTypeLabel, ANALYSIS_DETAIL_PATH, ANALYSIS_TYPE_FILTERS } from "@/types/analysis";
 import { getBookmarks } from "@/lib/api/analysis-api";
 import { formatDate } from "@/lib/utils/date-utils";
-import { Badge } from "@/components/ui";
+import { Badge, Button } from "@/components/ui";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import FilterBar from "@/components/features/analysis/common/FilterBar";
@@ -82,6 +82,11 @@ export default function BookmarksPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               분석 결과에서 &#9733;를 눌러 저장해보세요.
             </p>
+            <Link href="/analysis/history" className="inline-block mt-4">
+              <Button variant="secondary" size="sm">
+                분석 결과 보러 가기
+              </Button>
+            </Link>
           </div>
         ) : (
           <div className="space-y-3" role="tabpanel" id={`bookmarks-panel-${filter}`} aria-labelledby={`bookmarks-tab-${filter}`}>

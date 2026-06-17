@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { X } from "lucide-react";
 import type { SelectableExperience } from "@/types/analysis";
+import { Button } from "@/components/ui";
 
 interface ExperienceSelectorProps {
   experiences: SelectableExperience[];
@@ -66,9 +68,16 @@ export default function ExperienceSelector({
 
       {/* Experience list */}
       {completeExps.length === 0 ? (
-        <p className="text-body-sm text-text-tertiary py-4 text-center">
-          선택 가능한 경험이 없습니다.
-        </p>
+        <div className="py-4 text-center">
+          <p className="text-body-sm text-text-tertiary">
+            선택 가능한 경험이 없습니다.
+          </p>
+          <Link href="/archive" className="inline-block mt-3">
+            <Button variant="secondary" size="sm">
+              경험 기록하러 가기
+            </Button>
+          </Link>
+        </div>
       ) : (
         <div className="space-y-2 max-h-80 overflow-y-auto">
           {completeExps.map((exp) => {
