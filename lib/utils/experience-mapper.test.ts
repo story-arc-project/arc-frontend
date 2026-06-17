@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { Block, BlockValue, ExperienceV2 } from "@/types/archive"
+import type { Block, BlockValue, CustomEntry, ExperienceV2 } from "@/types/archive"
 import type { Experience } from "@/types/experience"
 import { getTemplateForType, TEMPLATE_VERSION } from "@/lib/constants/templates-v2"
 import {
@@ -108,6 +108,53 @@ describe("toExperienceV2", () => {
     expect(toExperienceV2(makeExperience({ importance: 6 })).importance).toBeUndefined()
     expect(toExperienceV2(makeExperience({ importance: 2.5 })).importance).toBeUndefined()
     expect(toExperienceV2(makeExperience({ importance: null })).importance).toBeUndefined()
+  })
+
+  it("v1 레거시: 모호한 라벨(여러 섹션 중복)은 안정키를 주입하지 않는다 (Codex P1 회귀)", () => {
+    // extracurricular: extended.결과/성과(textarea) vs extra-detail.결과/성과(repeatable-cell)
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "extracurricular",
+        content: {
+          title: "T",
+          summary: "",
+          status: "draft",
+          tags: [],
+          coreBlocks: [],
+          extensionBlocks: [
+            {
+              id: "x1",
+              type: "repeatable-cell",
+              label: "결과/성과",
+              value: { type: "repeatable-cell", columns: [], rows: [{ id: "r1", cells: {} }] },
+            },
+          ],
+          customBlocks: [],
+        },
+      }),
+    )
+    // 모호 라벨 → unkeyed (custom 으로 보존 유도, 타입 충돌 손상 방지)
+    expect(v2.extensionBlocks.find(b => b.label === "결과/성과")?.key).toBeUndefined()
+  })
+
+  it("v2: fields 값 타입이 블록 타입과 다르면 주입을 생략한다 (손상 방지)", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "T",
+          summary: "",
+          status: "draft",
+          tags: [],
+          // core.핵심 성과 는 textarea 인데 text 값이 들어온 손상 케이스
+          fields: { "core.핵심 성과": { type: "text", text: "wrong" } },
+          custom: [],
+        },
+      }),
+    )
+    // 템플릿 기본 타입(textarea) 유지 — text 값 주입 생략
+    expect(v2.coreBlocks.find(b => b.key === "core.핵심 성과")?.value.type).toBe("textarea")
   })
 
   it("v1 레거시: 저장된 블록 배열에 레지스트리 라벨매칭으로 안정키를 주입한다", () => {
@@ -288,6 +335,25 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
     expect(reloaded.extensionBlocks.find(b => b.key === "career-info.회사명")?.value).toEqual(text("ARC"))
     expect(reloaded.title).toBe("헤더T")
     expect(reloaded.coreBlocks.find(b => b.key === "core.경험명")?.value).toEqual(text("헤더T"))
+  })
+
+  it("키 없는(모호 라벨) 확장 블록은 custom 으로 보존된다 (Codex P1 회귀)", () => {
+    const block: Block = {
+      id: "x1",
+      type: "repeatable-cell",
+      label: "결과/성과",
+      value: { type: "repeatable-cell", columns: [], rows: [{ id: "r1", cells: {} }] },
+    }
+    const payload = toSavePayload(
+      makeExperienceV2({ typeId: "extracurricular", extensionBlocks: [block] }),
+    )
+    const content = payload.content as Record<string, unknown>
+    const custom = content.custom as CustomEntry[]
+    const preserved = custom.find(
+      e => e.entryType === "field" && e.label === "결과/성과",
+    )
+    expect(preserved).toBeDefined()
+    expect(preserved?.entryType === "field" && preserved.value.type).toBe("repeatable-cell")
   })
 
   it("custom 블록이 왕복 보존된다", () => {

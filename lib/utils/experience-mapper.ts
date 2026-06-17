@@ -43,14 +43,29 @@ function hasTemplate(typeId: string): typeId is ExperienceTypeId {
 }
 
 function injectValue(block: Block, value: BlockValue | undefined): Block {
-  return value !== undefined ? { ...block, value } : block
+  if (value === undefined) return block
+  // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)면 주입을 생략해 위젯 렌더 깨짐을 막는다.
+  if (value.type !== block.type) return block
+  return { ...block, value }
 }
 
-/** label → 안정키 맵 (첫 등장 우선) — v1 레거시 폴백용 */
-function labelKeyMap(blocks: Block[]): Record<string, string | undefined> {
-  const map: Record<string, string | undefined> = {}
+/**
+ * label → 안정키 맵 (v1 레거시 폴백용).
+ * ⚠️ 레지스트리 내에서 라벨이 **유일한** 경우에만 매핑한다. 같은 라벨이 둘 이상 섹션에
+ * 존재하면(예: `extended.결과/성과` textarea vs `extra-detail.결과/성과` repeatable-cell)
+ * 어느 키로 보낼지 모호하고 타입이 다르면 값이 깨지므로, unkeyed 로 남겨 custom 으로 보존한다.
+ */
+function labelKeyMap(blocks: Block[]): Record<string, string> {
+  const seen = new Map<string, { key: string; count: number }>()
   for (const b of blocks) {
-    if (b.key && !(b.label in map)) map[b.label] = b.key
+    if (!b.key) continue
+    const e = seen.get(b.label)
+    if (e) e.count++
+    else seen.set(b.label, { key: b.key, count: 1 })
+  }
+  const map: Record<string, string> = {}
+  for (const [label, { key, count }] of seen) {
+    if (count === 1) map[label] = key
   }
   return map
 }
