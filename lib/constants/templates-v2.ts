@@ -241,7 +241,7 @@ function careerExtensions(): TemplateSection[] {
         createTextField('회사명', { required: true }),
         createPeriodField('재직기간', { required: true }),
         createSelectField('고용 형태', ['인턴', '계약직', '정규직', '프리랜서']),
-        createTextField('직책/직급', { required: true }),
+        createTextField('직책/역할', { required: true }),
         createTextField('직무(업무분야)', { required: true }),
         createTextField('급여'),
         createTextareaField('지원 동기'),
