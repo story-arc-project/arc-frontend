@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { AnimatePresence, motion } from "framer-motion"
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Dialog } from "@/components/ui/dialog"
 import LibrarySidebar from "@/components/features/archive/LibrarySidebar"
 import FilterBar from "@/components/features/archive/FilterBar"
 import ExperienceCard from "@/components/features/archive/ExperienceCard"
@@ -14,31 +13,15 @@ import type { ArchiveModeV2 } from "@/components/features/archive/RightPanelV2"
 import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
 import { useExperiences } from "@/hooks/useExperiences"
 import { useLibraries } from "@/hooks/useLibraries"
-import {
-  toExperienceV2,
-  toSavePayload,
-} from "@/lib/utils/experience-mapper"
+import { toExperienceV2 } from "@/lib/utils/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
-import { usePresets } from "@/hooks/usePresets"
 import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
 import { useBasePath } from "@/lib/utils/use-base-path"
 
-/** @deprecated Use ArchiveModeV2 from RightPanelV2 */
+/** @deprecated V1 RightPanel 전용 — V2 는 RightPanelV2 의 ArchiveModeV2 사용. */
 export type ArchiveMode = "empty" | "new" | "detail" | "edit"
 
 type MobileView = "list" | "panel"
-
-/**
- * Deferred action queued behind the unsaved-changes guard. When the user is
- * mid-edit (`hasUnsaved`), navigation/CRUD intents are parked here and only run
- * once they confirm discard in the guard modal.
- */
-type PendingAction =
-  | { kind: "select"; id: string }
-  | { kind: "edit"; id: string }
-  | { kind: "new" }
-  | { kind: "delete"; id: string }
-  | { kind: "duplicate"; exp: ExperienceV2 }
 
 export default function ArchivePage() {
   const router = useRouter()
@@ -48,9 +31,6 @@ export default function ArchivePage() {
   const [mode, setMode] = useState<ArchiveModeV2>("empty")
   const [mobileView, setMobileView] = useState<MobileView>("list")
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [hasUnsaved, setHasUnsaved] = useState(false)
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
-  const [showGuardModal, setShowGuardModal] = useState(false)
 
   const [middleCollapsed, setMiddleCollapsed] = useState(false)
 
@@ -59,8 +39,6 @@ export default function ArchivePage() {
     isLoading: isExperiencesLoading,
     error: experiencesError,
     refetch: refetchExperiences,
-    createExperience: apiCreate,
-    updateExperience: apiUpdate,
     updateImportance: apiUpdateImportance,
     deleteExperience: apiDelete,
     duplicateExperience: apiDuplicate,
@@ -87,7 +65,6 @@ export default function ArchivePage() {
   const [activeLibraryId, setActiveLibraryId] = useState(ALL_LIBRARY_ID)
   const [libraryActionError, setLibraryActionError] = useState<string | null>(null)
   const [experienceActionError, setExperienceActionError] = useState<string | null>(null)
-  const presetsHook = usePresets()
 
   // Ref mirror lets deferred callbacks (e.g. delete onSuccess) read the current
   // active library instead of the value captured when the request was dispatched.
@@ -204,84 +181,29 @@ export default function ArchivePage() {
   // ── Selection ──────────────────────────────────────────────────────
   const handleSelectExperience = useCallback(
     (id: string) => {
-      if (hasUnsaved) {
-        setPendingAction({ kind: "select", id })
-        setShowGuardModal(true)
-        return
-      }
       setSelectedId(id)
       setMode("detail")
       setMobileView("panel")
       router.push(`${basePath}/archive?id=${id}`, { scroll: false })
     },
-    [hasUnsaved, router, basePath]
+    [router, basePath]
   )
 
+  // 입력은 별도 라우트로 분리됐다(FRT-74). 새 경험/편집은 더 이상 우측 패널의
+  // 폼 모드가 아니라 입력 전용 라우트로 이동한다. 미저장 가드는 입력 뷰 셸
+  // (InputViewShell)이 담당하므로 목록 페이지에는 가드가 없다.
   const handleNewExperience = useCallback(() => {
-    if (hasUnsaved) {
-      setPendingAction({ kind: "new" })
-      setShowGuardModal(true)
-      return
-    }
-    setSelectedId(null)
-    setMode("new")
-    setMobileView("panel")
-    router.push(`${basePath}/archive`, { scroll: false })
-  }, [hasUnsaved, router, basePath])
+    router.push(`${basePath}/archive/new`)
+  }, [router, basePath])
 
-  // Editing a card jumps straight into edit mode for that experience. Like
-  // selection it must respect the unsaved guard; previously it fired
-  // `handleSelectExperience` then a `setTimeout(setMode("edit"), 0)` that ran
-  // unconditionally — so when the guard blocked the select, the timer still
-  // forced edit mode onto the wrong (stale) selectedId.
-  //
-  // Pushing `?id` keeps the URL in sync (refresh/share land on this card). It's
-  // safe against the `?id` render-sync below because we set `selectedId` first,
-  // so the sync sees `selectedId === idParam` and won't clobber edit → detail.
   const handleEditExperience = useCallback(
     (id: string) => {
-      if (hasUnsaved) {
-        setPendingAction({ kind: "edit", id })
-        setShowGuardModal(true)
-        return
-      }
-      setSelectedId(id)
-      setMode("edit")
-      setMobileView("panel")
-      router.push(`${basePath}/archive?id=${id}`, { scroll: false })
+      router.push(`${basePath}/archive/${id}/edit`)
     },
-    [hasUnsaved, router, basePath]
+    [router, basePath]
   )
 
   // ── CRUD ──────────────────────────────────────────────────────────
-  const handleSave = useCallback(
-    async (exp: ExperienceV2) => {
-      try {
-        const payload = toSavePayload(exp)
-        const exists = experiences.some(e => e.id === exp.id)
-        let savedId: string
-        if (exists) {
-          await apiUpdate(exp.id, {
-            content: payload.content,
-            importance: payload.importance,
-          })
-          savedId = exp.id
-        } else {
-          savedId = await apiCreate(payload)
-        }
-        setExperienceActionError(null)
-        setSelectedId(savedId)
-        setMode("detail")
-        setHasUnsaved(false)
-        router.push(`${basePath}/archive?id=${savedId}`, { scroll: false })
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "경험을 저장하지 못했어요"
-        setExperienceActionError(message)
-      }
-    },
-    [experiences, apiCreate, apiUpdate, router, basePath]
-  )
-
   const handleUpdateImportance = useCallback(
     async (id: string, value: ImportanceLevel | undefined) => {
       try {
@@ -302,7 +224,6 @@ export default function ArchivePage() {
         setSelectedId(null)
         setMode("empty")
         setMobileView("list")
-        setHasUnsaved(false)
         router.push(`${basePath}/archive`, { scroll: false })
       } catch (err) {
         const message = err instanceof Error ? err.message : "경험을 삭제하지 못했어요"
@@ -312,19 +233,14 @@ export default function ArchivePage() {
     [apiDelete, router, basePath]
   )
 
-  // Guard duplicate/delete the same way selection does: deleting or duplicating
-  // another card while mid-edit would silently drop unsaved changes, so park the
-  // intent behind the discard modal and only run it after `confirmDiscard`.
+  // 삭제/복제는 상세 패널에서만 트리거되며, 삭제는 ExperienceDetailV2 의 자체
+  // 확인 다이얼로그를 거친다. 편집은 별도 라우트로 분리돼 목록 페이지에는
+  // 미저장 상태가 없으므로 가드 래퍼가 필요 없다.
   const handleDelete = useCallback(
     (id: string) => {
-      if (hasUnsaved) {
-        setPendingAction({ kind: "delete", id })
-        setShowGuardModal(true)
-        return
-      }
       void performDelete(id)
     },
-    [hasUnsaved, performDelete]
+    [performDelete]
   )
 
   const performDuplicate = useCallback(
@@ -345,25 +261,10 @@ export default function ArchivePage() {
 
   const handleDuplicate = useCallback(
     (exp: ExperienceV2) => {
-      if (hasUnsaved) {
-        setPendingAction({ kind: "duplicate", exp })
-        setShowGuardModal(true)
-        return
-      }
       void performDuplicate(exp)
     },
-    [hasUnsaved, performDuplicate]
+    [performDuplicate]
   )
-
-  const handleCancel = useCallback(() => {
-    setHasUnsaved(false)
-    if (selectedId) {
-      setMode("detail")
-    } else {
-      setMode("empty")
-      setMobileView("list")
-    }
-  }, [selectedId])
 
   // ── Library management ────────────────────────────────────────────
   const handleSelectLibrary = useCallback((id: string) => {
@@ -450,50 +351,6 @@ export default function ArchivePage() {
       "라이브러리를 만들지 못했어요",
     )
   }, [createLibrary, filter, runLibraryAction])
-
-  // ── Unsaved guard ─────────────────────────────────────────────────
-  // Dismissing the modal must drop the parked intent so it can't leak into a
-  // later confirm; the edit in progress stays untouched.
-  const cancelDiscard = useCallback(() => {
-    setShowGuardModal(false)
-    setPendingAction(null)
-  }, [])
-
-  const confirmDiscard = useCallback(() => {
-    setShowGuardModal(false)
-    setHasUnsaved(false)
-    const action = pendingAction
-    setPendingAction(null)
-    if (!action) return
-    switch (action.kind) {
-      case "new":
-        setSelectedId(null)
-        setMode("new")
-        setMobileView("panel")
-        router.push(`${basePath}/archive`, { scroll: false })
-        break
-      case "select":
-        setSelectedId(action.id)
-        setMode("detail")
-        setMobileView("panel")
-        router.push(`${basePath}/archive?id=${action.id}`, { scroll: false })
-        break
-      case "edit":
-        setSelectedId(action.id)
-        setMode("edit")
-        setMobileView("panel")
-        router.push(`${basePath}/archive?id=${action.id}`, { scroll: false })
-        break
-      case "delete":
-        // perform* bypasses the guard wrapper so the already-confirmed action
-        // doesn't re-trigger the modal off the stale `hasUnsaved` closure.
-        void performDelete(action.id)
-        break
-      case "duplicate":
-        void performDuplicate(action.exp)
-        break
-    }
-  }, [pendingAction, router, basePath, performDelete, performDuplicate])
 
   // ── Derived ───────────────────────────────────────────────────────
   const selectedExperience = experiences.find(e => e.id === selectedId) ?? null
@@ -674,14 +531,10 @@ export default function ArchivePage() {
           <RightPanelV2
             mode={mode}
             selectedExperience={selectedExperience}
-            presetsHook={presetsHook}
             onNewExperience={handleNewExperience}
-            onSave={handleSave}
             onDelete={handleDelete}
             onDuplicate={handleDuplicate}
-            onCancel={handleCancel}
-            onEdit={() => setMode("edit")}
-            onUnsavedChange={setHasUnsaved}
+            onEdit={() => { if (selectedId) handleEditExperience(selectedId) }}
             onUpdateImportance={handleUpdateImportance}
           />
         </div>
@@ -724,14 +577,10 @@ export default function ArchivePage() {
                 <RightPanelV2
                   mode={mode}
                   selectedExperience={selectedExperience}
-                  presetsHook={presetsHook}
                   onNewExperience={handleNewExperience}
-                  onSave={handleSave}
                   onDelete={handleDelete}
                   onDuplicate={handleDuplicate}
-                  onCancel={handleCancel}
-                  onEdit={() => setMode("edit")}
-                  onUnsavedChange={setHasUnsaved}
+                  onEdit={() => { if (selectedId) handleEditExperience(selectedId) }}
                   onUpdateImportance={handleUpdateImportance}
                 />
               </div>
@@ -739,22 +588,6 @@ export default function ArchivePage() {
           )}
         </AnimatePresence>
       </div>
-
-      {/* ── Unsaved changes guard modal ───────────────────────── */}
-      <Dialog open={showGuardModal} onClose={cancelDiscard} ariaLabel="저장하지 않고 나갈까요?">
-        <h3 className="text-title text-text-primary mb-2">저장하지 않고 나갈까요?</h3>
-        <p className="text-body-sm text-text-secondary mb-6 leading-relaxed">
-          작성 중인 내용이 있어요. 나가면 사라져요.
-        </p>
-        <div className="flex gap-2 justify-end">
-          <Button variant="ghost" size="sm" onClick={cancelDiscard}>
-            취소
-          </Button>
-          <Button variant="destructive" size="sm" onClick={confirmDiscard}>
-            나가기
-          </Button>
-        </div>
-      </Dialog>
     </>
   )
 }

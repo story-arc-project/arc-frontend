@@ -1,54 +1,36 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import ExperienceFormV2 from "./ExperienceFormV2"
 import ExperienceDetailV2 from "./ExperienceDetailV2"
 import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
-import type { UsePresetsReturn } from "@/hooks/usePresets"
 
-export type ArchiveModeV2 = "empty" | "new" | "detail" | "edit"
+// 입력(new/edit)은 별도 라우트(/archive/new·/archive/[id]/edit)로 분리됐다(FRT-74).
+// 목록 페이지의 우측 패널은 빈 상태 / 상세 보기만 담당한다.
+export type ArchiveModeV2 = "empty" | "detail"
 
 interface RightPanelV2Props {
   mode: ArchiveModeV2
   selectedExperience: ExperienceV2 | null
-  presetsHook: UsePresetsReturn
   onNewExperience: () => void
-  onSave: (exp: ExperienceV2) => void
   onDelete: (id: string) => void
   onDuplicate: (exp: ExperienceV2) => void
-  onCancel: () => void
   onEdit: () => void
-  onUnsavedChange: (hasUnsaved: boolean) => void
   onUpdateImportance?: (id: string, value: ImportanceLevel | undefined) => void
 }
 
 export default function RightPanelV2({
   mode,
   selectedExperience,
-  presetsHook,
   onNewExperience,
-  onSave,
   onDelete,
   onDuplicate,
-  onCancel,
   onEdit,
-  onUnsavedChange,
   onUpdateImportance,
 }: RightPanelV2Props) {
   return (
     <div className="flex-1 h-full overflow-y-auto bg-surface scrollbar-hide">
       {mode === "empty" && (
         <EmptyState onNewExperience={onNewExperience} />
-      )}
-
-      {mode === "new" && (
-        <ExperienceFormV2
-          mode="new"
-          presetsHook={presetsHook}
-          onSave={onSave}
-          onCancel={onCancel}
-          onUnsavedChange={onUnsavedChange}
-        />
       )}
 
       {mode === "detail" && selectedExperience && (
@@ -58,20 +40,6 @@ export default function RightPanelV2({
           onDelete={onDelete}
           onDuplicate={onDuplicate}
           onUpdateImportance={onUpdateImportance}
-        />
-      )}
-
-      {mode === "edit" && selectedExperience && (
-        <ExperienceFormV2
-          // Remount when the edited experience changes so the form re-seeds from
-          // the new record (switching edit directly between cards).
-          key={selectedExperience.id}
-          mode="edit"
-          initialExperience={selectedExperience}
-          presetsHook={presetsHook}
-          onSave={onSave}
-          onCancel={onCancel}
-          onUnsavedChange={onUnsavedChange}
         />
       )}
     </div>
