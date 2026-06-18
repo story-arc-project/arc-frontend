@@ -156,6 +156,11 @@ export default function ArchivePage() {
     if (selectedId !== idParam) {
       setSelectedId(idParam)
       setMode("detail")
+      // `?id` 로의 진입은 특정 레코드로의 의도적 이동(딥링크·입력 라우트 저장 후 복귀)
+      // 이므로 모바일에서도 상세 패널을 연다. 저장 후 목록으로 떨어지던 모바일 회귀
+      // (입력 라우트 분리로 mobileView 가 list 로 리셋됨)를 막는다. 자동선택 분기는
+      // idParam 이 없어 이 경로를 타지 않으므로 목록 유지(FRT-62)는 보존된다.
+      setMobileView("panel")
     }
   }
 
