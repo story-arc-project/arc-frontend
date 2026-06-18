@@ -10,6 +10,7 @@ interface ExperienceSelectorProps {
   selected: string[];
   onChange: (ids: string[]) => void;
   minCount?: number;
+  isLoading?: boolean;
 }
 
 export default function ExperienceSelector({
@@ -17,6 +18,7 @@ export default function ExperienceSelector({
   selected,
   onChange,
   minCount = 2,
+  isLoading = false,
 }: ExperienceSelectorProps) {
   const completeExps = experiences.filter((e) => e.isComplete);
 
@@ -68,16 +70,22 @@ export default function ExperienceSelector({
 
       {/* Experience list */}
       {completeExps.length === 0 ? (
-        <div className="py-4 text-center">
-          <p className="text-body-sm text-text-tertiary">
-            선택 가능한 경험이 없습니다.
+        isLoading ? (
+          <p className="text-body-sm text-text-tertiary py-4 text-center">
+            경험을 불러오는 중...
           </p>
-          <Link href="/archive" className="inline-block mt-3">
-            <Button variant="secondary" size="sm">
-              경험 기록하러 가기
-            </Button>
-          </Link>
-        </div>
+        ) : (
+          <div className="py-4 text-center">
+            <p className="text-body-sm text-text-tertiary">
+              선택 가능한 경험이 없습니다.
+            </p>
+            <Link href="/archive" className="inline-block mt-3">
+              <Button variant="secondary" size="sm">
+                경험 기록하러 가기
+              </Button>
+            </Link>
+          </div>
+        )
       ) : (
         <div className="space-y-2 max-h-80 overflow-y-auto">
           {completeExps.map((exp) => {
