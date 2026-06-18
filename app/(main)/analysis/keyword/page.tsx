@@ -99,6 +99,12 @@ export default function KeywordAnalysisPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               키워드를 선택해 경험 분석을 시작해보세요.
             </p>
+            <Link href="/analysis/keyword/new" className="inline-block mt-4">
+              <Button size="sm">
+                <Plus size={16} aria-hidden="true" />
+                새 키워드 분석
+              </Button>
+            </Link>
           </div>
         ) : (
           <div className="space-y-3">

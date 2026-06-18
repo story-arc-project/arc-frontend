@@ -96,6 +96,12 @@ export default function ComprehensiveAnalysisPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               여러 경험을 선택해 종합 분석을 시작해보세요.
             </p>
+            <Link href="/analysis/comprehensive/new" className="inline-block mt-4">
+              <Button size="sm">
+                <Plus size={16} aria-hidden="true" />
+                새 종합 분석
+              </Button>
+            </Link>
           </div>
         ) : (
           <div className="space-y-3">

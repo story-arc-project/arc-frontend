@@ -128,6 +128,21 @@ function NoCompleteExperiencesStory() {
   );
 }
 
+function LoadingStory() {
+  const [selected, setSelected] = useState<string[]>([]);
+  return (
+    <div className="max-w-md">
+      <ExperienceSelector
+        experiences={[]}
+        selected={selected}
+        onChange={setSelected}
+        minCount={2}
+        isLoading
+      />
+    </div>
+  );
+}
+
 export const NoneSelected: Story = {
   render: () => <NoneSelectedStory />,
 };
@@ -146,4 +161,8 @@ export const AllSelected: Story = {
 
 export const NoCompleteExperiences: Story = {
   render: () => <NoCompleteExperiencesStory />,
+};
+
+export const Loading: Story = {
+  render: () => <LoadingStory />,
 };

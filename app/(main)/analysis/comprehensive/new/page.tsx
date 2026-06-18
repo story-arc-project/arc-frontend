@@ -23,6 +23,7 @@ export default function ComprehensiveNewPage() {
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
   const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [expLoaded, setExpLoaded] = useState(false);
 
   const { start: startPolling } = useAnalysisPolling({
     analysisId,
@@ -40,7 +41,10 @@ export default function ComprehensiveNewPage() {
 
   const fetchExperiences = useCallback(() => {
     getSelectableExperiences()
-      .then(setExperiences)
+      .then((exps) => {
+        setExperiences(exps);
+        setExpLoaded(true);
+      })
       .catch(() => {
         setPhase("error");
         setErrorMsg("경험 목록을 불러오지 못했습니다.");
@@ -136,6 +140,7 @@ export default function ComprehensiveNewPage() {
             selected={selected}
             onChange={setSelected}
             minCount={2}
+            isLoading={!expLoaded}
           />
         </section>
 

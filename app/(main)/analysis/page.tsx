@@ -293,7 +293,8 @@ export default function AnalysisHomePage() {
           </div>
         </section>
 
-        {/* Placeholders */}
+        {/* Placeholders — 분석 데이터가 있을 때만 노출 (빈 상태 공허함 방지) */}
+        {data.stats.analysisCompleted > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="bg-surface-secondary border border-border rounded-lg p-6 flex flex-col items-center justify-center text-center">
             <BarChart3 size={24} className="text-text-tertiary mb-2" aria-hidden="true" />
@@ -308,6 +309,7 @@ export default function AnalysisHomePage() {
             </p>
           </div>
         </div>
+        )}
 
         {/* Bottom Links — 데모에서는 history/bookmarks 페이지를 미러링하지 않으므로 숨긴다 */}
         {basePath === "" && (
