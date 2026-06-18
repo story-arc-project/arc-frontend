@@ -20,7 +20,7 @@ export default function ArchiveEditPage() {
   const basePath = useBasePath()
   const { id } = useParams<{ id: string }>()
   const presetsHook = usePresets()
-  const { experience, isLoading, error } = useExperience(id)
+  const { experience, error } = useExperience(id)
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -50,15 +50,7 @@ export default function ArchiveEditPage() {
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[calc(100dvh-var(--gnb-h))] text-text-tertiary">
-        <p className="text-body">불러오는 중…</p>
-      </div>
-    )
-  }
-
-  if (error || !experienceV2) {
+  if (error) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 min-h-[calc(100dvh-var(--gnb-h))] text-text-tertiary">
         <p className="text-body">경험을 불러오지 못했어요</p>
@@ -68,6 +60,16 @@ export default function ArchiveEditPage() {
         >
           목록으로 돌아가기
         </Link>
+      </div>
+    )
+  }
+
+  // useExperience 의 isLoading 은 마운트 후 비동기로 켜지므로(초기값 false), 첫 동기
+  // 렌더의 에러 화면 플래시를 피하려 "데이터도 에러도 없으면 로딩"으로 판정한다.
+  if (!experienceV2) {
+    return (
+      <div className="flex items-center justify-center min-h-[calc(100dvh-var(--gnb-h))] text-text-tertiary">
+        <p className="text-body">불러오는 중…</p>
       </div>
     )
   }

@@ -29,8 +29,9 @@ interface InputViewShellProps {
  *
  * dirty-guard: Next.js App Router 에는 in-app router.push 를 가로채는 useBlocker 가
  * 없다. 그래서 "목록으로"(in-app 이동)는 아래 handleBack 이 직접 가드하고, 브라우저
- * back/refresh 는 beforeunload 로 커버한다. GNB 등 셸 밖 링크로의 이동은 beforeunload
- * 만 커버한다(전역 dirty 신호는 범위 밖 — resume 페이지 선례와 동일).
+ * back/refresh·탭 닫기 같은 full unload 는 beforeunload 로 커버한다. 단 GNB 등 셸 밖
+ * 링크(SPA 이동)는 beforeunload 가 발화하지 않아 가드되지 않는다 — 전역 dirty 신호가
+ * 필요하며 범위 밖(resume 페이지 선례와 동일).
  */
 export default function InputViewShell({
   formRef,
@@ -100,7 +101,7 @@ export default function InputViewShell({
 
       <div className="flex-1">{children}</div>
 
-      {/* 미저장 이탈 가드 — 목록 페이지(page.tsx)의 모달과 동일 문구. */}
+      {/* 미저장 이탈 가드 모달. */}
       <Dialog
         open={showGuardModal}
         onClose={() => setShowGuardModal(false)}
