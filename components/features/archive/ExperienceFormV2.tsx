@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from "react"
 import { BookOpen, Save, Settings, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -38,6 +38,19 @@ interface ExperienceFormV2Props {
   onSave: (experience: ExperienceV2) => void
   onCancel: () => void
   onUnsavedChange?: (hasUnsaved: boolean) => void
+  /**
+   * 하단 인라인 액션(초안 저장/완료/취소)을 숨긴다. 입력 뷰 셸(InputViewShell)이
+   * sticky 액션 바에서 ref(handle)로 저장을 트리거할 때 사용. 기본 false라
+   * 폼을 단독 마운트하는 테스트·스토리는 인라인 버튼을 그대로 유지한다.
+   */
+  hideInlineActions?: boolean
+}
+
+/**
+ * 셸(InputViewShell)이 sticky 바에서 저장을 트리거하기 위한 imperative handle.
+ */
+export interface ExperienceFormV2Handle {
+  save: (status: ExperienceStatus) => void
 }
 
 // Semantic groups: labels within the same group are treated as asking the same question.
@@ -81,14 +94,15 @@ function hasEquivalentIn(label: string, otherLabels: Set<string>): boolean {
   return SEMANTIC_GROUPS[group].some(eq => otherLabels.has(eq))
 }
 
-export default function ExperienceFormV2({
+const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Props>(function ExperienceFormV2({
   mode,
   initialExperience,
   presetsHook,
   onSave,
   onCancel,
   onUnsavedChange,
-}: ExperienceFormV2Props) {
+  hideInlineActions,
+}: ExperienceFormV2Props, ref) {
   const [typeId, setTypeId] = useState<ExperienceTypeId | null>(
     initialExperience?.typeId ?? null
   )
@@ -411,6 +425,10 @@ export default function ExperienceFormV2({
     onSave(experience)
   }
 
+  // 셸이 sticky 바 버튼에서 호출하는 저장 트리거를 노출한다. deps 배열을 생략해
+  // 매 렌더마다 최신 handleSave(최신 state 클로저)를 바인딩한다 — 스테일 클로저 방지.
+  useImperativeHandle(ref, () => ({ save: handleSave }))
+
   const titleValue = formLayout?.titleBlock?.value
   const titleText = titleValue?.type === "text" ? titleValue.text : ""
   const summaryValue = formLayout?.summaryBlock?.value
@@ -690,23 +708,29 @@ export default function ExperienceFormV2({
             <TagInput tags={tags} onChange={setTags} />
           </div>
 
-          {/* Action buttons */}
-          <div className="flex gap-2 pt-6 border-t border-border">
-            <Button variant="secondary" size="md" onClick={() => handleSave("draft")}>
-              초안 저장
-            </Button>
-            <Button variant="primary" size="md" onClick={() => handleSave("complete")}>
-              완료
-            </Button>
-            <Button variant="ghost" size="md" onClick={onCancel} className="ml-auto">
-              취소
-            </Button>
-          </div>
+          {/* Action buttons — 입력 뷰 셸에서는 sticky 바로 이관되어 숨겨진다(hideInlineActions). */}
+          {!hideInlineActions && (
+            <div className="flex gap-2 pt-6 border-t border-border">
+              <Button variant="secondary" size="md" onClick={() => handleSave("draft")}>
+                초안 저장
+              </Button>
+              <Button variant="primary" size="md" onClick={() => handleSave("complete")}>
+                완료
+              </Button>
+              <Button variant="ghost" size="md" onClick={onCancel} className="ml-auto">
+                취소
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
   )
-}
+})
+
+ExperienceFormV2.displayName = "ExperienceFormV2"
+
+export default ExperienceFormV2
 
 // ── Inline tag input ──────────────────────────────────────────────────────
 function TagInput({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
