@@ -46,13 +46,19 @@ describe("computeFormCards", () => {
     }
   })
 
-  it("dedup: 비어있는 core 기간/역할/성과는 type 섹션에 동일 의미 필드가 있으면 숨긴다", () => {
+  it("dedup(career): 비어있는 core 기간은 재직기간과 중복이라 숨긴다", () => {
     const { core, sections } = sectionsFor("career")
     const r = computeFormCards(core, sections)
     const all = r.cards.flatMap(c => c.blocks)
-    // career-info 의 재직기간/직책·역할/(성과 없음) 이 anchor → core 기간/역할 중복 숨김
     expect(all.filter(b => b.label === "기간").length).toBe(0)
+  })
+
+  it("dedup(extracurricular): core 역할/성과가 type 섹션 동의어와 중복이면 숨긴다", () => {
+    const { core, sections } = sectionsFor("extracurricular")
+    const r = computeFormCards(core, sections)
+    const all = r.cards.flatMap(c => c.blocks)
     expect(all.filter(b => b.label === "내 역할/기여도").length).toBe(0)
+    expect(all.filter(b => b.label === "핵심 성과").length).toBe(0)
   })
 
   it("dedup 안전장치: 값이 채워진 core 블록은 중복이어도 유지한다", () => {
