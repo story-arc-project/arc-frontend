@@ -112,6 +112,11 @@ export type BlockValue =
 
 export interface Block {
   id: string
+  /**
+   * 안정 시맨틱 키 (schema v2). 템플릿 블록은 `${sectionId}.${label}` 로 부여되어
+   * 화면순서=저장순서를 구조적으로 보장한다. 사용자가 추가한 커스텀 블록은 key 가 없을 수 있다.
+   */
+  key?: string
   type: BlockType
   label: string
   required?: boolean
@@ -209,6 +214,34 @@ export interface ExperienceV2 {
   customBlocks: Block[]
   createdAt: string
   updatedAt: string
+}
+
+// ─── Persisted content schema v2 (저장 JSONB shape) ──────────────
+//
+// content(JSONB)의 내부 shape만 v1→v2 로 바뀐다. API 봉투({type, importance, content})와
+// 엔드포인트는 불변. importance 는 content 밖 최상위 컬럼으로 유지(PATCH /importance, FRT-39).
+//
+// 핵심: 템플릿 필드는 `fields`(안정키→값 맵)로 값만 저장한다. 어떤 필드가·어떤 순서로·
+// 어느 섹션에 있는지는 템플릿 레지스트리에서 결정되므로, 라벨 매칭/재분배가 불필요해져
+// 저장순서=화면순서가 구조적으로 보장된다. custom 은 템플릿 밖 사용자 블록이라 순서 있는 배열.
+
+export const SCHEMA_VERSION_V2 = 2 as const
+
+/** custom[] 항목 — FRT-69 은 'field' 만 직렬화. group(FRT-72)/section(FRT-78) 은 구조 정의(중첩 1겹). */
+export type CustomEntry =
+  | { key: string; entryType: 'field'; type: BlockType; label: string; value: BlockValue; required?: boolean; options?: string[] }
+  | { key: string; entryType: 'group'; label: string; collapsed?: boolean; children: CustomEntry[] }
+  | { key: string; entryType: 'section'; label: string; children: CustomEntry[] }
+
+export interface ExperienceContentV2 {
+  schema_version: typeof SCHEMA_VERSION_V2
+  template_version: number
+  title: string
+  summary: string
+  status: ExperienceStatus
+  tags: string[]
+  fields: Record<string, BlockValue>
+  custom: CustomEntry[]
 }
 
 // ─── Library (replaces Folder) ──────────────────────────────────

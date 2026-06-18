@@ -145,11 +145,18 @@ export default function ExperienceFormV2({
       })
       if (extensionSections.length === 0) {
         const savedBlocks = initialExperience.extensionBlocks
-        // Distribute saved extension blocks across template sections by matching labels
+        // Distribute saved extension blocks across template sections.
+        // schema v2: 안정키로 매칭(라벨 충돌 무관) → 화면순서=저장순서 보장.
+        // 키 없는 레거시 블록만 라벨 폴백.
         setExtensionSections(
           tmpl.extensions.map(ext => {
+            const templateKeys = new Set(
+              ext.blocks.map(b => b.key).filter((k): k is string => !!k)
+            )
             const templateLabels = new Set(ext.blocks.map(b => b.label))
-            const matchedBlocks = savedBlocks.filter(b => templateLabels.has(b.label))
+            const matchedBlocks = savedBlocks.filter(b =>
+              b.key ? templateKeys.has(b.key) : templateLabels.has(b.label)
+            )
             return {
               id: ext.id,
               label: ext.label,

@@ -689,6 +689,29 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
   'goal': goalExtensions,
 }
 
+/**
+ * 템플릿 스키마 버전. content.template_version 으로 저장되어 향후 필드 셋 변경 추적에 쓰인다.
+ * (안정키 기반 additive 변경은 마이그레이션 불필요 — 키가 곧 정체성)
+ */
+export const TEMPLATE_VERSION = 1
+
+/**
+ * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.
+ * sectionId 는 타입별로 고정·고유하고, 섹션 내 라벨도 고유하므로 레코드 내 충돌이 없다.
+ *
+ * ⚠️ 키가 라벨에서 파생되므로 **라벨 = 영속 정체성의 일부**다. 따라서 라벨 변경은
+ * "단순 표기 수정"이 아니라 **breaking change** 다. 라벨을 바꾸려면 반드시 `TEMPLATE_VERSION`
+ * 을 올리고 v(N-1)→vN content 마이그레이션(구 key→신 key 재매핑)을 동반해야 한다.
+ * 그렇지 않으면 기존 레코드 값이 구 key 에 남아 폼/상세에서 사라진다.
+ * (라벨과 완전 분리된 명시적 field id 도입은 FRT-70 레지스트리 단일화 후속 과제.)
+ */
+function withSectionKeys(section: TemplateSection): TemplateSection {
+  return {
+    ...section,
+    blocks: section.blocks.map(b => ({ ...b, key: `${section.id}.${b.label}` })),
+  }
+}
+
 function buildTemplate(typeId: ExperienceTypeId): TemplateV2 {
   const info = EXPERIENCE_TYPE_MAP[typeId]
   const typeExtensions = extensionMap[typeId]()
@@ -697,8 +720,8 @@ function buildTemplate(typeId: ExperienceTypeId): TemplateV2 {
     typeId,
     label: info.label,
     icon: info.icon,
-    commonCore: buildCommonCore(),
-    extensions: [buildExtendedSection(), ...typeExtensions],
+    commonCore: withSectionKeys(buildCommonCore()),
+    extensions: [buildExtendedSection(), ...typeExtensions].map(withSectionKeys),
     isSystem: true,
   }
 }
