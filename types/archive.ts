@@ -110,6 +110,17 @@ export type BlockValue =
   | RepeatableCellBlockValue
   | TableBlockValue
 
+// ─── Section Category (입력 폼 4섹션 분류, FRT-70) ───────────────
+export type SectionCategory = "basic" | "detail" | "repeat" | "evidence"
+
+/** 입력 폼 카드 4섹션 — 고정 순서·고정 라벨. scrollspy 네비가 소비한다. */
+export const SECTION_CATEGORIES: { id: SectionCategory; label: string }[] = [
+  { id: "basic", label: "기본 정보" },
+  { id: "detail", label: "경험 상세" },
+  { id: "repeat", label: "반복 기록" },
+  { id: "evidence", label: "활동 증빙" },
+]
+
 export interface Block {
   id: string
   /**
@@ -123,6 +134,8 @@ export interface Block {
   collapsed?: boolean
   placeholder?: string
   options?: string[]
+  /** 섹션 category override. core 섹션의 이질적 블록(기간/역할/성과/증빙) 분류에 사용. */
+  category?: SectionCategory
   value: BlockValue
 }
 
@@ -160,6 +173,8 @@ export interface ExperienceTypeInfo {
 export interface TemplateSection {
   id: string
   label: string
+  /** 입력 폼 4섹션 분류 (FRT-70). 섹션 블록은 기본적으로 이 category 로 묶인다. */
+  category: SectionCategory
   collapsed?: boolean
   blocks: Block[]
 }

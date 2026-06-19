@@ -1,4 +1,4 @@
-import type { TemplateV2, TemplateSection, ExperienceTypeInfo, ExperienceTypeId } from '@/types/archive'
+import type { TemplateV2, TemplateSection, ExperienceTypeInfo, ExperienceTypeId, SectionCategory } from '@/types/archive'
 import {
   createTextField,
   createTextareaField,
@@ -55,13 +55,14 @@ function buildCommonCore(): TemplateSection {
   return {
     id: 'core',
     label: '기본 정보',
+    category: 'basic',
     blocks: [
       createTextField('경험명', { required: true, placeholder: '경험의 이름을 입력하세요' }),
-      createPeriodField('기간', { required: true }),
+      { ...createPeriodField('기간', { required: true }), category: 'basic' as SectionCategory },
       createTextField('한 줄 요약', { placeholder: '이 경험을 한 줄로 요약해주세요' }),
-      createTextareaField('내 역할/기여도', { placeholder: '내가 맡은 역할과 기여한 부분을 작성해주세요' }),
-      createTextareaField('핵심 성과', { placeholder: '주요 성과나 결과를 작성해주세요' }),
-      createFileField('증빙 자료'),
+      { ...createTextareaField('내 역할/기여도', { placeholder: '내가 맡은 역할과 기여한 부분을 작성해주세요' }), category: 'detail' as SectionCategory },
+      { ...createTextareaField('핵심 성과', { placeholder: '주요 성과나 결과를 작성해주세요' }), category: 'detail' as SectionCategory },
+      { ...createFileField('증빙 자료'), category: 'evidence' as SectionCategory },
     ],
   }
 }
@@ -72,6 +73,7 @@ function buildExtendedSection(): TemplateSection {
   return {
     id: 'extended',
     label: '확장 입력 (선택)',
+    category: 'detail',
     collapsed: true,
     blocks: [
       createTextareaField('배경/목표', { placeholder: '이 경험의 배경이나 목표를 설명해주세요' }),
@@ -92,6 +94,7 @@ function educationExtensions(): TemplateSection[] {
   return [
     {
       id: 'edu-info',
+      category: 'basic',
       label: '학교 정보',
       blocks: [
         createTextField('학교명', { required: true, placeholder: '○○대학교' }),
@@ -104,6 +107,7 @@ function educationExtensions(): TemplateSection[] {
     },
     {
       id: 'edu-courses',
+      category: 'repeat',
       label: '수업 기록',
       blocks: [
         createRepeatableCell('수업 기록', [
@@ -126,6 +130,7 @@ function extracurricularExtensions(): TemplateSection[] {
   return [
     {
       id: 'extra-info',
+      category: 'basic',
       label: '활동 정보',
       blocks: [
         createTextField('활동명', { required: true }),
@@ -138,6 +143,7 @@ function extracurricularExtensions(): TemplateSection[] {
     },
     {
       id: 'extra-detail',
+      category: 'repeat',
       label: '활동내용 상세',
       collapsed: true,
       blocks: [
@@ -162,6 +168,7 @@ function academicSocietyExtensions(): TemplateSection[] {
   return [
     {
       id: 'society-info',
+      category: 'basic',
       label: '학회 정보',
       blocks: [
         createTextField('학회명', { required: true }),
@@ -175,6 +182,7 @@ function academicSocietyExtensions(): TemplateSection[] {
     },
     {
       id: 'society-projects',
+      category: 'repeat',
       label: '프로젝트/연구활동 기록',
       blocks: [
         createRepeatableCell('프로젝트/연구활동', [
@@ -196,6 +204,7 @@ function clubExtensions(): TemplateSection[] {
   return [
     {
       id: 'club-info',
+      category: 'basic',
       label: '동아리/단체 정보',
       blocks: [
         createTextField('동아리/단체명', { required: true }),
@@ -207,6 +216,7 @@ function clubExtensions(): TemplateSection[] {
     },
     {
       id: 'club-activities',
+      category: 'repeat',
       label: '활동 기록',
       blocks: [
         createRepeatableCell('활동 기록', [
@@ -225,6 +235,7 @@ function careerExtensions(): TemplateSection[] {
   return [
     {
       id: 'career-info',
+      category: 'basic',
       label: '근무 정보',
       blocks: [
         createTextField('회사명', { required: true }),
@@ -240,6 +251,7 @@ function careerExtensions(): TemplateSection[] {
     },
     {
       id: 'career-tasks',
+      category: 'repeat',
       label: '업무내용 기록',
       blocks: [
         createRepeatableCell('업무내용', [
@@ -262,6 +274,7 @@ function awardExtensions(): TemplateSection[] {
   return [
     {
       id: 'award-info',
+      category: 'basic',
       label: '수상 정보',
       blocks: [
         createTextField('수상명', { required: true }),
@@ -286,6 +299,7 @@ function certificationExtensions(): TemplateSection[] {
   return [
     {
       id: 'cert-info',
+      category: 'basic',
       label: '자격증 정보',
       blocks: [
         createTextField('자격증명', { required: true }),
@@ -301,6 +315,7 @@ function certificationExtensions(): TemplateSection[] {
     },
     {
       id: 'cert-applied',
+      category: 'repeat',
       label: '실무 적용 사례',
       collapsed: true,
       blocks: [
@@ -319,6 +334,7 @@ function languageExtensions(): TemplateSection[] {
   return [
     {
       id: 'lang-info',
+      category: 'basic',
       label: '어학 정보',
       blocks: [
         createTextField('언어', { required: true, placeholder: '영어' }),
@@ -333,6 +349,7 @@ function languageExtensions(): TemplateSection[] {
     },
     {
       id: 'lang-usage',
+      category: 'repeat',
       label: '실제 활용 사례',
       collapsed: true,
       blocks: [
@@ -351,6 +368,7 @@ function researchExtensions(): TemplateSection[] {
   return [
     {
       id: 'research-info',
+      category: 'basic',
       label: '연구 정보',
       blocks: [
         createTextField('연구 주제/논문 제목', { required: true }),
@@ -375,6 +393,7 @@ function personalProjectExtensions(): TemplateSection[] {
   return [
     {
       id: 'pp-info',
+      category: 'basic',
       label: '프로젝트 정보',
       blocks: [
         createTextField('프로젝트명', { required: true }),
@@ -388,6 +407,7 @@ function personalProjectExtensions(): TemplateSection[] {
     },
     {
       id: 'pp-decisions',
+      category: 'repeat',
       label: '설계/결정 기록',
       collapsed: true,
       blocks: [
@@ -411,6 +431,7 @@ function teamProjectExtensions(): TemplateSection[] {
   return [
     {
       id: 'tp-info',
+      category: 'basic',
       label: '프로젝트 정보',
       blocks: [
         createTextField('프로젝트명', { required: true }),
@@ -424,6 +445,7 @@ function teamProjectExtensions(): TemplateSection[] {
     },
     {
       id: 'tp-tasks',
+      category: 'repeat',
       label: '작업 기록',
       blocks: [
         createRepeatableCell('작업 기록', [
@@ -444,6 +466,7 @@ function volunteerExtensions(): TemplateSection[] {
   return [
     {
       id: 'vol-info',
+      category: 'basic',
       label: '봉사 정보',
       blocks: [
         createTextField('봉사활동명', { required: true }),
@@ -466,6 +489,7 @@ function overseasExtensions(): TemplateSection[] {
   return [
     {
       id: 'overseas-info',
+      category: 'basic',
       label: '해외 경험 정보',
       blocks: [
         createSelectField('경험 유형', ['교환학생', '연수', '여행', '해외 인턴', '기타']),
@@ -478,6 +502,7 @@ function overseasExtensions(): TemplateSection[] {
     },
     {
       id: 'overseas-challenges',
+      category: 'repeat',
       label: '어려웠던 상황',
       collapsed: true,
       blocks: [
@@ -498,6 +523,7 @@ function creativeWorkExtensions(): TemplateSection[] {
   return [
     {
       id: 'cw-info',
+      category: 'basic',
       label: '작품 정보',
       blocks: [
         createTextField('작품/작업물명', { required: true }),
@@ -510,6 +536,7 @@ function creativeWorkExtensions(): TemplateSection[] {
     },
     {
       id: 'cw-process',
+      category: 'repeat',
       label: '제작 과정',
       collapsed: true,
       blocks: [
@@ -531,6 +558,7 @@ function sportsExtensions(): TemplateSection[] {
   return [
     {
       id: 'sports-info',
+      category: 'basic',
       label: '운동 정보',
       blocks: [
         createTextField('종목', { required: true }),
@@ -542,6 +570,7 @@ function sportsExtensions(): TemplateSection[] {
     },
     {
       id: 'sports-log',
+      category: 'repeat',
       label: '기록 로그',
       collapsed: true,
       blocks: [
@@ -563,6 +592,7 @@ function readingExtensions(): TemplateSection[] {
   return [
     {
       id: 'reading-info',
+      category: 'basic',
       label: '독서 정보',
       blocks: [
         createTextField('도서명', { required: true }),
@@ -575,6 +605,7 @@ function readingExtensions(): TemplateSection[] {
     },
     {
       id: 'reading-apply',
+      category: 'repeat',
       label: '적용/실험',
       collapsed: true,
       blocks: [
@@ -594,6 +625,7 @@ function journalExtensions(): TemplateSection[] {
   return [
     {
       id: 'journal-info',
+      category: 'basic',
       label: '기록 정보',
       blocks: [
         createTextField('기록 주제', { required: true, placeholder: '주간 회고, 학습 일지, 감정 기록 등' }),
@@ -609,6 +641,7 @@ function journalExtensions(): TemplateSection[] {
     },
     {
       id: 'journal-insights',
+      category: 'repeat',
       label: '인사이트/패턴',
       collapsed: true,
       blocks: [
@@ -627,6 +660,7 @@ function goalExtensions(): TemplateSection[] {
   return [
     {
       id: 'goal-info',
+      category: 'basic',
       label: '목표 정보',
       blocks: [
         createTextField('목표명', { required: true }),
@@ -638,6 +672,7 @@ function goalExtensions(): TemplateSection[] {
     },
     {
       id: 'goal-plan',
+      category: 'repeat',
       label: '세부 계획',
       blocks: [
         createRepeatableCell('세부 계획', [
@@ -651,6 +686,7 @@ function goalExtensions(): TemplateSection[] {
     },
     {
       id: 'goal-progress',
+      category: 'repeat',
       label: '진행 기록',
       collapsed: true,
       blocks: [

@@ -13,7 +13,7 @@ import ExperienceFormV2, {
   type ExperienceFormV2Handle,
 } from "@/components/features/archive/ExperienceFormV2"
 import InputViewShell from "@/app/(main)/archive/_components/InputViewShell"
-import type { ExperienceV2 } from "@/types/archive"
+import type { ExperienceV2, SectionCategory } from "@/types/archive"
 
 export default function ArchiveEditPage() {
   const router = useRouter()
@@ -25,6 +25,7 @@ export default function ArchiveEditPage() {
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [sections, setSections] = useState<{ id: SectionCategory; label: string }[]>([])
 
   const backTo = `${basePath}/archive?id=${id}`
 
@@ -80,6 +81,7 @@ export default function ArchiveEditPage() {
       hasUnsaved={hasUnsaved}
       backTo={backTo}
       saving={saving}
+      sections={sections}
     >
       {saveError && (
         <div
@@ -101,6 +103,7 @@ export default function ArchiveEditPage() {
         onSave={handleSave}
         onCancel={() => router.push(backTo)}
         onUnsavedChange={setHasUnsaved}
+        onVisibleSectionsChange={setSections}
       />
     </InputViewShell>
   )
