@@ -28,7 +28,7 @@ export default function SectionNav({ sections, formRef, saving }: SectionNavProp
             key={s.id}
             type="button"
             onClick={() => scrollTo(s.id)}
-            aria-current={active === s.id ? "true" : undefined}
+            aria-current={active === s.id ? true : undefined}
             className={`text-left text-body-sm rounded-md px-3 py-2 transition-colors ${
               active === s.id
                 ? "bg-surface-brand text-brand-dark font-medium"

@@ -223,6 +223,9 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     [template, coreBlocks, extensionSections]
   )
 
+  // 카드 onChange가 돌려준 블록들을 id로 core/extension state에 되쓴다. block id는
+  // uid()로 전역 고유하므로 core와 extension 간 충돌이 없고, updated에 없는 블록(dedup으로
+  // 숨겨진 블록)은 `?? b` 폴백으로 state에 그대로 보존된다.
   // ── Universal write-back: routes updated blocks to coreBlocks / extensionSections by id ──
   function writeBackBlocks(updated: Block[]) {
     const map = new Map(updated.map(b => [b.id, b]))
@@ -297,15 +300,26 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
 
   // ── Visible sections callback ────────────────────────────────────
   const visibleKey = formCards?.visibleCategories.join(",") ?? ""
+  const onVisibleSectionsChangeRef = useRef(onVisibleSectionsChange)
   useEffect(() => {
-    if (!formCards) { onVisibleSectionsChange?.([]); return }
-    onVisibleSectionsChange?.(
+    onVisibleSectionsChangeRef.current = onVisibleSectionsChange
+  })
+
+  useEffect(() => {
+    const emit = onVisibleSectionsChangeRef.current
+    if (!emit) return
+    if (!formCards) {
+      emit([])
+      return
+    }
+    emit(
       formCards.visibleCategories.map(id => ({
-        id, label: SECTION_CATEGORIES.find(c => c.id === id)!.label,
+        id,
+        label: SECTION_CATEGORIES.find(c => c.id === id)!.label,
       }))
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleKey, onVisibleSectionsChange])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- emit read from ref (always current); depend only on visibleKey to avoid loops with inline callbacks
+  }, [visibleKey])
 
   const titleValue = formCards?.titleBlock?.value
   const titleText = titleValue?.type === "text" ? titleValue.text : ""
