@@ -3,6 +3,7 @@ import { useRef } from "react"
 
 import InputViewShell from "./InputViewShell"
 import type { ExperienceFormV2Handle } from "@/components/features/archive/ExperienceFormV2"
+import type { SectionCategory } from "@/types/archive"
 
 const meta: Meta<typeof InputViewShell> = {
   title: "Features/Archive/InputViewShell",
@@ -16,10 +17,17 @@ export default meta
 
 type Story = StoryObj<typeof InputViewShell>
 
+const DEMO_SECTIONS: { id: SectionCategory; label: string }[] = [
+  { id: "basic", label: "기본 정보" },
+  { id: "detail", label: "경험 상세" },
+  { id: "repeat", label: "반복 기록" },
+  { id: "evidence", label: "활동 증빙" },
+]
+
 function Demo({ hasUnsaved }: { hasUnsaved: boolean }) {
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   return (
-    <InputViewShell formRef={formRef} hasUnsaved={hasUnsaved} backTo="/archive">
+    <InputViewShell formRef={formRef} hasUnsaved={hasUnsaved} backTo="/archive" sections={DEMO_SECTIONS}>
       <div className="max-w-[640px] mx-auto px-5 py-10">
         <p className="text-body text-text-secondary">
           입력 폼 영역 — 실제로는 ExperienceFormV2 가 이 자리에 렌더된다.
