@@ -20,9 +20,12 @@ import type {
   BlockValue,
   TemplateV2,
   ImportanceLevel,
+  SectionCategory,
 } from "@/types/archive"
+import { SECTION_CATEGORIES } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks, isBlockEmpty, uid } from "@/lib/utils/block-utils"
+import { computeFormCards } from "@/lib/utils/form-cards"
 import type { UsePresetsReturn } from "@/hooks/usePresets"
 
 interface AppliedPreset {
@@ -44,6 +47,7 @@ interface ExperienceFormV2Props {
    * 폼을 단독 마운트하는 테스트·스토리는 인라인 버튼을 그대로 유지한다.
    */
   hideInlineActions?: boolean
+  onVisibleSectionsChange?: (sections: { id: SectionCategory; label: string }[]) => void
 }
 
 /**
@@ -51,47 +55,6 @@ interface ExperienceFormV2Props {
  */
 export interface ExperienceFormV2Handle {
   save: (status: ExperienceStatus) => void
-}
-
-// Semantic groups: labels within the same group are treated as asking the same question.
-// Used to hide duplicate fields across core, type-specific extensions, and the shared
-// "확장 입력" section so users don't answer the same thing twice.
-const SEMANTIC_GROUPS: Record<string, string[]> = {
-  period: [
-    "기간", "재직기간", "읽은 기간/완독일", "제작 기간", "준비 기간", "학습 기간",
-  ],
-  role: [
-    "내 역할/기여도", "내 역할/기여", "내 역할", "내가 맡은 파트", "직책/역할", "역할/직책", "역할",
-  ],
-  achievement: [
-    "핵심 성과", "핵심 성과 기록", "결과/성과", "성과", "성과/산출물", "반응/성과", "변화/성과", "임팩트/변화",
-  ],
-  team: [
-    "협업/팀", "팀/조직", "팀 구성", "협업 방식", "협업/커뮤니케이션 방식",
-  ],
-  motivation: [
-    "지원 동기", "참여 동기", "읽은 이유", "목표/만들고 싶었던 이유",
-  ],
-  evidence: [
-    "증빙 자료", "증빙", "활동 인증서", "활동 인증서/수료 증빙", "수상 증빙", "자격증 증빙", "봉사 확인서", "꾸준함 증거",
-  ],
-  lesson: [
-    "배운 점", "느낀 점/가치관 변화",
-  ],
-}
-
-function getSemanticGroup(label: string): string | null {
-  for (const [key, labels] of Object.entries(SEMANTIC_GROUPS)) {
-    if (labels.includes(label)) return key
-  }
-  return null
-}
-
-function hasEquivalentIn(label: string, otherLabels: Set<string>): boolean {
-  if (otherLabels.has(label)) return true
-  const group = getSemanticGroup(label)
-  if (!group) return false
-  return SEMANTIC_GROUPS[group].some(eq => otherLabels.has(eq))
 }
 
 const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Props>(function ExperienceFormV2({
@@ -102,6 +65,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   onCancel,
   onUnsavedChange,
   hideInlineActions,
+  onVisibleSectionsChange,
 }: ExperienceFormV2Props, ref) {
   const [typeId, setTypeId] = useState<ExperienceTypeId | null>(
     initialExperience?.typeId ?? null
@@ -111,7 +75,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     initialExperience?.coreBlocks ?? []
   )
   const [extensionSections, setExtensionSections] = useState<
-    { id: string; label: string; collapsed?: boolean; blocks: Block[] }[]
+    { id: string; label: string; category: SectionCategory; collapsed?: boolean; blocks: Block[] }[]
   >([])
   const [customBlocks, setCustomBlocks] = useState<Block[]>(
     initialExperience?.customBlocks ?? []
@@ -140,6 +104,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         tmpl.extensions.map(ext => ({
           id: ext.id,
           label: ext.label,
+          category: ext.category,
           collapsed: ext.collapsed,
           blocks: cloneBlocks(ext.blocks),
         }))
@@ -174,6 +139,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             return {
               id: ext.id,
               label: ext.label,
+              category: ext.category,
               collapsed: ext.collapsed,
               blocks: matchedBlocks.length > 0
                 ? matchedBlocks
@@ -251,126 +217,26 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     return window.confirm("경험 유형을 바꾸면 입력한 내용이 초기화될 수 있어요. 계속할까요?")
   }, [coreBlocks, extensionSections, customBlocks, appliedPresets, tags])
 
-  function handleExtensionChange(sectionId: string, blocks: Block[]) {
+  // ── Computed form cards ──────────────────────────────────────────
+  const formCards = useMemo(
+    () => (template ? computeFormCards(coreBlocks, extensionSections) : null),
+    [template, coreBlocks, extensionSections]
+  )
+
+  // ── Universal write-back: routes updated blocks to coreBlocks / extensionSections by id ──
+  function writeBackBlocks(updated: Block[]) {
+    const map = new Map(updated.map(b => [b.id, b]))
+    setCoreBlocks(prev => prev.map(b => map.get(b.id) ?? b))
     setExtensionSections(prev =>
-      prev.map(s => (s.id === sectionId ? { ...s, blocks } : s))
+      prev.map(s => ({ ...s, blocks: s.blocks.map(b => map.get(b.id) ?? b) }))
     )
   }
 
-  // ── Computed layout for restructured form ──────────────────────
-  const formLayout = useMemo(() => {
-    if (!template) return null
-
-    // Separate type-specific sections from shared extended section
-    const typeSpecificSections = extensionSections.filter(s => s.id !== "extended")
-    const sharedExtendedSection = extensionSections.find(s => s.id === "extended")
-
-    // Extract standalone fields from core
-    const titleBlock = coreBlocks.find(b => b.label === "경험명")
-    const summaryBlock = coreBlocks.find(b => b.label === "한 줄 요약")
-    const evidenceBlock = coreBlocks.find(b => b.label === "증빙 자료")
-
-    // Collect all labels from type-specific extensions to detect overlap
-    const extensionLabels = new Set<string>()
-    for (const section of typeSpecificSections) {
-      for (const block of section.blocks) {
-        extensionLabels.add(block.label)
-      }
-    }
-
-    // Remaining core blocks = those not extracted and not overlapping with extensions
-    const extractedLabels = new Set(["경험명", "한 줄 요약", "증빙 자료"])
-    const remainingCoreBlocks = coreBlocks.filter(b => {
-      if (extractedLabels.has(b.label)) return false
-      // Keep if user already wrote something — never hide data silently
-      if (!isBlockEmpty(b)) return true
-      return !hasEquivalentIn(b.label, extensionLabels)
-    })
-
-    // Labels already present in remaining core + type-specific extensions.
-    // Used to filter duplicate fields out of the shared "확장 입력" section.
-    const usedLabels = new Set<string>(extensionLabels)
-    for (const b of remainingCoreBlocks) usedLabels.add(b.label)
-
-    const filteredSharedExtended = (sharedExtendedSection?.blocks ?? []).filter(b => {
-      // Never hide a block that already has user data
-      if (!isBlockEmpty(b)) return true
-      return !hasEquivalentIn(b.label, usedLabels)
-    })
-
-    // Merge remaining core + filtered shared extended blocks into "확장 입력"
-    const mergedExtendedBlocks = [
-      ...remainingCoreBlocks,
-      ...filteredSharedExtended,
-    ]
-
-    return {
-      titleBlock,
-      summaryBlock,
-      evidenceBlock,
-      typeSpecificSections,
-      mergedExtendedBlocks,
-      sharedExtendedSectionId: sharedExtendedSection?.id ?? "extended",
-    }
-  }, [template, coreBlocks, extensionSections])
-
-  // ── Handle changes to blocks that live in merged sections ──────
+  // ── Header input handler (경험명 / 한 줄 요약 only) ──────────────
   function handleCoreBlockChange(blockId: string, value: BlockValue) {
     setCoreBlocks(prev =>
       prev.map(b => (b.id === blockId ? { ...b, value } : b))
     )
-  }
-
-  function handleMergedExtendedChange(blocks: Block[]) {
-    // Split back: core blocks update coreBlocks state, shared extended update extensionSections.
-    // The merged array may only contain a subset of shared extended blocks (the rest
-    // are hidden by dedupe); preserve hidden blocks when writing back.
-    if (!formLayout) return
-    const coreBlockIds = new Set(coreBlocks.map(b => b.id))
-    const updatedCoreBlocks = blocks.filter(b => coreBlockIds.has(b.id))
-    const updatedExtBlocks = blocks.filter(b => !coreBlockIds.has(b.id))
-    const updatedExtMap = new Map(updatedExtBlocks.map(b => [b.id, b]))
-
-    // Update core blocks that are in the merged section
-    setCoreBlocks(prev =>
-      prev.map(b => {
-        const updated = updatedCoreBlocks.find(u => u.id === b.id)
-        return updated ?? b
-      })
-    )
-
-    // Merge visible shared-extended blocks back into full section, keeping hidden ones intact
-    setExtensionSections(prev =>
-      prev.map(s => {
-        if (s.id !== formLayout.sharedExtendedSectionId) return s
-        return {
-          ...s,
-          blocks: s.blocks.map(b => updatedExtMap.get(b.id) ?? b),
-        }
-      })
-    )
-  }
-
-  // Handle evidence block appended to last type-specific section
-  function handleTypeSpecificWithEvidenceChange(sectionId: string, blocks: Block[]) {
-    if (!formLayout?.evidenceBlock) {
-      handleExtensionChange(sectionId, blocks)
-      return
-    }
-
-    const evidenceId = formLayout.evidenceBlock.id
-    const evidenceUpdated = blocks.find(b => b.id === evidenceId)
-    const sectionBlocks = blocks.filter(b => b.id !== evidenceId)
-
-    // Update the extension section
-    handleExtensionChange(sectionId, sectionBlocks)
-
-    // Update evidence block in core
-    if (evidenceUpdated) {
-      setCoreBlocks(prev =>
-        prev.map(b => (b.id === evidenceId ? evidenceUpdated : b))
-      )
-    }
   }
 
   function handleSave(status: ExperienceStatus) {
@@ -429,9 +295,21 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   // 매 렌더마다 최신 handleSave(최신 state 클로저)를 바인딩한다 — 스테일 클로저 방지.
   useImperativeHandle(ref, () => ({ save: handleSave }))
 
-  const titleValue = formLayout?.titleBlock?.value
+  // ── Visible sections callback ────────────────────────────────────
+  const visibleKey = formCards?.visibleCategories.join(",") ?? ""
+  useEffect(() => {
+    if (!formCards) { onVisibleSectionsChange?.([]); return }
+    onVisibleSectionsChange?.(
+      formCards.visibleCategories.map(id => ({
+        id, label: SECTION_CATEGORIES.find(c => c.id === id)!.label,
+      }))
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleKey, onVisibleSectionsChange])
+
+  const titleValue = formCards?.titleBlock?.value
   const titleText = titleValue?.type === "text" ? titleValue.text : ""
-  const summaryValue = formLayout?.summaryBlock?.value
+  const summaryValue = formCards?.summaryBlock?.value
   const summaryText = summaryValue?.type === "text" ? summaryValue.text : ""
 
   return (
@@ -439,17 +317,17 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       {/* Header — inline editable title + summary */}
       <div className="flex items-start justify-between mb-7 gap-4">
         <div className="flex-1 min-w-0">
-          {template && formLayout?.titleBlock && titleValue?.type === "text" ? (
+          {template && formCards?.titleBlock && titleValue?.type === "text" ? (
             <input
               type="text"
               className="w-full text-heading-3 text-text-primary bg-transparent border-0 p-0 focus:outline-none placeholder:text-text-tertiary"
-              placeholder={formLayout.titleBlock.placeholder ?? (mode === "new" ? "새 경험 추가" : "경험명")}
+              placeholder={formCards.titleBlock.placeholder ?? (mode === "new" ? "새 경험 추가" : "경험명")}
               value={titleText}
               aria-label="경험명"
               aria-invalid={titleError}
               onChange={e => {
                 if (titleError) setTitleError(false)
-                handleCoreBlockChange(formLayout.titleBlock!.id, {
+                handleCoreBlockChange(formCards.titleBlock!.id, {
                   type: "text",
                   text: e.target.value,
                 })
@@ -467,15 +345,15 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             </p>
           )}
 
-          {template && formLayout?.summaryBlock && summaryValue?.type === "text" ? (
+          {template && formCards?.summaryBlock && summaryValue?.type === "text" ? (
             <input
               type="text"
               className="w-full mt-1 text-body text-text-secondary bg-transparent border-0 p-0 focus:outline-none placeholder:text-text-tertiary"
-              placeholder={formLayout.summaryBlock.placeholder ?? "한 줄 요약"}
+              placeholder={formCards.summaryBlock.placeholder ?? "한 줄 요약"}
               value={summaryText}
               aria-label="한 줄 요약"
               onChange={e =>
-                handleCoreBlockChange(formLayout.summaryBlock!.id, {
+                handleCoreBlockChange(formCards.summaryBlock!.id, {
                   type: "text",
                   text: e.target.value,
                 })
@@ -495,11 +373,6 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             />
           </div>
         </div>
-        {initialExperience && (
-          <Badge variant={initialExperience.status === "complete" ? "success" : "warning"}>
-            {initialExperience.status === "complete" ? "완료" : "작성 중"}
-          </Badge>
-        )}
       </div>
 
       {/* Type selector */}
@@ -515,58 +388,24 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         </p>
       )}
 
-      {/* Form sections — restructured order */}
-      {template && formLayout && (
+      {/* Form sections — 4-card layout */}
+      {template && formCards && (
         <div className="flex flex-col gap-5">
-          {/* 1. First type-specific section — flat (no box) */}
-          {formLayout.typeSpecificSections.map((section, idx) => {
-            const isLast = idx === formLayout.typeSpecificSections.length - 1
-            const sectionBlocks = isLast && formLayout.evidenceBlock
-              ? [...section.blocks, formLayout.evidenceBlock]
-              : section.blocks
-            const onChange = (blocks: Block[]) =>
-              isLast && formLayout.evidenceBlock
-                ? handleTypeSpecificWithEvidenceChange(section.id, blocks)
-                : handleExtensionChange(section.id, blocks)
-
-            // Render the first type-specific section flat (no box)
-            if (idx === 0) {
-              return (
-                <div key={section.id} className="flex flex-col gap-1">
-                  <div className="text-label text-text-tertiary mb-1">
-                    {section.label}
-                  </div>
-                  <BlockList
-                    blocks={sectionBlocks}
-                    onChange={onChange}
-                  />
-                </div>
-              )
-            }
-
-            // Subsequent sections — collapsible boxed
-            return (
-              <FormSection
-                key={section.id}
-                label={section.label}
-                blocks={sectionBlocks}
-                defaultCollapsed={section.collapsed}
-                onChange={onChange}
-              />
-            )
-          })}
-
-          {/* 2. Merged "확장 입력" section (remaining core + shared extended) */}
-          {formLayout.mergedExtendedBlocks.length > 0 && (
+          {formCards.cards.map(card => (
             <FormSection
-              label="확장 입력"
-              blocks={formLayout.mergedExtendedBlocks}
-              defaultCollapsed
-              onChange={handleMergedExtendedChange}
+              key={card.category}
+              variant="card"
+              sectionId={card.category}
+              label={card.label}
+              blocks={card.blocks}
+              optional={card.optional}
+              showOptionalBadge={card.showOptionalBadge}
+              description={card.category === "detail" ? "선택 입력이에요. 채울수록 분석이 정확해져요" : undefined}
+              onChange={writeBackBlocks}
             />
-          )}
+          ))}
 
-          {/* 3. 나만의 블록 — standalone block addition */}
+          {/* 나만의 블록 — standalone block addition */}
           <section className="border border-dashed border-border rounded-lg px-5 py-5">
             <div className="flex items-center justify-between mb-4 gap-2">
               <div className="min-w-0">
@@ -595,7 +434,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             />
           </section>
 
-          {/* 4. Applied presets — each as its own boxed group */}
+          {/* Applied presets — each as its own boxed group */}
           {appliedPresets.map(group => (
             <section
               key={group.groupId}
@@ -633,7 +472,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             </section>
           ))}
 
-          {/* 5. Preset toolbar */}
+          {/* Preset toolbar */}
           <div className="flex flex-wrap gap-2">
             <Button
               variant="secondary"
