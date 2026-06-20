@@ -190,11 +190,11 @@ export default function ArchivePage() {
       if (e.key !== "Escape") return
       const t = e.target as HTMLElement | null
       if (t && ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)) return
-      // 라이브러리 드롭다운 같은 팝오버나 열린 다이얼로그(삭제 확인 등)가 있으면 그쪽이
-      // ESC 를 먼저 소비하도록 양보한다 — 한 번의 ESC 로 미리보기까지 같이 닫혀 선택이
-      // 사라지는 것을 막는다. React 리렌더는 이벤트 디스패치 이후라 이 시점엔 해당 노드가
-      // 아직 DOM 에 남아 있다.
-      if (document.querySelector('[data-archive-popover], [role="dialog"]')) return
+      // 팝오버/다이얼로그/메뉴(라이브러리 드롭다운·삭제 확인·중요도 선택 등)가 열려
+      // 있으면 그쪽이 ESC 를 먼저 소비하도록 양보한다 — 한 번의 ESC 로 미리보기까지 같이
+      // 닫혀 선택이 사라지는 것을 막는다. React 리렌더는 이벤트 디스패치 이후라 이 시점엔
+      // 해당 노드가 아직 DOM 에 남아 있다.
+      if (document.querySelector('[data-archive-popover], [role="dialog"], [role="menu"]')) return
       handleClosePreview()
     }
     window.addEventListener("keydown", onKey)

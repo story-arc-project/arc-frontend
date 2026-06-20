@@ -125,7 +125,12 @@ export default function LibraryDropdown({
   useEffect(() => {
     if (!open) return
     const onScroll = (e: Event) => {
-      if (popoverRef.current?.contains(e.target as Node)) return
+      if (popoverRef.current?.contains(e.target as Node)) {
+        // 리스트 내부 스크롤: 드롭다운은 유지하되, 포털로 떠 있는 색상 피커는 고정 좌표가
+        // 행과 어긋나 엉뚱한 행 옆에 남으므로 닫는다(setState 는 idempotent).
+        setColorPickerId(null)
+        return
+      }
       closeAll()
     }
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeAll() }
@@ -182,6 +187,9 @@ export default function LibraryDropdown({
                     tabIndex={0}
                     onClick={() => { if (!isEditing) { onSelectLibrary(lib.id); closeAll() } }}
                     onKeyDown={e => {
+                      // 행의 중첩 컨트롤(색상/이름변경/삭제)에 포커스가 있을 때의 Enter/Space 는
+                      // 그 버튼이 처리하도록 두고, 행 자체가 포커스됐을 때만 라이브러리를 선택한다.
+                      if (e.target !== e.currentTarget) return
                       if ((e.key === "Enter" || e.key === " ") && !isEditing) {
                         e.preventDefault()
                         onSelectLibrary(lib.id)
