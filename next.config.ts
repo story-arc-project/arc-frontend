@@ -23,6 +23,12 @@ const nextConfig: NextConfig = {
         source: "/ingest/static/:path*",
         destination: `${POSTHOG_ASSETS_HOST}/static/:path*`,
       },
+      // PostHog remote config(/array/<token>/config) — CDN(assets) 경유로 캐싱.
+      // catch-all 보다 먼저 매칭돼야 오리진(envoy) 대신 엣지 캐시를 탄다.
+      {
+        source: "/ingest/array/:path*",
+        destination: `${POSTHOG_ASSETS_HOST}/array/:path*`,
+      },
       // PostHog 이벤트·flags 수집 — EU 호스트로.
       {
         source: "/ingest/:path*",
