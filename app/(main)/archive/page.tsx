@@ -153,6 +153,13 @@ export default function ArchivePage() {
       setSelectedId(idParam)
       setMobileView("panel")
     }
+  } else if (!idParam && selectedId !== null && syncedForParams === selectedId) {
+    // URL 의 ?id 가 사라졌는데(브라우저 Back 등) 미리보기가 열린 채면 닫는다.
+    // `syncedForParams === selectedId` 가드로 "선택 직후 push 가 아직 반영 전"인
+    // 과도기(이때 syncedForParams 는 아직 이전 값)와 구분해 오탐 클리어를 막는다.
+    setSelectedId(null)
+    setSyncedForParams(null)
+    setMobileView("list")
   }
 
   // ── Selection ──────────────────────────────────────────────────────
@@ -183,10 +190,11 @@ export default function ArchivePage() {
       if (e.key !== "Escape") return
       const t = e.target as HTMLElement | null
       if (t && ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)) return
-      // 라이브러리 드롭다운 등 팝오버가 열려 있으면 그 ESC 가 먼저 소비하도록 양보한다
-      // (한 번의 ESC 로 드롭다운+미리보기가 동시에 닫히는 것을 막는다). React 리렌더는
-      // 이벤트 디스패치 이후라 이 시점엔 팝오버 노드가 아직 DOM 에 남아 있다.
-      if (document.querySelector("[data-archive-popover]")) return
+      // 라이브러리 드롭다운 같은 팝오버나 열린 다이얼로그(삭제 확인 등)가 있으면 그쪽이
+      // ESC 를 먼저 소비하도록 양보한다 — 한 번의 ESC 로 미리보기까지 같이 닫혀 선택이
+      // 사라지는 것을 막는다. React 리렌더는 이벤트 디스패치 이후라 이 시점엔 해당 노드가
+      // 아직 DOM 에 남아 있다.
+      if (document.querySelector('[data-archive-popover], [role="dialog"]')) return
       handleClosePreview()
     }
     window.addEventListener("keydown", onKey)

@@ -50,10 +50,12 @@ export default function LibraryDropdown({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
   const [colorPickerId, setColorPickerId] = useState<string | null>(null)
+  const [colorPickerPos, setColorPickerPos] = useState({ top: 0, left: 0 })
   const [pos, setPos] = useState({ top: 0, left: 0, width: 260 })
 
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
+  const colorPickerRef = useRef<HTMLDivElement>(null)
   // Guards a single rename session against double-commit: Enter (or click-away)
   // commits, then the input's blur fires commitRename again with a stale
   // `editingId` closure; Escape must cancel without committing. The ref makes
@@ -85,12 +87,31 @@ export default function LibraryDropdown({
     })
   }, [open])
 
-  // Close on outside click.
+  // Idempotent finish for one rename session — `commit` distinguishes
+  // Enter/blur/outside-click (commit) from Escape (cancel). useCallback so
+  // handleOutsideClick can depend on the *current* editing values.
+  const finishRename = useCallback((commit: boolean) => {
+    if (renameHandledRef.current) return
+    renameHandledRef.current = true
+    if (commit && editingId && editName.trim()) {
+      onRenameLibrary(editingId, editName.trim())
+    }
+    setEditingId(null)
+  }, [editingId, editName, onRenameLibrary])
+
+  // Close on outside click — but commit any in-progress rename first so a
+  // click-away saves the typed name (the input's blur can't be relied on to
+  // fire before this handler tears the popover down).
   const handleOutsideClick = useCallback((e: MouseEvent) => {
     const target = e.target as Node
-    if (popoverRef.current?.contains(target) || triggerRef.current?.contains(target)) return
+    if (
+      popoverRef.current?.contains(target) ||
+      triggerRef.current?.contains(target) ||
+      colorPickerRef.current?.contains(target)
+    ) return
+    if (editingId) finishRename(true)
     closeAll()
-  }, [closeAll])
+  }, [closeAll, editingId, finishRename])
 
   useEffect(() => {
     if (!open) return
@@ -123,15 +144,15 @@ export default function LibraryDropdown({
     setColorPickerId(null)
   }
 
-  // Idempotent finish for one rename session — `commit` distinguishes
-  // Enter/blur (commit) from Escape (cancel).
-  function finishRename(commit: boolean) {
-    if (renameHandledRef.current) return
-    renameHandledRef.current = true
-    if (commit && editingId && editName.trim()) {
-      onRenameLibrary(editingId, editName.trim())
-    }
-    setEditingId(null)
+  function openColorPicker(lib: Library, anchor: HTMLElement) {
+    if (colorPickerId === lib.id) { setColorPickerId(null); return }
+    const r = anchor.getBoundingClientRect()
+    const PICKER_W = 116
+    setColorPickerPos({
+      top: r.bottom + 4,
+      left: Math.min(r.left, window.innerWidth - PICKER_W - 8),
+    })
+    setColorPickerId(lib.id)
   }
 
   function handleCreate() {
@@ -180,39 +201,17 @@ export default function LibraryDropdown({
                     ) : lib.filter ? (
                       <SlidersHorizontal size={14} className="shrink-0" style={{ color: lib.color || "#6B7280" }} />
                     ) : (
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={e => { e.stopPropagation(); setColorPickerId(colorPickerId === lib.id ? null : lib.id) }}
-                          className="p-0.5 rounded hover:ring-2 hover:ring-border transition-all"
-                          aria-label="색상 변경"
-                        >
-                          <span
-                            className="block w-2.5 h-2.5 rounded-full"
-                            style={{ backgroundColor: lib.color || "#6B7280" }}
-                          />
-                        </button>
-                        {colorPickerId === lib.id && (
-                          <div
-                            className="absolute left-0 top-7 z-20 bg-surface border border-border rounded-lg shadow-md p-2 flex gap-1.5 flex-wrap w-[116px]"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            {LIBRARY_COLORS.map(c => (
-                              <button
-                                key={c}
-                                type="button"
-                                onClick={e => { e.stopPropagation(); onUpdateLibraryColor(lib.id, c); setColorPickerId(null) }}
-                                className={[
-                                  "w-5 h-5 rounded-full border-2 transition-transform hover:scale-110",
-                                  lib.color === c ? "border-text-primary scale-110" : "border-transparent",
-                                ].join(" ")}
-                                style={{ backgroundColor: c }}
-                                aria-label={c}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); openColorPicker(lib, e.currentTarget) }}
+                        className="p-0.5 rounded hover:ring-2 hover:ring-border transition-all shrink-0"
+                        aria-label="색상 변경"
+                      >
+                        <span
+                          className="block w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: lib.color || "#6B7280" }}
+                        />
+                      </button>
                     )}
 
                     {isEditing ? (
@@ -276,6 +275,35 @@ export default function LibraryDropdown({
       )
     : null
 
+  // Color picker is portaled (not nested in the scrollable list) so the swatch
+  // grid for the bottom-most library isn't clipped by the list's overflow.
+  const colorPickerLib = colorPickerId ? libraries.find(l => l.id === colorPickerId) : null
+  const colorPicker = open && colorPickerLib
+    ? createPortal(
+        <div
+          ref={colorPickerRef}
+          data-archive-popover
+          className="fixed z-[60] bg-surface border border-border rounded-lg shadow-md p-2 flex gap-1.5 flex-wrap w-[116px]"
+          style={{ top: colorPickerPos.top, left: colorPickerPos.left }}
+        >
+          {LIBRARY_COLORS.map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={e => { e.stopPropagation(); onUpdateLibraryColor(colorPickerLib.id, c); setColorPickerId(null) }}
+              className={[
+                "w-5 h-5 rounded-full border-2 transition-transform hover:scale-110",
+                colorPickerLib.color === c ? "border-text-primary scale-110" : "border-transparent",
+              ].join(" ")}
+              style={{ backgroundColor: c }}
+              aria-label={c}
+            />
+          ))}
+        </div>,
+        document.body,
+      )
+    : null
+
   return (
     <>
       <button
@@ -295,6 +323,7 @@ export default function LibraryDropdown({
         <ChevronDown size={15} className="text-text-tertiary shrink-0" />
       </button>
       {popover}
+      {colorPicker}
     </>
   )
 }

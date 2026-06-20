@@ -42,6 +42,26 @@ test.describe("FRT-62/FRT-75 아카이브 빈·데이터 상태", () => {
     await expect(page).toHaveURL(/\/archive\?id=/);
   });
 
+  test("브라우저 Back 으로 ?id 가 사라지면 미리보기가 닫힌다", async ({ page }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/archive");
+
+    await page
+      .getByRole("heading", { level: 3, name: "캡스톤 팀 프로젝트" })
+      .click();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "캡스톤 팀 프로젝트" }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(/\/archive\?id=/);
+
+    // Back → URL 이 ?id 없는 목록 상태로 돌아가면 도킹된 미리보기도 닫힌다.
+    await page.goBack();
+    await expect(page).toHaveURL(/\/archive$/);
+    await expect(
+      page.getByRole("heading", { level: 2, name: "캡스톤 팀 프로젝트" }),
+    ).toHaveCount(0);
+  });
+
   test("데스크톱 빈 상태: empty-state CTA 가 정확히 1개만 보인다", async ({
     page,
   }) => {
