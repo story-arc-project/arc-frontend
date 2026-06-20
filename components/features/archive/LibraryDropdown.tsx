@@ -1,0 +1,300 @@
+"use client"
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import { ChevronDown, FolderOpen, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react"
+import type { ExperienceV2, Library } from "@/types/archive"
+import { matchesFilter } from "@/hooks/useLibraryFilter"
+import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
+
+const LIBRARY_COLORS = [
+  "#EF4444", "#F97316", "#EAB308", "#22C55E",
+  "#3B82F6", "#8B5CF6", "#EC4899", "#6B7280",
+]
+
+interface LibraryDropdownProps {
+  libraries: Library[]
+  activeLibraryId: string
+  experiences: ExperienceV2[]
+  onSelectLibrary: (id: string) => void
+  onCreateLibrary: (name: string) => void
+  onRenameLibrary: (id: string, name: string) => void
+  onDeleteLibrary: (id: string) => void
+  onUpdateLibraryColor: (id: string, color: string) => void
+  className?: string
+}
+
+function countMatches(lib: Library, experiences: ExperienceV2[], expIds: Set<string>): number {
+  if (lib.id === ALL_LIBRARY_ID) return experiences.length
+  if (lib.filter) return experiences.filter(e => matchesFilter(e, lib.filter!)).length
+  return lib.experienceIds.filter(id => expIds.has(id)).length
+}
+
+/**
+ * 라이브러리 선택 + 인라인 관리(추가/이름변경/삭제/색상)를 한 드롭다운 팝오버에 담는다.
+ * 구 `LibrarySidebar`(20vw 고정)를 대체하는 경량 컨트롤(FRT-75). 팝오버는 상단 toolbar 의
+ * overflow 클리핑을 피하려고 body 로 portal + fixed positioning 한다(ExperienceCard 메뉴와 동일 패턴).
+ */
+export default function LibraryDropdown({
+  libraries,
+  activeLibraryId,
+  experiences,
+  onSelectLibrary,
+  onCreateLibrary,
+  onRenameLibrary,
+  onDeleteLibrary,
+  onUpdateLibraryColor,
+  className,
+}: LibraryDropdownProps) {
+  const [open, setOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState("")
+  const [colorPickerId, setColorPickerId] = useState<string | null>(null)
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 260 })
+
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  // Guards a single rename session against double-commit: Enter (or click-away)
+  // commits, then the input's blur fires commitRename again with a stale
+  // `editingId` closure; Escape must cancel without committing. The ref makes
+  // the first finish win and the rest no-op until the next startRename.
+  const renameHandledRef = useRef(false)
+
+  const activeLibrary = libraries.find(l => l.id === activeLibraryId)
+  const activeName = activeLibrary?.name ?? "전체"
+
+  // Build the experience-id set once per experiences change so the per-row
+  // manual-library membership count is O(|ids|) instead of O(|ids|×|exps|).
+  const expIds = useMemo(() => new Set(experiences.map(e => e.id)), [experiences])
+
+  const closeAll = useCallback(() => {
+    setOpen(false)
+    setEditingId(null)
+    setColorPickerId(null)
+  }, [])
+
+  // Position the popover under the trigger when it opens.
+  useEffect(() => {
+    if (!open || !triggerRef.current) return
+    const rect = triggerRef.current.getBoundingClientRect()
+    const width = Math.max(rect.width, 260)
+    setPos({
+      top: rect.bottom + 4,
+      left: Math.min(rect.left, window.innerWidth - width - 8),
+      width,
+    })
+  }, [open])
+
+  // Close on outside click.
+  const handleOutsideClick = useCallback((e: MouseEvent) => {
+    const target = e.target as Node
+    if (popoverRef.current?.contains(target) || triggerRef.current?.contains(target)) return
+    closeAll()
+  }, [closeAll])
+
+  useEffect(() => {
+    if (!open) return
+    document.addEventListener("mousedown", handleOutsideClick)
+    return () => document.removeEventListener("mousedown", handleOutsideClick)
+  }, [open, handleOutsideClick])
+
+  // Close on page scroll / Escape. Scrolling *inside* the popover's own list
+  // must not dismiss it, so the capture-phase handler ignores events whose
+  // target lives within the popover.
+  useEffect(() => {
+    if (!open) return
+    const onScroll = (e: Event) => {
+      if (popoverRef.current?.contains(e.target as Node)) return
+      closeAll()
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeAll() }
+    window.addEventListener("scroll", onScroll, true)
+    window.addEventListener("keydown", onKey)
+    return () => {
+      window.removeEventListener("scroll", onScroll, true)
+      window.removeEventListener("keydown", onKey)
+    }
+  }, [open, closeAll])
+
+  function startRename(lib: Library) {
+    renameHandledRef.current = false
+    setEditingId(lib.id)
+    setEditName(lib.name)
+    setColorPickerId(null)
+  }
+
+  // Idempotent finish for one rename session — `commit` distinguishes
+  // Enter/blur (commit) from Escape (cancel).
+  function finishRename(commit: boolean) {
+    if (renameHandledRef.current) return
+    renameHandledRef.current = true
+    if (commit && editingId && editName.trim()) {
+      onRenameLibrary(editingId, editName.trim())
+    }
+    setEditingId(null)
+  }
+
+  function handleCreate() {
+    const name = `라이브러리 ${libraries.filter(l => !l.isSystem).length + 1}`
+    onCreateLibrary(name)
+  }
+
+  const popover = open
+    ? createPortal(
+        <div
+          ref={popoverRef}
+          data-archive-popover
+          className="fixed z-50 bg-surface border border-border rounded-lg shadow-md py-2"
+          style={{ top: pos.top, left: pos.left, width: pos.width }}
+        >
+          <p className="text-caption text-text-tertiary px-3 mb-1">라이브러리</p>
+          <ul className="flex flex-col gap-0.5 px-1.5 max-h-[50vh] overflow-y-auto">
+            {libraries.map(lib => {
+              const count = countMatches(lib, experiences, expIds)
+              const isActive = lib.id === activeLibraryId
+              const isEditing = editingId === lib.id
+
+              return (
+                <li key={lib.id}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { if (!isEditing) { onSelectLibrary(lib.id); closeAll() } }}
+                    onKeyDown={e => {
+                      if ((e.key === "Enter" || e.key === " ") && !isEditing) {
+                        e.preventDefault()
+                        onSelectLibrary(lib.id)
+                        closeAll()
+                      }
+                    }}
+                    className={[
+                      "group flex items-center gap-2 px-2.5 py-2 rounded-md cursor-pointer transition-colors text-body-sm min-w-0",
+                      isActive
+                        ? "bg-surface-brand/40 text-text-primary"
+                        : "text-text-secondary hover:bg-surface-secondary hover:text-text-primary",
+                    ].join(" ")}
+                    aria-pressed={isActive}
+                  >
+                    {lib.isSystem ? (
+                      <FolderOpen size={14} className="text-text-tertiary shrink-0" />
+                    ) : lib.filter ? (
+                      <SlidersHorizontal size={14} className="shrink-0" style={{ color: lib.color || "#6B7280" }} />
+                    ) : (
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); setColorPickerId(colorPickerId === lib.id ? null : lib.id) }}
+                          className="p-0.5 rounded hover:ring-2 hover:ring-border transition-all"
+                          aria-label="색상 변경"
+                        >
+                          <span
+                            className="block w-2.5 h-2.5 rounded-full"
+                            style={{ backgroundColor: lib.color || "#6B7280" }}
+                          />
+                        </button>
+                        {colorPickerId === lib.id && (
+                          <div
+                            className="absolute left-0 top-7 z-20 bg-surface border border-border rounded-lg shadow-md p-2 flex gap-1.5 flex-wrap w-[116px]"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            {LIBRARY_COLORS.map(c => (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={e => { e.stopPropagation(); onUpdateLibraryColor(lib.id, c); setColorPickerId(null) }}
+                                className={[
+                                  "w-5 h-5 rounded-full border-2 transition-transform hover:scale-110",
+                                  lib.color === c ? "border-text-primary scale-110" : "border-transparent",
+                                ].join(" ")}
+                                style={{ backgroundColor: c }}
+                                aria-label={c}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        className="flex-1 min-w-0 h-6 bg-transparent border-b border-brand text-body-sm text-text-primary focus:outline-none"
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                        onBlur={() => finishRename(true)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") finishRename(true)
+                          if (e.key === "Escape") finishRename(false)
+                        }}
+                        autoFocus
+                        onClick={e => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span className="flex-1 truncate">{lib.name}</span>
+                    )}
+
+                    <span className="text-caption text-text-disabled">{count}</span>
+
+                    {!lib.isSystem && !isEditing && (
+                      <div className="flex gap-0.5">
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); startRename(lib) }}
+                          className="p-0.5 text-text-tertiary hover:text-text-secondary rounded"
+                          aria-label="이름 변경"
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); onDeleteLibrary(lib.id) }}
+                          className="p-0.5 text-text-tertiary hover:text-error rounded"
+                          aria-label="삭제"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+
+          <div className="px-1.5 pt-1 mt-1 border-t border-border">
+            <button
+              type="button"
+              onClick={handleCreate}
+              className="flex items-center gap-2 px-2.5 py-2 text-body-sm text-text-tertiary hover:text-text-secondary hover:bg-surface-secondary transition-colors w-full rounded-md"
+            >
+              <Plus size={14} />
+              라이브러리 추가
+            </button>
+          </div>
+        </div>,
+        document.body,
+      )
+    : null
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={[
+          "h-11 px-3 inline-flex items-center gap-1.5 rounded-md border bg-surface-secondary text-body-sm text-text-primary transition-colors min-w-0",
+          open ? "border-brand" : "border-border hover:border-border-strong",
+          className ?? "",
+        ].join(" ")}
+      >
+        <FolderOpen size={15} className="text-text-tertiary shrink-0" />
+        <span className="truncate font-medium">{activeName}</span>
+        <ChevronDown size={15} className="text-text-tertiary shrink-0" />
+      </button>
+      {popover}
+    </>
+  )
+}

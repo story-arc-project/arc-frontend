@@ -1,17 +1,14 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
 import ExperienceDetailV2 from "./ExperienceDetailV2"
 import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
 
 // 입력(new/edit)은 별도 라우트(/archive/new·/archive/[id]/edit)로 분리됐다(FRT-74).
-// 목록 페이지의 우측 패널은 빈 상태 / 상세 보기만 담당한다.
-export type ArchiveModeV2 = "empty" | "detail"
-
+// FRT-75: 목록 뷰가 메인이 되면서 우측 패널은 카드 클릭 시에만 도킹되는 read-only
+// 미리보기(peek) 전용이다. 빈 상태/선택 없음은 목록 영역이 담당하므로 이 패널은
+// 선택된 경험이 있을 때만 마운트된다.
 interface RightPanelV2Props {
-  mode: ArchiveModeV2
-  selectedExperience: ExperienceV2 | null
-  onNewExperience: () => void
+  selectedExperience: ExperienceV2
   onDelete: (id: string) => void
   onDuplicate: (exp: ExperienceV2) => void
   onEdit: () => void
@@ -19,46 +16,21 @@ interface RightPanelV2Props {
 }
 
 export default function RightPanelV2({
-  mode,
   selectedExperience,
-  onNewExperience,
   onDelete,
   onDuplicate,
   onEdit,
   onUpdateImportance,
 }: RightPanelV2Props) {
   return (
-    <div className="flex-1 h-full overflow-y-auto bg-surface scrollbar-hide">
-      {mode === "empty" && (
-        <EmptyState onNewExperience={onNewExperience} />
-      )}
-
-      {mode === "detail" && selectedExperience && (
-        <ExperienceDetailV2
-          experience={selectedExperience}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          onDuplicate={onDuplicate}
-          onUpdateImportance={onUpdateImportance}
-        />
-      )}
-    </div>
-  )
-}
-
-function EmptyState({ onNewExperience }: { onNewExperience: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 px-4 text-center text-text-tertiary">
-      <div className="w-12 h-12 rounded-xl bg-surface-secondary flex items-center justify-center text-2xl mb-1">
-        📋
-      </div>
-      <p className="text-heading-3 text-text-secondary">기록을 시작해보세요</p>
-      <p className="text-body-lg text-text-tertiary leading-relaxed">
-        새 경험을 추가해 기록을 남겨보세요
-      </p>
-      <Button variant="primary" size="lg" onClick={onNewExperience} className="mt-2">
-        새 경험 추가하기
-      </Button>
+    <div className="h-full overflow-y-auto bg-surface scrollbar-hide">
+      <ExperienceDetailV2
+        experience={selectedExperience}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onDuplicate={onDuplicate}
+        onUpdateImportance={onUpdateImportance}
+      />
     </div>
   )
 }

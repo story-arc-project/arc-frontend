@@ -3,33 +3,43 @@ import { expect, test } from "@playwright/test";
 import { stubApi } from "./fixtures/stub-api";
 
 /**
- * FRT-62 — `/archive` 빈·데이터 상태 UX 회귀 가드.
+ * FRT-62 / FRT-75 — `/archive` 목록 뷰 빈·데이터 상태 UX 회귀 가드.
  *
- * 세 가지 수정의 관찰 가능한 효과를 FRT-42 stateful stub 위에서 백엔드 없이
- * 결정론적으로 검증한다(앱코드 의존 0):
- *  1. 데이터 상태 — 첫 항목 자동 선택(클릭 없이 우측 상세가 채워진다). URL 은
- *     ?id 를 push 하지 않아 `/archive` 그대로 유지(뷰 기본값일 뿐).
- *  2. 데스크톱 빈 상태 — empty-state CTA 가 정확히 1개(리스트 vs 우측 패널 이중
- *     공허 메시지 제거).
+ * FRT-75 에서 목록 뷰가 메인이 되고 미리보기는 카드 클릭 시에만 우측에 도킹된다
+ * (노션형 push peek). 진입 시 자동선택은 의도적으로 폐기됐다. 아래는 FRT-42
+ * stateful stub 위에서 백엔드 없이 결정론적으로 검증한다(앱코드 의존 0):
+ *  1. 데이터 상태 — 진입 시 미리보기는 닫혀 있고(상세 h2 없음) 첫 카드(h3)만
+ *     목록에 보인다. 카드 클릭 시 우측에 상세가 도킹되고 ?id 가 push 된다.
+ *  2. 데스크톱 빈 상태 — empty-state CTA 가 정확히 1개(목록 영역 히어로).
  *  3. 모바일 빈 상태 — 48px+ 터치 타겟의 '새 경험 추가하기' CTA 가 보인다.
  */
 
-test.describe("FRT-62 아카이브 빈·데이터 상태", () => {
-  test("데이터 상태: 첫 경험이 클릭 없이 자동 선택돼 상세가 채워진다", async ({
+test.describe("FRT-62/FRT-75 아카이브 빈·데이터 상태", () => {
+  test("데이터 상태: 진입 시 미리보기는 닫혀 있고, 카드 클릭 시 우측에 도킹된다", async ({
     page,
   }) => {
     await stubApi(page, { authed: true, scenario: "data" });
     await page.goto("/archive");
 
-    // 클릭 없이 첫 시드 경험의 상세(h2)가 우측 패널에 렌더된다(자동 선택 증명).
     // 기본 정렬은 updated 내림차순 — 가장 최근 갱신된 "캡스톤 팀 프로젝트"(2026-02-20)가
-    // filteredExperiences[0] 이라 자동 선택된다.
+    // 목록 첫 카드(h3)다. 자동선택은 폐기됐으므로 진입 시 상세(h2)는 렌더되지 않고
+    // URL 도 ?id 없이 그대로다.
+    await expect(
+      page.getByRole("heading", { level: 3, name: "캡스톤 팀 프로젝트" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "캡스톤 팀 프로젝트" }),
+    ).toHaveCount(0);
+    await expect(page).toHaveURL(/\/archive$/);
+
+    // 카드 클릭 → 우측 미리보기(상세 h2) 도킹 + ?id push.
+    await page
+      .getByRole("heading", { level: 3, name: "캡스톤 팀 프로젝트" })
+      .click();
     await expect(
       page.getByRole("heading", { level: 2, name: "캡스톤 팀 프로젝트" }),
     ).toBeVisible();
-
-    // 자동 선택은 뷰 기본값이라 ?id 를 push 하지 않는다 — URL 은 그대로 유지된다.
-    await expect(page).toHaveURL(/\/archive$/);
+    await expect(page).toHaveURL(/\/archive\?id=/);
   });
 
   test("데스크톱 빈 상태: empty-state CTA 가 정확히 1개만 보인다", async ({
@@ -38,10 +48,10 @@ test.describe("FRT-62 아카이브 빈·데이터 상태", () => {
     await stubApi(page, { authed: true, scenario: "empty" });
     await page.goto("/archive");
 
-    // 우측 패널 히어로만 CTA 를 갖고, 리스트 패널은 데스크톱에서 passive 텍스트뿐.
-    // (리스트 패널의 모바일 CTA 는 md:hidden 이라 a11y 트리에서 제외된다.)
-    // getByRole 은 숨김(md:hidden) 사본을 a11y 트리에서 제외하므로, 데스크톱에서
-    // 보이는 CTA(우측 히어로)만 1개로 잡힌다. 리스트 패널 모바일 CTA 는 숨겨져 0개.
+    // 경험 0건이면 목록 영역이 히어로 CTA 를 단독으로 렌더한다(미리보기 미도킹).
+    // 데스크톱/모바일 레이아웃은 각각 hidden md:flex / md:hidden 으로 한쪽만 a11y
+    // 트리에 노출되므로, 데스크톱 뷰포트에서 '새 경험 추가하기' 는 정확히 1개다.
+    // (상단 toolbar 의 버튼은 '새 경험' 이라 이름이 달라 잡히지 않는다.)
     await expect(
       page.getByRole("button", { name: "새 경험 추가하기" }),
     ).toHaveCount(1);

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
 
-import LibrarySidebar from "./LibrarySidebar"
+import LibraryDropdown from "./LibraryDropdown"
 import {
   systemLibrary,
   sampleLibraries,
@@ -8,11 +8,11 @@ import {
   draftExperience,
 } from "./__fixtures__/archive.fixtures"
 
-const meta: Meta<typeof LibrarySidebar> = {
-  title: "Features/Archive/LibrarySidebar",
-  component: LibrarySidebar,
+const meta: Meta<typeof LibraryDropdown> = {
+  title: "Features/Archive/LibraryDropdown",
+  component: LibraryDropdown,
   parameters: {
-    layout: "fullscreen",
+    layout: "padded",
   },
   args: {
     onSelectLibrary: () => {},
@@ -20,13 +20,12 @@ const meta: Meta<typeof LibrarySidebar> = {
     onRenameLibrary: () => {},
     onDeleteLibrary: () => {},
     onUpdateLibraryColor: () => {},
-    onNewExperience: () => {},
   },
 }
 
 export default meta
 
-type Story = StoryObj<typeof LibrarySidebar>
+type Story = StoryObj<typeof LibraryDropdown>
 
 export const Empty: Story = {
   args: {

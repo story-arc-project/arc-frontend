@@ -14,6 +14,7 @@ interface FilterBarProps {
   onToggleStatus: (status: ExperienceStatus) => void
   onClearFilters: () => void
   onSaveAsLibrary?: (name: string) => void
+  className?: string
 }
 
 const SORT_OPTIONS: { value: SortBy; label: string }[] = [
@@ -31,6 +32,7 @@ export default function FilterBar({
   onToggleStatus,
   onClearFilters,
   onSaveAsLibrary,
+  className,
 }: FilterBarProps) {
   const [showFilters, setShowFilters] = useState(false)
   const [showSaveInput, setShowSaveInput] = useState(false)
@@ -45,14 +47,14 @@ export default function FilterBar({
   }
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-3 border-b border-border bg-surface">
+    <div className={["flex flex-col gap-3", className ?? ""].join(" ")}>
       {/* Search + sort row */}
       <div className="flex gap-2">
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
           <input
             type="text"
-            className="h-9 w-full rounded-md border border-border bg-surface-secondary pl-9 pr-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+            className="h-11 w-full rounded-md border border-border bg-surface-secondary pl-9 pr-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
             placeholder="경험 검색..."
             value={filter.search ?? ""}
             onChange={e => onSearchChange(e.target.value)}
@@ -61,7 +63,7 @@ export default function FilterBar({
         <select
           value={filter.sortBy ?? "updated"}
           onChange={e => onSortChange(e.target.value as SortBy)}
-          className="h-9 rounded-md border border-border bg-surface-secondary px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
+          className="h-11 rounded-md border border-border bg-surface-secondary px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
         >
           {SORT_OPTIONS.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -71,7 +73,7 @@ export default function FilterBar({
           type="button"
           onClick={() => setShowFilters(s => !s)}
           className={[
-            "h-9 w-9 flex items-center justify-center rounded-md border transition-colors shrink-0",
+            "h-11 w-11 flex items-center justify-center rounded-md border transition-colors shrink-0",
             showFilters || isFilterActive
               ? "border-brand bg-surface-brand text-brand"
               : "border-border bg-surface-secondary text-text-tertiary hover:text-text-secondary",
