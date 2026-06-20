@@ -98,10 +98,23 @@ export default function ExperienceCard({
     return () => window.removeEventListener("scroll", handleScroll, true)
   }, [menuOpen])
 
+  // Close menu on Escape so the topmost overlay is dismissed. The portals are
+  // tagged `data-archive-popover` (below) so the archive preview's own Escape
+  // handler yields to this menu instead of closing the docked preview.
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setMenuOpen(false); setShowLibrarySubmenu(false) }
+    }
+    window.addEventListener("keydown", handleKey)
+    return () => window.removeEventListener("keydown", handleKey)
+  }, [menuOpen])
+
   const contextMenu = menuOpen
     ? createPortal(
         <div
           ref={menuRef}
+          data-archive-popover
           className="fixed w-40 bg-surface border border-border rounded-lg shadow-md py-1 z-50"
           style={{ top: menuPos.top, left: menuPos.left }}
         >
@@ -138,6 +151,7 @@ export default function ExperienceCard({
                 createPortal(
                   <div
                     ref={submenuRef}
+                    data-archive-popover
                     className="fixed w-36 bg-surface border border-border rounded-lg shadow-md py-1 z-50"
                     style={{ top: submenuPos.top, left: submenuPos.left }}
                   >
