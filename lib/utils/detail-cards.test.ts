@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { Block, BlockValue, ExperienceV2 } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
-import { cloneBlocks } from "@/lib/utils/block-utils"
+import { cloneBlocks, createGroupBlock, createTextField } from "@/lib/utils/block-utils"
 import { buildDetailSections } from "@/lib/utils/detail-cards"
 
 function text(t: string): BlockValue {
@@ -170,5 +170,62 @@ describe("buildDetailSections", () => {
     const basicLabels = sections[0].blocks.map(b => b.label)
     expect(basicLabels).not.toContain("경험명")
     expect(basicLabels).not.toContain("한 줄 요약")
+  })
+})
+
+describe("buildDetailSections — group blocks (FRT-72)", () => {
+  it("비어 있지 않은 커스텀 group 블록은 '추가 블록' 섹션에 포함된다", () => {
+    const { core, ext } = filledCareerBlocks()
+    const tmpl = getTemplateForType("career")
+
+    const g = createGroupBlock("프로젝트 역할")
+    const child = createTextField("메모")
+    if (child.value.type === "text") child.value.text = "팀 리드"
+    g.children = [child]
+
+    const sections = buildDetailSections(
+      makeExperienceV2({ coreBlocks: core, extensionBlocks: ext, customBlocks: [g] }),
+      tmpl,
+    )
+    const addOn = sections.find(s => s.label === "추가 블록")
+    expect(addOn).toBeDefined()
+    expect(addOn?.blocks).toHaveLength(1)
+    expect(addOn?.blocks[0].type).toBe("group")
+    expect(addOn?.blocks[0].label).toBe("프로젝트 역할")
+  })
+
+  it("children 이 모두 비어 있는 group 은 '추가 블록'에서 필터링된다", () => {
+    const { core, ext } = filledCareerBlocks()
+    const tmpl = getTemplateForType("career")
+
+    const emptyGroup = createGroupBlock("빈 그룹")
+    emptyGroup.children = [createTextField("아무것도 없음")]
+
+    const sections = buildDetailSections(
+      makeExperienceV2({ coreBlocks: core, extensionBlocks: ext, customBlocks: [emptyGroup] }),
+      tmpl,
+    )
+    expect(sections.find(s => s.label === "추가 블록")).toBeUndefined()
+  })
+
+  it("leaf 블록과 group 블록이 공존하면 둘 다 '추가 블록'에 포함된다", () => {
+    const { core, ext } = filledCareerBlocks()
+    const tmpl = getTemplateForType("career")
+
+    const leafBlock: Block = { id: "l1", type: "text", label: "메모", value: { type: "text", text: "내용" } }
+
+    const g = createGroupBlock("섹션A")
+    const child = createTextField("필드")
+    if (child.value.type === "text") child.value.text = "값"
+    g.children = [child]
+
+    const sections = buildDetailSections(
+      makeExperienceV2({ coreBlocks: core, extensionBlocks: ext, customBlocks: [leafBlock, g] }),
+      tmpl,
+    )
+    const addOn = sections.find(s => s.label === "추가 블록")
+    expect(addOn?.blocks).toHaveLength(2)
+    expect(addOn?.blocks[0].label).toBe("메모")
+    expect(addOn?.blocks[1].type).toBe("group")
   })
 })

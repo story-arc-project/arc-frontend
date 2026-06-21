@@ -287,6 +287,55 @@ export const legacyExperience: ExperienceWithFolder = {
 
 export const sampleLegacyExperiences: ExperienceWithFolder[] = [legacyExperience]
 
+// ─── Group block fixtures (FRT-72) ──────────────────────────────────────────
+
+export const groupBlock: Block = {
+  id: "blk-group-01",
+  type: "group",
+  label: "프로젝트 역할",
+  collapsed: false,
+  children: [
+    {
+      id: "blk-group-child-01",
+      type: "text",
+      label: "역할명",
+      value: { type: "text", text: "팀 리드" },
+    },
+    {
+      id: "blk-group-child-02",
+      type: "date",
+      label: "시작일",
+      value: { type: "date", date: "2024-03-01" },
+    },
+  ],
+  value: { type: "group" },
+}
+
+export const emptyGroupBlock: Block = {
+  id: "blk-group-empty",
+  type: "group",
+  label: "빈 그룹",
+  collapsed: false,
+  children: [],
+  value: { type: "group" },
+}
+
+export const collapsedGroupBlock: Block = {
+  id: "blk-group-collapsed",
+  type: "group",
+  label: "접힌 그룹",
+  collapsed: true,
+  children: [
+    {
+      id: "blk-group-collapsed-child",
+      type: "text",
+      label: "메모",
+      value: { type: "text", text: "접혀 있는 내용" },
+    },
+  ],
+  value: { type: "group" },
+}
+
 // ─── Remaining block fixtures ────────────────────────────────────────────────
 
 export const textareaBlock: Block = {

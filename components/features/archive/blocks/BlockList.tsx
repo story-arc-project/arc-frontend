@@ -17,10 +17,11 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import type { Block, BlockType, BlockValue } from "@/types/archive"
-import { createBlock, cloneBlock } from "@/lib/utils/block-utils"
+import { createBlock, cloneBlock, createGroupBlock } from "@/lib/utils/block-utils"
 import BlockRenderer from "./BlockRenderer"
 import BlockTypePicker from "./BlockTypePicker"
 import BlockEditModal, { type BlockEditConfig } from "./BlockEditModal"
+import GroupBlock from "./GroupBlock"
 
 interface BlockListProps {
   blocks: Block[]
@@ -30,6 +31,7 @@ interface BlockListProps {
   allowAdd?: boolean
   allowReorder?: boolean
   allowDelete?: boolean
+  allowGroups?: boolean
 }
 
 export default function BlockList({
@@ -40,6 +42,7 @@ export default function BlockList({
   allowAdd = false,
   allowReorder = false,
   allowDelete = false,
+  allowGroups = false,
 }: BlockListProps) {
   const [showPicker, setShowPicker] = useState(false)
 
@@ -54,13 +57,22 @@ export default function BlockList({
 
   const handleBlockChange = useCallback(
     (blockId: string, value: BlockValue) => {
-      onChange(blocks.map(b => (b.id === blockId ? { ...b, value } : b)))
+      onChange(blocks.map(b => b.type === 'group' ? b : (b.id === blockId ? { ...b, value } : b)))
     },
     [blocks, onChange]
   )
 
+  const handleGroupChange = useCallback(
+    (updated: Block) => onChange(blocks.map(b => b.id === updated.id ? updated : b)),
+    [blocks, onChange]
+  )
+
   function handlePickType(type: BlockType) {
-    if (type === 'group') return
+    if (type === 'group') {
+      onChange([...blocks, createGroupBlock('새 그룹')])
+      setShowPicker(false)
+      return
+    }
     setPendingType(type)
     setEditingBlock(null)
     setModalOpen(true)
@@ -178,9 +190,13 @@ export default function BlockList({
   if (readOnly) {
     return (
       <div className="flex flex-col gap-5">
-        {blocks.map(block => (
-          <BlockRenderer key={block.id} block={block} readOnly showOptionalBadge={showOptionalBadge} onChange={handleBlockChange} />
-        ))}
+        {blocks.map(block =>
+          block.type === 'group' ? (
+            <GroupBlock key={block.id} block={block} readOnly onChange={() => {}} />
+          ) : (
+            <BlockRenderer key={block.id} block={block} readOnly showOptionalBadge={showOptionalBadge} onChange={handleBlockChange} />
+          )
+        )}
       </div>
     )
   }
@@ -194,6 +210,7 @@ export default function BlockList({
       allowEdit={allowAdd}
       showOptionalBadge={showOptionalBadge}
       onChange={handleBlockChange}
+      onGroupChange={handleGroupChange}
       onDelete={() => handleDeleteBlock(block.id)}
       onDuplicate={() => handleDuplicateBlock(block.id)}
       onEdit={() => handleEditBlock(block)}
@@ -226,6 +243,7 @@ export default function BlockList({
             <BlockTypePicker
               onSelect={handlePickType}
               onClose={() => setShowPicker(false)}
+              allowGroups={allowGroups}
             />
           )}
         </div>
@@ -249,6 +267,7 @@ function SortableBlockItem({
   allowEdit,
   showOptionalBadge,
   onChange,
+  onGroupChange,
   onDelete,
   onDuplicate,
   onEdit,
@@ -259,6 +278,7 @@ function SortableBlockItem({
   allowEdit: boolean
   showOptionalBadge?: boolean
   onChange: (blockId: string, value: BlockValue) => void
+  onGroupChange: (updated: Block) => void
   onDelete: () => void
   onDuplicate: () => void
   onEdit: () => void
@@ -278,6 +298,8 @@ function SortableBlockItem({
     opacity: isDragging ? 0.5 : 1,
   }
 
+  const isGroup = block.type === 'group'
+
   return (
     <div ref={setNodeRef} style={style} className="group flex gap-2">
       {allowReorder && (
@@ -292,11 +314,15 @@ function SortableBlockItem({
         </button>
       )}
       <div className="flex-1 min-w-0">
-        <BlockRenderer block={block} showOptionalBadge={showOptionalBadge} onChange={onChange} />
+        {isGroup ? (
+          <GroupBlock block={block} onChange={onGroupChange} />
+        ) : (
+          <BlockRenderer block={block} showOptionalBadge={showOptionalBadge} onChange={onChange} />
+        )}
       </div>
       {allowDelete && (
         <div className="flex flex-col gap-1 mt-1 transition-opacity shrink-0">
-          {allowEdit && (
+          {allowEdit && !isGroup && (
             <button
               type="button"
               onClick={onEdit}
