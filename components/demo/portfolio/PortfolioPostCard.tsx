@@ -25,6 +25,9 @@ export function PortfolioPostCard({ post, href }: { post: PortfolioPost; href: s
               #{kw}
             </li>
           ))}
+          {post.keywords.length > 4 && (
+            <li className="text-caption text-text-tertiary">+{post.keywords.length - 4}</li>
+          )}
         </ul>
       )}
     </Link>

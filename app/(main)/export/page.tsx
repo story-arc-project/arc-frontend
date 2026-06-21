@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, PenLine, IdCard, Globe } from "lucide-react";
 import { useBasePath } from "@/lib/utils/use-base-path";
-import { DEMO_PORTFOLIO_ID } from "@/lib/demo/portfolio-seed";
 import { TrackCard } from "./_components/TrackCard";
 import { RecentResumeList } from "./_components/RecentResumeList";
 import { CreateResumeModal } from "./_components/CreateResumeModal";
@@ -21,7 +20,8 @@ export default function ExportPage() {
     if (generating) return;
     setGenerating(true);
     timerRef.current = setTimeout(() => {
-      router.push(`/demo/portfolio/${DEMO_PORTFOLIO_ID}`);
+      // Inlined literal to keep demo seed module out of the main-app bundle
+      router.push("/demo/portfolio/demo-portfolio-1");
     }, 600);
   }
 
