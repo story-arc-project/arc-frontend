@@ -2,12 +2,11 @@
 
 import type { RefObject } from "react"
 import { Button } from "@/components/ui/button"
-import type { SectionCategory } from "@/types/archive"
 import type { ExperienceFormV2Handle } from "@/components/features/archive/ExperienceFormV2"
 import { useScrollspy } from "@/hooks/useScrollspy"
 
 interface SectionNavProps {
-  sections: { id: SectionCategory; label: string }[]
+  sections: { id: string; label: string }[]
   formRef: RefObject<ExperienceFormV2Handle | null>
   saving?: boolean
 }
@@ -15,7 +14,7 @@ interface SectionNavProps {
 export default function SectionNav({ sections, formRef, saving }: SectionNavProps) {
   const active = useScrollspy(sections.map(s => s.id))
 
-  function scrollTo(id: SectionCategory) {
+  function scrollTo(id: string) {
     const el = document.querySelector<HTMLElement>(`[data-section-id="${id}"]`)
     el?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
