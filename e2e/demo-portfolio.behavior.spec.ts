@@ -37,3 +37,14 @@ test("데모 e-포트폴리오: 생성 → 인덱스 → 상세 → 다음 경�
   await page.getByRole("link", { name: "전체 포트폴리오로" }).click();
   await expect(page).toHaveURL(/\/demo\/portfolio\/demo-portfolio-1$/);
 });
+
+test("알 수 없는 포트폴리오 id 는 시드 대신 not-found 로 fail-closed 한다", async ({ page }) => {
+  // 인덱스: 임의 id 는 시드 포트폴리오를 노출하지 않고 not-found 를 보여준다.
+  await page.goto("/demo/portfolio/not-real");
+  await expect(page.getByRole("heading", { name: "포트폴리오를 찾을 수 없어요" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "데모 사용자" })).toHaveCount(0);
+
+  // 상세: 임의 id + 임의 postId 도 동일하게 not-found.
+  await page.goto("/demo/portfolio/not-real/exp-v2-1");
+  await expect(page.getByRole("heading", { name: "포트폴리오를 찾을 수 없어요" })).toBeVisible();
+});

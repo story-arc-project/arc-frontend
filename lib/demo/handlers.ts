@@ -18,6 +18,7 @@ import type { Portfolio } from "@/types/portfolio";
 
 import { experienceStore, libraryStore, presetStore, resumeStore, portfolioStore } from "./store";
 import { seedResumeListItem, DEMO_RESUME_VERSION_ID } from "./seed";
+import { DEMO_PORTFOLIO_ID } from "./portfolio-seed";
 
 // 짧은 인공 지연으로 실제 API 호출처럼 보이게 한다.
 function delay<T>(value: T, ms = 200): Promise<T> {
@@ -190,8 +191,9 @@ export async function createPortfolio(): Promise<Portfolio> {
   return delay(portfolioStore.get(), 600);
 }
 
-export async function getPortfolio(id: string): Promise<Portfolio> {
-  void id;
+export async function getPortfolio(id: string): Promise<Portfolio | null> {
+  // 공개 포트폴리오는 id 경계를 강제한다 — 알 수 없는 id 는 fail-closed(null).
+  if (id !== DEMO_PORTFOLIO_ID) return delay(null);
   return delay(portfolioStore.get());
 }
 

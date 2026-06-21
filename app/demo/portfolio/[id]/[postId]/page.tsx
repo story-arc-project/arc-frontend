@@ -7,16 +7,20 @@ import { getPortfolio } from "@/lib/demo/handlers";
 import type { Portfolio } from "@/types/portfolio";
 import { PortfolioPostBody } from "@/components/demo/portfolio/PortfolioPostBody";
 import { PortfolioPostNav } from "@/components/demo/portfolio/PortfolioPostNav";
+import { PortfolioNotFound } from "@/components/demo/portfolio/PortfolioNotFound";
 
 export default function PortfolioPostPage() {
   const { id, postId } = useParams<{ id: string; postId: string }>();
   const router = useRouter();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     let active = true;
     getPortfolio(id).then((p) => {
-      if (active) setPortfolio(p);
+      if (!active) return;
+      if (p) setPortfolio(p);
+      else setNotFound(true);
     });
     return () => {
       active = false;
@@ -28,6 +32,10 @@ export default function PortfolioPostPage() {
       router.replace(`/demo/portfolio/${id}`);
     }
   }, [portfolio, postId, id, router]);
+
+  if (notFound) {
+    return <PortfolioNotFound />;
+  }
 
   if (!portfolio) {
     return (

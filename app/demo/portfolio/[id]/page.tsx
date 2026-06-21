@@ -8,20 +8,28 @@ import type { Portfolio } from "@/types/portfolio";
 import { PortfolioHero } from "@/components/demo/portfolio/PortfolioHero";
 import { PortfolioPostCard } from "@/components/demo/portfolio/PortfolioPostCard";
 import { PortfolioFooter } from "@/components/demo/portfolio/PortfolioFooter";
+import { PortfolioNotFound } from "@/components/demo/portfolio/PortfolioNotFound";
 
 export default function PortfolioIndexPage() {
   const { id } = useParams<{ id: string }>();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     let active = true;
     getPortfolio(id).then((p) => {
-      if (active) setPortfolio(p);
+      if (!active) return;
+      if (p) setPortfolio(p);
+      else setNotFound(true);
     });
     return () => {
       active = false;
     };
   }, [id]);
+
+  if (notFound) {
+    return <PortfolioNotFound />;
+  }
 
   if (!portfolio) {
     return (
