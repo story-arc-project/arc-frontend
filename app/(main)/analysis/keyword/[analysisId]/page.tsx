@@ -16,7 +16,7 @@ import type {
 import { getKeywordResult } from "@/lib/api/analysis-api";
 import { formatDateTime } from "@/lib/utils/date-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
-import { Badge } from "@/components/ui"
+import { Badge } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 export default function KeywordDetailPage() {

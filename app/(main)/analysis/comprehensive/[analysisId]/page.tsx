@@ -18,7 +18,7 @@ import { weaknessSeverityLabel } from "@/types/analysis";
 import { getComprehensiveResult } from "@/lib/api/analysis-api";
 import { isSafeHttpUrl } from "@/lib/utils/url-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
-import { Badge } from "@/components/ui"
+import { Badge } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 export default function ComprehensiveDetailPage() {

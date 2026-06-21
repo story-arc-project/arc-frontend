@@ -8,7 +8,7 @@ import { formatDate } from "@/lib/utils/date-utils";
 import { Button } from "@/components/ui";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import AnalysisStatusBadge from "@/components/features/analysis/common/AnalysisStatusBadge";
-import FilterBar from "@/components/features/analysis/common/FilterBar"
+import FilterBar from "@/components/features/analysis/common/FilterBar";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 type FilterKey = "all" | "pending" | "completed";
