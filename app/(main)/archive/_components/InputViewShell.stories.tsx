@@ -3,7 +3,6 @@ import { useRef } from "react"
 
 import InputViewShell from "./InputViewShell"
 import type { ExperienceFormV2Handle } from "@/components/features/archive/ExperienceFormV2"
-import type { SectionCategory } from "@/types/archive"
 
 const meta: Meta<typeof InputViewShell> = {
   title: "Features/Archive/InputViewShell",
@@ -17,7 +16,7 @@ export default meta
 
 type Story = StoryObj<typeof InputViewShell>
 
-const DEMO_SECTIONS: { id: SectionCategory; label: string }[] = [
+const DEMO_SECTIONS: { id: string; label: string }[] = [
   { id: "basic", label: "기본 정보" },
   { id: "detail", label: "경험 상세" },
   { id: "repeat", label: "반복 기록" },

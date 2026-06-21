@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event"
 
 import type { ExperienceV2 } from "@/types/archive"
 import ExperienceFormV2 from "./ExperienceFormV2"
-import { emptyPresetsHook } from "./__fixtures__/archive.fixtures"
 
 /**
  * FRT-54 — 경험명(title) 빈 값 저장 차단 회귀 가드.
@@ -18,7 +17,6 @@ function renderForm(onSave = vi.fn()) {
   render(
     <ExperienceFormV2
       mode="new"
-      presetsHook={emptyPresetsHook}
       onSave={onSave}
       onCancel={() => {}}
     />,
@@ -97,7 +95,6 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
       <ExperienceFormV2
         mode="edit"
         initialExperience={legacyRecord()}
-        presetsHook={emptyPresetsHook}
         onSave={onSave}
         onCancel={() => {}}
       />,
@@ -124,7 +121,6 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
       <ExperienceFormV2
         mode="edit"
         initialExperience={legacyRecord({ title: "" })}
-        presetsHook={emptyPresetsHook}
         onSave={onSave}
         onCancel={() => {}}
       />,
@@ -178,7 +174,6 @@ describe("FRT-52 편집 진입 직후 dirty 위양성 방지", () => {
       <ExperienceFormV2
         mode="edit"
         initialExperience={editRecord()}
-        presetsHook={emptyPresetsHook}
         onSave={() => {}}
         onCancel={() => {}}
         onUnsavedChange={onUnsavedChange}
@@ -201,7 +196,6 @@ describe("FRT-52 편집 진입 직후 dirty 위양성 방지", () => {
       <ExperienceFormV2
         mode="edit"
         initialExperience={editRecord()}
-        presetsHook={emptyPresetsHook}
         onSave={() => {}}
         onCancel={() => {}}
         onUnsavedChange={onUnsavedChange}
