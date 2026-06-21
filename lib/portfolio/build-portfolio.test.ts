@@ -52,6 +52,14 @@ describe("experienceToPost", () => {
     expect(experienceToPost(exp).period).toBe("2026.02 – 현재");
   });
 
+  it("시작일만 있고 종료가 없으면(진행 중 아님) 시작일만 표기한다 — 매달린 구분자 없음", () => {
+    const exp = makeExp();
+    (exp.content as { coreBlocks: Block[] }).coreBlocks[1].value = {
+      type: "period", start: "2026-02-01", end: "", isCurrent: false,
+    };
+    expect(experienceToPost(exp).period).toBe("2026.02");
+  });
+
   it("알 수 없는 type 은 '경험' 라벨로 폴백한다", () => {
     expect(experienceToPost(makeExp({ type: "unknown-xyz" })).category).toBe("경험");
   });

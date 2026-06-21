@@ -21,10 +21,12 @@ function ym(date: string | undefined): string {
 
 function periodOf(value: BlockValue | undefined): string {
   if (!value || value.type !== "period") return "";
+  // 아카이브 읽기전용 뷰(formatPeriodString)와 동일하게: 시작일이 없으면 빈 값,
+  // 종료(또는 진행 중)가 있을 때만 범위로, 단일 날짜는 매달린 구분자 없이 시작일만 표기.
   const start = ym(value.start);
+  if (!start) return "";
   const end = value.isCurrent ? "현재" : ym(value.end);
-  if (!start && !end) return "";
-  return `${start} – ${end}`;
+  return end ? `${start} – ${end}` : start;
 }
 
 export function experienceToPost(exp: Experience): PortfolioPost {
