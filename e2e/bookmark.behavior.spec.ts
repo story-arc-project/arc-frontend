@@ -11,10 +11,58 @@ import { stubApi } from "./fixtures/stub-api";
  * ⚠️ 백엔드 BAC-27(분석 즐겨찾기 엔드포인트) 미구현 → stateful mock 으로 프론트 동작을
  * 선검증한다. mock↔실 백엔드 계약 드리프트는 FRT-33(통합 E2E)에서 재대조한다.
  *
- * ⚠️ 이슈 본문은 "analysis 상세에서 북마크"라 적었으나, 실제 BookmarkToggle 은 분석 상세가
- * 아니라 **목록/허브 페이지**(종합·키워드·즐겨찾기 등)에 있다. 멀티페이지 반영(AC)을
- * 만족하도록 "종합 목록에서 북마크 → 즐겨찾기 목록에서 확인" 경로로 검증한다.
+ * FRT-64: BookmarkToggle 은 이제 분석 상세 페이지(개별·종합·키워드) 헤더에도 추가됐다.
+ * 개별 분석 **목록**에도 BookmarkToggle 이 추가됐다(FRT-64 버그 수정).
+ * 멀티페이지 반영(AC)을 만족하도록 "종합 목록에서 북마크 → 즐겨찾기 목록에서 확인" 경로로 검증한다.
  */
+
+test.describe("FRT-64 개별 분석 목록 북마크 토글 (버그 수정)", () => {
+  test("개별 목록에 즐겨찾기 버튼이 표시되고 토글이 동작한다", async ({ page }) => {
+    // data 시나리오: ind-1 은 시드 북마크 목록에 포함되어 있으므로 목록 진입 시
+    // withBookmarkFlags 가 isBookmarked:true 로 덮어써 "즐겨찾기 해제" 상태로 시작한다.
+    const stub = await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/analysis/individual");
+
+    // Arrange: ind-1(교내 개발 동아리 운영진 분석)이 목록에 있고, 이미 북마크된 상태이다.
+    await expect(
+      page.getByRole("link", { name: /교내 개발 동아리 운영진 분석/ }),
+    ).toBeVisible();
+    // 시드 isBookmarked:true → 버튼은 "즐겨찾기 해제"
+    const removeToggle = page.getByRole("button", { name: "즐겨찾기 해제" });
+    await expect(removeToggle).toBeVisible();
+
+    // ── REMOVE ─────────────────────────────────────────────────────────────
+    await removeToggle.click();
+
+    // 결과: 버튼이 "즐겨찾기"로 바뀐다.
+    await expect(
+      page.getByRole("button", { name: "즐겨찾기", exact: true }),
+    ).toBeVisible();
+    // 변이 payload 단언: DELETE /analysis/bookmarks/ind-1 이 전송된다.
+    const removes = stub.mutations.filter(
+      (m) => m.method === "DELETE" && m.path === "/analysis/bookmarks/ind-1",
+    );
+    expect(removes).toHaveLength(1);
+
+    // ── ADD BACK ───────────────────────────────────────────────────────────
+    await page.getByRole("button", { name: "즐겨찾기", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "즐겨찾기 해제" }),
+    ).toBeVisible();
+    const adds = stub.mutations.filter(
+      (m) => m.method === "POST" && m.path === "/analysis/bookmarks/ind-1",
+    );
+    expect(adds).toHaveLength(1);
+
+    // ── 멀티페이지 반영 ──────────────────────────────────────────────────────
+    await page.goto("/analysis/bookmarks");
+    await expect(page.getByRole("heading", { level: 1, name: "즐겨찾기" })).toBeVisible();
+    // ADD BACK 후 ind-1 이 즐겨찾기 목록에 나타난다.
+    await expect(
+      page.getByRole("link", { name: /교내 개발 동아리 운영진 분석/ }),
+    ).toBeVisible();
+  });
+});
 
 test.describe("FRT-43 북마크 토글 동작", () => {
   test("종합 목록에서 북마크 → 즐겨찾기 목록 반영 → 해제 시 사라진다", async ({ page }) => {
