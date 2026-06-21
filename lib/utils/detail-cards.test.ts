@@ -231,4 +231,26 @@ describe("buildDetailSections — 사용자 섹션 (FRT-78)", () => {
     expect(sections.find(s => s.label === "섹션A")?.blocks.map(b => b.label)).toEqual(["필드"])
     expect(sections.find(s => s.label === "추가 블록")?.blocks.map(b => b.label)).toEqual(["메모"])
   })
+
+  it("동명 사용자 섹션 두 개가 서로 다른 id를 가진다 (React key 충돌 방지, I2)", () => {
+    // 두 group이 모두 기본 라벨 "새 블록"을 가진 경우 — 저장 후 상세뷰에서 key 충돌이
+    // 발생하지 않으려면 DetailSection.id가 각 group.id로 채워져야 한다.
+    const { core, ext } = filledCareerBlocks()
+    const tmpl = getTemplateForType("career")
+    const g1 = createGroupBlock("새 블록")
+    const c1 = createTextField("필드1"); if (c1.value.type === "text") c1.value.text = "값1"; g1.children = [c1]
+    const g2 = createGroupBlock("새 블록")
+    const c2 = createTextField("필드2"); if (c2.value.type === "text") c2.value.text = "값2"; g2.children = [c2]
+    const sections = buildDetailSections(
+      makeExperienceV2({ coreBlocks: core, extensionBlocks: ext, customBlocks: [g1, g2] }),
+      tmpl,
+    )
+    const userSections = sections.filter(s => s.label === "새 블록")
+    expect(userSections).toHaveLength(2)
+    expect(userSections[0].id).toBeDefined()
+    expect(userSections[1].id).toBeDefined()
+    expect(userSections[0].id).toBe(g1.id)
+    expect(userSections[1].id).toBe(g2.id)
+    expect(userSections[0].id).not.toBe(userSections[1].id)
+  })
 })
