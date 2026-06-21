@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, PenLine, IdCard, Globe } from "lucide-react";
 import { useBasePath } from "@/lib/utils/use-base-path";
@@ -15,14 +15,19 @@ export default function ExportPage() {
   const isDemo = base === "/demo";
   const router = useRouter();
   const [generating, setGenerating] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function handleCreatePortfolio() {
     if (generating) return;
     setGenerating(true);
-    setTimeout(() => {
+    timerRef.current = setTimeout(() => {
       router.push(`/demo/portfolio/${DEMO_PORTFOLIO_ID}`);
     }, 600);
   }
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
 
   return (
     <div className="min-h-[calc(100dvh-var(--gnb-h))] bg-surface px-4 py-8 sm:px-8">
