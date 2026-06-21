@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Experience } from "@/types/experience";
 import type { Block } from "@/types/archive";
 import type { PortfolioProfile } from "@/types/portfolio";
+import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper";
 import { buildPortfolio, experienceToPost } from "./build-portfolio";
 
 function blk(id: string, type: Block["type"], label: string, value: Block["value"]): Block {
@@ -64,6 +65,16 @@ describe("experienceToPost", () => {
     expect(post.achievement).toBe("");
     expect(post.period).toBe("");
     expect(post.keywords).toEqual([]);
+  });
+
+  it("v2 스키마(fields)로 저장된 경험도 period/역할/성과를 채운다", () => {
+    const v1 = makeExp();
+    const v2content = toSavePayload(toExperienceV2(v1));
+    const v2exp: Experience = { ...v1, content: v2content.content };
+    const post = experienceToPost(v2exp);
+    expect(post.period).toBe("2026.02 – 2026.05");
+    expect(post.contribution).toBe("전 과정 독립 수행");
+    expect(post.achievement).toBe("백테스팅 시각화 완성");
   });
 });
 

@@ -2,17 +2,7 @@ import type { Block, BlockValue, ExperienceTypeId } from "@/types/archive";
 import type { Experience } from "@/types/experience";
 import type { Portfolio, PortfolioPost, PortfolioProfile } from "@/types/portfolio";
 import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2";
-
-interface ExperienceContentShape {
-  title?: string;
-  summary?: string;
-  tags?: string[];
-  coreBlocks?: Block[];
-}
-
-function readContent(exp: Experience): ExperienceContentShape {
-  return (exp.content ?? {}) as ExperienceContentShape;
-}
+import { toExperienceV2 } from "@/lib/utils/experience-mapper";
 
 function findBlock(blocks: Block[] | undefined, label: string): Block | undefined {
   return (blocks ?? []).find((b) => b.label === label);
@@ -38,18 +28,18 @@ function periodOf(value: BlockValue | undefined): string {
 }
 
 export function experienceToPost(exp: Experience): PortfolioPost {
-  const content = readContent(exp);
-  const core = content.coreBlocks;
+  const ev2 = toExperienceV2(exp);
+  const core = ev2.coreBlocks;
   const label = EXPERIENCE_TYPE_MAP[exp.type as ExperienceTypeId]?.label ?? "경험";
   return {
     id: exp.id,
-    title: content.title ?? textOf(findBlock(core, "경험명")?.value),
+    title: ev2.title || textOf(findBlock(core, "경험명")?.value),
     period: periodOf(findBlock(core, "기간")?.value),
     category: label,
-    summary: content.summary ?? textOf(findBlock(core, "한 줄 요약")?.value),
+    summary: ev2.summary || textOf(findBlock(core, "한 줄 요약")?.value),
     contribution: textOf(findBlock(core, "내 역할/기여도")?.value),
     achievement: textOf(findBlock(core, "핵심 성과")?.value),
-    keywords: content.tags ?? [],
+    keywords: ev2.tags,
   };
 }
 
