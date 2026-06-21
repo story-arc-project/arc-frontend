@@ -5,6 +5,7 @@ import type { Experience, ExperienceSavePayload, ExperienceUpdatePayload } from 
 import type { LibraryDTO, LibraryUpsertPayload } from "@/lib/utils/library-mapper";
 import type { PresetDTO, PresetUpsertPayload } from "@/lib/utils/preset-mapper";
 import type { ResumeVersion } from "@/types/resume";
+import type { Portfolio } from "@/types/portfolio";
 
 import {
   seedExperiences,
@@ -12,6 +13,7 @@ import {
   seedLibraryMembership,
   seedResume,
 } from "./seed";
+import { seedPortfolio } from "./portfolio-seed";
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -226,5 +228,15 @@ export const presetStore = {
 export const resumeStore = {
   get(): ResumeVersion {
     return clone(resume);
+  },
+};
+
+// ─── Portfolio (read-only) ──────────────────────────────────
+
+const portfolio = clone(seedPortfolio);
+
+export const portfolioStore = {
+  get(): Portfolio {
+    return clone(portfolio);
   },
 };
