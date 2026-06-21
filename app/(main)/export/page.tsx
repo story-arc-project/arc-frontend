@@ -1,13 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, PenLine, IdCard } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FileText, PenLine, IdCard, Globe } from "lucide-react";
+import { useBasePath } from "@/lib/utils/use-base-path";
+import { DEMO_PORTFOLIO_ID } from "@/lib/demo/portfolio-seed";
 import { TrackCard } from "./_components/TrackCard";
 import { RecentResumeList } from "./_components/RecentResumeList";
 import { CreateResumeModal } from "./_components/CreateResumeModal";
 
 export default function ExportPage() {
   const [createOpen, setCreateOpen] = useState(false);
+  const base = useBasePath();
+  const isDemo = base === "/demo";
+  const router = useRouter();
+  const [generating, setGenerating] = useState(false);
+
+  function handleCreatePortfolio() {
+    if (generating) return;
+    setGenerating(true);
+    setTimeout(() => {
+      router.push(`/demo/portfolio/${DEMO_PORTFOLIO_ID}`);
+    }, 600);
+  }
 
   return (
     <div className="min-h-[calc(100dvh-var(--gnb-h))] bg-surface px-4 py-8 sm:px-8">
@@ -43,6 +58,15 @@ export default function ExportPage() {
               disabled
               badgeText="Phase 1.5 예정"
             />
+            {isDemo && (
+              <TrackCard
+                title="e-포트폴리오"
+                description="경험을 블로그처럼 연결된 포트폴리오로 정리해요."
+                icon={<Globe size={20} />}
+                onClick={handleCreatePortfolio}
+                actionLabel={generating ? "생성 중…" : "e-포트폴리오 만들기"}
+              />
+            )}
           </div>
         </section>
 
