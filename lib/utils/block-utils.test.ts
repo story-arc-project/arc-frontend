@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   cloneBlock,
+  cloneBlocks,
   createChecklistField,
   createDateField,
   createFileField,
+  createGroupBlock,
   createLinkField,
   createPeriodField,
   createSelectField,
@@ -81,5 +83,77 @@ describe("cloneBlock", () => {
     // 깊은 복제이므로 클론 변경이 원본에 영향을 주지 않는다.
     if (clone.value.type === "text") clone.value.text = "변경됨"
     expect(original.value).toMatchObject({ text: "원본" })
+  })
+})
+
+describe("group block", () => {
+  it("createGroupBlock 은 grp- 접두사 id·빈 children·collapsed:false 를 갖는다", () => {
+    const g = createGroupBlock("새 그룹")
+    expect(g.id).toMatch(/^grp-/)
+    expect(g.type).toBe("group")
+    expect(g.label).toBe("새 그룹")
+    expect(g.children).toEqual([])
+    expect(g.collapsed).toBe(false)
+    expect(g.value).toEqual({ type: "group" })
+  })
+
+  it("isBlockEmpty: children 이 없으면 group 은 empty 다", () => {
+    const g = createGroupBlock("g")
+    expect(isBlockEmpty(g)).toBe(true)
+  })
+
+  it("isBlockEmpty: children 이 모두 비어 있으면 group 은 empty 다", () => {
+    const g = createGroupBlock("g")
+    g.children = [createTextField("t")]
+    expect(isBlockEmpty(g)).toBe(true)
+  })
+
+  it("isBlockEmpty: children 중 하나라도 채워지면 group 은 empty 가 아니다", () => {
+    const g = createGroupBlock("g")
+    const t = createTextField("t")
+    if (t.value.type === "text") t.value.text = "내용"
+    g.children = [t]
+    expect(isBlockEmpty(g)).toBe(false)
+  })
+
+  it("cloneBlock: group 은 자신·자식 모두 새 id 를 받는다", () => {
+    const g = createGroupBlock("g")
+    const child = createTextField("c")
+    g.children = [child]
+
+    const clone = cloneBlock(g)
+    expect(clone.id).not.toBe(g.id)
+    expect(clone.children).toHaveLength(1)
+    expect(clone.children![0].id).not.toBe(child.id)
+    // 깊은 복제 — 클론 자식 변경이 원본에 영향 없음
+    if (clone.children![0].value.type === "text") clone.children![0].value.text = "변경"
+    expect(child.value).toMatchObject({ text: "" })
+  })
+
+  it("cloneBlocks: group 을 포함한 배열도 자식까지 re-id 된다", () => {
+    const g = createGroupBlock("g")
+    g.children = [createTextField("c")]
+    const origChildId = g.children[0].id
+
+    const [cloned] = cloneBlocks([g])
+    expect(cloned.children![0].id).not.toBe(origChildId)
+  })
+
+  it("validateRequiredBlocks: group 자식의 required 빈 블록도 에러를 낸다", () => {
+    const g = createGroupBlock("g")
+    const req = createTextField("이름", { required: true })
+    g.children = [req]
+
+    const errors = validateRequiredBlocks([g])
+    expect(errors).toEqual(['"이름" 항목을 입력해주세요.'])
+  })
+
+  it("validateRequiredBlocks: group 자식이 채워져 있으면 에러 없음", () => {
+    const g = createGroupBlock("g")
+    const req = createTextField("이름", { required: true })
+    if (req.value.type === "text") req.value.text = "홍길동"
+    g.children = [req]
+
+    expect(validateRequiredBlocks([g])).toEqual([])
   })
 })

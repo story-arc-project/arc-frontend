@@ -45,7 +45,7 @@ export default function BlockList({
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false)
-  const [pendingType, setPendingType] = useState<BlockType | null>(null)
+  const [pendingType, setPendingType] = useState<Exclude<BlockType, 'group'> | null>(null)
   const [editingBlock, setEditingBlock] = useState<Block | null>(null)
 
   const sensors = useSensors(
@@ -60,12 +60,14 @@ export default function BlockList({
   )
 
   function handlePickType(type: BlockType) {
+    if (type === 'group') return
     setPendingType(type)
     setEditingBlock(null)
     setModalOpen(true)
   }
 
   function handleEditBlock(block: Block) {
+    if (block.type === 'group') return
     setEditingBlock(block)
     setPendingType(block.type)
     setModalOpen(true)

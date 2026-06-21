@@ -70,13 +70,13 @@ function labelKeyMap(blocks: Block[]): Record<string, string> {
   return map
 }
 
-/** custom[] → Block[] (field 항목만 직렬 복원; group/section 은 children 을 평탄화) */
+/** custom[] → Block[] (field 항목은 직렬 복원, group 은 Block 으로 구조 보존, section 은 평탄화) */
 function customEntriesToBlocks(entries: CustomEntry[]): Block[] {
   const out: Block[] = []
   for (const e of entries) {
-    if (e.entryType === "field") {
+    if (e.entryType === 'field') {
       out.push({
-        id: uid("blk"),
+        id: uid('blk'),
         key: e.key,
         type: e.type,
         label: e.label,
@@ -84,7 +84,18 @@ function customEntriesToBlocks(entries: CustomEntry[]): Block[] {
         ...(e.required ? { required: true } : {}),
         ...(e.options ? { options: e.options } : {}),
       })
+    } else if (e.entryType === 'group') {
+      out.push({
+        id: uid('grp'),
+        key: e.key,
+        type: 'group',
+        label: e.label,
+        collapsed: e.collapsed ?? false,
+        children: customEntriesToBlocks(e.children),
+        value: { type: 'group' },
+      })
     } else {
+      // 'section' — 평탄화 (FRT-78 미구현)
       out.push(...customEntriesToBlocks(e.children))
     }
   }
@@ -92,9 +103,18 @@ function customEntriesToBlocks(entries: CustomEntry[]): Block[] {
 }
 
 function blockToCustomEntry(b: Block): CustomEntry {
+  if (b.type === 'group') {
+    return {
+      key: b.key ?? b.id,
+      entryType: 'group',
+      label: b.label,
+      ...(b.collapsed !== undefined ? { collapsed: b.collapsed } : {}),
+      children: (b.children ?? []).map(blockToCustomEntry),
+    }
+  }
   return {
     key: b.key ?? b.id,
-    entryType: "field",
+    entryType: 'field',
     type: b.type,
     label: b.label,
     value: b.value,
