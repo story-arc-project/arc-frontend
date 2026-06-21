@@ -503,3 +503,28 @@ describe("section round-trip (FRT-78)", () => {
     expect(reloaded.customBlocks[0].children).toEqual([])
   })
 })
+
+describe("빈 사용자 섹션 prune (FRT-78)", () => {
+  it("complete 저장 시 children 이 모두 빈 섹션은 custom 에서 제외된다", () => {
+    const empty = createGroupBlock("빈 섹션") // children []
+    const filled = createGroupBlock("채운 섹션")
+    const c = createTextField("메모"); if (c.value.type === "text") c.value.text = "내용"
+    filled.children = [c]
+    const payload = toSavePayload(
+      makeExperienceV2({ status: "complete", customBlocks: [empty, filled] }),
+    )
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom).toHaveLength(1)
+    expect(custom[0].entryType === "section" && custom[0].label).toBe("채운 섹션")
+  })
+
+  it("draft 저장 시 빈 섹션도 보존된다", () => {
+    const empty = createGroupBlock("빈 섹션")
+    const payload = toSavePayload(
+      makeExperienceV2({ status: "draft", customBlocks: [empty] }),
+    )
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom).toHaveLength(1)
+    expect(custom[0].entryType === "section" && custom[0].label).toBe("빈 섹션")
+  })
+})

@@ -17,7 +17,7 @@ import {
   getTemplateForType,
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
-import { uid, createGroupBlock } from "@/lib/utils/block-utils"
+import { uid, createGroupBlock, isBlockEmpty } from "@/lib/utils/block-utils"
 
 /**
  * Experience ↔ ExperienceV2 매퍼.
@@ -219,7 +219,12 @@ export function toSavePayload(exp: ExperienceV2): ExperienceSavePayload {
     if (b.key) fields[b.key] = b.value
     else custom.push(blockToCustomEntry(b)) // 키 없는(사용자 추가) 블록은 custom 으로 보존
   }
-  for (const b of exp.customBlocks) {
+  // 완료 저장 시 완전히 빈 사용자 섹션(group)은 정리한다. 초안은 보존(돌아와 채울 수 있게).
+  const customSource =
+    exp.status === "complete"
+      ? exp.customBlocks.filter(b => !(b.type === "group" && isBlockEmpty(b)))
+      : exp.customBlocks
+  for (const b of customSource) {
     custom.push(blockToCustomEntry(b))
   }
 
