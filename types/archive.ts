@@ -12,6 +12,7 @@ export type BlockType =
   | 'file'
   | 'repeatable-cell'
   | 'table'
+  | 'group'
 
 export interface TextBlockValue {
   type: 'text'
@@ -74,7 +75,7 @@ export interface FileBlockValue {
 export interface BlockColumnDef {
   key: string
   label: string
-  blockType: Exclude<BlockType, 'repeatable-cell' | 'table'>
+  blockType: Exclude<BlockType, 'repeatable-cell' | 'table' | 'group'>
   required?: boolean
   placeholder?: string
   options?: string[]
@@ -97,6 +98,14 @@ export interface TableBlockValue {
   rows: string[][]
 }
 
+/**
+ * group(접이식 미니 섹션, FRT-72) 블록의 센티넬 값. group 은 스칼라 값이 없고
+ * children(Block[]) 으로 구조를 표현하므로 value 는 타입 일관성을 위한 자리표시다.
+ */
+export interface GroupBlockValue {
+  type: 'group'
+}
+
 export type BlockValue =
   | TextBlockValue
   | TextareaBlockValue
@@ -109,6 +118,7 @@ export type BlockValue =
   | FileBlockValue
   | RepeatableCellBlockValue
   | TableBlockValue
+  | GroupBlockValue
 
 // ─── Section Category (입력 폼 4섹션 분류, FRT-70) ───────────────
 export type SectionCategory = "basic" | "detail" | "repeat" | "evidence"
@@ -136,6 +146,11 @@ export interface Block {
   options?: string[]
   /** 섹션 category override. core 섹션의 이질적 블록(기간/역할/성과/증빙) 분류에 사용. */
   category?: SectionCategory
+  /**
+   * 접이식 group 블록(FRT-72)의 자식 블록들. type 이 'group' 일 때만 사용한다.
+   * 중첩은 1겹만 허용한다(group 안에 group 불가).
+   */
+  children?: Block[]
   value: BlockValue
 }
 
@@ -244,7 +259,7 @@ export const SCHEMA_VERSION_V2 = 2 as const
 
 /** custom[] 항목 — FRT-69 은 'field' 만 직렬화. group(FRT-72)/section(FRT-78) 은 구조 정의(중첩 1겹). */
 export type CustomEntry =
-  | { key: string; entryType: 'field'; type: BlockType; label: string; value: BlockValue; required?: boolean; options?: string[] }
+  | { key: string; entryType: 'field'; type: Exclude<BlockType, 'group'>; label: string; value: BlockValue; required?: boolean; options?: string[] }
   | { key: string; entryType: 'group'; label: string; collapsed?: boolean; children: CustomEntry[] }
   | { key: string; entryType: 'section'; label: string; children: CustomEntry[] }
 

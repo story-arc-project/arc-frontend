@@ -12,12 +12,14 @@ import {
   Paperclip,
   Rows3,
   Table2,
+  Layers,
 } from "lucide-react"
 import type { BlockType } from "@/types/archive"
 
 interface BlockTypePickerProps {
   onSelect: (type: BlockType) => void
   onClose: () => void
+  allowGroups?: boolean
 }
 
 const BLOCK_OPTIONS: { type: BlockType; label: string; icon: typeof Type }[] = [
@@ -34,7 +36,7 @@ const BLOCK_OPTIONS: { type: BlockType; label: string; icon: typeof Type }[] = [
   { type: "table", label: "표 (그리드)", icon: Table2 },
 ]
 
-export default function BlockTypePicker({ onSelect, onClose }: BlockTypePickerProps) {
+export default function BlockTypePicker({ onSelect, onClose, allowGroups = false }: BlockTypePickerProps) {
   return (
     <div
       className="absolute z-20 mt-1 w-64 bg-surface border border-border rounded-lg shadow-lg py-1"
@@ -53,6 +55,21 @@ export default function BlockTypePicker({ onSelect, onClose }: BlockTypePickerPr
           {label}
         </button>
       ))}
+      {allowGroups && (
+        <>
+          <div className="border-t border-border my-1" />
+          <button
+            type="button"
+            role="option"
+            aria-selected={false}
+            onClick={() => { onSelect('group'); onClose() }}
+            className="flex items-center gap-3 w-full px-4 py-2.5 text-body-sm text-text-primary hover:bg-surface-secondary transition-colors text-left"
+          >
+            <Layers size={16} className="text-text-tertiary shrink-0" />
+            그룹 (미니 섹션)
+          </button>
+        </>
+      )}
     </div>
   )
 }

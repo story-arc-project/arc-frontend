@@ -14,7 +14,7 @@ export function uid(prefix = 'blk'): string {
 
 // ─── Empty value factories ──────────────────────────────────────
 
-function emptyValue(type: BlockType, opts?: { options?: string[]; columns?: BlockColumnDef[] }): BlockValue {
+function emptyValue(type: Exclude<BlockType, 'group'>, opts?: { options?: string[]; columns?: BlockColumnDef[] }): BlockValue {
   switch (type) {
     case 'text':
       return { type: 'text', text: '' }
@@ -44,7 +44,7 @@ function emptyValue(type: BlockType, opts?: { options?: string[]; columns?: Bloc
 // ─── Block factories ────────────────────────────────────────────
 
 export function createBlock(
-  type: BlockType,
+  type: Exclude<BlockType, 'group'>,
   label: string,
   opts?: {
     required?: boolean
@@ -114,6 +114,17 @@ export function createTableField(label: string): Block {
   return createBlock('table', label)
 }
 
+export function createGroupBlock(label: string): Block {
+  return {
+    id: uid('grp'),
+    type: 'group',
+    label,
+    children: [],
+    collapsed: false,
+    value: { type: 'group' },
+  }
+}
+
 // ─── Row helpers ────────────────────────────────────────────────
 
 export function createEmptyRow(columns: BlockColumnDef[]): BlockRow {
@@ -131,10 +142,13 @@ export function createEmptyRow(columns: BlockColumnDef[]): BlockRow {
 // ─── Deep clone ─────────────────────────────────────────────────
 
 export function cloneBlock(block: Block): Block {
-  return {
-    ...JSON.parse(JSON.stringify(block)),
-    id: uid(),
+  const result: Block = { ...JSON.parse(JSON.stringify(block)), id: uid() }
+  if (result.type === 'group' && result.children) {
+    // Children are leaves (1-level cap). The JSON deep-clone above already deep-copied
+    // their values; just assign fresh ids without another full serialize pass.
+    result.children = result.children.map((c: Block) => ({ ...c, id: uid() }))
   }
+  return result
 }
 
 export function cloneBlocks(blocks: Block[]): Block[] {
@@ -171,12 +185,19 @@ export function isBlockEmpty(block: Block): boolean {
       return v.rows.length === 0
     case 'table':
       return v.rows.length === 0
+    case 'group':
+      return (block.children ?? []).every(c => isBlockEmpty(c))
   }
 }
 
 export function validateRequiredBlocks(blocks: Block[]): string[] {
   const errors: string[] = []
   for (const block of blocks) {
+    if (block.type === 'group') {
+      // Groups have no required flag; validate only their children
+      errors.push(...validateRequiredBlocks(block.children ?? []))
+      continue
+    }
     if (block.required && isBlockEmpty(block)) {
       errors.push(`"${block.label}" 항목을 입력해주세요.`)
     }

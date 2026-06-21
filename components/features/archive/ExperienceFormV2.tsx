@@ -445,6 +445,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
               allowAdd
               allowReorder
               allowDelete
+              allowGroups
             />
           </section>
 

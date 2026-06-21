@@ -7,6 +7,7 @@ import {
   checklistBlock,
   tableBlock,
   emptyTextBlock,
+  groupBlock,
 } from "../__fixtures__/archive.fixtures"
 
 const meta: Meta<typeof BlockList> = {
@@ -53,5 +54,16 @@ export const WithAddAndReorder: Story = {
     allowAdd: true,
     allowReorder: true,
     allowDelete: true,
+  },
+}
+
+export const WithGroupBlock: Story = {
+  args: {
+    blocks: [textBlock, groupBlock],
+    readOnly: false,
+    allowAdd: true,
+    allowReorder: true,
+    allowDelete: true,
+    allowGroups: true,
   },
 }

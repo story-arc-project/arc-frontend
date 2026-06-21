@@ -6,6 +6,7 @@ import {
   toExperienceV2,
   toSavePayload,
 } from "@/lib/utils/experience-mapper"
+import { createGroupBlock, createTextField } from "@/lib/utils/block-utils"
 
 function makeExperience(overrides: Partial<Experience> = {}): Experience {
   return {
@@ -367,5 +368,170 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
     expect(reloaded.customBlocks).toHaveLength(1)
     expect(reloaded.customBlocks[0]).toMatchObject({ label: "메모", type: "text" })
     expect(reloaded.customBlocks[0].value).toEqual(text("note"))
+  })
+})
+
+describe("group round-trip", () => {
+  it("toSavePayload: group 블록은 entryType:'group' 으로 직렬화된다", () => {
+    const g = createGroupBlock("나만의 섹션")
+    const child = createTextField("메모")
+    if (child.value.type === "text") child.value.text = "내용"
+    g.children = [child]
+
+    const payload = toSavePayload(makeExperienceV2({ customBlocks: [g] }))
+    const content = payload.content as Record<string, unknown>
+    const custom = content.custom as CustomEntry[]
+    expect(custom).toHaveLength(1)
+    expect(custom[0].entryType).toBe("group")
+    if (custom[0].entryType === "group") {
+      expect(custom[0].label).toBe("나만의 섹션")
+      expect(custom[0].children).toHaveLength(1)
+      expect(custom[0].children[0].entryType).toBe("field")
+    }
+  })
+
+  it("toExperienceV2: custom group 항목이 type:'group' Block 으로 복원된다 (평탄화 아님)", () => {
+    const exp = makeExperience({
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "T",
+        summary: "",
+        status: "draft",
+        tags: [],
+        fields: {},
+        custom: [
+          {
+            key: "grp-1",
+            entryType: "group",
+            label: "나만의 섹션",
+            collapsed: false,
+            children: [
+              { key: "c-1", entryType: "field", type: "text", label: "메모", value: { type: "text", text: "내용" } },
+            ],
+          } as CustomEntry,
+        ],
+      },
+    })
+    const v2 = toExperienceV2(exp)
+    expect(v2.customBlocks).toHaveLength(1)
+    expect(v2.customBlocks[0].type).toBe("group")
+    expect(v2.customBlocks[0].label).toBe("나만의 섹션")
+    expect(v2.customBlocks[0].children).toHaveLength(1)
+    expect(v2.customBlocks[0].children![0].label).toBe("메모")
+  })
+
+  it("FULL round-trip: group with two children survives toSavePayload → toExperienceV2", () => {
+    const g = createGroupBlock("섹션A")
+    const c1 = createTextField("필드1")
+    const c2 = createTextField("필드2")
+    if (c1.value.type === "text") c1.value.text = "값1"
+    if (c2.value.type === "text") c2.value.text = "값2"
+    g.children = [c1, c2]
+    g.key = "grp-stable"
+
+    const payload = toSavePayload(makeExperienceV2({ customBlocks: [g] }))
+    const reloaded = toExperienceV2(makeExperience({ content: payload.content }))
+
+    expect(reloaded.customBlocks).toHaveLength(1)
+    const rg = reloaded.customBlocks[0]
+    expect(rg.type).toBe("group")
+    expect(rg.label).toBe("섹션A")
+    expect(rg.key).toBe("grp-stable")
+    expect(rg.children).toHaveLength(2)
+    expect(rg.children![0].label).toBe("필드1")
+    expect(rg.children![0].value).toEqual({ type: "text", text: "값1" })
+    expect(rg.children![1].label).toBe("필드2")
+    expect(rg.children![1].value).toEqual({ type: "text", text: "값2" })
+  })
+
+  it("REGRESSION: section entry 는 여전히 평탄화된다 (FRT-78 미구현)", () => {
+    const exp = makeExperience({
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "T",
+        summary: "",
+        status: "draft",
+        tags: [],
+        fields: {},
+        custom: [
+          {
+            key: "sec-1",
+            entryType: "section",
+            label: "섹션",
+            children: [
+              { key: "c-1", entryType: "field", type: "text", label: "메모", value: { type: "text", text: "내용" } },
+            ],
+          } as CustomEntry,
+        ],
+      },
+    })
+    const v2 = toExperienceV2(exp)
+    // section 은 평탄화되므로 customBlocks 에 type:'group' 이 없고 child 가 직접 들어온다
+    expect(v2.customBlocks.every(b => b.type !== "group")).toBe(true)
+    expect(v2.customBlocks).toHaveLength(1)
+    expect(v2.customBlocks[0].label).toBe("메모")
+  })
+
+  it("children 없는 group 이 빈 children:[] 로 왕복된다", () => {
+    const g = createGroupBlock("빈 그룹")
+    const payload = toSavePayload(makeExperienceV2({ customBlocks: [g] }))
+    const reloaded = toExperienceV2(makeExperience({ content: payload.content }))
+    expect(reloaded.customBlocks[0].type).toBe("group")
+    expect(reloaded.customBlocks[0].children).toEqual([])
+  })
+
+  it("FIX 6: toSavePayload 에서 직렬화된 group 항목에 collapsed 가 포함되지 않는다", () => {
+    const g = createGroupBlock("섹션")
+    // collapsed defaults to false in createGroupBlock
+    const payload = toSavePayload(makeExperienceV2({ customBlocks: [g] }))
+    const content = payload.content as Record<string, unknown>
+    const custom = content.custom as CustomEntry[]
+    expect(custom[0].entryType).toBe("group")
+    if (custom[0].entryType === "group") {
+      expect(Object.prototype.hasOwnProperty.call(custom[0], "collapsed")).toBe(false)
+    }
+  })
+
+  it("FIX 2: 중첩 group(group-in-group)은 평탄화되고 children 에 type:group 이 없다", () => {
+    const exp = makeExperience({
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "T",
+        summary: "",
+        status: "draft",
+        tags: [],
+        fields: {},
+        custom: [
+          {
+            key: "grp-outer",
+            entryType: "group",
+            label: "외부 그룹",
+            children: [
+              {
+                key: "grp-inner",
+                entryType: "group",
+                label: "내부 그룹 (중첩)",
+                children: [
+                  { key: "c-1", entryType: "field", type: "text", label: "메모", value: { type: "text", text: "내용" } },
+                ],
+              } as CustomEntry,
+            ],
+          } as CustomEntry,
+        ],
+      },
+    })
+    const v2 = toExperienceV2(exp)
+    // 외부 group 은 Block 으로 복원됨
+    expect(v2.customBlocks).toHaveLength(1)
+    expect(v2.customBlocks[0].type).toBe("group")
+    // 자식에 type:'group' 이 없어야 한다 (내부 group 은 평탄화됨)
+    const children = v2.customBlocks[0].children ?? []
+    expect(children.every(c => c.type !== "group")).toBe(true)
+    // 내부 group 의 자식(field)이 평탄화되어 올라온다
+    expect(children).toHaveLength(1)
+    expect(children[0].label).toBe("메모")
   })
 })
