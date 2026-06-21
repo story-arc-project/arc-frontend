@@ -15,6 +15,22 @@ function textOf(value: BlockValue | undefined): string {
   return "";
 }
 
+function selectedOf(value: BlockValue | undefined): string {
+  return value && value.type === "single-select" ? value.selected : "";
+}
+
+/**
+ * 포트폴리오는 공개 발행물이므로 미완성(draft)·비공개 경험은 제외한다.
+ * status 는 toExperienceV2 가 정규화한 값(content.status, 없으면 "draft") 기준이고,
+ * 공개 여부는 템플릿의 '공개 설정' single-select 가 "비공개" 인지로 판단한다.
+ */
+export function isPublishableExperience(exp: Experience): boolean {
+  const ev2 = toExperienceV2(exp);
+  if (ev2.status !== "complete") return false;
+  const blocks = [...ev2.coreBlocks, ...ev2.extensionBlocks];
+  return selectedOf(findBlock(blocks, "공개 설정")?.value) !== "비공개";
+}
+
 function ym(date: string | undefined): string {
   return date ? date.slice(0, 7).replace("-", ".") : "";
 }
@@ -50,5 +66,5 @@ export function buildPortfolio(
   experiences: Experience[],
   profile: PortfolioProfile,
 ): Portfolio {
-  return { id, profile, posts: experiences.map(experienceToPost) };
+  return { id, profile, posts: experiences.filter(isPublishableExperience).map(experienceToPost) };
 }

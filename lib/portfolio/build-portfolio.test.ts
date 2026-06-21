@@ -3,7 +3,7 @@ import type { Experience } from "@/types/experience";
 import type { Block } from "@/types/archive";
 import type { PortfolioProfile } from "@/types/portfolio";
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper";
-import { buildPortfolio, experienceToPost } from "./build-portfolio";
+import { buildPortfolio, experienceToPost, isPublishableExperience } from "./build-portfolio";
 
 function blk(id: string, type: Block["type"], label: string, value: Block["value"]): Block {
   return { id, type, label, value };
@@ -22,7 +22,7 @@ function makeExp(overrides?: Partial<Experience>): Experience {
     user_id: "demo-user",
     type: "personal-project",
     importance: 5,
-    content: { title: "주가 예측 프로젝트", summary: "LLM 뉴스 감성 분석", tags: ["LLM", "NLP"], coreBlocks: core },
+    content: { title: "주가 예측 프로젝트", summary: "LLM 뉴스 감성 분석", status: "complete", tags: ["LLM", "NLP"], coreBlocks: core },
     created_at: "2026-05-01T00:00:00Z",
     updated_at: "2026-05-08T00:00:00Z",
     ...overrides,
@@ -98,5 +98,53 @@ describe("buildPortfolio", () => {
 
   it("빈 experiences → 빈 posts (throw 없음)", () => {
     expect(buildPortfolio("demo-portfolio-1", [], profile).posts).toEqual([]);
+  });
+
+  it("draft(미완성) 경험은 공개 포트폴리오에서 제외한다", () => {
+    const done = makeExp({ id: "done" });
+    const draft: Experience = {
+      ...makeExp({ id: "draft" }),
+      content: { ...(makeExp().content as Record<string, unknown>), status: "draft" },
+    };
+    const result = buildPortfolio("demo-portfolio-1", [done, draft], profile);
+    expect(result.posts.map((p) => p.id)).toEqual(["done"]);
+  });
+
+  it("공개 설정이 '비공개'인 경험은 제외한다", () => {
+    const pub = makeExp({ id: "pub" });
+    const core = (makeExp().content as { coreBlocks: Block[] }).coreBlocks;
+    const hidden: Experience = {
+      ...makeExp({ id: "hidden" }),
+      content: {
+        title: "비공개 경험",
+        summary: "",
+        status: "complete",
+        tags: [],
+        coreBlocks: core,
+        extensionBlocks: [
+          blk("v", "single-select", "공개 설정", {
+            type: "single-select",
+            options: ["공개", "비공개", "일부 공개"],
+            selected: "비공개",
+          }),
+        ],
+      },
+    };
+    const result = buildPortfolio("demo-portfolio-1", [pub, hidden], profile);
+    expect(result.posts.map((p) => p.id)).toEqual(["pub"]);
+  });
+});
+
+describe("isPublishableExperience", () => {
+  it("complete + 비공개 아님 → 발행 가능", () => {
+    expect(isPublishableExperience(makeExp())).toBe(true);
+  });
+
+  it("draft → 발행 불가", () => {
+    const draft: Experience = {
+      ...makeExp(),
+      content: { ...(makeExp().content as Record<string, unknown>), status: "draft" },
+    };
+    expect(isPublishableExperience(draft)).toBe(false);
   });
 });
