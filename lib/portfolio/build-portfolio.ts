@@ -20,15 +20,16 @@ function selectedOf(value: BlockValue | undefined): string {
 }
 
 /**
- * 포트폴리오는 공개 발행물이므로 미완성(draft)·비공개 경험은 제외한다.
+ * 포트폴리오는 공개 발행물이므로 명시적 옵트인(공개)만 발행한다.
  * status 는 toExperienceV2 가 정규화한 값(content.status, 없으면 "draft") 기준이고,
- * 공개 여부는 템플릿의 '공개 설정' single-select 가 "비공개" 인지로 판단한다.
+ * 공개 여부는 '공개 설정' single-select 가 정확히 "공개" 일 때만 true 다.
+ * 누락/빈 값/"일부 공개"/"비공개" 는 모두 비공개로 취급한다(기본 비공개).
  */
 export function isPublishableExperience(exp: Experience): boolean {
   const ev2 = toExperienceV2(exp);
   if (ev2.status !== "complete") return false;
   const blocks = [...ev2.coreBlocks, ...ev2.extensionBlocks];
-  return selectedOf(findBlock(blocks, "공개 설정")?.value) !== "비공개";
+  return selectedOf(findBlock(blocks, "공개 설정")?.value) === "공개";
 }
 
 function ym(date: string | undefined): string {
