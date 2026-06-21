@@ -7,13 +7,14 @@ import type { PresetDTO, PresetUpsertPayload } from "@/lib/utils/preset-mapper";
 import type { ResumeVersion } from "@/types/resume";
 import type { Portfolio } from "@/types/portfolio";
 
+import { buildPortfolio } from "@/lib/portfolio/build-portfolio";
 import {
   seedExperiences,
   seedLibraries,
   seedLibraryMembership,
   seedResume,
 } from "./seed";
-import { seedPortfolio } from "./portfolio-seed";
+import { DEMO_PORTFOLIO_ID, DEMO_PORTFOLIO_PROFILE } from "./portfolio-seed";
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -233,10 +234,8 @@ export const resumeStore = {
 
 // ─── Portfolio (read-only) ──────────────────────────────────
 
-const portfolio = clone(seedPortfolio);
-
 export const portfolioStore = {
   get(): Portfolio {
-    return clone(portfolio);
+    return buildPortfolio(DEMO_PORTFOLIO_ID, experienceStore.list(), DEMO_PORTFOLIO_PROFILE);
   },
 };
