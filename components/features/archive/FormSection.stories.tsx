@@ -1,8 +1,10 @@
+import { useState } from "react"
 import type { Meta, StoryObj } from "@storybook/nextjs"
 
 import FormSection from "./FormSection"
 import { careerExperience } from "./__fixtures__/archive.fixtures"
-import { createTextField, createTextareaField } from "@/lib/utils/block-utils"
+import { createGroupBlock, createTextField, createTextareaField } from "@/lib/utils/block-utils"
+import type { Block } from "@/types/archive"
 
 const sampleBlocks = [
   createTextField("회사명", { required: true }),
@@ -83,5 +85,40 @@ export const EmptyBlocks: Story = {
     blocks: [],
     defaultCollapsed: false,
     allowAdd: true,
+  },
+}
+
+function EditableHarness({ readOnly }: { readOnly?: boolean }) {
+  const section = createGroupBlock("나만의 섹션")
+  const f = createTextField("메모"); if (f.value.type === "text") f.value.text = "내용"
+  section.children = [f]
+  const [blocks, setBlocks] = useState<Block[]>(section.children ?? [])
+  const [label, setLabel] = useState(section.label)
+  return (
+    <FormSection
+      variant="card"
+      sectionId={section.id}
+      label={label}
+      blocks={blocks}
+      readOnly={readOnly}
+      editableLabel={!readOnly}
+      onLabelChange={setLabel}
+      onDelete={() => {}}
+      allowAdd={!readOnly}
+      allowReorder={!readOnly}
+      allowDelete={!readOnly}
+      onChange={setBlocks}
+    />
+  )
+}
+
+export const UserSectionEditable: Story = { render: () => <EditableHarness /> }
+export const UserSectionReadOnly: Story = { render: () => <EditableHarness readOnly /> }
+export const FixedCard: Story = {
+  args: {
+    variant: "card",
+    label: "기본 정보",
+    blocks: [createTextField("회사명")],
+    onChange: () => {},
   },
 }

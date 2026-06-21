@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown, Trash2 } from "lucide-react"
 import type { Block } from "@/types/archive"
 import BlockList from "./blocks/BlockList"
 
@@ -18,6 +18,11 @@ interface FormSectionProps {
   allowAdd?: boolean
   allowReorder?: boolean
   allowDelete?: boolean
+  /** 제목 인라인 편집(사용자 섹션, FRT-78). onLabelChange 와 함께 사용. */
+  editableLabel?: boolean
+  onLabelChange?: (label: string) => void
+  /** 섹션 자체 삭제(사용자 섹션). 지정 시 헤더에 삭제 버튼 노출. */
+  onDelete?: () => void
   onChange: (blocks: Block[]) => void
 }
 
@@ -34,6 +39,9 @@ export default function FormSection({
   allowAdd,
   allowReorder,
   allowDelete,
+  editableLabel,
+  onLabelChange,
+  onDelete,
   onChange,
 }: FormSectionProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
@@ -44,17 +52,41 @@ export default function FormSection({
         data-section-id={sectionId}
         className="scroll-mt-20 border border-border rounded-lg px-5 py-5"
       >
-        <div className="mb-4">
-          <div className="flex items-center gap-2">
-            <h3 className="text-title text-text-primary">{label}</h3>
-            {optional && (
-              <span className="text-caption text-text-tertiary border border-border rounded-full px-2 py-0.5">
-                선택
-              </span>
+        <div className="mb-4 flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              {editableLabel && onLabelChange ? (
+                <input
+                  type="text"
+                  aria-label="섹션 이름"
+                  value={label}
+                  onChange={e => onLabelChange(e.target.value)}
+                  onBlur={e => { if (e.target.value.trim() === "") onLabelChange("새 블록") }}
+                  placeholder="섹션 이름"
+                  className="w-full bg-transparent text-title font-medium text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-brand rounded px-0"
+                />
+              ) : (
+                <h3 className="text-title text-text-primary">{label}</h3>
+              )}
+              {optional && (
+                <span className="text-caption text-text-tertiary border border-border rounded-full px-2 py-0.5 shrink-0">
+                  선택
+                </span>
+              )}
+            </div>
+            {description && (
+              <p className="text-caption text-text-tertiary mt-1">{description}</p>
             )}
           </div>
-          {description && (
-            <p className="text-caption text-text-tertiary mt-1">{description}</p>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label={`${label || "섹션"} 삭제`}
+              className="shrink-0 text-text-tertiary hover:text-error transition-colors p-1 rounded"
+            >
+              <Trash2 size={16} />
+            </button>
           )}
         </div>
         <BlockList
