@@ -32,9 +32,16 @@ export default function PostHogProvider({
       // URL·쿼리스트링이 묵시적으로 수집되는 것을 막는다 (명시적 capture 만 허용).
       capture_pageview: false,
       capture_pageleave: false,
-      // dead-click 자동 수집 비활성 — autocapture 와 별개 확장이라 명시적으로 꺼야
-      // remote config 로 켜져도 $dead_click 이 나가지 않는다.
+      // 아래 3종은 autocapture·remote config 와 무관하게 켜질 수 있는 자동 수집 경로다.
+      // 로컬 false 가 remote config 를 항상 이기므로 명시적으로 꺼 "명시적 capture 만" 계약을 보장.
+      // - dead-click: 별개 확장, remote config 로 활성
       capture_dead_clicks: false,
+      // - rage-click: 자체 옵션이며 기본값 true (autocapture·dead_click 와 별개)
+      rageclick: false,
+      // - performance(Web Vitals·network timing): 미설정 시 remote config 가 활성 가능
+      capture_performance: false,
+      // - exception($exception): Error Tracking 켜지면 onerror 핸들러로 자동 전송
+      capture_exceptions: false,
       // 기본 속성 중 PII 가 실릴 수 있는 URL 류 제거 — 앱이 /signup?email=... 처럼
       // 쿼리스트링에 PII 를 싣는 경로가 있어 명시적 이벤트에서도 새지 않게 차단.
       // ($pathname·$referring_domain 은 PII 없어 유지 → 경로 단위 분석은 가능)
