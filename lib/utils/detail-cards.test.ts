@@ -125,7 +125,9 @@ describe("buildDetailSections", () => {
     expect(last?.blocks.map(b => b.label)).toEqual(["메모"])
   })
 
-  it("매칭되지 않는 확장 블록(레거시 라벨)은 '추가 입력'으로 보존한다", () => {
+  it("매칭되지 않는 확장 블록(레거시 라벨)은 '추가 입력' 없이 정식 섹션에 합류한다", () => {
+    // 입력 폼과 동일하게 미리보기도 정식 4섹션만 노출한다 — 어느 템플릿 섹션과도 매칭되지
+    // 않는 블록은 자신의 category(없으면 detail=경험 상세)로 합류한다(FRT-75).
     const { core, ext } = filledCareerBlocks()
     const tmpl = getTemplateForType("career")
     const orphan: Block = { id: "o1", type: "text", label: "옛날필드", value: text("legacy") }
@@ -133,13 +135,15 @@ describe("buildDetailSections", () => {
       makeExperienceV2({ coreBlocks: core, extensionBlocks: [...ext, orphan] }),
       tmpl,
     )
-    const leftover = sections.find(s => s.label === "추가 입력")
-    expect(leftover?.blocks).toContainEqual(orphan)
+    expect(sections.find(s => s.label === "추가 입력")).toBeUndefined()
+    const detail = sections.find(s => s.label === "경험 상세")
+    expect(detail?.blocks).toContainEqual(orphan)
   })
 
-  it("v1 모호 라벨(키 없음)은 잘못된 카드로 흡수되지 않고 '추가 입력'으로 보존된다", () => {
+  it("v1 모호 라벨(키 없음)도 타입으로 섹션을 특정해 정식 카드에 배치한다", () => {
     // extracurricular: extended.결과/성과(textarea) vs extra-detail.결과/성과(repeatable-cell)
-    // → 라벨이 두 섹션에 중복되므로 키 없는 레거시 블록은 매칭하지 않고 보존해야 한다.
+    // → 라벨은 모호하지만 타입(textarea)으로 extended(경험 상세)에 정확히 매칭된다. 미리보기는
+    // 값 주입 없이 표시만 하므로 타입 기반 매칭이 안전하다(FRT-75).
     const tmpl = getTemplateForType("extracurricular")
     const legacy: Block = {
       id: "lg1",
@@ -151,11 +155,9 @@ describe("buildDetailSections", () => {
       makeExperienceV2({ typeId: "extracurricular", coreBlocks: [], extensionBlocks: [legacy] }),
       tmpl,
     )
-    const leftover = sections.find(s => s.label === "추가 입력")
-    expect(leftover?.blocks).toContainEqual(legacy)
-    // 다른 어떤 카드(경험 상세 등)에도 흡수되지 않는다.
-    const elsewhere = sections.filter(s => s.label !== "추가 입력")
-    expect(elsewhere.flatMap(s => s.blocks)).not.toContainEqual(legacy)
+    expect(sections.find(s => s.label === "추가 입력")).toBeUndefined()
+    const detail = sections.find(s => s.label === "경험 상세")
+    expect(detail?.blocks).toContainEqual(legacy)
   })
 
   it("템플릿 없음(v1/미지 타입) 폴백: 헤더 제외 코어/확장 블록을 단순 그룹 렌더", () => {
