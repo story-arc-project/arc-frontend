@@ -23,6 +23,12 @@ export default function PortfolioPostPage() {
     };
   }, [id]);
 
+  useEffect(() => {
+    if (portfolio && !portfolio.posts.some((p) => p.id === postId)) {
+      router.replace(`/demo/portfolio/${id}`);
+    }
+  }, [portfolio, postId, id, router]);
+
   if (!portfolio) {
     return (
       <div className="flex min-h-screen items-center justify-center text-body text-text-tertiary">
@@ -33,7 +39,6 @@ export default function PortfolioPostPage() {
 
   const index = portfolio.posts.findIndex((p) => p.id === postId);
   if (index === -1) {
-    router.replace(`/demo/portfolio/${id}`);
     return null;
   }
 
