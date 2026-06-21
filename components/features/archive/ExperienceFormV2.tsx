@@ -233,6 +233,21 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   const handleAddSection = useCallback(() => {
     setCustomBlocks(prev => [...prev, createGroupBlock("새 블록")])
   }, [])
+  // 최상위 사용자 섹션 정렬. customBlocks 순서가 좌측 네비·상세 카드 순서를 결정하므로
+  // group 블록만 추려 위치를 바꾸고(loose 는 항상 뒤로 정규화) 되쓴다.
+  const handleMoveSection = useCallback((sectionId: string, dir: -1 | 1) => {
+    setCustomBlocks(prev => {
+      const groups = prev.filter(b => b.type === "group")
+      const loose = prev.filter(b => b.type !== "group")
+      const idx = groups.findIndex(b => b.id === sectionId)
+      const target = idx + dir
+      if (idx === -1 || target < 0 || target >= groups.length) return prev
+      const next = [...groups]
+      const [moved] = next.splice(idx, 1)
+      next.splice(target, 0, moved)
+      return [...next, ...loose]
+    })
+  }, [])
   // 레거시 loose 필드: group 섹션은 위치 유지, loose 묶음만 교체(추가 불가, 편집·삭제만).
   const handleLooseChange = useCallback((updated: Block[]) => {
     setCustomBlocks(prev => [...prev.filter(b => b.type === "group"), ...updated])
@@ -412,8 +427,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             />
           ))}
 
-          {/* 사용자 섹션 (FRT-78) — 최상위 블록, 고정 카드와 동일 시각 */}
-          {userSections.map(section => (
+          {/* 사용자 섹션 (FRT-78) — 최상위 블록, 고정 카드와 동일 시각. 헤더 위/아래로 카드 정렬. */}
+          {userSections.map((section, i) => (
             <FormSection
               key={section.id}
               variant="card"
@@ -423,6 +438,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
               editableLabel
               onLabelChange={label => handleSectionLabelChange(section.id, label)}
               onDelete={() => handleSectionDelete(section.id)}
+              onMoveUp={i > 0 ? () => handleMoveSection(section.id, -1) : undefined}
+              onMoveDown={i < userSections.length - 1 ? () => handleMoveSection(section.id, 1) : undefined}
               allowAdd
               allowReorder
               allowDelete
@@ -430,7 +447,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             />
           ))}
 
-          {/* 레거시 loose 커스텀 필드 폴백 — 추가는 막고 편집/삭제만 */}
+          {/* 레거시 loose 커스텀 필드 폴백 — 새 추가는 막고 편집·정렬·삭제는 유지 */}
           {looseCustomBlocks.length > 0 && (
             <FormSection
               variant="card"
@@ -438,6 +455,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
               blocks={looseCustomBlocks}
               allowReorder
               allowDelete
+              allowEdit
               onChange={handleLooseChange}
             />
           )}

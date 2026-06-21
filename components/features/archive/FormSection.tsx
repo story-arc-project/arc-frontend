@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, Trash2 } from "lucide-react"
+import { ChevronDown, ChevronUp, Trash2 } from "lucide-react"
 import type { Block } from "@/types/archive"
 import BlockList from "./blocks/BlockList"
 
@@ -18,11 +18,16 @@ interface FormSectionProps {
   allowAdd?: boolean
   allowReorder?: boolean
   allowDelete?: boolean
+  /** 블록 편집(연필) 노출 여부. 미지정 시 allowAdd 를 따른다. 추가는 막되 편집만 허용할 때 단독으로 켠다. */
+  allowEdit?: boolean
   /** 제목 인라인 편집(사용자 섹션, FRT-78). onLabelChange 와 함께 사용. */
   editableLabel?: boolean
   onLabelChange?: (label: string) => void
   /** 섹션 자체 삭제(사용자 섹션). 지정 시 헤더에 삭제 버튼 노출. */
   onDelete?: () => void
+  /** 섹션 카드 위/아래 이동(사용자 섹션 정렬, FRT-78). 경계에서는 undefined 로 비활성. */
+  onMoveUp?: () => void
+  onMoveDown?: () => void
   onChange: (blocks: Block[]) => void
 }
 
@@ -39,9 +44,12 @@ export default function FormSection({
   allowAdd,
   allowReorder,
   allowDelete,
+  allowEdit,
   editableLabel,
   onLabelChange,
   onDelete,
+  onMoveUp,
+  onMoveDown,
   onChange,
 }: FormSectionProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
@@ -78,15 +86,41 @@ export default function FormSection({
               <p className="text-caption text-text-tertiary mt-1">{description}</p>
             )}
           </div>
-          {onDelete && (
-            <button
-              type="button"
-              onClick={onDelete}
-              aria-label={`${label || "섹션"} 삭제`}
-              className="shrink-0 text-text-tertiary hover:text-error transition-colors p-1 rounded"
-            >
-              <Trash2 size={16} />
-            </button>
+          {(onMoveUp || onMoveDown || onDelete) && (
+            <div className="flex items-center gap-0.5 shrink-0">
+              {(onMoveUp || onMoveDown) && (
+                <>
+                  <button
+                    type="button"
+                    onClick={onMoveUp}
+                    disabled={!onMoveUp}
+                    aria-label="섹션 위로 이동"
+                    className="text-text-tertiary hover:text-text-secondary disabled:opacity-30 disabled:hover:text-text-tertiary transition-colors p-1 rounded"
+                  >
+                    <ChevronUp size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onMoveDown}
+                    disabled={!onMoveDown}
+                    aria-label="섹션 아래로 이동"
+                    className="text-text-tertiary hover:text-text-secondary disabled:opacity-30 disabled:hover:text-text-tertiary transition-colors p-1 rounded"
+                  >
+                    <ChevronDown size={16} />
+                  </button>
+                </>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  aria-label={`${label || "섹션"} 삭제`}
+                  className="text-text-tertiary hover:text-error transition-colors p-1 rounded"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </div>
           )}
         </div>
         <BlockList
@@ -96,6 +130,7 @@ export default function FormSection({
           allowAdd={allowAdd}
           allowReorder={allowReorder}
           allowDelete={allowDelete}
+          allowEdit={allowEdit}
           showOptionalBadge={showOptionalBadge}
         />
       </section>
@@ -126,6 +161,7 @@ export default function FormSection({
             allowAdd={allowAdd}
             allowReorder={allowReorder}
             allowDelete={allowDelete}
+            allowEdit={allowEdit}
           />
         </div>
       )}

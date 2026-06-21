@@ -208,3 +208,76 @@ describe("FRT-52 편집 진입 직후 dirty 위양성 방지", () => {
     expect(onUnsavedChange).toHaveBeenLastCalledWith(true)
   })
 })
+
+/**
+ * FRT-78 — Codex 리뷰 P2 두 건 회귀 가드.
+ *  #1 최상위 사용자 섹션 정렬(헤더 위/아래 이동)이 동작한다.
+ *  #2 레거시 loose 커스텀 블록은 '기타' 카드에서 편집(연필)이 유지된다.
+ */
+describe("FRT-78 사용자 섹션 정렬·loose 편집 (Codex P2)", () => {
+  it("섹션 '아래로 이동'으로 최상위 섹션 순서를 바꾼다 (네비 순서에 반영)", async () => {
+    const user = userEvent.setup()
+    const onVisibleSectionsChange = vi.fn()
+    render(
+      <ExperienceFormV2
+        mode="new"
+        onSave={() => {}}
+        onCancel={() => {}}
+        onVisibleSectionsChange={onVisibleSectionsChange}
+      />,
+    )
+    await selectType(user)
+
+    // 최상위 '블록 추가' 버튼은 DOM 상 마지막(섹션 내부 BlockList 추가 버튼과 동명) → at(-1).
+    const topAdd = () => screen.getAllByRole("button", { name: "블록 추가" }).at(-1)!
+    await user.click(topAdd())
+    await user.click(topAdd())
+
+    // 두 섹션에 구분용 이름 부여.
+    let names = screen.getAllByRole("textbox", { name: "섹션 이름" })
+    expect(names).toHaveLength(2)
+    await user.clear(names[0]); await user.type(names[0], "A")
+    names = screen.getAllByRole("textbox", { name: "섹션 이름" })
+    await user.clear(names[1]); await user.type(names[1], "B")
+
+    const userOrder = () => {
+      const last = onVisibleSectionsChange.mock.calls.at(-1)?.[0] ?? []
+      return last.map((s: { label: string }) => s.label).filter((l: string) => l === "A" || l === "B")
+    }
+    expect(userOrder()).toEqual(["A", "B"])
+
+    // 첫 섹션(A) '아래로 이동' → 순서가 [B, A] 로 바뀐다.
+    await user.click(screen.getAllByRole("button", { name: "섹션 아래로 이동" })[0])
+    expect(userOrder()).toEqual(["B", "A"])
+  })
+
+  it("레거시 loose 커스텀 블록은 '기타' 카드에서 편집(연필) 버튼이 노출된다", () => {
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={{
+          id: "exp-loose",
+          userId: "u1",
+          typeId: "extracurricular",
+          title: "레거시 레코드",
+          summary: "",
+          status: "complete",
+          tags: [],
+          importance: undefined,
+          coreBlocks: [],
+          extensionBlocks: [],
+          customBlocks: [
+            { id: "loose-1", type: "text", label: "메모", value: { type: "text", text: "내용" } },
+          ],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }}
+        onSave={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+
+    // 추가는 막혀도(상단 '블록 추가'만 존재) loose 블록 자체 편집은 가능해야 한다.
+    expect(screen.getByRole("button", { name: "블록 편집" })).toBeInTheDocument()
+  })
+})

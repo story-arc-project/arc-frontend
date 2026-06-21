@@ -30,6 +30,11 @@ interface BlockListProps {
   allowAdd?: boolean
   allowReorder?: boolean
   allowDelete?: boolean
+  /**
+   * 블록 편집(연필) 노출 여부. 미지정 시 allowAdd 를 따른다(기존 동작 유지).
+   * 추가는 막되 편집은 허용하는 경우(레거시 loose 폴백)에 단독으로 켠다.
+   */
+  allowEdit?: boolean
 }
 
 export default function BlockList({
@@ -40,7 +45,9 @@ export default function BlockList({
   allowAdd = false,
   allowReorder = false,
   allowDelete = false,
+  allowEdit,
 }: BlockListProps) {
+  const editEnabled = allowEdit ?? allowAdd
   const [showPicker, setShowPicker] = useState(false)
 
   // Modal state
@@ -190,7 +197,7 @@ export default function BlockList({
       block={block}
       allowReorder={allowReorder}
       allowDelete={allowDelete}
-      allowEdit={allowAdd}
+      allowEdit={editEnabled}
       showOptionalBadge={showOptionalBadge}
       onChange={handleBlockChange}
       onDelete={() => handleDeleteBlock(block.id)}
