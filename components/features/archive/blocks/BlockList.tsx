@@ -70,7 +70,6 @@ export default function BlockList({
   function handlePickType(type: BlockType) {
     if (type === 'group') {
       onChange([...blocks, createGroupBlock('새 그룹')])
-      setShowPicker(false)
       return
     }
     setPendingType(type)

@@ -17,7 +17,7 @@ import {
   getTemplateForType,
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
-import { uid } from "@/lib/utils/block-utils"
+import { uid, createGroupBlock } from "@/lib/utils/block-utils"
 
 /**
  * Experience ↔ ExperienceV2 매퍼.
@@ -70,8 +70,13 @@ function labelKeyMap(blocks: Block[]): Record<string, string> {
   return map
 }
 
-/** custom[] → Block[] (field 항목은 직렬 복원, group 은 Block 으로 구조 보존, section 은 평탄화) */
-function customEntriesToBlocks(entries: CustomEntry[]): Block[] {
+/**
+ * custom[] → Block[].
+ * - field 항목은 직렬 복원
+ * - group 항목은 depth===0 일 때만 Block 으로 구조 보존; depth>0(중첩 group)은 평탄화 — 1겹 cap
+ * - section 항목은 평탄화 (FRT-78 미구현)
+ */
+function customEntriesToBlocks(entries: CustomEntry[], depth = 0): Block[] {
   const out: Block[] = []
   for (const e of entries) {
     if (e.entryType === 'field') {
@@ -84,19 +89,15 @@ function customEntriesToBlocks(entries: CustomEntry[]): Block[] {
         ...(e.required ? { required: true } : {}),
         ...(e.options ? { options: e.options } : {}),
       })
-    } else if (e.entryType === 'group') {
-      out.push({
-        id: uid('grp'),
-        key: e.key,
-        type: 'group',
-        label: e.label,
-        collapsed: e.collapsed ?? false,
-        children: customEntriesToBlocks(e.children),
-        value: { type: 'group' },
-      })
+    } else if (e.entryType === 'group' && depth === 0) {
+      // Use canonical factory; set key and children after
+      const g = createGroupBlock(e.label)
+      g.key = e.key
+      g.children = customEntriesToBlocks(e.children, depth + 1)
+      out.push(g)
     } else {
-      // 'section' — 평탄화 (FRT-78 미구현)
-      out.push(...customEntriesToBlocks(e.children))
+      // 'section' OR a nested 'group' beyond depth 0 → flatten (1-level cap)
+      out.push(...customEntriesToBlocks(e.children, depth))
     }
   }
   return out
@@ -108,7 +109,7 @@ function blockToCustomEntry(b: Block): CustomEntry {
       key: b.key ?? b.id,
       entryType: 'group',
       label: b.label,
-      ...(b.collapsed !== undefined ? { collapsed: b.collapsed } : {}),
+      // FIX 6: collapse is ephemeral/local-only — do NOT serialize it
       children: (b.children ?? []).map(blockToCustomEntry),
     }
   }

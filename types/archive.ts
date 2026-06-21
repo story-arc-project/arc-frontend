@@ -75,7 +75,7 @@ export interface FileBlockValue {
 export interface BlockColumnDef {
   key: string
   label: string
-  blockType: Exclude<BlockType, 'repeatable-cell' | 'table'>
+  blockType: Exclude<BlockType, 'repeatable-cell' | 'table' | 'group'>
   required?: boolean
   placeholder?: string
   options?: string[]
@@ -259,7 +259,7 @@ export const SCHEMA_VERSION_V2 = 2 as const
 
 /** custom[] 항목 — FRT-69 은 'field' 만 직렬화. group(FRT-72)/section(FRT-78) 은 구조 정의(중첩 1겹). */
 export type CustomEntry =
-  | { key: string; entryType: 'field'; type: BlockType; label: string; value: BlockValue; required?: boolean; options?: string[] }
+  | { key: string; entryType: 'field'; type: Exclude<BlockType, 'group'>; label: string; value: BlockValue; required?: boolean; options?: string[] }
   | { key: string; entryType: 'group'; label: string; collapsed?: boolean; children: CustomEntry[] }
   | { key: string; entryType: 'section'; label: string; children: CustomEntry[] }
 

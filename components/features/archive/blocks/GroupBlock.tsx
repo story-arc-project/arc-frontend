@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { ChevronDown } from "lucide-react"
 import type { Block } from "@/types/archive"
+import { isBlockEmpty } from "@/lib/utils/block-utils"
 import BlockList from "./BlockList"
 
 interface GroupBlockProps {
@@ -16,10 +17,12 @@ export default function GroupBlock({ block, readOnly, onChange }: GroupBlockProp
   const [collapsed, setCollapsed] = useState(block.collapsed ?? false)
 
   const children = block.children ?? []
+  // FIX 5: in readOnly mode, hide empty children
+  const visibleChildren = readOnly ? children.filter(c => !isBlockEmpty(c)) : children
 
   return (
-    <section className="border border-border rounded-lg overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 bg-surface-secondary">
+    <section className="border border-border rounded-lg">
+      <div className={`flex items-center gap-2 px-4 py-3 bg-surface-secondary rounded-t-lg ${collapsed ? "rounded-b-lg" : ""}`}>
         <button
           type="button"
           onClick={() => setCollapsed(c => !c)}
@@ -42,15 +45,16 @@ export default function GroupBlock({ block, readOnly, onChange }: GroupBlockProp
               aria-label="그룹 이름"
               value={block.label}
               onChange={e => onChange({ ...block, label: e.target.value })}
+              onBlur={e => { if (e.target.value.trim() === '') onChange({ ...block, label: '새 그룹' }) }}
               className="w-full bg-transparent text-title font-medium text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-brand rounded px-0"
               placeholder="그룹 이름"
             />
           )}
         </div>
 
-        {children.length > 0 && (
+        {visibleChildren.length > 0 && (
           <span className="text-caption text-text-tertiary shrink-0">
-            {children.length}개 항목
+            {visibleChildren.length}개 항목
           </span>
         )}
       </div>
@@ -58,7 +62,7 @@ export default function GroupBlock({ block, readOnly, onChange }: GroupBlockProp
       {!collapsed && (
         <div className="px-4 py-4">
           <BlockList
-            blocks={children}
+            blocks={visibleChildren}
             readOnly={readOnly}
             onChange={updated => onChange({ ...block, children: updated })}
             allowAdd={!readOnly}

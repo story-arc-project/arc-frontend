@@ -481,4 +481,57 @@ describe("group round-trip", () => {
     expect(reloaded.customBlocks[0].type).toBe("group")
     expect(reloaded.customBlocks[0].children).toEqual([])
   })
+
+  it("FIX 6: toSavePayload 에서 직렬화된 group 항목에 collapsed 가 포함되지 않는다", () => {
+    const g = createGroupBlock("섹션")
+    // collapsed defaults to false in createGroupBlock
+    const payload = toSavePayload(makeExperienceV2({ customBlocks: [g] }))
+    const content = payload.content as Record<string, unknown>
+    const custom = content.custom as CustomEntry[]
+    expect(custom[0].entryType).toBe("group")
+    if (custom[0].entryType === "group") {
+      expect(Object.prototype.hasOwnProperty.call(custom[0], "collapsed")).toBe(false)
+    }
+  })
+
+  it("FIX 2: 중첩 group(group-in-group)은 평탄화되고 children 에 type:group 이 없다", () => {
+    const exp = makeExperience({
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "T",
+        summary: "",
+        status: "draft",
+        tags: [],
+        fields: {},
+        custom: [
+          {
+            key: "grp-outer",
+            entryType: "group",
+            label: "외부 그룹",
+            children: [
+              {
+                key: "grp-inner",
+                entryType: "group",
+                label: "내부 그룹 (중첩)",
+                children: [
+                  { key: "c-1", entryType: "field", type: "text", label: "메모", value: { type: "text", text: "내용" } },
+                ],
+              } as CustomEntry,
+            ],
+          } as CustomEntry,
+        ],
+      },
+    })
+    const v2 = toExperienceV2(exp)
+    // 외부 group 은 Block 으로 복원됨
+    expect(v2.customBlocks).toHaveLength(1)
+    expect(v2.customBlocks[0].type).toBe("group")
+    // 자식에 type:'group' 이 없어야 한다 (내부 group 은 평탄화됨)
+    const children = v2.customBlocks[0].children ?? []
+    expect(children.every(c => c.type !== "group")).toBe(true)
+    // 내부 group 의 자식(field)이 평탄화되어 올라온다
+    expect(children).toHaveLength(1)
+    expect(children[0].label).toBe("메모")
+  })
 })

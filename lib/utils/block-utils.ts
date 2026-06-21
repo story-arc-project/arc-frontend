@@ -142,12 +142,11 @@ export function createEmptyRow(columns: BlockColumnDef[]): BlockRow {
 // ─── Deep clone ─────────────────────────────────────────────────
 
 export function cloneBlock(block: Block): Block {
-  const result: Block = {
-    ...JSON.parse(JSON.stringify(block)),
-    id: uid(),
-  }
+  const result: Block = { ...JSON.parse(JSON.stringify(block)), id: uid() }
   if (result.type === 'group' && result.children) {
-    result.children = result.children.map((c: Block) => cloneBlock(c))
+    // Children are leaves (1-level cap). The JSON deep-clone above already deep-copied
+    // their values; just assign fresh ids without another full serialize pass.
+    result.children = result.children.map((c: Block) => ({ ...c, id: uid() }))
   }
   return result
 }
@@ -194,11 +193,13 @@ export function isBlockEmpty(block: Block): boolean {
 export function validateRequiredBlocks(blocks: Block[]): string[] {
   const errors: string[] = []
   for (const block of blocks) {
+    if (block.type === 'group') {
+      // Groups have no required flag; validate only their children
+      errors.push(...validateRequiredBlocks(block.children ?? []))
+      continue
+    }
     if (block.required && isBlockEmpty(block)) {
       errors.push(`"${block.label}" 항목을 입력해주세요.`)
-    }
-    if (block.type === 'group') {
-      errors.push(...validateRequiredBlocks(block.children ?? []))
     }
   }
   return errors
