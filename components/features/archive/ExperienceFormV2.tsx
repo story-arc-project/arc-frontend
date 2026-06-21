@@ -1,16 +1,10 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from "react"
-import { BookOpen, Save, Settings, Trash2 } from "lucide-react"
+import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Dialog } from "@/components/ui/dialog"
 import TypeSelector from "./TypeSelector"
 import FormSection from "./FormSection"
-import BlockList from "./blocks/BlockList"
-import SavePresetModal from "./SavePresetModal"
-import ApplyPresetModal from "./ApplyPresetModal"
-import PresetManager from "./PresetManager"
 import ImportanceSelector from "./ImportanceSelector"
 import type {
   ExperienceV2,
@@ -24,20 +18,12 @@ import type {
 } from "@/types/archive"
 import { SECTION_CATEGORIES } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
-import { cloneBlocks, isBlockEmpty, uid } from "@/lib/utils/block-utils"
+import { cloneBlocks, createGroupBlock, isBlockEmpty, uid } from "@/lib/utils/block-utils"
 import { computeFormCards } from "@/lib/utils/form-cards"
-import type { UsePresetsReturn } from "@/hooks/usePresets"
-
-interface AppliedPreset {
-  groupId: string
-  name: string
-  blocks: Block[]
-}
 
 interface ExperienceFormV2Props {
   mode: "new" | "edit"
   initialExperience?: ExperienceV2
-  presetsHook: UsePresetsReturn
   onSave: (experience: ExperienceV2) => void
   onCancel: () => void
   onUnsavedChange?: (hasUnsaved: boolean) => void
@@ -47,7 +33,7 @@ interface ExperienceFormV2Props {
    * 폼을 단독 마운트하는 테스트·스토리는 인라인 버튼을 그대로 유지한다.
    */
   hideInlineActions?: boolean
-  onVisibleSectionsChange?: (sections: { id: SectionCategory; label: string }[]) => void
+  onVisibleSectionsChange?: (sections: { id: string; label: string }[]) => void
 }
 
 /**
@@ -60,7 +46,6 @@ export interface ExperienceFormV2Handle {
 const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Props>(function ExperienceFormV2({
   mode,
   initialExperience,
-  presetsHook,
   onSave,
   onCancel,
   onUnsavedChange,
@@ -80,17 +65,12 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   const [customBlocks, setCustomBlocks] = useState<Block[]>(
     initialExperience?.customBlocks ?? []
   )
-  const [appliedPresets, setAppliedPresets] = useState<AppliedPreset[]>([])
   const [tags, setTags] = useState<string[]>(initialExperience?.tags ?? [])
   const [importance, setImportance] = useState<ImportanceLevel | undefined>(
     initialExperience?.importance,
   )
   const [typeError, setTypeError] = useState(false)
   const [titleError, setTitleError] = useState(false)
-  const [savePresetOpen, setSavePresetOpen] = useState(false)
-  const [applyPresetOpen, setApplyPresetOpen] = useState(false)
-  const [managePresetOpen, setManagePresetOpen] = useState(false)
-  const { presets, createPreset, updatePreset, deletePreset, duplicatePreset, getPreset } = presetsHook
 
   // Load template when type changes
   useEffect(() => {
@@ -164,13 +144,11 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     // New mode (or no initial record): any entered data counts as unsaved.
     if (mode === "new" || !initialExperience) {
       const extensionBlocks = extensionSections.flatMap(s => s.blocks)
-      const presetBlocks = appliedPresets.flatMap(p => p.blocks)
       const importanceChanged = importance !== initialExperience?.importance
       const hasData =
         hasBlockData(coreBlocks) ||
         hasBlockData(extensionBlocks) ||
         customBlocks.length > 0 ||
-        presetBlocks.length > 0 ||
         tags.length > 0 ||
         importanceChanged
       onUnsavedChange?.(hasData)
@@ -186,7 +164,6 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       core: coreBlocks,
       ext: extensionSections.map(s => s.blocks),
       custom: customBlocks,
-      presets: appliedPresets.map(p => p.blocks),
       tags,
       importance: importance ?? null,
     })
@@ -196,7 +173,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       return
     }
     onUnsavedChange?.(snapshot !== dirtyBaselineRef.current)
-  }, [coreBlocks, extensionSections, customBlocks, appliedPresets, tags, importance, mode, template, initialExperience, onUnsavedChange])
+  }, [coreBlocks, extensionSections, customBlocks, tags, importance, mode, template, initialExperience, onUnsavedChange])
 
   const handleTypeSelect = useCallback((id: ExperienceTypeId) => {
     setTypeId(id)
@@ -206,16 +183,14 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   const handleRequestTypeChange = useCallback((): boolean => {
     const hasBlockData = (blocks: Block[]) => blocks.some(b => !isBlockEmpty(b))
     const extensionBlocks = extensionSections.flatMap(s => s.blocks)
-    const presetBlocks = appliedPresets.flatMap(p => p.blocks)
     const hasData =
       hasBlockData(coreBlocks) ||
       hasBlockData(extensionBlocks) ||
       customBlocks.length > 0 ||
-      presetBlocks.length > 0 ||
       tags.length > 0
     if (!hasData) return true
     return window.confirm("경험 유형을 바꾸면 입력한 내용이 초기화될 수 있어요. 계속할까요?")
-  }, [coreBlocks, extensionSections, customBlocks, appliedPresets, tags])
+  }, [coreBlocks, extensionSections, customBlocks, tags])
 
   // ── Computed form cards ──────────────────────────────────────────
   const formCards = useMemo(
@@ -241,6 +216,27 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       prev.map(b => (b.id === blockId ? { ...b, value } : b))
     )
   }
+
+  // ── 사용자 섹션(FRT-78) — customBlocks 의 group 블록 = 최상위 섹션 ──
+  const userSections = useMemo(() => customBlocks.filter(b => b.type === "group"), [customBlocks])
+  const looseCustomBlocks = useMemo(() => customBlocks.filter(b => b.type !== "group"), [customBlocks])
+
+  const handleSectionBlocksChange = useCallback((sectionId: string, blocks: Block[]) => {
+    setCustomBlocks(prev => prev.map(b => (b.id === sectionId ? { ...b, children: blocks } : b)))
+  }, [])
+  const handleSectionLabelChange = useCallback((sectionId: string, label: string) => {
+    setCustomBlocks(prev => prev.map(b => (b.id === sectionId ? { ...b, label } : b)))
+  }, [])
+  const handleSectionDelete = useCallback((sectionId: string) => {
+    setCustomBlocks(prev => prev.filter(b => b.id !== sectionId))
+  }, [])
+  const handleAddSection = useCallback(() => {
+    setCustomBlocks(prev => [...prev, createGroupBlock("새 블록")])
+  }, [])
+  // 레거시 loose 필드: group 섹션은 위치 유지, loose 묶음만 교체(추가 불가, 편집·삭제만).
+  const handleLooseChange = useCallback((updated: Block[]) => {
+    setCustomBlocks(prev => [...prev.filter(b => b.type === "group"), ...updated])
+  }, [])
 
   function handleSave(status: ExperienceStatus) {
     if (!typeId || !template) {
@@ -268,11 +264,6 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
 
     // Flatten extension blocks
     const allExtensionBlocks = extensionSections.flatMap(s => s.blocks)
-    // Merge custom blocks with applied-preset blocks for persistence
-    const allCustomBlocks = [
-      ...customBlocks,
-      ...appliedPresets.flatMap(p => p.blocks),
-    ]
 
     const now = new Date().toISOString()
     const experience: ExperienceV2 = {
@@ -286,7 +277,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       importance,
       coreBlocks,
       extensionBlocks: allExtensionBlocks,
-      customBlocks: allCustomBlocks,
+      customBlocks,
       createdAt: initialExperience?.createdAt ?? now,
       updatedAt: now,
     }
@@ -298,28 +289,30 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   // 매 렌더마다 최신 handleSave(최신 state 클로저)를 바인딩한다 — 스테일 클로저 방지.
   useImperativeHandle(ref, () => ({ save: handleSave }))
 
-  // ── Visible sections callback ────────────────────────────────────
-  const visibleKey = formCards?.visibleCategories.join(",") ?? ""
+  // ── Visible sections callback (고정 4카드 + 사용자 섹션) ──────────────────────────────────────
+  const fixedSections = useMemo(
+    () =>
+      (formCards?.visibleCategories ?? []).map(id => ({
+        id: id as string,
+        label: SECTION_CATEGORIES.find(c => c.id === id)!.label,
+      })),
+    [formCards]
+  )
+  const allNavSections = useMemo(
+    () => [...fixedSections, ...userSections.map(s => ({ id: s.id, label: s.label || "새 블록" }))],
+    [fixedSections, userSections]
+  )
+  const visibleKey = allNavSections.map(s => `${s.id}:${s.label}`).join(",")
   const onVisibleSectionsChangeRef = useRef(onVisibleSectionsChange)
   useEffect(() => {
     onVisibleSectionsChangeRef.current = onVisibleSectionsChange
   })
-
   useEffect(() => {
     const emit = onVisibleSectionsChangeRef.current
     if (!emit) return
-    if (!formCards) {
-      emit([])
-      return
-    }
-    emit(
-      formCards.visibleCategories.map(id => ({
-        id,
-        label: SECTION_CATEGORIES.find(c => c.id === id)!.label,
-      }))
-    )
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- emit read from ref (always current); depend only on visibleKey to avoid loops with inline callbacks
-  }, [visibleKey])
+    emit(template ? allNavSections : [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- emit read from ref; depend only on visibleKey/template
+  }, [visibleKey, template])
 
   const titleValue = formCards?.titleBlock?.value
   const titleText = titleValue?.type === "text" ? titleValue.text : ""
@@ -419,142 +412,45 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             />
           ))}
 
-          {/* 나만의 블록 — standalone block addition */}
-          <section className="border border-dashed border-border rounded-lg px-5 py-5">
-            <div className="flex items-center justify-between mb-4 gap-2">
-              <div className="min-w-0">
-                <h3 className="text-title text-text-primary">나만의 블록</h3>
-                <p className="text-caption text-text-tertiary mt-0.5">
-                  필요한 입력을 자유롭게 추가하세요
-                </p>
-              </div>
-              {customBlocks.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSavePresetOpen(true)}
-                >
-                  <Save size={14} className="mr-1" />
-                  프리셋으로 저장
-                </Button>
-              )}
-            </div>
-            <BlockList
-              blocks={customBlocks}
-              onChange={setCustomBlocks}
+          {/* 사용자 섹션 (FRT-78) — 최상위 블록, 고정 카드와 동일 시각 */}
+          {userSections.map(section => (
+            <FormSection
+              key={section.id}
+              variant="card"
+              sectionId={section.id}
+              label={section.label}
+              blocks={section.children ?? []}
+              editableLabel
+              onLabelChange={label => handleSectionLabelChange(section.id, label)}
+              onDelete={() => handleSectionDelete(section.id)}
               allowAdd
               allowReorder
               allowDelete
-              allowGroups
+              onChange={blocks => handleSectionBlocksChange(section.id, blocks)}
             />
-          </section>
-
-          {/* Applied presets — each as its own boxed group */}
-          {appliedPresets.map(group => (
-            <section
-              key={group.groupId}
-              className="border border-border rounded-lg px-5 py-5 bg-surface-secondary/40"
-            >
-              <div className="flex items-center justify-between mb-4 gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <BookOpen size={16} className="text-brand-dark shrink-0" />
-                  <h3 className="text-title text-text-primary truncate">{group.name}</h3>
-                  <Badge variant="default">프리셋</Badge>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setAppliedPresets(prev => prev.filter(p => p.groupId !== group.groupId))
-                  }
-                  aria-label={`${group.name} 프리셋 제거`}
-                >
-                  <Trash2 size={14} className="mr-1" />
-                  제거
-                </Button>
-              </div>
-              <BlockList
-                blocks={group.blocks}
-                onChange={blocks =>
-                  setAppliedPresets(prev =>
-                    prev.map(p => (p.groupId === group.groupId ? { ...p, blocks } : p))
-                  )
-                }
-                allowAdd
-                allowReorder
-                allowDelete
-              />
-            </section>
           ))}
 
-          {/* Preset toolbar */}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setApplyPresetOpen(true)}
-            >
-              <BookOpen size={14} className="mr-1" />
-              프리셋 불러오기
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setManagePresetOpen(true)}
-            >
-              <Settings size={14} className="mr-1" />
-              프리셋 관리
-            </Button>
-          </div>
-
-          {/* Preset modals */}
-          <SavePresetModal
-            open={savePresetOpen}
-            blocks={customBlocks}
-            onClose={() => setSavePresetOpen(false)}
-            onSave={(name, description, selectedBlockIds) => {
-              const selected = customBlocks.filter(b => selectedBlockIds.includes(b.id))
-              createPreset(name, selected, { description })
-            }}
-          />
-          <ApplyPresetModal
-            open={applyPresetOpen}
-            presets={presets}
-            onClose={() => setApplyPresetOpen(false)}
-            onApply={(presetId) => {
-              const preset = getPreset(presetId)
-              if (!preset) return
-              const cloned = cloneBlocks(preset.blocks)
-              setAppliedPresets(prev => [
-                ...prev,
-                { groupId: uid("grp"), name: preset.name, blocks: cloned },
-              ])
-            }}
-          />
-          <Dialog
-            open={managePresetOpen}
-            onClose={() => setManagePresetOpen(false)}
-            ariaLabel="프리셋 관리"
-            className="max-w-lg max-h-[85vh] flex flex-col"
-          >
-            <PresetManager
-              presets={presets}
-              onToggleFavorite={(id) => {
-                const target = presets.find(p => p.id === id)
-                if (!target) return
-                void updatePreset(id, { isFavorite: !target.isFavorite })
-              }}
-              onRename={(id, name) => {
-                void updatePreset(id, { name })
-              }}
-              onDuplicate={(id) => {
-                void duplicatePreset(id)
-              }}
-              onDelete={(id) => {
-                void deletePreset(id)
-              }}
+          {/* 레거시 loose 커스텀 필드 폴백 — 추가는 막고 편집/삭제만 */}
+          {looseCustomBlocks.length > 0 && (
+            <FormSection
+              variant="card"
+              label="기타"
+              blocks={looseCustomBlocks}
+              allowReorder
+              allowDelete
+              onChange={handleLooseChange}
             />
-          </Dialog>
+          )}
+
+          {/* 블록 추가 — 최상위 사용자 섹션 생성 */}
+          <button
+            type="button"
+            onClick={handleAddSection}
+            className="flex items-center justify-center gap-2 w-full rounded-lg border border-dashed border-border px-5 py-4 text-body-sm text-text-secondary hover:text-text-primary hover:border-brand transition-colors"
+          >
+            <Plus size={16} />
+            블록 추가
+          </button>
 
           {/* Tags */}
           <div className="flex flex-col gap-1.5">
