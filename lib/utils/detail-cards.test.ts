@@ -173,59 +173,62 @@ describe("buildDetailSections", () => {
   })
 })
 
-describe("buildDetailSections — group blocks (FRT-72)", () => {
-  it("비어 있지 않은 커스텀 group 블록은 '추가 블록' 섹션에 포함된다", () => {
+describe("buildDetailSections — 사용자 섹션 (FRT-78)", () => {
+  it("비어있지 않은 사용자 섹션은 자신의 라벨로 개별 카드가 된다", () => {
     const { core, ext } = filledCareerBlocks()
     const tmpl = getTemplateForType("career")
-
     const g = createGroupBlock("프로젝트 역할")
-    const child = createTextField("메모")
-    if (child.value.type === "text") child.value.text = "팀 리드"
+    const child = createTextField("메모"); if (child.value.type === "text") child.value.text = "팀 리드"
     g.children = [child]
-
     const sections = buildDetailSections(
       makeExperienceV2({ coreBlocks: core, extensionBlocks: ext, customBlocks: [g] }),
       tmpl,
     )
-    const addOn = sections.find(s => s.label === "추가 블록")
-    expect(addOn).toBeDefined()
-    expect(addOn?.blocks).toHaveLength(1)
-    expect(addOn?.blocks[0].type).toBe("group")
-    expect(addOn?.blocks[0].label).toBe("프로젝트 역할")
+    const card = sections.find(s => s.label === "프로젝트 역할")
+    expect(card).toBeDefined()
+    expect(card?.blocks.map(b => b.label)).toEqual(["메모"])
+    // group 자체가 아니라 children(leaf)이 들어간다
+    expect(card?.blocks.every(b => b.type !== "group")).toBe(true)
   })
 
-  it("children 이 모두 비어 있는 group 은 '추가 블록'에서 필터링된다", () => {
+  it("children 이 모두 빈 사용자 섹션은 카드로 노출되지 않는다", () => {
     const { core, ext } = filledCareerBlocks()
     const tmpl = getTemplateForType("career")
-
-    const emptyGroup = createGroupBlock("빈 그룹")
+    const emptyGroup = createGroupBlock("빈 섹션")
     emptyGroup.children = [createTextField("아무것도 없음")]
-
     const sections = buildDetailSections(
       makeExperienceV2({ coreBlocks: core, extensionBlocks: ext, customBlocks: [emptyGroup] }),
       tmpl,
     )
-    expect(sections.find(s => s.label === "추가 블록")).toBeUndefined()
+    expect(sections.find(s => s.label === "빈 섹션")).toBeUndefined()
   })
 
-  it("leaf 블록과 group 블록이 공존하면 둘 다 '추가 블록'에 포함된다", () => {
+  it("여러 사용자 섹션은 customBlocks 순서대로 카드가 된다", () => {
     const { core, ext } = filledCareerBlocks()
     const tmpl = getTemplateForType("career")
-
-    const leafBlock: Block = { id: "l1", type: "text", label: "메모", value: { type: "text", text: "내용" } }
-
-    const g = createGroupBlock("섹션A")
-    const child = createTextField("필드")
-    if (child.value.type === "text") child.value.text = "값"
-    g.children = [child]
-
+    const a = createGroupBlock("섹션A")
+    const ca = createTextField("a"); if (ca.value.type === "text") ca.value.text = "1"; a.children = [ca]
+    const b = createGroupBlock("섹션B")
+    const cb = createTextField("b"); if (cb.value.type === "text") cb.value.text = "2"; b.children = [cb]
     const sections = buildDetailSections(
-      makeExperienceV2({ coreBlocks: core, extensionBlocks: ext, customBlocks: [leafBlock, g] }),
+      makeExperienceV2({ coreBlocks: core, extensionBlocks: ext, customBlocks: [a, b] }),
       tmpl,
     )
-    const addOn = sections.find(s => s.label === "추가 블록")
-    expect(addOn?.blocks).toHaveLength(2)
-    expect(addOn?.blocks[0].label).toBe("메모")
-    expect(addOn?.blocks[1].type).toBe("group")
+    const labels = sections.map(s => s.label)
+    expect(labels.indexOf("섹션A")).toBeLessThan(labels.indexOf("섹션B"))
+  })
+
+  it("레거시 loose leaf 블록은 '추가 블록' 단일 카드로 들어간다", () => {
+    const { core, ext } = filledCareerBlocks()
+    const tmpl = getTemplateForType("career")
+    const leaf: Block = { id: "l1", type: "text", label: "메모", value: { type: "text", text: "내용" } }
+    const g = createGroupBlock("섹션A")
+    const c = createTextField("필드"); if (c.value.type === "text") c.value.text = "값"; g.children = [c]
+    const sections = buildDetailSections(
+      makeExperienceV2({ coreBlocks: core, extensionBlocks: ext, customBlocks: [leaf, g] }),
+      tmpl,
+    )
+    expect(sections.find(s => s.label === "섹션A")?.blocks.map(b => b.label)).toEqual(["필드"])
+    expect(sections.find(s => s.label === "추가 블록")?.blocks.map(b => b.label)).toEqual(["메모"])
   })
 })

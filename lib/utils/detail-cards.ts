@@ -92,8 +92,18 @@ export function buildDetailSections(
     if (extBlocks.length > 0) out.push({ label: "추가 입력", blocks: extBlocks })
   }
 
-  const customBlocks = experience.customBlocks.filter(b => !isBlockEmpty(b))
-  if (customBlocks.length > 0) out.push({ label: "추가 블록", blocks: customBlocks })
+  // 사용자 섹션(group) = 개별 카드(라벨=섹션명, children leaf 만, 빈 섹션 제외).
+  // 레거시 loose leaf = 단일 "추가 블록" 카드.
+  const looseCustom: Block[] = []
+  for (const b of experience.customBlocks) {
+    if (b.type === "group") {
+      const children = (b.children ?? []).filter(c => !isBlockEmpty(c))
+      if (children.length > 0) out.push({ label: b.label || "새 블록", blocks: children })
+    } else if (!isBlockEmpty(b)) {
+      looseCustom.push(b)
+    }
+  }
+  if (looseCustom.length > 0) out.push({ label: "추가 블록", blocks: looseCustom })
 
   return out
 }
