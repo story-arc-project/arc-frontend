@@ -267,3 +267,46 @@ describe("getKeywordResult — isBookmarked 방어 파싱 (FRT-64)", () => {
     expect(res.isBookmarked).toBe(false)
   })
 })
+
+describe("getIndividualAnalysisResult — result 래퍼 내 is_bookmarked 보존 (FRT-64 P2)", () => {
+  it("is_bookmarked:true 가 result 래퍼 안에 있어도 isBookmarked:true 로 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-2",
+        status: "completed",
+        experience_id: "e1",
+        result: { is_bookmarked: true },
+      }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-2")
+    expect(res.isBookmarked).toBe(true)
+  })
+})
+
+describe("getComprehensiveResult — result 래퍼 내 is_bookmarked 보존 (FRT-64 P2)", () => {
+  it("is_bookmarked:true 가 result 래퍼 안에 있어도 isBookmarked:true 로 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "comp-2",
+        status: "completed",
+        result: { is_bookmarked: true },
+      }),
+    )
+    const res: ComprehensiveAnalysisResult = await getComprehensiveResult("comp-2")
+    expect(res.isBookmarked).toBe(true)
+  })
+})
+
+describe("getKeywordResult — result 래퍼 내 is_bookmarked 보존 (FRT-64 P2)", () => {
+  it("is_bookmarked:true 가 result 래퍼 안에 있어도 isBookmarked:true 로 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-2",
+        status: "completed",
+        result: { is_bookmarked: true, keywords: [] },
+      }),
+    )
+    const res: KeywordAnalysisResult = await getKeywordResult("kw-2")
+    expect(res.isBookmarked).toBe(true)
+  })
+})
