@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ApiSuccessResponse } from "@/types/api"
+import type {
+  IndividualAnalysisResult,
+  ComprehensiveAnalysisResult,
+  KeywordAnalysisResult,
+} from "@/types/analysis"
 
 // shouldMock() 이 mock 픽스처 분기로 새지 않도록 실 경로를 강제한다.
 // (이게 없으면 매퍼가 아니라 mock 데이터를 검증하게 됨)
@@ -20,6 +25,9 @@ import {
   createKeywordAnalysis,
   getBookmarks,
   getIndividualAnalysisList,
+  getIndividualAnalysisResult,
+  getComprehensiveResult,
+  getKeywordResult,
 } from "@/lib/api/analysis-api"
 
 const apiMock = vi.mocked(api)
@@ -167,5 +175,95 @@ describe("create*Analysis — 응답 ID 부재 처리 (FRT-38)", () => {
   it("키워드 분석: id 가 최상위(`{ status, message, id }`)에 와도 추출한다 (BE 문서 스펙)", async () => {
     apiMock.post.mockResolvedValue({ status: "success", message: "시작됨", id: "kw-top" })
     expect(await createKeywordAnalysis(["성장"])).toEqual({ analysisId: "kw-top" })
+  })
+})
+
+describe("getIndividualAnalysisResult — isBookmarked 방어 파싱 (FRT-64)", () => {
+  const minimalResult = {
+    itemName: "",
+    itemType: "",
+    briefSummary: "",
+    deepAnalysis: {},
+    starFormat: {},
+    itemDiagnosis: {},
+    synergyRecommendations: [],
+    actionPlan: {},
+    missingInfoWarning: "",
+  }
+
+  it("snake_case is_bookmarked:true → isBookmarked:true", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "ind-1", status: "completed", experience_id: "e1", is_bookmarked: true, result: minimalResult }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.isBookmarked).toBe(true)
+  })
+
+  it("camelCase isBookmarked:true → isBookmarked:true", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "ind-1", status: "completed", experience_id: "e1", isBookmarked: true, result: minimalResult }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.isBookmarked).toBe(true)
+  })
+
+  it("필드 부재 시 isBookmarked:false (기본값)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "ind-1", status: "completed", experience_id: "e1", result: minimalResult }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.isBookmarked).toBe(false)
+  })
+})
+
+describe("getComprehensiveResult — isBookmarked 방어 파싱 (FRT-64)", () => {
+  it("snake_case is_bookmarked:true → isBookmarked:true", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed", is_bookmarked: true }),
+    )
+    const res: ComprehensiveAnalysisResult = await getComprehensiveResult("comp-1")
+    expect(res.isBookmarked).toBe(true)
+  })
+
+  it("camelCase isBookmarked:true → isBookmarked:true", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed", isBookmarked: true }),
+    )
+    const res: ComprehensiveAnalysisResult = await getComprehensiveResult("comp-1")
+    expect(res.isBookmarked).toBe(true)
+  })
+
+  it("필드 부재 시 isBookmarked:false (기본값)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed" }),
+    )
+    const res: ComprehensiveAnalysisResult = await getComprehensiveResult("comp-1")
+    expect(res.isBookmarked).toBe(false)
+  })
+})
+
+describe("getKeywordResult — isBookmarked 방어 파싱 (FRT-64)", () => {
+  it("snake_case is_bookmarked:true → isBookmarked:true", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", is_bookmarked: true, keywords: [] }),
+    )
+    const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+    expect(res.isBookmarked).toBe(true)
+  })
+
+  it("camelCase isBookmarked:true → isBookmarked:true", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", isBookmarked: true, keywords: [] }),
+    )
+    const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+    expect(res.isBookmarked).toBe(true)
+  })
+
+  it("필드 부재 시 isBookmarked:false (기본값)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", keywords: [] }),
+    )
+    const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+    expect(res.isBookmarked).toBe(false)
   })
 })

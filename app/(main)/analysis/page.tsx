@@ -24,12 +24,6 @@ import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBad
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 const STAT_ICONS = [FileText, CheckCircle, Clock, AlertTriangle] as const;
-const STAT_COLORS = [
-  "text-brand",
-  "text-success",
-  "text-text-secondary",
-  "text-warning",
-];
 
 const QUICK_ACTIONS = [
   {
@@ -114,10 +108,10 @@ export default function AnalysisHomePage() {
   }
 
   const statItems = [
-    { label: "전체 경험", value: data.stats.totalExperiences },
-    { label: "분석 완료", value: data.stats.analysisCompleted },
-    { label: "최근 분석", value: data.stats.lastAnalysisAt ? formatRelativeTime(data.stats.lastAnalysisAt) : "-" },
-    { label: "보완 필요", value: data.stats.improvementNeeded },
+    { label: "전체 경험", value: data.stats.totalExperiences, color: "text-brand" },
+    { label: "분석 완료", value: data.stats.analysisCompleted, color: "text-success" },
+    { label: "최근 분석", value: data.stats.lastAnalysisAt ? formatRelativeTime(data.stats.lastAnalysisAt) : "-", color: "text-text-secondary" },
+    { label: "보완 필요", value: data.stats.improvementNeeded, color: data.stats.improvementNeeded > 0 ? "text-warning" : "text-text-tertiary" },
   ];
 
   const recentMap: Record<TabKey, typeof data.recentIndividual> = {
@@ -146,7 +140,7 @@ export default function AnalysisHomePage() {
                 key={item.label}
                 className="bg-surface border border-border rounded-lg p-4 flex items-center gap-3"
               >
-                <div className={`p-2 rounded-md bg-surface-secondary ${STAT_COLORS[i]}`}>
+                <div className={`p-2 rounded-md bg-surface-secondary ${item.color}`}>
                   <Icon size={18} aria-hidden="true" />
                 </div>
                 <div>

@@ -18,7 +18,8 @@ import { weaknessSeverityLabel } from "@/types/analysis";
 import { getComprehensiveResult } from "@/lib/api/analysis-api";
 import { isSafeHttpUrl } from "@/lib/utils/url-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
-import { Badge } from "@/components/ui";
+import { Badge } from "@/components/ui"
+import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 export default function ComprehensiveDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
@@ -84,10 +85,13 @@ export default function ComprehensiveDetailPage() {
           목록으로
         </Link>
 
-        <header className="space-y-2">
-          <h1 className="text-heading-2 text-text-primary">종합 분석 결과</h1>
-          {userTitle && <p className="text-body-sm text-text-tertiary">{userTitle}</p>}
-        </header>
+        <div className="flex items-start justify-between gap-3">
+          <header className="space-y-2 flex-1 min-w-0">
+            <h1 className="text-heading-2 text-text-primary">종합 분석 결과</h1>
+            {userTitle && <p className="text-body-sm text-text-tertiary">{userTitle}</p>}
+          </header>
+          <BookmarkToggle analysisId={analysisId} isBookmarked={data.isBookmarked} />
+        </div>
 
         {data.missingInfoWarning && (
           <div
@@ -334,7 +338,7 @@ function CriticalDiagnosisBlock({ diagnosis }: { diagnosis: CriticalDiagnosis })
 
   return (
     <section className="space-y-4">
-      <h2 className="text-title text-text-primary">크리티컬 진단</h2>
+      <h2 className="text-title text-text-primary">보완 포인트</h2>
 
       {diagnosis.oneLineVerdict && (
         <div className="bg-surface-brand text-brand-dark rounded-lg p-4">
@@ -377,7 +381,7 @@ function CriticalDiagnosisBlock({ diagnosis }: { diagnosis: CriticalDiagnosis })
 
       {diagnosis.competitorGap && (
         <div className="space-y-2">
-          <p className="text-label text-text-tertiary">경쟁자 대비 갭</p>
+          <p className="text-label text-text-tertiary">개선 여지</p>
           <div className="bg-surface-secondary rounded-lg p-4">
             <p className="text-body-sm text-text-secondary leading-relaxed whitespace-pre-line">
               {diagnosis.competitorGap}
