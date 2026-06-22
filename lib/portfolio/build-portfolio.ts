@@ -25,10 +25,26 @@ function pickValue(blocks: Block[], coreLabel: string): BlockValue | undefined {
   return (ordered.find((b) => !isBlockEmpty(b)) ?? ordered[0])?.value;
 }
 
+/** repeatable-cell(로그형) 값을 사람이 읽을 수 있는 텍스트로 평탄화한다. */
+function flattenRepeatable(value: BlockValue): string {
+  if (value.type !== "repeatable-cell") return "";
+  return value.rows
+    .map((row) =>
+      value.columns
+        .map((c) => row.cells[c.key])
+        .map((v) => (Array.isArray(v) ? v.join(", ") : (v ?? "")).trim())
+        .filter(Boolean)
+        .join(" · "),
+    )
+    .filter(Boolean)
+    .join("\n");
+}
+
 function textOf(value: BlockValue | undefined): string {
-  if (value && (value.type === "text" || value.type === "textarea")) {
-    return value.text ?? "";
-  }
+  if (!value) return "";
+  if (value.type === "text" || value.type === "textarea") return value.text ?? "";
+  // 동의어 폴백이 repeatable-cell(예: extracurricular '결과/성과')일 수 있어 평탄화한다.
+  if (value.type === "repeatable-cell") return flattenRepeatable(value);
   return "";
 }
 
@@ -54,13 +70,29 @@ function ym(date: string | undefined): string {
 }
 
 function periodOf(value: BlockValue | undefined): string {
-  if (!value || value.type !== "period") return "";
+  if (!value) return "";
+  // 동의어 폴백이 text 블록(예: reading '읽은 기간/완독일')이면 입력 문자열을 그대로 쓴다.
+  if (value.type === "text" || value.type === "textarea") return (value.text ?? "").trim();
+  if (value.type !== "period") return "";
   // 아카이브 읽기전용 뷰(formatPeriodString)와 동일하게: 시작일이 없으면 빈 값,
   // 종료(또는 진행 중)가 있을 때만 범위로, 단일 날짜는 매달린 구분자 없이 시작일만 표기.
   const start = ym(value.start);
   if (!start) return "";
   const end = value.isCurrent ? "현재" : ym(value.end);
   return end ? `${start} – ${end}` : start;
+}
+
+// 한 줄 요약(헤더, optional)이 비면 type-specific 한 줄 설명/소개(필수)로 폴백.
+// SEMANTIC_GROUPS 에 넣지 않는다 — 폼 dedup 동작(아카이브 입력)을 바꾸지 않기 위해 로컬 처리.
+const SUMMARY_LABELS = ["한 줄 요약", "한 줄 설명", "한 줄 소개"];
+
+function pickSummary(blocks: Block[]): string {
+  for (const label of SUMMARY_LABELS) {
+    const block = blocks.find((b) => b.label === label && !isBlockEmpty(b));
+    const text = textOf(block?.value);
+    if (text) return text;
+  }
+  return "";
 }
 
 export function experienceToPost(exp: Experience): PortfolioPost {
@@ -74,7 +106,7 @@ export function experienceToPost(exp: Experience): PortfolioPost {
     title: ev2.title || textOf(findBlock(core, "경험명")?.value),
     period: periodOf(pickValue(blocks, "기간")),
     category: label,
-    summary: ev2.summary || textOf(findBlock(core, "한 줄 요약")?.value),
+    summary: ev2.summary || pickSummary(blocks),
     contribution: textOf(pickValue(blocks, "내 역할/기여도")),
     achievement: textOf(pickValue(blocks, "핵심 성과")),
     keywords: ev2.tags,

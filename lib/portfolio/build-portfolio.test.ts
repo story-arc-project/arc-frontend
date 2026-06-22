@@ -97,6 +97,55 @@ describe("experienceToPost", () => {
     expect(post.achievement).toBe("출시 및 200+ 다운로드");
   });
 
+  it("기간 동의어가 text 블록(예: 읽은 기간/완독일)이면 입력 문자열을 그대로 쓴다", () => {
+    const core: Block[] = [
+      blk("c1", "text", "경험명", { type: "text", text: "독서" }),
+      blk("c2", "period", "기간", { type: "period", start: "", end: "", isCurrent: false }),
+    ];
+    const ext: Block[] = [
+      blk("e1", "text", "읽은 기간/완독일", { type: "text", text: "2024.03 ~ 2024.05" }),
+    ];
+    const exp = makeExp({
+      content: { title: "독서", summary: "요약", status: "complete", tags: [], coreBlocks: core, extensionBlocks: ext },
+    });
+    expect(experienceToPost(exp).period).toBe("2024.03 ~ 2024.05");
+  });
+
+  it("성과 동의어가 repeatable-cell(예: 결과/성과)이면 평탄화해서 채운다", () => {
+    const core: Block[] = [
+      blk("c1", "text", "경험명", { type: "text", text: "대외활동" }),
+      blk("c5", "textarea", "핵심 성과", { type: "textarea", text: "" }),
+    ];
+    const ext: Block[] = [
+      blk("e1", "repeatable-cell", "결과/성과", {
+        type: "repeatable-cell",
+        columns: [{ key: "action", label: "한 일", blockType: "text" }],
+        rows: [
+          { id: "r1", cells: { action: "mAP 0.68 달성" } },
+          { id: "r2", cells: { action: "앙상블 전략 적용" } },
+        ],
+      }),
+    ];
+    const exp = makeExp({
+      content: { title: "대외활동", summary: "요약", status: "complete", tags: [], coreBlocks: core, extensionBlocks: ext },
+    });
+    expect(experienceToPost(exp).achievement).toBe("mAP 0.68 달성\n앙상블 전략 적용");
+  });
+
+  it("한 줄 요약이 비면 type-specific 한 줄 설명으로 폴백한다", () => {
+    const core: Block[] = [
+      blk("c1", "text", "경험명", { type: "text", text: "프로젝트" }),
+      blk("c3", "text", "한 줄 요약", { type: "text", text: "" }),
+    ];
+    const ext: Block[] = [
+      blk("e1", "text", "한 줄 설명", { type: "text", text: "프로젝트 한 줄 설명입니다" }),
+    ];
+    const exp = makeExp({
+      content: { title: "프로젝트", summary: "", status: "complete", tags: [], coreBlocks: core, extensionBlocks: ext },
+    });
+    expect(experienceToPost(exp).summary).toBe("프로젝트 한 줄 설명입니다");
+  });
+
   it("코어와 extension 동의어가 모두 있으면 채워진 코어를 우선한다", () => {
     const ext: Block[] = [
       blk("e1", "period", "재직기간", { type: "period", start: "2099-01-01", end: "2099-12-31", isCurrent: false }),
