@@ -6,22 +6,20 @@ import { useRouter } from "next/navigation"
 import { createExperience } from "@/lib/api/experience-api"
 import { toSavePayload } from "@/lib/utils/experience-mapper"
 import { useBasePath } from "@/lib/utils/use-base-path"
-import { usePresets } from "@/hooks/usePresets"
 import ExperienceFormV2, {
   type ExperienceFormV2Handle,
 } from "@/components/features/archive/ExperienceFormV2"
 import InputViewShell from "@/app/(main)/archive/_components/InputViewShell"
-import type { ExperienceV2, SectionCategory } from "@/types/archive"
+import type { ExperienceV2 } from "@/types/archive"
 
 export default function ArchiveNewPage() {
   const router = useRouter()
   const basePath = useBasePath()
-  const presetsHook = usePresets()
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [sections, setSections] = useState<{ id: SectionCategory; label: string }[]>([])
+  const [sections, setSections] = useState<{ id: string; label: string }[]>([])
 
   const backTo = `${basePath}/archive`
 
@@ -60,7 +58,6 @@ export default function ArchiveNewPage() {
         ref={formRef}
         mode="new"
         hideInlineActions
-        presetsHook={presetsHook}
         onSave={handleSave}
         onCancel={() => router.push(backTo)}
         onUnsavedChange={setHasUnsaved}

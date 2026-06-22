@@ -1,11 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
 
 import ExperienceFormV2 from "./ExperienceFormV2"
-import {
-  careerExperience,
-  mockPresetsHook,
-  emptyPresetsHook,
-} from "./__fixtures__/archive.fixtures"
+import { careerExperience } from "./__fixtures__/archive.fixtures"
 
 const meta: Meta<typeof ExperienceFormV2> = {
   title: "Features/Archive/ExperienceFormV2",
@@ -29,16 +25,14 @@ export const NewEmpty: Story = {
   args: {
     mode: "new",
     initialExperience: undefined,
-    presetsHook: emptyPresetsHook,
   },
 }
 
-/** New experience with presets available in the hook. */
+/** New experience (default). */
 export const NewWithPresets: Story = {
   args: {
     mode: "new",
     initialExperience: undefined,
-    presetsHook: mockPresetsHook,
   },
 }
 
@@ -47,6 +41,5 @@ export const EditWithData: Story = {
   args: {
     mode: "edit",
     initialExperience: careerExperience,
-    presetsHook: mockPresetsHook,
   },
 }

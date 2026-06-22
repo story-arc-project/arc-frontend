@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog } from "@/components/ui/dialog"
 import type { ExperienceFormV2Handle } from "@/components/features/archive/ExperienceFormV2"
 import SectionNav from "./SectionNav"
-import type { SectionCategory } from "@/types/archive"
 
 interface InputViewShellProps {
   /** 저장 트리거(초안/완료)를 노출하는 폼 핸들 ref */
@@ -20,7 +19,7 @@ interface InputViewShellProps {
   /** 저장 진행 중 — 액션 버튼 비활성 */
   saving?: boolean
   /** 좌측 레일 섹션 네비에 표시할 섹션 목록 */
-  sections: { id: SectionCategory; label: string }[]
+  sections: { id: string; label: string }[]
   children: ReactNode
 }
 

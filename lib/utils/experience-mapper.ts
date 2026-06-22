@@ -17,7 +17,7 @@ import {
   getTemplateForType,
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
-import { uid, createGroupBlock } from "@/lib/utils/block-utils"
+import { uid, createGroupBlock, isBlockEmpty } from "@/lib/utils/block-utils"
 
 /**
  * Experience ↔ ExperienceV2 매퍼.
@@ -73,8 +73,8 @@ function labelKeyMap(blocks: Block[]): Record<string, string> {
 /**
  * custom[] → Block[].
  * - field 항목은 직렬 복원
- * - group 항목은 depth===0 일 때만 Block 으로 구조 보존; depth>0(중첩 group)은 평탄화 — 1겹 cap
- * - section 항목은 평탄화 (FRT-78 미구현)
+ * - section(FRT-78) / 레거시 group(FRT-72) 항목은 depth===0 일 때만 group Block 으로 구조 보존
+ * - depth>0(중첩) 은 평탄화 — 1겹 cap
  */
 function customEntriesToBlocks(entries: CustomEntry[], depth = 0): Block[] {
   const out: Block[] = []
@@ -89,14 +89,13 @@ function customEntriesToBlocks(entries: CustomEntry[], depth = 0): Block[] {
         ...(e.required ? { required: true } : {}),
         ...(e.options ? { options: e.options } : {}),
       })
-    } else if (e.entryType === 'group' && depth === 0) {
-      // Use canonical factory; set key and children after
+    } else if ((e.entryType === 'section' || e.entryType === 'group') && depth === 0) {
       const g = createGroupBlock(e.label)
       g.key = e.key
       g.children = customEntriesToBlocks(e.children, depth + 1)
       out.push(g)
     } else {
-      // 'section' OR a nested 'group' beyond depth 0 → flatten (1-level cap)
+      // 중첩(depth>0) section/group → 평탄화 (1-level cap)
       out.push(...customEntriesToBlocks(e.children, depth))
     }
   }
@@ -105,11 +104,11 @@ function customEntriesToBlocks(entries: CustomEntry[], depth = 0): Block[] {
 
 function blockToCustomEntry(b: Block): CustomEntry {
   if (b.type === 'group') {
+    // 최상위 사용자 섹션(FRT-78). collapse 는 ephemeral 이라 직렬화하지 않는다.
     return {
       key: b.key ?? b.id,
-      entryType: 'group',
+      entryType: 'section',
       label: b.label,
-      // FIX 6: collapse is ephemeral/local-only — do NOT serialize it
       children: (b.children ?? []).map(blockToCustomEntry),
     }
   }
@@ -220,7 +219,12 @@ export function toSavePayload(exp: ExperienceV2): ExperienceSavePayload {
     if (b.key) fields[b.key] = b.value
     else custom.push(blockToCustomEntry(b)) // 키 없는(사용자 추가) 블록은 custom 으로 보존
   }
-  for (const b of exp.customBlocks) {
+  // 완료 저장 시 완전히 빈 사용자 섹션(group)은 정리한다. 초안은 보존(돌아와 채울 수 있게).
+  const customSource =
+    exp.status === "complete"
+      ? exp.customBlocks.filter(b => !(b.type === "group" && isBlockEmpty(b)))
+      : exp.customBlocks
+  for (const b of customSource) {
     custom.push(blockToCustomEntry(b))
   }
 

@@ -106,7 +106,7 @@ export default function ExperienceDetailV2({
       <div className="flex flex-col gap-5">
         {sections.map((section, index) => (
           <section
-            key={section.label}
+            key={section.id ?? section.label}
             className="rounded-xl border border-border bg-surface p-5 md:p-6"
           >
             <div className="flex items-center gap-2 mb-4">

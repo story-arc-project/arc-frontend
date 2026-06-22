@@ -8,24 +8,22 @@ import { updateExperience } from "@/lib/api/experience-api"
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper"
 import { useBasePath } from "@/lib/utils/use-base-path"
 import { useExperience } from "@/hooks/useExperience"
-import { usePresets } from "@/hooks/usePresets"
 import ExperienceFormV2, {
   type ExperienceFormV2Handle,
 } from "@/components/features/archive/ExperienceFormV2"
 import InputViewShell from "@/app/(main)/archive/_components/InputViewShell"
-import type { ExperienceV2, SectionCategory } from "@/types/archive"
+import type { ExperienceV2 } from "@/types/archive"
 
 export default function ArchiveEditPage() {
   const router = useRouter()
   const basePath = useBasePath()
   const { id } = useParams<{ id: string }>()
-  const presetsHook = usePresets()
   const { experience, error } = useExperience(id)
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [sections, setSections] = useState<{ id: SectionCategory; label: string }[]>([])
+  const [sections, setSections] = useState<{ id: string; label: string }[]>([])
 
   const backTo = `${basePath}/archive?id=${id}`
 
@@ -99,7 +97,6 @@ export default function ArchiveEditPage() {
         mode="edit"
         initialExperience={experienceV2}
         hideInlineActions
-        presetsHook={presetsHook}
         onSave={handleSave}
         onCancel={() => router.push(backTo)}
         onUnsavedChange={setHasUnsaved}
