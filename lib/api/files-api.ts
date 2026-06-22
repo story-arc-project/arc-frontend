@@ -156,10 +156,19 @@ export async function uploadFile(
 
   const contentType = file.type || "application/octet-stream";
 
-  const presignRes = await api.post<ApiSuccessResponse<PresignData>>(
-    "/files/presign",
-    { filename: file.name, content_type: contentType, size: file.size },
-  );
+  let presignRes: ApiSuccessResponse<PresignData>;
+  try {
+    presignRes = await api.post<ApiSuccessResponse<PresignData>>(
+      "/files/presign",
+      { filename: file.name, content_type: contentType, size: file.size },
+      { signal: opts.signal },
+    );
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw new ApiError(0, "업로드가 취소됐어요.", "aborted");
+    }
+    throw err;
+  }
 
   const presignData = presignRes.data;
   if (

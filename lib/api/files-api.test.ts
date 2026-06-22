@@ -114,7 +114,7 @@ describe("uploadFile — presign → PUT → confirm", () => {
       filename: "cert.pdf",
       content_type: "application/pdf",
       size: 1234,
-    })
+    }, { signal: undefined })
   })
 
   it("빈 content_type 은 application/octet-stream 으로 보낸다", async () => {
@@ -131,7 +131,7 @@ describe("uploadFile — presign → PUT → confirm", () => {
       filename: "blob.bin",
       content_type: "application/octet-stream",
       size: 10,
-    })
+    }, { signal: undefined })
   })
 
   it("발급된 upload_url 로 raw File 을 PUT 한다 (Content-Type 일치, 쿠키 미전송)", async () => {
@@ -244,6 +244,20 @@ describe("uploadFile — presign → PUT → confirm", () => {
       uploadFile(makeFile("x.woff2", "font/woff2", 10)),
     ).rejects.toBeInstanceOf(ApiError)
     expect(apiMock.post).not.toHaveBeenCalled()
+  })
+
+  it("presign 단계에서 abort 되면 code:'aborted' 로 매핑한다", async () => {
+    const controller = new AbortController()
+    apiMock.post.mockImplementation(async (path: string) => {
+      if (path === "/files/presign") {
+        throw new DOMException("aborted", "AbortError")
+      }
+      return {}
+    })
+
+    await expect(
+      uploadFile(makeFile(), { signal: controller.signal }),
+    ).rejects.toMatchObject({ code: "aborted" })
   })
 
   it("confirm 에 abort signal 을 전달한다", async () => {
