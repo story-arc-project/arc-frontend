@@ -73,6 +73,48 @@ describe("experienceToPost", () => {
     expect(experienceToPost(exp).period).toBe("2026.02");
   });
 
+  it("코어가 비고 type-specific extension(동의어)에만 값이 있으면 폴백한다", () => {
+    // 폼 dedup 으로 빈 코어가 숨겨지고 값이 extension 동의어 라벨에 저장된 케이스.
+    const core: Block[] = [
+      blk("c1", "text", "경험명", { type: "text", text: "팀 프로젝트" }),
+      blk("c2", "period", "기간", { type: "period", start: "", end: "", isCurrent: false }),
+      blk("c3", "text", "한 줄 요약", { type: "text", text: "요약" }),
+      blk("c4", "textarea", "내 역할/기여도", { type: "textarea", text: "" }),
+      blk("c5", "textarea", "핵심 성과", { type: "textarea", text: "" }),
+    ];
+    const ext: Block[] = [
+      blk("e1", "period", "재직기간", { type: "period", start: "2025-03-01", end: "2025-08-31", isCurrent: false }),
+      blk("e2", "textarea", "내 역할", { type: "textarea", text: "프론트엔드 전담" }),
+      blk("e3", "textarea", "결과/성과", { type: "textarea", text: "출시 및 200+ 다운로드" }),
+    ];
+    const exp = makeExp({
+      type: "team-project",
+      content: { title: "팀 프로젝트", summary: "요약", status: "complete", tags: [], coreBlocks: core, extensionBlocks: ext },
+    });
+    const post = experienceToPost(exp);
+    expect(post.period).toBe("2025.03 – 2025.08");
+    expect(post.contribution).toBe("프론트엔드 전담");
+    expect(post.achievement).toBe("출시 및 200+ 다운로드");
+  });
+
+  it("코어와 extension 동의어가 모두 있으면 채워진 코어를 우선한다", () => {
+    const ext: Block[] = [
+      blk("e1", "period", "재직기간", { type: "period", start: "2099-01-01", end: "2099-12-31", isCurrent: false }),
+    ];
+    const exp = makeExp({
+      content: {
+        title: "주가 예측 프로젝트",
+        summary: "LLM 뉴스 감성 분석",
+        status: "complete",
+        tags: [],
+        coreBlocks: (makeExp().content as { coreBlocks: Block[] }).coreBlocks,
+        extensionBlocks: ext,
+      },
+    });
+    // 코어 기간(2026.02 – 2026.05)이 채워져 있으므로 extension 재직기간을 덮어쓰지 않는다.
+    expect(experienceToPost(exp).period).toBe("2026.02 – 2026.05");
+  });
+
   it("알 수 없는 type 은 '경험' 라벨로 폴백한다", () => {
     expect(experienceToPost(makeExp({ type: "unknown-xyz" })).category).toBe("경험");
   });

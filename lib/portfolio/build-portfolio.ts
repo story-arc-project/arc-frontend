@@ -3,9 +3,26 @@ import type { Experience } from "@/types/experience";
 import type { Portfolio, PortfolioPost, PortfolioProfile } from "@/types/portfolio";
 import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2";
 import { toExperienceV2 } from "@/lib/utils/experience-mapper";
+import { isBlockEmpty } from "@/lib/utils/block-utils";
+import { equivalentLabels } from "@/lib/utils/form-cards";
 
 function findBlock(blocks: Block[] | undefined, label: string): Block | undefined {
   return (blocks ?? []).find((b) => b.label === label);
+}
+
+/**
+ * 코어 라벨의 값을 고른다. 폼 dedup 으로 빈 코어가 숨겨지고 값이 type-specific
+ * extension 의 동의어 라벨에 저장될 수 있으므로(form-cards SEMANTIC_GROUPS),
+ * 코어를 우선하되 비어 있으면 같은 의미 그룹의 채워진 블록으로 폴백한다.
+ */
+function pickValue(blocks: Block[], coreLabel: string): BlockValue | undefined {
+  const labels = equivalentLabels(coreLabel);
+  const candidates = blocks.filter((b) => labels.includes(b.label));
+  const ordered = [
+    ...candidates.filter((b) => b.label === coreLabel),
+    ...candidates.filter((b) => b.label !== coreLabel),
+  ];
+  return (ordered.find((b) => !isBlockEmpty(b)) ?? ordered[0])?.value;
 }
 
 function textOf(value: BlockValue | undefined): string {
@@ -49,15 +66,17 @@ function periodOf(value: BlockValue | undefined): string {
 export function experienceToPost(exp: Experience): PortfolioPost {
   const ev2 = toExperienceV2(exp);
   const core = ev2.coreBlocks;
+  // 코어가 비고 값이 type-specific extension 에 저장된 경우(폼 dedup)를 위해 양쪽을 본다.
+  const blocks = [...core, ...ev2.extensionBlocks];
   const label = EXPERIENCE_TYPE_MAP[exp.type as ExperienceTypeId]?.label ?? "경험";
   return {
     id: exp.id,
     title: ev2.title || textOf(findBlock(core, "경험명")?.value),
-    period: periodOf(findBlock(core, "기간")?.value),
+    period: periodOf(pickValue(blocks, "기간")),
     category: label,
     summary: ev2.summary || textOf(findBlock(core, "한 줄 요약")?.value),
-    contribution: textOf(findBlock(core, "내 역할/기여도")?.value),
-    achievement: textOf(findBlock(core, "핵심 성과")?.value),
+    contribution: textOf(pickValue(blocks, "내 역할/기여도")),
+    achievement: textOf(pickValue(blocks, "핵심 성과")),
     keywords: ev2.tags,
   };
 }
