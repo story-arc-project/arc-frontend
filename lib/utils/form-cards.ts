@@ -20,6 +20,16 @@ function getSemanticGroup(label: string): string | null {
   return null
 }
 
+/**
+ * 주어진 라벨과 같은 의미 그룹(동의어)에 속하는 라벨 목록을 반환한다.
+ * 그룹이 없으면 자기 자신만. 폼 dedup 으로 코어 대신 type-specific extension 에
+ * 값이 저장된 경우, 소비처(예: 포트폴리오 매퍼)가 동등 라벨로 폴백 조회할 때 쓴다.
+ */
+export function equivalentLabels(label: string): string[] {
+  const group = getSemanticGroup(label)
+  return group ? SEMANTIC_GROUPS[group] : [label]
+}
+
 function hasEquivalentIn(label: string, others: Set<string>): boolean {
   if (others.has(label)) return true
   const group = getSemanticGroup(label)
