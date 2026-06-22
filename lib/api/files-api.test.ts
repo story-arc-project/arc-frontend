@@ -166,7 +166,7 @@ describe("uploadFile — presign → PUT → confirm", () => {
     const result = await uploadFile(makeFile("report.pdf", "application/pdf", 4096))
 
     expect(calls).toEqual(["/files/presign", "/files/confirm"])
-    expect(apiMock.post).toHaveBeenCalledWith("/files/confirm", { id: "file-77" })
+    expect(apiMock.post).toHaveBeenCalledWith("/files/confirm", { id: "file-77" }, { signal: undefined })
     expect(result).toEqual({
       id: "file-77",
       mimeType: "application/pdf",
@@ -244,6 +244,38 @@ describe("uploadFile — presign → PUT → confirm", () => {
       uploadFile(makeFile("x.woff2", "font/woff2", 10)),
     ).rejects.toBeInstanceOf(ApiError)
     expect(apiMock.post).not.toHaveBeenCalled()
+  })
+
+  it("confirm 에 abort signal 을 전달한다", async () => {
+    const controller = new AbortController()
+    apiMock.post.mockImplementation(async (path: string) => {
+      if (path === "/files/presign") {
+        return { data: { id: "f", upload_url: "https://store/x", expires_in: 1 } }
+      }
+      return {}
+    })
+
+    await uploadFile(makeFile(), { signal: controller.signal })
+
+    expect(apiMock.post).toHaveBeenLastCalledWith(
+      "/files/confirm",
+      { id: "f" },
+      { signal: controller.signal },
+    )
+  })
+
+  it("confirm 단계에서 abort 되면 code:'aborted' 로 매핑한다", async () => {
+    const controller = new AbortController()
+    apiMock.post.mockImplementation(async (path: string) => {
+      if (path === "/files/presign") {
+        return { data: { id: "f", upload_url: "https://store/x", expires_in: 1 } }
+      }
+      throw new DOMException("aborted", "AbortError")
+    })
+
+    await expect(
+      uploadFile(makeFile(), { signal: controller.signal }),
+    ).rejects.toMatchObject({ code: "aborted" })
   })
 })
 

@@ -132,6 +132,15 @@ function pickExpiresAt(raw: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException) return err.name === "AbortError";
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { name?: string }).name === "AbortError"
+  );
+}
+
 export async function uploadFile(
   file: File,
   opts: UploadOptions = {},
@@ -162,7 +171,19 @@ export async function uploadFile(
 
   await putToStorage(presignData.upload_url, file, contentType, opts);
 
-  await api.post("/files/confirm", { id: presignData.id });
+  // presign 이후 abort 가 도착했다면 confirm 전에 차단
+  if (opts.signal?.aborted) {
+    throw new ApiError(0, "업로드가 취소됐어요.", "aborted");
+  }
+
+  try {
+    await api.post("/files/confirm", { id: presignData.id }, { signal: opts.signal });
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw new ApiError(0, "업로드가 취소됐어요.", "aborted");
+    }
+    throw err;
+  }
 
   return {
     id: presignData.id,
