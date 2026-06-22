@@ -3,8 +3,6 @@
 import { api, ApiError } from "./client";
 import type { ApiSuccessResponse } from "@/types/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
 export const ALLOWED_MIME_PREFIXES = [
@@ -34,27 +32,13 @@ export interface UploadOptions {
   signal?: AbortSignal;
 }
 
-interface RawUploadResponse {
+interface PresignData {
   id: string;
-  url?: string;
-  mime_type?: string;
-  mimeType?: string;
-  size: number;
-  original_name?: string;
-  originalName?: string;
+  upload_url: string;
+  expires_in: number;
 }
 
-function normalizeUploaded(raw: RawUploadResponse): UploadedFile {
-  return {
-    id: raw.id,
-    url: raw.url,
-    mimeType: raw.mimeType ?? raw.mime_type ?? "application/octet-stream",
-    size: raw.size,
-    originalName: raw.originalName ?? raw.original_name ?? "",
-  };
-}
-
-function isAllowedMime(mime: string): boolean {
+export function isAllowedMime(mime: string): boolean {
   return ALLOWED_MIME_PREFIXES.some((prefix) => mime.startsWith(prefix));
 }
 
@@ -69,30 +53,24 @@ export function validateFile(file: File): string | null {
   return null;
 }
 
-async function tryRefresh(): Promise<boolean> {
-  const res = await fetch(`${API_URL}/auth/refresh`, {
-    method: "POST",
-    credentials: "include",
-  });
-  return res.ok;
-}
-
-interface XhrResult {
-  status: number;
-  body: string;
-}
-
-function xhrUpload(
+// presign PUT은 크로스-오리진 스토리지로 직접 전송된다 — 쿠키 미포함, Content-Type은 서명된 타입과 일치해야 한다.
+function putToStorage(
+  uploadUrl: string,
   file: File,
+  contentType: string,
   opts: UploadOptions,
-): Promise<XhrResult> {
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const formData = new FormData();
-    formData.append("file", file);
+    if (opts.signal?.aborted) {
+      reject(new ApiError(0, "업로드가 취소됐어요.", "aborted"));
+      return;
+    }
 
-    xhr.open("POST", `${API_URL}/files/upload`, true);
-    xhr.withCredentials = true;
+    const xhr = new XMLHttpRequest();
+
+    xhr.open("PUT", uploadUrl, true);
+    xhr.setRequestHeader("Content-Type", contentType);
+    xhr.withCredentials = false;
 
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable || !opts.onProgress) return;
@@ -101,7 +79,11 @@ function xhrUpload(
     };
 
     xhr.onload = () => {
-      resolve({ status: xhr.status, body: xhr.responseText });
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new ApiError(xhr.status, "업로드에 실패했어요."));
+      }
     };
 
     xhr.onerror = () => {
@@ -113,49 +95,49 @@ function xhrUpload(
     };
 
     if (opts.signal) {
-      if (opts.signal.aborted) {
-        xhr.abort();
-        return;
-      }
       opts.signal.addEventListener("abort", () => xhr.abort(), { once: true });
     }
 
-    xhr.send(formData);
+    xhr.send(file);
   });
 }
 
-function parseUploadResponse(
-  status: number,
-  body: string,
-): UploadedFile {
-  let parsed: unknown = null;
-  try {
-    parsed = body ? JSON.parse(body) : null;
-  } catch {
-    parsed = null;
-  }
+function pickUrl(raw: Record<string, unknown>): string | undefined {
+  const data =
+    raw.data !== undefined && typeof raw.data === "object" && raw.data !== null
+      ? (raw.data as Record<string, unknown>)
+      : null;
 
-  if (status >= 200 && status < 300) {
-    if (!parsed || typeof parsed !== "object") {
-      throw new ApiError(status, "업로드 응답을 해석할 수 없어요.");
-    }
-    const wrapper = parsed as Partial<ApiSuccessResponse<RawUploadResponse>> &
-      Partial<RawUploadResponse>;
-    const raw = wrapper.data ?? (parsed as RawUploadResponse);
-    if (!raw || typeof raw.id !== "string") {
-      throw new ApiError(status, "업로드 응답 형식이 올바르지 않아요.");
-    }
-    return normalizeUploaded(raw);
+  if (data) {
+    if (typeof data.url === "string") return data.url;
+    if (typeof data.download_url === "string") return data.download_url;
   }
+  if (typeof raw.url === "string") return raw.url;
+  if (typeof raw.download_url === "string") return raw.download_url;
+  return undefined;
+}
 
-  const errBody =
-    parsed && typeof parsed === "object"
-      ? (parsed as { message?: string; code?: string })
-      : {};
-  throw new ApiError(
-    status,
-    errBody.message ?? "업로드에 실패했어요.",
-    errBody.code,
+function pickExpiresAt(raw: Record<string, unknown>): string | undefined {
+  const data =
+    raw.data !== undefined && typeof raw.data === "object" && raw.data !== null
+      ? (raw.data as Record<string, unknown>)
+      : null;
+
+  if (data) {
+    if (typeof data.expires_at === "string") return data.expires_at;
+    if (typeof data.expiresAt === "string") return data.expiresAt;
+  }
+  if (typeof raw.expires_at === "string") return raw.expires_at;
+  if (typeof raw.expiresAt === "string") return raw.expiresAt;
+  return undefined;
+}
+
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException) return err.name === "AbortError";
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { name?: string }).name === "AbortError"
   );
 }
 
@@ -168,25 +150,71 @@ export async function uploadFile(
     throw new ApiError(400, validationError, "invalid_file");
   }
 
-  const first = await xhrUpload(file, opts);
-  if (first.status !== 401) {
-    return parseUploadResponse(first.status, first.body);
+  if (opts.signal?.aborted) {
+    throw new ApiError(0, "업로드가 취소됐어요.", "aborted");
   }
 
-  const refreshed = await tryRefresh();
-  if (!refreshed) {
-    throw new ApiError(401, "인증이 만료되었어요. 다시 로그인해주세요.");
+  const contentType = file.type || "application/octet-stream";
+
+  let presignRes: ApiSuccessResponse<PresignData>;
+  try {
+    presignRes = await api.post<ApiSuccessResponse<PresignData>>(
+      "/files/presign",
+      { filename: file.name, content_type: contentType, size: file.size },
+      { signal: opts.signal },
+    );
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw new ApiError(0, "업로드가 취소됐어요.", "aborted");
+    }
+    throw err;
   }
 
-  const second = await xhrUpload(file, opts);
-  return parseUploadResponse(second.status, second.body);
-}
+  const presignData = presignRes.data;
+  if (
+    typeof presignData?.id !== "string" ||
+    typeof presignData?.upload_url !== "string"
+  ) {
+    throw new ApiError(500, "업로드 준비 응답 형식이 올바르지 않아요.");
+  }
 
-export async function deleteFile(id: string): Promise<void> {
-  await api.delete<void>(`/files/${id}`);
+  await putToStorage(presignData.upload_url, file, contentType, opts);
+
+  // presign 이후 abort 가 도착했다면 confirm 전에 차단
+  if (opts.signal?.aborted) {
+    throw new ApiError(0, "업로드가 취소됐어요.", "aborted");
+  }
+
+  try {
+    await api.post("/files/confirm", { id: presignData.id }, { signal: opts.signal });
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw new ApiError(0, "업로드가 취소됐어요.", "aborted");
+    }
+    throw err;
+  }
+
+  return {
+    id: presignData.id,
+    mimeType: contentType,
+    size: file.size,
+    originalName: file.name,
+    url: undefined,
+  };
 }
 
 export async function getFileUrl(id: string): Promise<FileUrlInfo> {
-  const res = await api.get<ApiSuccessResponse<FileUrlInfo>>(`/files/${id}`);
-  return res.data;
+  const res = await api.get<unknown>(`/files/${id}/download`);
+  const raw = res as Record<string, unknown>;
+
+  const url = pickUrl(raw);
+  if (!url) {
+    throw new ApiError(500, "파일 URL 응답 형식이 올바르지 않아요.");
+  }
+
+  return { url, expiresAt: pickExpiresAt(raw) };
+}
+
+export async function deleteFile(id: string): Promise<void> {
+  await api.delete(`/files/${id}`);
 }
