@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import type { RefObject, ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog } from "@/components/ui/dialog"
+import useUnsavedNavGuard from "@/hooks/useUnsavedNavGuard"
 import type { ExperienceFormV2Handle } from "@/components/features/archive/ExperienceFormV2"
 import SectionNav from "./SectionNav"
 
@@ -31,9 +32,10 @@ interface InputViewShellProps {
  *
  * dirty-guard: Next.js App Router 에는 in-app router.push 를 가로채는 useBlocker 가
  * 없다. 그래서 "목록으로"(in-app 이동)는 아래 handleBack 이 직접 가드하고, 브라우저
- * back/refresh·탭 닫기 같은 full unload 는 beforeunload 로 커버한다. 단 GNB 등 셸 밖
- * 링크(SPA 이동)는 beforeunload 가 발화하지 않아 가드되지 않는다 — 전역 dirty 신호가
- * 필요하며 범위 밖(resume 페이지 선례와 동일).
+ * 새로고침·탭 닫기·주소창 이동 같은 full unload 와 브라우저 Back(SPA popstate)은
+ * useUnsavedNavGuard(beforeunload + history sentinel)로 커버한다. "목록으로"·Back 모두
+ * 동일한 이탈 가드 모달을 띄우고, "나가기" 시 confirmLeave 로 실제 이동한다. 단 GNB 등 셸
+ * 밖 SPA 링크는 전역 dirty 신호가 필요하므로 여전히 범위 밖(FRT-81; resume 선례 동일).
  */
 export default function InputViewShell({
   formRef,
@@ -46,15 +48,12 @@ export default function InputViewShell({
   const router = useRouter()
   const [showGuardModal, setShowGuardModal] = useState(false)
 
-  useEffect(() => {
-    if (!hasUnsaved) return
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
-      e.returnValue = ""
-    }
-    window.addEventListener("beforeunload", handler)
-    return () => window.removeEventListener("beforeunload", handler)
-  }, [hasUnsaved])
+  // 새로고침·탭 닫기·주소창 이동(beforeunload) + 브라우저 Back(popstate) 가드.
+  const { confirmLeave } = useUnsavedNavGuard({
+    enabled: hasUnsaved,
+    onAttemptLeave: () => setShowGuardModal(true),
+    onLeave: () => router.replace(backTo),
+  })
 
   function handleBack() {
     if (hasUnsaved) {
@@ -66,7 +65,7 @@ export default function InputViewShell({
 
   function confirmDiscard() {
     setShowGuardModal(false)
-    router.push(backTo)
+    confirmLeave()
   }
 
   return (
