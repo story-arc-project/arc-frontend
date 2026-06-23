@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
-import { getPortfolio } from "@/lib/demo/handlers";
+import { getLibraries, getLibraryExperiences, getPortfolio } from "@/lib/demo/handlers";
 import { DEMO_PORTFOLIO_CONTENT } from "@/lib/demo/portfolio-seed";
 import { groupPosts } from "@/lib/demo/group-posts";
+import { DEFAULT_GROUP_STYLE, EXPERIENCE_GROUP_STYLES } from "@/lib/demo/content";
+import type { DemoExperienceGroup } from "@/lib/demo/content";
 import type { Portfolio } from "@/types/portfolio";
 import { PortfolioAbout } from "@/components/demo/portfolio/PortfolioAbout";
 import { PortfolioExperienceGroups } from "@/components/demo/portfolio/PortfolioExperienceGroups";
@@ -19,6 +21,7 @@ export default function PortfolioIndexPage() {
   const { id } = useParams<{ id: string }>();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [groups, setGroups] = useState<DemoExperienceGroup[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -32,9 +35,32 @@ export default function PortfolioIndexPage() {
     };
   }, [id]);
 
+  useEffect(() => {
+    let active = true;
+    getLibraries().then(async (libraries) => {
+      const built = await Promise.all(
+        libraries
+          .filter((library) => !library.is_system)
+          .map(async (library) => {
+            const { contents } = await getLibraryExperiences(library.id);
+            return {
+              libraryId: library.id,
+              name: library.name,
+              tailwindColorClass: EXPERIENCE_GROUP_STYLES[library.id] ?? DEFAULT_GROUP_STYLE,
+              postIds: contents.map((experience) => experience.id),
+            };
+          }),
+      );
+      if (active) setGroups(built);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const postGroups = useMemo(
-    () => groupPosts(portfolio?.posts ?? [], DEMO_PORTFOLIO_CONTENT.experienceGroups),
-    [portfolio],
+    () => groupPosts(portfolio?.posts ?? [], groups),
+    [portfolio, groups],
   );
 
   if (notFound) {

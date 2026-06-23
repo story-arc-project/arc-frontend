@@ -19,6 +19,14 @@ export interface DemoExperienceGroup {
   postIds: string[];
 }
 
+// 라이브러리 id → 경험 그룹 색상 클래스. 시드 라이브러리만 매핑하고,
+// 사용자가 데모에서 새로 만든 라이브러리는 기본 색을 쓴다.
+export const EXPERIENCE_GROUP_STYLES: Record<string, string> = {
+  "demo-lib-ai": "bg-violet-500",
+  "demo-lib-dev": "bg-blue-500",
+};
+export const DEFAULT_GROUP_STYLE = "bg-surface-brand";
+
 export interface DemoProfileFact {
   label: string;
   value: string;
@@ -40,7 +48,6 @@ export interface DemoAbout {
 export interface DemoPortfolioContent {
   about: DemoAbout;
   values: DemoValueCard[];
-  experienceGroups: DemoExperienceGroup[];
   goals: DemoGoal[];
   growthJourney: string;
 }
@@ -86,20 +93,6 @@ export const DEMO_PORTFOLIO_CONTENT: DemoPortfolioContent = {
       title: "문제 먼저",
       description:
         "기술은 수단이에요. 주가 예측에서 LLM을 고른 건 트렌드 때문이 아니라, 비정형 뉴스를 정량 지표로 바꾸는 데 가장 적합한 도구여서였어요.",
-    },
-  ],
-  experienceGroups: [
-    {
-      libraryId: "demo-lib-ai",
-      name: "AI/ML 프로젝트",
-      tailwindColorClass: "bg-violet-500",
-      postIds: ["exp-v2-1", "exp-v2-4", "exp-v2-5"],
-    },
-    {
-      libraryId: "demo-lib-dev",
-      name: "개발 & 교육",
-      tailwindColorClass: "bg-blue-500",
-      postIds: ["exp-v2-2", "exp-v2-3"],
     },
   ],
   goals: [
