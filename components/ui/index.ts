@@ -19,3 +19,5 @@ export { PeriodPicker } from "./period-picker";
 export { Dialog } from "./dialog";
 
 export { toast, ToastContainer } from "./toast";
+
+export { FullPageMessage } from "./FullPageMessage";
