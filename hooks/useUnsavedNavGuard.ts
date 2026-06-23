@@ -26,6 +26,14 @@ interface UseUnsavedNavGuardOptions {
  * 남지 않아 이중 엔트리가 생기지 않는다.)
  *
  * 범위 밖: GNB 등 셸 밖 SPA 링크는 전역 dirty 신호가 필요하므로 가드하지 않는다.
+ *
+ * 알려진 한계(데이터 소실 아님):
+ * - arm 은 enabled 가 true 로 바뀐 뒤 effect 에서 일어나므로, 첫 dirty 입력과 arm 사이
+ *   1프레임 남짓의 틈이 있다(그 사이 Back 은 사람 손으로는 도달 불가). 동기 dirty 감지는
+ *   폼 책임이라 범위 밖.
+ * - confirmLeave 를 거치지 않고 disarm 되는 경로(저장 성공·baseline 복귀·기타 unmount)에선
+ *   sentinel 엔트리 1개가 history 에 잔존할 수 있다. 저장 후 목록에서 Back 시 빈 입력
+ *   라우트가 한 번 스칠 수 있으나 작성 내용 소실과 무관.
  */
 export default function useUnsavedNavGuard({
   enabled,
@@ -33,6 +41,9 @@ export default function useUnsavedNavGuard({
   onLeave,
 }: UseUnsavedNavGuardOptions) {
   const bypassRef = useRef(false)
+  // sentinel 이 현재 history 스택에 올라가 있는지(중복 push 방지 — StrictMode 이중 마운트,
+  // enabled 토글 재구독에도 sentinel 은 1개만 유지).
+  const sentinelArmedRef = useRef(false)
   // 최신 콜백을 ref 로 유지 → 효과 의존성을 [enabled] 로 고정(재구독·이중 sentinel 방지).
   const onAttemptLeaveRef = useRef(onAttemptLeave)
   const onLeaveRef = useRef(onLeave)
@@ -51,14 +62,19 @@ export default function useUnsavedNavGuard({
     const onPopState = () => {
       if (bypassRef.current) {
         bypassRef.current = false
+        sentinelArmedRef.current = false
         onLeaveRef.current()
         return
       }
-      window.history.pushState(null, "") // 재-arm: 페이지에 머묾
+      // Back 이 sentinel 을 pop 했으므로 즉시 재-push 해 페이지에 머문다(net 1개 유지).
+      window.history.pushState(null, "")
       onAttemptLeaveRef.current()
     }
 
-    window.history.pushState(null, "") // arm
+    if (!sentinelArmedRef.current) {
+      window.history.pushState(null, "") // arm (중복 방지)
+      sentinelArmedRef.current = true
+    }
     window.addEventListener("beforeunload", onBeforeUnload)
     window.addEventListener("popstate", onPopState)
     return () => {

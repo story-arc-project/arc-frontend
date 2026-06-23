@@ -1,3 +1,4 @@
+import { StrictMode } from "react"
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { renderHook, cleanup } from "@testing-library/react"
 import useUnsavedNavGuard from "./useUnsavedNavGuard"
@@ -24,6 +25,14 @@ describe("useUnsavedNavGuard", () => {
   it("enabled 면 마운트 시 sentinel 을 1회 push(arm)한다", () => {
     renderHook(() =>
       useUnsavedNavGuard({ enabled: true, onAttemptLeave: vi.fn(), onLeave: vi.fn() }),
+    )
+    expect(pushSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("StrictMode 이중 마운트에서도 sentinel 은 1회만 push 한다(idempotent)", () => {
+    renderHook(
+      () => useUnsavedNavGuard({ enabled: true, onAttemptLeave: vi.fn(), onLeave: vi.fn() }),
+      { wrapper: StrictMode },
     )
     expect(pushSpy).toHaveBeenCalledTimes(1)
   })
