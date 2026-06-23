@@ -13,6 +13,8 @@ let pushSpy: ReturnType<typeof vi.spyOn>
 let backSpy: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
+  // 이전 테스트가 남긴 sentinel 태그 제거 — arm 은 history.state 태그로 멱등 판정한다.
+  window.history.replaceState(null, "")
   pushSpy = vi.spyOn(window.history, "pushState")
   backSpy = vi.spyOn(window.history, "back").mockImplementation(() => {})
 })
@@ -34,6 +36,21 @@ describe("useUnsavedNavGuard", () => {
       () => useUnsavedNavGuard({ enabled: true, onAttemptLeave: vi.fn(), onLeave: vi.fn() }),
       { wrapper: StrictMode },
     )
+    expect(pushSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it("clean Back 로 sentinel 이 사라진 뒤 다시 dirty 면 재-arm 한다 (Codex high 회귀)", () => {
+    const { rerender } = renderHook(
+      ({ enabled }) =>
+        useUnsavedNavGuard({ enabled, onAttemptLeave: vi.fn(), onLeave: vi.fn() }),
+      { initialProps: { enabled: true } },
+    )
+    rerender({ enabled: false }) // baseline 복귀 → disarm
+    // clean 상태에서 같은-URL sentinel 을 Back 으로 pop 해 사라진 상황을 모사.
+    window.history.replaceState(null, "")
+    pushSpy.mockClear()
+
+    rerender({ enabled: true }) // 다시 dirty → 살아있는 sentinel 이 없으니 재-arm 필수
     expect(pushSpy).toHaveBeenCalledTimes(1)
   })
 
