@@ -1,5 +1,19 @@
 import type { ReactNode } from "react";
 
+/**
+ * 세로 정렬 기준 높이 — 렌더 위치에 GNB·부모 높이가 있느냐에 따라 고른다.
+ * - `below-gnb`: (main) 레이아웃 GNB 아래 영역(기본). 뷰포트에서 GNB 높이를 뺀다.
+ * - `viewport`: GNB가 없는 루트 레이아웃(예: not-found). 전체 뷰포트.
+ * - `parent`: 이미 높이가 정해진 스크롤 컨테이너 안(예: analysis 레이아웃 콘텐츠 팬).
+ */
+type FullPageFill = "below-gnb" | "viewport" | "parent";
+
+const fillClasses: Record<FullPageFill, string> = {
+  "below-gnb": "min-h-[calc(100dvh-var(--gnb-h))]",
+  viewport: "min-h-dvh",
+  parent: "min-h-full",
+};
+
 interface FullPageMessageProps {
   /** 카드 제목 — 한 줄 요약 */
   title: string;
@@ -11,6 +25,8 @@ interface FullPageMessageProps {
   children?: ReactNode;
   /** 컨테이너 role (에러 경계는 "alert") */
   role?: "alert" | "status";
+  /** 세로 정렬 기준 높이 (기본: GNB 아래 영역) */
+  fill?: FullPageFill;
 }
 
 /**
@@ -23,9 +39,12 @@ export function FullPageMessage({
   icon,
   children,
   role,
+  fill = "below-gnb",
 }: FullPageMessageProps) {
   return (
-    <div className="min-h-[calc(100dvh-var(--gnb-h))] flex items-center justify-center px-4 py-8">
+    <div
+      className={`${fillClasses[fill]} flex items-center justify-center px-4 py-8`}
+    >
       <div
         role={role}
         className="bg-surface border border-border rounded-xl p-8 max-w-md w-full flex flex-col items-center text-center"

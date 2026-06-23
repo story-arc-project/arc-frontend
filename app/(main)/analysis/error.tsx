@@ -19,6 +19,7 @@ export default function AnalysisError({
   return (
     <FullPageMessage
       role="alert"
+      fill="parent"
       icon={<AlertTriangle size={22} aria-hidden="true" />}
       title="분석을 불러오지 못했어요"
       description="잠시 후 다시 시도해 주세요. 계속되면 새로고침해 주세요."

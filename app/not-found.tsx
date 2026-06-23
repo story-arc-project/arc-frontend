@@ -5,6 +5,7 @@ import { FullPageMessage } from "@/components/ui";
 export default function NotFound() {
   return (
     <FullPageMessage
+      fill="viewport"
       icon={<FileQuestion size={22} aria-hidden="true" />}
       title="페이지를 찾을 수 없어요"
       description="요청하신 페이지가 없거나 이동되었어요."
