@@ -103,6 +103,9 @@ function putToStorage(
 }
 
 function pickUrl(raw: Record<string, unknown>): string | undefined {
+  // 백엔드 실계약: GET /files/{id}/download 의 data 가 presigned URL 문자열 그 자체
+  if (typeof raw.data === "string" && raw.data) return raw.data;
+
   const data =
     raw.data !== undefined && typeof raw.data === "object" && raw.data !== null
       ? (raw.data as Record<string, unknown>)

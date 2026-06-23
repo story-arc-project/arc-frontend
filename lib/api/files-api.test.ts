@@ -315,6 +315,18 @@ describe("getFileUrl", () => {
     expect(info.url).toBe("https://store/dlk")
   })
 
+  it("data 가 presigned URL 문자열 그 자체여도 허용한다 (BAC-1 실계약)", async () => {
+    apiMock.get.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: "https://bucket.s3.amazonaws.com/key?X-Amz-Signature=abc",
+    })
+    const info = await getFileUrl("f")
+    expect(info.url).toBe(
+      "https://bucket.s3.amazonaws.com/key?X-Amz-Signature=abc",
+    )
+  })
+
   it("url 이 없으면 ApiError 를 던진다", async () => {
     apiMock.get.mockResolvedValue({ data: {} })
     await expect(getFileUrl("f")).rejects.toBeInstanceOf(ApiError)
