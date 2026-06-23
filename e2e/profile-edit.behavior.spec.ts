@@ -4,7 +4,7 @@ import { stubApi } from "./fixtures/stub-api";
 
 /**
  * FRT-21 — 마이페이지 프로필 수정(저장) 동작 E2E.
- * seedDemoUser(profile.name="데모 사용자", affiliation="student") 를 PATCH /auth/profile 로
+ * seedDemoUser(profile.name="김서윤", affiliation="student") 를 PATCH /auth/profile 로
  * 수정 → 성공 토스트 + 저장 후 dirty 해제 + /auth/me 재조회 반영을 검증한다.
  */
 test("프로필 이름 수정 → PATCH /auth/profile + 성공 토스트 + dirty 해제", async ({ page }) => {
@@ -18,7 +18,7 @@ test("프로필 이름 수정 → PATCH /auth/profile + 성공 토스트 + dirty
   await expect(saveButton).toBeDisabled();
 
   const nameInput = page.getByLabel("이름");
-  await expect(nameInput).toHaveValue("데모 사용자");
+  await expect(nameInput).toHaveValue("김서윤");
   await nameInput.fill("수정한 이름");
   await expect(saveButton).toBeEnabled();
 

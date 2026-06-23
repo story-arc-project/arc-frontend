@@ -20,8 +20,8 @@ test("데모 e-포트폴리오: 생성 → 인덱스 → 상세 → 다음 경�
   await expect(page).toHaveURL(/\/demo\/portfolio\/demo-portfolio-1$/);
 
   // 3. 발행물 룩 — 히어로 렌더 + 데모 GNB(아카이브 링크) 미표시
-  await expect(page.getByRole("heading", { name: "데모 사용자" })).toBeVisible();
-  await expect(page.getByText("대표 경험")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "김서윤" })).toBeVisible();
+  await expect(page.getByText("경험 모음")).toBeVisible();
   await expect(page.getByRole("link", { name: "아카이브" })).toHaveCount(0);
 
   // 4. 첫 경험 카드 진입 → 상세 글
@@ -42,7 +42,7 @@ test("알 수 없는 포트폴리오 id 는 시드 대신 not-found 로 fail-clo
   // 인덱스: 임의 id 는 시드 포트폴리오를 노출하지 않고 not-found 를 보여준다.
   await page.goto("/demo/portfolio/not-real");
   await expect(page.getByRole("heading", { name: "포트폴리오를 찾을 수 없어요" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "데모 사용자" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "김서윤" })).toHaveCount(0);
 
   // 상세: 임의 id + 임의 postId 도 동일하게 not-found.
   await page.goto("/demo/portfolio/not-real/exp-v2-1");

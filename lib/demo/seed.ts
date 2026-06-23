@@ -587,14 +587,14 @@ export const seedDemoUser: AuthUser = {
     connected_oauth: [],
   },
   profile: {
-    name: "데모 사용자",
+    name: "김서윤",
     birth: "2002-03-15",
     phone: "",
     affiliation: "student",
     school: "한양대학교",
     department: "컴퓨터소프트웨어학부",
     worry: [],
-    interest: ["AI/ML", "데이터분석", "백엔드"],
+    interest: ["AI/ML", "데이터분석", "백엔드", "자연어처리", "데이터 시각화"],
   },
   onboarded: true,
 };
@@ -610,10 +610,10 @@ export const seedResume: ResumeVersion = {
     source_chars: 5120,
   },
   인적사항: {
-    이름: "데모 사용자",
-    영문명: "Demo User",
+    이름: "김서윤",
+    영문명: "Seo-yun Kim",
     생년월일: "2002-03-15",
-    이메일: "demo@story-arc.org",
+    이메일: "seo-yun.kim@hanyang.ac.kr",
     전화번호: null,
     주소: null,
     링크: [
