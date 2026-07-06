@@ -13,9 +13,18 @@ import shlex
 import subprocess
 import sys
 
-BRANCH_RE = re.compile(r"^(feat|fix|docs|refactor|chore|hotfix)/[a-z0-9][a-z0-9._-]*$")
+BRANCH_RE = re.compile(r"^(feat|fix|docs|refactor|chore|hotfix)/[a-z0-9]+(?:-[a-z0-9]+)*$")
 PROTECTED = {"main", "master", "dev"}
 CONVENTION = "feat/ · fix/ · docs/ · refactor/ · chore/ · hotfix/ + 영문 소문자·하이픈"
+
+SHELL_PUNCT = ";&|<>()"
+# 값을 뒤따르는 git 글로벌 옵션 (git [글로벌옵션...] <subcommand> ...)
+GIT_GLOBAL_WITH_ARG = {
+    "-C", "-c", "--git-dir", "--work-tree", "--namespace",
+    "--super-prefix", "--config-env", "--exec-path", "--list-cmds", "--attr-source",
+}
+# 값을 뒤따르는 push 옵션 (positional/refspec 오인 방지)
+PUSH_OPT_WITH_ARG = {"-o", "--push-option", "--repo", "--receive-pack", "--exec"}
 
 
 def deny(reason: str) -> None:
@@ -47,11 +56,21 @@ def current_branch(cwd: str | None) -> str:
         return ""
 
 
+def tokenize(cmd: str) -> list[str]:
+    """셸 연산자(;, &&, | 등)를 공백 없이 붙여 써도 별도 토큰으로 분리한다."""
+    try:
+        lex = shlex.shlex(cmd, posix=True, punctuation_chars=SHELL_PUNCT)
+        lex.whitespace_split = True
+        return list(lex)
+    except ValueError:
+        return cmd.split()
+
+
 def split_segments(tokens: list[str]) -> list[list[str]]:
     segs: list[list[str]] = []
     cur: list[str] = []
     for t in tokens:
-        if t in ("&&", ";", "||", "|"):
+        if t and all(c in SHELL_PUNCT for c in t):
             segs.append(cur)
             cur = []
         else:
@@ -60,16 +79,59 @@ def split_segments(tokens: list[str]) -> list[list[str]]:
     return segs
 
 
+def check_push(rest: list[str], cwd: str | None) -> None:
+    if {"--all", "--branches", "--mirror"} & set(rest):
+        deny("전체 브랜치 push(--all/--mirror) 금지 — main/dev 는 PR 로만 머지합니다.")
+
+    positionals: list[str] = []
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a in PUSH_OPT_WITH_ARG:
+            i += 2
+            continue
+        if a.startswith("-"):
+            i += 1
+            continue
+        positionals.append(a)
+        i += 1
+
+    refspecs = positionals[1:]  # positionals[0] = remote
+    if not refspecs:
+        if current_branch(cwd) in PROTECTED:
+            deny("main/dev 브랜치에서의 push 금지 — PR 로만 머지합니다.")
+        return
+
+    for r in refspecs:
+        r = r.removeprefix("+")  # 강제 push 축약형 [+]<src>[:<dst>]
+        if r == ":":
+            deny("matching push(`:`) 금지 — main/dev 가 포함될 수 있습니다. 브랜치를 명시하세요.")
+        if ":" in r:
+            _src, dst = r.split(":", 1)
+        else:
+            dst = r
+        dst = dst.removeprefix("refs/heads/")
+        if dst in ("HEAD", "@"):
+            dst = current_branch(cwd)
+        if dst in PROTECTED:
+            deny("main/dev 직접 push 금지 — PR 로만 머지합니다 (git-workflow 스킬).")
+        if "*" in dst:
+            deny("와일드카드 refspec push 금지 — main/dev 가 포함될 수 있습니다. 브랜치를 명시하세요.")
+
+
 def check_segment(seg: list[str]) -> None:
     if "git" not in seg:
         return
     args = seg[seg.index("git") + 1 :]
     cwd: str | None = None
-    # 글로벌 옵션(-C <path>, -c <k=v>) 스킵
-    while len(args) >= 2 and args[0] in ("-C", "-c"):
-        if args[0] == "-C":
-            cwd = args[1]
-        args = args[2:]
+    # 글로벌 옵션(-C <path>, --no-pager, --git-dir <path> 등) 전부 스킵
+    while args and args[0].startswith("-"):
+        if args[0] in GIT_GLOBAL_WITH_ARG and len(args) >= 2:
+            if args[0] == "-C":
+                cwd = args[1]
+            args = args[2:]
+        else:
+            args = args[1:]
     if not args:
         return
     sub, rest = args[0], args[1:]
@@ -83,13 +145,7 @@ def check_segment(seg: list[str]) -> None:
             )
 
     elif sub == "push":
-        positionals = [a for a in rest if not a.startswith("-")]
-        refspecs = positionals[1:]  # positionals[0] = remote
-        targets = {r.split(":")[-1].removeprefix("refs/heads/") for r in refspecs}
-        if targets & PROTECTED:
-            deny("main/dev 직접 push 금지 — PR 로만 머지합니다 (git-workflow 스킬).")
-        if not refspecs and current_branch(cwd) in PROTECTED:
-            deny("main/dev 브랜치에서의 push 금지 — PR 로만 머지합니다.")
+        check_push(rest, cwd)
 
     new_branch: str | None = None
     if sub == "checkout":
@@ -113,7 +169,7 @@ def check_segment(seg: list[str]) -> None:
                 new_branch = positionals[0]
     elif sub == "worktree" and rest[:1] == ["add"]:
         for i, a in enumerate(rest):
-            if a == "-b" and i + 1 < len(rest):
+            if a in ("-b", "-B") and i + 1 < len(rest):
                 new_branch = rest[i + 1]
 
     if new_branch and not BRANCH_RE.match(new_branch):
@@ -128,11 +184,7 @@ def main() -> None:
     cmd = (data.get("tool_input") or {}).get("command", "")
     if "git" not in cmd:
         return
-    try:
-        tokens = shlex.split(cmd, posix=True)
-    except ValueError:
-        tokens = cmd.split()
-    for seg in split_segments(tokens):
+    for seg in split_segments(tokenize(cmd)):
         check_segment(seg)
 
 
