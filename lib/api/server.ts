@@ -9,12 +9,14 @@ const DEBUG = process.env.API_DEBUG === "true";
 
 function logRequest(method: string, path: string, body?: unknown) {
   if (!DEBUG) return;
+  // eslint-disable-next-line no-console -- API_DEBUG 게이트 로거
   console.log(`[API.server →] ${method} ${path}`, body ?? "");
 }
 
 function logResponse(method: string, path: string, status: number, duration: number) {
   if (!DEBUG) return;
   const icon = status < 400 ? "✓" : "✗";
+  // eslint-disable-next-line no-console -- API_DEBUG 게이트 로거
   console.log(`[API.server ←] ${icon} ${status} ${method} ${path} (${duration}ms)`);
 }
 

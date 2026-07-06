@@ -11,11 +11,6 @@ const eslintConfig = defineConfig([
       "no-console": ["error", { allow: ["warn", "error"] }],
     },
   },
-  {
-    // 의도적 예외: NEXT_PUBLIC_API_DEBUG 로 게이트된 API 디버그 로거.
-    files: ["lib/api/client.ts", "lib/api/server.ts"],
-    rules: { "no-console": "off" },
-  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
