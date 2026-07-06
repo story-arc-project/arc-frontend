@@ -2,203 +2,75 @@
 
 ## Project
 
-ARC는 정성적 경험 데이터를 기록·연결해 커리어 내러티브를 만드는 플랫폼이다.  
+ARC는 정성적 경험 데이터를 기록·연결해 커리어 내러티브를 만드는 플랫폼이다.
 주요 타겟은 진로가 확정되지 않은 대학생이다.
 
----
+**제품 원칙** — 스펙 관리 도구가 아니라 경험 기록 도구다.
 
-## Core Principles
+- 입력 허들 최소화 (UX 최우선) · 입력은 단순하게, 정리는 시스템이
+- 사용자가 생각하지 않도록 자동화 · 안정감을 주는 톤 (경쟁/압박 지양)
+- 한 화면 = 하나의 핵심 행동 · 빈 상태에서도 다음 행동이 보여야 함
+- optional 입력 허용 · validation은 느슨하게, 후처리 강화 · 입력 단계 증가 금지
 
-- 입력 허들을 최소화한다 (UX 최우선)
-- 경험은 정성 데이터로 다룬다
-- 사용자가 생각하지 않도록 자동화한다
-- 안정감을 주는 톤 유지 (경쟁/압박 지양)
+## Tech Stack & Structure
 
----
-
-## Product Perspective
-
-- ARC는 스펙 관리 도구가 아니라 경험 기록 도구다
-- 사용자는 구조화보다 빠른 기록을 원한다
-- 입력은 단순하게, 정리는 시스템이 수행한다
-
----
-
-## Tech Stack
-
-- Next.js (App Router)
-- TypeScript (strict)
-- Tailwind CSS
-
----
-
-## Structure
+Next.js (App Router) · TypeScript (strict) · Tailwind CSS
 
 ```text
-app/          # Next.js App Router (pages, layouts, API routes)
+app/          # App Router (pages, layouts, API routes)
 components/   # UI·feature·layout 컴포넌트
 lib/          # 유틸리티, API 클라이언트, 매퍼
-hooks/        # 커스텀 React 훅
-types/        # 공유 타입 정의
-contexts/     # React Context providers
-public/       # 정적 에셋
-docs/         # 프로젝트 문서 (claude 등)
+hooks/ types/ contexts/
+e2e/          # Playwright (정본: docs/frontend-testing.md)
+docs/         # 프로젝트 문서
 ```
-
----
 
 ## Commands
 
-개발
 - `npm run dev` · `npm run build` · `npm run lint` · `npm run typecheck`
-
-테스트 (상세 → `docs/frontend-testing.md`)
-- 유닛: `npm run test:unit` (Vitest) · `npm run test:unit:watch`
-- Storybook: `npm run storybook` · `npm run build-storybook` · `npm run test-storybook` · `npm run test-storybook:ci`
-- E2E: `npm run test:e2e` (Playwright) · `npm run test:e2e:ui` · `npm run test:e2e:report`
-
----
+- 테스트: `npm run test:unit` (Vitest) · `npm run test:e2e` (Playwright) · `npm run storybook`
+- 4게이트(lint→typecheck→unit→build) 일괄 검증: `validate` 스킬 (서브에이전트 실행)
 
 ## Conventions
 
-- PascalCase: components
-- camelCase: variables/functions
-- Type: PascalCase (no prefix)
-- import order:
-  react/next → external → `@/lib` → `@/components` → relative
-- default export 1개
-- Tailwind only (no inline style)
+- PascalCase: components · camelCase: variables/functions · Type: PascalCase (no prefix)
+- import order: react/next → external → `@/lib` → `@/components` → relative
+- default export 1개 · Tailwind only (inline style 금지)
 - 상태는 가능하면 searchParams 기반
 
----
+## Communication — 행동의 언어
 
-## AI Rules
+사용자에게 보이는 모든 산출물(Linear 이슈 본문, PR 제목·본문, 작업 완료 보고)은 **행동의 언어**로 쓴다.
 
-- AI 호출은 반드시 backend API
-- frontend는 fetch만 담당
-- API key / prompt 로직 frontend 금지
-- 판단 로직은 서버에 둔다
-
----
-
-## UX Rules
-
-- 입력 단계 최소화
-- optional 입력 허용
-- validation은 느슨하게, 후처리 강화
-- 한 화면 = 하나의 핵심 행동
-- 빈 상태에서도 다음 행동이 보여야 함
-
----
+- "어떻게 구현했나"가 아니라 **"어떤 기능이 생겼고, 사용자/관리자가 이제 무엇을 할 수 있는가"**를 먼저.
+- 구현 세부는 Linear sub-issue 또는 PR의 접힌 `<details>구현 노트</details>`로 격리한다.
+- Linear 계층: 부모 이슈 = 행동·가치, sub-issue = 구현 계획.
+- 작업 완료 보고 순서: 가능해진 행동 → 직접 확인하는 방법 → 남은 리스크.
 
 ## Hard Constraints
 
-- `any` 금지
-- console.log 커밋 금지
-- 요청하지 않은 리팩토링 금지
-- 변경 범위 최소화
-- 프론트에 AI 로직 구현 금지
+- `any` 금지 · 요청하지 않은 리팩토링 금지 · 변경 범위 최소화
+- AI 호출은 반드시 backend API — frontend는 fetch만, API key/prompt/판단 로직 frontend 금지
+- console.log 금지는 ESLint(no-console)가, main/dev 직접 커밋·푸시와 브랜치 네이밍은
+  훅(`.claude/hooks/git-guard.py`)이 강제한다 — 문서 규칙이 아니라 게이트다.
 
----
+## Development Workflow
 
-## Development Workflow (Mandatory)
+코드 변경 작업(기능·버그·리팩토링)은 **`arc-dev-workflow` 스킬**을 따른다.
+요약: Triage 기본값 Standard → Brainstorm/Plan → dev에서 분기(worktree) → SDD/TDD 구현 →
+`validate` 4게이트 → UI 변경 시 `ui-preview`로 사용자 확인 채널 발행 → Codex 리뷰(최종 권위) → PR(base=dev).
 
-> 개발 프로세스는 품질 기준으로 운영한다. "입력 허들 최소화"는 *제품 사용자* 원칙이며 개발 워크플로우와 무관하다.
-> 척추 = superpowers 스킬 · 리뷰 권위 = Codex · git 규약 = `git-workflow` 스킬(Git 작업 시 자동 로드)
-
-### 0. Triage — 복잡도 게이트
-규모에 비례해 단계를 정한다. **기본값은 Standard** — 분류가 애매하면 Standard로 올린다. Trivial은 아래 조건이 *명백할 때만* 적용한다(탈출구를 넓게 쓰지 않는다).
-- **Trivial** (1~2파일, UX/상태/API 변화 없음): Brainstorm·Plan·SDD**만** 생략한다. **3 Isolate(dev에서 분기)는 반드시 수행** → 4 Implement → 5 Validate. **8 Review의 필수 `/codex:review --base dev`도 생략하지 않는다** (조건부 adversarial·6 UI Quality는 해당 시). main/dev 직접 커밋 금지는 규모와 무관하게 적용된다.
-- **Standard** (3~5파일 또는 UX/상태 변화): 전체 파이프라인
-- **Large** (6+파일, 새 기능/흐름): 전체 + 설계 문서
-
-### 1. Brainstorm (Standard+)
-`superpowers:brainstorming` 으로 의도·요구·설계 정리. Large는 design doc까지.
-
-### 2. Plan
-`superpowers:writing-plans` 로 단계별 구현 계획 작성. 변경 파일·영향 범위 식별.
-
-### 3. Isolate
-`superpowers:using-git-worktrees` + `git-workflow` 스킬(Git 작업 시 자동 로드되는 가이드라인 — 슬래시 커맨드 아님). **dev에서 분기, PR base = dev.**
-
-### 4. Implement
-계획을 `superpowers:subagent-driven-development` (SDD)로 실행 — 독립 태스크 단위, 2단계 리뷰(스펙 준수 → 코드 품질).
-- 각 태스크는 **테스트 전략 매트릭스**(`docs/frontend-testing.md`)에 따라 검증한다 — 로직·매퍼·방어 파싱은 **TDD**(RED→GREEN→REFACTOR) 의무, 컴포넌트는 Storybook 스토리, `(main)` 흐름은 Playwright 스모크. (FRT Test Foundation 완료로 **활성**; 2차 통합 E2E(FRT-33)는 deferred.)
-- 신규 컴포넌트/페이지: **UI Spec 상태 매트릭스** 먼저 (loading/error/empty/partial × 컴포넌트).
-- 기존 패턴 유지, Hard Constraints 준수. Trivial은 SDD 없이 직접 구현.
-
-### 5. Validate
-```bash
-npm run lint
-npm run typecheck
-npm run test:unit
-npm run build
-```
-UI 변경 시 Storybook(`play`)·Playwright로 동작 확인 (→ `docs/frontend-testing.md`).
-
-### 6. UI Quality (조건부 — UI 변경)
-- 새 컴포넌트/페이지 → `/audit` + `/critique`
-- 레이아웃·스타일 수정 → `/polish` (+ Storybook 시각 확인)
-- 디자인 시스템 정합성 의심 → `/normalize`
-
-### 7. Self-review
-`superpowers:requesting-code-review` 체크리스트로 셀프 점검 후 리뷰 요청.
-
-### 8. Review (필수) — Codex가 최종 권위
-- 조건부 `/codex:adversarial-review --base dev` (3+파일 / UX / 상태 / API 변경 시)
-- 필수 `/codex:review --base dev`
-- Codex = 제안자, 실제 수정 = Claude. 반복 실패(2회) / 원인 불명 버그 → `/codex:rescue`.
-
-### 9. Finish
-`superpowers:finishing-a-development-branch` → PR(base dev) → merge → 브랜치 삭제. (PR 템플릿은 `git-workflow` 스킬 참조)
-
-### 10. Output
-변경 내용 / 이유 / 수정 파일 / 검증 결과 / 남은 리스크.
-
-> 가로지르는 규율: 완료 주장 전 `superpowers:verification-before-completion`(검증 명령 실제 실행), 버그·실패 시 `superpowers:systematic-debugging` 우선.
-
----
-
-## Quality Bar
-
-- lint 통과
-- build 통과
-- 타입 안정성 유지
-- UX 악화 없음
-- 입력 단계 증가 없음
-- AI 로직 frontend 없음
-
----
-
-## Output Rules
-
-작업 완료 시:
-
-- 변경 내용
-- 변경 이유
-- 수정 파일
-- 검증 결과
-- 남은 리스크
-
----
-
-## References
-
-워크플로우 정본은 위 **Development Workflow** 섹션이다. 아래는 보조 자료.
-
-- checklist: `docs/claude/checklist.md`
-- frontend-testing: `docs/frontend-testing.md` — 테스트 워크플로·전략 매트릭스 (story·E2E·유닛 작성법)
-- workflow (요약 포인터): `docs/claude/workflow.md`
-- codex (요약 포인터): `docs/claude/codex.md`
-- git-workflow: `git-workflow` 스킬 — 브랜치 전략·커밋·PR 규약 (Git 작업 시 자동 로드; `user-invocable: false`라 슬래시 호출 불가)
-- superpowers (skill): `brainstorming` · `writing-plans` · `using-git-worktrees` · `subagent-driven-development` · `test-driven-development` · `requesting-code-review` · `finishing-a-development-branch` · `verification-before-completion` · `systematic-debugging`
+경로별 세부 규칙은 `.claude/rules/`(archive · api · testing)가 해당 파일 작업 시 자동 로드된다.
 
 ## graphify
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships. `graphify-out/` 는 **로컬 전용이며 gitignore 된다** (재생성 산출물 — 동시 작업 시 충돌 방지). 커밋하지 않는다.
+지식그래프 `graphify-out/` (로컬 전용, gitignore — 커밋 금지).
 
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the **local** graph current (AST-only, no API cost). 결과물은 커밋하지 않는다 (gitignore).
+- 코드베이스 질문은 `graphify query "<질문>"` 우선 (`path`/`explain`도 활용).
+- 코드 수정 후 `graphify update .` 로 로컬 그래프 최신화.
+
+## References
+
+- 테스트 전략·작성법 정본: `docs/frontend-testing.md`
+- 워크플로 정본: `arc-dev-workflow` 스킬 · git 규약: `git-workflow` 스킬(자동 로드)
+- UI 디자인 시스템: `ui-guidelines` 스킬 · 백엔드 API 계약: api.story-arc.org/docs
