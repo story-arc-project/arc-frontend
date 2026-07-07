@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useRef, useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 
 import { updateExperience } from "@/lib/api/experience-api"
@@ -18,6 +18,7 @@ export default function ArchiveEditPage() {
   const router = useRouter()
   const basePath = useBasePath()
   const { id } = useParams<{ id: string }>()
+  const searchParams = useSearchParams()
   const { experience, error } = useExperience(id)
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
@@ -25,7 +26,11 @@ export default function ArchiveEditPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [sections, setSections] = useState<{ id: string; label: string }[]>([])
 
-  const backTo = `${basePath}/archive?id=${id}`
+  // FRT-82: 리스트 페이지가 실어보낸 returnTo(라이브러리·필터 컨텍스트 포함, basePath 내장)를
+  // 그대로 backTo 로 되돌린다. 없으면(딥링크·북마크 진입) 해당 레코드 상세로 폴백.
+  // returnTo 에는 이미 basePath 가 박혀 있으므로 여기서 다시 붙이지 않는다.
+  const returnTo = searchParams.get("returnTo")
+  const backTo = returnTo ? decodeURIComponent(returnTo) : `${basePath}/archive?id=${id}`
 
   const experienceV2 = useMemo(
     () => (experience ? toExperienceV2(experience) : null),

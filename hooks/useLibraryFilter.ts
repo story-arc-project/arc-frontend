@@ -66,8 +66,15 @@ function sortExperiences(experiences: ExperienceV2[], sortBy: SortBy): Experienc
   return sorted
 }
 
-export function useLibraryFilter(experiences: ExperienceV2[]): UseLibraryFilterReturn {
-  const [filter, setFilter] = useState<LibraryFilter>({ sortBy: "updated" })
+export function useLibraryFilter(
+  experiences: ExperienceV2[],
+  initialFilter?: LibraryFilter,
+): UseLibraryFilterReturn {
+  // initialFilter 는 마운트 시 1회 복원용(FRT-82: 편집 라우트 왕복 후 필터 재구성).
+  // 이후 URL 변화를 추적하지 않으므로 lazy initializer 로 최초 값만 캡처한다.
+  const [filter, setFilter] = useState<LibraryFilter>(
+    () => initialFilter ?? { sortBy: "updated" },
+  )
 
   const setSearch = useCallback((search: string) => {
     setFilter(prev => ({ ...prev, search: search || undefined }))
