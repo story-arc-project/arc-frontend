@@ -7,6 +7,11 @@
 3. 브랜치 생성·리네임 시 네이밍 컨벤션 강제: (feat|fix|docs|refactor|chore|hotfix)/<소문자-하이픈>
 
 차단 시 permissionDecision=deny 를 출력한다. 판단 불가/파싱 실패는 조용히 통과(막지 않음).
+
+위협 모델: 이 훅은 세션이 "실수로" 보호 브랜치를 건드리는 것을 막는 가드레일이지 보안 경계가
+아니다. fail-open 설계상 의도적 우회(임의 스크립트 실행, --stdin 파이프, 저장소 상태에 의존하는
+간접 경로 등)는 스코프 밖이며, 그런 경로는 원격 브랜치 보호 규칙(GitHub)이 최종 방어선이다.
+여기서 다루는 것은 실수로 타이핑될 개연성이 있는 명령 형태까지다.
 """
 import json
 import os
@@ -22,7 +27,9 @@ CONVENTION = "feat/ · fix/ · docs/ · refactor/ · chore/ · hotfix/ + 영문 
 SHELL_PUNCT = ";&|<>()"
 UNKNOWN_CWD = "\0unknown"  # cd 대상을 정적으로 알 수 없음 → 브랜치 판정 포기(fail-open)
 # 보호 브랜치 위에서 커밋을 만들거나 브랜치를 움직이는 서브커맨드
-COMMITTING_SUBS = {"commit", "merge", "cherry-pick", "revert", "rebase"}
+COMMITTING_SUBS = {"commit", "merge", "cherry-pick", "revert", "rebase", "am"}
+# `bash -c '<cmd>'` 래핑 — 인용 문자열 안의 git 도 검사한다
+SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 # 진행 중인 merge/rebase 등을 되돌리기만 하는 모드 — 커밋을 만들지 않으므로 허용
 ABORT_SAFE = {"--abort", "--quit"}
 # 값을 뒤따르는 git 글로벌 옵션 (git [글로벌옵션...] <subcommand> ...)
@@ -42,7 +49,8 @@ RESET_OPT_WITH_ARG = {"--pathspec-from-file"}
 WORKTREE_OPT_WITH_ARG = {"--reason"}
 # 이 가드가 직접 다루는 서브커맨드 — 그 외 토큰은 alias 확장을 시도한다
 HANDLED_SUBS = COMMITTING_SUBS | {
-    "push", "pull", "reset", "checkout", "switch", "branch", "worktree",
+    "push", "pull", "fetch", "reset", "update-ref",
+    "checkout", "switch", "branch", "worktree", "stash",
 }
 
 
@@ -95,13 +103,13 @@ def push_target(cwd: str | None, cfg: list[str]) -> str:
         return ""
 
 
-def upstream_branch(cwd: str | None) -> str:
+def upstream_branch(cwd: str | None, cfg: list[str]) -> str:
     """현재 브랜치의 @{upstream} 브랜치명 (원격 prefix 제거). 미설정/판정 불가 시 ""."""
     if cwd == UNKNOWN_CWD:
         return ""
     try:
         out = subprocess.run(
-            ["git", "rev-parse", "--symbolic-full-name", "@{upstream}"],
+            ["git", *cfg, "rev-parse", "--symbolic-full-name", "@{upstream}"],
             capture_output=True,
             text=True,
             cwd=cwd,
@@ -208,7 +216,29 @@ def check_push(rest: list[str], cwd: str | None, cfg: list[str]) -> None:
             deny("와일드카드 refspec push 금지 — main/dev 가 포함될 수 있습니다. 브랜치를 명시하세요.")
 
 
-def check_pull(rest: list[str], cwd: str | None) -> None:
+def check_fetch(rest: list[str]) -> None:
+    """`git fetch <repo> <src>:<dst>` 는 로컬 <dst> ref 를 직접 갱신한다 — 보호 브랜치 금지."""
+    positionals: list[str] = []
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a in PULL_OPT_WITH_ARG:
+            i += 2
+            continue
+        if a.startswith("-"):
+            i += 1
+            continue
+        positionals.append(a)
+        i += 1
+    for r in positionals[1:]:  # positionals[0] = remote/저장소
+        if ":" not in r:
+            continue  # 콜론 없는 refspec 은 remote-tracking ref 만 갱신
+        dst = r.removeprefix("+").split(":", 1)[1].removeprefix("refs/heads/")
+        if dst in PROTECTED or "*" in dst:
+            deny("fetch refspec 으로 main/dev 로컬 브랜치 갱신 금지 — PR 로만 머지합니다.")
+
+
+def check_pull(rest: list[str], cwd: str | None, cfg: list[str]) -> None:
     """보호 브랜치에서의 pull 은 같은 브랜치 refspec(원격 동기화)만 허용."""
     br = current_branch(cwd)
     if br not in PROTECTED:
@@ -227,7 +257,7 @@ def check_pull(rest: list[str], cwd: str | None) -> None:
         i += 1
     if len(positionals) < 2:
         # refspec 없는 pull 은 @{upstream} 을 통합한다 — 다른 브랜치를 추적 중이면 우회 가능
-        up = upstream_branch(cwd)
+        up = upstream_branch(cwd, cfg)
         if up and up != br:
             deny(
                 f"'{br}' 브랜치의 upstream({up})이 다른 브랜치입니다 — pull 통합 금지,"
@@ -244,6 +274,7 @@ def check_pull(rest: list[str], cwd: str | None) -> None:
 
 
 def check_segment(seg: list[str], base_cwd: str | None, depth: int = 0) -> None:
+    check_shell_wrap(seg, base_cwd, depth)
     # `/usr/bin/git` 같은 경로 호출도 인식한다
     idx = next((i for i, t in enumerate(seg) if os.path.basename(t) == "git"), None)
     if idx is None:
@@ -260,6 +291,21 @@ def check_segment(seg: list[str], base_cwd: str | None, depth: int = 0) -> None:
     if target:
         cwd = resolve_dir(cwd, target)
     check_git_args(seg[idx + 1 :], cwd, depth)
+
+
+def check_shell_wrap(seg: list[str], base_cwd: str | None, depth: int) -> None:
+    """bash -c '<cmd>' / sh -lc '<cmd>' 안의 git 명령도 재귀 검사한다."""
+    if depth > 2:
+        return
+    idx = next((i for i, t in enumerate(seg) if os.path.basename(t) in SHELLS), None)
+    if idx is None:
+        return
+    for i in range(idx + 1, len(seg) - 1):
+        a = seg[i]
+        # -c 또는 -lc 같은 결합 단축 플래그의 마지막이 c 인 경우 → 다음 토큰이 명령 문자열
+        if a == "-c" or (a.startswith("-") and not a.startswith("--") and a.endswith("c")):
+            check_command(seg[i + 1], base_cwd, depth + 1)
+            return
 
 
 def check_git_args(args: list[str], base_cwd: str | None, depth: int = 0) -> None:
@@ -312,7 +358,16 @@ def check_git_args(args: list[str], base_cwd: str | None, depth: int = 0) -> Non
         check_push(rest, cwd, cfg)
 
     elif sub == "pull":
-        check_pull(rest, cwd)
+        check_pull(rest, cwd, cfg)
+
+    elif sub == "fetch":
+        check_fetch(rest)
+
+    elif sub == "update-ref":
+        # 보호 브랜치 ref 직접 이동/삭제 금지 (어느 브랜치에 있든)
+        for p in (a for a in rest if not a.startswith("-")):
+            if p.removeprefix("refs/heads/") in PROTECTED:
+                deny("update-ref 로 main/dev ref 직접 변경 금지 — PR 로만 머지합니다.")
 
     elif sub == "reset":
         br = current_branch(cwd)
@@ -402,20 +457,16 @@ def check_git_args(args: list[str], base_cwd: str | None, depth: int = 0) -> Non
             if len(positionals) == 1:
                 # <path> 만 주면 basename 브랜치가 암묵 생성된다 (-b 와 동일)
                 new_branch = os.path.basename(positionals[0].rstrip("/"))
+    elif sub == "stash" and rest[:1] == ["branch"] and len(rest) > 1:
+        new_branch = rest[1]
 
     if new_branch and not BRANCH_RE.match(new_branch):
         deny(f"브랜치명 '{new_branch}' 컨벤션 위반 — {CONVENTION} (git-workflow 스킬).")
 
 
-def main() -> None:
-    try:
-        data = json.load(sys.stdin)
-    except Exception:
-        return
-    cmd = (data.get("tool_input") or {}).get("command", "")
-    if "git" not in cmd:
-        return
-    shell_cwd: str | None = None  # None = 훅 프로세스 cwd 그대로
+def check_command(cmd: str, base_cwd: str | None = None, depth: int = 0) -> None:
+    """cd 추적을 포함해 명령 문자열 전체를 세그먼트 단위로 검사한다."""
+    shell_cwd = base_cwd  # None = 훅 프로세스 cwd 그대로
     for seg in split_segments(tokenize(cmd)):
         if seg and seg[0] == "cd":
             if len(seg) > 1:
@@ -426,7 +477,18 @@ def main() -> None:
             else:
                 shell_cwd = UNKNOWN_CWD  # 맨몸 cd = $HOME
             continue
-        check_segment(seg, shell_cwd)
+        check_segment(seg, shell_cwd, depth)
+
+
+def main() -> None:
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        return
+    cmd = (data.get("tool_input") or {}).get("command", "")
+    if "git" not in cmd:
+        return
+    check_command(cmd)
 
 
 if __name__ == "__main__":
