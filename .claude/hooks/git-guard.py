@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """PreToolUse(Bash) git 가드 — CLAUDE.md Hard Constraints 의 결정론적 강제.
 
-1. main/master/dev 브랜치 직접 커밋 생성 차단 (commit·merge·cherry-pick·revert·rebase,
-   다른 ref 를 통합하는 pull 포함 — --abort/--quit 복구는 허용)
+1. main/master/dev 브랜치 직접 커밋 생성·이동 차단 (commit·merge·cherry-pick·revert·rebase,
+   다른 ref 를 통합하는 pull·브랜치를 움직이는 reset 포함 — --abort/--quit 복구는 허용)
 2. main/dev 로의 `git push` 차단 (PR 로만 머지) — 암묵 대상(@{push})도 해석
 3. 브랜치 생성·리네임 시 네이밍 컨벤션 강제: (feat|fix|docs|refactor|chore|hotfix)/<소문자-하이픈>
 
@@ -37,8 +37,13 @@ PULL_OPT_WITH_ARG = {
     "--upload-pack", "--negotiation-tip", "--depth", "--shallow-since",
     "--shallow-exclude", "-j", "--jobs", "--refmap",
 }
+# 값을 뒤따르는 reset/worktree-add 옵션 (positional 오인 방지)
+RESET_OPT_WITH_ARG = {"--pathspec-from-file"}
+WORKTREE_OPT_WITH_ARG = {"--reason"}
 # 이 가드가 직접 다루는 서브커맨드 — 그 외 토큰은 alias 확장을 시도한다
-HANDLED_SUBS = COMMITTING_SUBS | {"push", "pull", "checkout", "switch", "branch", "worktree"}
+HANDLED_SUBS = COMMITTING_SUBS | {
+    "push", "pull", "reset", "checkout", "switch", "branch", "worktree",
+}
 
 
 def deny(reason: str) -> None:
@@ -90,12 +95,33 @@ def push_target(cwd: str | None, cfg: list[str]) -> str:
         return ""
 
 
-def git_alias(sub: str, cwd: str | None) -> str:
+def upstream_branch(cwd: str | None) -> str:
+    """현재 브랜치의 @{upstream} 브랜치명 (원격 prefix 제거). 미설정/판정 불가 시 ""."""
+    if cwd == UNKNOWN_CWD:
+        return ""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--symbolic-full-name", "@{upstream}"],
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+            timeout=5,
+        )
+        ref = out.stdout.strip()
+        if ref.startswith("refs/remotes/"):
+            rest = ref[len("refs/remotes/") :]
+            return rest.split("/", 1)[1] if "/" in rest else rest
+        return ref.removeprefix("refs/heads/")
+    except Exception:
+        return ""
+
+
+def git_alias(sub: str, cwd: str | None, cfg: list[str]) -> str:
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9-]*", sub):
         return ""
     try:
         out = subprocess.run(
-            ["git", "config", "--get", f"alias.{sub}"],
+            ["git", *cfg, "config", "--get", f"alias.{sub}"],
             capture_output=True,
             text=True,
             cwd=None if cwd == UNKNOWN_CWD else cwd,
@@ -199,6 +225,15 @@ def check_pull(rest: list[str], cwd: str | None) -> None:
             continue
         positionals.append(a)
         i += 1
+    if len(positionals) < 2:
+        # refspec 없는 pull 은 @{upstream} 을 통합한다 — 다른 브랜치를 추적 중이면 우회 가능
+        up = upstream_branch(cwd)
+        if up and up != br:
+            deny(
+                f"'{br}' 브랜치의 upstream({up})이 다른 브랜치입니다 — pull 통합 금지,"
+                " main/dev 는 PR 로만 머지합니다."
+            )
+        return
     for r in positionals[1:]:  # positionals[0] = remote/저장소
         src = r.removeprefix("+").split(":", 1)[0].removeprefix("refs/heads/")
         if src != br:
@@ -213,7 +248,18 @@ def check_segment(seg: list[str], base_cwd: str | None, depth: int = 0) -> None:
     idx = next((i for i, t in enumerate(seg) if os.path.basename(t) == "git"), None)
     if idx is None:
         return
-    check_git_args(seg[idx + 1 :], base_cwd, depth)
+    # GIT_DIR=/x/.git GIT_WORK_TREE=/x git ... — 환경변수로 대상 저장소를 바꾸는 형태
+    cwd = base_cwd
+    env_git_dir = env_work_tree = None
+    for t in seg[:idx]:
+        if t.startswith("GIT_DIR="):
+            env_git_dir = t[len("GIT_DIR=") :]
+        elif t.startswith("GIT_WORK_TREE="):
+            env_work_tree = t[len("GIT_WORK_TREE=") :]
+    target = env_work_tree or env_git_dir
+    if target:
+        cwd = resolve_dir(cwd, target)
+    check_git_args(seg[idx + 1 :], cwd, depth)
 
 
 def check_git_args(args: list[str], base_cwd: str | None, depth: int = 0) -> None:
@@ -241,9 +287,13 @@ def check_git_args(args: list[str], base_cwd: str | None, depth: int = 0) -> Non
 
     # 알 수 없는 서브커맨드는 alias 확장을 시도한다 (git 은 내장 명령을 alias 로 가릴 수 없음)
     if sub not in HANDLED_SUBS:
-        expansion = git_alias(sub, cwd)
+        expansion = git_alias(sub, cwd, cfg)
         if expansion.startswith("!"):
-            for s in split_segments(tokenize(expansion[1:])):
+            # 셸 alias 는 호출 시 인자를 명령 끝에 덧붙여 실행한다
+            segs = split_segments(tokenize(expansion[1:]))
+            if segs and rest:
+                segs[-1] = segs[-1] + rest
+            for s in segs:
                 check_segment(s, cwd, depth + 1)
         elif expansion:
             check_git_args(tokenize(expansion) + rest, cwd, depth + 1)
@@ -264,18 +314,53 @@ def check_git_args(args: list[str], base_cwd: str | None, depth: int = 0) -> Non
     elif sub == "pull":
         check_pull(rest, cwd)
 
+    elif sub == "reset":
+        br = current_branch(cwd)
+        if br in PROTECTED:
+            positionals = []
+            i = 0
+            while i < len(rest):
+                a = rest[i]
+                if a == "--":  # 이후는 전부 pathspec — 브랜치를 움직이지 않는다
+                    break
+                if a in RESET_OPT_WITH_ARG:
+                    i += 2
+                    continue
+                if a.startswith("-"):
+                    i += 1
+                    continue
+                positionals.append(a)
+                i += 1
+            # 첫 positional 이 HEAD 가 아니면 커밋 대상 reset 으로 간주 (브랜치 이동 가능)
+            if positionals and positionals[0] != "HEAD":
+                deny(
+                    f"'{br}' 브랜치에서 커밋 대상 reset 금지 — 보호 브랜치를 직접 움직일 수"
+                    " 없습니다. 파일 unstage 는 git reset -- <경로> 를 사용하세요."
+                )
+
     new_branch: str | None = None
     if sub in ("checkout", "switch"):
-        create_flags = (
-            ("-b", "-B", "--orphan")
-            if sub == "checkout"
-            else ("-c", "-C", "--create", "--force-create", "--orphan")
+        short_flags = ("-b", "-B") if sub == "checkout" else ("-c", "-C")
+        create_flags = short_flags + (
+            ("--orphan",) if sub == "checkout"
+            else ("--create", "--force-create", "--orphan")
         )
+        track = False
         for i, a in enumerate(rest):
             if a in create_flags and i + 1 < len(rest):
                 new_branch = rest[i + 1]
             elif a.startswith("--orphan="):
                 new_branch = a[len("--orphan=") :]
+            elif a.startswith(short_flags) and len(a) > 2 and not a.startswith("--"):
+                new_branch = a[2:]  # -b<name> 붙여쓰기
+            elif a == "-t" or a == "--track" or a.startswith("--track="):
+                track = True
+        if new_branch is None and track:
+            # --track <remote>/<branch> 는 원격 브랜치명 그대로 로컬 브랜치를 만든다
+            positionals = [a for a in rest if not a.startswith("-")]
+            if positionals:
+                ref = positionals[0].removeprefix("refs/remotes/")
+                new_branch = ref.split("/", 1)[1] if "/" in ref else ref
     elif sub == "branch":
         positionals = [a for a in rest if not a.startswith("-")]
         # 리네임/복사: (-m|-M|-c|-C) [<old>] <new> — 마지막 positional 이 새 이름
@@ -297,8 +382,23 @@ def check_git_args(args: list[str], base_cwd: str | None, depth: int = 0) -> Non
         for i, a in enumerate(wt):
             if a in ("-b", "-B", "--orphan") and i + 1 < len(wt):
                 new_branch = wt[i + 1]
+            elif a.startswith("--orphan="):
+                new_branch = a[len("--orphan=") :]
+            elif a.startswith(("-b", "-B")) and len(a) > 2 and not a.startswith("--"):
+                new_branch = a[2:]  # -b<name> 붙여쓰기
         if new_branch is None and "--detach" not in wt:
-            positionals = [a for a in wt if not a.startswith("-")]
+            positionals = []
+            i = 0
+            while i < len(wt):
+                a = wt[i]
+                if a in WORKTREE_OPT_WITH_ARG:  # --reason <string> 등 값 옵션
+                    i += 2
+                    continue
+                if a.startswith("-"):
+                    i += 1
+                    continue
+                positionals.append(a)
+                i += 1
             if len(positionals) == 1:
                 # <path> 만 주면 basename 브랜치가 암묵 생성된다 (-b 와 동일)
                 new_branch = os.path.basename(positionals[0].rstrip("/"))
@@ -318,7 +418,13 @@ def main() -> None:
     shell_cwd: str | None = None  # None = 훅 프로세스 cwd 그대로
     for seg in split_segments(tokenize(cmd)):
         if seg and seg[0] == "cd":
-            shell_cwd = resolve_dir(shell_cwd, seg[1]) if len(seg) > 1 else UNKNOWN_CWD
+            if len(seg) > 1:
+                nd = resolve_dir(shell_cwd, seg[1])
+                # 존재하지 않는 대상 → cd 실패, 셸은 원래 디렉토리에 남는다 (cwd 유지)
+                if nd == UNKNOWN_CWD or os.path.isdir(nd):
+                    shell_cwd = nd
+            else:
+                shell_cwd = UNKNOWN_CWD  # 맨몸 cd = $HOME
             continue
         check_segment(seg, shell_cwd)
 
