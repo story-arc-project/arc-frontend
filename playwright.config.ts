@@ -23,6 +23,8 @@ const API_URL = API_ORIGIN;
 
 export default defineConfig({
   testDir: "./e2e",
+  // e2e/preview/ 는 ui-preview 스킬 전용 임시 스펙(gitignore) — 본 러너·CI 에서 제외.
+  testIgnore: "**/e2e/preview/**",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
