@@ -3,7 +3,7 @@ import {
   serializeArchiveContext,
   parseArchiveContext,
   buildReturnTo,
-  withIdInReturnTo,
+  safeReturnTo,
   type ArchiveContext,
 } from "@/lib/utils/archive-context"
 import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
@@ -109,6 +109,15 @@ describe("serialize ↔ parse round-trip", () => {
     const restored = parseArchiveContext(new URLSearchParams(serializeArchiveContext(ctx)))
     expect(restored).toBeUndefined()
   })
+
+  it("검색어의 예약문자(&·?)를 왕복 보존한다(이중 디코딩 회귀 가드)", () => {
+    // 검색어에 & 가 있으면 직렬화 시 %26 으로 인코딩돼야 하고, parse 는 이를 다시 & 로
+    // 복원해야 한다. 소비 측이 값을 한 번 더 디코딩하면 이 경계가 깨진다(Codex P2).
+    const ctx: ArchiveContext = { libraryId: ALL_LIBRARY_ID, filter: { search: "C&A?B" } }
+    const qs = serializeArchiveContext(ctx)
+    expect(qs).not.toContain("C&A") // 리터럴 & 가 그대로 새면 안 된다
+    expect(parseArchiveContext(new URLSearchParams(qs))?.filter.search).toBe("C&A?B")
+  })
 })
 
 describe("buildReturnTo", () => {
@@ -138,28 +147,34 @@ describe("buildReturnTo", () => {
   })
 })
 
-describe("withIdInReturnTo", () => {
-  it("쿼리가 없던 returnTo에 id를 추가한다", () => {
-    expect(withIdInReturnTo("/archive", "exp-5")).toBe("/archive?id=exp-5")
+describe("safeReturnTo", () => {
+  const FALLBACK = "/archive?id=exp-1"
+
+  it("null·빈 값이면 fallback을 반환한다", () => {
+    expect(safeReturnTo(null, FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("", FALLBACK)).toBe(FALLBACK)
   })
 
-  it("기존 컨텍스트 쿼리를 유지한 채 id를 추가한다", () => {
-    const out = withIdInReturnTo("/archive?lib=lib-1", "exp-5")
-    const [path, qs] = out.split("?")
-    expect(path).toBe("/archive")
-    const params = new URLSearchParams(qs)
-    expect(params.get("lib")).toBe("lib-1")
-    expect(params.get("id")).toBe("exp-5")
+  it("같은 출처의 archive 상대경로는 그대로 통과시킨다", () => {
+    expect(safeReturnTo("/archive?q=x&id=exp-2", FALLBACK)).toBe("/archive?q=x&id=exp-2")
+    expect(safeReturnTo("/archive", FALLBACK)).toBe("/archive")
+    expect(safeReturnTo("/demo/archive?lib=lib-1", FALLBACK)).toBe("/demo/archive?lib=lib-1")
   })
 
-  it("이미 있던 id를 새 값으로 교체한다", () => {
-    const out = withIdInReturnTo("/archive?lib=lib-1&id=old", "new")
-    const params = new URLSearchParams(out.split("?")[1])
-    expect(params.get("id")).toBe("new")
-    expect(params.getAll("id")).toEqual(["new"])
+  it("인코딩된 내부 쿼리(%26)를 디코딩하지 않고 그대로 통과시킨다", () => {
+    // 소비 측은 이 반환값을 router.push 에 그대로 넣는다 — 여기서 디코딩하면 이중 디코딩.
+    expect(safeReturnTo("/archive?q=C%26A", FALLBACK)).toBe("/archive?q=C%26A")
   })
 
-  it("/demo basePath 경로를 보존한다", () => {
-    expect(withIdInReturnTo("/demo/archive?lib=lib-1", "exp-2")).toContain("/demo/archive?")
+  it("외부 URL·프로토콜상대·javascript 스킴은 fallback으로 무력화한다(P1 오픈리다이렉트)", () => {
+    expect(safeReturnTo("https://evil.com", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("//evil.com/archive", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("javascript:alert(1)", FALLBACK)).toBe(FALLBACK)
+  })
+
+  it("archive 목록 경로가 아닌 상대경로는 fallback으로 막는다", () => {
+    expect(safeReturnTo("/settings", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("/archive/exp-1/edit", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("/archive/../secret", FALLBACK)).toBe(FALLBACK)
   })
 })

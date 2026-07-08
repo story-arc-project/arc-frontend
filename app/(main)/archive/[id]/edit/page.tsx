@@ -8,6 +8,7 @@ import { updateExperience } from "@/lib/api/experience-api"
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper"
 import { useBasePath } from "@/lib/utils/use-base-path"
 import { useExperience } from "@/hooks/useExperience"
+import { safeReturnTo } from "@/lib/utils/archive-context"
 import ExperienceFormV2, {
   type ExperienceFormV2Handle,
 } from "@/components/features/archive/ExperienceFormV2"
@@ -28,9 +29,10 @@ export default function ArchiveEditPage() {
 
   // FRT-82: 리스트 페이지가 실어보낸 returnTo(라이브러리·필터 컨텍스트 포함, basePath 내장)를
   // 그대로 backTo 로 되돌린다. 없으면(딥링크·북마크 진입) 해당 레코드 상세로 폴백.
-  // returnTo 에는 이미 basePath 가 박혀 있으므로 여기서 다시 붙이지 않는다.
-  const returnTo = searchParams.get("returnTo")
-  const backTo = returnTo ? decodeURIComponent(returnTo) : `${basePath}/archive?id=${id}`
+  // returnTo 에는 이미 basePath 가 박혀 있으므로 다시 붙이지 않는다. 신뢰 불가 값이라
+  // safeReturnTo 로 같은 출처 archive 경로만 통과시키고, searchParams.get 이 이미 1회
+  // 디코딩했으므로 추가 디코딩하지 않는다(내부 쿼리 %26 보존 → 필터 온전 복원).
+  const backTo = safeReturnTo(searchParams.get("returnTo"), `${basePath}/archive?id=${id}`)
 
   const experienceV2 = useMemo(
     () => (experience ? toExperienceV2(experience) : null),

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { createExperience } from "@/lib/api/experience-api"
 import { toSavePayload } from "@/lib/utils/experience-mapper"
 import { useBasePath } from "@/lib/utils/use-base-path"
-import { withIdInReturnTo } from "@/lib/utils/archive-context"
+import { safeReturnTo } from "@/lib/utils/archive-context"
 import ExperienceFormV2, {
   type ExperienceFormV2Handle,
 } from "@/components/features/archive/ExperienceFormV2"
@@ -24,10 +24,9 @@ export default function ArchiveNewPage() {
   const [sections, setSections] = useState<{ id: string; label: string }[]>([])
 
   // FRT-82: 리스트가 실어보낸 returnTo(라이브러리·필터 컨텍스트, basePath 내장)를 복원한다.
-  // 취소·이탈은 이 backTo(id 없음)로, 저장 성공은 방금 만든 레코드 id를 병합해 복귀한다.
-  const returnTo = searchParams.get("returnTo")
-  const decodedReturnTo = returnTo ? decodeURIComponent(returnTo) : null
-  const backTo = decodedReturnTo ?? `${basePath}/archive`
+  // 취소·이탈은 이 backTo 로 되돌아간다(아무것도 만들지 않았으므로 컨텍스트 복원이 안전).
+  // 신뢰 불가 값이라 safeReturnTo 로 같은 출처 archive 경로만 통과시키고, 추가 디코딩하지 않는다.
+  const backTo = safeReturnTo(searchParams.get("returnTo"), `${basePath}/archive`)
 
   async function handleSave(exp: ExperienceV2) {
     setSaving(true)
@@ -36,11 +35,10 @@ export default function ArchiveNewPage() {
       setError(null)
       // 저장 성공 — 미저장 플래그를 내려 beforeunload 경고 없이 목록으로 복귀한다.
       setHasUnsaved(false)
-      router.push(
-        decodedReturnTo
-          ? withIdInReturnTo(decodedReturnTo, savedId)
-          : `${basePath}/archive?id=${savedId}`,
-      )
+      // 새 레코드는 방금 만든 것이므로 항상 전체 라이브러리로 복귀해 확실히 보이게 한다.
+      // 수동 라이브러리 컨텍스트를 복원하면(lib=...) 새 레코드는 그 라이브러리 멤버가
+      // 아니라 프리뷰를 닫는 순간 목록에서 사라진다(Codex P2). 복귀 시 ?id 로 미리보기만 도킹.
+      router.push(`${basePath}/archive?id=${savedId}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "경험을 저장하지 못했어요")
       setSaving(false)
