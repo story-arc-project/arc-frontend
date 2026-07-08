@@ -155,10 +155,14 @@ export default function ArchivePage() {
   // 검증할 수 없으므로 로드 완료 후 1회 보정한다.
   useEffect(() => {
     if (isLibrariesLoading) return
+    // 로드 실패 시 libraries 는 시스템 all 만 남고(재시도 배너로 유도) isLoading 은 false 다.
+    // 이때 복원된 activeLibraryId 를 "삭제됨"으로 오판해 all 로 덮으면, 재시도가 성공해도
+    // 원래 라이브러리 컨텍스트를 되살릴 수 없다. 성공 로드 후에만 보정한다.
+    if (librariesError) return
     if (activeLibraryId !== ALL_LIBRARY_ID && !libraries.some(l => l.id === activeLibraryId)) {
       setActiveLibraryId(ALL_LIBRARY_ID)
     }
-  }, [isLibrariesLoading, libraries, activeLibraryId])
+  }, [isLibrariesLoading, librariesError, libraries, activeLibraryId])
 
   // Sync ?id= when experiences are loaded (adjust state during render)
   const [syncedForParams, setSyncedForParams] = useState<string | null>(null)
