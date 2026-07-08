@@ -32,7 +32,11 @@ export default function ArchiveEditPage() {
   // returnTo 에는 이미 basePath 가 박혀 있으므로 다시 붙이지 않는다. 신뢰 불가 값이라
   // safeReturnTo 로 같은 출처 archive 경로만 통과시키고, searchParams.get 이 이미 1회
   // 디코딩했으므로 추가 디코딩하지 않는다(내부 쿼리 %26 보존 → 필터 온전 복원).
-  const backTo = safeReturnTo(searchParams.get("returnTo"), `${basePath}/archive?id=${id}`)
+  const backTo = safeReturnTo(
+    searchParams.get("returnTo"),
+    basePath,
+    `${basePath}/archive?id=${id}`,
+  )
 
   const experienceV2 = useMemo(
     () => (experience ? toExperienceV2(experience) : null),

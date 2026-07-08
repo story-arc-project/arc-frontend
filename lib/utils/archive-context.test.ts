@@ -151,30 +151,40 @@ describe("safeReturnTo", () => {
   const FALLBACK = "/archive?id=exp-1"
 
   it("null·빈 값이면 fallback을 반환한다", () => {
-    expect(safeReturnTo(null, FALLBACK)).toBe(FALLBACK)
-    expect(safeReturnTo("", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo(null, "", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("", "", FALLBACK)).toBe(FALLBACK)
   })
 
-  it("같은 출처의 archive 상대경로는 그대로 통과시킨다", () => {
-    expect(safeReturnTo("/archive?q=x&id=exp-2", FALLBACK)).toBe("/archive?q=x&id=exp-2")
-    expect(safeReturnTo("/archive", FALLBACK)).toBe("/archive")
-    expect(safeReturnTo("/demo/archive?lib=lib-1", FALLBACK)).toBe("/demo/archive?lib=lib-1")
+  it("현재 basePath 의 archive 상대경로만 그대로 통과시킨다", () => {
+    expect(safeReturnTo("/archive?q=x&id=exp-2", "", FALLBACK)).toBe("/archive?q=x&id=exp-2")
+    expect(safeReturnTo("/archive", "", FALLBACK)).toBe("/archive")
+    expect(safeReturnTo("/demo/archive?lib=lib-1", "/demo", "/demo/archive")).toBe(
+      "/demo/archive?lib=lib-1",
+    )
+  })
+
+  it("다른 앱 컨텍스트(basePath 불일치)의 archive 경로는 fallback으로 막는다", () => {
+    // /demo 플로우의 returnTo 를 메인 archive 로 넘기거나 그 반대 — 컨텍스트 이탈(P2).
+    expect(safeReturnTo("/demo/archive?lib=lib-1", "", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("/archive", "/demo", "/demo/archive")).toBe("/demo/archive")
+    // 존재하지 않는 세그먼트는 404 를 유발하므로 통과시키지 않는다.
+    expect(safeReturnTo("/foo/archive", "", FALLBACK)).toBe(FALLBACK)
   })
 
   it("인코딩된 내부 쿼리(%26)를 디코딩하지 않고 그대로 통과시킨다", () => {
     // 소비 측은 이 반환값을 router.push 에 그대로 넣는다 — 여기서 디코딩하면 이중 디코딩.
-    expect(safeReturnTo("/archive?q=C%26A", FALLBACK)).toBe("/archive?q=C%26A")
+    expect(safeReturnTo("/archive?q=C%26A", "", FALLBACK)).toBe("/archive?q=C%26A")
   })
 
   it("외부 URL·프로토콜상대·javascript 스킴은 fallback으로 무력화한다(P1 오픈리다이렉트)", () => {
-    expect(safeReturnTo("https://evil.com", FALLBACK)).toBe(FALLBACK)
-    expect(safeReturnTo("//evil.com/archive", FALLBACK)).toBe(FALLBACK)
-    expect(safeReturnTo("javascript:alert(1)", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("https://evil.com", "", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("//evil.com/archive", "", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("javascript:alert(1)", "", FALLBACK)).toBe(FALLBACK)
   })
 
   it("archive 목록 경로가 아닌 상대경로는 fallback으로 막는다", () => {
-    expect(safeReturnTo("/settings", FALLBACK)).toBe(FALLBACK)
-    expect(safeReturnTo("/archive/exp-1/edit", FALLBACK)).toBe(FALLBACK)
-    expect(safeReturnTo("/archive/../secret", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("/settings", "", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("/archive/exp-1/edit", "", FALLBACK)).toBe(FALLBACK)
+    expect(safeReturnTo("/archive/../secret", "", FALLBACK)).toBe(FALLBACK)
   })
 })

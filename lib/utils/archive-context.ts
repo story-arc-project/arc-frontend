@@ -118,25 +118,27 @@ export function buildReturnTo(
   return `${basePath}/archive${qs ? `?${qs}` : ""}`
 }
 
-// `[/basePath]/archive` 형태의 목록 경로만 허용하는 화이트리스트(쿼리·프래그먼트 제외한 경로부).
-const ARCHIVE_PATH = /^(\/[\w-]+)?\/archive$/
-
 /**
- * returnTo 는 URL 에서 온 신뢰 불가 문자열이다(FRT-82). 같은 출처의 archive 목록
- * 상대경로만 통과시키고, 외부 URL·프로토콜 상대(`//host`)·`javascript:` 스킴·archive
- * 목록이 아닌 경로는 fallback 으로 무력화해 오픈 리다이렉트를 막는다.
+ * returnTo 는 URL 에서 온 신뢰 불가 문자열이다(FRT-82). **현재 앱 컨텍스트(basePath)의**
+ * archive 목록 경로(`${basePath}/archive`)만 정확히 통과시키고, 외부 URL·프로토콜
+ * 상대(`//host`)·`javascript:` 스킴·다른 basePath(예: 메인↔`/demo` 이탈)·존재하지 않는
+ * 세그먼트(`/foo/archive` → 404)·archive 목록이 아닌 경로는 fallback 으로 무력화한다.
+ *
+ * 임의의 단일 세그먼트를 허용하면 `/demo/archive/new?returnTo=/archive` 처럼 URL 조작으로
+ * 앱 컨텍스트를 갈아탈 수 있으므로(Codex P2), 소비 측이 가진 basePath 와 정확히 대조한다.
  *
  * 입력은 이미 `searchParams.get` 이 1회 디코딩한 값이므로 여기서 추가 디코딩하지 않는다
  * (내부 쿼리의 `%26` 등을 보존해야 소비 측 router.push 후 필터가 온전히 복원된다).
  */
 export function safeReturnTo(
   returnTo: string | null | undefined,
+  basePath: string,
   fallback: string,
 ): string {
   if (!returnTo) return fallback
   // 반드시 단일 '/' 로 시작하는 절대경로. '//' 는 프로토콜 상대 URL(외부)이라 거절.
   if (!returnTo.startsWith("/") || returnTo.startsWith("//")) return fallback
   const path = returnTo.split(/[?#]/, 1)[0]
-  if (!ARCHIVE_PATH.test(path)) return fallback
+  if (path !== `${basePath}/archive`) return fallback
   return returnTo
 }

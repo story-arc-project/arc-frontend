@@ -26,7 +26,7 @@ export default function ArchiveNewPage() {
   // FRT-82: 리스트가 실어보낸 returnTo(라이브러리·필터 컨텍스트, basePath 내장)를 복원한다.
   // 취소·이탈은 이 backTo 로 되돌아간다(아무것도 만들지 않았으므로 컨텍스트 복원이 안전).
   // 신뢰 불가 값이라 safeReturnTo 로 같은 출처 archive 경로만 통과시키고, 추가 디코딩하지 않는다.
-  const backTo = safeReturnTo(searchParams.get("returnTo"), `${basePath}/archive`)
+  const backTo = safeReturnTo(searchParams.get("returnTo"), basePath, `${basePath}/archive`)
 
   async function handleSave(exp: ExperienceV2) {
     setSaving(true)
