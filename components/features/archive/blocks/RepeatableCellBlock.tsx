@@ -230,6 +230,9 @@ function RowEditor({
                 {col.label}
                 {col.required && <span className="text-error ml-0.5">*</span>}
               </label>
+              {col.guide && index === 0 && (
+                <p className="text-caption text-text-tertiary">{col.guide}</p>
+              )}
               <CellInput
                 column={col}
                 value={cellVal}

@@ -147,6 +147,26 @@ describe("isCardComplete / computeFormProgress", () => {
     expect(isCardComplete(repeat)).toBe(true)
   })
 
+  it("필수 컬럼 repeatable + optional 형제(교육 수업 기록): optional 만 채우면 미완료", () => {
+    // Codex P2: block.required 는 false 지만 필수 컬럼을 가진 repeatable-cell 은 필수로 취급해야 한다.
+    const { core, sections } = sectionsFor("education")
+    const r = computeFormCards(core, sections)
+    const repeat = r.cards.find(c => c.category === "repeat")!
+    const cell = repeat.blocks.find(b => b.value.type === "repeatable-cell")!
+    const tags = repeat.blocks.find(b => b.value.type === "tags")!
+    if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
+    expect(cell.value.columns.some(c => c.required)).toBe(true)
+    expect(cell.required).toBeFalsy()
+    // optional 태그 형제만 채움 → 필수 컬럼 미충족이므로 여전히 미완료여야 한다
+    tags.value = { type: "tags", tags: ["백엔드"] }
+    expect(isCardComplete(repeat)).toBe(false)
+    // 필수 컬럼을 채운 행이 생기면 완료
+    const filled: Record<string, string> = {}
+    for (const c of cell.value.columns.filter(c => c.required)) filled[c.key] = "값"
+    cell.value = { ...cell.value, rows: [{ id: "row-1", cells: filled }] }
+    expect(isCardComplete(repeat)).toBe(true)
+  })
+
   it("computeFormProgress: done/total 카운트", () => {
     const { core, sections } = sectionsFor("academic-society")
     const r = computeFormCards(core, sections)

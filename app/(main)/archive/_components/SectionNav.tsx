@@ -28,8 +28,25 @@ export default function SectionNav({ sections, formRef, saving, progress }: Sect
 
   return (
     <div className="flex flex-col gap-6">
+      <nav aria-label="섹션 이동" className="flex flex-col gap-1">
+        {sections.map(s => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => scrollTo(s.id)}
+            aria-current={active === s.id ? true : undefined}
+            className={`text-left text-body-sm rounded-md px-3 py-2 transition-colors ${
+              active === s.id
+                ? "bg-surface-brand text-brand-dark font-medium"
+                : "text-text-secondary hover:bg-surface-secondary"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </nav>
       {progress && progress.total > 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 border-t border-border pt-4">
           <div className="flex items-center justify-between">
             <span className="text-caption text-text-secondary">작성 진행도</span>
             <span className="text-caption font-medium text-text-primary tabular-nums">
@@ -51,23 +68,6 @@ export default function SectionNav({ sections, formRef, saving, progress }: Sect
           </div>
         </div>
       )}
-      <nav aria-label="섹션 이동" className="flex flex-col gap-1">
-        {sections.map(s => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => scrollTo(s.id)}
-            aria-current={active === s.id ? true : undefined}
-            className={`text-left text-body-sm rounded-md px-3 py-2 transition-colors ${
-              active === s.id
-                ? "bg-surface-brand text-brand-dark font-medium"
-                : "text-text-secondary hover:bg-surface-secondary"
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
-      </nav>
       <div className="flex flex-col gap-2 border-t border-border pt-4">
         <Button
           variant="primary"

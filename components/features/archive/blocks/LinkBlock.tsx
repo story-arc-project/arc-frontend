@@ -89,6 +89,7 @@ export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps)
       <Input
         placeholder="https://..."
         hint={block.guide}
+        hintPosition="top"
         value={val.url}
         onChange={e => update("url", e.target.value)}
       />

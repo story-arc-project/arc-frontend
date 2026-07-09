@@ -26,6 +26,7 @@ export default function TextBlock({ block, readOnly, onChange }: TextBlockProps)
       label={block.label}
       placeholder={block.placeholder}
       hint={block.guide}
+      hintPosition="top"
       value={val.text}
       onChange={e => onChange({ type: "text", text: e.target.value })}
       required={block.required}

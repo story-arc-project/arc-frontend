@@ -154,12 +154,25 @@ function isBlockFilledForProgress(block: Block): boolean {
 }
 
 /**
+ * 진행도 판정용 "필수 블록". block.required 뿐 아니라, 블록 자체는 optional 이어도
+ * 필수 컬럼을 가진 repeatable-cell(예: 학회 프로젝트 기록·수업 기록)도 필수로 본다.
+ * 이렇게 하지 않으면 optional 형제 필드만 채워도 카드가 완료로 오판된다.
+ */
+function isRequiredBlock(block: Block): boolean {
+  if (block.required) return true
+  if (block.value.type === "repeatable-cell") {
+    return block.value.columns.some(c => c.required)
+  }
+  return false
+}
+
+/**
  * 카드(섹션) 하나가 "채워졌는지" 판정한다 — 진행도 바 카운트 기준.
  * 필수 항목이 있으면 그 필수를 모두 채워야 완료, 필수가 없는 섹션(예: 경험 상세·증빙)은
  * 하나라도 채우면 완료로 본다. (선택 입력이 많아 "모든 항목"을 기준으로 하면 바가 거의 안 오름.)
  */
 export function isCardComplete(card: FormCardModel): boolean {
-  const required = card.blocks.filter(b => b.required)
+  const required = card.blocks.filter(isRequiredBlock)
   return required.length > 0
     ? required.every(isBlockFilledForProgress)
     : card.blocks.some(isBlockFilledForProgress)

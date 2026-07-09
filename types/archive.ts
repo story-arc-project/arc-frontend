@@ -79,6 +79,8 @@ export interface BlockColumnDef {
   required?: boolean
   placeholder?: string
   options?: string[]
+  /** 입력 가이드라인(컬럼 라벨과 입력칸 사이 안내문). 반복 입력의 첫 행에만 렌더된다. */
+  guide?: string
 }
 
 export interface BlockRow {
