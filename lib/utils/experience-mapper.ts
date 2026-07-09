@@ -133,6 +133,26 @@ function isHeaderBlock(b: Block): boolean {
 }
 
 /**
+ * 현재 템플릿이 소비하지 않는 fields 항목(구 템플릿에서 이동·삭제·개편된 필드의 값)을
+ * custom 필드 블록으로 보존한다. 이 안전망이 없으면 orphan 값이 로드 시 안 보이고
+ * toSavePayload 재직렬화 때 영구 삭제된다(템플릿 개편 시 무음 데이터 손실 방지).
+ * 키는 그대로 보존해 재저장 시 custom[] 에 안정적으로 남는다.
+ */
+function orphanFieldsToBlocks(
+  fields: Record<string, BlockValue>,
+  consumedKeys: Set<string>,
+): Block[] {
+  const out: Block[] = []
+  for (const [key, value] of Object.entries(fields)) {
+    if (consumedKeys.has(key)) continue
+    if (!value || typeof value !== "object" || !("type" in value)) continue
+    const label = key.includes(".") ? key.slice(key.indexOf(".") + 1) : key
+    out.push({ id: uid(), key, type: value.type, label, value })
+  }
+  return out
+}
+
+/**
  * API Experience → 프론트엔드 ExperienceV2 변환
  */
 export function toExperienceV2(exp: Experience): ExperienceV2 {
@@ -178,11 +198,18 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     const extensionBlocks = tmpl.extensions
       .flatMap(s => s.blocks)
       .map(b => injectValue(b, b.key ? fields[b.key] : undefined))
+    // 템플릿이 소비한 키 집합. 그 밖의 fields 값은 구 템플릿 잔재이므로 custom 으로 보존한다.
+    const consumedKeys = new Set<string>()
+    for (const b of tmpl.commonCore.blocks) if (b.key) consumedKeys.add(b.key)
+    for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) consumedKeys.add(b.key)
     return {
       ...base,
       coreBlocks,
       extensionBlocks,
-      customBlocks: customEntriesToBlocks(content.custom ?? []),
+      customBlocks: [
+        ...customEntriesToBlocks(content.custom ?? []),
+        ...orphanFieldsToBlocks(fields, consumedKeys),
+      ],
     }
   }
 

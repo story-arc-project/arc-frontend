@@ -236,6 +236,56 @@ describe("toExperienceV2", () => {
     expect(v2.customBlocks[0]).toMatchObject({ key: "custom-1", label: "나만의 메모", type: "text" })
     expect(v2.customBlocks[0].value).toEqual(text("hi"))
   })
+
+  it("v2: 현재 템플릿에 없는 orphan fields 값을 custom 블록으로 보존한다(구 템플릿 개편)", () => {
+    // 학회 개편(FRT-90 3차)으로 society-info.지원 동기 → society-detail.참여 동기 이동,
+    // 범용 extended.배경/목표 제거. 기존 레코드의 그 값들이 소실되지 않아야 한다.
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "AI 학회",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: {
+            "society-info.지원 동기": textarea("옛 지원 동기 텍스트"),
+            "extended.배경/목표": textarea("옛 배경/목표"),
+          },
+          custom: [],
+        },
+      }),
+    )
+    // 두 orphan 값이 customBlocks 로 보존되고 키·값이 유지된다.
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+    expect(byKey("society-info.지원 동기")?.value).toEqual(textarea("옛 지원 동기 텍스트"))
+    expect(byKey("extended.배경/목표")?.value).toEqual(textarea("옛 배경/목표"))
+    // 라벨은 키의 label 부분으로 복원된다.
+    expect(byKey("society-info.지원 동기")?.label).toBe("지원 동기")
+  })
+
+  it("v2: 라운드트립에서 orphan 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
+    const original = makeExperience({
+      type: "academic-society",
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "AI 학회",
+        summary: "",
+        status: "complete",
+        tags: [],
+        fields: { "extended.배경/목표": textarea("보존될 값") },
+        custom: [],
+      },
+    })
+    const payload = toSavePayload(toExperienceV2(original))
+    const content = payload.content as { fields: Record<string, unknown>; custom: Array<{ key: string; value: unknown }> }
+    // 재저장 시 fields 에서는 사라지지만 custom[] 에 키·값이 보존된다.
+    expect(content.fields["extended.배경/목표"]).toBeUndefined()
+    expect(content.custom.find(c => c.key === "extended.배경/목표")?.value).toEqual(textarea("보존될 값"))
+  })
 })
 
 describe("toSavePayload", () => {
