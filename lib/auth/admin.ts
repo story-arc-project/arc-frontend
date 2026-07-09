@@ -43,6 +43,10 @@ async function fetchCurrentUserServer(): Promise<AuthUser | null> {
   }
 
   try {
+    // 프론트 요청에 실려온 쿠키를 백엔드로 forward 한다. 이 가드가 배포 환경에서
+    // 동작하려면 auth 쿠키가 프론트 도메인에서 보여야 한다(백엔드와 공유 상위 도메인
+    // 예: `.story-arc.org`). 백엔드 host-only 쿠키(예: api.story-arc.org 전용)면
+    // 서버 cookies() 가 이를 못 봐 항상 401→null 이 된다 — .env.example 참고.
     const cookieStore = await cookies();
     const cookieHeader = cookieStore
       .getAll()
@@ -55,6 +59,13 @@ async function fetchCurrentUserServer(): Promise<AuthUser | null> {
       headers: { "Content-Type": "application/json", Cookie: cookieHeader },
     });
 
+    // 401(access token 만료)이라도 서버사이드 refresh 는 하지 않고 fail-close 한다.
+    // 서버 컴포넌트는 렌더 중 쿠키를 갱신·지속시킬 수 없고(Next 제약), refresh 토큰
+    // 로테이션 시 갱신본을 브라우저에 못 돌려주면 오히려 세션이 깨진다 —
+    // lib/api/server.ts:54("서버에서는 쿠키 갱신이 불가능")와 동일 정책이다. 갱신은
+    // 클라이언트 client.ts 가 담당하며, 진입점 경로(/api/admin/status)는 useAuth 가
+    // 클라이언트에서 이미 refresh 를 마친 뒤 호출돼 이 401 을 사실상 만나지 않는다.
+    // (직접 /admin 진입 시의 만료-유휴 404 는 새로고침으로 회복 — fail-close = 안전 방향.)
     if (!res.ok) return null;
 
     // 응답 래퍼(`{ data: AuthUser }`) 방어 파싱 — 형태가 달라도 throw 하지 않는다.
