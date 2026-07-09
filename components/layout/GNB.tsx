@@ -6,7 +6,9 @@ import { useState } from "react";
 import { Menu, X } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { UserMenu } from "./UserMenu";
+import { AdminEntryLink } from "./AdminEntryLink";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "대시보드" },
@@ -19,6 +21,8 @@ export function GNB() {
   const pathname = usePathname();
   // logout: 모바일 인라인 섹션 전용. 데스크톱은 <UserMenu>가 자체적으로 처리.
   const { user, logout } = useAuth();
+  // admin 진입점 노출 판정 — GNB 에서 1회만 호출해 데스크톱/모바일 양쪽에 prop 으로 내려준다.
+  const isAdmin = useIsAdmin();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -53,7 +57,7 @@ export function GNB() {
         <div className="ml-auto flex items-center">
           {/* Desktop user menu */}
           <div className="hidden sm:block">
-            <UserMenu />
+            <UserMenu isAdmin={isAdmin} />
           </div>
 
           {/* Mobile hamburger */}
@@ -99,6 +103,11 @@ export function GNB() {
                 </p>
                 <p className="truncate text-caption">{user.account?.email}</p>
               </div>
+              <AdminEntryLink
+                isAdmin={isAdmin}
+                variant="mobile"
+                onClick={() => setMobileOpen(false)}
+              />
               <Link
                 href="/settings"
                 onClick={() => setMobileOpen(false)}
