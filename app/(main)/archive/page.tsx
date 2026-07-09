@@ -16,6 +16,7 @@ import { toExperienceV2 } from "@/lib/utils/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
 import { useBasePath } from "@/lib/utils/use-base-path"
+import { parseArchiveContext, buildReturnTo } from "@/lib/utils/archive-context"
 
 /** @deprecated V1 RightPanel 전용 — V2 는 RightPanelV2 의 read-only 미리보기를 사용. */
 export type ArchiveMode = "empty" | "new" | "detail" | "edit"
@@ -60,7 +61,15 @@ export default function ArchivePage() {
     membershipErrorIds,
   } = useLibraries()
 
-  const [activeLibraryId, setActiveLibraryId] = useState(ALL_LIBRARY_ID)
+  // FRT-82: 편집/새경험 라우트에서 복귀할 때 나가기 직전의 라이브러리·필터 컨텍스트를
+  // returnTo(URL)에 실어 보냈다가 마운트 시 1회 복원한다. 이후엔 사용자 조작이 정본이므로
+  // URL 변화를 추적하지 않는다(빈 deps 로 최초 마운트 시점의 searchParams 만 캡처).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const restoredContext = useMemo(() => parseArchiveContext(searchParams), [])
+
+  const [activeLibraryId, setActiveLibraryId] = useState(
+    restoredContext?.libraryId ?? ALL_LIBRARY_ID,
+  )
   const [libraryActionError, setLibraryActionError] = useState<string | null>(null)
   const [experienceActionError, setExperienceActionError] = useState<string | null>(null)
 
@@ -139,7 +148,21 @@ export default function ArchivePage() {
     toggleTypeFilter,
     toggleStatusFilter,
     clearFilters,
-  } = useLibraryFilter(libraryExperiences)
+  } = useLibraryFilter(libraryExperiences, restoredContext?.filter)
+
+  // FRT-82: returnTo 로 복원한 activeLibraryId 가 (다른 기기/탭 삭제 등으로) 더는 존재하지
+  // 않는 라이브러리를 가리키면 전체로 폴백한다. libraries 는 비동기 로드라 마운트 시점엔
+  // 검증할 수 없으므로 로드 완료 후 1회 보정한다.
+  useEffect(() => {
+    if (isLibrariesLoading) return
+    // 로드 실패 시 libraries 는 시스템 all 만 남고(재시도 배너로 유도) isLoading 은 false 다.
+    // 이때 복원된 activeLibraryId 를 "삭제됨"으로 오판해 all 로 덮으면, 재시도가 성공해도
+    // 원래 라이브러리 컨텍스트를 되살릴 수 없다. 성공 로드 후에만 보정한다.
+    if (librariesError) return
+    if (activeLibraryId !== ALL_LIBRARY_ID && !libraries.some(l => l.id === activeLibraryId)) {
+      setActiveLibraryId(ALL_LIBRARY_ID)
+    }
+  }, [isLibrariesLoading, librariesError, libraries, activeLibraryId])
 
   // Sync ?id= when experiences are loaded (adjust state during render)
   const [syncedForParams, setSyncedForParams] = useState<string | null>(null)
@@ -203,15 +226,19 @@ export default function ArchivePage() {
 
   // 입력은 별도 라우트로 분리됐다(FRT-74). 새 경험/편집은 입력 전용 라우트로
   // 이동한다. 미저장 가드는 입력 뷰 셸(InputViewShell)이 담당한다.
+  // FRT-82: 나가기 직전의 라이브러리·필터 컨텍스트를 returnTo 로 인코딩해 입력 라우트에
+  // 넘긴다. 입력 라우트는 이 값을 opaque 하게 backTo 로 되돌려주고, 복귀 시 리스트가 복원한다.
   const handleNewExperience = useCallback(() => {
-    router.push(`${basePath}/archive/new`)
-  }, [router, basePath])
+    const returnTo = buildReturnTo(basePath, { libraryId: activeLibraryId, filter })
+    router.push(`${basePath}/archive/new?returnTo=${encodeURIComponent(returnTo)}`)
+  }, [router, basePath, activeLibraryId, filter])
 
   const handleEditExperience = useCallback(
     (id: string) => {
-      router.push(`${basePath}/archive/${id}/edit`)
+      const returnTo = buildReturnTo(basePath, { libraryId: activeLibraryId, filter }, id)
+      router.push(`${basePath}/archive/${id}/edit?returnTo=${encodeURIComponent(returnTo)}`)
     },
-    [router, basePath]
+    [router, basePath, activeLibraryId, filter]
   )
 
   // ── CRUD ──────────────────────────────────────────────────────────
