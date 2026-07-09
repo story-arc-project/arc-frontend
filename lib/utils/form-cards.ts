@@ -61,7 +61,11 @@ export interface FormCardsResult {
   visibleCategories: SectionCategory[]
 }
 
-export function computeFormCards(coreBlocks: Block[], sections: FormCardSection[]): FormCardsResult {
+export function computeFormCards(
+  coreBlocks: Block[],
+  sections: FormCardSection[],
+  labelOverrides?: Partial<Record<SectionCategory, string>>,
+): FormCardsResult {
   const titleBlock = coreBlocks.find(isTitle)
   const summaryBlock = coreBlocks.find(isSummary)
   // 코어 증빙 자료는 항상 evidence 카드에 넣는다 (원래 formLayout도 별도 추출하여 항상 표시).
@@ -110,7 +114,7 @@ export function computeFormCards(coreBlocks: Block[], sections: FormCardSection[
     if (blocks.length === 0) continue
     cards.push({
       category: id,
-      label,
+      label: labelOverrides?.[id] ?? label,
       blocks,
       optional: id === "detail" || undefined,
       showOptionalBadge: id === "detail" || undefined,
@@ -123,4 +127,21 @@ export function computeFormCards(coreBlocks: Block[], sections: FormCardSection[
     cards,
     visibleCategories: cards.map(c => c.category),
   }
+}
+
+/**
+ * 카드(섹션) 하나가 "채워졌는지" 판정한다 — 진행도 바 카운트 기준.
+ * 필수 항목이 있으면 그 필수를 모두 채워야 완료, 필수가 없는 섹션(예: 경험 상세·증빙)은
+ * 하나라도 채우면 완료로 본다. (선택 입력이 많아 "모든 항목"을 기준으로 하면 바가 거의 안 오름.)
+ */
+export function isCardComplete(card: FormCardModel): boolean {
+  const required = card.blocks.filter(b => b.required)
+  return required.length > 0
+    ? required.every(b => !isBlockEmpty(b))
+    : card.blocks.some(b => !isBlockEmpty(b))
+}
+
+/** 표시된 고정 카드들의 진행도(완료 카드 수 / 전체 카드 수). 사용자 추가 섹션은 제외. */
+export function computeFormProgress(cards: FormCardModel[]): { done: number; total: number } {
+  return { total: cards.length, done: cards.filter(isCardComplete).length }
 }

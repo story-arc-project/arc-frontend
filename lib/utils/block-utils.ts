@@ -49,6 +49,7 @@ export function createBlock(
   opts?: {
     required?: boolean
     placeholder?: string
+    guide?: string
     options?: string[]
     columns?: BlockColumnDef[]
     collapsed?: boolean
@@ -61,16 +62,17 @@ export function createBlock(
     required: opts?.required,
     collapsed: opts?.collapsed,
     placeholder: opts?.placeholder,
+    guide: opts?.guide,
     options: opts?.options,
     value: emptyValue(type, opts),
   }
 }
 
-export function createTextField(label: string, opts?: { required?: boolean; placeholder?: string }): Block {
+export function createTextField(label: string, opts?: { required?: boolean; placeholder?: string; guide?: string }): Block {
   return createBlock('text', label, opts)
 }
 
-export function createTextareaField(label: string, opts?: { required?: boolean; placeholder?: string }): Block {
+export function createTextareaField(label: string, opts?: { required?: boolean; placeholder?: string; guide?: string }): Block {
   return createBlock('textarea', label, opts)
 }
 
@@ -94,7 +96,7 @@ export function createTagsField(label: string, opts?: { required?: boolean }): B
   return createBlock('tags', label, opts)
 }
 
-export function createLinkField(label: string, opts?: { required?: boolean; placeholder?: string }): Block {
+export function createLinkField(label: string, opts?: { required?: boolean; placeholder?: string; guide?: string }): Block {
   return createBlock('link', label, opts)
 }
 

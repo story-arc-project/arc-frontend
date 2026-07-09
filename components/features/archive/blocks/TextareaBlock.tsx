@@ -25,6 +25,7 @@ export default function TextareaBlock({ block, readOnly, onChange }: TextareaBlo
     <Textarea
       label={block.label}
       placeholder={block.placeholder}
+      hint={block.guide}
       value={val.text}
       onChange={e => onChange({ type: "textarea", text: e.target.value })}
       required={block.required}

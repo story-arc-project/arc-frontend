@@ -171,13 +171,25 @@ function academicSocietyExtensions(): TemplateSection[] {
       category: 'basic',
       label: '학회 정보',
       blocks: [
-        createTextField('학회명', { required: true }),
-        createTextareaField('학회 소개'),
-        createLinkField('공식 URL/웹사이트'),
+        createTextField('학회명', {
+          required: true,
+          guide: '정식 명칭으로 적어주세요. 약칭이 더 잘 알려져 있다면 괄호로 함께 적어도 좋아요.',
+        }),
+        createTextareaField('학회 소개', {
+          guide: '어떤 분야의 학회인지, 규모와 성격을 한두 줄로 적어주세요. 외부에 잘 알려지지 않은 곳이라면 더 친절히요.',
+        }),
+        createLinkField('공식 URL/웹사이트', {
+          guide: '학회 홈페이지나 소개 페이지가 있다면 붙여주세요. 없으면 비워둬도 괜찮아요.',
+        }),
         createPeriodField('기간', { required: true }),
         createFileField('활동 인증서'),
-        createTextareaField('지원 동기'),
-        createTextField('역할/직책', { required: true }),
+        createTextareaField('지원 동기', {
+          guide: '지원한 동기가 무엇인가요? 참여하기로 결심한 이유가 있었다면 떠올려보세요. 완성된 문장이 아니어도 괜찮아요.',
+        }),
+        createTextField('역할/직책', {
+          required: true,
+          guide: '학회 안에서 맡았던 포지션을 적어주세요. 기수·부서·팀이 있다면 함께 적으면 좋아요.',
+        }),
       ],
     },
     {

@@ -22,6 +22,7 @@ export default function ArchiveNewPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sections, setSections] = useState<{ id: string; label: string }[]>([])
+  const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
 
   // FRT-82: 리스트가 실어보낸 returnTo(라이브러리·필터 컨텍스트, basePath 내장)를 복원한다.
   // 취소·이탈은 이 backTo 로 되돌아간다(아무것도 만들지 않았으므로 컨텍스트 복원이 안전).
@@ -52,6 +53,7 @@ export default function ArchiveNewPage() {
       backTo={backTo}
       saving={saving}
       sections={sections}
+      progress={progress}
     >
       {error && (
         <div
@@ -70,6 +72,7 @@ export default function ArchiveNewPage() {
         onCancel={() => router.push(backTo)}
         onUnsavedChange={setHasUnsaved}
         onVisibleSectionsChange={setSections}
+        onProgressChange={setProgress}
       />
     </InputViewShell>
   )

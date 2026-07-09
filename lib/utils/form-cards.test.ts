@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { computeFormCards } from "@/lib/utils/form-cards"
+import { computeFormCards, isCardComplete, computeFormProgress } from "@/lib/utils/form-cards"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks } from "@/lib/utils/block-utils"
-import type { FormCardSection } from "@/lib/utils/form-cards"
+import type { FormCardSection, FormCardModel } from "@/lib/utils/form-cards"
+import type { Block } from "@/types/archive"
 
 function sectionsFor(typeId: Parameters<typeof getTemplateForType>[0]): { core: ReturnType<typeof cloneBlocks>; sections: FormCardSection[] } {
   const t = getTemplateForType(typeId)
@@ -76,5 +77,75 @@ describe("computeFormCards", () => {
     expect(r.visibleCategories).not.toContain("repeat")
     expect(r.visibleCategories).toContain("basic")
     expect(r.visibleCategories).toContain("evidence")
+  })
+
+  it("labelOverrides: 지정 카테고리는 오버라이드 라벨, 미지정은 기본 라벨", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const overridden = computeFormCards(core, sections, { repeat: "프로젝트 기록" })
+    const repeat = overridden.cards.find(c => c.category === "repeat")!
+    expect(repeat.label).toBe("프로젝트 기록")
+    // 미지정 카테고리는 기본(SECTION_CATEGORIES) 라벨 유지
+    expect(overridden.cards.find(c => c.category === "basic")!.label).toBe("기본 정보")
+  })
+
+  it("labelOverrides 미전달 시 기본 라벨을 쓴다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const plain = computeFormCards(core, sections)
+    expect(plain.cards.find(c => c.category === "repeat")!.label).toBe("반복 기록")
+  })
+})
+
+describe("isCardComplete / computeFormProgress", () => {
+  function fillBlock(card: FormCardModel, label: string, text: string) {
+    const b = card.blocks.find(x => x.label === label)!
+    b.value = { type: b.value.type === "textarea" ? "textarea" : "text", text } as Block["value"]
+  }
+
+  it("필수 항목이 모두 채워지면 완료, 하나라도 비면 미완료", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const basic = r.cards.find(c => c.category === "basic")!
+    // basic 필수(학회): 학회명·기간·역할/직책(경험명은 titleBlock 으로 추출돼 카드 밖). 초기엔 미완료.
+    expect(basic.blocks.filter(b => b.required).map(b => b.label).sort()).toEqual(["기간", "역할/직책", "학회명"])
+    expect(isCardComplete(basic)).toBe(false)
+    // 필수 텍스트만 채우고 기간(period)은 비워두면 여전히 미완료
+    fillBlock(basic, "학회명", "한국인공지능학회")
+    fillBlock(basic, "역할/직책", "부회장")
+    expect(isCardComplete(basic)).toBe(false)
+    // 기간(period)까지 채우면 완료
+    const period = basic.blocks.find(b => b.label === "기간")!
+    period.value = { type: "period", start: "2024-03", end: "2024-12", isCurrent: false }
+    expect(isCardComplete(basic)).toBe(true)
+  })
+
+  it("필수 없는 섹션(detail)은 하나라도 채우면 완료", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const detail = r.cards.find(c => c.category === "detail")!
+    expect(detail.blocks.some(b => b.required)).toBe(false)
+    expect(isCardComplete(detail)).toBe(false)
+    fillBlock(detail, detail.blocks[0].label, "무언가 입력")
+    expect(isCardComplete(detail)).toBe(true)
+  })
+
+  it("repeatable-cell 섹션(학회 프로젝트 기록)은 행이 있으면 완료", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const repeat = r.cards.find(c => c.category === "repeat")!
+    expect(isCardComplete(repeat)).toBe(false)
+    const cell = repeat.blocks.find(b => b.value.type === "repeatable-cell")!
+    if (cell.value.type === "repeatable-cell") {
+      cell.value = { ...cell.value, rows: [{ id: "row-1", cells: {} }] }
+    }
+    expect(isCardComplete(repeat)).toBe(true)
+  })
+
+  it("computeFormProgress: done/total 카운트", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    expect(computeFormProgress(r.cards)).toEqual({ done: 0, total: r.cards.length })
+    const detail = r.cards.find(c => c.category === "detail")!
+    fillBlock(detail, detail.blocks[0].label, "채움")
+    expect(computeFormProgress(r.cards).done).toBe(1)
   })
 })
