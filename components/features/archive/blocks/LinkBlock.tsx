@@ -88,6 +88,7 @@ export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps)
       <legend className="text-label text-text-primary mb-1">{block.label}</legend>
       <Input
         placeholder="https://..."
+        hint={block.guide}
         value={val.url}
         onChange={e => update("url", e.target.value)}
       />

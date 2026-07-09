@@ -129,6 +129,30 @@ export function computeFormCards(
   }
 }
 
+function cellFilled(v: string | string[] | undefined): boolean {
+  if (v === undefined) return false
+  return Array.isArray(v) ? v.length > 0 : v.trim() !== ""
+}
+
+/**
+ * 진행도 판정용 "채워짐". 대부분은 !isBlockEmpty 와 같지만, repeatable-cell 은
+ * 빈 행(방금 추가한 blank row)을 완료로 오판하지 않도록 필수 컬럼(없으면 아무 셀)이
+ * 실제로 채워진 행이 하나라도 있는지까지 본다.
+ */
+function isBlockFilledForProgress(block: Block): boolean {
+  const v = block.value
+  if (v.type === "repeatable-cell") {
+    if (v.rows.length === 0) return false
+    const requiredCols = v.columns.filter(c => c.required)
+    return v.rows.some(row =>
+      requiredCols.length > 0
+        ? requiredCols.every(c => cellFilled(row.cells[c.key]))
+        : Object.values(row.cells).some(cellFilled),
+    )
+  }
+  return !isBlockEmpty(block)
+}
+
 /**
  * 카드(섹션) 하나가 "채워졌는지" 판정한다 — 진행도 바 카운트 기준.
  * 필수 항목이 있으면 그 필수를 모두 채워야 완료, 필수가 없는 섹션(예: 경험 상세·증빙)은
@@ -137,8 +161,8 @@ export function computeFormCards(
 export function isCardComplete(card: FormCardModel): boolean {
   const required = card.blocks.filter(b => b.required)
   return required.length > 0
-    ? required.every(b => !isBlockEmpty(b))
-    : card.blocks.some(b => !isBlockEmpty(b))
+    ? required.every(isBlockFilledForProgress)
+    : card.blocks.some(isBlockFilledForProgress)
 }
 
 /** 표시된 고정 카드들의 진행도(완료 카드 수 / 전체 카드 수). 사용자 추가 섹션은 제외. */

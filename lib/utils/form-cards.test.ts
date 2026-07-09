@@ -128,15 +128,22 @@ describe("isCardComplete / computeFormProgress", () => {
     expect(isCardComplete(detail)).toBe(true)
   })
 
-  it("repeatable-cell 섹션(학회 프로젝트 기록)은 행이 있으면 완료", () => {
+  it("repeatable-cell 섹션(학회 프로젝트 기록): 빈 행은 미완료, 필수 셀 채운 행은 완료", () => {
     const { core, sections } = sectionsFor("academic-society")
     const r = computeFormCards(core, sections)
     const repeat = r.cards.find(c => c.category === "repeat")!
     expect(isCardComplete(repeat)).toBe(false)
     const cell = repeat.blocks.find(b => b.value.type === "repeatable-cell")!
-    if (cell.value.type === "repeatable-cell") {
-      cell.value = { ...cell.value, rows: [{ id: "row-1", cells: {} }] }
-    }
+    if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
+    const requiredKeys = cell.value.columns.filter(c => c.required).map(c => c.key)
+    expect(requiredKeys.length).toBeGreaterThan(0)
+    // 빈 행만 추가하면 여전히 미완료 (필수 셀 미충족)
+    cell.value = { ...cell.value, rows: [{ id: "row-1", cells: {} }] }
+    expect(isCardComplete(repeat)).toBe(false)
+    // 필수 셀을 모두 채운 행이 있으면 완료
+    const filledCells: Record<string, string> = {}
+    for (const k of requiredKeys) filledCells[k] = "값"
+    cell.value = { ...cell.value, rows: [{ id: "row-1", cells: filledCells }] }
     expect(isCardComplete(repeat)).toBe(true)
   })
 
