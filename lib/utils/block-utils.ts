@@ -92,7 +92,7 @@ export function createChecklistField(label: string, options: string[], opts?: { 
   return createBlock('checklist', label, { ...opts, options })
 }
 
-export function createTagsField(label: string, opts?: { required?: boolean }): Block {
+export function createTagsField(label: string, opts?: { required?: boolean; guide?: string }): Block {
   return createBlock('tags', label, opts)
 }
 

@@ -11,14 +11,23 @@ describe("templates-v2 category tagging", () => {
     }
   })
 
-  it("첫 type-specific(info) 섹션은 basic, 나머지는 repeat 다", () => {
+  it("첫 type-specific(info) 섹션은 basic, 나머지는 repeat 또는 유형 전용 detail 이다", () => {
+    // 유형이 자기 '경험 상세'(detail) 섹션을 소유하면 범용 확장 섹션 대신 그 섹션을 쓴다(FRT-90 3차).
     for (const t of SYSTEM_TEMPLATES_V2) {
       const typeSections = t.extensions.filter(s => s.id !== "extended")
       expect(typeSections[0].category, `${t.typeId} info`).toBe("basic")
       for (const s of typeSections.slice(1)) {
-        expect(s.category, `${t.typeId}/${s.id}`).toBe("repeat")
+        expect(["repeat", "detail"], `${t.typeId}/${s.id}`).toContain(s.category)
       }
     }
+  })
+
+  it("유형 전용 detail 섹션을 가지면 범용 extended 대신 설정 섹션(공개 설정만)을 쓴다", () => {
+    const t = getTemplateForType("academic-society")
+    const hasCustomDetail = t.extensions.some(s => s.id !== "extended" && s.category === "detail")
+    expect(hasCustomDetail).toBe(true)
+    const ext = t.extensions.find(s => s.id === "extended")!
+    expect(ext.blocks.map(b => b.label)).toEqual(["공개 설정"])
   })
 
   it("extended 섹션은 detail 이다", () => {

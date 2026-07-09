@@ -93,6 +93,52 @@ describe("computeFormCards", () => {
     const plain = computeFormCards(core, sections)
     expect(plain.cards.find(c => c.category === "repeat")!.label).toBe("반복 기록")
   })
+
+  it("학회 detail 카드는 학회 전용 6필드로 구성되고 범용 확장·commonCore 성과 필드가 없다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const detail = r.cards.find(c => c.category === "detail")!
+    const labels = detail.blocks.map(b => b.label)
+    // 학회 전용 6필드(노션 원본) 존재
+    for (const l of [
+      "참여 동기",
+      "단체 활동 / 성과",
+      "개인 활동 / 성과",
+      "성장 / 변화",
+      "사용한 스킬 / 툴 / 기술",
+      "협업 / 팀원",
+    ]) {
+      expect(labels).toContain(l)
+    }
+    // 범용 확장 필드(buildExtendedSection) 부재
+    expect(labels).not.toContain("배경/목표")
+    expect(labels).not.toContain("내가 한 행동")
+    expect(labels).not.toContain("결과/성과")
+    expect(labels).not.toContain("배운 점")
+    expect(labels).not.toContain("난이도")
+    // commonCore detail 필드는 학회 앵커와 동의어라 dedup 으로 부재
+    expect(labels).not.toContain("핵심 성과")
+    expect(labels).not.toContain("내 역할/기여도")
+    // 공개 설정은 포트폴리오 발행에 필요하므로 보존
+    expect(labels).toContain("공개 설정")
+  })
+
+  it("비-커스텀 유형(club)은 범용 확장 필드(배경/목표·공개 설정)를 유지한다", () => {
+    const { core, sections } = sectionsFor("club")
+    const r = computeFormCards(core, sections)
+    const all = r.cards.flatMap(c => c.blocks).map(b => b.label)
+    expect(all).toContain("배경/목표")
+    expect(all).toContain("공개 설정")
+  })
+
+  it("학회 템플릿: society-info 에 지원 동기가 없고 society-detail 에 참여 동기가 있다", () => {
+    const t = getTemplateForType("academic-society")
+    const info = t.extensions.find(e => e.id === "society-info")!
+    expect(info.blocks.some(b => b.label === "지원 동기")).toBe(false)
+    const detail = t.extensions.find(e => e.id === "society-detail")!
+    expect(detail.category).toBe("detail")
+    expect(detail.blocks.some(b => b.label === "참여 동기")).toBe(true)
+  })
 })
 
 describe("isCardComplete / computeFormProgress", () => {
