@@ -33,6 +33,15 @@ export function isAdminEmail(email: string | null | undefined): boolean {
  * redirect 하므로 여기서 재사용하지 않고 쿠키 forward + 원시 fetch 를 둔다.)
  */
 async function fetchCurrentUserServer(): Promise<AuthUser | null> {
+  // E2E·UI 프리뷰 전용 인증 주입(FRT-24 플래그) — auth-api.ts 의 클라이언트 경로와 동일하게
+  // 고정 사용자(seedDemoUser)를 반환해 서버사이드 admin 판정도 스텁 없이 태울 수 있게 한다.
+  // 이 플래그는 이미 전체 인증을 우회하는 테스트 전용이며 production/preview 배포엔 설정하지 않는다.
+  // (dynamic import 로 프로덕션 서버 번들에 데모 시드가 딸려오지 않게 한다.)
+  if (process.env.NEXT_PUBLIC_E2E_AUTH === "true") {
+    const { seedDemoUser } = await import("@/lib/demo/seed");
+    return seedDemoUser;
+  }
+
   try {
     const cookieStore = await cookies();
     const cookieHeader = cookieStore

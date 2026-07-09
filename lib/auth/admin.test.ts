@@ -128,6 +128,28 @@ describe("getAdminUserOrNull", () => {
   })
 })
 
+describe("E2E 인증 주입(NEXT_PUBLIC_E2E_AUTH)", () => {
+  it("플래그가 켜지면 fetch 없이 고정 사용자(seedDemoUser)로 판정한다", async () => {
+    vi.stubEnv("NEXT_PUBLIC_E2E_AUTH", "true")
+    vi.stubEnv("ADMIN_EMAILS", "demo@story-arc.org")
+    const fetchSpy = vi.fn()
+    vi.stubGlobal("fetch", fetchSpy)
+
+    const user = await getAdminUserOrNull()
+
+    expect(user?.account.email).toBe("demo@story-arc.org")
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("플래그가 켜져도 고정 사용자가 ADMIN_EMAILS 에 없으면 null", async () => {
+    vi.stubEnv("NEXT_PUBLIC_E2E_AUTH", "true")
+    vi.stubEnv("ADMIN_EMAILS", "someone@else.com")
+    vi.stubGlobal("fetch", vi.fn())
+
+    expect(await getAdminUserOrNull()).toBeNull()
+  })
+})
+
 describe("requireAdmin", () => {
   it("admin 이면 user 를 반환하고 notFound 를 호출하지 않는다", async () => {
     vi.stubEnv("ADMIN_EMAILS", "admin@story-arc.org")
