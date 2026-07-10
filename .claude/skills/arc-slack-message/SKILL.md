@@ -22,7 +22,7 @@ claude.ai Slack 커넥터(`mcp__claude_ai_Slack__*`)는 **계정당 워크스페
 4. 대상 채널에 봇 초대: 채널에서 `/invite @봇이름`
 5. 토큰 저장(리포 밖, 커밋 금지):
    ```bash
-   export SLACK_BOT_TOKEN=xoxb-...
+   export ARC_NOTIFIER_SLACK_BOT_TOKEN=xoxb-...
    # 또는 영구 보관:
    mkdir -p ~/.arc && printf %s 'xoxb-...' > ~/.arc/slack-bot-token && chmod 600 ~/.arc/slack-bot-token
    ```

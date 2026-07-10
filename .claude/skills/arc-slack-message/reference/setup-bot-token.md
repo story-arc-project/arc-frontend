@@ -29,7 +29,7 @@
 
 ## 5) 토큰 저장 (리포 밖, 커밋 금지)
 ```bash
-export SLACK_BOT_TOKEN=xoxb-...
+export ARC_NOTIFIER_SLACK_BOT_TOKEN=xoxb-...
 # 또는 영구 보관:
 mkdir -p ~/.arc && printf %s 'xoxb-...' > ~/.arc/slack-bot-token && chmod 600 ~/.arc/slack-bot-token
 ```

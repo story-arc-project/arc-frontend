@@ -5,7 +5,7 @@ claude.ai Slack 커넥터(계정당 워크스페이스 1개 제약)를 우회해
 만든 봇 토큰(xoxb-...)으로 Slack Web API를 직접 호출한다.
 
 토큰 우선순위:
-  1) 환경변수 SLACK_BOT_TOKEN
+  1) 환경변수 ARC_NOTIFIER_SLACK_BOT_TOKEN
   2) 파일 ~/.arc/slack-bot-token  (리포 밖. 커밋 금지)
 
 사용법:
@@ -26,7 +26,7 @@ API = "https://slack.com/api/"
 
 
 def get_token() -> str:
-    tok = os.environ.get("SLACK_BOT_TOKEN", "").strip()
+    tok = os.environ.get("ARC_NOTIFIER_SLACK_BOT_TOKEN", "").strip()
     if not tok:
         path = os.path.expanduser("~/.arc/slack-bot-token")
         if os.path.exists(path):
@@ -34,8 +34,8 @@ def get_token() -> str:
                 tok = f.read().strip()
     if not tok:
         sys.exit(
-            "SLACK_BOT_TOKEN 이 없습니다. 환경변수로 지정하거나 ~/.arc/slack-bot-token 에 저장하세요.\n"
-            "  export SLACK_BOT_TOKEN=xoxb-...\n"
+            "ARC_NOTIFIER_SLACK_BOT_TOKEN 이 없습니다. 환경변수로 지정하거나 ~/.arc/slack-bot-token 에 저장하세요.\n"
+            "  export ARC_NOTIFIER_SLACK_BOT_TOKEN=xoxb-...\n"
             "  # 또는  mkdir -p ~/.arc && printf %s 'xoxb-...' > ~/.arc/slack-bot-token && chmod 600 ~/.arc/slack-bot-token"
         )
     if not tok.startswith("xoxb-"):
