@@ -250,7 +250,11 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   const orphanExt: Block[] = []
   for (const b of keyedExt) {
     const matched = b.key ? extTemplateKeys.has(b.key) : extTemplateLabels.has(b.label)
-    ;(matched ? matchedExt : orphanExt).push(b)
+    // 빈 미매칭 블록은 승격하지 않는다(v2 orphanFieldsToBlocks 와 동일 기준). 구 학회 레코드엔
+    // 빈 extended.* 항목이 흔한데, 그대로 custom 으로 올리면 '기타' 카드에 빈 레거시 필드가
+    // 쌓이고 완료 저장이 이를 영구화한다(빈 group 만 정리, 빈 field custom 은 안 지움).
+    if (matched) matchedExt.push(b)
+    else if (!isBlockEmpty(b)) orphanExt.push(b)
   }
 
   return {

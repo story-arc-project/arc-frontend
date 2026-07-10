@@ -98,6 +98,44 @@ describe("experienceToPost", () => {
     expect(post.achievement).toBe("출시 및 200+ 다운로드");
   });
 
+  it("코어 라벨(기간)과 같은 이름의 사용자 섹션이 채워져 있어도 동의어의 실제 기간을 소실하지 않는다", () => {
+    // 사용자 섹션(type 'group')은 스칼라 값이 없는 구조 블록이다. 값 폴백 풀에서 제외하지 않으면
+    // pickValue 정렬에서 채워진 그룹 '기간'이 동의어 '재직기간'보다 먼저 뽑혀 periodOf 가 빈 값을
+    // 돌려주고 실제 기간이 발행에서 소실된다(Codex P2 회귀).
+    const core: Block[] = [
+      blk("c1", "text", "경험명", { type: "text", text: "팀 프로젝트" }),
+      blk("c2", "period", "기간", { type: "period", start: "", end: "", isCurrent: false }),
+      blk("c3", "text", "한 줄 요약", { type: "text", text: "요약" }),
+      blk("c4", "textarea", "내 역할/기여도", { type: "textarea", text: "역할" }),
+      blk("c5", "textarea", "핵심 성과", { type: "textarea", text: "성과" }),
+    ];
+    const ext: Block[] = [
+      blk("e1", "period", "재직기간", { type: "period", start: "2025-03-01", end: "2025-08-31", isCurrent: false }),
+    ];
+    // 사용자가 '기간'이라는 이름으로 만든 채워진 커스텀 섹션(group). 자식이 있어 isBlockEmpty=false.
+    const groupNamedGigan: Block = {
+      id: "g1",
+      type: "group",
+      label: "기간",
+      value: { type: "group" },
+      children: [blk("g1c1", "textarea", "메모", { type: "textarea", text: "이건 기간이 아니라 사용자 메모" })],
+    };
+    const exp = makeExp({
+      type: "team-project",
+      content: {
+        title: "팀 프로젝트",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        coreBlocks: core,
+        extensionBlocks: ext,
+        customBlocks: [groupNamedGigan],
+      },
+    });
+    const post = experienceToPost(exp);
+    expect(post.period).toBe("2025.03 – 2025.08");
+  });
+
   it("기간 동의어가 text 블록(예: 읽은 기간/완독일)이면 입력 문자열을 그대로 쓴다", () => {
     const core: Block[] = [
       blk("c1", "text", "경험명", { type: "text", text: "독서" }),

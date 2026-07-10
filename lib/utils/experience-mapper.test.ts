@@ -338,6 +338,24 @@ describe("toExperienceV2", () => {
     expect(v1.extensionBlocks.find(b => b.label === "참여 동기")?.value).toEqual(textarea("현 템플릿 매칭"))
   })
 
+  it("v1: 빈 미매칭 extension 블록은 custom 으로 보존하지 않는다(v2 orphan 필터와 동일 기준)", () => {
+    // 구 학회 레코드엔 빈 배경/목표·결과/성과 블록이 흔하다. 이를 승격하면 '기타' 카드에
+    // 빈 레거시 필드가 쌓이고 완료 저장이 이를 영구화한다(빈 group 만 정리). 실제 값만 보존한다.
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          extensionBlocks: [
+            { id: "b1", type: "textarea", label: "배경/목표", value: textarea("") }, // 빈 값 → 보존 안 함
+            { id: "b2", type: "textarea", label: "결과/성과", value: textarea("옛 결과/성과") }, // 채워짐 → 보존
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    expect(v1.customBlocks.find(b => b.label === "배경/목표")).toBeUndefined()
+    expect(v1.customBlocks.find(b => b.label === "결과/성과")?.value).toEqual(textarea("옛 결과/성과"))
+  })
+
   it("v1: 라운드트립에서 미매칭 extension 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
     const v1 = toExperienceV2(
       makeExperience({

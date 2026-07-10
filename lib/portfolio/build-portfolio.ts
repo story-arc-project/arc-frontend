@@ -135,7 +135,12 @@ export function experienceToPost(exp: Experience): PortfolioPost {
   // (폼 dedup), (3) 템플릿 개편으로 폐기된 필드값이 orphan 으로 custom 에 보존된 경우
   // (experience-mapper 안전망 — v2 orphanFieldsToBlocks·v1 미매칭 extension 이관).
   // custom 을 빼면 orphan 된 기간·기여·성과가 발행 시 소실된다.
-  const blocks = [...core, ...ev2.extensionBlocks, ...ev2.customBlocks];
+  // 단, 사용자 섹션(type 'group')은 스칼라 값이 없는 구조 블록이라 값 폴백 대상이 아니다.
+  // 코어 라벨(예 '기간')과 같은 이름의 커스텀 섹션이 채워져 있으면 pickValue 정렬에서
+  // 앞서 뽑혀 periodOf/textOf 가 빈 값을 돌려주고 실제 동의어 값이 소실되므로 제외한다.
+  const blocks = [...core, ...ev2.extensionBlocks, ...ev2.customBlocks].filter(
+    (b) => b.type !== "group",
+  );
   const label = EXPERIENCE_TYPE_MAP[exp.type as ExperienceTypeId]?.label ?? "경험";
   return {
     id: exp.id,
