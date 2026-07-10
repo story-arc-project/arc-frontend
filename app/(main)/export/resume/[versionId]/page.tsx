@@ -56,6 +56,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const [continueAnyway, setContinueAnyway] = useState(false);
 
   const load = useCallback(async () => {
+    // 새 버전 로드 시 폐기 플래그를 초기화한다 — 재생성으로 이동해 온 새 버전에서
+    // 이후 정상 편집을 하면 이탈 시 draft 가 다시 저장돼야 한다.
+    discardDraftRef.current = false;
     setLoading(true);
     setError(null);
     try {
@@ -85,6 +88,10 @@ export default function ResumeDetailPage({ params }: PageProps) {
 
   const dirtyRef = useRef(false);
   const resumeRef = useRef<ResumeVersion | null>(null);
+  // 재생성처럼 편집 내용을 의도적으로 폐기하는 이동에서, 언마운트 cleanup 이 draft 를
+  // 되살리지 않도록 하는 플래그. dirtyRef 는 렌더마다 dirty 로 재동기화(96행)되므로
+  // cleanup 직전에 눌러도 무효화된다 → 렌더에 좌우되지 않는 별도 ref 가 필요하다.
+  const discardDraftRef = useRef(false);
 
   const dirty = useMemo(() => {
     if (!resume || !initial) return false;
@@ -160,12 +167,21 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const created = await createResume({ language: resume.meta.language });
       const newId = created.version_id;
       if (!newId) throw new Error("version_id missing");
+      // 재생성 확정 — dialog 약속대로 현재 편집/임시저장을 폐기한다.
+      // 기존 draft 를 지우고, 이어질 언마운트 cleanup 이 편집 내용을 draft 로
+      // 되살리지 않도록 플래그를 세운다.
+      discardDraftRef.current = true;
+      clearDraft(versionId);
+      // versionId만 바뀔 때 App Router가 동일 인스턴스를 재사용해도
+      // 버튼/다이얼로그가 잔존하지 않도록 이동 직전에 상태를 해제한다.
+      setRegenerating(false);
+      setRegenerateOpen(false);
       router.push(`${basePath}/export/resume/${newId}`);
     } catch {
       toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
       setRegenerating(false);
     }
-  }, [resume, regenerating, router, basePath]);
+  }, [resume, regenerating, router, basePath, versionId]);
 
   const handlePrint = useCallback(() => {
     if (typeof window !== "undefined") window.print();
@@ -198,6 +214,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   // Persist draft on any client-side navigation (unmount)
   useEffect(() => {
     return () => {
+      if (discardDraftRef.current) return;
       if (dirtyRef.current && resumeRef.current) {
         writeDraft(versionId, resumeRef.current);
       }
