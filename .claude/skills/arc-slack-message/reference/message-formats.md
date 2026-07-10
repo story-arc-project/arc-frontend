@@ -90,5 +90,8 @@ https://app.notion.com/p/Slack-37673d1b738280a3aeaeee805496d521
 
 - **행동의 언어**(CLAUDE.md): "어떻게 구현했나"가 아니라 "무엇이 가능해졌고 상대가 무엇을 하면 되는가"를 먼저.
 - 멘션은 실제로 알림이 가도록 `<@U…>` 형식을 쓴다(플레인 `@이름`은 알림이 안 감). 멤버 ID는 `scripts/slack.py lookup --query <이름>` 으로 찾는다.
-- 링크는 Slack 마크다운(`<url|텍스트>`가 아니라 표준 마크다운 `[텍스트](url)` 또는 raw URL)로. Notion·Linear 링크를 [자료]/[참고]에 첨부.
+- 링크는 **Slack mrkdwn** 형식으로 쓴다(`chat.postMessage`의 `text`는 mrkdwn이라 CommonMark `[텍스트](url)`는 대괄호 그대로 노출됨):
+  - 라벨 있는 링크: `<https://url|텍스트>`
+  - 라벨 없으면 raw URL(자동 링크)
+  - Notion·Linear 링크를 [자료]/[참고]에 첨부.
 - 이모지는 `:tada:` 같은 코드 표기 사용 가능.
