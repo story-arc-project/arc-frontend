@@ -442,7 +442,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── Recent Analysis ── */}
+        {/* ── Recent Analysis (hidden until first experience) ── */}
+        {experiences.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-title text-text-primary">최근 분석</h2>
@@ -562,16 +563,18 @@ export default function DashboardPage() {
             </Link>
           </div>
         </section>
-
-        {/* ── Recommendations ── */}
-        {summary ? (
-          <RecommendationSection
-            summary={summary}
-            hasExperiences={experiences.length > 0}
-          />
-        ) : summaryError ? null : (
-          <RecommendationSkeleton />
         )}
+
+        {/* ── Recommendations (hidden until first experience) ── */}
+        {experiences.length > 0 &&
+          (summary ? (
+            <RecommendationSection
+              summary={summary}
+              hasExperiences={experiences.length > 0}
+            />
+          ) : summaryError ? null : (
+            <RecommendationSkeleton />
+          ))}
 
         {/* ── CTA Cards ── */}
         {experiences.length > 0 && (
