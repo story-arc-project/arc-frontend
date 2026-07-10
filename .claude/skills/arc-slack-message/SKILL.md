@@ -29,7 +29,11 @@ claude.ai Slack 커넥터(`mcp__claude_ai_Slack__*`)는 **계정당 워크스페
 
 ## 발송 절차
 
-`SKILL_DIR = .claude/skills/arc-slack-message` (이 파일이 있는 디렉터리) 기준.
+아래 명령들은 `SKILL_DIR`(이 파일이 있는 디렉터리)를 참조한다. 먼저 셸에 그대로 붙여 넣어 변수를 정의한다(공백 없이 `=`):
+
+```bash
+SKILL_DIR=.claude/skills/arc-slack-message
+```
 
 1. **연결 확인** — 봇이 올바른 ARC 워크스페이스에 붙었는지 먼저 확인한다(엉뚱한 곳 발송 방지):
    ```bash
