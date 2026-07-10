@@ -58,7 +58,7 @@ export default function KeywordAnalysisPage() {
             </p>
           </div>
           <Button asChild size="sm" className="min-h-11 shrink-0 whitespace-nowrap sm:min-h-0">
-            <Link href="/analysis/keyword/new">
+            <Link href="/analysis/keyword/new" aria-label="새 키워드 분석">
               <Plus size={16} aria-hidden="true" />
               <span className="sm:hidden">새 키워드</span>
               <span className="hidden sm:inline">새 키워드 분석</span>
