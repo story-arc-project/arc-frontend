@@ -196,11 +196,9 @@ export default function HistoryPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               경험을 기록하고 분석을 시작해보세요.
             </p>
-            <Link href="/archive" className="inline-block mt-4">
-              <Button variant="secondary" size="sm">
-                경험 기록하러 가기
-              </Button>
-            </Link>
+            <Button asChild variant="secondary" size="sm" className="mt-4">
+              <Link href="/archive">경험 기록하러 가기</Link>
+            </Button>
           </div>
         ) : (
           <div className="space-y-3" role="tabpanel" id={`history-panel-${filter}`} aria-labelledby={`history-tab-${filter}`}>

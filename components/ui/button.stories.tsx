@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs";
+import { expect, within } from "storybook/test";
+import Link from "next/link";
 
 import { Button } from "./button";
 
@@ -61,4 +63,23 @@ export const Sizes: Story = {
       </Button>
     </div>
   ),
+};
+
+/**
+ * FRT-80 — `asChild`로 Link를 감싸면 버튼 스타일이 자식(`<a>`)에 병합돼
+ * 단일 상호작용 요소(`<a>`)로 렌더된다. `<a>` 안에 `<button>`이 중첩되지 않는다.
+ */
+export const AsChildLink: Story = {
+  render: () => (
+    <Button asChild variant="secondary" size="sm">
+      <Link href="/archive">경험 기록하러 가기</Link>
+    </Button>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const link = canvas.getByRole("link", { name: "경험 기록하러 가기" });
+    expect(link.tagName).toBe("A");
+    // 상호작용 요소 중첩 없음
+    expect(canvasElement.querySelector("button")).toBeNull();
+  },
 };

@@ -84,11 +84,9 @@ export default function IndividualAnalysisPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               경험을 기록하면 자동으로 분석이 시작됩니다.
             </p>
-            <Link href="/archive" className="inline-block mt-4">
-              <Button variant="secondary" size="sm">
-                경험 기록하러 가기
-              </Button>
-            </Link>
+            <Button asChild variant="secondary" size="sm" className="mt-4">
+              <Link href="/archive">경험 기록하러 가기</Link>
+            </Button>
           </div>
         ) : (
           <div className="space-y-3" role="tabpanel" id={`individual-panel-${filter}`} aria-labelledby={`individual-tab-${filter}`}>
