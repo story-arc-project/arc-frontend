@@ -311,6 +311,51 @@ describe("toExperienceV2", () => {
     expect(v2.customBlocks.find(b => b.key === "extended.배경/목표")).toBeUndefined()
     expect(v2.customBlocks.find(b => b.key === "extended.배운 점")?.value).toEqual(textarea("실제 값"))
   })
+
+  it("v1: 현재 템플릿에 없는 저장 extension 블록을 custom 으로 보존한다(구 학회 레거시)", () => {
+    // schema_version 미기재(v1) 레코드는 값이 content.extensionBlocks 에 배열로 남는다.
+    // 학회가 buildSettingsSection 으로 바뀌면서 옛 배경/목표·결과/성과 라벨이 템플릿에서 사라졌다.
+    // 이 미매칭 블록을 extensionBlocks 로 두면 ExperienceFormV2 로드 필터에서 탈락→저장 왕복에
+    // 유실되므로 custom 으로 옮겨 보존해야 한다. 현 템플릿에 있는 라벨(참여 동기)은 extension 유지.
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          extensionBlocks: [
+            { id: "b1", type: "textarea", label: "배경/목표", value: textarea("옛 배경/목표") },
+            { id: "b2", type: "textarea", label: "결과/성과", value: textarea("옛 결과/성과") },
+            { id: "b3", type: "textarea", label: "참여 동기", value: textarea("현 템플릿 매칭") },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    // 미매칭 두 블록은 extensionBlocks 에서 빠지고 customBlocks 로 보존(값 유지).
+    expect(v1.extensionBlocks.find(b => b.label === "배경/목표")).toBeUndefined()
+    expect(v1.extensionBlocks.find(b => b.label === "결과/성과")).toBeUndefined()
+    expect(v1.customBlocks.find(b => b.label === "배경/목표")?.value).toEqual(textarea("옛 배경/목표"))
+    expect(v1.customBlocks.find(b => b.label === "결과/성과")?.value).toEqual(textarea("옛 결과/성과"))
+    // 현 템플릿에 있는 라벨은 extension 에 남는다.
+    expect(v1.extensionBlocks.find(b => b.label === "참여 동기")?.value).toEqual(textarea("현 템플릿 매칭"))
+  })
+
+  it("v1: 라운드트립에서 미매칭 extension 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          extensionBlocks: [
+            { id: "b1", type: "textarea", label: "결과/성과", value: textarea("보존될 성과") },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const payload = toSavePayload(v1)
+    const content = payload.content as {
+      fields: Record<string, unknown>
+      custom: Array<{ label: string; value: unknown }>
+    }
+    expect(content.custom.find(c => c.label === "결과/성과")?.value).toEqual(textarea("보존될 성과"))
+  })
 })
 
 describe("toSavePayload", () => {

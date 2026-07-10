@@ -233,11 +233,31 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   const coreKeyByLabel = labelKeyMap(tmpl.commonCore.blocks)
   const extKeyByLabel = labelKeyMap(tmpl.extensions.flatMap(s => s.blocks))
 
+  // 저장 블록에 안정키 주입(라벨 폴백) 후, 현재 템플릿 extension 이 소비하는 key/label 로
+  // 매칭 여부를 가른다 — ExperienceFormV2 의 섹션 재분배 필터(b.key ? templateKeys : templateLabels)와
+  // 동일 기준이다. 어느 섹션에도 안 걸리는 블록(구 템플릿 라벨: 학회 buildExtendedSection→
+  // buildSettingsSection 전환 후의 배경/목표·결과/성과·지원 동기 등)을 extensionBlocks 로 두면
+  // 폼 로드 시 그 필터에서 탈락→저장 왕복에 유실되므로 custom 으로 보존한다.
+  // v2 orphanFieldsToBlocks 안전망의 v1(schema_version 미기재) 대응.
+  const keyedExt = savedExt.map(b => (b.key ? b : { ...b, key: extKeyByLabel[b.label] }))
+  const extTemplateKeys = new Set<string>()
+  const extTemplateLabels = new Set<string>()
+  for (const s of tmpl.extensions) for (const b of s.blocks) {
+    if (b.key) extTemplateKeys.add(b.key)
+    extTemplateLabels.add(b.label)
+  }
+  const matchedExt: Block[] = []
+  const orphanExt: Block[] = []
+  for (const b of keyedExt) {
+    const matched = b.key ? extTemplateKeys.has(b.key) : extTemplateLabels.has(b.label)
+    ;(matched ? matchedExt : orphanExt).push(b)
+  }
+
   return {
     ...base,
     coreBlocks: savedCore.map(b => (b.key ? b : { ...b, key: coreKeyByLabel[b.label] })),
-    extensionBlocks: savedExt.map(b => (b.key ? b : { ...b, key: extKeyByLabel[b.label] })),
-    customBlocks: savedCustom,
+    extensionBlocks: matchedExt,
+    customBlocks: [...savedCustom, ...orphanExt],
   }
 }
 

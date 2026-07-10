@@ -131,8 +131,11 @@ function pickSummary(blocks: Block[]): string {
 export function experienceToPost(exp: Experience): PortfolioPost {
   const ev2 = toExperienceV2(exp);
   const core = ev2.coreBlocks;
-  // 코어가 비고 값이 type-specific extension 에 저장된 경우(폼 dedup)를 위해 양쪽을 본다.
-  const blocks = [...core, ...ev2.extensionBlocks];
+  // 세 출처를 함께 본다: (1) 코어, (2) 값이 type-specific extension 동의어 라벨에 저장된 경우
+  // (폼 dedup), (3) 템플릿 개편으로 폐기된 필드값이 orphan 으로 custom 에 보존된 경우
+  // (experience-mapper 안전망 — v2 orphanFieldsToBlocks·v1 미매칭 extension 이관).
+  // custom 을 빼면 orphan 된 기간·기여·성과가 발행 시 소실된다.
+  const blocks = [...core, ...ev2.extensionBlocks, ...ev2.customBlocks];
   const label = EXPERIENCE_TYPE_MAP[exp.type as ExperienceTypeId]?.label ?? "경험";
   return {
     id: exp.id,
@@ -141,8 +144,7 @@ export function experienceToPost(exp: Experience): PortfolioPost {
     category: label,
     summary: ev2.summary || pickSummary(blocks),
     contribution: textOf(pickValue(blocks, "내 역할/기여도")),
-    // customBlocks 포함: 폐기된 템플릿 필드의 성과값(orphan)이 발행 시 소실되지 않게.
-    achievement: achievementText([...blocks, ...ev2.customBlocks]),
+    achievement: achievementText(blocks),
     keywords: ev2.tags,
   };
 }
