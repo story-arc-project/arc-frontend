@@ -57,12 +57,12 @@ export default function ComprehensiveAnalysisPage() {
               여러 경험을 묶어 일관된 스토리라인을 만듭니다.
             </p>
           </div>
-          <Link href="/analysis/comprehensive/new">
-            <Button size="sm">
+          <Button asChild size="sm">
+            <Link href="/analysis/comprehensive/new">
               <Plus size={16} aria-hidden="true" />
               새 종합 분석
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
 
         {error ? (
@@ -96,12 +96,12 @@ export default function ComprehensiveAnalysisPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               여러 경험을 선택해 종합 분석을 시작해보세요.
             </p>
-            <Link href="/analysis/comprehensive/new" className="inline-block mt-4">
-              <Button size="sm">
+            <Button asChild size="sm" className="mt-4">
+              <Link href="/analysis/comprehensive/new">
                 <Plus size={16} aria-hidden="true" />
                 새 종합 분석
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         ) : (
           <div className="space-y-3">

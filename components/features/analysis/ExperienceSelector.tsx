@@ -79,11 +79,9 @@ export default function ExperienceSelector({
             <p className="text-body-sm text-text-tertiary">
               선택 가능한 경험이 없습니다.
             </p>
-            <Link href="/archive" className="inline-block mt-3">
-              <Button variant="secondary" size="sm">
-                경험 기록하러 가기
-              </Button>
-            </Link>
+            <Button asChild variant="secondary" size="sm" className="mt-3">
+              <Link href="/archive">경험 기록하러 가기</Link>
+            </Button>
           </div>
         )
       ) : (

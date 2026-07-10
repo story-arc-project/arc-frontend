@@ -250,11 +250,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
             : "잠시 후 다시 시도해주세요."}
         </p>
         <div className="flex gap-2">
-          <Link href={`${basePath}/export`}>
-            <Button variant="ghost" size="sm">
-              익스포트로 돌아가기
-            </Button>
-          </Link>
+          <Button asChild variant="ghost" size="sm">
+            <Link href={`${basePath}/export`}>익스포트로 돌아가기</Link>
+          </Button>
           {!isNotFound && (
             <Button variant="primary" size="sm" onClick={load}>
               다시 시도

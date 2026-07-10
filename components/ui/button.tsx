@@ -1,4 +1,5 @@
 import { ButtonHTMLAttributes, forwardRef } from "react";
+import { Slot } from "@radix-ui/react-slot";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
 type ButtonSize = "sm" | "md" | "lg";
@@ -7,6 +8,11 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   fullWidth?: boolean;
+  /**
+   * 렌더 요소를 자식 엘리먼트로 위임한다(Radix Slot). `<Button asChild><Link/></Button>`
+   * 처럼 쓰면 버튼 스타일이 자식(`<a>`)에 병합돼 단일 상호작용 요소로 렌더된다.
+   */
+  asChild?: boolean;
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
@@ -32,16 +38,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       variant = "primary",
       size = "md",
       fullWidth = false,
+      asChild = false,
       className = "",
       children,
       ...props
     },
     ref
   ) => {
+    const Comp = asChild ? Slot : "button";
     return (
-      <button
+      <Comp
         ref={ref}
-        type={props.type ?? "button"}
+        // anchor 등 비-button 요소에는 type="button"을 강제 주입하지 않는다.
+        type={asChild ? props.type : props.type ?? "button"}
         className={[
           "inline-flex items-center justify-center gap-2",
           "transition-colors duration-150 cursor-pointer",
@@ -56,7 +65,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {children}
-      </button>
+      </Comp>
     );
   }
 );

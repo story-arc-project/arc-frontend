@@ -57,12 +57,12 @@ export default function KeywordAnalysisPage() {
               특정 키워드에 부합하는 경험을 찾아 분석합니다.
             </p>
           </div>
-          <Link href="/analysis/keyword/new">
-            <Button size="sm">
+          <Button asChild size="sm">
+            <Link href="/analysis/keyword/new">
               <Plus size={16} aria-hidden="true" />
               새 키워드 분석
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
 
         {error ? (
@@ -99,12 +99,12 @@ export default function KeywordAnalysisPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               키워드를 선택해 경험 분석을 시작해보세요.
             </p>
-            <Link href="/analysis/keyword/new" className="inline-block mt-4">
-              <Button size="sm">
+            <Button asChild size="sm" className="mt-4">
+              <Link href="/analysis/keyword/new">
                 <Plus size={16} aria-hidden="true" />
                 새 키워드 분석
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         ) : (
           <div className="space-y-3">
