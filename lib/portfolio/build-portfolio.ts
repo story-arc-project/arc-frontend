@@ -86,19 +86,37 @@ function periodOf(value: BlockValue | undefined): string {
 // SEMANTIC_GROUPS 에 넣지 않는다 — 폼 dedup 동작(아카이브 입력)을 바꾸지 않기 위해 로컬 처리.
 const SUMMARY_LABELS = ["한 줄 요약", "한 줄 설명", "한 줄 소개"];
 
+// 성과 라벨 그룹(SEMANTIC_GROUPS.achievement)엔 성격이 다른 둘이 섞여 있다:
+//  - 동의어(핵심 성과·결과/성과·성과 등): 같은 질문의 **대안**. 하나만 고른다(core 우선).
+//  - 상호보완(학회 `단체 활동 / 성과`·`개인 활동 / 성과`): 동시에 채우는 별개 항목. 모두 합친다.
+const COMPLEMENTARY_ACHIEVEMENT_LABELS = ["단체 활동 / 성과", "개인 활동 / 성과"];
+
 /**
- * "핵심 성과" 는 유형별로 보통 단일 동의어(결과/성과·성과 등) 하나로 저장되지만,
- * 학회는 `단체 활동 / 성과` 와 `개인 활동 / 성과` 를 **동시에** 채우는 상호보완 필드다.
- * pickValue(첫 비어있지 않은 것만)로 뽑으면 뒤 목록이 통째로 누락되므로, 성과만은
- * 채워진 동등 블록을 모두 모아 합친다. 단일 유형은 채워진 게 하나뿐이라 무변화(무회귀).
+ * 성과 텍스트를 만든다.
+ * - 동의어는 첫 채워진 값 하나만 쓴다. 구 레코드에서 core `핵심 성과`와 type-specific 동의어
+ *   (`결과/성과` 등)가 동시에 남아 있어도 합치면 포트폴리오에 성과가 중복·과장되므로 core 우선 단일.
+ * - 학회 상호보완 필드(단체·개인 활동/성과)만 모두 합친다. 단일 유형은 채워진 게 하나라 무변화(무회귀).
+ * 호출측이 customBlocks 까지 넘기면, 폐기된 템플릿 필드(구 `extended.결과/성과`)가 orphan 으로
+ * 보존된 경우에도 발행 시 성과가 소실되지 않는다.
  */
 function achievementText(blocks: Block[]): string {
-  const labels = equivalentLabels("핵심 성과");
-  return blocks
-    .filter((b) => labels.includes(b.label) && !isBlockEmpty(b))
-    .map((b) => textOf(b.value))
-    .filter(Boolean)
-    .join("\n");
+  const synonymLabels = equivalentLabels("핵심 성과").filter(
+    (l) => !COMPLEMENTARY_ACHIEVEMENT_LABELS.includes(l),
+  );
+  const parts: string[] = [];
+  // 동의어: core 우선, 채워진 것 하나만.
+  const filledSynonyms = blocks.filter((b) => synonymLabels.includes(b.label) && !isBlockEmpty(b));
+  const primary = filledSynonyms.find((b) => b.label === "핵심 성과") ?? filledSynonyms[0];
+  const primaryText = textOf(primary?.value);
+  if (primaryText) parts.push(primaryText);
+  // 상호보완(학회): 채워진 것 모두.
+  for (const b of blocks) {
+    if (COMPLEMENTARY_ACHIEVEMENT_LABELS.includes(b.label) && !isBlockEmpty(b)) {
+      const t = textOf(b.value);
+      if (t) parts.push(t);
+    }
+  }
+  return parts.join("\n");
 }
 
 function pickSummary(blocks: Block[]): string {
@@ -123,7 +141,8 @@ export function experienceToPost(exp: Experience): PortfolioPost {
     category: label,
     summary: ev2.summary || pickSummary(blocks),
     contribution: textOf(pickValue(blocks, "내 역할/기여도")),
-    achievement: achievementText(blocks),
+    // customBlocks 포함: 폐기된 템플릿 필드의 성과값(orphan)이 발행 시 소실되지 않게.
+    achievement: achievementText([...blocks, ...ev2.customBlocks]),
     keywords: ev2.tags,
   };
 }

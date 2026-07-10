@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Experience } from "@/types/experience";
 import type { Block } from "@/types/archive";
+import { SCHEMA_VERSION_V2 } from "@/types/archive";
 import type { PortfolioProfile } from "@/types/portfolio";
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper";
 import { buildPortfolio, experienceToPost, isPublishableExperience } from "./build-portfolio";
@@ -156,6 +157,42 @@ describe("experienceToPost", () => {
       content: { title: "AI 학회", summary: "요약", status: "complete", tags: [], coreBlocks: core, extensionBlocks: ext },
     });
     expect(experienceToPost(exp).achievement).toBe("전국 케이스 경진대회 은상\n우수 부원 선정");
+  });
+
+  it("성과 동의어가 core 와 type-specific 에 동시에 남아 있어도 하나만 쓴다(중복·과장 방지)", () => {
+    // 동의어(핵심 성과 ↔ 결과/성과)는 같은 질문의 대안이다. 둘 다 채워져 있어도 합치면
+    // 포트폴리오에 성과가 중복/과장되므로 core 우선 단일 값만 쓴다(상호보완 학회 필드와 구분).
+    const core: Block[] = [
+      blk("c1", "text", "경험명", { type: "text", text: "프로젝트" }),
+      blk("c5", "textarea", "핵심 성과", { type: "textarea", text: "코어 성과값" }),
+    ];
+    const ext: Block[] = [
+      blk("e1", "textarea", "결과/성과", { type: "textarea", text: "중복 성과값" }),
+    ];
+    const exp = makeExp({
+      content: { title: "프로젝트", summary: "요약", status: "complete", tags: [], coreBlocks: core, extensionBlocks: ext },
+    });
+    expect(experienceToPost(exp).achievement).toBe("코어 성과값");
+  });
+
+  it("학회(구 레코드): 폐기된 extended.결과/성과 성과값이 orphan 으로 보존돼도 발행 시 포함한다", () => {
+    // 3차 개편으로 학회 템플릿에서 범용 extended 가 빠지며 구 `extended.결과/성과` 는 현재 템플릿이
+    // 소비하지 않아 customBlocks(orphan)로 보존된다. 성과 계산이 core+extension 만 보면 이 값이
+    // 통째로 누락되므로 customBlocks 까지 봐야 발행 포트폴리오에서 성과가 소실되지 않는다.
+    const exp = makeExp({
+      type: "academic-society",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "AI 학회",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "extended.결과/성과": { type: "textarea", text: "전국 대회 대상 수상" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).achievement).toBe("전국 대회 대상 수상");
   });
 
   it("한 줄 요약이 비면 type-specific 한 줄 설명으로 폴백한다", () => {
