@@ -18,9 +18,6 @@ import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
 import { useBasePath } from "@/lib/utils/use-base-path"
 import { parseArchiveContext, buildReturnTo } from "@/lib/utils/archive-context"
 
-/** @deprecated V1 RightPanel 전용 — V2 는 RightPanelV2 의 read-only 미리보기를 사용. */
-export type ArchiveMode = "empty" | "new" | "detail" | "edit"
-
 type MobileView = "list" | "panel"
 
 export default function ArchivePage() {
