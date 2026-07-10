@@ -45,6 +45,7 @@ export function ResumeDetailTopBar({
         <Button
           variant="ghost"
           size="sm"
+          className="min-h-11 shrink-0 sm:min-h-0"
           onClick={onSave}
           disabled={!dirty || saving}
         >
@@ -54,20 +55,26 @@ export function ResumeDetailTopBar({
         <Button
           variant="ghost"
           size="sm"
+          className="min-h-11 shrink-0 sm:min-h-0"
+          aria-label="다시 만들기"
           onClick={onRegenerate}
           disabled={regenerating}
         >
           <RefreshCcw size={13} className="mr-1" />
-          다시 만들기
+          <span className="sm:hidden">다시</span>
+          <span className="hidden sm:inline">다시 만들기</span>
         </Button>
         <Button
           variant="secondary"
           size="sm"
+          className="min-h-11 shrink-0 sm:min-h-0"
+          aria-label="PDF 다운로드"
           onClick={onPrint}
           title="인쇄 창에서 '대상'을 'PDF로 저장'으로 선택하세요"
         >
           <Printer size={13} className="mr-1" />
-          PDF 다운로드
+          <span className="sm:hidden">PDF</span>
+          <span className="hidden sm:inline">PDF 다운로드</span>
         </Button>
       </div>
     </header>

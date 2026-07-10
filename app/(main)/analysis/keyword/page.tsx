@@ -57,10 +57,10 @@ export default function KeywordAnalysisPage() {
               특정 키워드에 부합하는 경험을 찾아 분석합니다.
             </p>
           </div>
-          <Button asChild size="sm">
-            <Link href="/analysis/keyword/new">
+          <Button asChild size="sm" className="min-h-11 shrink-0 whitespace-nowrap sm:min-h-0">
+            <Link href="/analysis/keyword/new" aria-label="새 키워드 분석">
               <Plus size={16} aria-hidden="true" />
-              새 키워드 분석
+              <span className="hidden sm:inline">새 키워드 분석</span>
             </Link>
           </Button>
         </div>
