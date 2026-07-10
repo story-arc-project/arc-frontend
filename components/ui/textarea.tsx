@@ -6,6 +6,8 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
   hint?: string;
   error?: string;
+  /** 힌트(가이드라인) 위치. "top"이면 라벨과 입력칸 사이에 렌더한다. 기본 "bottom". */
+  hintPosition?: "top" | "bottom";
 }
 
 function autoResize(el: HTMLTextAreaElement) {
@@ -14,12 +16,15 @@ function autoResize(el: HTMLTextAreaElement) {
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ label, hint, error, className = "", id, onChange, value, ...props }, ref) => {
+  ({ label, hint, error, hintPosition = "bottom", className = "", id, onChange, value, ...props }, ref) => {
     const innerRef = useRef<HTMLTextAreaElement>(null);
     const textareaId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
     const hintId = textareaId ? `${textareaId}-hint` : undefined;
     const errorId = textareaId ? `${textareaId}-error` : undefined;
     const describedBy = error ? errorId : hint ? hintId : undefined;
+    const hintNode = hint ? (
+      <p id={hintId} className="text-caption">{hint}</p>
+    ) : null;
 
     // Sync forwarded ref + inner ref
     const setRef = useCallback(
@@ -48,6 +53,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
             {label}
           </label>
         )}
+        {hintPosition === "top" && hintNode}
         <textarea
           ref={setRef}
           id={textareaId}
@@ -76,8 +82,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         />
         {error ? (
           <p id={errorId} className="text-body-sm text-error">{error}</p>
-        ) : hint ? (
-          <p id={hintId} className="text-caption">{hint}</p>
+        ) : hintPosition !== "top" ? (
+          hintNode
         ) : null}
       </div>
     );

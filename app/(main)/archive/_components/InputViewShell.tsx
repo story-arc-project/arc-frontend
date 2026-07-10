@@ -21,6 +21,8 @@ interface InputViewShellProps {
   saving?: boolean
   /** 좌측 레일 섹션 네비에 표시할 섹션 목록 */
   sections: { id: string; label: string }[]
+  /** 좌측 레일에 표시할 작성 진행도(완료 카드 수/전체) */
+  progress?: { done: number; total: number }
   children: ReactNode
 }
 
@@ -43,6 +45,7 @@ export default function InputViewShell({
   backTo,
   saving,
   sections,
+  progress,
   children,
 }: InputViewShellProps) {
   const router = useRouter()
@@ -81,7 +84,7 @@ export default function InputViewShell({
           <ArrowLeft size={16} />
           <span>목록으로</span>
         </button>
-        <SectionNav sections={sections} formRef={formRef} saving={saving} />
+        <SectionNav sections={sections} formRef={formRef} saving={saving} progress={progress} />
       </aside>
 
       {/* 본문 */}

@@ -36,3 +36,26 @@ export const Default: Story = {}
 export const Saving: Story = {
   args: { saving: true },
 }
+
+/** 진행도 바 — 아무 섹션도 안 채운 상태 (0/4) (FRT-90). */
+export const ProgressEmpty: Story = {
+  args: { progress: { done: 0, total: 4 } },
+}
+
+/** 진행도 바 — 절반 완료 (2/4). 학회는 repeat 앵커가 '프로젝트 기록'으로 표시된다. */
+export const ProgressHalf: Story = {
+  args: {
+    sections: [
+      { id: "basic", label: "기본 정보" },
+      { id: "detail", label: "경험 상세" },
+      { id: "repeat", label: "프로젝트 기록" },
+      { id: "evidence", label: "활동 증빙" },
+    ],
+    progress: { done: 2, total: 4 },
+  },
+}
+
+/** 진행도 바 — 전부 완료 (4/4). */
+export const ProgressFull: Story = {
+  args: { progress: { done: 4, total: 4 } },
+}

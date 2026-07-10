@@ -79,6 +79,8 @@ export interface BlockColumnDef {
   required?: boolean
   placeholder?: string
   options?: string[]
+  /** 입력 가이드라인(컬럼 라벨과 입력칸 사이 안내문). 반복 입력의 첫 행에만 렌더된다. */
+  guide?: string
 }
 
 export interface BlockRow {
@@ -143,6 +145,11 @@ export interface Block {
   required?: boolean
   collapsed?: boolean
   placeholder?: string
+  /**
+   * 입력 가이드라인(필드 아래 안내문). Input/Textarea 의 hint 로 렌더된다.
+   * placeholder 가 "무엇을 쓰는 칸인가"라면, guide 는 "어떻게·왜 쓰면 좋은가"를 안내한다.
+   */
+  guide?: string
   options?: string[]
   /** 섹션 category override. core 섹션의 이질적 블록(기간/역할/성과/증빙) 분류에 사용. */
   category?: SectionCategory
@@ -181,6 +188,18 @@ export interface ExperienceTypeInfo {
   label: string
   icon: string
   category: 'academic' | 'career' | 'project' | 'personal'
+}
+
+/**
+ * 유형별 섹션(카드·앵커) 라벨 오버라이드. 고정 4카테고리 라벨(SECTION_CATEGORIES)을
+ * 특정 경험 유형에서만 다른 이름으로 보이게 한다 — 예: 학회의 '반복 기록' → '프로젝트 기록'.
+ * "유형마다 섹션이 달라지는" 구조의 확장점이며, 표시 전용이라 안정키(`${sectionId}.${label}`)와
+ * 무관하다(마이그레이션 불필요). 미지정 카테고리는 기본 라벨로 폴백한다.
+ */
+export const SECTION_LABEL_OVERRIDES: Partial<
+  Record<ExperienceTypeId, Partial<Record<SectionCategory, string>>>
+> = {
+  'academic-society': { repeat: '프로젝트 기록' },
 }
 
 // ─── Templates ──────────────────────────────────────────────────

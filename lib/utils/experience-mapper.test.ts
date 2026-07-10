@@ -236,6 +236,144 @@ describe("toExperienceV2", () => {
     expect(v2.customBlocks[0]).toMatchObject({ key: "custom-1", label: "나만의 메모", type: "text" })
     expect(v2.customBlocks[0].value).toEqual(text("hi"))
   })
+
+  it("v2: 현재 템플릿에 없는 orphan fields 값을 custom 블록으로 보존한다(구 템플릿 개편)", () => {
+    // 학회 개편(FRT-90 3차)으로 society-info.지원 동기 → society-detail.참여 동기 이동,
+    // 범용 extended.배경/목표 제거. 기존 레코드의 그 값들이 소실되지 않아야 한다.
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "AI 학회",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: {
+            "society-info.지원 동기": textarea("옛 지원 동기 텍스트"),
+            "extended.배경/목표": textarea("옛 배경/목표"),
+          },
+          custom: [],
+        },
+      }),
+    )
+    // 두 orphan 값이 customBlocks 로 보존되고 키·값이 유지된다.
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+    expect(byKey("society-info.지원 동기")?.value).toEqual(textarea("옛 지원 동기 텍스트"))
+    expect(byKey("extended.배경/목표")?.value).toEqual(textarea("옛 배경/목표"))
+    // 라벨은 키의 label 부분으로 복원된다.
+    expect(byKey("society-info.지원 동기")?.label).toBe("지원 동기")
+  })
+
+  it("v2: 라운드트립에서 orphan 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
+    const original = makeExperience({
+      type: "academic-society",
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "AI 학회",
+        summary: "",
+        status: "complete",
+        tags: [],
+        fields: { "extended.배경/목표": textarea("보존될 값") },
+        custom: [],
+      },
+    })
+    const payload = toSavePayload(toExperienceV2(original))
+    const content = payload.content as { fields: Record<string, unknown>; custom: Array<{ key: string; value: unknown }> }
+    // 재저장 시 fields 에서는 사라지지만 custom[] 에 키·값이 보존된다.
+    expect(content.fields["extended.배경/목표"]).toBeUndefined()
+    expect(content.custom.find(c => c.key === "extended.배경/목표")?.value).toEqual(textarea("보존될 값"))
+  })
+
+  it("v2: 빈 orphan fields 는 custom 으로 보존하지 않는다(구 레코드 빈 레거시 필드 누적 방지)", () => {
+    // toSavePayload 는 키 있는 블록을 값이 비어도 fields 에 쓰므로, 구 학회 레코드엔
+    // 빈 extended.* 항목이 흔하다. 이걸 승격하면 '기타' 카드에 빈 필드가 쌓인다.
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "AI 학회",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: {
+            "extended.배경/목표": textarea(""), // 빈 값 → 보존 안 함
+            "extended.배운 점": textarea("실제 값"), // 채워짐 → 보존
+          },
+          custom: [],
+        },
+      }),
+    )
+    expect(v2.customBlocks.find(b => b.key === "extended.배경/목표")).toBeUndefined()
+    expect(v2.customBlocks.find(b => b.key === "extended.배운 점")?.value).toEqual(textarea("실제 값"))
+  })
+
+  it("v1: 현재 템플릿에 없는 저장 extension 블록을 custom 으로 보존한다(구 학회 레거시)", () => {
+    // schema_version 미기재(v1) 레코드는 값이 content.extensionBlocks 에 배열로 남는다.
+    // 학회가 buildSettingsSection 으로 바뀌면서 옛 배경/목표·결과/성과 라벨이 템플릿에서 사라졌다.
+    // 이 미매칭 블록을 extensionBlocks 로 두면 ExperienceFormV2 로드 필터에서 탈락→저장 왕복에
+    // 유실되므로 custom 으로 옮겨 보존해야 한다. 현 템플릿에 있는 라벨(참여 동기)은 extension 유지.
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          extensionBlocks: [
+            { id: "b1", type: "textarea", label: "배경/목표", value: textarea("옛 배경/목표") },
+            { id: "b2", type: "textarea", label: "결과/성과", value: textarea("옛 결과/성과") },
+            { id: "b3", type: "textarea", label: "참여 동기", value: textarea("현 템플릿 매칭") },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    // 미매칭 두 블록은 extensionBlocks 에서 빠지고 customBlocks 로 보존(값 유지).
+    expect(v1.extensionBlocks.find(b => b.label === "배경/목표")).toBeUndefined()
+    expect(v1.extensionBlocks.find(b => b.label === "결과/성과")).toBeUndefined()
+    expect(v1.customBlocks.find(b => b.label === "배경/목표")?.value).toEqual(textarea("옛 배경/목표"))
+    expect(v1.customBlocks.find(b => b.label === "결과/성과")?.value).toEqual(textarea("옛 결과/성과"))
+    // 현 템플릿에 있는 라벨은 extension 에 남는다.
+    expect(v1.extensionBlocks.find(b => b.label === "참여 동기")?.value).toEqual(textarea("현 템플릿 매칭"))
+  })
+
+  it("v1: 빈 미매칭 extension 블록은 custom 으로 보존하지 않는다(v2 orphan 필터와 동일 기준)", () => {
+    // 구 학회 레코드엔 빈 배경/목표·결과/성과 블록이 흔하다. 이를 승격하면 '기타' 카드에
+    // 빈 레거시 필드가 쌓이고 완료 저장이 이를 영구화한다(빈 group 만 정리). 실제 값만 보존한다.
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          extensionBlocks: [
+            { id: "b1", type: "textarea", label: "배경/목표", value: textarea("") }, // 빈 값 → 보존 안 함
+            { id: "b2", type: "textarea", label: "결과/성과", value: textarea("옛 결과/성과") }, // 채워짐 → 보존
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    expect(v1.customBlocks.find(b => b.label === "배경/목표")).toBeUndefined()
+    expect(v1.customBlocks.find(b => b.label === "결과/성과")?.value).toEqual(textarea("옛 결과/성과"))
+  })
+
+  it("v1: 라운드트립에서 미매칭 extension 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          extensionBlocks: [
+            { id: "b1", type: "textarea", label: "결과/성과", value: textarea("보존될 성과") },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const payload = toSavePayload(v1)
+    const content = payload.content as {
+      fields: Record<string, unknown>
+      custom: Array<{ label: string; value: unknown }>
+    }
+    expect(content.custom.find(c => c.label === "결과/성과")?.value).toEqual(textarea("보존될 성과"))
+  })
 })
 
 describe("toSavePayload", () => {

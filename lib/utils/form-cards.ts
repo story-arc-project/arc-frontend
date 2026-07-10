@@ -6,11 +6,11 @@ import { isBlockEmpty } from "@/lib/utils/block-utils"
 const SEMANTIC_GROUPS: Record<string, string[]> = {
   period: ["기간", "재직기간", "읽은 기간/완독일", "제작 기간", "준비 기간", "학습 기간"],
   role: ["내 역할/기여도", "내 역할/기여", "내 역할", "내가 맡은 파트", "직책/역할", "역할/직책", "역할"],
-  achievement: ["핵심 성과", "핵심 성과 기록", "결과/성과", "성과", "성과/산출물", "반응/성과", "변화/성과", "임팩트/변화"],
-  team: ["협업/팀", "팀/조직", "팀 구성", "협업 방식", "협업/커뮤니케이션 방식"],
+  achievement: ["핵심 성과", "핵심 성과 기록", "결과/성과", "성과", "성과/산출물", "반응/성과", "변화/성과", "임팩트/변화", "단체 활동 / 성과", "개인 활동 / 성과"],
+  team: ["협업/팀", "팀/조직", "팀 구성", "협업 방식", "협업/커뮤니케이션 방식", "협업 / 팀원"],
   motivation: ["지원 동기", "참여 동기", "읽은 이유", "목표/만들고 싶었던 이유"],
   evidence: ["증빙 자료", "증빙", "활동 인증서", "활동 인증서/수료 증빙", "수상 증빙", "자격증 증빙", "봉사 확인서", "꾸준함 증거"],
-  lesson: ["배운 점", "느낀 점/가치관 변화"],
+  lesson: ["배운 점", "느낀 점/가치관 변화", "성장 / 변화"],
 }
 
 function getSemanticGroup(label: string): string | null {
@@ -61,7 +61,11 @@ export interface FormCardsResult {
   visibleCategories: SectionCategory[]
 }
 
-export function computeFormCards(coreBlocks: Block[], sections: FormCardSection[]): FormCardsResult {
+export function computeFormCards(
+  coreBlocks: Block[],
+  sections: FormCardSection[],
+  labelOverrides?: Partial<Record<SectionCategory, string>>,
+): FormCardsResult {
   const titleBlock = coreBlocks.find(isTitle)
   const summaryBlock = coreBlocks.find(isSummary)
   // 코어 증빙 자료는 항상 evidence 카드에 넣는다 (원래 formLayout도 별도 추출하여 항상 표시).
@@ -110,7 +114,7 @@ export function computeFormCards(coreBlocks: Block[], sections: FormCardSection[
     if (blocks.length === 0) continue
     cards.push({
       category: id,
-      label,
+      label: labelOverrides?.[id] ?? label,
       blocks,
       optional: id === "detail" || undefined,
       showOptionalBadge: id === "detail" || undefined,
@@ -123,4 +127,58 @@ export function computeFormCards(coreBlocks: Block[], sections: FormCardSection[
     cards,
     visibleCategories: cards.map(c => c.category),
   }
+}
+
+function cellFilled(v: string | string[] | undefined): boolean {
+  if (v === undefined) return false
+  return Array.isArray(v) ? v.length > 0 : v.trim() !== ""
+}
+
+/**
+ * 진행도 판정용 "채워짐". 대부분은 !isBlockEmpty 와 같지만, repeatable-cell 은
+ * 빈 행(방금 추가한 blank row)을 완료로 오판하지 않도록 필수 컬럼(없으면 아무 셀)이
+ * 실제로 채워진 행이 하나라도 있는지까지 본다.
+ */
+function isBlockFilledForProgress(block: Block): boolean {
+  const v = block.value
+  if (v.type === "repeatable-cell") {
+    if (v.rows.length === 0) return false
+    const requiredCols = v.columns.filter(c => c.required)
+    return v.rows.some(row =>
+      requiredCols.length > 0
+        ? requiredCols.every(c => cellFilled(row.cells[c.key]))
+        : Object.values(row.cells).some(cellFilled),
+    )
+  }
+  return !isBlockEmpty(block)
+}
+
+/**
+ * 진행도 판정용 "필수 블록". block.required 뿐 아니라, 블록 자체는 optional 이어도
+ * 필수 컬럼을 가진 repeatable-cell(예: 학회 프로젝트 기록·수업 기록)도 필수로 본다.
+ * 이렇게 하지 않으면 optional 형제 필드만 채워도 카드가 완료로 오판된다.
+ */
+function isRequiredBlock(block: Block): boolean {
+  if (block.required) return true
+  if (block.value.type === "repeatable-cell") {
+    return block.value.columns.some(c => c.required)
+  }
+  return false
+}
+
+/**
+ * 카드(섹션) 하나가 "채워졌는지" 판정한다 — 진행도 바 카운트 기준.
+ * 필수 항목이 있으면 그 필수를 모두 채워야 완료, 필수가 없는 섹션(예: 경험 상세·증빙)은
+ * 하나라도 채우면 완료로 본다. (선택 입력이 많아 "모든 항목"을 기준으로 하면 바가 거의 안 오름.)
+ */
+export function isCardComplete(card: FormCardModel): boolean {
+  const required = card.blocks.filter(isRequiredBlock)
+  return required.length > 0
+    ? required.every(isBlockFilledForProgress)
+    : card.blocks.some(isBlockFilledForProgress)
+}
+
+/** 표시된 고정 카드들의 진행도(완료 카드 수 / 전체 카드 수). 사용자 추가 섹션은 제외. */
+export function computeFormProgress(cards: FormCardModel[]): { done: number; total: number } {
+  return { total: cards.length, done: cards.filter(isCardComplete).length }
 }

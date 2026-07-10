@@ -26,6 +26,7 @@ export default function ArchiveEditPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [sections, setSections] = useState<{ id: string; label: string }[]>([])
+  const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
 
   // FRT-82: 리스트 페이지가 실어보낸 returnTo(라이브러리·필터 컨텍스트 포함, basePath 내장)를
   // 그대로 backTo 로 되돌린다. 없으면(딥링크·북마크 진입) 해당 레코드 상세로 폴백.
@@ -91,6 +92,7 @@ export default function ArchiveEditPage() {
       backTo={backTo}
       saving={saving}
       sections={sections}
+      progress={progress}
     >
       {saveError && (
         <div
@@ -112,6 +114,7 @@ export default function ArchiveEditPage() {
         onCancel={() => router.push(backTo)}
         onUnsavedChange={setHasUnsaved}
         onVisibleSectionsChange={setSections}
+        onProgressChange={setProgress}
       />
     </InputViewShell>
   )

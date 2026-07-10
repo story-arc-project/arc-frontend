@@ -86,6 +86,39 @@ function periodOf(value: BlockValue | undefined): string {
 // SEMANTIC_GROUPS 에 넣지 않는다 — 폼 dedup 동작(아카이브 입력)을 바꾸지 않기 위해 로컬 처리.
 const SUMMARY_LABELS = ["한 줄 요약", "한 줄 설명", "한 줄 소개"];
 
+// 성과 라벨 그룹(SEMANTIC_GROUPS.achievement)엔 성격이 다른 둘이 섞여 있다:
+//  - 동의어(핵심 성과·결과/성과·성과 등): 같은 질문의 **대안**. 하나만 고른다(core 우선).
+//  - 상호보완(학회 `단체 활동 / 성과`·`개인 활동 / 성과`): 동시에 채우는 별개 항목. 모두 합친다.
+const COMPLEMENTARY_ACHIEVEMENT_LABELS = ["단체 활동 / 성과", "개인 활동 / 성과"];
+
+/**
+ * 성과 텍스트를 만든다.
+ * - 동의어는 첫 채워진 값 하나만 쓴다. 구 레코드에서 core `핵심 성과`와 type-specific 동의어
+ *   (`결과/성과` 등)가 동시에 남아 있어도 합치면 포트폴리오에 성과가 중복·과장되므로 core 우선 단일.
+ * - 학회 상호보완 필드(단체·개인 활동/성과)만 모두 합친다. 단일 유형은 채워진 게 하나라 무변화(무회귀).
+ * 호출측이 customBlocks 까지 넘기면, 폐기된 템플릿 필드(구 `extended.결과/성과`)가 orphan 으로
+ * 보존된 경우에도 발행 시 성과가 소실되지 않는다.
+ */
+function achievementText(blocks: Block[]): string {
+  const synonymLabels = equivalentLabels("핵심 성과").filter(
+    (l) => !COMPLEMENTARY_ACHIEVEMENT_LABELS.includes(l),
+  );
+  const parts: string[] = [];
+  // 동의어: core 우선, 채워진 것 하나만.
+  const filledSynonyms = blocks.filter((b) => synonymLabels.includes(b.label) && !isBlockEmpty(b));
+  const primary = filledSynonyms.find((b) => b.label === "핵심 성과") ?? filledSynonyms[0];
+  const primaryText = textOf(primary?.value);
+  if (primaryText) parts.push(primaryText);
+  // 상호보완(학회): 채워진 것 모두.
+  for (const b of blocks) {
+    if (COMPLEMENTARY_ACHIEVEMENT_LABELS.includes(b.label) && !isBlockEmpty(b)) {
+      const t = textOf(b.value);
+      if (t) parts.push(t);
+    }
+  }
+  return parts.join("\n");
+}
+
 function pickSummary(blocks: Block[]): string {
   for (const label of SUMMARY_LABELS) {
     const block = blocks.find((b) => b.label === label && !isBlockEmpty(b));
@@ -98,8 +131,16 @@ function pickSummary(blocks: Block[]): string {
 export function experienceToPost(exp: Experience): PortfolioPost {
   const ev2 = toExperienceV2(exp);
   const core = ev2.coreBlocks;
-  // 코어가 비고 값이 type-specific extension 에 저장된 경우(폼 dedup)를 위해 양쪽을 본다.
-  const blocks = [...core, ...ev2.extensionBlocks];
+  // 세 출처를 함께 본다: (1) 코어, (2) 값이 type-specific extension 동의어 라벨에 저장된 경우
+  // (폼 dedup), (3) 템플릿 개편으로 폐기된 필드값이 orphan 으로 custom 에 보존된 경우
+  // (experience-mapper 안전망 — v2 orphanFieldsToBlocks·v1 미매칭 extension 이관).
+  // custom 을 빼면 orphan 된 기간·기여·성과가 발행 시 소실된다.
+  // 단, 사용자 섹션(type 'group')은 스칼라 값이 없는 구조 블록이라 값 폴백 대상이 아니다.
+  // 코어 라벨(예 '기간')과 같은 이름의 커스텀 섹션이 채워져 있으면 pickValue 정렬에서
+  // 앞서 뽑혀 periodOf/textOf 가 빈 값을 돌려주고 실제 동의어 값이 소실되므로 제외한다.
+  const blocks = [...core, ...ev2.extensionBlocks, ...ev2.customBlocks].filter(
+    (b) => b.type !== "group",
+  );
   const label = EXPERIENCE_TYPE_MAP[exp.type as ExperienceTypeId]?.label ?? "경험";
   return {
     id: exp.id,
@@ -108,7 +149,7 @@ export function experienceToPost(exp: Experience): PortfolioPost {
     category: label,
     summary: ev2.summary || pickSummary(blocks),
     contribution: textOf(pickValue(blocks, "내 역할/기여도")),
-    achievement: textOf(pickValue(blocks, "핵심 성과")),
+    achievement: achievementText(blocks),
     keywords: ev2.tags,
   };
 }

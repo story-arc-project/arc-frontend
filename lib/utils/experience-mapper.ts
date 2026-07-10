@@ -133,6 +133,33 @@ function isHeaderBlock(b: Block): boolean {
 }
 
 /**
+ * 현재 템플릿이 소비하지 않는 fields 항목(구 템플릿에서 이동·삭제·개편된 필드의 값)을
+ * custom 필드 블록으로 보존한다. 이 안전망이 없으면 orphan 값이 로드 시 안 보이고
+ * toSavePayload 재직렬화 때 영구 삭제된다(템플릿 개편 시 무음 데이터 손실 방지).
+ * 키는 그대로 보존해 재저장 시 custom[] 에 안정적으로 남는다.
+ *
+ * ⚠️ 빈 값은 보존하지 않는다. toSavePayload 는 키 있는 템플릿 블록을 값이 비어도 fields 에
+ * 직렬화하므로, 구 학회 레코드엔 빈 `extended.*`(·이동된 `society-info.지원 동기`) 항목이
+ * 흔하다. 이걸 그대로 custom 으로 승격하면 '기타' 카드에 빈 레거시 필드가 영원히 쌓인다
+ * (완료 저장은 빈 group 만 정리, 빈 field custom 은 안 지움). 실제 데이터만 보존한다.
+ */
+function orphanFieldsToBlocks(
+  fields: Record<string, BlockValue>,
+  consumedKeys: Set<string>,
+): Block[] {
+  const out: Block[] = []
+  for (const [key, value] of Object.entries(fields)) {
+    if (consumedKeys.has(key)) continue
+    if (!value || typeof value !== "object" || !("type" in value)) continue
+    const label = key.includes(".") ? key.slice(key.indexOf(".") + 1) : key
+    const block: Block = { id: uid(), key, type: value.type, label, value }
+    if (isBlockEmpty(block)) continue
+    out.push(block)
+  }
+  return out
+}
+
+/**
  * API Experience → 프론트엔드 ExperienceV2 변환
  */
 export function toExperienceV2(exp: Experience): ExperienceV2 {
@@ -178,11 +205,18 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     const extensionBlocks = tmpl.extensions
       .flatMap(s => s.blocks)
       .map(b => injectValue(b, b.key ? fields[b.key] : undefined))
+    // 템플릿이 소비한 키 집합. 그 밖의 fields 값은 구 템플릿 잔재이므로 custom 으로 보존한다.
+    const consumedKeys = new Set<string>()
+    for (const b of tmpl.commonCore.blocks) if (b.key) consumedKeys.add(b.key)
+    for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) consumedKeys.add(b.key)
     return {
       ...base,
       coreBlocks,
       extensionBlocks,
-      customBlocks: customEntriesToBlocks(content.custom ?? []),
+      customBlocks: [
+        ...customEntriesToBlocks(content.custom ?? []),
+        ...orphanFieldsToBlocks(fields, consumedKeys),
+      ],
     }
   }
 
@@ -199,11 +233,35 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   const coreKeyByLabel = labelKeyMap(tmpl.commonCore.blocks)
   const extKeyByLabel = labelKeyMap(tmpl.extensions.flatMap(s => s.blocks))
 
+  // 저장 블록에 안정키 주입(라벨 폴백) 후, 현재 템플릿 extension 이 소비하는 key/label 로
+  // 매칭 여부를 가른다 — ExperienceFormV2 의 섹션 재분배 필터(b.key ? templateKeys : templateLabels)와
+  // 동일 기준이다. 어느 섹션에도 안 걸리는 블록(구 템플릿 라벨: 학회 buildExtendedSection→
+  // buildSettingsSection 전환 후의 배경/목표·결과/성과·지원 동기 등)을 extensionBlocks 로 두면
+  // 폼 로드 시 그 필터에서 탈락→저장 왕복에 유실되므로 custom 으로 보존한다.
+  // v2 orphanFieldsToBlocks 안전망의 v1(schema_version 미기재) 대응.
+  const keyedExt = savedExt.map(b => (b.key ? b : { ...b, key: extKeyByLabel[b.label] }))
+  const extTemplateKeys = new Set<string>()
+  const extTemplateLabels = new Set<string>()
+  for (const s of tmpl.extensions) for (const b of s.blocks) {
+    if (b.key) extTemplateKeys.add(b.key)
+    extTemplateLabels.add(b.label)
+  }
+  const matchedExt: Block[] = []
+  const orphanExt: Block[] = []
+  for (const b of keyedExt) {
+    const matched = b.key ? extTemplateKeys.has(b.key) : extTemplateLabels.has(b.label)
+    // 빈 미매칭 블록은 승격하지 않는다(v2 orphanFieldsToBlocks 와 동일 기준). 구 학회 레코드엔
+    // 빈 extended.* 항목이 흔한데, 그대로 custom 으로 올리면 '기타' 카드에 빈 레거시 필드가
+    // 쌓이고 완료 저장이 이를 영구화한다(빈 group 만 정리, 빈 field custom 은 안 지움).
+    if (matched) matchedExt.push(b)
+    else if (!isBlockEmpty(b)) orphanExt.push(b)
+  }
+
   return {
     ...base,
     coreBlocks: savedCore.map(b => (b.key ? b : { ...b, key: coreKeyByLabel[b.label] })),
-    extensionBlocks: savedExt.map(b => (b.key ? b : { ...b, key: extKeyByLabel[b.label] })),
-    customBlocks: savedCustom,
+    extensionBlocks: matchedExt,
+    customBlocks: [...savedCustom, ...orphanExt],
   }
 }
 

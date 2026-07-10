@@ -4,14 +4,19 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   hint?: string;
   error?: string;
+  /** 힌트(가이드라인) 위치. "top"이면 라벨과 입력칸 사이에 렌더한다. 기본 "bottom". */
+  hintPosition?: "top" | "bottom";
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, hint, error, className = "", id, ...props }, ref) => {
+  ({ label, hint, error, hintPosition = "bottom", className = "", id, ...props }, ref) => {
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
     const hintId = inputId ? `${inputId}-hint` : undefined;
     const errorId = inputId ? `${inputId}-error` : undefined;
     const describedBy = error ? errorId : hint ? hintId : undefined;
+    const hintNode = hint ? (
+      <p id={hintId} className="text-caption">{hint}</p>
+    ) : null;
 
     return (
       <div className="flex flex-col gap-1.5">
@@ -20,6 +25,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {label}
           </label>
         )}
+        {hintPosition === "top" && hintNode}
         <input
           ref={ref}
           id={inputId}
@@ -41,8 +47,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         />
         {error ? (
           <p id={errorId} className="text-body-sm text-error">{error}</p>
-        ) : hint ? (
-          <p id={hintId} className="text-caption">{hint}</p>
+        ) : hintPosition !== "top" ? (
+          hintNode
         ) : null}
       </div>
     );

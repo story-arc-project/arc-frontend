@@ -16,10 +16,10 @@ import type {
   ImportanceLevel,
   SectionCategory,
 } from "@/types/archive"
-import { SECTION_CATEGORIES } from "@/types/archive"
+import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks, createGroupBlock, isBlockEmpty, uid } from "@/lib/utils/block-utils"
-import { computeFormCards } from "@/lib/utils/form-cards"
+import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
 
 interface ExperienceFormV2Props {
   mode: "new" | "edit"
@@ -34,6 +34,8 @@ interface ExperienceFormV2Props {
    */
   hideInlineActions?: boolean
   onVisibleSectionsChange?: (sections: { id: string; label: string }[]) => void
+  /** 고정 카드 진행도(완료 카드 수/전체) 변경 알림. 값 입력마다 갱신된다. */
+  onProgressChange?: (progress: { done: number; total: number }) => void
 }
 
 /**
@@ -51,6 +53,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   onUnsavedChange,
   hideInlineActions,
   onVisibleSectionsChange,
+  onProgressChange,
 }: ExperienceFormV2Props, ref) {
   const [typeId, setTypeId] = useState<ExperienceTypeId | null>(
     initialExperience?.typeId ?? null
@@ -194,8 +197,15 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
 
   // ── Computed form cards ──────────────────────────────────────────
   const formCards = useMemo(
-    () => (template ? computeFormCards(coreBlocks, extensionSections) : null),
-    [template, coreBlocks, extensionSections]
+    () =>
+      template
+        ? computeFormCards(
+            coreBlocks,
+            extensionSections,
+            typeId ? SECTION_LABEL_OVERRIDES[typeId] : undefined,
+          )
+        : null,
+    [template, coreBlocks, extensionSections, typeId]
   )
 
   // 카드 onChange가 돌려준 블록들을 id로 core/extension state에 되쓴다. block id는
@@ -305,12 +315,9 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   useImperativeHandle(ref, () => ({ save: handleSave }))
 
   // ── Visible sections callback (고정 4카드 + 사용자 섹션) ──────────────────────────────────────
+  // 앵커 라벨은 카드 라벨(오버라이드 반영)과 동일 소스를 쓴다 → 앵커=카드헤더 일치.
   const fixedSections = useMemo(
-    () =>
-      (formCards?.visibleCategories ?? []).map(id => ({
-        id: id as string,
-        label: SECTION_CATEGORIES.find(c => c.id === id)!.label,
-      })),
+    () => (formCards?.cards ?? []).map(c => ({ id: c.category as string, label: c.label })),
     [formCards]
   )
   const allNavSections = useMemo(
@@ -328,6 +335,24 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     emit(template ? allNavSections : [])
     // eslint-disable-next-line react-hooks/exhaustive-deps -- emit read from ref; depend only on visibleKey/template
   }, [visibleKey, template])
+
+  // ── Progress callback (고정 카드 완료 수/전체) ──────────────────────────────────────
+  // onVisibleSectionsChange 는 구조(섹션 목록)만 emit 하므로, 값 입력마다 갱신되는
+  // 진행도는 별도 채널로 흘린다. formCards 는 블록 값 변화에 따라 재계산된다.
+  const progress = useMemo(
+    () => computeFormProgress(formCards?.cards ?? []),
+    [formCards]
+  )
+  const onProgressChangeRef = useRef(onProgressChange)
+  useEffect(() => {
+    onProgressChangeRef.current = onProgressChange
+  })
+  useEffect(() => {
+    const emit = onProgressChangeRef.current
+    if (!emit) return
+    emit(template ? progress : { done: 0, total: 0 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- emit read from ref; depend only on progress/template
+  }, [progress.done, progress.total, template])
 
   const titleValue = formCards?.titleBlock?.value
   const titleText = titleValue?.type === "text" ? titleValue.text : ""
