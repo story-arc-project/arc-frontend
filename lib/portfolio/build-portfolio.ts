@@ -86,6 +86,21 @@ function periodOf(value: BlockValue | undefined): string {
 // SEMANTIC_GROUPS 에 넣지 않는다 — 폼 dedup 동작(아카이브 입력)을 바꾸지 않기 위해 로컬 처리.
 const SUMMARY_LABELS = ["한 줄 요약", "한 줄 설명", "한 줄 소개"];
 
+/**
+ * "핵심 성과" 는 유형별로 보통 단일 동의어(결과/성과·성과 등) 하나로 저장되지만,
+ * 학회는 `단체 활동 / 성과` 와 `개인 활동 / 성과` 를 **동시에** 채우는 상호보완 필드다.
+ * pickValue(첫 비어있지 않은 것만)로 뽑으면 뒤 목록이 통째로 누락되므로, 성과만은
+ * 채워진 동등 블록을 모두 모아 합친다. 단일 유형은 채워진 게 하나뿐이라 무변화(무회귀).
+ */
+function achievementText(blocks: Block[]): string {
+  const labels = equivalentLabels("핵심 성과");
+  return blocks
+    .filter((b) => labels.includes(b.label) && !isBlockEmpty(b))
+    .map((b) => textOf(b.value))
+    .filter(Boolean)
+    .join("\n");
+}
+
 function pickSummary(blocks: Block[]): string {
   for (const label of SUMMARY_LABELS) {
     const block = blocks.find((b) => b.label === label && !isBlockEmpty(b));
@@ -108,7 +123,7 @@ export function experienceToPost(exp: Experience): PortfolioPost {
     category: label,
     summary: ev2.summary || pickSummary(blocks),
     contribution: textOf(pickValue(blocks, "내 역할/기여도")),
-    achievement: textOf(pickValue(blocks, "핵심 성과")),
+    achievement: achievementText(blocks),
     keywords: ev2.tags,
   };
 }

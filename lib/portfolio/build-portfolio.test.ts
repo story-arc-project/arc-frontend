@@ -132,6 +132,32 @@ describe("experienceToPost", () => {
     expect(experienceToPost(exp).achievement).toBe("mAP 0.68 달성\n앙상블 전략 적용");
   });
 
+  it("학회: 단체·개인 활동/성과가 둘 다 채워지면 성과를 모두 합친다(상호보완 필드)", () => {
+    // 학회는 '단체 활동 / 성과'와 '개인 활동 / 성과'를 동시에 채우는 상호보완 필드다.
+    // 첫 값만 뽑으면 뒤 목록이 통째로 누락되므로 둘 다 포함해야 한다.
+    const core: Block[] = [
+      blk("c1", "text", "경험명", { type: "text", text: "AI 학회" }),
+      blk("c5", "textarea", "핵심 성과", { type: "textarea", text: "" }), // dedup 으로 빈 코어
+    ];
+    const ext: Block[] = [
+      blk("e1", "repeatable-cell", "단체 활동 / 성과", {
+        type: "repeatable-cell",
+        columns: [{ key: "item", label: "활동 / 성과", blockType: "text" }],
+        rows: [{ id: "r1", cells: { item: "전국 케이스 경진대회 은상" } }],
+      }),
+      blk("e2", "repeatable-cell", "개인 활동 / 성과", {
+        type: "repeatable-cell",
+        columns: [{ key: "item", label: "활동 / 성과", blockType: "text" }],
+        rows: [{ id: "r2", cells: { item: "우수 부원 선정" } }],
+      }),
+    ];
+    const exp = makeExp({
+      type: "academic-society",
+      content: { title: "AI 학회", summary: "요약", status: "complete", tags: [], coreBlocks: core, extensionBlocks: ext },
+    });
+    expect(experienceToPost(exp).achievement).toBe("전국 케이스 경진대회 은상\n우수 부원 선정");
+  });
+
   it("한 줄 요약이 비면 type-specific 한 줄 설명으로 폴백한다", () => {
     const core: Block[] = [
       blk("c1", "text", "경험명", { type: "text", text: "프로젝트" }),

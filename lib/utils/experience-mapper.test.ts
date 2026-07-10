@@ -286,6 +286,31 @@ describe("toExperienceV2", () => {
     expect(content.fields["extended.배경/목표"]).toBeUndefined()
     expect(content.custom.find(c => c.key === "extended.배경/목표")?.value).toEqual(textarea("보존될 값"))
   })
+
+  it("v2: 빈 orphan fields 는 custom 으로 보존하지 않는다(구 레코드 빈 레거시 필드 누적 방지)", () => {
+    // toSavePayload 는 키 있는 블록을 값이 비어도 fields 에 쓰므로, 구 학회 레코드엔
+    // 빈 extended.* 항목이 흔하다. 이걸 승격하면 '기타' 카드에 빈 필드가 쌓인다.
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "AI 학회",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: {
+            "extended.배경/목표": textarea(""), // 빈 값 → 보존 안 함
+            "extended.배운 점": textarea("실제 값"), // 채워짐 → 보존
+          },
+          custom: [],
+        },
+      }),
+    )
+    expect(v2.customBlocks.find(b => b.key === "extended.배경/목표")).toBeUndefined()
+    expect(v2.customBlocks.find(b => b.key === "extended.배운 점")?.value).toEqual(textarea("실제 값"))
+  })
 })
 
 describe("toSavePayload", () => {

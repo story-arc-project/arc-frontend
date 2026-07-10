@@ -137,6 +137,11 @@ function isHeaderBlock(b: Block): boolean {
  * custom 필드 블록으로 보존한다. 이 안전망이 없으면 orphan 값이 로드 시 안 보이고
  * toSavePayload 재직렬화 때 영구 삭제된다(템플릿 개편 시 무음 데이터 손실 방지).
  * 키는 그대로 보존해 재저장 시 custom[] 에 안정적으로 남는다.
+ *
+ * ⚠️ 빈 값은 보존하지 않는다. toSavePayload 는 키 있는 템플릿 블록을 값이 비어도 fields 에
+ * 직렬화하므로, 구 학회 레코드엔 빈 `extended.*`(·이동된 `society-info.지원 동기`) 항목이
+ * 흔하다. 이걸 그대로 custom 으로 승격하면 '기타' 카드에 빈 레거시 필드가 영원히 쌓인다
+ * (완료 저장은 빈 group 만 정리, 빈 field custom 은 안 지움). 실제 데이터만 보존한다.
  */
 function orphanFieldsToBlocks(
   fields: Record<string, BlockValue>,
@@ -147,7 +152,9 @@ function orphanFieldsToBlocks(
     if (consumedKeys.has(key)) continue
     if (!value || typeof value !== "object" || !("type" in value)) continue
     const label = key.includes(".") ? key.slice(key.indexOf(".") + 1) : key
-    out.push({ id: uid(), key, type: value.type, label, value })
+    const block: Block = { id: uid(), key, type: value.type, label, value }
+    if (isBlockEmpty(block)) continue
+    out.push(block)
   }
   return out
 }
