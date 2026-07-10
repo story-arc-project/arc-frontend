@@ -209,6 +209,11 @@ export default function DashboardPage() {
       ? "—"
       : "…";
 
+  // 경험이 없어도(예: 마지막 경험 삭제) 완료된 분석이 남아 있으면
+  // 최근 분석 섹션을 유지한다 — Stats Row의 '분석 완료' 카운트와 일관.
+  const showAnalysisSections =
+    experiences.length > 0 || (summary?.stats.analysisCompleted ?? 0) > 0;
+
   const statItems = useMemo(() => [
     { label: "총 경험", value: `${experiences.length}개`, icon: FileText, iconColor: "text-brand" },
     {
@@ -442,8 +447,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── Recent Analysis (hidden until first experience) ── */}
-        {experiences.length > 0 && (
+        {/* ── Recent Analysis (hidden only when no experiences AND no completed analyses) ── */}
+        {showAnalysisSections && (
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-title text-text-primary">최근 분석</h2>
@@ -565,8 +570,8 @@ export default function DashboardPage() {
         </section>
         )}
 
-        {/* ── Recommendations (hidden until first experience) ── */}
-        {experiences.length > 0 &&
+        {/* ── Recommendations (follows analysis-section visibility) ── */}
+        {showAnalysisSections &&
           (summary ? (
             <RecommendationSection
               summary={summary}
