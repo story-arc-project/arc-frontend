@@ -81,3 +81,58 @@ test.describe("FRT-43 레쥬메 생성·편집 동작", () => {
     await expect(page.getByText("E2E 갱신 자기소개 요약")).toBeVisible();
   });
 });
+
+/**
+ * FRT-56 — 레쥬메 '다시 만들기' 재생성 동작(behavior) E2E.
+ *
+ * 편집(dirty) 중 재생성하면: (1) 새 버전 상세로 이동한 뒤에도 '다시 만들기' 버튼이
+ * 활성 상태로 남고(App Router 동일 인스턴스 재사용 시 regenerating 고정 회귀 가드),
+ * (2) 구 versionId 의 draft 가 localStorage 에 잔존하지 않는다(다이얼로그 "편집 내용이
+ * 사라진다" 약속과 정합). 두 버그 모두 성공 경로 router.push 직전의 상태/draft 정리로 해소.
+ */
+test.describe("FRT-56 레쥬메 재생성 동작", () => {
+  const DRAFT_KEY = "arc:resume-draft:resume-e2e-1";
+
+  test("편집 중 재생성 시 버튼 재활성화되고 구 draft 가 남지 않는다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+
+    // Arrange: 시드 레쥬메 상세로 진입한다.
+    await page.goto("/export/resume/resume-e2e-1");
+    const regenerateButton = page
+      .locator("header")
+      .getByRole("button", { name: "다시 만들기" });
+    await expect(regenerateButton).toBeEnabled();
+
+    // 자기소개를 수정해 dirty 상태로 만든다(저장하지 않음).
+    await page.getByRole("button", { name: "자기소개", exact: true }).click();
+    await page
+      .getByPlaceholder("간단한 자기소개를 적어주세요.")
+      .fill("재생성 직전 편집 내용");
+    await expect(
+      page.getByRole("button", { name: "저장", exact: true }),
+    ).toBeEnabled();
+
+    // ── REGENERATE ─────────────────────────────────────────────────────────
+    await regenerateButton.click();
+    const dialog = page.getByRole("dialog", { name: "다시 만들기 확인" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "다시 만들기" }).click();
+
+    // 새 버전 상세로 이동한다(구 id 와 다르다).
+    await expect(page).toHaveURL(/\/export\/resume\/e2e-resume-new-/);
+
+    // 버그1 가드: 이동 후에도 '다시 만들기' 버튼이 활성 상태다(재사용된 인스턴스에서
+    // regenerating 이 true 로 고정되지 않는다).
+    await expect(regenerateButton).toBeEnabled();
+
+    // 버그2 가드: 구 versionId 의 draft 가 localStorage 에 남지 않는다
+    // (다이얼로그 "편집 내용이 사라진다" 약속과 정합).
+    const leftoverDraft = await page.evaluate(
+      (k) => window.localStorage.getItem(k),
+      DRAFT_KEY,
+    );
+    expect(leftoverDraft).toBeNull();
+  });
+});
