@@ -490,7 +490,7 @@ function Pricing() {
               가입하면 {SIGNUP_GRANT_CREDITS}크레딧을 무료로 드려요
             </p>
             <p className="text-[15px] leading-[1.7] text-text-secondary mt-3">
-              이력서·자기소개서를 약 {resumeRuns}편 만들어 볼 수 있는 크레딧이에요.
+              이력서를 약 {resumeRuns}편 만들어 볼 수 있는 크레딧이에요.
               결제 없이 AI 분석과 문서 생성을 바로 경험할 수 있습니다.
             </p>
             <Link
