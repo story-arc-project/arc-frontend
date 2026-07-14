@@ -470,7 +470,7 @@ function Pricing() {
 
         {/* 신뢰 요소 칩 */}
         <Reveal delay={0.04} className="mb-8">
-          <ul className="flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-text-secondary">
+          <ul className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-[16px] sm:text-[18px] font-semibold text-text-primary">
             <li>월 구독 없음</li>
             <li aria-hidden className="text-text-tertiary">·</li>
             <li>기록·보관 무료</li>
