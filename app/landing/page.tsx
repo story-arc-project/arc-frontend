@@ -8,6 +8,7 @@ import {
   CREDIT_COSTS,
   CREDIT_PACKAGES,
   SIGNUP_GRANT_CREDITS,
+  creditCost,
   creditRuns,
   formatCost,
   formatKrw,
@@ -451,9 +452,9 @@ function HowItWorks() {
 
 /* ── Pricing ─────────────────────────────────────────────── */
 function Pricing() {
-  // 대표 환산은 config 값에서 파생 — 첫 항목(종합 분석)·마지막 항목(이력서) 기준.
-  const analysisCost = CREDIT_COSTS[0].cost;
-  const resumeCost = CREDIT_COSTS[CREDIT_COSTS.length - 1].cost;
+  // 대표 환산은 config 값에서 파생 — 안정 id로 조회(배열 순서 비의존).
+  const analysisCost = creditCost("comprehensive");
+  const resumeCost = creditCost("resume");
 
   return (
     <section id="pricing" className="py-24 px-6 border-t border-border">

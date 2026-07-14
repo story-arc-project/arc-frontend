@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CREDIT_COSTS,
   CREDIT_PACKAGES,
+  creditCost,
   creditRuns,
   formatCost,
   formatKrw,
@@ -62,11 +63,25 @@ describe("CREDIT_PACKAGES", () => {
 });
 
 describe("CREDIT_COSTS", () => {
-  it("각 항목은 라벨과 차감량을 가진다", () => {
+  it("각 항목은 id·라벨·차감량을 가진다", () => {
     expect(CREDIT_COSTS.length).toBeGreaterThan(0);
     for (const c of CREDIT_COSTS) {
+      expect(c.id).toBeTruthy();
       expect(c.label).toBeTruthy();
       expect(c.cost).toBeDefined();
     }
+  });
+
+  it("id는 고유하다", () => {
+    const ids = CREDIT_COSTS.map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("creditCost", () => {
+  it("id로 차감량을 조회한다(배열 순서 비의존)", () => {
+    expect(creditCost("comprehensive")).toBe(2);
+    expect(creditCost("keyword")).toBe(2);
+    expect(creditCost("resume")).toEqual([3, 5]);
   });
 });
