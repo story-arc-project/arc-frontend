@@ -1,6 +1,6 @@
 "use client"
 
-import type { Block, BlockValue } from "@/types/archive"
+import type { Block, BlockValue, RepeatableCellBlockValue } from "@/types/archive"
 import TextBlock from "./TextBlock"
 import TextareaBlock from "./TextareaBlock"
 import DateBlock from "./DateBlock"
@@ -44,11 +44,14 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
         return <LinkBlock block={block} readOnly={readOnly} onChange={handleChange} />
       case "file":
         return <FileBlock block={block} readOnly={readOnly} onChange={handleChange} />
-      case "repeatable-cell":
-        // 단일컬럼 outcome-list 는 개조식 불릿-행 UI 로, 그 외 다중컬럼은 표형으로 렌더(FRT-97).
-        return block.variant === "outcome-list"
+      case "repeatable-cell": {
+        // outcome-list 는 개조식 불릿-행 UI(단일컬럼 전용). 사용자가 '열 추가'로 컬럼을
+        // 늘린 레거시 값이면 데이터가 숨지 않도록 표형 RepeatableCellBlock 으로 폴백한다(FRT-97).
+        const columnCount = (block.value as RepeatableCellBlockValue).columns.length
+        return block.variant === "outcome-list" && columnCount <= 1
           ? <OutcomeList block={block} readOnly={readOnly} onChange={handleChange} />
           : <RepeatableCellBlock block={block} readOnly={readOnly} onChange={handleChange} />
+      }
       case "table":
         return <TableBlock block={block} readOnly={readOnly} onChange={handleChange} />
     }

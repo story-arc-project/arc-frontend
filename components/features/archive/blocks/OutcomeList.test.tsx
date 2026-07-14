@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 
@@ -97,13 +97,15 @@ describe("OutcomeList", () => {
     expect(inputs[0].value).toBe("B")
   })
 
-  it("행이 하나뿐일 때 삭제하면 행은 유지하고 텍스트만 비운다", async () => {
+  it("마지막 행을 삭제하면 rows 가 비고 인풋 없이 추가 버튼만 남는다(빈 블록 불변식)", async () => {
     const user = userEvent.setup()
-    render(<Harness initial={["A"]} />)
+    const onValue = vi.fn()
+    render(<Harness initial={["A"]} onValue={onValue} />)
     await user.click(screen.getByRole("button", { name: /삭제/ }))
-    const inputs = textInputs()
-    expect(inputs).toHaveLength(1)
-    expect(inputs[0].value).toBe("")
+    expect(screen.queryByRole("textbox")).toBeNull()
+    expect(screen.getByRole("button", { name: /추가/ })).toBeInTheDocument()
+    const last = onValue.mock.calls.at(-1)![0] as RepeatableCellBlockValue
+    expect(last.rows).toHaveLength(0)
   })
 
   it("삭제해도 나머지 행의 안정 id 가 보존된다(FRT-76 앵커)", async () => {
@@ -115,6 +117,12 @@ describe("OutcomeList", () => {
     expect(last.rows).toHaveLength(1)
     expect(last.rows[0].id).toBe("row-1")
     expect(last.rows[0].cells.item).toBe("B")
+  })
+
+  it("IME 조합 중 Enter 는 행을 추가하지 않는다(한글 입력)", () => {
+    render(<Harness initial={["A"]} />)
+    fireEvent.keyDown(textInputs()[0], { key: "Enter", isComposing: true })
+    expect(textInputs()).toHaveLength(1)
   })
 
   it("readOnly 모드는 불릿 텍스트만 보여주고 인풋을 렌더하지 않는다", () => {

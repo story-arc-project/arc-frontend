@@ -65,15 +65,14 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   }
 
   function removeRow(rowId: string) {
-    // 마지막 한 행은 유지하고 텍스트만 비운다(빈 리스트로 붕괴 방지).
-    if (rows.length <= 1) {
-      commit(rows.map((r) => (r.id === rowId ? { ...r, cells: { ...r.cells, [colKey]: "" } } : r)))
-      return
-    }
+    // 마지막 행까지 지워 rows 가 [] 가 될 수 있게 둔다 — `isBlockEmpty`(rows.length===0)
+    // 불변식을 지켜야 빈 블록이 상세뷰·포트폴리오에서 유령 섹션으로 남지 않는다.
     commit(rows.filter((r) => r.id !== rowId))
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>, index: number, row: BlockRow) {
+    // IME 조합 중의 Enter/Backspace 는 조합 확정용이므로 행 조작을 트리거하지 않는다(한글 입력).
+    if (e.nativeEvent.isComposing) return
     if (e.key === "Enter") {
       e.preventDefault()
       addAfter(index)
