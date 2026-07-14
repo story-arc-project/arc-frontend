@@ -12,15 +12,20 @@ export interface CreditPackage {
   credits: number;
   /** 결제 금액(원, KRW). */
   price: number;
-  /** 앵커로 강조할 추천 패키지. */
+  /**
+   * 용도 라벨(예: "가볍게"). 구매 데이터가 없으므로 "추천/인기" 대신 용도로 안내한다.
+   * 데이터가 쌓이면 "가장 많이 선택" 등으로 교체 가능.
+   */
+  tag: string;
+  /** 기본값으로 은은하게 강조할 패키지(주황 채움·배지 아님, 테두리 강조만). */
   recommended?: boolean;
 }
 
 /** 크레딧 충전 패키지(랜딩 노출용). 배열·요소 모두 불변. */
 export const CREDIT_PACKAGES: readonly Readonly<CreditPackage>[] = [
-  { id: "credits-15", credits: 15, price: 2900 },
-  { id: "credits-30", credits: 30, price: 4900, recommended: true },
-  { id: "credits-50", credits: 50, price: 7900 },
+  { id: "credits-15", credits: 15, price: 2900, tag: "가볍게" },
+  { id: "credits-30", credits: 30, price: 4900, tag: "균형", recommended: true },
+  { id: "credits-50", credits: 50, price: 7900, tag: "좋은 단가" },
 ];
 
 /** 단일 차감량 또는 [최소, 최대] 범위(예: 이력서 3~5). */

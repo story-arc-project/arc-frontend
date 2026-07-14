@@ -5,12 +5,10 @@ import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import {
-  CREDIT_COSTS,
   CREDIT_PACKAGES,
   SIGNUP_GRANT_CREDITS,
   creditCost,
   creditRuns,
-  formatCost,
   formatKrw,
 } from "@/lib/constants/credits";
 import LandingDemo from "./_components/LandingDemo";
@@ -453,89 +451,78 @@ function HowItWorks() {
 /* ── Pricing ─────────────────────────────────────────────── */
 function Pricing() {
   // 대표 환산은 config 값에서 파생 — 안정 id로 조회(배열 순서 비의존).
-  const analysisCost = creditCost("comprehensive");
-  const resumeCost = creditCost("resume");
+  // 차감량 자체는 노출하지 않고, "가입 크레딧으로 대표 작업 몇 편" 감만 준다.
+  const resumeRuns = creditRuns(SIGNUP_GRANT_CREDITS, creditCost("resume"));
 
   return (
     <section id="pricing" className="py-24 px-6 border-t border-border">
-      <div className="max-w-5xl mx-auto">
-        <Reveal className="mb-14 max-w-2xl">
+      <div className="max-w-4xl mx-auto">
+        <Reveal className="mb-10 max-w-2xl">
           <p className="text-[12px] font-bold text-brand uppercase tracking-widest mb-4">요금</p>
           <h2 className="text-[26px] sm:text-[38px] font-bold tracking-[-0.02em] text-text-primary mb-4">
-            크레딧으로, 필요한 만큼만
+            기록은 무료로, AI는 필요한 만큼만
           </h2>
           <p className="text-[16px] leading-[1.7] text-text-secondary">
-            필요할 때 크레딧을 충전해 사용해요.
-            AI가 일하는 순간에만 크레딧이 쓰이고, 기록과 저장은 언제나 무료입니다.
+            월 구독 없이, AI가 경험을 분석하거나 문서를 만들 때만 크레딧을 사용해요.
+            기록하고 보관하는 일은 언제나 무료입니다.
           </p>
         </Reveal>
 
-        {/* 충전 카드 — 크레딧 용량 선택(가로) */}
+        {/* 신뢰 요소 칩 */}
+        <Reveal delay={0.04} className="mb-8">
+          <ul className="flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-text-secondary">
+            <li>월 구독 없음</li>
+            <li aria-hidden className="text-text-tertiary">·</li>
+            <li>기록·보관 무료</li>
+            <li aria-hidden className="text-text-tertiary">·</li>
+            <li>가입 시 {SIGNUP_GRANT_CREDITS}크레딧 제공</li>
+          </ul>
+        </Reveal>
+
+        {/* 히어로 — 무료 크레딧 강조(가장 강한 정보) */}
         <Reveal delay={0.08}>
-          <div className="rounded-2xl border border-border p-6 sm:p-8">
-            <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 mb-6">
-              <h3 className="text-[16px] font-bold text-text-primary">필요한 만큼 충전하세요</h3>
-              <span className="text-[13px] text-text-secondary">한 번 충전 · 소진할 때까지 사용</span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3 sm:gap-4">
-              {CREDIT_PACKAGES.map((pkg) => (
-                <div
-                  key={pkg.id}
-                  className={`relative rounded-xl px-3 py-5 sm:py-6 text-center ${
-                    pkg.recommended
-                      ? "border-2 border-brand bg-surface-brand"
-                      : "border border-border"
-                  }`}
-                >
-                  {pkg.recommended && (
-                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-brand text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap">
-                      추천
-                    </span>
-                  )}
-                  <p className="text-[22px] sm:text-[28px] font-bold text-text-primary leading-none">
-                    {pkg.credits}
-                  </p>
-                  <p className="text-[11px] text-text-secondary mt-1 mb-2">크레딧</p>
-                  <p className="text-[13px] sm:text-[15px] font-semibold text-text-primary">
-                    {formatKrw(pkg.price)}
-                  </p>
-                </div>
-              ))}
-            </div>
-
+          <div className="rounded-2xl border border-border bg-surface-secondary p-8 sm:p-10">
+            <p className="text-[13px] font-semibold text-brand mb-3">먼저 무료로 시작해 보세요</p>
+            <p className="text-[24px] sm:text-[30px] font-bold tracking-[-0.02em] text-text-primary leading-[1.3]">
+              가입하면 {SIGNUP_GRANT_CREDITS}크레딧을 무료로 드려요
+            </p>
+            <p className="text-[15px] leading-[1.7] text-text-secondary mt-3">
+              이력서·자기소개서를 약 {resumeRuns}편 만들어 볼 수 있는 크레딧이에요.
+              결제 없이 AI 분석과 문서 생성을 바로 경험할 수 있습니다.
+            </p>
             <Link
               href="/signup"
-              className="mt-6 flex items-center justify-center h-12 rounded-lg bg-brand
+              className="mt-7 inline-flex items-center justify-center h-12 px-7 rounded-lg bg-brand
                          text-white text-[15px] font-semibold hover:bg-brand-dark transition-colors"
             >
-              무료로 시작하기
+              {SIGNUP_GRANT_CREDITS}크레딧 받고 시작하기
             </Link>
           </div>
         </Reveal>
 
-        {/* 차감 안내 + 대표 환산 */}
-        <Reveal delay={0.16}>
-          <div className="mt-6 rounded-2xl bg-surface-secondary border border-border p-6 sm:p-8">
-            <p className="text-[13px] font-semibold text-text-primary mb-4">크레딧은 이럴 때 쓰여요</p>
-            <div className="flex flex-col sm:flex-row sm:flex-wrap gap-x-8 gap-y-2.5 mb-5">
-              {CREDIT_COSTS.map((c) => (
-                <div key={c.label} className="flex items-center justify-between sm:justify-start gap-3">
-                  <span className="text-[14px] text-text-secondary">{c.label}</span>
-                  <span className="text-[14px] font-semibold text-text-primary whitespace-nowrap">
-                    {formatCost(c.cost)}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <p className="text-[15px] leading-[1.7] text-text-primary font-medium">
-              {SIGNUP_GRANT_CREDITS}크레딧이면 이력서·자기소개서 약 {creditRuns(SIGNUP_GRANT_CREDITS, resumeCost)}개,
-              또는 경험 분석 {creditRuns(SIGNUP_GRANT_CREDITS, analysisCost)}회를 만들 수 있어요.
-            </p>
-            <p className="text-[14px] leading-[1.7] text-text-secondary mt-2">
-              경험을 기록하고 보관하는 일은 크레딧 없이 언제나 무료이고,
-              가입하면 무료 크레딧 {SIGNUP_GRANT_CREDITS}개로 바로 시작할 수 있어요.
-            </p>
+        {/* 충전 안내 — 비교용 가격 카드(선택 UI 아님) */}
+        <Reveal delay={0.16} className="mt-10">
+          <p className="text-[15px] leading-[1.7] text-text-secondary mb-5">
+            무료 크레딧을 모두 사용한 뒤에도, 필요한 만큼 충전할 수 있어요.
+          </p>
+          <div className="grid grid-cols-3 gap-3 sm:gap-4">
+            {CREDIT_PACKAGES.map((pkg) => (
+              <div
+                key={pkg.id}
+                className={`rounded-xl px-3 py-6 sm:py-7 text-center ${
+                  pkg.recommended ? "border-2 border-border-strong" : "border border-border"
+                }`}
+              >
+                <p className="text-[12px] font-medium text-text-tertiary mb-3">{pkg.tag}</p>
+                <p className="text-[22px] sm:text-[28px] font-bold text-text-primary leading-none">
+                  {pkg.credits}
+                </p>
+                <p className="text-[11px] text-text-secondary mt-1 mb-3">크레딧</p>
+                <p className="text-[14px] sm:text-[16px] font-semibold text-text-primary">
+                  {formatKrw(pkg.price)}
+                </p>
+              </div>
+            ))}
           </div>
         </Reveal>
       </div>

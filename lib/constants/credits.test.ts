@@ -60,6 +60,12 @@ describe("CREDIT_PACKAGES", () => {
       expect(pkg.price).toBeGreaterThan(0);
     }
   });
+
+  it("모든 패키지는 용도 라벨(tag)을 가진다", () => {
+    for (const pkg of CREDIT_PACKAGES) {
+      expect(pkg.tag).toBeTruthy();
+    }
+  });
 });
 
 describe("CREDIT_COSTS", () => {
