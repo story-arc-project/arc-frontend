@@ -513,7 +513,7 @@ function Pricing() {
                   pkg.recommended ? "border-2 border-border-strong" : "border border-border"
                 }`}
               >
-                <p className="text-[12px] font-medium text-text-tertiary mb-3">{pkg.tag}</p>
+                <p className="text-[12px] font-medium text-text-secondary mb-3">{pkg.tag}</p>
                 <p className="text-[22px] sm:text-[28px] font-bold text-text-primary leading-none">
                   {pkg.credits}
                 </p>
