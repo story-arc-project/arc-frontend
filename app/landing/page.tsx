@@ -524,14 +524,22 @@ function Pricing() {
           <p className="text-[15px] leading-[1.7] text-text-secondary mb-5">
             무료 크레딧을 모두 사용한 뒤에도, 필요한 만큼 충전할 수 있어요.
           </p>
-          <ul className="grid grid-cols-3 divide-x divide-border overflow-hidden rounded-2xl border border-border">
+          <ul className="grid grid-cols-3 divide-x divide-border rounded-2xl border border-border">
             {CREDIT_PACKAGES.map((pkg) => (
               <li
                 key={pkg.id}
-                className={`px-2 py-7 text-center sm:px-3 ${
-                  pkg.recommended ? "bg-surface-secondary" : ""
+                className={`relative px-2 py-7 text-center sm:px-3 ${
+                  pkg.recommended
+                    ? "z-10 rounded-xl bg-surface-brand ring-2 ring-inset ring-brand"
+                    : ""
                 }`}
               >
+                {pkg.recommended && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand px-2.5 py-0.5 text-[11px] font-semibold text-white">
+                    추천
+                  </span>
+                )}
+                <Coins className="mx-auto mb-2 h-5 w-5 text-brand" aria-hidden />
                 <p className="text-[20px] sm:text-[26px] font-bold tracking-[-0.02em] text-text-primary leading-none">
                   {pkg.credits}
                   <span className="ml-0.5 text-[13px] font-medium text-text-secondary">
