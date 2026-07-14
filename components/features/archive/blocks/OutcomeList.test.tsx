@@ -46,8 +46,8 @@ function Harness({
   )
 }
 
-function textInputs(): HTMLInputElement[] {
-  return screen.getAllByRole("textbox") as HTMLInputElement[]
+function textInputs(): HTMLTextAreaElement[] {
+  return screen.getAllByRole("textbox") as HTMLTextAreaElement[]
 }
 
 describe("OutcomeList", () => {
@@ -75,6 +75,14 @@ describe("OutcomeList", () => {
     await user.click(textInputs()[0])
     await user.keyboard("{Enter}")
     expect(textInputs()).toHaveLength(2)
+  })
+
+  it("Shift+Enter 는 새 행을 추가하지 않는다(한 행 내 줄바꿈 허용)", async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={["A"]} />)
+    await user.click(textInputs()[0])
+    await user.keyboard("{Shift>}{Enter}{/Shift}")
+    expect(textInputs()).toHaveLength(1)
   })
 
   it("빈 행에서 Backspace 를 누르면(행 2개 이상) 그 행이 삭제된다", async () => {

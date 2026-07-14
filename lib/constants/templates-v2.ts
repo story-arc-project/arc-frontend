@@ -229,17 +229,11 @@ function academicSocietyExtensions(): TemplateSection[] {
           placeholder: '예: 우수 부원 선정',
           guide: '내가 개인적으로 달성하거나 인정받은 것들을 적어주세요.',
         }),
-        {
-          ...createRepeatableCell('성장 / 변화', [
-            {
-              key: 'item',
-              label: '항목',
-              blockType: 'text',
-              placeholder: '예: 문제를 프레임으로 나눠 구조화하는 습관이 생겼습니다',
-            },
-          ]),
+        createOutcomeList('성장 / 변화', {
+          itemLabel: '항목',
+          placeholder: '예: 문제를 프레임으로 나눠 구조화하는 습관이 생겼습니다',
           guide: '이 경험을 통해 개선되거나 나아진 부분이 있나요? 역량이든, 사고방식이든, 습관이든 구체적일수록 좋아요',
-        },
+        }),
         createTagsField('사용한 스킬 / 툴 / 기술', {
           guide: '이 활동에서 실제로 배우거나 사용한 기술, 툴, 언어 등을 태그로 추가해주세요',
         }),

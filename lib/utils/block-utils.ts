@@ -120,13 +120,14 @@ export function createTableField(label: string): Block {
  * 개조식 불릿-행 입력(FRT-97). 저장은 단일컬럼 `repeatable-cell` 그대로 두고
  * `variant: 'outcome-list'` 마커로 OutcomeList UI 를 지정한다(무마이그레이션).
  * 컬럼 key 는 `'item'` 고정 — OutcomeList 가 이 키의 텍스트를 각 행 값으로 읽는다.
+ * `itemLabel` 은 '+ ○○ 추가' 버튼 문구가 되는 컬럼 라벨(기본 '활동 / 성과').
  */
 export function createOutcomeList(
   label: string,
-  opts?: { placeholder?: string; guide?: string },
+  opts?: { placeholder?: string; guide?: string; itemLabel?: string },
 ): Block {
   const base = createRepeatableCell(label, [
-    { key: 'item', label: '활동 / 성과', blockType: 'text', placeholder: opts?.placeholder },
+    { key: 'item', label: opts?.itemLabel ?? '활동 / 성과', blockType: 'text', placeholder: opts?.placeholder },
   ])
   return { ...base, variant: 'outcome-list', guide: opts?.guide }
 }

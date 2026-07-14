@@ -1,6 +1,13 @@
 "use client"
 
-import { useEffect, useRef, type KeyboardEvent, type ReactNode } from "react"
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react"
 import { Plus } from "lucide-react"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 import { createEmptyRow } from "@/lib/utils/block-utils"
@@ -17,9 +24,47 @@ interface OutcomeListProps {
 }
 
 /**
+ * 기본 한 줄, 내용이 길어지면 자동으로 높이가 늘어나는 textarea(스크롤 없음).
+ * Enter 로 새 행을 추가하고 Shift+Enter 로 한 행 안에서 줄바꿈한다.
+ */
+function AutoGrowInput({
+  value,
+  placeholder,
+  onChange,
+  onKeyDown,
+}: {
+  value: string
+  placeholder?: string
+  onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void
+  onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${el.scrollHeight}px`
+  }, [value])
+
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value}
+      placeholder={placeholder}
+      onChange={onChange}
+      onKeyDown={onKeyDown}
+      className="flex-1 resize-none overflow-hidden border-none bg-transparent py-0.5 text-body leading-6 text-text-primary placeholder:text-text-tertiary outline-none"
+    />
+  )
+}
+
+/**
  * 개조식 불릿-행 입력(FRT-97). 단일컬럼 `repeatable-cell`(key `'item'`) 위에서 동작한다 —
  * 타입/저장 스키마는 그대로 두고 렌더만 바꾸는 무마이그레이션 컴포넌트.
- * `• 텍스트 + [액션] + [×]` 행, `+ 추가` 푸터, Enter 로 다음 행·빈 행 Backspace 로 삭제.
+ * `• 텍스트(자동확장) + [액션] + [×]` 행, `+ 추가` 푸터.
+ * Enter 로 다음 행, Shift+Enter 로 줄바꿈, 빈 행 Backspace 로 삭제.
  */
 export default function OutcomeList({ block, readOnly, onChange, rowAction }: OutcomeListProps) {
   const val = block.value as RepeatableCellBlockValue
@@ -35,7 +80,7 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   useEffect(() => {
     const id = pendingFocus.current
     if (!id) return
-    const el = listRef.current?.querySelector<HTMLInputElement>(`[data-row-id="${id}"] input`)
+    const el = listRef.current?.querySelector<HTMLTextAreaElement>(`[data-row-id="${id}"] textarea`)
     el?.focus()
     pendingFocus.current = null
   }, [rows])
@@ -70,10 +115,11 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
     commit(rows.filter((r) => r.id !== rowId))
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>, index: number, row: BlockRow) {
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>, index: number, row: BlockRow) {
     // IME 조합 중의 Enter/Backspace 는 조합 확정용이므로 행 조작을 트리거하지 않는다(한글 입력).
     if (e.nativeEvent.isComposing) return
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
+      // Enter = 다음 행. Shift+Enter 는 기본 동작(줄바꿈)을 허용해 한 행 안에서 여러 줄 입력.
       e.preventDefault()
       addAfter(index)
     } else if (e.key === "Backspace" && textOf(row) === "" && rows.length > 1) {
@@ -121,14 +167,12 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
           <div
             key={row.id}
             data-row-id={row.id}
-            className="flex items-center gap-2 border-b border-border px-3 py-2"
+            className="flex items-start gap-2 border-b border-border px-3 py-2"
           >
-            <span className="text-brand font-bold leading-none shrink-0 select-none">•</span>
-            <input
-              type="text"
-              className="flex-1 border-none bg-transparent text-body text-text-primary placeholder:text-text-tertiary outline-none"
-              placeholder={col?.placeholder}
+            <span className="text-brand font-bold leading-6 shrink-0 select-none">•</span>
+            <AutoGrowInput
               value={textOf(row)}
+              placeholder={col?.placeholder}
               onChange={(e) => updateText(row.id, e.target.value)}
               onKeyDown={(e) => handleKeyDown(e, index, row)}
             />
@@ -136,7 +180,7 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
             <button
               type="button"
               onClick={() => removeRow(row.id)}
-              className="shrink-0 rounded p-1 text-text-tertiary transition-colors hover:text-error"
+              className="shrink-0 rounded p-1 leading-6 text-text-tertiary transition-colors hover:text-error"
               aria-label={`${textOf(row).trim() || "항목"} 삭제`}
             >
               ×
