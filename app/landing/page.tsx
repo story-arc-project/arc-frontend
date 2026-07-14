@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { motion, useInView } from "framer-motion";
+import { Coins } from "lucide-react";
 import { useRef } from "react";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import {
@@ -462,9 +463,8 @@ function Pricing() {
           <h2 className="text-[26px] sm:text-[38px] font-bold tracking-[-0.02em] text-text-primary mb-4">
             기록은 무료로, AI는 필요한 만큼만
           </h2>
-          <p className="text-[16px] leading-[1.7] text-text-secondary">
-            월 구독 없이, AI가 경험을 분석하거나 문서를 만들 때만 크레딧을 사용해요.
-            기록하고 보관하는 일은 언제나 무료입니다.
+          <p className="text-[16px] leading-[1.7] text-text-secondary break-keep">
+            월 구독 없이, AI 분석과 문서 생성에만 크레딧을 써요. 기록과 보관은 언제나 무료입니다.
           </p>
         </Reveal>
 
@@ -482,6 +482,9 @@ function Pricing() {
         {/* 히어로 — 무료 크레딧 강조(가장 강한 정보) */}
         <Reveal delay={0.08}>
           <div className="rounded-2xl border border-border bg-surface-secondary p-8 sm:p-10">
+            <div className="mb-4 inline-flex items-center justify-center w-11 h-11 rounded-full bg-surface-brand">
+              <Coins className="w-5 h-5 text-brand" aria-hidden />
+            </div>
             <p className="text-[13px] font-semibold text-brand mb-3">먼저 무료로 시작해 보세요</p>
             <p className="text-[24px] sm:text-[30px] font-bold tracking-[-0.02em] text-text-primary leading-[1.3]">
               가입하면 {SIGNUP_GRANT_CREDITS}크레딧을 무료로 드려요
@@ -514,6 +517,7 @@ function Pricing() {
                 }`}
               >
                 <p className="text-[12px] font-medium text-text-secondary mb-3">{pkg.tag}</p>
+                <Coins className="w-5 h-5 mx-auto mb-2 text-brand" aria-hidden />
                 <p className="text-[22px] sm:text-[28px] font-bold text-text-primary leading-none">
                   {pkg.credits}
                 </p>
