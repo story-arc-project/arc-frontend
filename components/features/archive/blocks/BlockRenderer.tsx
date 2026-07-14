@@ -11,6 +11,7 @@ import TagsBlock from "./TagsBlock"
 import LinkBlock from "./LinkBlock"
 import FileBlock from "./FileBlock"
 import RepeatableCellBlock from "./RepeatableCellBlock"
+import OutcomeList from "./OutcomeList"
 import TableBlock from "./TableBlock"
 
 interface BlockRendererProps {
@@ -44,7 +45,10 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
       case "file":
         return <FileBlock block={block} readOnly={readOnly} onChange={handleChange} />
       case "repeatable-cell":
-        return <RepeatableCellBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        // 단일컬럼 outcome-list 는 개조식 불릿-행 UI 로, 그 외 다중컬럼은 표형으로 렌더(FRT-97).
+        return block.variant === "outcome-list"
+          ? <OutcomeList block={block} readOnly={readOnly} onChange={handleChange} />
+          : <RepeatableCellBlock block={block} readOnly={readOnly} onChange={handleChange} />
       case "table":
         return <TableBlock block={block} readOnly={readOnly} onChange={handleChange} />
     }

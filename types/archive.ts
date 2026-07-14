@@ -158,6 +158,12 @@ export interface Block {
    * 중첩은 1겹만 허용한다(group 안에 group 불가).
    */
   children?: Block[]
+  /**
+   * 렌더 모드 힌트 (FRT-97). type 을 바꾸지 않고 같은 블록을 다른 UI 로 그릴 때 쓴다.
+   * `'outcome-list'` 는 단일컬럼 `repeatable-cell` 을 개조식 불릿-행(OutcomeList)으로 렌더한다.
+   * 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다 — 로드 시 레지스트리에서 재공급된다.
+   */
+  variant?: 'outcome-list'
   value: BlockValue
 }
 

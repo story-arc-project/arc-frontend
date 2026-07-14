@@ -10,6 +10,7 @@ import {
   createLinkField,
   createFileField,
   createRepeatableCell,
+  createOutcomeList,
 } from '@/lib/utils/block-utils'
 
 // ─── Experience Type Registry ───────────────────────────────────
@@ -220,28 +221,14 @@ function academicSocietyExtensions(): TemplateSection[] {
           placeholder:
             '예: 경영 이론을 실전 케이스로 분석하는 훈련을 쌓고 싶었고, 전략 컨설팅 직무에 관심이 있어 지원했습니다',
         }),
-        {
-          ...createRepeatableCell('단체 활동 / 성과', [
-            {
-              key: 'item',
-              label: '활동 / 성과',
-              blockType: 'text',
-              placeholder: '예: 전국 케이스 경진대회 은상 수상',
-            },
-          ]),
+        createOutcomeList('단체 활동 / 성과', {
+          placeholder: '예: 전국 케이스 경진대회 은상 수상',
           guide: '팀·학회가 함께 이뤄낸 것들을 떠올려보세요. 수상, 발간, 대회 참가 등 무엇이든 괜찮아요.',
-        },
-        {
-          ...createRepeatableCell('개인 활동 / 성과', [
-            {
-              key: 'item',
-              label: '활동 / 성과',
-              blockType: 'text',
-              placeholder: '예: 우수 부원 선정',
-            },
-          ]),
+        }),
+        createOutcomeList('개인 활동 / 성과', {
+          placeholder: '예: 우수 부원 선정',
           guide: '내가 개인적으로 달성하거나 인정받은 것들을 적어주세요.',
-        },
+        }),
         {
           ...createRepeatableCell('성장 / 변화', [
             {
