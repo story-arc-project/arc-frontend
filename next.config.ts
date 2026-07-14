@@ -40,6 +40,24 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // 전역 Referrer-Policy — URL PII(email) 가 Referer 헤더로 새는 것을 차단 (FRT-83).
+  // 앱이 /signup?email=... 처럼 쿼리에 email 을 싣는데, PostHog SDK 가 same-origin
+  // /ingest/* 요청을 보낼 때 브라우저가 현재 URL 을 Referer 헤더에 붙이고 rewrite 가
+  // 이를 PostHog EU 로 프록시하며 헤더까지 전달 → email 누출. 이 경로는 HTTP 헤더라
+  // property_denylist·before_send 로 못 막는다.
+  // strict-origin: origin 만 전송(path·query 제거), HTTPS→HTTP 다운그레이드 시 미전송.
+  //   (기본값 strict-origin-when-cross-origin·same-origin 은 same-origin 요청에 full URL 을
+  //    그대로 보내 누출을 못 막으므로 반드시 strict-origin 이상이어야 한다.)
+  // 안전: PostHog 는 URL 을 window.location(JS)에서 읽으므로 헤더 스트립과 무관하고,
+  //   ARC 는 $referrer·capture_pageview 를 이미 꺼 유입분석 손실이 없다.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [{ key: "Referrer-Policy", value: "strict-origin" }],
+      },
+    ];
+  },
 };
 
 export default withSentryConfig(nextConfig, {
