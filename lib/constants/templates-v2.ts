@@ -10,6 +10,7 @@ import {
   createLinkField,
   createFileField,
   createRepeatableCell,
+  createOutcomeList,
 } from '@/lib/utils/block-utils'
 
 // ─── Experience Type Registry ───────────────────────────────────
@@ -220,39 +221,19 @@ function academicSocietyExtensions(): TemplateSection[] {
           placeholder:
             '예: 경영 이론을 실전 케이스로 분석하는 훈련을 쌓고 싶었고, 전략 컨설팅 직무에 관심이 있어 지원했습니다',
         }),
-        {
-          ...createRepeatableCell('단체 활동 / 성과', [
-            {
-              key: 'item',
-              label: '활동 / 성과',
-              blockType: 'text',
-              placeholder: '예: 전국 케이스 경진대회 은상 수상',
-            },
-          ]),
+        createOutcomeList('단체 활동 / 성과', {
+          placeholder: '예: 전국 케이스 경진대회 은상 수상',
           guide: '팀·학회가 함께 이뤄낸 것들을 떠올려보세요. 수상, 발간, 대회 참가 등 무엇이든 괜찮아요.',
-        },
-        {
-          ...createRepeatableCell('개인 활동 / 성과', [
-            {
-              key: 'item',
-              label: '활동 / 성과',
-              blockType: 'text',
-              placeholder: '예: 우수 부원 선정',
-            },
-          ]),
+        }),
+        createOutcomeList('개인 활동 / 성과', {
+          placeholder: '예: 우수 부원 선정',
           guide: '내가 개인적으로 달성하거나 인정받은 것들을 적어주세요.',
-        },
-        {
-          ...createRepeatableCell('성장 / 변화', [
-            {
-              key: 'item',
-              label: '항목',
-              blockType: 'text',
-              placeholder: '예: 문제를 프레임으로 나눠 구조화하는 습관이 생겼습니다',
-            },
-          ]),
+        }),
+        createOutcomeList('성장 / 변화', {
+          itemLabel: '항목',
+          placeholder: '예: 문제를 프레임으로 나눠 구조화하는 습관이 생겼습니다',
           guide: '이 경험을 통해 개선되거나 나아진 부분이 있나요? 역량이든, 사고방식이든, 습관이든 구체적일수록 좋아요',
-        },
+        }),
         createTagsField('사용한 스킬 / 툴 / 기술', {
           guide: '이 활동에서 실제로 배우거나 사용한 기술, 툴, 언어 등을 태그로 추가해주세요',
         }),
