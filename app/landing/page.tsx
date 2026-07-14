@@ -519,31 +519,34 @@ function Pricing() {
           </div>
         </Reveal>
 
-        {/* 충전 안내 — 비교용 가격 카드(선택 UI 아님) */}
+        {/* 충전 안내 — 단일 패널(카드 분리 아님) + 열 구분선 */}
         <Reveal delay={0.16} className="mt-10">
           <p className="text-[15px] leading-[1.7] text-text-secondary mb-5">
             무료 크레딧을 모두 사용한 뒤에도, 필요한 만큼 충전할 수 있어요.
           </p>
-          <div className="grid grid-cols-3 gap-3 sm:gap-4">
+          <ul className="grid grid-cols-3 divide-x divide-border overflow-hidden rounded-2xl border border-border">
             {CREDIT_PACKAGES.map((pkg) => (
-              <div
+              <li
                 key={pkg.id}
-                className={`rounded-xl px-3 py-6 sm:py-7 text-center ${
-                  pkg.recommended ? "border-2 border-border-strong" : "border border-border"
+                className={`px-2 py-7 text-center sm:px-3 ${
+                  pkg.recommended ? "bg-surface-secondary" : ""
                 }`}
               >
-                <p className="text-[12px] font-medium text-text-secondary mb-3">{pkg.tag}</p>
-                <Coins className="w-5 h-5 mx-auto mb-2 text-brand" aria-hidden />
-                <p className="text-[22px] sm:text-[28px] font-bold text-text-primary leading-none">
+                <p className="text-[20px] sm:text-[26px] font-bold tracking-[-0.02em] text-text-primary leading-none">
                   {pkg.credits}
+                  <span className="ml-0.5 text-[13px] font-medium text-text-secondary">
+                    크레딧
+                  </span>
                 </p>
-                <p className="text-[11px] text-text-secondary mt-1 mb-3">크레딧</p>
-                <p className="text-[14px] sm:text-[16px] font-semibold text-text-primary">
+                <p className="mt-3 text-[16px] sm:text-[19px] font-semibold text-text-primary">
                   {formatKrw(pkg.price)}
                 </p>
-              </div>
+                <p className="mt-3 text-[12px] sm:text-[13px] leading-[1.5] text-text-secondary break-keep">
+                  이력서 약 {creditRuns(pkg.credits, creditCost("resume"))}개
+                </p>
+              </li>
             ))}
-          </div>
+          </ul>
         </Reveal>
       </div>
     </section>
