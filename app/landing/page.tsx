@@ -478,25 +478,15 @@ function Pricing() {
                     </span>
                   </div>
                 )}
-                <p
+                <h3
                   className={`text-[13px] font-bold uppercase tracking-wide mb-6 ${
                     pkg.recommended ? "text-brand" : "text-text-secondary"
                   }`}
                 >
                   {pkg.credits} 크레딧
-                </p>
+                </h3>
                 <p className="text-[38px] font-bold text-text-primary mb-1">{formatKrw(pkg.price)}</p>
-                <p className="text-[14px] text-text-tertiary mb-8 flex-1">한 번 충전 · 소진할 때까지 사용</p>
-                <Link
-                  href="/signup"
-                  className={`flex items-center justify-center h-11 rounded-lg font-semibold text-[14px] transition-colors ${
-                    pkg.recommended
-                      ? "bg-brand text-white hover:bg-brand-dark"
-                      : "border border-border text-text-primary hover:bg-surface-tertiary"
-                  }`}
-                >
-                  무료로 시작하기
-                </Link>
+                <p className="text-[14px] text-text-secondary">한 번 충전 · 소진할 때까지 사용</p>
               </div>
             </Reveal>
           ))}
@@ -509,6 +499,18 @@ function Pricing() {
               경험을 기록하고 보관하는 일은 크레딧 없이 언제나 무료입니다.
             </p>
             <p className="text-[14px] leading-[1.7] text-text-primary font-medium mt-2">{grantCopy}</p>
+          </div>
+        </Reveal>
+
+        <Reveal delay={0.32}>
+          <div className="mt-8">
+            <Link
+              href="/signup"
+              className="h-12 px-6 bg-brand text-white text-[15px] font-semibold rounded-lg
+                         hover:bg-brand-dark transition-colors inline-flex items-center"
+            >
+              무료로 시작하기
+            </Link>
           </div>
         </Reveal>
       </div>

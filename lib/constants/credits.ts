@@ -16,8 +16,8 @@ export interface CreditPackage {
   recommended?: boolean;
 }
 
-/** 크레딧 충전 패키지(랜딩 노출용). */
-export const CREDIT_PACKAGES: readonly CreditPackage[] = [
+/** 크레딧 충전 패키지(랜딩 노출용). 배열·요소 모두 불변. */
+export const CREDIT_PACKAGES: readonly Readonly<CreditPackage>[] = [
   { id: "credits-15", credits: 15, price: 2900 },
   { id: "credits-30", credits: 30, price: 4900, recommended: true },
   { id: "credits-50", credits: 50, price: 7900 },
