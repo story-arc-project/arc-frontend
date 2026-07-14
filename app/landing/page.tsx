@@ -468,14 +468,30 @@ function Pricing() {
           </p>
         </Reveal>
 
-        {/* 신뢰 요소 칩 */}
-        <Reveal delay={0.04} className="mb-8">
-          <ul className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-[16px] sm:text-[18px] font-semibold text-text-primary">
-            <li>월 구독 없음</li>
-            <li aria-hidden className="text-text-tertiary">·</li>
-            <li>기록·보관 무료</li>
-            <li aria-hidden className="text-text-tertiary">·</li>
-            <li>가입 시 {SIGNUP_GRANT_CREDITS}크레딧 제공</li>
+        {/* 가치 제안 3열 — 라벨 · 강조 값 · 보조 설명 */}
+        <Reveal delay={0.04} className="mb-10">
+          <ul className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            {[
+              { label: "월 구독료", value: "없음", desc: "필요한 만큼만 충전하세요" },
+              { label: "기록·보관", value: "무료", desc: "기록은 계속 보관돼요" },
+              {
+                label: "가입 혜택",
+                value: `${SIGNUP_GRANT_CREDITS} 크레딧`,
+                desc: "가입 즉시 지급해요",
+              },
+            ].map((item) => (
+              <li key={item.label} className="px-6 py-6 text-center sm:py-2">
+                <p className="text-[13px] font-medium tracking-wide text-text-secondary">
+                  {item.label}
+                </p>
+                <p className="mt-2 text-[30px] sm:text-[34px] font-bold tracking-[-0.02em] text-text-primary leading-none">
+                  {item.value}
+                </p>
+                <p className="mt-2.5 text-[13px] leading-[1.6] text-text-secondary">
+                  {item.desc}
+                </p>
+              </li>
+            ))}
           </ul>
         </Reveal>
 
