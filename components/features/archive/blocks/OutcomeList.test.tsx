@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 
 import OutcomeList from "./OutcomeList"
+import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
 import type { Block, RepeatableCellBlockValue } from "@/types/archive"
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
@@ -159,5 +160,143 @@ describe("OutcomeList", () => {
     await user.type(textInputs()[0], "수상")
     const last = onValue.mock.calls.at(-1)![0] as RepeatableCellBlockValue
     expect(last.rows[0].cells.item).toBe("수상")
+  })
+})
+
+// ── FRT-76: '프로젝트로 연결' 링크 UI ────────────────────────────────
+function makeLinkBlock(
+  rows: { id: string; item: string; linkedProjectRowId?: string }[] = [],
+): Block {
+  return {
+    id: "b1",
+    type: "repeatable-cell",
+    label: "단체 활동 / 성과",
+    variant: "outcome-list",
+    linkConfig: { targetSectionId: "society-projects", titleColumnKey: "name", label: "프로젝트로 연결" },
+    value: {
+      type: "repeatable-cell",
+      columns: [{ key: "item", label: "활동 / 성과", blockType: "text" }],
+      rows: rows.map((r) => ({
+        id: r.id,
+        cells: { item: r.item },
+        ...(r.linkedProjectRowId ? { linkedProjectRowId: r.linkedProjectRowId } : {}),
+      })),
+    },
+  }
+}
+
+function makeCtx(overrides?: Partial<ProjectLinkContextValue>): ProjectLinkContextValue {
+  return {
+    createProjectRow: vi.fn(() => "proj-1"),
+    getProjectRow: vi.fn(() => ({ title: "케이스 대회 은상" })),
+    scrollToProjectRow: vi.fn(),
+    ...overrides,
+  }
+}
+
+function LinkHarness({
+  initial,
+  ctx,
+  onValue,
+}: {
+  initial: Block
+  ctx: ProjectLinkContextValue | null
+  onValue?: (v: RepeatableCellBlockValue) => void
+}) {
+  const [block, setBlock] = useState<Block>(() => initial)
+  const node = (
+    <OutcomeList
+      block={block}
+      onChange={(v) => {
+        onValue?.(v)
+        setBlock((b) => ({ ...b, value: v }))
+      }}
+    />
+  )
+  return ctx ? <ProjectLinkProvider value={ctx}>{node}</ProjectLinkProvider> : node
+}
+
+describe("OutcomeList — 프로젝트로 연결 (FRT-76)", () => {
+  it("linkConfig + provider 가 있으면 각 행에 링크 버튼을 렌더한다", () => {
+    render(<LinkHarness initial={makeLinkBlock([{ id: "r0", item: "케이스 대회 은상" }])} ctx={makeCtx()} />)
+    expect(screen.getByRole("button", { name: "프로젝트로 연결" })).toBeInTheDocument()
+  })
+
+  it("provider 가 없으면(상세뷰·스토리북) 링크 버튼을 렌더하지 않는다", () => {
+    render(<LinkHarness initial={makeLinkBlock([{ id: "r0", item: "A" }])} ctx={null} />)
+    expect(screen.queryByRole("button", { name: "프로젝트로 연결" })).toBeNull()
+  })
+
+  it("linkConfig 가 없으면(opt-in 안 함) 링크 버튼이 없다", () => {
+    render(
+      <ProjectLinkProvider value={makeCtx()}>
+        <OutcomeList block={makeBlock(["A"])} onChange={() => {}} />
+      </ProjectLinkProvider>,
+    )
+    expect(screen.queryByRole("button", { name: "프로젝트로 연결" })).toBeNull()
+  })
+
+  it("링크 버튼 클릭 → createProjectRow 호출·행에 linkedProjectRowId 세팅·스크롤", async () => {
+    const user = userEvent.setup()
+    const onValue = vi.fn()
+    const ctx = makeCtx()
+    render(
+      <LinkHarness initial={makeLinkBlock([{ id: "r0", item: "케이스 대회 은상" }])} ctx={ctx} onValue={onValue} />,
+    )
+    await user.click(screen.getByRole("button", { name: "프로젝트로 연결" }))
+    expect(ctx.createProjectRow).toHaveBeenCalledWith("society-projects", "name", "케이스 대회 은상")
+    const last = onValue.mock.calls.at(-1)![0] as RepeatableCellBlockValue
+    expect(last.rows[0].linkedProjectRowId).toBe("proj-1")
+    expect(ctx.scrollToProjectRow).toHaveBeenCalledWith("proj-1")
+  })
+
+  it("이미 연결된 행은 '연결됨' 칩을 보이고 링크 버튼을 숨긴다", () => {
+    render(
+      <LinkHarness
+        initial={makeLinkBlock([{ id: "r0", item: "케이스 대회 은상", linkedProjectRowId: "proj-1" }])}
+        ctx={makeCtx()}
+      />,
+    )
+    expect(screen.getByRole("button", { name: /연결됨/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "프로젝트로 연결" })).toBeNull()
+  })
+
+  it("'연결됨' 클릭 시 해당 프로젝트로 스크롤한다", async () => {
+    const user = userEvent.setup()
+    const ctx = makeCtx()
+    render(
+      <LinkHarness
+        initial={makeLinkBlock([{ id: "r0", item: "A", linkedProjectRowId: "proj-1" }])}
+        ctx={ctx}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: /연결됨/ }))
+    expect(ctx.scrollToProjectRow).toHaveBeenCalledWith("proj-1")
+  })
+
+  it("연결 해제 시 linkedProjectRowId 를 제거한다(프로젝트 행은 존치)", async () => {
+    const user = userEvent.setup()
+    const onValue = vi.fn()
+    render(
+      <LinkHarness
+        initial={makeLinkBlock([{ id: "r0", item: "A", linkedProjectRowId: "proj-1" }])}
+        ctx={makeCtx()}
+        onValue={onValue}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "프로젝트 연결 해제" }))
+    const last = onValue.mock.calls.at(-1)![0] as RepeatableCellBlockValue
+    expect(last.rows[0].linkedProjectRowId).toBeUndefined()
+  })
+
+  it("대상 프로젝트가 사라지면(stale) 링크 버튼으로 복귀한다", () => {
+    render(
+      <LinkHarness
+        initial={makeLinkBlock([{ id: "r0", item: "A", linkedProjectRowId: "gone" }])}
+        ctx={makeCtx({ getProjectRow: vi.fn(() => null) })}
+      />,
+    )
+    expect(screen.queryByRole("button", { name: /연결됨/ })).toBeNull()
+    expect(screen.getByRole("button", { name: "프로젝트로 연결" })).toBeInTheDocument()
   })
 })

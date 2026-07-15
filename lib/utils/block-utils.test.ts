@@ -7,6 +7,7 @@ import {
   createFileField,
   createGroupBlock,
   createLinkField,
+  createOutcomeList,
   createPeriodField,
   createSelectField,
   createTagsField,
@@ -155,5 +156,44 @@ describe("group block", () => {
     g.children = [req]
 
     expect(validateRequiredBlocks([g])).toEqual([])
+  })
+})
+
+describe("createOutcomeList (FRT-97/FRT-76)", () => {
+  it("단일컬럼 repeatable-cell + variant:'outcome-list' 을 만든다", () => {
+    const b = createOutcomeList("단체 활동 / 성과", { placeholder: "예: 수상" })
+    expect(b.type).toBe("repeatable-cell")
+    expect(b.variant).toBe("outcome-list")
+    expect(b.value.type).toBe("repeatable-cell")
+    if (b.value.type === "repeatable-cell") {
+      expect(b.value.columns).toHaveLength(1)
+      expect(b.value.columns[0].key).toBe("item")
+      expect(b.value.columns[0].placeholder).toBe("예: 수상")
+    }
+  })
+
+  it("link 미지정이면 linkConfig 가 없다(프로젝트 연결 버튼 미노출)", () => {
+    const b = createOutcomeList("성장 / 변화", { itemLabel: "항목" })
+    expect(b.linkConfig).toBeUndefined()
+  })
+
+  it("link 를 주면 linkConfig 를 세팅한다(인스턴스별 opt-in·문구 설정)", () => {
+    const b = createOutcomeList("단체 활동 / 성과", {
+      link: { targetSectionId: "society-projects", titleColumnKey: "name", label: "프로젝트로 연결" },
+    })
+    expect(b.linkConfig).toEqual({
+      targetSectionId: "society-projects",
+      titleColumnKey: "name",
+      label: "프로젝트로 연결",
+    })
+  })
+
+  it("link 를 줘도 컬럼은 1개 유지된다(BlockRenderer columnCount<=1 가드 → 표 폴백 안 됨)", () => {
+    const b = createOutcomeList("단체 활동 / 성과", {
+      link: { targetSectionId: "society-projects", titleColumnKey: "name" },
+    })
+    if (b.value.type === "repeatable-cell") {
+      expect(b.value.columns).toHaveLength(1)
+    }
   })
 })

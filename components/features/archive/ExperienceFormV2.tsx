@@ -12,14 +12,16 @@ import type {
   ExperienceStatus,
   Block,
   BlockValue,
+  RepeatableCellBlockValue,
   TemplateV2,
   ImportanceLevel,
   SectionCategory,
 } from "@/types/archive"
 import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
-import { cloneBlocks, createGroupBlock, isBlockEmpty, uid } from "@/lib/utils/block-utils"
+import { cloneBlocks, createEmptyRow, createGroupBlock, isBlockEmpty, uid } from "@/lib/utils/block-utils"
 import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
+import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
 
 interface ExperienceFormV2Props {
   mode: "new" | "edit"
@@ -219,6 +221,68 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       prev.map(s => ({ ...s, blocks: s.blocks.map(b => map.get(b.id) ?? b) }))
     )
   }
+
+  // ── FRT-76: '프로젝트로 연결' 교차-섹션 배선 (ProjectLinkContext provider) ──
+  // OutcomeList 활동 행이 다른 섹션(프로젝트 기록)에 프로젝트 행을 만들고/조회/스크롤한다.
+  // extensionSections 가 형제 state 라 writeBackBlocks 와 같은 방식으로 대상 섹션만 갱신한다.
+  const findProjectBlock = useCallback(
+    (targetSectionId: string): { block: Block; value: RepeatableCellBlockValue } | null => {
+      const section = extensionSections.find(s => s.id === targetSectionId)
+      const block = section?.blocks.find(b => b.value.type === "repeatable-cell")
+      if (!block) return null
+      return { block, value: block.value as RepeatableCellBlockValue }
+    },
+    [extensionSections],
+  )
+
+  const projectLink = useMemo<ProjectLinkContextValue>(() => ({
+    createProjectRow(targetSectionId, titleColumnKey, text) {
+      const found = findProjectBlock(targetSectionId)
+      if (!found) return null
+      // row 를 먼저 생성해 id 를 동기 반환한다(setState 콜백 안에서 만들면 반환 불가).
+      const row = createEmptyRow(found.value.columns)
+      row.cells[titleColumnKey] = text
+      setExtensionSections(prev =>
+        prev.map(s =>
+          s.id !== targetSectionId
+            ? s
+            : {
+                ...s,
+                collapsed: false, // 연결하면 대상 섹션을 펼쳐 새 프로젝트가 보이게 한다.
+                blocks: s.blocks.map(b =>
+                  b.id === found.block.id
+                    ? {
+                        ...b,
+                        value: {
+                          ...(b.value as RepeatableCellBlockValue),
+                          rows: [...(b.value as RepeatableCellBlockValue).rows, row],
+                        },
+                      }
+                    : b,
+                ),
+              },
+        ),
+      )
+      return row.id
+    },
+    getProjectRow(targetSectionId, projectRowId) {
+      const found = findProjectBlock(targetSectionId)
+      const row = found?.value.rows.find(r => r.id === projectRowId)
+      if (!row) return null
+      const firstColKey = found!.value.columns[0]?.key
+      const cell = firstColKey ? row.cells[firstColKey] : ""
+      const title = Array.isArray(cell) ? cell.join(", ") : (cell ?? "")
+      return { title }
+    },
+    scrollToProjectRow(projectRowId) {
+      if (typeof document === "undefined") return
+      // 새 행 DOM 이 커밋된 뒤로 미룬다(생성 직후 호출되므로).
+      requestAnimationFrame(() => {
+        const el = document.querySelector<HTMLElement>(`[data-row-id="${projectRowId}"]`)
+        el?.scrollIntoView?.({ behavior: "smooth", block: "center" })
+      })
+    },
+  }), [findProjectBlock])
 
   // ── Header input handler (경험명 / 한 줄 요약 only) ──────────────
   function handleCoreBlockChange(blockId: string, value: BlockValue) {
@@ -437,6 +501,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
 
       {/* Form sections — 4-card layout */}
       {template && formCards && (
+        <ProjectLinkProvider value={projectLink}>
         <div className="flex flex-col gap-5">
           {formCards.cards.map(card => (
             <FormSection
@@ -516,6 +581,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             </div>
           )}
         </div>
+        </ProjectLinkProvider>
       )}
     </div>
   )

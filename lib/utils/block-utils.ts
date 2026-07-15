@@ -4,6 +4,7 @@ import type {
   BlockValue,
   BlockRow,
   BlockColumnDef,
+  ProjectLinkConfig,
 } from '@/types/archive'
 
 let _counter = 0
@@ -121,15 +122,26 @@ export function createTableField(label: string): Block {
  * `variant: 'outcome-list'` 마커로 OutcomeList UI 를 지정한다(무마이그레이션).
  * 컬럼 key 는 `'item'` 고정 — OutcomeList 가 이 키의 텍스트를 각 행 값으로 읽는다.
  * `itemLabel` 은 '+ ○○ 추가' 버튼 문구가 되는 컬럼 라벨(기본 '활동 / 성과').
+ * `link` 를 주면(FRT-76) 각 행에 '프로젝트로 연결' 버튼이 붙는다(인스턴스별 opt-in·문구 설정).
  */
 export function createOutcomeList(
   label: string,
-  opts?: { placeholder?: string; guide?: string; itemLabel?: string },
+  opts?: {
+    placeholder?: string
+    guide?: string
+    itemLabel?: string
+    link?: ProjectLinkConfig
+  },
 ): Block {
   const base = createRepeatableCell(label, [
     { key: 'item', label: opts?.itemLabel ?? '활동 / 성과', blockType: 'text', placeholder: opts?.placeholder },
   ])
-  return { ...base, variant: 'outcome-list', guide: opts?.guide }
+  return {
+    ...base,
+    variant: 'outcome-list',
+    guide: opts?.guide,
+    ...(opts?.link ? { linkConfig: opts.link } : {}),
+  }
 }
 
 export function createGroupBlock(label: string): Block {

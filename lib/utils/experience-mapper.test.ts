@@ -507,6 +507,38 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
     expect(reloaded.customBlocks[0]).toMatchObject({ label: "메모", type: "text" })
     expect(reloaded.customBlocks[0].value).toEqual(text("note"))
   })
+
+  it("FRT-76: BlockRow.linkedProjectRowId 가 왕복 보존된다(additive·무마이그레이션)", () => {
+    // 학회 society-detail 의 OutcomeList 블록을 레지스트리에서 가져와 링크된 행을 심는다.
+    const tmpl = getTemplateForType("academic-society")
+    const outcomeBlock = tmpl.extensions
+      .flatMap(s => s.blocks)
+      .find(b => b.key === "society-detail.단체 활동 / 성과")
+    expect(outcomeBlock).toBeDefined()
+    const linked: Block = {
+      ...outcomeBlock!,
+      value: {
+        type: "repeatable-cell",
+        columns: (outcomeBlock!.value as { columns: unknown[] }).columns as never,
+        rows: [{ id: "r1", cells: { item: "케이스 대회 은상" }, linkedProjectRowId: "proj-1" }],
+      },
+    }
+    const payload = toSavePayload(
+      makeExperienceV2({ typeId: "academic-society", extensionBlocks: [linked] }),
+    )
+    // 저장: fields[key].rows[0] 에 linkedProjectRowId 가 그대로 실린다(value JSONB 경로).
+    const fields = (payload.content as { fields: Record<string, { rows: { linkedProjectRowId?: string }[] }> }).fields
+    expect(fields["society-detail.단체 활동 / 성과"].rows[0].linkedProjectRowId).toBe("proj-1")
+    // 복원: 로드 후에도 참조가 살아있다(학회 템플릿으로 재구성해야 하므로 type 명시).
+    const reloaded = toExperienceV2(
+      makeExperience({ type: "academic-society", content: payload.content, importance: payload.importance }),
+    )
+    const reloadedBlock = reloaded.extensionBlocks.find(b => b.key === "society-detail.단체 활동 / 성과")
+    expect(reloadedBlock?.value.type).toBe("repeatable-cell")
+    if (reloadedBlock?.value.type === "repeatable-cell") {
+      expect(reloadedBlock.value.rows[0].linkedProjectRowId).toBe("proj-1")
+    }
+  })
 })
 
 describe("section round-trip (FRT-78)", () => {

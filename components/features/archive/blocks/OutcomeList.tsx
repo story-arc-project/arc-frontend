@@ -8,9 +8,10 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react"
-import { Plus } from "lucide-react"
+import { ArrowUpRight, Link2, Plus } from "lucide-react"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 import { createEmptyRow } from "@/lib/utils/block-utils"
+import { useProjectLink } from "@/contexts/ProjectLinkContext"
 
 interface OutcomeListProps {
   block: Block
@@ -72,6 +73,11 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   const colKey = col?.key ?? "item"
   const rows = val.rows
 
+  // FRT-76: linkConfig(템플릿 opt-in) + provider 둘 다 있을 때만 '프로젝트로 연결' 노출.
+  const linkConfig = block.linkConfig
+  const projectLink = useProjectLink()
+  const linkEnabled = !!linkConfig && !!projectLink && !readOnly
+
   const listRef = useRef<HTMLDivElement>(null)
   // 다음 렌더에서 포커스할 행 id(예약). state 대신 ref 라 effect 안에서 setState 없이 정리한다.
   const pendingFocus = useRef<string | null>(null)
@@ -113,6 +119,72 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
     // 마지막 행까지 지워 rows 가 [] 가 될 수 있게 둔다 — `isBlockEmpty`(rows.length===0)
     // 불변식을 지켜야 빈 블록이 상세뷰·포트폴리오에서 유령 섹션으로 남지 않는다.
     commit(rows.filter((r) => r.id !== rowId))
+  }
+
+  // FRT-76: 활동 행 → 프로젝트 행 생성 + 이 행에 참조 영속 + 그 프로젝트로 스크롤.
+  function linkRow(row: BlockRow) {
+    if (!linkConfig || !projectLink) return
+    const newId = projectLink.createProjectRow(
+      linkConfig.targetSectionId,
+      linkConfig.titleColumnKey,
+      textOf(row).trim(),
+    )
+    if (!newId) return
+    commit(rows.map((r) => (r.id === row.id ? { ...r, linkedProjectRowId: newId } : r)))
+    projectLink.scrollToProjectRow(newId)
+  }
+
+  // 참조만 해제(프로젝트 행은 존치) — soft link.
+  function unlinkRow(rowId: string) {
+    commit(
+      rows.map((r) =>
+        r.id === rowId && r.linkedProjectRowId !== undefined
+          ? { id: r.id, cells: r.cells }
+          : r,
+      ),
+    )
+  }
+
+  // 행 액션 슬롯. rowAction(테스트/스토리북 escape hatch)이 우선. 그다음 링크 UI.
+  function renderRowAction(row: BlockRow): ReactNode {
+    if (rowAction) return rowAction(row)
+    if (!linkEnabled || !linkConfig || !projectLink) return null
+    const linkedId = row.linkedProjectRowId
+    // 대상 프로젝트가 실제로 존재할 때만 '연결됨'. 삭제됐으면(stale) 링크 버튼으로 복귀.
+    const linked = linkedId ? projectLink.getProjectRow(linkConfig.targetSectionId, linkedId) : null
+    if (linkedId && linked) {
+      return (
+        <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-surface-brand pl-2 pr-1 py-0.5 text-caption font-medium text-brand-dark">
+          <button
+            type="button"
+            onClick={() => projectLink.scrollToProjectRow(linkedId)}
+            className="inline-flex items-center gap-0.5 hover:underline"
+            title={linked.title || undefined}
+          >
+            연결됨
+            <ArrowUpRight size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => unlinkRow(row.id)}
+            className="rounded-full p-0.5 leading-none text-brand-dark transition-colors hover:bg-brand-light"
+            aria-label="프로젝트 연결 해제"
+          >
+            ×
+          </button>
+        </span>
+      )
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => linkRow(row)}
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-0.5 text-caption text-text-secondary transition-colors hover:border-brand hover:text-brand"
+      >
+        <Link2 size={12} />
+        {linkConfig.label ?? "프로젝트로 연결"}
+      </button>
+    )
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>, index: number, row: BlockRow) {
@@ -176,7 +248,7 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
               onChange={(e) => updateText(row.id, e.target.value)}
               onKeyDown={(e) => handleKeyDown(e, index, row)}
             />
-            {rowAction?.(row)}
+            {renderRowAction(row)}
             <button
               type="button"
               onClick={() => removeRow(row.id)}
