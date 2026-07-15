@@ -299,4 +299,9 @@ describe("OutcomeList — 프로젝트로 연결 (FRT-76)", () => {
     expect(screen.queryByRole("button", { name: /연결됨/ })).toBeNull()
     expect(screen.getByRole("button", { name: "프로젝트로 연결" })).toBeInTheDocument()
   })
+
+  it("빈/공백 행에는 링크 버튼을 숨긴다(제목 없는 프로젝트 생성 방지)", () => {
+    render(<LinkHarness initial={makeLinkBlock([{ id: "r0", item: "   " }])} ctx={makeCtx()} />)
+    expect(screen.queryByRole("button", { name: "프로젝트로 연결" })).toBeNull()
+  })
 })

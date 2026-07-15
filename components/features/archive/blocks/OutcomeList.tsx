@@ -124,10 +124,13 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   // FRT-76: 활동 행 → 프로젝트 행 생성 + 이 행에 참조 영속 + 그 프로젝트로 스크롤.
   function linkRow(row: BlockRow) {
     if (!linkConfig || !projectLink) return
+    // 빈/공백 행은 제목 없는 프로젝트 행을 만들어버리므로 링크하지 않는다(버튼도 숨김).
+    const text = textOf(row).trim()
+    if (!text) return
     const newId = projectLink.createProjectRow(
       linkConfig.targetSectionId,
       linkConfig.titleColumnKey,
-      textOf(row).trim(),
+      text,
     )
     if (!newId) return
     commit(rows.map((r) => (r.id === row.id ? { ...r, linkedProjectRowId: newId } : r)))
@@ -152,6 +155,8 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
     const linkedId = row.linkedProjectRowId
     // 대상 프로젝트가 실제로 존재할 때만 '연결됨'. 삭제됐으면(stale) 링크 버튼으로 복귀.
     const linked = linkedId ? projectLink.getProjectRow(linkConfig.targetSectionId, linkedId) : null
+    // 빈/공백 행에서는 링크 버튼을 숨긴다 — 제목 없는 프로젝트 행 생성을 원천 차단.
+    if (!linkedId && !textOf(row).trim()) return null
     if (linkedId && linked) {
       return (
         <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-surface-brand pl-2 pr-1 py-0.5 text-caption font-medium text-brand-dark">
