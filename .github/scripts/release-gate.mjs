@@ -54,6 +54,10 @@ const DRY_RUN = process.env.DRY_RUN === '1'; // 판정만 하고 게시/머지�
 
 if (!SLACK_TOKEN) fail('SLACK_BOT_TOKEN(=ARC_SLACK_BOT_TOKEN) 시크릿이 없습니다.');
 if (!CHANNEL || !ROSTER_N) fail('RELEASE_GATE_CONFIG(channel·roster) 시크릿이 없습니다.');
+// quorum 오설정 방어: 0·음수면 승인 0명으로 자동 머지, roster 초과·비숫자면 게이트가 영영 안 열림.
+if (!Number.isInteger(QUORUM) || QUORUM < 1 || QUORUM > ROSTER_N) {
+  fail(`RELEASE_GATE_CONFIG.quorum(${JSON.stringify(CONFIG.quorum)})가 유효하지 않습니다 — 1..${ROSTER_N} 정수여야 합니다.`);
+}
 
 // ── 유틸 ──────────────────────────────────────────────────────────────────
 function log(...a) { console.log(...a); }
@@ -220,15 +224,40 @@ if (approved) {
   try {
     gh(['pr', 'merge', number, '--repo', REPO, '--merge', '--match-head-commit', currentDevSha]);
   } catch (e) {
-    const out = (e.stdout ? e.stdout.toString() : '') + (e.stderr ? e.stderr.toString() : '');
-    log(`머지 보류 — head가 승인 SHA(${currentDevSha.slice(0, 7)})와 불일치(새 커밋 유입 추정). 다음 실행에서 재평가. ${out.trim()}`);
-    process.exit(0);
+    const out = ((e.stdout ? e.stdout.toString() : '') + (e.stderr ? e.stderr.toString() : '')).trim();
+    // 실패 원인 구분: head가 승인 SHA와 달라졌으면 양성 경쟁(새 커밋 유입) → 다음 실행이 dev-sha 변경으로 재QA.
+    let headNow = '';
+    try { headNow = gh(['pr', 'view', number, '--repo', REPO, '--json', 'headRefOid', '-q', '.headRefOid']); } catch { /* 조회 실패는 아래서 실제 오류로 처리 */ }
+    if (headNow && headNow !== currentDevSha) {
+      log(`머지 보류 — head가 승인 SHA(${currentDevSha.slice(0, 7)})→${headNow.slice(0, 7)}로 바뀜(새 커밋 유입). 다음 실행에서 재QA. ${out}`);
+      process.exit(0);
+    }
+    // head는 그대로인데 머지가 거부됨 — 권한·머지 설정·브랜치 규칙 등 실제 오류.
+    // 조용한 무한 재시도 대신 Slack 1회 경보(마커로 중복 차단) + 비정상 종료로 표면화.
+    if (!/<!--\s*merge-error\s*-->/.test(body)) {
+      try {
+        await slack('chat.postMessage', {
+          channel: CHANNEL, thread_ts: ts,
+          text: `:x: *자동 배포 실패* — 승인·CI는 통과했지만 dev → main 머지가 거부됐어요. 권한·머지 설정·브랜치 규칙을 확인해주세요.\n\`\`\`${out.slice(0, 500)}\`\`\``,
+        }, true);
+      } catch (se) { log(`Slack 실패 경보 게시 실패(무시): ${se.message}`); }
+      try { gh(['pr', 'edit', number, '--repo', REPO, '--body', `${body}\n<!-- merge-error -->`]); } catch { /* 마커 기록 실패는 무시 */ }
+    }
+    fail(`자동 머지 실패(head 불변, 실제 오류): ${out}`);
   }
+  // gh pr merge 반환 == 머지 완료가 아니다 — main이 merge queue를 쓰면 큐 등록에 그친다. 실제 머지 상태 확인.
+  let mergedState = null;
+  try {
+    mergedState = JSON.parse(gh(['pr', 'view', number, '--repo', REPO, '--json', 'state,merged']));
+  } catch { /* 확인 실패 시 큐 등록(미확정)으로 보수 처리 */ }
+  const isMerged = mergedState?.merged === true || mergedState?.state === 'MERGED';
   await slack('chat.postMessage', {
     channel: CHANNEL, thread_ts: ts,
-    text: `:tada: *배포 완료* — dev → main 머지됨 (${reason}, CI 통과). 프로덕션 반영이 진행됩니다.`,
+    text: isMerged
+      ? `:tada: *배포 완료* — dev → main 머지됨 (${reason}, CI 통과). 프로덕션 반영이 진행됩니다.`
+      : `:inbox_tray: *배포 예약* — dev → main 머지가 대기열에 등록됐어요 (${reason}, CI 통과). 큐 통과 후 반영됩니다.`,
   }, true);
-  log(`머지 완료(${reason}).`);
+  log(isMerged ? `머지 완료(${reason}).` : `머지 큐 등록(${reason}).`);
   process.exit(0);
 }
 
