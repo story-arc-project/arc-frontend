@@ -1,0 +1,62 @@
+name: release-gate
+
+# dev.story-arc.org QA 사인오프(Slack ✅) + CI 통과를 게이트로 dev → main(프로덕션) 승격을 자동화한다.
+# 로직 전체: .github/scripts/release-gate.mjs
+#
+# 동작 조건(GitHub 제약):
+#   - schedule / workflow_dispatch 는 "기본 브랜치(main)"의 워크플로 파일만 실행된다.
+#     → 이 파일이 첫 릴리스로 main에 올라간 뒤부터 cron이 동작한다.
+#   - dev→main PR 생성이 CI(pull_request)를 트리거하려면, 반드시 PAT(RELEASE_GATE_PAT)로 생성해야 한다.
+#     기본 GITHUB_TOKEN으로 만든 PR은 다른 워크플로를 트리거하지 못한다(무한루프 방지 정책).
+#
+# 필요한 시크릿:
+#   - ARC_SLACK_BOT_TOKEN : arc_notifier 봇 토큰(xoxb-). scopes: chat:write, reactions:read
+#   - RELEASE_GATE_PAT    : dev→main PR 생성·머지 + CI 트리거용 PAT
+#                           (fine-grained: contents RW, pull-requests RW, actions read)
+#   - RELEASE_GATE_CONFIG : 팀 식별정보 JSON(공개 리포에 두지 않음). 형태:
+#                           {"channel":"C…","quorum":3,"overrideIds":["U…","U…"],
+#                            "roster":{"U…":"이름",…},"stagingUrl":"https://…"}
+
+on:
+  workflow_dispatch: {}
+  # 첫 배치를 감독 실행으로 성공시키고 시크릿(ARC_SLACK_BOT_TOKEN·RELEASE_GATE_PAT)을 등록한 뒤 아래 주석을 해제한다.
+  # schedule:
+  #   - cron: '*/30 * * * *' # 30분마다 재평가
+
+concurrency:
+  group: release-gate
+  cancel-in-progress: false # 머지 진행 중 취소 방지
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # main..dev 비교에 전체 히스토리 필요
+
+      - name: Fetch dev & main
+        run: git fetch origin main dev --no-tags --quiet
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run release gate
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.ARC_SLACK_BOT_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_GATE_PAT }}
+          RELEASE_GATE_CONFIG: ${{ secrets.RELEASE_GATE_CONFIG }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$SLACK_BOT_TOKEN" ] || [ -z "$GH_TOKEN" ] || [ -z "$RELEASE_GATE_CONFIG" ]; then
+            echo "⏭️  시크릿(ARC_SLACK_BOT_TOKEN·RELEASE_GATE_PAT·RELEASE_GATE_CONFIG) 미설정 — 게이트 건너뜀."
+            exit 0
+          fi
+          node .github/scripts/release-gate.mjs
