@@ -6,19 +6,21 @@
 // 흐름(매 실행마다 stateless하게 재평가):
 //   1. dev가 main보다 앞서 있나? 아니면 종료.
 //   2. 열린 dev→main PR이 있나?
-//        없으면 → PR 생성(= CI 트리거) + Slack 승인 메시지 게시 + PR 본문에 slack ts 각인 → 종료.
-//        있으면 → PR 본문에서 slack ts 복원, PR 생성시각으로 경과시간 계산.
+//        없으면 → PR 생성(= CI 트리거) + Slack 승인 메시지 게시 + PR 본문에 상태 각인.
+//        있으면 → PR 본문에서 상태 복원. 단, dev head가 승인 요청 이후 바뀌었거나(=재QA 필요)
+//                 상태 마커가 없으면(=이전 게시 실패 복구) 승인 요청을 다시 게시하고 종료.
 //   3. Slack 메시지의 ✅ 반응을 읽어 명단 중 승인자 수를 센다.
 //   4. PR의 CI 체크가 전부 초록인지 확인.
 //   5. 판정:
-//        (과반  OR  48h 경과 & 지정 승인자 2인 둘 다 ✅)  AND  CI 초록 → 자동 머지 + "배포 완료" 스레드.
+//        (과반  OR  48h 경과 & 지정 승인자 전원 ✅)  AND  CI 초록 → 자동 머지 + "배포 완료" 스레드.
 //        24h 경과 & 미충족 & 리마인드 전 → 리마인드 스레드(미반응자 멘션) 1회.
 //        그 외 → 대기.
 //
-// 상태 저장은 GitHub Actions가 stateless라, "열린 dev→main PR" 자체를 단일 상태원으로 쓴다.
-//   - slack 메시지 ts: PR 본문의 <!-- slack-ts: ... --> 마커
-//   - 24h 리마인드 발송 여부: PR 본문의 <!-- reminded-24h --> 마커
-//   - 백스톱 경과시간: PR createdAt
+// 상태 저장은 GitHub Actions가 stateless라, "열린 dev→main PR" 자체를 단일 상태원으로 쓴다(PR 본문 마커):
+//   <!-- slack-ts: … -->    승인 요청 Slack 메시지 ts(반응을 읽는 대상)
+//   <!-- dev-sha: … -->     승인 요청이 대상으로 삼은 dev head SHA(이후 바뀌면 재QA 필요)
+//   <!-- posted-at: … -->   승인 요청 게시 시각(백스톱 24h/48h 기준)
+//   <!-- reminded-24h -->   24h 리마인드 발송 여부
 
 import { execFileSync } from 'node:child_process';
 
@@ -28,15 +30,17 @@ import { execFileSync } from 'node:child_process';
 //   {
 //     "channel": "C…",                      // #release-approvals 채널 id
 //     "quorum": 3,                          // 과반 승인 수(기본 3)
-//     "overrideIds": ["U…", "U…"],          // 48h 백스톱: 둘 다 ✅면 통과
+//     "overrideIds": ["U…", "U…"],          // 48h 백스톱: 전원 ✅면 통과(비면 백스톱 비활성)
 //     "roster": { "U…": "이름", ... },       // Slack id → 표시 이름
 //     "stagingUrl": "https://…"             // QA 대상 staging(선택)
 //   }
 const CONFIG = JSON.parse(process.env.RELEASE_GATE_CONFIG || '{}');
 const CHANNEL = CONFIG.channel;
 const ROSTER = CONFIG.roster || {};
+const ROSTER_IDS = Object.keys(ROSTER);
+const ROSTER_N = ROSTER_IDS.length;
 const OVERRIDE_IDS = CONFIG.overrideIds || [];
-const OVERRIDE_NAMES = OVERRIDE_IDS.map((id) => ROSTER[id] || id).join('·'); // 표시용(config에서 파생)
+const OVERRIDE_NAMES = OVERRIDE_IDS.map((id) => ROSTER[id] || id).join('·'); // Slack 메시지 표시용(로그엔 쓰지 않음)
 const QUORUM = CONFIG.quorum ?? 3; // 명단 과반
 const STAGING_URL = CONFIG.stagingUrl || 'https://dev.story-arc.org';
 const EMOJI = 'white_check_mark'; // ✅
@@ -48,7 +52,7 @@ const REPO = process.env.GH_REPO || 'story-arc-project/arc-frontend';
 const DRY_RUN = process.env.DRY_RUN === '1'; // 판정만 하고 게시/머지는 하지 않음
 
 if (!SLACK_TOKEN) fail('SLACK_BOT_TOKEN(=ARC_SLACK_BOT_TOKEN) 시크릿이 없습니다.');
-if (!CHANNEL || !Object.keys(ROSTER).length) fail('RELEASE_GATE_CONFIG(channel·roster) 시크릿이 없습니다.');
+if (!CHANNEL || !ROSTER_N) fail('RELEASE_GATE_CONFIG(channel·roster) 시크릿이 없습니다.');
 
 // ── 유틸 ──────────────────────────────────────────────────────────────────
 function log(...a) { console.log(...a); }
@@ -80,20 +84,10 @@ async function slack(method, params, post = false) {
   return data;
 }
 
-// ── 1. dev가 main보다 앞섰나 ───────────────────────────────────────────────
-const ahead = Number(git(['rev-list', '--count', 'origin/main..origin/dev']));
-if (!ahead) { log('✅ dev가 main보다 앞선 커밋 없음 — 배포할 것 없음. 종료.'); process.exit(0); }
-log(`dev가 main보다 ${ahead}커밋 앞섬.`);
-
-// ── 2. 열린 dev→main PR 찾기 ───────────────────────────────────────────────
-const prs = JSON.parse(
-  gh(['pr', 'list', '--repo', REPO, '--base', 'main', '--head', 'dev',
-    '--state', 'open', '--json', 'number,body,createdAt'])
-);
-
-if (prs.length === 0) {
-  // ── PR 생성 + Slack 메시지 게시 ──
-  log('열린 dev→main PR 없음 → 생성 + Slack 게시.');
+// 승인 요청 Slack 메시지를 (재)게시하고 PR 본문에 상태 마커를 기록한다.
+// oldTs가 있으면 이전 메시지를 "만료됨"으로 갱신해 스테일 승인을 막는다.
+// 최초 생성 · 마커 부재 복구 · dev head 변경 재QA — 세 경로가 공유한다.
+async function postAndRecord(number, devSha, oldTs) {
   const compare = `https://github.com/${REPO}/compare/main...dev`;
   const merges = git(['log', 'origin/main..origin/dev', '--merges', '--pretty=%s'])
     .split('\n').filter(Boolean);
@@ -103,26 +97,54 @@ if (prs.length === 0) {
   }).join('\n');
   const more = merges.length > 10 ? `\n…외 ${merges.length - 10}건` : '';
 
-  const title = `🚀 릴리스: dev → main (${merges.length}개 기능)`;
-  if (DRY_RUN) { log('[DRY_RUN] PR 생성/게시 생략'); process.exit(0); }
-
-  gh(['pr', 'create', '--repo', REPO, '--base', 'main', '--head', 'dev',
-    '--title', title, '--body', '<!-- release-gate -->\n자동 생성된 릴리스 PR입니다. 승인은 #release-approvals 에서 진행됩니다.']);
-  const number = gh(['pr', 'list', '--repo', REPO, '--base', 'main', '--head', 'dev',
-    '--state', 'open', '--json', 'number', '-q', '.[0].number']);
+  if (oldTs) {
+    try {
+      await slack('chat.update', {
+        channel: CHANNEL, ts: oldTs,
+        text: ':warning: 새 커밋이 추가되어 이 배포 승인 요청은 만료됐어요. 아래 새 메시지에서 다시 승인해주세요.',
+      }, true);
+    } catch (e) { log(`이전 메시지 만료 처리 실패(무시): ${e.message}`); }
+  }
 
   const text =
     `:rocket: *dev → main 배포 검토* — ${merges.length}개 기능\n\n` +
     `dev를 프로덕션(main)으로 올릴 준비가 됐어요.\n` +
     `:point_right: <${STAGING_URL}|dev.story-arc.org> 에서 확인한 뒤, *이 메시지에 :white_check_mark: 를 눌러주세요.*\n\n` +
     `*이번 배치*\n${items}${more}\n\n` +
-    `*승인 규칙* — ${Object.keys(ROSTER).length}명 중 ${QUORUM}명 :white_check_mark: (또는 48시간 경과 시 ${OVERRIDE_NAMES} 승인) + CI 통과 → 자동 배포\n` +
+    `*승인 규칙* — ${ROSTER_N}명 중 ${QUORUM}명 :white_check_mark:` +
+    (OVERRIDE_IDS.length ? ` (또는 48시간 경과 시 ${OVERRIDE_NAMES} 승인)` : '') +
+    ` + CI 통과 → 자동 배포\n` +
     `<${compare}|전체 변경 보기>  ·  <https://github.com/${REPO}/pull/${number}|PR #${number}>`;
 
   const posted = await slack('chat.postMessage', { channel: CHANNEL, text, unfurl_links: false }, true);
+  const postedAt = new Date().toISOString();
   gh(['pr', 'edit', number, '--repo', REPO, '--body',
-    `<!-- release-gate -->\n<!-- slack-ts: ${posted.ts} -->\n\n자동 생성된 릴리스 PR입니다. 승인은 <#${CHANNEL}> 에서 진행됩니다.\n\n[전체 변경](${compare})`]);
-  log(`PR #${number} 생성 + Slack 게시(ts=${posted.ts}). 다음 실행에서 반응·CI 평가.`);
+    `<!-- release-gate -->\n<!-- slack-ts: ${posted.ts} -->\n<!-- dev-sha: ${devSha} -->\n<!-- posted-at: ${postedAt} -->\n\n` +
+    `자동 생성된 릴리스 PR입니다. 승인은 <#${CHANNEL}> 에서 진행됩니다.\n\n[전체 변경](${compare})`]);
+  log(`Slack 승인 요청 게시(ts=${posted.ts}, dev=${devSha.slice(0, 7)}). 다음 실행에서 반응·CI 평가.`);
+  return posted.ts;
+}
+
+// ── 1. dev가 main보다 앞섰나 ───────────────────────────────────────────────
+const ahead = Number(git(['rev-list', '--count', 'origin/main..origin/dev']));
+if (!ahead) { log('✅ dev가 main보다 앞선 커밋 없음 — 배포할 것 없음. 종료.'); process.exit(0); }
+const currentDevSha = git(['rev-parse', 'origin/dev']);
+log(`dev가 main보다 ${ahead}커밋 앞섬 (dev=${currentDevSha.slice(0, 7)}).`);
+
+// ── 2. 열린 dev→main PR 찾기 ───────────────────────────────────────────────
+const prs = JSON.parse(
+  gh(['pr', 'list', '--repo', REPO, '--base', 'main', '--head', 'dev',
+    '--state', 'open', '--json', 'number,body,createdAt'])
+);
+
+if (prs.length === 0) {
+  if (DRY_RUN) { log('[DRY_RUN] PR 생성/게시 생략'); process.exit(0); }
+  log('열린 dev→main PR 없음 → 생성 + Slack 게시.');
+  gh(['pr', 'create', '--repo', REPO, '--base', 'main', '--head', 'dev',
+    '--title', '🚀 릴리스: dev → main', '--body', '<!-- release-gate -->\n승인 대기 중…']);
+  const number = gh(['pr', 'list', '--repo', REPO, '--base', 'main', '--head', 'dev',
+    '--state', 'open', '--json', 'number', '-q', '.[0].number']);
+  await postAndRecord(number, currentDevSha);
   process.exit(0);
 }
 
@@ -130,29 +152,45 @@ if (prs.length === 0) {
 const pr = prs[0];
 const number = String(pr.number);
 const body = pr.body || '';
-const tsMatch = body.match(/<!--\s*slack-ts:\s*([\d.]+)\s*-->/);
-if (!tsMatch) fail(`PR #${number} 본문에 slack-ts 마커가 없습니다. 수동 확인 필요.`);
-const ts = tsMatch[1];
+const ts = body.match(/<!--\s*slack-ts:\s*([\d.]+)\s*-->/)?.[1];
+const devShaMarker = body.match(/<!--\s*dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1];
+const postedAtMarker = body.match(/<!--\s*posted-at:\s*(\S+)\s*-->/)?.[1];
 const remindedBefore = /<!--\s*reminded-24h\s*-->/.test(body);
-const ageH = (Date.now() - new Date(pr.createdAt).getTime()) / 3_600_000;
+
+// 마커 부재(이전 게시 실패 복구) 또는 dev head 변경(승인 후 새 커밋 → 재QA 필요) 시 승인 요청 재게시.
+if (!ts || !devShaMarker || devShaMarker !== currentDevSha) {
+  const why = !ts ? '상태 마커 없음(게시 복구)' : `dev head 변경(${(devShaMarker || '?').slice(0, 7)}→${currentDevSha.slice(0, 7)}, 재QA 필요)`;
+  if (DRY_RUN) { log(`[DRY_RUN] 승인 요청 재게시 필요: ${why}`); process.exit(0); }
+  log(`승인 요청 재게시: ${why}`);
+  await postAndRecord(number, currentDevSha, ts);
+  process.exit(0);
+}
+
+const postedAt = postedAtMarker ? new Date(postedAtMarker) : new Date(pr.createdAt); // 구버전 PR 폴백
+const ageH = (Date.now() - postedAt.getTime()) / 3_600_000;
 log(`PR #${number}, slack ts=${ts}, 경과 ${ageH.toFixed(1)}h, 24h리마인드=${remindedBefore}`);
 
 // ── 3. ✅ 반응 카운트 ──────────────────────────────────────────────────────
 const reac = await slack('reactions.get', { channel: CHANNEL, timestamp: ts, full: 'true' });
 const reactions = reac.message?.reactions || [];
 const checkUsers = new Set((reactions.find((r) => r.name === EMOJI)?.users) || []);
-const approvers = Object.keys(ROSTER).filter((id) => checkUsers.has(id));
-const pending = Object.keys(ROSTER).filter((id) => !checkUsers.has(id));
-log(`승인 ${approvers.length}/${Object.keys(ROSTER).length}: [${approvers.map((i) => ROSTER[i]).join(', ')}]`);
+const approvers = ROSTER_IDS.filter((id) => checkUsers.has(id));
+const pending = ROSTER_IDS.filter((id) => !checkUsers.has(id));
+// 공개 Actions 로그에 실명을 남기지 않는다 — 카운트와 Slack id만.
+log(`승인 ${approvers.length}/${ROSTER_N} (ids: ${approvers.join(', ') || '없음'})`);
 
 // ── 4. CI 상태 ─────────────────────────────────────────────────────────────
 function ciStatus() {
-  let checks;
+  let out = '';
   try {
-    checks = JSON.parse(gh(['pr', 'checks', number, '--repo', REPO, '--json', 'bucket,name,state']));
-  } catch {
-    return 'pending'; // 체크가 아직 안 붙음
+    out = gh(['pr', 'checks', number, '--repo', REPO, '--json', 'bucket,name,state']);
+  } catch (e) {
+    // gh pr checks는 실패=1·대기=8로 non-zero exit이라 throw된다. JSON은 stdout에 실려 오므로 그대로 파싱.
+    out = (e.stdout ? e.stdout.toString() : '').trim();
+    if (!out) return 'pending'; // 체크가 아직 안 붙음
   }
+  let checks;
+  try { checks = JSON.parse(out); } catch { return 'pending'; }
   if (!checks.length) return 'pending';
   const buckets = checks.map((c) => c.bucket);
   if (buckets.some((b) => b === 'fail' || b === 'cancel')) return 'fail';
@@ -162,14 +200,16 @@ function ciStatus() {
 
 // ── 5. 판정 ────────────────────────────────────────────────────────────────
 const quorumMet = approvers.length >= QUORUM;
-const overrideMet = ageH >= OVERRIDE_AFTER_H && OVERRIDE_IDS.every((id) => checkUsers.has(id));
+// override는 대상이 지정돼 있을 때만(빈 배열이면 [].every()=true로 0명 승인 통과하는 함정 차단).
+const overrideMet = OVERRIDE_IDS.length > 0
+  && ageH >= OVERRIDE_AFTER_H
+  && OVERRIDE_IDS.every((id) => checkUsers.has(id));
 const approved = quorumMet || overrideMet;
 
 if (approved) {
+  const reason = quorumMet ? `과반 ${approvers.length}/${ROSTER_N}` : `48h override(지정 ${OVERRIDE_IDS.length}인)`;
   const ci = ciStatus();
-  const reason = quorumMet
-    ? `과반 ${approvers.length}/${Object.keys(ROSTER).length}`
-    : `48h override(${OVERRIDE_NAMES})`;
+  if (ci === 'fail') { log(`승인됨(${reason})이나 CI 실패 — 배포 보류. PR 체크 확인 필요.`); process.exit(0); }
   if (ci !== 'green') { log(`승인됨(${reason})이나 CI=${ci} — 대기.`); process.exit(0); }
   if (DRY_RUN) { log(`[DRY_RUN] 머지 조건 충족(${reason}, CI green) — 실제 머지 생략.`); process.exit(0); }
   gh(['pr', 'merge', number, '--repo', REPO, '--merge']);
