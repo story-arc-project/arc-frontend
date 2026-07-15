@@ -94,13 +94,18 @@ async function slack(method, params, post = false) {
 // 최초 생성 · 마커 부재 복구 · dev head 변경 재QA — 세 경로가 공유한다.
 async function postAndRecord(number, devSha, oldTs) {
   const compare = `https://github.com/${REPO}/compare/main...dev`;
+  // 머지 커밋이 있으면 그것을(PR 단위), 없으면(squash 병합 등) 일반 커밋을 배치로 요약한다 —
+  // 병합 전략과 무관하게 "0개/빈 목록"이 뜨지 않도록.
   const merges = git(['log', 'origin/main..origin/dev', '--merges', '--pretty=%s'])
     .split('\n').filter(Boolean);
-  const items = merges.slice(0, 10).map((s) => {
+  const source = merges.length
+    ? merges
+    : git(['log', 'origin/main..origin/dev', '--no-merges', '--pretty=%s']).split('\n').filter(Boolean);
+  const items = source.slice(0, 10).map((s) => {
     const m = s.match(/#(\d+) from [^/]+\/(.+)$/);
     return m ? `• #${m[1]} — ${m[2]}` : `• ${s}`;
   }).join('\n');
-  const more = merges.length > 10 ? `\n…외 ${merges.length - 10}건` : '';
+  const more = source.length > 10 ? `\n…외 ${source.length - 10}건` : '';
 
   if (oldTs) {
     try {
@@ -112,7 +117,7 @@ async function postAndRecord(number, devSha, oldTs) {
   }
 
   const text =
-    `:rocket: *dev → main 배포 검토* — ${merges.length}개 기능\n\n` +
+    `:rocket: *dev → main 배포 검토* — ${source.length}개 변경\n\n` +
     `dev를 프로덕션(main)으로 올릴 준비가 됐어요.\n` +
     `:point_right: <${STAGING_URL}|dev.story-arc.org> 에서 확인한 뒤, *이 메시지에 :white_check_mark: 를 눌러주세요.*\n\n` +
     `*이번 배치*\n${items}${more}\n\n` +
@@ -137,18 +142,22 @@ const currentDevSha = git(['rev-parse', 'origin/dev']);
 log(`dev가 main보다 ${ahead}커밋 앞섬 (dev=${currentDevSha.slice(0, 7)}).`);
 
 // ── 2. 열린 dev→main PR 찾기 ───────────────────────────────────────────────
+const OWNER = REPO.split('/')[0];
+// --head dev는 브랜치명만 매칭해 포크의 동명 브랜치(fork:dev)에서 연 PR도 잡힐 수 있다(공개 리포).
+// 업스트림 same-repo PR만 남긴다 — 아니면 남의 PR 본문을 편집하거나 head SHA 불일치로 영구 대기하게 된다.
 const prs = JSON.parse(
   gh(['pr', 'list', '--repo', REPO, '--base', 'main', '--head', 'dev',
-    '--state', 'open', '--json', 'number,body,createdAt'])
-);
+    '--state', 'open', '--json', 'number,body,createdAt,isCrossRepository,headRepositoryOwner'])
+).filter((p) => !p.isCrossRepository && (p.headRepositoryOwner?.login ?? OWNER) === OWNER);
 
 if (prs.length === 0) {
   if (DRY_RUN) { log('[DRY_RUN] PR 생성/게시 생략'); process.exit(0); }
   log('열린 dev→main PR 없음 → 생성 + Slack 게시.');
-  gh(['pr', 'create', '--repo', REPO, '--base', 'main', '--head', 'dev',
+  // 생성 직후 재조회(레이스·포크 오매칭 위험) 대신 gh pr create가 찍는 PR URL에서 번호를 뽑는다.
+  const createOut = gh(['pr', 'create', '--repo', REPO, '--base', 'main', '--head', 'dev',
     '--title', '🚀 릴리스: dev → main', '--body', '<!-- release-gate -->\n승인 대기 중…']);
-  const number = gh(['pr', 'list', '--repo', REPO, '--base', 'main', '--head', 'dev',
-    '--state', 'open', '--json', 'number', '-q', '.[0].number']);
+  const number = createOut.match(/\/pull\/(\d+)/)?.[1];
+  if (!number) fail(`PR 생성 후 번호 파싱 실패: ${createOut}`);
   await postAndRecord(number, currentDevSha);
   process.exit(0);
 }
@@ -176,7 +185,19 @@ const ageH = (Date.now() - postedAt.getTime()) / 3_600_000;
 log(`PR #${number}, slack ts=${ts}, 경과 ${ageH.toFixed(1)}h, 24h리마인드=${remindedBefore}`);
 
 // ── 3. ✅ 반응 카운트 ──────────────────────────────────────────────────────
-const reac = await slack('reactions.get', { channel: CHANNEL, timestamp: ts, full: 'true' });
+let reac;
+try {
+  reac = await slack('reactions.get', { channel: CHANNEL, timestamp: ts, full: 'true' });
+} catch (e) {
+  // 승인 메시지가 삭제/채널 보존기간 만료로 사라지면 reactions.get가 message_not_found로 throw.
+  // 마커만 믿고 매 실행 같은 지점에서 멈추지 않도록, 메시지가 사라졌을 때만 새로 게시하고 종료.
+  if (/message_not_found/.test(e.message)) {
+    log('승인 메시지가 사라짐(message_not_found) → 승인 요청 재게시.');
+    if (!DRY_RUN) await postAndRecord(number, currentDevSha);
+    process.exit(0);
+  }
+  throw e; // 그 외(전송 오류 등)는 표면화 — 중복 메시지 스팸 대신 다음 실행에서 재시도.
+}
 const reactions = reac.message?.reactions || [];
 const checkUsers = new Set((reactions.find((r) => r.name === EMOJI)?.users) || []);
 const approvers = ROSTER_IDS.filter((id) => checkUsers.has(id));
@@ -248,9 +269,10 @@ if (approved) {
   // gh pr merge 반환 == 머지 완료가 아니다 — main이 merge queue를 쓰면 큐 등록에 그친다. 실제 머지 상태 확인.
   let mergedState = null;
   try {
-    mergedState = JSON.parse(gh(['pr', 'view', number, '--repo', REPO, '--json', 'state,merged']));
+    // gh pr view는 boolean `merged` 필드가 없다(Unknown JSON field로 throw) — state·mergedAt로 판정.
+    mergedState = JSON.parse(gh(['pr', 'view', number, '--repo', REPO, '--json', 'state,mergedAt']));
   } catch { /* 확인 실패 시 큐 등록(미확정)으로 보수 처리 */ }
-  const isMerged = mergedState?.merged === true || mergedState?.state === 'MERGED';
+  const isMerged = mergedState?.state === 'MERGED' || Boolean(mergedState?.mergedAt);
   await slack('chat.postMessage', {
     channel: CHANNEL, thread_ts: ts,
     text: isMerged
