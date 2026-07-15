@@ -41,7 +41,8 @@ const ROSTER_IDS = Object.keys(ROSTER);
 const ROSTER_N = ROSTER_IDS.length;
 const OVERRIDE_IDS = CONFIG.overrideIds || [];
 const OVERRIDE_NAMES = OVERRIDE_IDS.map((id) => ROSTER[id] || id).join('·'); // Slack 메시지 표시용(로그엔 쓰지 않음)
-const QUORUM = CONFIG.quorum ?? 3; // 명단 과반
+const QUORUM = CONFIG.quorum ?? (Math.floor(ROSTER_N / 2) + 1); // 기본값 = 명단 과반(미지정 시 roster 크기에서 계산)
+const REQUIRED_CHECKS = CONFIG.requiredChecks || ['ci', 'e2e', 'storybook-test']; // green 판정에 반드시 존재+통과해야 하는 체크
 const STAGING_URL = CONFIG.stagingUrl || 'https://dev.story-arc.org';
 const EMOJI = 'white_check_mark'; // ✅
 const REMIND_AFTER_H = 24;
@@ -191,11 +192,13 @@ function ciStatus() {
   }
   let checks;
   try { checks = JSON.parse(out); } catch { return 'pending'; }
-  if (!checks.length) return 'pending';
-  const buckets = checks.map((c) => c.bucket);
-  if (buckets.some((b) => b === 'fail' || b === 'cancel')) return 'fail';
-  if (buckets.some((b) => b === 'pending')) return 'pending';
-  return 'green'; // pass/skipping만 남음
+  // 필수 워크플로(ci·e2e·storybook)만으로 판정한다 — 아무 체크나 통과했다고 green으로 보지 않는다.
+  const required = checks.filter((c) => REQUIRED_CHECKS.includes(c.name));
+  if (required.some((c) => c.bucket === 'fail' || c.bucket === 'cancel')) return 'fail';
+  const present = new Set(required.map((c) => c.name));
+  if (REQUIRED_CHECKS.some((n) => !present.has(n))) return 'pending'; // 필수 체크가 아직 안 붙음
+  if (required.some((c) => c.bucket === 'pending')) return 'pending';
+  return 'green'; // 필수 체크 전부 pass/skipping
 }
 
 // ── 5. 판정 ────────────────────────────────────────────────────────────────
@@ -212,7 +215,15 @@ if (approved) {
   if (ci === 'fail') { log(`승인됨(${reason})이나 CI 실패 — 배포 보류. PR 체크 확인 필요.`); process.exit(0); }
   if (ci !== 'green') { log(`승인됨(${reason})이나 CI=${ci} — 대기.`); process.exit(0); }
   if (DRY_RUN) { log(`[DRY_RUN] 머지 조건 충족(${reason}, CI green) — 실제 머지 생략.`); process.exit(0); }
-  gh(['pr', 'merge', number, '--repo', REPO, '--merge']);
+  // 승인·CI 확인 이후 머지 직전 사이 dev에 새 커밋이 붙는 경쟁을 차단 —
+  // PR head가 승인된 SHA와 다르면 머지 실패, 다음 실행이 dev-sha 변경으로 재QA를 건다.
+  try {
+    gh(['pr', 'merge', number, '--repo', REPO, '--merge', '--match-head-commit', currentDevSha]);
+  } catch (e) {
+    const out = (e.stdout ? e.stdout.toString() : '') + (e.stderr ? e.stderr.toString() : '');
+    log(`머지 보류 — head가 승인 SHA(${currentDevSha.slice(0, 7)})와 불일치(새 커밋 유입 추정). 다음 실행에서 재평가. ${out.trim()}`);
+    process.exit(0);
+  }
   await slack('chat.postMessage', {
     channel: CHANNEL, thread_ts: ts,
     text: `:tada: *배포 완료* — dev → main 머지됨 (${reason}, CI 통과). 프로덕션 반영이 진행됩니다.`,
