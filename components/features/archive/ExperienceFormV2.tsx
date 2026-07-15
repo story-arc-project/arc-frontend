@@ -239,6 +239,9 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     createProjectRow(targetSectionId, titleColumnKey, text) {
       const found = findProjectBlock(targetSectionId)
       if (!found) return null
+      // 대상 표에서 제목 컬럼이 사라졌으면(사용자가 열 삭제) 링크하지 않는다 — 보이지 않는
+      // 셀에 제목만 써 넣어 활동 행은 '연결됨'인데 프로젝트 제목은 안 보이는 상태를 막는다.
+      if (!found.value.columns.some(c => c.key === titleColumnKey)) return null
       // row 를 먼저 생성해 id 를 동기 반환한다(setState 콜백 안에서 만들면 반환 불가).
       const row = createEmptyRow(found.value.columns)
       row.cells[titleColumnKey] = text
