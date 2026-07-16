@@ -70,6 +70,19 @@ function gh(args) {
   return execFileSync('gh', args, { encoding: 'utf8', env: process.env }).trim();
 }
 
+// gh/GitHub API의 일시적 블립에 대한 유한 재시도. 머지 직후 경로에서 특히 중요하다 —
+// 거기서 한 번 실패하고 삼키면 다음 실행은 main..dev=0으로 조기 종료해 복구 기회가 없다.
+// 재시도를 소진하면 그대로 throw해 호출부가 표면화하게 둔다(조용한 성공 처리 금지).
+async function retry(label, fn, attempts = 3, waitMs = 5000) {
+  for (let i = 1; ; i++) {
+    try { return fn(); } catch (e) {
+      if (i >= attempts) throw e;
+      log(`${label} 실패(${i}/${attempts}: ${e.message}) — ${waitMs / 1000}s 후 재시도`);
+      await new Promise((r) => { setTimeout(r, waitMs); });
+    }
+  }
+}
+
 async function slack(method, params, post = false) {
   const url = `https://slack.com/api/${method}`;
   const opts = {
@@ -89,50 +102,114 @@ async function slack(method, params, post = false) {
   return data;
 }
 
-// 승인 요청 Slack 메시지를 (재)게시하고 PR 본문에 상태 마커를 기록한다.
-// oldTs가 있으면 이전 메시지를 "만료됨"으로 갱신해 스테일 승인을 막는다.
-// 최초 생성 · 마커 부재 복구 · dev head 변경 재QA — 세 경로가 공유한다.
-async function postAndRecord(number, devSha, oldTs) {
-  const compare = `https://github.com/${REPO}/compare/main...dev`;
-  // 머지 커밋이 있으면 그것을(PR 단위), 없으면(squash 병합 등) 일반 커밋을 배치로 요약한다 —
-  // 병합 전략과 무관하게 "0개/빈 목록"이 뜨지 않도록.
-  const merges = git(['log', 'origin/main..origin/dev', '--merges', '--pretty=%s'])
-    .split('\n').filter(Boolean);
-  const source = merges.length
-    ? merges
-    : git(['log', 'origin/main..origin/dev', '--no-merges', '--pretty=%s']).split('\n').filter(Boolean);
-  const items = source.slice(0, 10).map((s) => {
-    const m = s.match(/#(\d+) from [^/]+\/(.+)$/);
-    return m ? `• #${m[1]} — ${m[2]}` : `• ${s}`;
-  }).join('\n');
-  const more = source.length > 10 ? `\n…외 ${source.length - 10}건` : '';
+// 주간 루틴이 PR 본문에 <!-- slack-summary … --> 로 남긴 Slack 문구를 꺼낸다.
+// 사람이 읽을 문구는 루틴(Claude)이 쓰고 게이트는 전달만 한다 — 여기서 요약을 다시 짓지 않는다.
+function extractSlackSummary(prBody) {
+  return (prBody || '').match(/<!--\s*slack-summary\s*([\s\S]*?)-->/)?.[1]?.trim() || null;
+}
 
-  if (oldTs) {
+// 노트 작성 시점(a) 이후 dev에 붙은 커밋 목록. squash 병합이면 --no-merges가 비므로 폴백한다.
+// a가 force-push 등으로 사라졌으면 git이 throw → 빈 문자열(섹션 생략).
+function commitsBetween(a, b) {
+  try {
+    return git(['log', '--no-merges', '--oneline', `${a}..${b}`]) || git(['log', '--oneline', `${a}..${b}`]);
+  } catch { return ''; }
+}
+
+// 승인 요청을 게시하고 PR 본문의 상태 마커를 갱신한다.
+// 루틴이 써둔 slack-summary는 "노트 기준 SHA == 현재 dev head"일 때만 쓴다 — 그 문구는 dev@notesBase를
+// 서술하므로, head가 그 뒤로 움직였다면 어느 경로로 들어왔든 스테일이다. 이전 메시지 존재 여부(expireTs)로
+// 판정하면, 메시지 소실 복구처럼 expireTs가 없는 재게시에서 스테일 요약이 첫 게시처럼 다시 나간다.
+// 호출 경로: 마커 부재(루틴이 연 새 PR·게시 실패 복구) · dev head 변경 재QA · 승인 메시지 소실 복구.
+async function postAndRecord(number, devSha, prevBody, { expireTs = null } = {}) {
+  // 노트가 커버하는 dev SHA. 한 번 각인하면 그대로 물려준다 —
+  // 직전 dev-sha를 기준으로 잡으면 A→B→C로 두 번 밀릴 때 A..B 구간이 섹션에서 사라진다.
+  // 1순위는 주간 루틴이 PR 생성 시 남기는 notes-dev-sha: 루틴이 dev@A에서 노트를 쓴 뒤
+  // 게이트 첫 실행 전에 B가 붙으면, 마커가 없는 한 A..B를 알아낼 방법이 없다(기준이 B로 잡힘).
+  const notesBaseMarker = (prevBody || '').match(/<!--\s*notes-dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1]
+    || (prevBody || '').match(/<!--\s*dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1];
+  if (!notesBaseMarker) {
+    log(`⚠️ notes-dev-sha 마커 없음 — 노트 기준을 현재 head(${devSha.slice(0, 7)})로 가정한다. `
+      + '루틴이 PR 생성 시 <!-- notes-dev-sha: SHA -->를 남기면 노트 작성~첫 게시 사이 커밋도 표면화된다.');
+  }
+  const notesBase = notesBaseMarker || devSha;
+  const notesStale = notesBase !== devSha; // 노트(=slack-summary)가 서술하지 않는 커밋이 dev에 있다
+  const added = notesStale ? commitsBetween(notesBase, devSha) : '';
+
+  if (expireTs) {
     try {
       await slack('chat.update', {
-        channel: CHANNEL, ts: oldTs,
-        text: ':warning: 새 커밋이 추가되어 이 배포 승인 요청은 만료됐어요. 아래 새 메시지에서 다시 승인해주세요.',
+        channel: CHANNEL, ts: expireTs,
+        text: notesStale
+          ? ':warning: 새 커밋이 추가되어 이 배포 승인 요청은 만료됐어요. 아래 새 메시지에서 다시 승인해주세요.'
+          : ':warning: 이 배포 승인 요청은 만료됐어요. 아래 새 메시지에서 다시 승인해주세요.',
       }, true);
     } catch (e) { log(`이전 메시지 만료 처리 실패(무시): ${e.message}`); }
   }
 
-  const text =
-    `:rocket: *dev → main 배포 검토* — ${source.length}개 변경\n\n` +
-    `dev를 프로덕션(main)으로 올릴 준비가 됐어요.\n` +
-    `:point_right: <${STAGING_URL}|dev.story-arc.org> 에서 확인한 뒤, *이 메시지에 :white_check_mark: 를 눌러주세요.*\n\n` +
-    `*이번 배치*\n${items}${more}\n\n` +
+  const summary = extractSlackSummary(prevBody);
+  const useSummary = !notesStale && Boolean(summary);
+  const again = Boolean(expireTs) || notesStale;
+  const text = useSummary ? summary : (
+    `:rocket: *dev → main 배포 검토*${again ? ' (재요청)' : ''}\n<!channel>\n\n` +
+    (notesStale ? 'dev에 새 커밋이 반영돼 다시 확인이 필요해요.\n' : '') +
+    `<${STAGING_URL}|dev.story-arc.org> 확인 후 *이 메시지에* :white_check_mark: 부탁드려요.\n\n` +
     `*승인 규칙* — ${ROSTER_N}명 중 ${QUORUM}명 :white_check_mark:` +
     (OVERRIDE_IDS.length ? ` (또는 48시간 경과 시 ${OVERRIDE_NAMES} 승인)` : '') +
     ` + CI 통과 → 자동 배포\n` +
-    `<${compare}|전체 변경 보기>  ·  <https://github.com/${REPO}/pull/${number}|PR #${number}>`;
+    `변경 내용은 <https://github.com/${REPO}/pull/${number}|PR #${number}>를 확인해주세요`
+  );
 
-  const posted = await slack('chat.postMessage', { channel: CHANNEL, text, unfurl_links: false }, true);
+  const posted = await slack('chat.postMessage', { channel: CHANNEL, text, unfurl_links: false, link_names: true }, true);
   const postedAt = new Date().toISOString();
+
+  // 마커만 교체하고 본문(상세 노트)은 그대로 둔다 — 통째로 덮어쓰면 릴리스 노트가 날아간다.
+  let notes = (prevBody || '')
+    .replace(/<!--\s*(?:release-gate|slack-ts:.*?|notes-dev-sha:.*?|dev-sha:.*?|posted-at:.*?|reminded-24h|merge-error)\s*-->\n?/g, '')
+    .replace(/<!--\s*gate:added-commits\s*-->[\s\S]*?<!--\s*\/gate:added-commits\s*-->\n?/g, '') // 이전 회차 섹션 제거 후 재생성
+    .trim();
+
+  // 노트 작성 이후 dev에 커밋이 붙었다면 그 사실을 본문에 남긴다. 게이트는 노트를 쓸 수 없지만
+  // (사람 글은 루틴 담당), 승인자와 Release 아카이브가 "노트에 없는 커밋"을 모르는 채로
+  // 넘어가는 건 막아야 한다 — 이 본문이 그대로 GitHub Release가 된다.
+  if (added) {
+    notes += `\n\n<!-- gate:added-commits -->\n---\n\n### ⚠️ 아래 커밋은 위 릴리스 노트에 반영되지 않았습니다\n`
+      + `노트 작성(\`${notesBase.slice(0, 7)}\`) 이후 dev에 추가된 커밋입니다 — 게이트가 자동 기록.\n\n`
+      + `\`\`\`\n${added}\n\`\`\`\n<!-- /gate:added-commits -->`;
+  }
+
   gh(['pr', 'edit', number, '--repo', REPO, '--body',
-    `<!-- release-gate -->\n<!-- slack-ts: ${posted.ts} -->\n<!-- dev-sha: ${devSha} -->\n<!-- posted-at: ${postedAt} -->\n\n` +
-    `자동 생성된 릴리스 PR입니다. 승인은 <#${CHANNEL}> 에서 진행됩니다.\n\n[전체 변경](${compare})`]);
-  log(`Slack 승인 요청 게시(ts=${posted.ts}, dev=${devSha.slice(0, 7)}). 다음 실행에서 반응·CI 평가.`);
+    `<!-- release-gate -->\n<!-- slack-ts: ${posted.ts} -->\n<!-- dev-sha: ${devSha} -->\n`
+    + `<!-- notes-dev-sha: ${notesBase} -->\n<!-- posted-at: ${postedAt} -->\n\n${notes}`]);
+  log(`Slack 승인 요청 게시(ts=${posted.ts}, dev=${devSha.slice(0, 7)}, 문구=${useSummary ? '루틴 작성' : '기본 템플릿'}${added ? ', 노트 미반영 커밋 기록됨' : ''}). 다음 실행에서 반응·CI 평가.`);
   return posted.ts;
+}
+
+// 머지된 릴리스 노트를 GitHub Release로 영구 아카이브한다. PR body에서 상태 마커와 승인 안내만
+// 걷어내고 그대로 재사용 — 노트는 주간 루틴이 한 번만 쓴다.
+// 호출 시점엔 머지가 이미 끝났다 → 어떤 실패도 치명적이지 않으므로 로그만 남기고 삼킨다.
+// 머지 완료된 릴리스 노트를 GitHub Release로 아카이브한다.
+// 실패는 삼키지 않고 throw — 호출부가 Slack 배포 완료 알림을 보낸 뒤 실행을 빨갛게 만든다.
+// (조용히 exit 0하면 다음 실행이 main..dev=0으로 끝나 아카이브를 영영 재시도하지 못한다.)
+async function publishRelease(prBody, mergeSha) {
+  const notes = prBody
+    .replace(/<!--[\s\S]*?-->/g, '') // 상태 마커
+    .replace(/^.*dev\.story-arc\.org에서 QA 후.*$/m, '') // 승인 요청 안내(배포 후엔 무의미)
+    .replace(/^\*\*승인 규칙\*\*.*$/m, '')
+    .trim();
+  const day = new Date().toISOString().slice(0, 10);
+  let tag = `release-${day}`;
+  let exists = false;
+  try { gh(['release', 'view', tag, '--repo', REPO]); exists = true; } catch { /* 없으면 그대로 사용 */ }
+  if (exists) {
+    // 같은 날 두 번 배포되면 태그가 충돌한다 — 머지 커밋으로 구분.
+    if (!mergeSha) { log(`Release 태그 ${tag} 존재 + 머지 커밋 미확인 — 발행 생략.`); return; }
+    tag = `${tag}-${mergeSha.slice(0, 7)}`;
+  }
+  const args = ['release', 'create', tag, '--repo', REPO, '--title', `🚀 릴리스 ${day}`, '--notes', notes];
+  if (mergeSha) args.push('--target', mergeSha);
+  await retry('Release 발행', () => gh(args));
+  log(`GitHub Release 발행: ${tag}`);
 }
 
 // ── 1. dev가 main보다 앞섰나 ───────────────────────────────────────────────
@@ -150,15 +227,10 @@ const prs = JSON.parse(
     '--state', 'open', '--json', 'number,body,createdAt,isCrossRepository,headRepositoryOwner'])
 ).filter((p) => !p.isCrossRepository && (p.headRepositoryOwner?.login ?? OWNER) === OWNER);
 
+// 릴리스 PR은 주간 Claude 루틴(월 10시)이 상세 노트와 함께 만든다 — 이 게이트는 만들지 않는다.
+// 여기서 PR을 만들면 매시 배포를 재촉하는 꼴이 되고, 사람이 읽을 요약도 못 쓴다.
 if (prs.length === 0) {
-  if (DRY_RUN) { log('[DRY_RUN] PR 생성/게시 생략'); process.exit(0); }
-  log('열린 dev→main PR 없음 → 생성 + Slack 게시.');
-  // 생성 직후 재조회(레이스·포크 오매칭 위험) 대신 gh pr create가 찍는 PR URL에서 번호를 뽑는다.
-  const createOut = gh(['pr', 'create', '--repo', REPO, '--base', 'main', '--head', 'dev',
-    '--title', '🚀 릴리스: dev → main', '--body', '<!-- release-gate -->\n승인 대기 중…']);
-  const number = createOut.match(/\/pull\/(\d+)/)?.[1];
-  if (!number) fail(`PR 생성 후 번호 파싱 실패: ${createOut}`);
-  await postAndRecord(number, currentDevSha);
+  log('열린 dev→main PR 없음 — 주간 루틴이 생성할 때까지 대기. 종료.');
   process.exit(0);
 }
 
@@ -171,12 +243,13 @@ const devShaMarker = body.match(/<!--\s*dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1];
 const postedAtMarker = body.match(/<!--\s*posted-at:\s*(\S+)\s*-->/)?.[1];
 const remindedBefore = /<!--\s*reminded-24h\s*-->/.test(body);
 
-// 마커 부재(이전 게시 실패 복구) 또는 dev head 변경(승인 후 새 커밋 → 재QA 필요) 시 승인 요청 재게시.
+// 마커 부재(주간 루틴이 막 연 PR · 이전 게시 실패 복구) 또는
+// dev head 변경(승인 후 새 커밋 → 재QA 필요) 시 승인 요청을 게시한다.
 if (!ts || !devShaMarker || devShaMarker !== currentDevSha) {
-  const why = !ts ? '상태 마커 없음(게시 복구)' : `dev head 변경(${(devShaMarker || '?').slice(0, 7)}→${currentDevSha.slice(0, 7)}, 재QA 필요)`;
-  if (DRY_RUN) { log(`[DRY_RUN] 승인 요청 재게시 필요: ${why}`); process.exit(0); }
-  log(`승인 요청 재게시: ${why}`);
-  await postAndRecord(number, currentDevSha, ts);
+  const why = !ts ? '상태 마커 없음(신규 PR 게시 또는 복구)' : `dev head 변경(${(devShaMarker || '?').slice(0, 7)}→${currentDevSha.slice(0, 7)}, 재QA 필요)`;
+  if (DRY_RUN) { log(`[DRY_RUN] 승인 요청 게시 필요: ${why}`); process.exit(0); }
+  log(`승인 요청 게시: ${why}`);
+  await postAndRecord(number, currentDevSha, body, { expireTs: ts });
   process.exit(0);
 }
 
@@ -192,8 +265,9 @@ try {
   // 승인 메시지가 삭제/채널 보존기간 만료로 사라지면 reactions.get가 message_not_found로 throw.
   // 마커만 믿고 매 실행 같은 지점에서 멈추지 않도록, 메시지가 사라졌을 때만 새로 게시하고 종료.
   if (/message_not_found/.test(e.message)) {
+    // 지울 메시지가 이미 없으므로 expireTs는 넘기지 않는다 — 스테일 판정은 notes-dev-sha가 한다.
     log('승인 메시지가 사라짐(message_not_found) → 승인 요청 재게시.');
-    if (!DRY_RUN) await postAndRecord(number, currentDevSha);
+    if (!DRY_RUN) await postAndRecord(number, currentDevSha, body);
     process.exit(0);
   }
   throw e; // 그 외(전송 오류 등)는 표면화 — 중복 메시지 스팸 대신 다음 실행에서 재시도.
@@ -267,18 +341,48 @@ if (approved) {
     fail(`자동 머지 실패(head 불변, 실제 오류): ${out}`);
   }
   // gh pr merge 반환 == 머지 완료가 아니다 — main이 merge queue를 쓰면 큐 등록에 그친다. 실제 머지 상태 확인.
+  // 조회가 일시 실패했다고 "큐 등록"으로 단정하면, 실제로는 머지된 릴리스가 아카이브 없이 조용히 넘어간다.
   let mergedState = null;
+  let stateUnknown = false;
   try {
     // gh pr view는 boolean `merged` 필드가 없다(Unknown JSON field로 throw) — state·mergedAt로 판정.
-    mergedState = JSON.parse(gh(['pr', 'view', number, '--repo', REPO, '--json', 'state,mergedAt']));
-  } catch { /* 확인 실패 시 큐 등록(미확정)으로 보수 처리 */ }
+    mergedState = JSON.parse(await retry('머지 상태 확인', () =>
+      gh(['pr', 'view', number, '--repo', REPO, '--json', 'state,mergedAt,mergeCommit'])));
+  } catch (e) {
+    stateUnknown = true;
+    log(`머지 상태 확인 실패(재시도 소진): ${e.message}`);
+  }
   const isMerged = mergedState?.state === 'MERGED' || Boolean(mergedState?.mergedAt);
-  await slack('chat.postMessage', {
-    channel: CHANNEL, thread_ts: ts,
-    text: isMerged
-      ? `:tada: *배포 완료* — dev → main 머지됨 (${reason}, CI 통과). 프로덕션 반영이 진행됩니다.`
-      : `:inbox_tray: *배포 예약* — dev → main 머지가 대기열에 등록됐어요 (${reason}, CI 통과). 큐 통과 후 반영됩니다.`,
-  }, true);
+
+  // 머지된 경우에만 릴리스 노트를 GitHub Release로 영구 아카이브(Slack=가볍게 / PR body=상세 / Release=아카이브).
+  // 본문은 PR body 재사용 — 노트를 두 번 쓰지 않는다.
+  // Slack 알림보다 먼저 — 알림이 throw하면 이 실행이 죽고, 다음 실행은 main..dev=0으로 조기 종료해
+  // Release를 영영 못 남긴다(아카이브가 Slack 가용성에 매달리면 안 된다).
+  let releaseError = null;
+  if (isMerged) {
+    try { await publishRelease(body, mergedState?.mergeCommit?.oid); }
+    catch (e) { releaseError = e; log(`Release 발행 실패(재시도 소진): ${e.message}`); }
+  }
+
+  // 알림이 먼저다 — 머지는 이미 일어났으므로 아래서 실행을 실패시키더라도 팀은 배포 사실을 알아야 한다.
+  try {
+    await slack('chat.postMessage', {
+      channel: CHANNEL, thread_ts: ts,
+      text: stateUnknown
+        ? `:warning: *배포 상태 확인 필요* — dev → main 머지 명령은 성공했지만 결과를 확인하지 못했어요 (${reason}, CI 통과). <https://github.com/${REPO}/pull/${number}|PR #${number}>를 확인해주세요.`
+        : isMerged
+          ? `:tada: *배포 완료* — dev → main 머지됨 (${reason}, CI 통과). 프로덕션 반영이 진행됩니다.`
+          : `:inbox_tray: *배포 예약* — dev → main 머지가 대기열에 등록됐어요 (${reason}, CI 통과). 큐 통과 후 반영됩니다.`,
+    }, true);
+  } catch (e) {
+    // 머지·아카이브는 이미 끝났다 — 알림 실패로 실행을 죽이면 다음 실행이 재시도할 여지도 없다.
+    log(`배포 완료 알림 게시 실패(무시 — 머지·Release는 완료됨): ${e.message}`);
+  }
+
+  // 머지 이후의 실패는 되돌릴 수도, 다음 실행이 재시도할 수도 없다(main..dev=0으로 조기 종료).
+  // 조용한 exit 0 대신 실행을 빨갛게 만들어 사람이 수동으로 마무리하게 한다.
+  if (stateUnknown) fail(`머지 상태 미확인 — PR #${number}가 머지됐는지, Release 아카이브가 필요한지 수동 확인해주세요.`);
+  if (releaseError) fail(`GitHub Release 아카이브 실패(머지는 완료 — 릴리스 노트는 PR #${number} 본문에 그대로 보존됨): ${releaseError.message}`);
   log(isMerged ? `머지 완료(${reason}).` : `머지 큐 등록(${reason}).`);
   process.exit(0);
 }

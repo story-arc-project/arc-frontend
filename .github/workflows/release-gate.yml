@@ -3,15 +3,19 @@ name: release-gate
 # dev.story-arc.org QA 사인오프(Slack ✅) + CI 통과를 게이트로 dev → main(프로덕션) 승격을 자동화한다.
 # 로직 전체: .github/scripts/release-gate.mjs
 #
+# 역할 분담(하이브리드):
+#   - 릴리스 PR 생성 + 상세 노트·Slack 승인 메시지 작성 = 주간 Claude 루틴(매주 월 10시)이 담당.
+#     사람이 읽을 요약을 쓰는 일이라 AI가 맡는다. 이 워크플로는 PR을 만들지 않는다.
+#   - 이 워크플로(매시)는 기계적인 부분만 = ✅ 집계 · CI 확인 · 자동 머지 · 리마인드/override ·
+#     머지 후 GitHub Release 발행. 사람/AI가 떠 있지 않아도 돌아야 하므로 Actions에 둔다.
+#
 # 동작 조건(GitHub 제약):
 #   - schedule / workflow_dispatch 는 "기본 브랜치(main)"의 워크플로 파일만 실행된다.
-#     → 이 파일이 첫 릴리스로 main에 올라간 뒤부터 cron이 동작한다.
-#   - dev→main PR 생성이 CI(pull_request)를 트리거하려면, 반드시 PAT(RELEASE_GATE_PAT)로 생성해야 한다.
-#     기본 GITHUB_TOKEN으로 만든 PR은 다른 워크플로를 트리거하지 못한다(무한루프 방지 정책).
+#     → 이 파일이 main에 있어야 cron이 동작한다(2026-07-16 첫 릴리스로 반영 완료).
 #
 # 필요한 시크릿:
 #   - ARC_SLACK_BOT_TOKEN : arc_notifier 봇 토큰(xoxb-). scopes: chat:write, reactions:read
-#   - RELEASE_GATE_PAT    : dev→main PR 생성·머지 + CI 트리거용 PAT
+#   - RELEASE_GATE_PAT    : dev→main 머지 + Release 발행용 PAT
 #                           (fine-grained: contents RW, pull-requests RW, actions read)
 #   - RELEASE_GATE_CONFIG : 팀 식별정보 JSON(공개 리포에 두지 않음). 형태:
 #                           {"channel":"C…","quorum":3,"overrideIds":["U…","U…"],
@@ -19,9 +23,8 @@ name: release-gate
 
 on:
   workflow_dispatch: {}
-  # 첫 배치를 감독 실행으로 성공시키고 시크릿(ARC_SLACK_BOT_TOKEN·RELEASE_GATE_PAT)을 등록한 뒤 아래 주석을 해제한다.
-  # schedule:
-  #   - cron: '*/30 * * * *' # 30분마다 재평가
+  schedule:
+    - cron: '0 * * * *' # 매시 정각 재평가(✅ 집계 → 과반+CI green이면 머지)
 
 concurrency:
   group: release-gate
