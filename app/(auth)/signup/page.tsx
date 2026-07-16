@@ -176,7 +176,7 @@ function SignupForm() {
         // 신규 가입(미온보딩)의 이메일 인증 완료 = 가입 완료 확정 지점.
         // onboarded=true 분기는 기존 사용자 재인증이라 signup 으로 잡지 않는다.
         // 온보딩 중도 이탈 후 재인증도 onboarded=false 로 이 분기를 다시 타므로 마커로 막는다.
-        if (markSignupCompletedIfUnseen()) {
+        if (await markSignupCompletedIfUnseen(email)) {
           capture("signup_completed", { method: "email" });
         }
         goTo(FIRST_ONBOARDING_STEP);

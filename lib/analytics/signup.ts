@@ -5,17 +5,13 @@
 // 재로그인해도 onboarded=false 로 같은 분기를 타므로, 그대로 두면 재시도마다 가입 완료가
 // 다시 잡혀 전환수가 부풀려진다(이메일·구글 경로 공통).
 //
-// 백엔드 신호가 생기기 전까지의 최선 노력: 디바이스 마커로 재발화를 막고,
-// 로그아웃/탈퇴 시 마커를 비워 같은 기기의 다음 사용자는 정상 계측되게 한다.
-import { clearMarker, markOnce } from "./markers";
+// 백엔드 신호가 생기기 전까지의 최선 노력: 사용자별 마커로 재발화를 막는다.
+// 키가 사용자별이라 같은 기기의 다음 사용자는 자기 가입을 정상 발화한다.
+import { markOnceForUser } from "./markers";
 
 const SIGNUP_COMPLETED_KEY = "arc:signup_completed_emitted";
 
-// 아직 가입 완료를 쏜 적 없으면 마커를 세우고 true(→ 이벤트 발화).
-export function markSignupCompletedIfUnseen(): boolean {
-  return markOnce(SIGNUP_COMPLETED_KEY);
-}
-
-export function clearSignupMarker(): void {
-  clearMarker(SIGNUP_COMPLETED_KEY);
+// 이 사용자의 가입 완료를 아직 쏜 적 없으면 마커를 세우고 true(→ 이벤트 발화).
+export function markSignupCompletedIfUnseen(emailSeed: string): Promise<boolean> {
+  return markOnceForUser(SIGNUP_COMPLETED_KEY, emailSeed);
 }

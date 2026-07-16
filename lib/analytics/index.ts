@@ -1,7 +1,7 @@
 // FRT-19: 계측 레이어 공개 표면.
 export { capture, identifyUser, isIdentified, resetUser } from "./client";
-export { markFirstRecordIfUnseen, clearFirstRecordMarker } from "./first-record";
-export { markSignupCompletedIfUnseen, clearSignupMarker } from "./signup";
+export { markFirstRecordIfUnseen } from "./first-record";
+export { markSignupCompletedIfUnseen } from "./signup";
 export {
   ANALYTICS_EVENTS,
   type AnalyticsEventName,

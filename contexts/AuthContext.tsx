@@ -4,13 +4,7 @@ import { createContext, useCallback, useEffect, useRef, useState } from "react";
 
 import type { AuthUser, AuthContextValue } from "@/types/auth";
 import { fetchCurrentUser, logoutUser } from "@/lib/api/auth-api";
-import {
-  identifyUser,
-  isIdentified,
-  resetUser,
-  clearFirstRecordMarker,
-  clearSignupMarker,
-} from "@/lib/analytics";
+import { identifyUser, isIdentified, resetUser } from "@/lib/analytics";
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -50,9 +44,8 @@ export default function AuthProvider({
       // 서버에서 httpOnly 쿠키가 실제로 제거된 뒤에만 상태 정리 + 이동한다.
       // 분석 세션도 익명으로 되돌려 다음 사용자와 섞이지 않게 한다(FRT-19).
       resetUser();
-      // 같은 기기에서 다른 사용자가 로그인해도 첫 기록·가입 완료를 다시 잡을 수 있게 마커를 비운다.
-      clearFirstRecordMarker();
-      clearSignupMarker();
+      // 1회성 마커(첫 기록·가입 완료)는 사용자별 키라 비우지 않는다 — 같은 기기의 다른
+      // 사용자는 자기 키로 정상 발화하고, 같은 사람의 재로그인은 계속 막혀야 한다.
       identifiedEmailRef.current = null;
       setUser(null);
       window.location.assign("/login");

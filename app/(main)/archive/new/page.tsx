@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { createExperience, getExperiences } from "@/lib/api/experience-api"
 import { toSavePayload } from "@/lib/utils/experience-mapper"
 import { capture, markFirstRecordIfUnseen } from "@/lib/analytics"
+import { useAuth } from "@/hooks/useAuth"
 import { useBasePath } from "@/lib/utils/use-base-path"
 import { safeReturnTo } from "@/lib/utils/archive-context"
 import ExperienceFormV2, {
@@ -18,6 +19,8 @@ export default function ArchiveNewPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const basePath = useBasePath()
+  // 첫 기록 마커를 사용자별로 스코프하기 위한 시드(원본 이메일은 저장·전송되지 않는다).
+  const { user } = useAuth()
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -43,8 +46,8 @@ export default function ArchiveNewPage() {
       // 최초 1회 판정: 서버 count===1 을 1차 근거로 하되, 전체 삭제 후 재생성 재발화를
       // 디바이스 마커로 막는다(markFirstRecordIfUnseen). 네비게이션을 막지 않도록 fire-and-forget.
       void getExperiences()
-        .then((list) => {
-          if (markFirstRecordIfUnseen(list.count)) {
+        .then(async (list) => {
+          if (await markFirstRecordIfUnseen(list.count, user?.account.email ?? "")) {
             capture("first_record_created", { experience_type: payload.type })
           }
         })
