@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest"
-import type { ExperienceV2 } from "@/types/archive"
+import type { Block, BlockValue, CustomEntry, ExperienceV2 } from "@/types/archive"
 import type { Experience } from "@/types/experience"
+import { getTemplateForType, TEMPLATE_VERSION } from "@/lib/constants/templates-v2"
 import {
   toExperienceV2,
   toSavePayload,
 } from "@/lib/utils/experience-mapper"
+import { createGroupBlock, createTextField } from "@/lib/utils/block-utils"
 
 function makeExperience(overrides: Partial<Experience> = {}): Experience {
   return {
@@ -16,6 +18,22 @@ function makeExperience(overrides: Partial<Experience> = {}): Experience {
     created_at: "2024-01-01T00:00:00Z",
     updated_at: "2024-01-02T00:00:00Z",
     ...overrides,
+  }
+}
+
+function text(t: string): BlockValue {
+  return { type: "text", text: t }
+}
+function textarea(t: string): BlockValue {
+  return { type: "textarea", text: t }
+}
+
+/** career 템플릿에서 키를 가진 core/extension 블록 배열을 만든다(폼 로드 결과 모사). */
+function careerBlocks(): { coreBlocks: Block[]; extensionBlocks: Block[] } {
+  const tmpl = getTemplateForType("career")
+  return {
+    coreBlocks: tmpl.commonCore.blocks,
+    extensionBlocks: tmpl.extensions.flatMap(s => s.blocks),
   }
 }
 
@@ -39,7 +57,7 @@ function makeExperienceV2(overrides: Partial<ExperienceV2> = {}): ExperienceV2 {
 }
 
 describe("toExperienceV2", () => {
-  it("content 가 비어 있으면 모든 필드를 안전 기본값으로 채운다", () => {
+  it("content 가 비어 있으면(v1 빈 레코드) 모든 필드를 안전 기본값으로 채운다", () => {
     const v2 = toExperienceV2(makeExperience({ content: {} }))
     expect(v2).toMatchObject({
       id: "exp-1",
@@ -52,8 +70,6 @@ describe("toExperienceV2", () => {
       coreBlocks: [],
       extensionBlocks: [],
       customBlocks: [],
-      createdAt: "2024-01-01T00:00:00Z",
-      updatedAt: "2024-01-02T00:00:00Z",
     })
     expect(v2.importance).toBeUndefined()
   })
@@ -66,7 +82,7 @@ describe("toExperienceV2", () => {
     expect(v2.coreBlocks).toEqual([])
   })
 
-  it("snake_case API 필드를 camelCase 로 매핑하고 content 값을 보존한다", () => {
+  it("v1 레거시: snake_case 매핑 + content 스칼라 보존", () => {
     const v2 = toExperienceV2(
       makeExperience({
         content: {
@@ -94,48 +110,559 @@ describe("toExperienceV2", () => {
     expect(toExperienceV2(makeExperience({ importance: 2.5 })).importance).toBeUndefined()
     expect(toExperienceV2(makeExperience({ importance: null })).importance).toBeUndefined()
   })
+
+  it("v1 레거시: 모호한 라벨(여러 섹션 중복)은 안정키를 주입하지 않는다 (Codex P1 회귀)", () => {
+    // extracurricular: extended.결과/성과(textarea) vs extra-detail.결과/성과(repeatable-cell)
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "extracurricular",
+        content: {
+          title: "T",
+          summary: "",
+          status: "draft",
+          tags: [],
+          coreBlocks: [],
+          extensionBlocks: [
+            {
+              id: "x1",
+              type: "repeatable-cell",
+              label: "결과/성과",
+              value: { type: "repeatable-cell", columns: [], rows: [{ id: "r1", cells: {} }] },
+            },
+          ],
+          customBlocks: [],
+        },
+      }),
+    )
+    // 모호 라벨 → unkeyed (custom 으로 보존 유도, 타입 충돌 손상 방지)
+    expect(v2.extensionBlocks.find(b => b.label === "결과/성과")?.key).toBeUndefined()
+  })
+
+  it("v2: fields 값 타입이 블록 타입과 다르면 주입을 생략한다 (손상 방지)", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "T",
+          summary: "",
+          status: "draft",
+          tags: [],
+          // core.핵심 성과 는 textarea 인데 text 값이 들어온 손상 케이스
+          fields: { "core.핵심 성과": { type: "text", text: "wrong" } },
+          custom: [],
+        },
+      }),
+    )
+    // 템플릿 기본 타입(textarea) 유지 — text 값 주입 생략
+    expect(v2.coreBlocks.find(b => b.key === "core.핵심 성과")?.value.type).toBe("textarea")
+  })
+
+  it("v1 레거시: 저장된 블록 배열에 레지스트리 라벨매칭으로 안정키를 주입한다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          title: "T",
+          summary: "S",
+          status: "draft",
+          tags: [],
+          coreBlocks: [
+            { id: "b1", type: "text", label: "경험명", value: text("T") },
+            { id: "b2", type: "textarea", label: "핵심 성과", value: textarea("성과!") },
+          ],
+          extensionBlocks: [
+            { id: "b3", type: "text", label: "회사명", value: text("ARC") },
+          ],
+          customBlocks: [],
+        },
+      }),
+    )
+    expect(v2.coreBlocks.find(b => b.label === "핵심 성과")?.key).toBe("core.핵심 성과")
+    expect(v2.extensionBlocks.find(b => b.label === "회사명")?.key).toBe("career-info.회사명")
+  })
+
+  it("v2: fields 맵을 레지스트리 순서대로 블록으로 재구성하고 title/summary 를 헤더 블록에 주입한다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "v2 타이틀",
+          summary: "v2 요약",
+          status: "complete",
+          tags: ["t"],
+          fields: {
+            "core.핵심 성과": textarea("성과 v2"),
+            "career-info.회사명": text("ARC Inc"),
+          },
+          custom: [],
+        },
+        importance: 5,
+      }),
+    )
+    expect(v2.title).toBe("v2 타이틀")
+    expect(v2.summary).toBe("v2 요약")
+    expect(v2.status).toBe("complete")
+    expect(v2.importance).toBe(5)
+    // 헤더 값이 core 경험명/요약 블록에 주입됨
+    expect(v2.coreBlocks.find(b => b.key === "core.경험명")?.value).toEqual(text("v2 타이틀"))
+    expect(v2.coreBlocks.find(b => b.key === "core.한 줄 요약")?.value).toEqual(text("v2 요약"))
+    // fields 값 주입
+    expect(v2.coreBlocks.find(b => b.key === "core.핵심 성과")?.value).toEqual(textarea("성과 v2"))
+    expect(v2.extensionBlocks.find(b => b.key === "career-info.회사명")?.value).toEqual(text("ARC Inc"))
+    // 모든 템플릿 블록에 key 가 존재
+    expect(v2.coreBlocks.every(b => !!b.key)).toBe(true)
+    expect(v2.extensionBlocks.every(b => !!b.key)).toBe(true)
+  })
+
+  it("v2: custom[] field 항목을 customBlocks 로 복원한다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "T",
+          summary: "",
+          status: "draft",
+          tags: [],
+          fields: {},
+          custom: [
+            { key: "custom-1", entryType: "field", type: "text", label: "나만의 메모", value: text("hi") },
+          ],
+        },
+      }),
+    )
+    expect(v2.customBlocks).toHaveLength(1)
+    expect(v2.customBlocks[0]).toMatchObject({ key: "custom-1", label: "나만의 메모", type: "text" })
+    expect(v2.customBlocks[0].value).toEqual(text("hi"))
+  })
+
+  it("v2: 현재 템플릿에 없는 orphan fields 값을 custom 블록으로 보존한다(구 템플릿 개편)", () => {
+    // 학회 개편(FRT-90 3차)으로 society-info.지원 동기 → society-detail.참여 동기 이동,
+    // 범용 extended.배경/목표 제거. 기존 레코드의 그 값들이 소실되지 않아야 한다.
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "AI 학회",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: {
+            "society-info.지원 동기": textarea("옛 지원 동기 텍스트"),
+            "extended.배경/목표": textarea("옛 배경/목표"),
+          },
+          custom: [],
+        },
+      }),
+    )
+    // 두 orphan 값이 customBlocks 로 보존되고 키·값이 유지된다.
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+    expect(byKey("society-info.지원 동기")?.value).toEqual(textarea("옛 지원 동기 텍스트"))
+    expect(byKey("extended.배경/목표")?.value).toEqual(textarea("옛 배경/목표"))
+    // 라벨은 키의 label 부분으로 복원된다.
+    expect(byKey("society-info.지원 동기")?.label).toBe("지원 동기")
+  })
+
+  it("v2: 라운드트립에서 orphan 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
+    const original = makeExperience({
+      type: "academic-society",
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "AI 학회",
+        summary: "",
+        status: "complete",
+        tags: [],
+        fields: { "extended.배경/목표": textarea("보존될 값") },
+        custom: [],
+      },
+    })
+    const payload = toSavePayload(toExperienceV2(original))
+    const content = payload.content as { fields: Record<string, unknown>; custom: Array<{ key: string; value: unknown }> }
+    // 재저장 시 fields 에서는 사라지지만 custom[] 에 키·값이 보존된다.
+    expect(content.fields["extended.배경/목표"]).toBeUndefined()
+    expect(content.custom.find(c => c.key === "extended.배경/목표")?.value).toEqual(textarea("보존될 값"))
+  })
+
+  it("v2: 빈 orphan fields 는 custom 으로 보존하지 않는다(구 레코드 빈 레거시 필드 누적 방지)", () => {
+    // toSavePayload 는 키 있는 블록을 값이 비어도 fields 에 쓰므로, 구 학회 레코드엔
+    // 빈 extended.* 항목이 흔하다. 이걸 승격하면 '기타' 카드에 빈 필드가 쌓인다.
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "AI 학회",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: {
+            "extended.배경/목표": textarea(""), // 빈 값 → 보존 안 함
+            "extended.배운 점": textarea("실제 값"), // 채워짐 → 보존
+          },
+          custom: [],
+        },
+      }),
+    )
+    expect(v2.customBlocks.find(b => b.key === "extended.배경/목표")).toBeUndefined()
+    expect(v2.customBlocks.find(b => b.key === "extended.배운 점")?.value).toEqual(textarea("실제 값"))
+  })
+
+  it("v1: 현재 템플릿에 없는 저장 extension 블록을 custom 으로 보존한다(구 학회 레거시)", () => {
+    // schema_version 미기재(v1) 레코드는 값이 content.extensionBlocks 에 배열로 남는다.
+    // 학회가 buildSettingsSection 으로 바뀌면서 옛 배경/목표·결과/성과 라벨이 템플릿에서 사라졌다.
+    // 이 미매칭 블록을 extensionBlocks 로 두면 ExperienceFormV2 로드 필터에서 탈락→저장 왕복에
+    // 유실되므로 custom 으로 옮겨 보존해야 한다. 현 템플릿에 있는 라벨(참여 동기)은 extension 유지.
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          extensionBlocks: [
+            { id: "b1", type: "textarea", label: "배경/목표", value: textarea("옛 배경/목표") },
+            { id: "b2", type: "textarea", label: "결과/성과", value: textarea("옛 결과/성과") },
+            { id: "b3", type: "textarea", label: "참여 동기", value: textarea("현 템플릿 매칭") },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    // 미매칭 두 블록은 extensionBlocks 에서 빠지고 customBlocks 로 보존(값 유지).
+    expect(v1.extensionBlocks.find(b => b.label === "배경/목표")).toBeUndefined()
+    expect(v1.extensionBlocks.find(b => b.label === "결과/성과")).toBeUndefined()
+    expect(v1.customBlocks.find(b => b.label === "배경/목표")?.value).toEqual(textarea("옛 배경/목표"))
+    expect(v1.customBlocks.find(b => b.label === "결과/성과")?.value).toEqual(textarea("옛 결과/성과"))
+    // 현 템플릿에 있는 라벨은 extension 에 남는다.
+    expect(v1.extensionBlocks.find(b => b.label === "참여 동기")?.value).toEqual(textarea("현 템플릿 매칭"))
+  })
+
+  it("v1: 빈 미매칭 extension 블록은 custom 으로 보존하지 않는다(v2 orphan 필터와 동일 기준)", () => {
+    // 구 학회 레코드엔 빈 배경/목표·결과/성과 블록이 흔하다. 이를 승격하면 '기타' 카드에
+    // 빈 레거시 필드가 쌓이고 완료 저장이 이를 영구화한다(빈 group 만 정리). 실제 값만 보존한다.
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          extensionBlocks: [
+            { id: "b1", type: "textarea", label: "배경/목표", value: textarea("") }, // 빈 값 → 보존 안 함
+            { id: "b2", type: "textarea", label: "결과/성과", value: textarea("옛 결과/성과") }, // 채워짐 → 보존
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    expect(v1.customBlocks.find(b => b.label === "배경/목표")).toBeUndefined()
+    expect(v1.customBlocks.find(b => b.label === "결과/성과")?.value).toEqual(textarea("옛 결과/성과"))
+  })
+
+  it("v1: 라운드트립에서 미매칭 extension 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "academic-society",
+        content: {
+          extensionBlocks: [
+            { id: "b1", type: "textarea", label: "결과/성과", value: textarea("보존될 성과") },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const payload = toSavePayload(v1)
+    const content = payload.content as {
+      fields: Record<string, unknown>
+      custom: Array<{ label: string; value: unknown }>
+    }
+    expect(content.custom.find(c => c.label === "결과/성과")?.value).toEqual(textarea("보존될 성과"))
+  })
 })
 
 describe("toSavePayload", () => {
-  it("ExperienceV2 를 저장 payload 형태로 묶는다", () => {
+  it("빈 ExperienceV2 를 v2 content 로 직렬화한다", () => {
     const payload = toSavePayload(makeExperienceV2())
-    expect(payload).toEqual({
-      type: "career",
-      importance: 4,
-      content: {
-        title: "타이틀",
-        summary: "요약",
-        status: "draft",
-        tags: ["a"],
-        coreBlocks: [],
-        extensionBlocks: [],
-        customBlocks: [],
-      },
+    expect(payload.type).toBe("career")
+    expect(payload.importance).toBe(4)
+    expect(payload.content).toMatchObject({
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "타이틀",
+      summary: "요약",
+      status: "draft",
+      tags: ["a"],
+      fields: {},
+      custom: [],
     })
   })
 
   it("importance 가 undefined 면 null 로 강제한다", () => {
     expect(toSavePayload(makeExperienceV2({ importance: undefined })).importance).toBeNull()
   })
+
+  it("키 있는 블록은 fields 맵으로, title/summary 블록은 제외한다", () => {
+    const { coreBlocks, extensionBlocks } = careerBlocks()
+    // 값 채우기
+    const filledCore = coreBlocks.map(b =>
+      b.key === "core.핵심 성과" ? { ...b, value: textarea("성과!") } : b,
+    )
+    const filledExt = extensionBlocks.map(b =>
+      b.key === "career-info.회사명" ? { ...b, value: text("ARC") } : b,
+    )
+    const payload = toSavePayload(
+      makeExperienceV2({ coreBlocks: filledCore, extensionBlocks: filledExt }),
+    )
+    const content = payload.content as Record<string, unknown>
+    const fields = content.fields as Record<string, BlockValue>
+    expect(fields["core.핵심 성과"]).toEqual(textarea("성과!"))
+    expect(fields["career-info.회사명"]).toEqual(text("ARC"))
+    // 헤더 소유 필드는 fields 에 중복 저장하지 않음
+    expect(fields["core.경험명"]).toBeUndefined()
+    expect(fields["core.한 줄 요약"]).toBeUndefined()
+  })
 })
 
 describe("round-trip (toExperienceV2 → toSavePayload)", () => {
-  it("content·importance 가 왕복 후에도 보존된다", () => {
+  it("v2 스칼라·importance 가 왕복 후 보존된다", () => {
     const original = makeExperience({
       content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
         title: "T",
         summary: "S",
-        status: "draft",
+        status: "complete",
         tags: ["x"],
-        coreBlocks: [],
-        extensionBlocks: [],
-        customBlocks: [],
+        fields: {},
+        custom: [],
       },
       importance: 2,
     })
     const payload = toSavePayload(toExperienceV2(original))
-    expect(payload.content).toEqual(original.content)
+    expect(payload.content).toMatchObject({
+      schema_version: 2,
+      title: "T",
+      summary: "S",
+      status: "complete",
+      tags: ["x"],
+    })
     expect(payload.importance).toBe(2)
-    expect(payload.type).toBe(original.type)
+    expect(payload.type).toBe("career")
+  })
+
+  it("저장순서=화면순서: extensionBlocks 가 왕복 후에도 레지스트리 순서를 유지한다", () => {
+    const { coreBlocks, extensionBlocks } = careerBlocks()
+    const expectedKeys = extensionBlocks.map(b => b.key)
+    const v2In = makeExperienceV2({ coreBlocks, extensionBlocks })
+    const payload = toSavePayload(v2In)
+    const reloaded = toExperienceV2(
+      makeExperience({ content: payload.content, importance: payload.importance }),
+    )
+    expect(reloaded.extensionBlocks.map(b => b.key)).toEqual(expectedKeys)
+  })
+
+  it("필드 값이 키 기준으로 왕복 보존된다(라벨 충돌 무관)", () => {
+    const { coreBlocks, extensionBlocks } = careerBlocks()
+    const filledExt = extensionBlocks.map(b =>
+      b.key === "career-tasks.업무내용"
+        ? b
+        : b.key === "career-info.회사명"
+          ? { ...b, value: text("ARC") }
+          : b,
+    )
+    const v2In = makeExperienceV2({ coreBlocks, extensionBlocks: filledExt, title: "헤더T" })
+    const payload = toSavePayload(v2In)
+    const reloaded = toExperienceV2(
+      makeExperience({ content: payload.content, importance: payload.importance }),
+    )
+    expect(reloaded.extensionBlocks.find(b => b.key === "career-info.회사명")?.value).toEqual(text("ARC"))
+    expect(reloaded.title).toBe("헤더T")
+    expect(reloaded.coreBlocks.find(b => b.key === "core.경험명")?.value).toEqual(text("헤더T"))
+  })
+
+  it("키 없는(모호 라벨) 확장 블록은 custom 으로 보존된다 (Codex P1 회귀)", () => {
+    const block: Block = {
+      id: "x1",
+      type: "repeatable-cell",
+      label: "결과/성과",
+      value: { type: "repeatable-cell", columns: [], rows: [{ id: "r1", cells: {} }] },
+    }
+    const payload = toSavePayload(
+      makeExperienceV2({ typeId: "extracurricular", extensionBlocks: [block] }),
+    )
+    const content = payload.content as Record<string, unknown>
+    const custom = content.custom as CustomEntry[]
+    const preserved = custom.find(
+      e => e.entryType === "field" && e.label === "결과/성과",
+    )
+    expect(preserved).toBeDefined()
+    expect(preserved?.entryType === "field" && preserved.value.type).toBe("repeatable-cell")
+  })
+
+  it("custom 블록이 왕복 보존된다", () => {
+    const custom: Block[] = [
+      { id: "c1", key: "custom-1", type: "text", label: "메모", value: text("note") },
+    ]
+    const payload = toSavePayload(makeExperienceV2({ customBlocks: custom }))
+    const reloaded = toExperienceV2(
+      makeExperience({ content: payload.content, importance: payload.importance }),
+    )
+    expect(reloaded.customBlocks).toHaveLength(1)
+    expect(reloaded.customBlocks[0]).toMatchObject({ label: "메모", type: "text" })
+    expect(reloaded.customBlocks[0].value).toEqual(text("note"))
+  })
+})
+
+describe("section round-trip (FRT-78)", () => {
+  it("toSavePayload: 사용자 섹션(group 블록)은 entryType:'section' 으로 직렬화된다", () => {
+    const g = createGroupBlock("나만의 섹션")
+    const child = createTextField("메모")
+    if (child.value.type === "text") child.value.text = "내용"
+    g.children = [child]
+    const payload = toSavePayload(makeExperienceV2({ customBlocks: [g] }))
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom[0].entryType).toBe("section")
+    if (custom[0].entryType === "section") {
+      expect(custom[0].label).toBe("나만의 섹션")
+      expect(custom[0].children).toHaveLength(1)
+      expect(custom[0].children[0].entryType).toBe("field")
+    }
+  })
+
+  it("toExperienceV2: section 항목이 type:'group' Block 으로 복원된다 (평탄화 아님)", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          fields: {},
+          custom: [
+            {
+              key: "s-1",
+              entryType: "section",
+              label: "복원 섹션",
+              children: [
+                { key: "c-1", entryType: "field", type: "text", label: "메모", value: { type: "text", text: "내용" } },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    expect(v2.customBlocks).toHaveLength(1)
+    expect(v2.customBlocks[0].type).toBe("group")
+    expect(v2.customBlocks[0].label).toBe("복원 섹션")
+    expect(v2.customBlocks[0].children).toHaveLength(1)
+  })
+
+  it("하위호환: 레거시 entryType:'group'(FRT-72) 도 최상위 group Block 으로 복원된다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          fields: {},
+          custom: [
+            {
+              key: "g-1",
+              entryType: "group",
+              label: "레거시 그룹",
+              children: [
+                { key: "c-1", entryType: "field", type: "text", label: "메모", value: { type: "text", text: "내용" } },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    expect(v2.customBlocks[0].type).toBe("group")
+    expect(v2.customBlocks[0].label).toBe("레거시 그룹")
+    expect(v2.customBlocks[0].children).toHaveLength(1)
+  })
+
+  it("FULL round-trip: 두 자식을 가진 섹션이 toSavePayload → toExperienceV2 를 견딘다", () => {
+    const g = createGroupBlock("섹션A")
+    const a = createTextField("필드1"); if (a.value.type === "text") a.value.text = "v1"
+    const b = createTextField("필드2"); if (b.value.type === "text") b.value.text = "v2"
+    g.children = [a, b]
+    const payload = toSavePayload(makeExperienceV2({ customBlocks: [g] }))
+    const reloaded = toExperienceV2(
+      makeExperience({ content: payload.content as unknown as Record<string, unknown> }),
+    )
+    const rg = reloaded.customBlocks[0]
+    expect(rg.type).toBe("group")
+    expect(rg.children).toHaveLength(2)
+    expect(rg.children?.map(c => c.label)).toEqual(["필드1", "필드2"])
+  })
+
+  it("중첩 섹션/그룹(depth>0)은 평탄화된다 — 1겹 cap", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          fields: {},
+          custom: [
+            {
+              key: "s-1",
+              entryType: "section",
+              label: "외부",
+              children: [
+                {
+                  key: "s-2",
+                  entryType: "section",
+                  label: "내부(평탄화 대상)",
+                  children: [
+                    { key: "c-1", entryType: "field", type: "text", label: "메모", value: { type: "text", text: "내용" } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    expect(v2.customBlocks[0].type).toBe("group")
+    const children = v2.customBlocks[0].children ?? []
+    expect(children.every(c => c.type !== "group")).toBe(true)
+    expect(children.map(c => c.label)).toEqual(["메모"])
+  })
+
+  it("collapsed 는 직렬화되지 않는다 (local-only)", () => {
+    const g = createGroupBlock("섹션")
+    const c = createTextField("메모"); if (c.value.type === "text") c.value.text = "x"
+    g.children = [c]
+    const payload = toSavePayload(makeExperienceV2({ customBlocks: [g] }))
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom[0].entryType).toBe("section")
+    expect("collapsed" in custom[0]).toBe(false)
+  })
+
+  it("children 없는 섹션이 빈 children:[] 로 왕복된다", () => {
+    const g = createGroupBlock("빈 섹션")
+    const payload = toSavePayload(makeExperienceV2({ status: "draft", customBlocks: [g] }))
+    const reloaded = toExperienceV2(
+      makeExperience({ content: payload.content as unknown as Record<string, unknown> }),
+    )
+    expect(reloaded.customBlocks[0].type).toBe("group")
+    expect(reloaded.customBlocks[0].children).toEqual([])
+  })
+})
+
+describe("빈 사용자 섹션 prune (FRT-78)", () => {
+  it("complete 저장 시 children 이 모두 빈 섹션은 custom 에서 제외된다", () => {
+    const empty = createGroupBlock("빈 섹션") // children []
+    const filled = createGroupBlock("채운 섹션")
+    const c = createTextField("메모"); if (c.value.type === "text") c.value.text = "내용"
+    filled.children = [c]
+    const payload = toSavePayload(
+      makeExperienceV2({ status: "complete", customBlocks: [empty, filled] }),
+    )
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom).toHaveLength(1)
+    expect(custom[0].entryType === "section" && custom[0].label).toBe("채운 섹션")
+  })
+
+  it("draft 저장 시 빈 섹션도 보존된다", () => {
+    const empty = createGroupBlock("빈 섹션")
+    const payload = toSavePayload(
+      makeExperienceV2({ status: "draft", customBlocks: [empty] }),
+    )
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom).toHaveLength(1)
+    expect(custom[0].entryType === "section" && custom[0].label).toBe("빈 섹션")
   })
 })

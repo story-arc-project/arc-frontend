@@ -14,7 +14,6 @@ import type {
   Template,
   ImportanceLevel,
 } from "@/types/archive"
-import type { UsePresetsReturn } from "@/hooks/usePresets"
 
 // ─── Blocks ─────────────────────────────────────────────────────────────────
 
@@ -215,32 +214,6 @@ export const samplePreset: Preset = {
   updatedAt: "2025-05-01T00:00:00.000Z",
 }
 
-// ─── UsePresetsReturn mock ────────────────────────────────────────────────────
-
-export const mockPresetsHook: UsePresetsReturn = {
-  presets: [samplePreset],
-  isLoading: false,
-  error: null,
-  refetch: async () => {},
-  createPreset: async () => {},
-  updatePreset: async () => {},
-  deletePreset: async () => {},
-  duplicatePreset: async () => {},
-  getPreset: (id: string) => (id === samplePreset.id ? samplePreset : undefined),
-}
-
-export const emptyPresetsHook: UsePresetsReturn = {
-  presets: [],
-  isLoading: false,
-  error: null,
-  refetch: async () => {},
-  createPreset: async () => {},
-  updatePreset: async () => {},
-  deletePreset: async () => {},
-  duplicatePreset: async () => {},
-  getPreset: () => undefined,
-}
-
 // ─── Legacy (ArchiveSidebar) fixtures ────────────────────────────────────────
 
 export const systemFolder: Folder = {
@@ -317,6 +290,13 @@ export const periodBlockFinished: Block = {
   type: "period",
   label: "재직 기간",
   value: { type: "period", start: "2020-03", end: "2022-06", isCurrent: false },
+}
+
+export const periodBlockDay: Block = {
+  id: "blk-period-day",
+  type: "period",
+  label: "프로젝트 기간",
+  value: { type: "period", start: "2023-03-15", end: "2024-01-20", isCurrent: false },
 }
 
 export const emptyPeriodBlock: Block = {

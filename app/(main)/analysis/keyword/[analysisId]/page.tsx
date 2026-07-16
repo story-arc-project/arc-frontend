@@ -17,6 +17,7 @@ import { getKeywordResult } from "@/lib/api/analysis-api";
 import { formatDateTime } from "@/lib/utils/date-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui";
+import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 export default function KeywordDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
@@ -88,26 +89,29 @@ export default function KeywordDetailPage() {
           목록으로
         </Link>
 
-        <header className="space-y-2">
-          <h1 className="text-heading-2 text-text-primary">{headerTitle}</h1>
-          {data.analysisDate && (
-            <p className="text-body-sm text-text-tertiary">
-              분석 시점: {formatDateTime(data.analysisDate)}
-            </p>
-          )}
-          {data.keywords.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap">
-              {data.keywords.map((kw) => (
-                <Badge key={kw} variant="brand">{kw}</Badge>
-              ))}
-            </div>
-          )}
-          {data.targetScenario && (
-            <p className="text-body-sm text-text-secondary">
-              타겟 시나리오: <span className="text-text-primary">{data.targetScenario}</span>
-            </p>
-          )}
-        </header>
+        <div className="flex items-start justify-between gap-3">
+          <header className="space-y-2 flex-1 min-w-0">
+            <h1 className="text-heading-2 text-text-primary">{headerTitle}</h1>
+            {data.analysisDate && (
+              <p className="text-body-sm text-text-tertiary">
+                분석 시점: {formatDateTime(data.analysisDate)}
+              </p>
+            )}
+            {data.keywords.length > 0 && (
+              <div className="flex gap-1.5 flex-wrap">
+                {data.keywords.map((kw) => (
+                  <Badge key={kw} variant="brand">{kw}</Badge>
+                ))}
+              </div>
+            )}
+            {data.targetScenario && (
+              <p className="text-body-sm text-text-secondary">
+                타겟 시나리오: <span className="text-text-primary">{data.targetScenario}</span>
+              </p>
+            )}
+          </header>
+          <BookmarkToggle analysisId={analysisId} isBookmarked={data.isBookmarked} />
+        </div>
 
         <hr className="border-border" />
 

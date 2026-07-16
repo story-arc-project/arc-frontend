@@ -23,6 +23,7 @@ export default function ComprehensiveNewPage() {
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
   const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [expLoaded, setExpLoaded] = useState(false);
 
   const { start: startPolling } = useAnalysisPolling({
     analysisId,
@@ -40,7 +41,10 @@ export default function ComprehensiveNewPage() {
 
   const fetchExperiences = useCallback(() => {
     getSelectableExperiences()
-      .then(setExperiences)
+      .then((exps) => {
+        setExperiences(exps);
+        setExpLoaded(true);
+      })
       .catch(() => {
         setPhase("error");
         setErrorMsg("경험 목록을 불러오지 못했습니다.");
@@ -77,33 +81,37 @@ export default function ComprehensiveNewPage() {
 
   if (phase === "loading") {
     return (
-      <div className="flex flex-col items-center justify-center py-24 px-4" role="status" aria-live="polite">
-        <Loader2 size={32} className="text-brand animate-spin mb-4" aria-hidden="true" />
-        <h2 className="text-title text-text-primary mb-1">분석 중입니다...</h2>
-        <p className="text-body-sm text-text-secondary">
-          선택한 {selected.length}개 경험을 종합 분석하고 있어요.
-        </p>
-        <div className="mt-6 w-full max-w-md space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className={`h-12 bg-surface-secondary rounded-lg animate-pulse [animation-delay:${i * 150}ms]`}
-            />
-          ))}
+      <main>
+        <div className="flex flex-col items-center justify-center py-24 px-4" role="status" aria-live="polite">
+          <Loader2 size={32} className="text-brand animate-spin mb-4" aria-hidden="true" />
+          <h2 className="text-title text-text-primary mb-1">분석 중입니다...</h2>
+          <p className="text-body-sm text-text-secondary">
+            선택한 {selected.length}개 경험을 종합 분석하고 있어요.
+          </p>
+          <div className="mt-6 w-full max-w-md space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className={`h-12 bg-surface-secondary rounded-lg animate-pulse [animation-delay:${i * 150}ms]`}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      </main>
     );
   }
 
   if (phase === "error") {
     return (
-      <div className="flex flex-col items-center justify-center py-24 px-4" role="alert">
-        <h2 className="text-title text-text-primary mb-2">오류 발생</h2>
-        <p className="text-body-sm text-text-secondary mb-4">{errorMsg}</p>
-        <Button size="sm" onClick={() => { setPhase("select"); fetchExperiences(); }}>
-          다시 시도
-        </Button>
-      </div>
+      <main>
+        <div className="flex flex-col items-center justify-center py-24 px-4" role="alert">
+          <h2 className="text-title text-text-primary mb-2">오류 발생</h2>
+          <p className="text-body-sm text-text-secondary mb-4">{errorMsg}</p>
+          <Button size="sm" onClick={() => { setPhase("select"); fetchExperiences(); }}>
+            다시 시도
+          </Button>
+        </div>
+      </main>
     );
   }
 
@@ -132,6 +140,7 @@ export default function ComprehensiveNewPage() {
             selected={selected}
             onChange={setSelected}
             minCount={2}
+            isLoading={!expLoaded}
           />
         </section>
 

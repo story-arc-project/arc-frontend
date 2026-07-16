@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event"
 
 import type { ExperienceV2 } from "@/types/archive"
 import ExperienceFormV2 from "./ExperienceFormV2"
-import { emptyPresetsHook } from "./__fixtures__/archive.fixtures"
 
 /**
  * FRT-54 — 경험명(title) 빈 값 저장 차단 회귀 가드.
@@ -18,7 +17,6 @@ function renderForm(onSave = vi.fn()) {
   render(
     <ExperienceFormV2
       mode="new"
-      presetsHook={emptyPresetsHook}
       onSave={onSave}
       onCancel={() => {}}
     />,
@@ -97,7 +95,6 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
       <ExperienceFormV2
         mode="edit"
         initialExperience={legacyRecord()}
-        presetsHook={emptyPresetsHook}
         onSave={onSave}
         onCancel={() => {}}
       />,
@@ -124,7 +121,6 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
       <ExperienceFormV2
         mode="edit"
         initialExperience={legacyRecord({ title: "" })}
-        presetsHook={emptyPresetsHook}
         onSave={onSave}
         onCancel={() => {}}
       />,
@@ -140,5 +136,148 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
     await user.click(screen.getByRole("button", { name: "완료" }))
     expect(onSave).toHaveBeenCalledTimes(1)
     expect(onSave.mock.calls[0][0]).toMatchObject({ title: "복구한 제목" })
+  })
+})
+
+/**
+ * FRT-52 — 편집 모드 진입 직후 dirty(hasUnsaved) 위양성 방지.
+ *
+ * 버그: edit 모드에서 initialExperience 로 coreBlocks 를 초기화하면 dirty 추적이
+ * "데이터 존재 여부"만 보고 즉시 onUnsavedChange(true) 를 호출했다. 사용자가
+ * 아무것도 수정하지 않아도 hasUnsaved=true 가 되어 다른 카드 클릭 시 항상 가드
+ * 모달이 떴다.
+ * 수정: 로드된 baseline 대비 실제 변경 여부로 dirty 를 판정한다.
+ */
+describe("FRT-52 편집 진입 직후 dirty 위양성 방지", () => {
+  function editRecord(overrides: Partial<ExperienceV2> = {}): ExperienceV2 {
+    return {
+      id: "exp-edit-1",
+      userId: "u1",
+      typeId: "extracurricular",
+      title: "교내 개발 동아리 운영진",
+      summary: "12명 규모 동아리 운영",
+      status: "complete",
+      tags: ["리더십"],
+      importance: 4,
+      coreBlocks: [],
+      extensionBlocks: [],
+      customBlocks: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    }
+  }
+
+  it("수정 없이 편집 모드로 진입하면 hasUnsaved=true 가 보고되지 않는다", async () => {
+    const onUnsavedChange = vi.fn()
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={editRecord()}
+        onSave={() => {}}
+        onCancel={() => {}}
+        onUnsavedChange={onUnsavedChange}
+      />,
+    )
+
+    // 폼(템플릿) 로드 + 경험명 materialize 가 끝날 때까지 대기.
+    expect(
+      (screen.getByRole("textbox", { name: "경험명" }) as HTMLInputElement).value,
+    ).toBe("교내 개발 동아리 운영진")
+
+    // 사용자 변경이 없으므로 dirty 가 한 번도 true 로 보고되면 안 된다.
+    expect(onUnsavedChange).not.toHaveBeenCalledWith(true)
+  })
+
+  it("편집 모드에서 사용자가 내용을 바꾸면 hasUnsaved=true 가 보고된다", async () => {
+    const user = userEvent.setup()
+    const onUnsavedChange = vi.fn()
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={editRecord()}
+        onSave={() => {}}
+        onCancel={() => {}}
+        onUnsavedChange={onUnsavedChange}
+      />,
+    )
+
+    const titleInput = screen.getByRole("textbox", { name: "경험명" })
+    await user.type(titleInput, " 보강")
+
+    expect(onUnsavedChange).toHaveBeenLastCalledWith(true)
+  })
+})
+
+/**
+ * FRT-78 — Codex 리뷰 P2 두 건 회귀 가드.
+ *  #1 최상위 사용자 섹션 정렬(헤더 위/아래 이동)이 동작한다.
+ *  #2 레거시 loose 커스텀 블록은 '기타' 카드에서 편집(연필)이 유지된다.
+ */
+describe("FRT-78 사용자 섹션 정렬·loose 편집 (Codex P2)", () => {
+  it("섹션 '아래로 이동'으로 최상위 섹션 순서를 바꾼다 (네비 순서에 반영)", async () => {
+    const user = userEvent.setup()
+    const onVisibleSectionsChange = vi.fn()
+    render(
+      <ExperienceFormV2
+        mode="new"
+        onSave={() => {}}
+        onCancel={() => {}}
+        onVisibleSectionsChange={onVisibleSectionsChange}
+      />,
+    )
+    await selectType(user)
+
+    // 최상위 '블록 추가' 버튼은 DOM 상 마지막(섹션 내부 BlockList 추가 버튼과 동명) → at(-1).
+    const topAdd = () => screen.getAllByRole("button", { name: "블록 추가" }).at(-1)!
+    await user.click(topAdd())
+    await user.click(topAdd())
+
+    // 두 섹션에 구분용 이름 부여.
+    let names = screen.getAllByRole("textbox", { name: "섹션 이름" })
+    expect(names).toHaveLength(2)
+    await user.clear(names[0]); await user.type(names[0], "A")
+    names = screen.getAllByRole("textbox", { name: "섹션 이름" })
+    await user.clear(names[1]); await user.type(names[1], "B")
+
+    const userOrder = () => {
+      const last = onVisibleSectionsChange.mock.calls.at(-1)?.[0] ?? []
+      return last.map((s: { label: string }) => s.label).filter((l: string) => l === "A" || l === "B")
+    }
+    expect(userOrder()).toEqual(["A", "B"])
+
+    // 첫 섹션(A) '아래로 이동' → 순서가 [B, A] 로 바뀐다.
+    await user.click(screen.getAllByRole("button", { name: "섹션 아래로 이동" })[0])
+    expect(userOrder()).toEqual(["B", "A"])
+  })
+
+  it("레거시 loose 커스텀 블록은 '기타' 카드에서 편집(연필) 버튼이 노출된다", () => {
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={{
+          id: "exp-loose",
+          userId: "u1",
+          typeId: "extracurricular",
+          title: "레거시 레코드",
+          summary: "",
+          status: "complete",
+          tags: [],
+          importance: undefined,
+          coreBlocks: [],
+          extensionBlocks: [],
+          customBlocks: [
+            { id: "loose-1", type: "text", label: "메모", value: { type: "text", text: "내용" } },
+          ],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }}
+        onSave={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+
+    // 추가는 막혀도(상단 '블록 추가'만 존재) loose 블록 자체 편집은 가능해야 한다.
+    expect(screen.getByRole("button", { name: "블록 편집" })).toBeInTheDocument()
   })
 })

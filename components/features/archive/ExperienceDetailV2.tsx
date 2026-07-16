@@ -9,7 +9,7 @@ import BlockList from "./blocks/BlockList"
 import ImportanceSelector from "./ImportanceSelector"
 import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
 import { EXPERIENCE_TYPE_MAP, getTemplateForType } from "@/lib/constants/templates-v2"
-import { isBlockEmpty } from "@/lib/utils/block-utils"
+import { buildDetailSections } from "@/lib/utils/detail-cards"
 
 interface ExperienceDetailV2Props {
   experience: ExperienceV2
@@ -35,87 +35,12 @@ export default function ExperienceDetailV2({
   const hasKnownType = Object.hasOwn(EXPERIENCE_TYPE_MAP, experience.typeId)
   const typeInfo = hasKnownType ? EXPERIENCE_TYPE_MAP[experience.typeId] : undefined
   const template = hasKnownType ? getTemplateForType(experience.typeId) : null
-  const nonEmptyCoreBlocks = experience.coreBlocks.filter(block => !isBlockEmpty(block))
-  const nonEmptyExtBlocks = experience.extensionBlocks.filter(block => !isBlockEmpty(block))
-  const nonEmptyCustomBlocks = experience.customBlocks.filter(block => !isBlockEmpty(block))
 
   const noop = () => {}
 
-  const sections: { num: number; label: string; blocks: typeof experience.coreBlocks }[] = []
-  const templateSections: { label: string; blocks: typeof experience.coreBlocks }[] = []
-
-  // Type-specific sections are shown with their original template labels so
-  // the detail view matches what users saw while filling out the form.
-  const extBlocksByLabel = new Map<string, typeof experience.extensionBlocks>()
-  for (const block of nonEmptyExtBlocks) {
-    const blocksForLabel = extBlocksByLabel.get(block.label)
-    if (blocksForLabel) {
-      blocksForLabel.push(block)
-    } else {
-      extBlocksByLabel.set(block.label, [block])
-    }
-  }
-
-  const usedExtIds = new Set<string>()
-  if (template) {
-    const sharedExtension = template.extensions.find(ext => ext.id === "extended") ?? null
-    const typeSpecificExtensions = template.extensions.filter(ext => ext.id !== "extended")
-
-    for (const ext of typeSpecificExtensions) {
-      const sectionBlocks = ext.blocks
-        .map(templateBlock => {
-          const blocksForLabel = extBlocksByLabel.get(templateBlock.label)
-          const nextBlock = blocksForLabel?.shift()
-          if (nextBlock) usedExtIds.add(nextBlock.id)
-          return nextBlock
-        })
-        .filter((block): block is typeof experience.extensionBlocks[number] => Boolean(block))
-
-      if (sectionBlocks.length > 0) {
-        templateSections.push({
-          label: ext.label,
-          blocks: sectionBlocks,
-        })
-      }
-    }
-
-    if (sharedExtension) {
-      const sharedLabels = new Set(sharedExtension.blocks.map(block => block.label))
-      const sharedBlocks = nonEmptyExtBlocks.filter(
-        block => !usedExtIds.has(block.id) && sharedLabels.has(block.label)
-      )
-
-      if (sharedBlocks.length > 0) {
-        for (const block of sharedBlocks) usedExtIds.add(block.id)
-        templateSections.unshift({
-          label: sharedExtension.label,
-          blocks: sharedBlocks,
-        })
-      }
-    }
-  }
-
-  for (const section of templateSections) {
-    sections.push({
-      num: sections.length + 1,
-      label: section.label,
-      blocks: section.blocks,
-    })
-  }
-
-  // Unmatched extension fields (e.g. legacy/renamed labels) are kept visible.
-  const unmatchedExt = nonEmptyExtBlocks.filter(b => !usedExtIds.has(b.id))
-  if (unmatchedExt.length > 0) {
-    sections.push({ num: sections.length + 1, label: "추가 입력", blocks: unmatchedExt })
-  }
-
-  if (nonEmptyCoreBlocks.length > 0) {
-    sections.push({ num: sections.length + 1, label: "공통 정보", blocks: nonEmptyCoreBlocks })
-  }
-
-  if (nonEmptyCustomBlocks.length > 0) {
-    sections.push({ num: sections.length + 1, label: "추가 블록", blocks: nonEmptyCustomBlocks })
-  }
+  // #69 안정키/저장순서를 그대로 사용 — 라벨매칭 재조립 없이 입력 폼(#70)과 동일한
+  // 4카드 구조로 렌더한다. 경험명/요약은 헤더가 단독 소유(본문 제외).
+  const sections = buildDetailSections(experience, template)
 
   return (
     <div className="max-w-[640px] mx-auto px-5 py-6 md:px-12 md:py-10">
@@ -179,14 +104,14 @@ export default function ExperienceDetailV2({
 
       {/* Sections */}
       <div className="flex flex-col gap-5">
-        {sections.map(section => (
+        {sections.map((section, index) => (
           <section
-            key={section.label}
+            key={section.id ?? section.label}
             className="rounded-xl border border-border bg-surface p-5 md:p-6"
           >
             <div className="flex items-center gap-2 mb-4">
               <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-surface-brand text-brand-dark text-caption font-semibold">
-                {section.num}
+                {index + 1}
               </span>
               <h3 className="text-title text-text-primary">{section.label}</h3>
             </div>

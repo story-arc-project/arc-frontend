@@ -464,7 +464,16 @@ function makeExperience(args: {
       status: args.status,
       tags: args.tags,
       coreBlocks: args.coreBlocks,
-      extensionBlocks: args.extensionBlocks,
+      // 데모 포트폴리오는 명시적 옵트인(공개)만 발행하므로, 큐레이트된 시드 경험은
+      // '공개 설정'을 명시적으로 "공개"로 둔다. (build-portfolio isPublishableExperience)
+      extensionBlocks: [
+        ...args.extensionBlocks,
+        blk(`${args.id}-vis`, "single-select", "공개 설정", {
+          type: "single-select",
+          options: ["공개", "비공개", "일부 공개"],
+          selected: "공개",
+        }),
+      ],
       customBlocks: [],
     },
     created_at: args.createdAt,
@@ -578,14 +587,14 @@ export const seedDemoUser: AuthUser = {
     connected_oauth: [],
   },
   profile: {
-    name: "데모 사용자",
+    name: "김서윤",
     birth: "2002-03-15",
     phone: "",
     affiliation: "student",
     school: "한양대학교",
     department: "컴퓨터소프트웨어학부",
     worry: [],
-    interest: ["AI/ML", "데이터분석", "백엔드"],
+    interest: ["AI/ML", "데이터분석", "백엔드", "자연어처리", "데이터 시각화"],
   },
   onboarded: true,
 };
@@ -601,10 +610,10 @@ export const seedResume: ResumeVersion = {
     source_chars: 5120,
   },
   인적사항: {
-    이름: "데모 사용자",
-    영문명: "Demo User",
+    이름: "김서윤",
+    영문명: "Seo-yun Kim",
     생년월일: "2002-03-15",
-    이메일: "demo@story-arc.org",
+    이메일: "seo-yun.kim@hanyang.ac.kr",
     전화번호: null,
     주소: null,
     링크: [

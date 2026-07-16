@@ -13,7 +13,8 @@ import type {
 import { weaknessSeverityLabel, synergyPriorityLabel } from "@/types/analysis";
 import { getIndividualAnalysisResult } from "@/lib/api/analysis-api";
 import { useBasePath } from "@/lib/utils/use-base-path";
-import { Badge } from "@/components/ui";
+import { Badge } from "@/components/ui"
+import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 export default function IndividualAnalysisDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
@@ -79,20 +80,23 @@ export default function IndividualAnalysisDetailPage() {
           목록으로
         </Link>
 
-        <header className="space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-heading-2 text-text-primary">{result.itemName || "이력 분석"}</h1>
-            {result.itemType && <Badge variant="brand">{result.itemType}</Badge>}
-          </div>
-          {data.experienceId && (
-            <Link
-              href={`${basePath}/archive?id=${data.experienceId}`}
-              className="inline-flex items-center gap-1 text-caption text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
-            >
-              아카이브에서 보기 <ExternalLink size={12} aria-hidden="true" />
-            </Link>
-          )}
-        </header>
+        <div className="flex items-start justify-between gap-3">
+          <header className="space-y-2 flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-heading-2 text-text-primary">{result.itemName || "이력 분석"}</h1>
+              {result.itemType && <Badge variant="brand">{result.itemType}</Badge>}
+            </div>
+            {data.experienceId && (
+              <Link
+                href={`${basePath}/archive?id=${data.experienceId}`}
+                className="inline-flex items-center gap-1 text-caption text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+              >
+                아카이브에서 보기 <ExternalLink size={12} aria-hidden="true" />
+              </Link>
+            )}
+          </header>
+          <BookmarkToggle analysisId={analysisId} isBookmarked={data.isBookmarked} />
+        </div>
 
         {result.missingInfoWarning && (
           <div

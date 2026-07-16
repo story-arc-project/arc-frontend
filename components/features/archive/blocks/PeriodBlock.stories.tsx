@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
 
 import PeriodBlock from "./PeriodBlock"
-import { periodBlock, periodBlockFinished, emptyPeriodBlock } from "../__fixtures__/archive.fixtures"
+import { periodBlock, periodBlockFinished, periodBlockDay, emptyPeriodBlock } from "../__fixtures__/archive.fixtures"
 
 const meta: Meta<typeof PeriodBlock> = {
   title: "Features/Archive/Blocks/PeriodBlock",
@@ -36,6 +36,20 @@ export const FinishedPeriod: Story = {
   args: {
     block: periodBlockFinished,
     readOnly: false,
+  },
+}
+
+export const DayPeriod: Story = {
+  args: {
+    block: periodBlockDay,
+    readOnly: false,
+  },
+}
+
+export const DayPeriodReadOnly: Story = {
+  args: {
+    block: periodBlockDay,
+    readOnly: true,
   },
 }
 

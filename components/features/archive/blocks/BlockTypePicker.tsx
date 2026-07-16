@@ -16,11 +16,11 @@ import {
 import type { BlockType } from "@/types/archive"
 
 interface BlockTypePickerProps {
-  onSelect: (type: BlockType) => void
+  onSelect: (type: Exclude<BlockType, 'group'>) => void
   onClose: () => void
 }
 
-const BLOCK_OPTIONS: { type: BlockType; label: string; icon: typeof Type }[] = [
+const BLOCK_OPTIONS: { type: Exclude<BlockType, 'group'>; label: string; icon: typeof Type }[] = [
   { type: "text", label: "텍스트 (짧은)", icon: Type },
   { type: "textarea", label: "텍스트 (긴)", icon: AlignLeft },
   { type: "checklist", label: "체크리스트", icon: CheckSquare },

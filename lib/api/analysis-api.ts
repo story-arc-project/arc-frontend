@@ -297,6 +297,7 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
     experienceId: asString(r.experienceId ?? r.experience_id ?? body.experience_id),
+    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
     result,
   };
 }
@@ -351,6 +352,7 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
   return {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
+    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
     userSchool: asString(body.userSchool ?? body.user_school),
     userDepartment: asString(body.userDepartment ?? body.user_department),
     briefSummary: asString(body.briefSummary ?? body.brief_summary),
@@ -509,6 +511,7 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
   return {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
+    isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
     analysisDate: asString(body.analysisDate ?? body.analysis_date ?? body.created_at),
     keywords: asStringArray(body.keywords ?? body.selectedKeywords ?? body.selected_keywords),
     targetScenario: asString(body.targetScenario ?? body.target_scenario),

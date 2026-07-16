@@ -47,6 +47,7 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-label text-text-primary">{block.label}</label>
+      {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
       <div className="flex flex-wrap gap-1.5 min-h-[32px]">
         {val.tags.map(tag => (
           <span

@@ -3,7 +3,7 @@ import type { Template, RawTextField } from '@/types/archive'
 /** Templates whose field_schema includes motivation + takeaway keys */
 export const QUALITATIVE_KEYS = ['motivation', 'takeaway'] as const
 
-/** Template labels that show the QualitativeSection */
+/** Template labels that surface qualitative fields (motivation/takeaway) */
 export const QUALITATIVE_TEMPLATE_LABELS = ['경력', '인턴/대외활동/프로젝트', '수상']
 
 export function isQualitativeTemplate(templateLabel: string): boolean {

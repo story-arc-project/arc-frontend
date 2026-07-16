@@ -57,12 +57,12 @@ export default function ComprehensiveAnalysisPage() {
               여러 경험을 묶어 일관된 스토리라인을 만듭니다.
             </p>
           </div>
-          <Link href="/analysis/comprehensive/new">
-            <Button size="sm">
+          <Button asChild size="sm" className="min-h-11 shrink-0 whitespace-nowrap sm:min-h-0">
+            <Link href="/analysis/comprehensive/new" aria-label="새 종합 분석">
               <Plus size={16} aria-hidden="true" />
-              새 종합 분석
-            </Button>
-          </Link>
+              <span className="hidden sm:inline">새 종합 분석</span>
+            </Link>
+          </Button>
         </div>
 
         {error ? (
@@ -96,6 +96,12 @@ export default function ComprehensiveAnalysisPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               여러 경험을 선택해 종합 분석을 시작해보세요.
             </p>
+            <Button asChild size="sm" className="mt-4">
+              <Link href="/analysis/comprehensive/new">
+                <Plus size={16} aria-hidden="true" />
+                새 종합 분석
+              </Link>
+            </Button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -148,6 +154,13 @@ export default function ComprehensiveAnalysisPage() {
                       <BookmarkToggle
                         analysisId={item.id}
                         isBookmarked={item.isBookmarked}
+                        onToggled={(next) =>
+                          setItems((prev) =>
+                            prev.map((i) =>
+                              i.id === item.id ? { ...i, isBookmarked: next } : i,
+                            ),
+                          )
+                        }
                         size="sm"
                       />
                       <button

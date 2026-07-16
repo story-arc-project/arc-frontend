@@ -119,6 +119,7 @@ export interface IndividualAnalysisResult {
   id: string;
   status: AnalysisStatus;
   experienceId: string;
+  isBookmarked: boolean;
   result: IndividualAnalysisResultBody;
 }
 
@@ -203,6 +204,7 @@ export interface JobRecommendation {
 export interface ComprehensiveAnalysisResult {
   id: string;
   status: AnalysisStatus;
+  isBookmarked: boolean;
   userSchool: string;
   userDepartment: string;
   briefSummary: string;
@@ -300,6 +302,7 @@ export interface KeywordImprovementGuide {
 export interface KeywordAnalysisResult {
   id: string;
   status: AnalysisStatus;
+  isBookmarked: boolean;
   analysisDate: string;
   keywords: string[];
   targetScenario: string;

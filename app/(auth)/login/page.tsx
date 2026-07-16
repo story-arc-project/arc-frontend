@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
+import { needsOnboarding } from "@/lib/auth/login-response";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { API_URL, SOCIAL_ERROR_MESSAGES, FIRST_ONBOARDING_STEP, PASSWORD_RESET_ENABLED, loginContainer, loginItem } from "../constants";
 
@@ -84,9 +85,12 @@ function LoginForm() {
         return;
       }
 
-      const { data } = await loginRes.json();
+      // 로그인 성공 응답은 방어적으로 해석한다(FRT-51): data 누락·null·onboarded 부재 시
+      // TypeError 로 '네트워크 오류'가 뜨거나 정상 사용자가 /signup 으로 오리다이렉트되지 않도록,
+      // 명시적으로 onboarded === false 일 때만 온보딩 화면으로 보낸다.
+      const body = await loginRes.json().catch(() => null);
 
-      if (!data.onboarded) {
+      if (needsOnboarding(body)) {
         router.push(`/signup?step=${FIRST_ONBOARDING_STEP}&email=${encodeURIComponent(email)}`);
       } else {
         // 하드 내비게이션으로 AuthProvider를 재마운트해 로그인 직후 user를 다시 불러온다.

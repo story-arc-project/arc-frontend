@@ -5,6 +5,12 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    // "console.log 커밋 금지"(CLAUDE.md Hard Constraint)를 문서가 아닌 lint 게이트로 강제.
+    rules: {
+      "no-console": ["error", { allow: ["warn", "error"] }],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

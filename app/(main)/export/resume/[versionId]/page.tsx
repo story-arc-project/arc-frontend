@@ -56,6 +56,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const [continueAnyway, setContinueAnyway] = useState(false);
 
   const load = useCallback(async () => {
+    // 새 버전 로드(재생성으로 이동해 온 경우 포함) 시 재생성 UI 상태를 초기화한다.
+    // App Router가 versionId만 바뀔 때 동일 인스턴스를 재사용해도 '다시 만들기'
+    // 버튼/다이얼로그가 잔존(영구 비활성)하지 않도록 여기서 리셋한다.
+    setRegenerating(false);
+    setRegenerateOpen(false);
     setLoading(true);
     setError(null);
     try {
@@ -160,12 +165,19 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const created = await createResume({ language: resume.meta.language });
       const newId = created.version_id;
       if (!newId) throw new Error("version_id missing");
+      // 재생성 확정 — dialog 약속대로 현재 편집/임시저장을 폐기한다. 기존 draft를
+      // 지우고, 현재 편집을 initial로 확정해 dirty를 해소한다 → 이어질 언마운트
+      // cleanup이 dirtyRef=false를 보고 draft를 되살리지 않는다.
+      // regenerating은 여기서 끄지 않는다: 이동이 실제로 끝나기 전 버튼이 재활성돼
+      // 두 번째 재생성이 겹치는 것을 막고, 새 버전 load()에서 리셋된다.
+      clearDraft(versionId);
+      setInitial(resume);
       router.push(`${basePath}/export/resume/${newId}`);
     } catch {
       toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
       setRegenerating(false);
     }
-  }, [resume, regenerating, router, basePath]);
+  }, [resume, regenerating, router, basePath, versionId]);
 
   const handlePrint = useCallback(() => {
     if (typeof window !== "undefined") window.print();
@@ -250,11 +262,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
             : "잠시 후 다시 시도해주세요."}
         </p>
         <div className="flex gap-2">
-          <Link href={`${basePath}/export`}>
-            <Button variant="ghost" size="sm">
-              익스포트로 돌아가기
-            </Button>
-          </Link>
+          <Button asChild variant="ghost" size="sm">
+            <Link href={`${basePath}/export`}>익스포트로 돌아가기</Link>
+          </Button>
           {!isNotFound && (
             <Button variant="primary" size="sm" onClick={load}>
               다시 시도

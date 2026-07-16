@@ -14,9 +14,11 @@ import type { LibraryDTO, LibraryUpsertPayload } from "@/lib/utils/library-mappe
 import type { PresetDTO, PresetUpsertPayload } from "@/lib/utils/preset-mapper";
 import type { ResumeLanguage, ResumeListItem, ResumeVersion } from "@/types/resume";
 import type { AuthUser } from "@/types/auth";
+import type { Portfolio } from "@/types/portfolio";
 
-import { experienceStore, libraryStore, presetStore, resumeStore } from "./store";
+import { experienceStore, libraryStore, presetStore, resumeStore, portfolioStore } from "./store";
 import { seedResumeListItem, DEMO_RESUME_VERSION_ID } from "./seed";
+import { DEMO_PORTFOLIO_ID } from "./portfolio-seed";
 
 // 짧은 인공 지연으로 실제 API 호출처럼 보이게 한다.
 function delay<T>(value: T, ms = 200): Promise<T> {
@@ -180,6 +182,19 @@ export async function updateResume(versionId: string, data: ResumeVersion): Prom
 export async function deleteResume(versionId: string): Promise<void> {
   void versionId;
   await delay(undefined);
+}
+
+// ─── Portfolio (Export, demo-only) ──────────────────────────
+
+export async function createPortfolio(): Promise<Portfolio> {
+  // 실제 생성이 아니라 600ms 가짜 지연 후 미리 만든 시드를 반환한다 (레쥬메 데모와 동일).
+  return delay(portfolioStore.get(), 600);
+}
+
+export async function getPortfolio(id: string): Promise<Portfolio | null> {
+  // 공개 포트폴리오는 id 경계를 강제한다 — 알 수 없는 id 는 fail-closed(null).
+  if (id !== DEMO_PORTFOLIO_ID) return delay(null);
+  return delay(portfolioStore.get());
 }
 
 export const DEMO_RESUME_ID = DEMO_RESUME_VERSION_ID;

@@ -14,7 +14,7 @@ export function uid(prefix = 'blk'): string {
 
 // ─── Empty value factories ──────────────────────────────────────
 
-function emptyValue(type: BlockType, opts?: { options?: string[]; columns?: BlockColumnDef[] }): BlockValue {
+function emptyValue(type: Exclude<BlockType, 'group'>, opts?: { options?: string[]; columns?: BlockColumnDef[] }): BlockValue {
   switch (type) {
     case 'text':
       return { type: 'text', text: '' }
@@ -44,11 +44,12 @@ function emptyValue(type: BlockType, opts?: { options?: string[]; columns?: Bloc
 // ─── Block factories ────────────────────────────────────────────
 
 export function createBlock(
-  type: BlockType,
+  type: Exclude<BlockType, 'group'>,
   label: string,
   opts?: {
     required?: boolean
     placeholder?: string
+    guide?: string
     options?: string[]
     columns?: BlockColumnDef[]
     collapsed?: boolean
@@ -61,16 +62,17 @@ export function createBlock(
     required: opts?.required,
     collapsed: opts?.collapsed,
     placeholder: opts?.placeholder,
+    guide: opts?.guide,
     options: opts?.options,
     value: emptyValue(type, opts),
   }
 }
 
-export function createTextField(label: string, opts?: { required?: boolean; placeholder?: string }): Block {
+export function createTextField(label: string, opts?: { required?: boolean; placeholder?: string; guide?: string }): Block {
   return createBlock('text', label, opts)
 }
 
-export function createTextareaField(label: string, opts?: { required?: boolean; placeholder?: string }): Block {
+export function createTextareaField(label: string, opts?: { required?: boolean; placeholder?: string; guide?: string }): Block {
   return createBlock('textarea', label, opts)
 }
 
@@ -90,11 +92,11 @@ export function createChecklistField(label: string, options: string[], opts?: { 
   return createBlock('checklist', label, { ...opts, options })
 }
 
-export function createTagsField(label: string, opts?: { required?: boolean }): Block {
+export function createTagsField(label: string, opts?: { required?: boolean; guide?: string }): Block {
   return createBlock('tags', label, opts)
 }
 
-export function createLinkField(label: string, opts?: { required?: boolean; placeholder?: string }): Block {
+export function createLinkField(label: string, opts?: { required?: boolean; placeholder?: string; guide?: string }): Block {
   return createBlock('link', label, opts)
 }
 
@@ -114,6 +116,33 @@ export function createTableField(label: string): Block {
   return createBlock('table', label)
 }
 
+/**
+ * 개조식 불릿-행 입력(FRT-97). 저장은 단일컬럼 `repeatable-cell` 그대로 두고
+ * `variant: 'outcome-list'` 마커로 OutcomeList UI 를 지정한다(무마이그레이션).
+ * 컬럼 key 는 `'item'` 고정 — OutcomeList 가 이 키의 텍스트를 각 행 값으로 읽는다.
+ * `itemLabel` 은 '+ ○○ 추가' 버튼 문구가 되는 컬럼 라벨(기본 '활동 / 성과').
+ */
+export function createOutcomeList(
+  label: string,
+  opts?: { placeholder?: string; guide?: string; itemLabel?: string },
+): Block {
+  const base = createRepeatableCell(label, [
+    { key: 'item', label: opts?.itemLabel ?? '활동 / 성과', blockType: 'text', placeholder: opts?.placeholder },
+  ])
+  return { ...base, variant: 'outcome-list', guide: opts?.guide }
+}
+
+export function createGroupBlock(label: string): Block {
+  return {
+    id: uid('grp'),
+    type: 'group',
+    label,
+    children: [],
+    collapsed: false,
+    value: { type: 'group' },
+  }
+}
+
 // ─── Row helpers ────────────────────────────────────────────────
 
 export function createEmptyRow(columns: BlockColumnDef[]): BlockRow {
@@ -131,10 +160,13 @@ export function createEmptyRow(columns: BlockColumnDef[]): BlockRow {
 // ─── Deep clone ─────────────────────────────────────────────────
 
 export function cloneBlock(block: Block): Block {
-  return {
-    ...JSON.parse(JSON.stringify(block)),
-    id: uid(),
+  const result: Block = { ...JSON.parse(JSON.stringify(block)), id: uid() }
+  if (result.type === 'group' && result.children) {
+    // Children are leaves (1-level cap). The JSON deep-clone above already deep-copied
+    // their values; just assign fresh ids without another full serialize pass.
+    result.children = result.children.map((c: Block) => ({ ...c, id: uid() }))
   }
+  return result
 }
 
 export function cloneBlocks(blocks: Block[]): Block[] {
@@ -171,12 +203,19 @@ export function isBlockEmpty(block: Block): boolean {
       return v.rows.length === 0
     case 'table':
       return v.rows.length === 0
+    case 'group':
+      return (block.children ?? []).every(c => isBlockEmpty(c))
   }
 }
 
 export function validateRequiredBlocks(blocks: Block[]): string[] {
   const errors: string[] = []
   for (const block of blocks) {
+    if (block.type === 'group') {
+      // Groups have no required flag; validate only their children
+      errors.push(...validateRequiredBlocks(block.children ?? []))
+      continue
+    }
     if (block.required && isBlockEmpty(block)) {
       errors.push(`"${block.label}" 항목을 입력해주세요.`)
     }

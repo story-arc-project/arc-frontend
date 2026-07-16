@@ -25,25 +25,34 @@ import BlockEditModal, { type BlockEditConfig } from "./BlockEditModal"
 interface BlockListProps {
   blocks: Block[]
   readOnly?: boolean
+  showOptionalBadge?: boolean
   onChange: (blocks: Block[]) => void
   allowAdd?: boolean
   allowReorder?: boolean
   allowDelete?: boolean
+  /**
+   * 블록 편집(연필) 노출 여부. 미지정 시 allowAdd 를 따른다(기존 동작 유지).
+   * 추가는 막되 편집은 허용하는 경우(레거시 loose 폴백)에 단독으로 켠다.
+   */
+  allowEdit?: boolean
 }
 
 export default function BlockList({
   blocks,
   readOnly,
+  showOptionalBadge,
   onChange,
   allowAdd = false,
   allowReorder = false,
   allowDelete = false,
+  allowEdit,
 }: BlockListProps) {
+  const editEnabled = allowEdit ?? allowAdd
   const [showPicker, setShowPicker] = useState(false)
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false)
-  const [pendingType, setPendingType] = useState<BlockType | null>(null)
+  const [pendingType, setPendingType] = useState<Exclude<BlockType, 'group'> | null>(null)
   const [editingBlock, setEditingBlock] = useState<Block | null>(null)
 
   const sensors = useSensors(
@@ -57,13 +66,14 @@ export default function BlockList({
     [blocks, onChange]
   )
 
-  function handlePickType(type: BlockType) {
+  function handlePickType(type: Exclude<BlockType, 'group'>) {
     setPendingType(type)
     setEditingBlock(null)
     setModalOpen(true)
   }
 
   function handleEditBlock(block: Block) {
+    if (block.type === 'group') return
     setEditingBlock(block)
     setPendingType(block.type)
     setModalOpen(true)
@@ -175,7 +185,7 @@ export default function BlockList({
     return (
       <div className="flex flex-col gap-5">
         {blocks.map(block => (
-          <BlockRenderer key={block.id} block={block} readOnly onChange={handleBlockChange} />
+          <BlockRenderer key={block.id} block={block} readOnly showOptionalBadge={showOptionalBadge} onChange={handleBlockChange} />
         ))}
       </div>
     )
@@ -187,7 +197,8 @@ export default function BlockList({
       block={block}
       allowReorder={allowReorder}
       allowDelete={allowDelete}
-      allowEdit={allowAdd}
+      allowEdit={editEnabled}
+      showOptionalBadge={showOptionalBadge}
       onChange={handleBlockChange}
       onDelete={() => handleDeleteBlock(block.id)}
       onDuplicate={() => handleDuplicateBlock(block.id)}
@@ -242,6 +253,7 @@ function SortableBlockItem({
   allowReorder,
   allowDelete,
   allowEdit,
+  showOptionalBadge,
   onChange,
   onDelete,
   onDuplicate,
@@ -251,6 +263,7 @@ function SortableBlockItem({
   allowReorder: boolean
   allowDelete: boolean
   allowEdit: boolean
+  showOptionalBadge?: boolean
   onChange: (blockId: string, value: BlockValue) => void
   onDelete: () => void
   onDuplicate: () => void
@@ -285,7 +298,7 @@ function SortableBlockItem({
         </button>
       )}
       <div className="flex-1 min-w-0">
-        <BlockRenderer block={block} onChange={onChange} />
+        <BlockRenderer block={block} showOptionalBadge={showOptionalBadge} onChange={onChange} />
       </div>
       {allowDelete && (
         <div className="flex flex-col gap-1 mt-1 transition-opacity shrink-0">

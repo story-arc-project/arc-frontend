@@ -9,12 +9,14 @@ const DEBUG = process.env.NEXT_PUBLIC_API_DEBUG === "true";
 
 function logRequest(method: string, path: string, body?: unknown) {
   if (!DEBUG) return;
+  // eslint-disable-next-line no-console -- NEXT_PUBLIC_API_DEBUG 게이트 로거
   console.log(`[API →] ${method} ${path}`, body ?? "");
 }
 
 function logResponse(method: string, path: string, status: number, duration: number) {
   if (!DEBUG) return;
   const color = status < 400 ? "color:green" : "color:red";
+  // eslint-disable-next-line no-console -- NEXT_PUBLIC_API_DEBUG 게이트 로거
   console.log(`[API ←] %c${status}%c ${method} ${path} (${duration}ms)`, color, "");
 }
 

@@ -3,6 +3,7 @@ import "./globals.css";
 
 import { ToastContainer } from "@/components/ui";
 import AuthProvider from "@/contexts/AuthContext";
+import PostHogProvider from "@/contexts/PostHogProvider";
 
 export const metadata: Metadata = {
   title: "ARC",
@@ -23,11 +24,13 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col">
-        <AuthProvider>
-          {children}
-          {/* 앱 전역 토스트 표시 지점 — (auth)·(main) 모두 커버 (FRT-45). */}
-          <ToastContainer />
-        </AuthProvider>
+        <PostHogProvider>
+          <AuthProvider>
+            {children}
+            {/* 앱 전역 토스트 표시 지점 — (auth)·(main) 모두 커버 (FRT-45). */}
+            <ToastContainer />
+          </AuthProvider>
+        </PostHogProvider>
       </body>
     </html>
   );

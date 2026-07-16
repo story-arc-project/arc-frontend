@@ -5,8 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
+import { AdminEntryLink } from "./AdminEntryLink";
 
-export function UserMenu() {
+export function UserMenu({ isAdmin = false }: { isAdmin?: boolean }) {
   const { user, isLoading, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -79,6 +80,7 @@ export function UserMenu() {
             </p>
             <p className="truncate text-caption">{user.account?.email}</p>
           </div>
+          <AdminEntryLink isAdmin={isAdmin} onClick={() => setOpen(false)} />
           <Link
             href="/settings"
             role="menuitem"

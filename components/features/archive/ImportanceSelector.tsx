@@ -63,7 +63,7 @@ export default function ImportanceSelector({
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
 
-  const label = value !== undefined ? IMPORTANCE_LABELS[value] : "미설정"
+  const label = value !== undefined ? IMPORTANCE_LABELS[value] : "중요도"
   const isInteractive = !readOnly && typeof onChange === "function"
 
   // Menu items: 5 levels + reset. Index 0-4 = levels, 5 = reset.

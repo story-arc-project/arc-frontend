@@ -21,11 +21,9 @@ export function EmptyResumeState({ onContinueAnyway }: Props) {
         경험을 먼저 기록해볼까요? 아카이브에 경험이 쌓이면 더 풍부한 레쥬메를 만들 수 있어요.
       </p>
       <div className="mt-3 flex gap-2">
-        <Link href="/archive">
-          <Button variant="primary" size="sm">
-            경험 기록하러 가기
-          </Button>
-        </Link>
+        <Button asChild variant="primary" size="sm">
+          <Link href="/archive">경험 기록하러 가기</Link>
+        </Button>
         {onContinueAnyway && (
           <Button variant="ghost" size="sm" onClick={onContinueAnyway}>
             빈 레쥬메 편집하기

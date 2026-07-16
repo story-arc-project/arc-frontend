@@ -5,9 +5,11 @@ import Link from "next/link";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getIndividualAnalysisList } from "@/lib/api/analysis-api";
 import { formatDate } from "@/lib/utils/date-utils";
+import { Button } from "@/components/ui";
 import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import AnalysisStatusBadge from "@/components/features/analysis/common/AnalysisStatusBadge";
 import FilterBar from "@/components/features/analysis/common/FilterBar";
+import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 type FilterKey = "all" | "pending" | "completed";
 const FILTERS: { key: FilterKey; label: string }[] = [
@@ -82,27 +84,57 @@ export default function IndividualAnalysisPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               경험을 기록하면 자동으로 분석이 시작됩니다.
             </p>
+            <Button asChild variant="secondary" size="sm" className="mt-4">
+              <Link href="/archive">경험 기록하러 가기</Link>
+            </Button>
           </div>
         ) : (
           <div className="space-y-3" role="tabpanel" id={`individual-panel-${filter}`} aria-labelledby={`individual-tab-${filter}`}>
             {items.map((item) => {
               const isNavigable = item.status === "completed";
-              const displayStatus = isNavigable ? "completed" : "pending";
+              const displayStatus =
+                item.status === "failed"
+                  ? "failed"
+                  : isNavigable
+                  ? "completed"
+                  : "pending";
 
-              const content = (
-                <div className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors">
+              return (
+                <div
+                  key={item.id}
+                  className={[
+                    "bg-surface border border-border rounded-lg p-4",
+                    !isNavigable ? "opacity-60" : "hover:border-brand transition-colors",
+                  ].join(" ")}
+                >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="text-body-sm text-text-primary font-medium">
-                          {item.title}
-                        </span>
-                        <AnalysisStatusBadge status={displayStatus} />
-                        {isNavigable && (
+                    {isNavigable ? (
+                      <Link
+                        href={`/analysis/individual/${item.id}`}
+                        className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
+                      >
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-body-sm text-text-primary font-medium">
+                            {item.title}
+                          </span>
+                          <AnalysisStatusBadge status={displayStatus} />
                           <ConfidenceBadge confidence={item.overallConfidence} />
-                        )}
-                      </div>
-                      {!isNavigable ? (
+                        </div>
+                        <p className="text-body-sm text-text-secondary line-clamp-1">
+                          {item.summaryText}
+                        </p>
+                        <p className="text-caption text-text-tertiary mt-1.5">
+                          {formatDate(item.createdAt)}
+                        </p>
+                      </Link>
+                    ) : (
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-body-sm text-text-primary font-medium">
+                            {item.title}
+                          </span>
+                          <AnalysisStatusBadge status={displayStatus} />
+                        </div>
                         <p className="text-body-sm text-text-tertiary">
                           {item.status === "processing"
                             ? "분석 진행 중..."
@@ -110,35 +142,25 @@ export default function IndividualAnalysisPage() {
                             ? "분석에 실패했습니다"
                             : "입력 완료 후 자동 분석됩니다"}
                         </p>
-                      ) : (
-                        <p className="text-body-sm text-text-secondary line-clamp-1">
-                          {item.summaryText}
+                        <p className="text-caption text-text-tertiary mt-1.5">
+                          {formatDate(item.createdAt)}
                         </p>
-                      )}
-                      <p className="text-caption text-text-tertiary mt-1.5">
-                        {formatDate(item.createdAt)}
-                      </p>
-                    </div>
+                      </div>
+                    )}
+                    <BookmarkToggle
+                      analysisId={item.id}
+                      isBookmarked={item.isBookmarked}
+                      size="sm"
+                      onToggled={(next) =>
+                        setItems((prev) =>
+                          prev.map((i) =>
+                            i.id === item.id ? { ...i, isBookmarked: next } : i,
+                          ),
+                        )
+                      }
+                    />
                   </div>
                 </div>
-              );
-
-              if (!isNavigable) {
-                return (
-                  <div key={item.id} className="opacity-60 cursor-not-allowed">
-                    {content}
-                  </div>
-                );
-              }
-
-              return (
-                <Link
-                  key={item.id}
-                  href={`/analysis/individual/${item.id}`}
-                  className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-lg"
-                >
-                  {content}
-                </Link>
               );
             })}
           </div>

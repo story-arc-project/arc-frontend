@@ -57,12 +57,12 @@ export default function KeywordAnalysisPage() {
               특정 키워드에 부합하는 경험을 찾아 분석합니다.
             </p>
           </div>
-          <Link href="/analysis/keyword/new">
-            <Button size="sm">
+          <Button asChild size="sm" className="min-h-11 shrink-0 whitespace-nowrap sm:min-h-0">
+            <Link href="/analysis/keyword/new" aria-label="새 키워드 분석">
               <Plus size={16} aria-hidden="true" />
-              새 키워드 분석
-            </Button>
-          </Link>
+              <span className="hidden sm:inline">새 키워드 분석</span>
+            </Link>
+          </Button>
         </div>
 
         {error ? (
@@ -99,6 +99,12 @@ export default function KeywordAnalysisPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               키워드를 선택해 경험 분석을 시작해보세요.
             </p>
+            <Button asChild size="sm" className="mt-4">
+              <Link href="/analysis/keyword/new">
+                <Plus size={16} aria-hidden="true" />
+                새 키워드 분석
+              </Link>
+            </Button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -164,6 +170,13 @@ export default function KeywordAnalysisPage() {
                       <BookmarkToggle
                         analysisId={item.id}
                         isBookmarked={item.isBookmarked}
+                        onToggled={(next) =>
+                          setItems((prev) =>
+                            prev.map((i) =>
+                              i.id === item.id ? { ...i, isBookmarked: next } : i,
+                            ),
+                          )
+                        }
                         size="sm"
                       />
                       <button

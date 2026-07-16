@@ -34,7 +34,7 @@ export function DemoGNB() {
                 key={item.href}
                 href={item.href}
                 className={[
-                  "px-3 py-1.5 rounded-md text-body-large transition-colors duration-150",
+                  "px-3 py-1.5 rounded-md text-body-lg transition-colors duration-150",
                   isActive
                     ? "text-brand font-semibold bg-surface-brand"
                     : "text-text-secondary hover:text-text-primary hover:bg-surface-tertiary",
@@ -84,7 +84,7 @@ export function DemoGNB() {
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
                 className={[
-                  "block px-3 py-2.5 rounded-md text-body-large transition-colors duration-150",
+                  "block px-3 py-2.5 rounded-md text-body-lg transition-colors duration-150",
                   isActive
                     ? "text-brand font-semibold bg-surface-brand"
                     : "text-text-secondary hover:text-text-primary hover:bg-surface-tertiary",
@@ -98,14 +98,14 @@ export function DemoGNB() {
             <button
               type="button"
               onClick={() => { setMobileOpen(false); reopen(); }}
-              className="block px-3 py-2.5 text-left text-body-large text-text-secondary hover:text-text-primary transition-colors"
+              className="block px-3 py-2.5 text-left text-body-lg text-text-secondary hover:text-text-primary transition-colors"
             >
               가이드 다시 보기
             </button>
             <Link
               href="/signup"
               onClick={() => setMobileOpen(false)}
-              className="block px-3 py-2.5 text-body-large text-brand font-semibold"
+              className="block px-3 py-2.5 text-body-lg text-brand font-semibold"
             >
               회원가입
             </Link>

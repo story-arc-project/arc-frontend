@@ -1,46 +1,93 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import {
+  formatPeriodString,
+  inferGranularity,
+  padToDay,
+  parsePeriodString,
+  truncateToMonth,
+  type PeriodGranularity,
+} from "@/lib/utils/period-format";
 import { DatePicker } from "./date-picker";
 
 interface PeriodPickerProps {
   label?: string;
-  /** Stored format: "2023.03 ~ 2024.01" or "2023.03 ~ 현재" */
+  /** Stored format: "2023.03 ~ 2024.01" (월) · "2023.03.15 ~ 현재" (일) */
   value: string;
   onChange: (v: string) => void;
 }
 
-export function PeriodPicker({ label, value, onChange }: PeriodPickerProps) {
-  const toDash = (v: string) => v.replace(".", "-");
-  const toDot = (v: string) => v.replace("-", ".");
+const GRANULARITIES: { key: PeriodGranularity; label: string }[] = [
+  { key: "month", label: "월 단위" },
+  { key: "day", label: "일 단위" },
+];
 
-  const [start, setStart] = useState(() => toDash(value.split("~")[0]?.trim() ?? ""));
-  const [end, setEnd] = useState(() => {
-    const e = value.split("~")[1]?.trim() ?? "";
-    return e === "현재" ? "" : toDash(e);
-  });
-  const [isCurrent, setIsCurrent] = useState(() => value.includes("현재"));
+export function PeriodPicker({ label, value, onChange }: PeriodPickerProps) {
+  const [start, setStart] = useState(() => parsePeriodString(value).start);
+  const [end, setEnd] = useState(() => parsePeriodString(value).end);
+  const [isCurrent, setIsCurrent] = useState(() => parsePeriodString(value).isCurrent);
+  const [granularity, setGranularity] = useState<PeriodGranularity>(() => inferGranularity(value));
 
   useEffect(() => {
-    const startDot = toDot(start);
-    const endDot = isCurrent ? "현재" : toDot(end);
-    onChange(startDot && (isCurrent || end) ? `${startDot} ~ ${endDot}` : startDot);
+    onChange(formatPeriodString({ start, end, isCurrent }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [start, end, isCurrent]);
 
+  const handleGranularity = (next: PeriodGranularity) => {
+    if (next === granularity) return;
+    // 일 → 월: 일 정밀도 절삭. 월 → 일: 1일로 채워 type=date 입력이 빈 컨트롤로
+    // 보이거나 혼합 granularity로 직렬화되는 것을 막는다(사용자가 일을 조정).
+    const convert = next === "month" ? truncateToMonth : padToDay;
+    setStart(convert);
+    setEnd(convert);
+    setGranularity(next);
+  };
+
+  const mode = granularity === "day" ? "date" : "month";
+
   return (
     <div className="flex flex-col gap-1.5">
-      {label && <label className="text-label text-text-primary">{label}</label>}
+      <div className="flex items-center justify-between gap-2">
+        {label ? (
+          <label className="text-field-label text-text-primary">{label}</label>
+        ) : (
+          <span />
+        )}
+        <div
+          role="radiogroup"
+          aria-label="기간 단위"
+          className="flex items-center gap-1 flex-shrink-0"
+        >
+          {GRANULARITIES.map((g) => (
+            <button
+              key={g.key}
+              type="button"
+              role="radio"
+              aria-checked={granularity === g.key}
+              onClick={() => handleGranularity(g.key)}
+              className={[
+                "px-2 py-0.5 rounded text-caption transition-colors",
+                granularity === g.key
+                  ? "bg-brand text-white"
+                  : "text-text-secondary hover:text-text-primary hover:bg-surface-secondary border border-border",
+              ].join(" ")}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="flex items-center gap-2">
         <DatePicker
-          mode="month"
+          mode={mode}
           value={start}
           onChange={(e) => setStart(e.target.value)}
           wrapperClassName="flex-1"
         />
         <span className="text-text-tertiary text-body flex-shrink-0">~</span>
         <DatePicker
-          mode="month"
+          mode={mode}
           value={isCurrent ? "" : end}
           onChange={(e) => setEnd(e.target.value)}
           disabled={isCurrent}

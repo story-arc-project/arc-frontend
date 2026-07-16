@@ -69,6 +69,9 @@ docs/superpowers/
 # playwright MCP scratch output
 .playwright-mcp/
 
+# ui-preview 스킬 임시 스펙·스크린샷 (로컬 전용)
+/e2e/preview/
+
 
 # graphify: 로컬 전용 지식그래프 산출물 — 전부 ignore.
 # graph.json(~3.4MB) 등은 브랜치마다 재생성되어 동시 작업 시 충돌이 잦으므로 커밋하지 않는다.

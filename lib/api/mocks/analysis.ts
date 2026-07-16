@@ -198,6 +198,7 @@ export const mockIndividualAnalysisResult: IndividualAnalysisResult = {
   id: "ind-1",
   status: "completed",
   experienceId: "exp-v2-1",
+  isBookmarked: false,
   result: {
     status: "completed",
     itemName: "LLM 활용 뉴스 감성 분석 기반 하이브리드 주가 예측 프로젝트",
@@ -339,6 +340,7 @@ export const mockComprehensiveList: AnalysisSnapshot[] = [
 export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
   id: "comp-1",
   status: "completed",
+  isBookmarked: false,
   userSchool: "한양대학교",
   userDepartment: "컴퓨터소프트웨어학부",
   briefSummary:
@@ -509,6 +511,7 @@ export const mockKeywordList: AnalysisSnapshot[] = [
 export const mockKeywordResult: KeywordAnalysisResult = {
   id: "kw-1",
   status: "completed",
+  isBookmarked: false,
   analysisDate: "2026-05-03T11:00:00Z",
   keywords: ["문제 해결", "자기주도성"],
   targetScenario: "AI/ML 분야 신입 엔지니어 또는 데이터 사이언티스트 지원",

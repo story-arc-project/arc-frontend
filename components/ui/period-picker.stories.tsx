@@ -76,3 +76,41 @@ function CurrentlyWorkingRender() {
 export const CurrentlyWorking: Story = {
   render: () => <CurrentlyWorkingRender />,
 };
+
+function DayGranularityRender() {
+  const [value, setValue] = useState<string>("2023.03.15 ~ 2024.01.20");
+
+  return (
+    <div className="flex flex-col gap-2">
+      <PeriodPicker
+        label="프로젝트 기간"
+        value={value}
+        onChange={(v: string) => setValue(v)}
+      />
+      <p className="text-caption text-text-tertiary">현재 값: {value}</p>
+    </div>
+  );
+}
+
+export const DayGranularity: Story = {
+  render: () => <DayGranularityRender />,
+};
+
+function DayGranularityCurrentRender() {
+  const [value, setValue] = useState<string>("2023.03.15 ~ 현재");
+
+  return (
+    <div className="flex flex-col gap-2">
+      <PeriodPicker
+        label="프로젝트 기간"
+        value={value}
+        onChange={(v: string) => setValue(v)}
+      />
+      <p className="text-caption text-text-tertiary">현재 값: {value}</p>
+    </div>
+  );
+}
+
+export const DayGranularityCurrent: Story = {
+  render: () => <DayGranularityCurrentRender />,
+};

@@ -2,8 +2,16 @@
 
 import Link from "next/link";
 import { motion, useInView } from "framer-motion";
+import { Coins } from "lucide-react";
 import { useRef } from "react";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
+import {
+  CREDIT_PACKAGES,
+  SIGNUP_GRANT_CREDITS,
+  creditCost,
+  creditRuns,
+  formatKrw,
+} from "@/lib/constants/credits";
 import LandingDemo from "./_components/LandingDemo";
 
 /* ── Shared animation ────────────────────────────────────── */
@@ -176,7 +184,7 @@ function Navbar() {
       <nav className="max-w-5xl mx-auto px-6 h-[72px] flex items-center justify-between">
         <div className="flex items-center gap-6">
           <span className="text-heading-3 font-bold tracking-widest text-text-primary">ARC</span>
-          <div className="hidden sm:flex items-center gap-7 text-body-large text-text-secondary font-medium">
+          <div className="hidden sm:flex items-center gap-7 text-body-lg text-text-secondary font-medium">
             <Link href="#features" className="hover:text-text-primary transition-colors">기능</Link>
             <Link href="#demo" className="hover:text-text-primary transition-colors">체험</Link>
             <Link href="#how" className="hover:text-text-primary transition-colors">사용법</Link>
@@ -192,8 +200,8 @@ function Navbar() {
           </Link>
           <Link
             href="/signup"
-            className="h-8 px-4 bg-gray-950 text-white text-[13px] font-semibold rounded-lg
-                       hover:bg-gray-800 transition-colors inline-flex items-center"
+            className="h-8 px-4 bg-brand text-white text-[13px] font-semibold rounded-lg
+                       hover:bg-brand-dark transition-colors inline-flex items-center"
           >
             시작하기
           </Link>
@@ -393,7 +401,7 @@ function Features() {
           desc="아카이빙된 경험을 바탕으로 AI가 이력서와 자기소개서 초안을 자동으로 완성합니다. 스펙 목록이 아닌, 당신이라는 사람의 서사로."
           points={[
             "지원 직무에 맞게 경험 자동 선별 및 재구성",
-            "Pro 플랜에서 워터마크 없이 PDF 다운로드",
+            "워터마크 없는 PDF 다운로드",
             "자소서 항목별 AI 초안 + 직접 편집",
           ]}
           mockup={<ExportMockup />}
@@ -443,96 +451,111 @@ function HowItWorks() {
 
 /* ── Pricing ─────────────────────────────────────────────── */
 function Pricing() {
+  // 대표 환산은 config 값에서 파생 — 안정 id로 조회(배열 순서 비의존).
+  // 차감량 자체는 노출하지 않고, "가입 크레딧으로 대표 작업 몇 편" 감만 준다.
+  const resumeRuns = creditRuns(SIGNUP_GRANT_CREDITS, creditCost("resume"));
+
   return (
     <section id="pricing" className="py-24 px-6 border-t border-border">
-      <div className="max-w-5xl mx-auto">
-        <Reveal className="mb-14">
+      <div className="max-w-4xl mx-auto">
+        <Reveal className="mb-10 max-w-2xl">
           <p className="text-[12px] font-bold text-brand uppercase tracking-widest mb-4">요금</p>
-          <h2 className="text-[26px] sm:text-[38px] font-bold tracking-[-0.02em] text-text-primary">
-            무료로 시작, 필요할 때 업그레이드
+          <h2 className="text-[26px] sm:text-[38px] font-bold tracking-[-0.02em] text-text-primary mb-4">
+            기록은 무료로, AI는 필요한 만큼만
           </h2>
+          <p className="text-[16px] leading-[1.7] text-text-secondary break-keep">
+            월 구독 없이, AI 분석과 문서 생성에만 크레딧을 써요. 기록과 보관은 언제나 무료입니다.
+          </p>
         </Reveal>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {/* Free */}
-          <Reveal delay={0.08}>
-            <div className="border border-border rounded-xl p-7 h-full flex flex-col">
-              <p className="text-[13px] font-bold text-text-secondary uppercase tracking-wide mb-6">Free</p>
-              <p className="text-[38px] font-bold text-text-primary mb-1">
-                ₩0
-              </p>
-              <p className="text-[14px] text-text-tertiary mb-8">영원히 무료</p>
-              <ul className="space-y-3 text-[14px] text-text-secondary flex-1">
-                {["아카이브 기록 무제한", "기본 키워드 분석", "이력서 초안 (워터마크 포함)"].map((f) => (
-                  <li key={f} className="flex items-center gap-2.5">
-                    <span className="text-success">✓</span>{f}
-                  </li>
-                ))}
-              </ul>
-              <Link
-                href="/signup"
-                className="mt-8 flex items-center justify-center h-11 rounded-lg border border-border
-                           text-text-primary font-semibold text-[14px] hover:bg-surface-tertiary transition-colors"
-              >
-                무료로 시작하기
-              </Link>
-            </div>
-          </Reveal>
+        {/* 가치 제안 3열 — 라벨 · 강조 값 · 보조 설명 */}
+        <Reveal delay={0.04} className="mb-10">
+          <ul className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            {[
+              { label: "월 구독료", value: "없음", desc: "필요한 만큼만 충전하세요" },
+              { label: "기록·보관", value: "무료", desc: "기록은 계속 보관돼요" },
+              {
+                label: "가입 혜택",
+                value: `${SIGNUP_GRANT_CREDITS} 크레딧`,
+                desc: "가입 즉시 지급해요",
+              },
+            ].map((item) => (
+              <li key={item.label} className="px-6 py-6 text-center sm:py-2">
+                <p className="text-[13px] font-medium tracking-wide text-text-secondary">
+                  {item.label}
+                </p>
+                <p className="mt-2 text-[30px] sm:text-[34px] font-bold tracking-[-0.02em] text-text-primary leading-none">
+                  {item.value}
+                </p>
+                <p className="mt-2.5 text-[13px] leading-[1.6] text-text-secondary">
+                  {item.desc}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </Reveal>
 
-          {/* Pro */}
-          <Reveal delay={0.14}>
-            <div className="border-2 border-brand rounded-xl p-7 h-full flex flex-col relative">
-              <div className="absolute -top-3 left-6">
-                <span className="bg-brand text-white text-[11px] font-bold px-3 py-1 rounded-full">
-                  추천
-                </span>
-              </div>
-              <p className="text-[13px] font-bold text-brand uppercase tracking-wide mb-6">Pro</p>
-              <p className="text-[38px] font-bold text-text-primary mb-1">₩9,900</p>
-              <p className="text-[14px] text-text-tertiary mb-8">월 / 언제든 해지</p>
-              <ul className="space-y-3 text-[14px] text-text-secondary flex-1">
-                {[
-                  "Free 플랜 모든 기능",
-                  "AI 대화형 경험 추출",
-                  "내러티브 엔진 (스토리라인 제안)",
-                  "워터마크 없는 PDF 출력",
-                  "진로 로드맵 설계",
-                ].map((f) => (
-                  <li key={f} className="flex items-center gap-2.5">
-                    <span className="text-brand">✓</span>{f}
-                  </li>
-                ))}
-              </ul>
-              <Link
-                href="/signup?plan=pro"
-                className="mt-8 flex items-center justify-center h-11 rounded-lg bg-brand
-                           text-white font-semibold text-[14px] hover:bg-brand-dark transition-colors"
-              >
-                Pro 시작하기
-              </Link>
+        {/* 히어로 — 무료 크레딧 강조(가장 강한 정보) */}
+        <Reveal delay={0.08}>
+          <div className="rounded-2xl border border-border bg-surface-secondary p-8 sm:p-10">
+            <div className="mb-4 inline-flex items-center justify-center w-11 h-11 rounded-full bg-surface-brand">
+              <Coins className="w-5 h-5 text-brand" aria-hidden />
             </div>
-          </Reveal>
+            <p className="text-[13px] font-semibold text-brand mb-3">먼저 무료로 시작해 보세요</p>
+            <p className="text-[24px] sm:text-[30px] font-bold tracking-[-0.02em] text-text-primary leading-[1.3]">
+              가입하면 {SIGNUP_GRANT_CREDITS}크레딧을 무료로 드려요
+            </p>
+            <p className="text-[15px] leading-[1.7] text-text-secondary mt-3">
+              이력서를 약 {resumeRuns}편 만들어 볼 수 있는 크레딧이에요.
+              결제 없이 AI 분석과 문서 생성을 바로 경험할 수 있습니다.
+            </p>
+            <Link
+              href="/signup"
+              className="mt-7 inline-flex items-center justify-center h-12 px-7 rounded-lg bg-brand
+                         text-white text-[15px] font-semibold hover:bg-brand-dark transition-colors"
+            >
+              {SIGNUP_GRANT_CREDITS}크레딧 받고 시작하기
+            </Link>
+          </div>
+        </Reveal>
 
-          {/* Team — coming soon */}
-          <Reveal delay={0.2}>
-            <div className="border border-border rounded-xl p-7 h-full flex flex-col opacity-60">
-              <p className="text-[13px] font-bold text-text-secondary uppercase tracking-wide mb-6">Team</p>
-              <p className="text-[38px] font-bold text-text-primary mb-1">곧 출시</p>
-              <p className="text-[14px] text-text-tertiary mb-8">단체 · 학교 · 기업</p>
-              <ul className="space-y-3 text-[14px] text-text-secondary flex-1">
-                {["Pro 플랜 모든 기능", "팀 단위 대시보드", "관리자 통합 분석"].map((f) => (
-                  <li key={f} className="flex items-center gap-2.5">
-                    <span className="text-gray-300">✓</span>{f}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-8 flex items-center justify-center h-11 rounded-lg bg-surface-tertiary
-                              text-text-disabled font-semibold text-[14px]">
-                준비 중
-              </div>
-            </div>
-          </Reveal>
-        </div>
+        {/* 충전 안내 — 단일 패널(카드 분리 아님) + 열 구분선 */}
+        <Reveal delay={0.16} className="mt-10">
+          <p className="text-[15px] leading-[1.7] text-text-secondary mb-5">
+            무료 크레딧을 모두 사용한 뒤에도, 필요한 만큼 충전할 수 있어요.
+          </p>
+          <ul className="grid grid-cols-3 divide-x divide-border rounded-2xl border border-border">
+            {CREDIT_PACKAGES.map((pkg) => (
+              <li
+                key={pkg.id}
+                className={`relative px-2 py-7 text-center sm:px-3 ${
+                  pkg.recommended
+                    ? "z-10 rounded-xl bg-surface-brand ring-2 ring-inset ring-brand"
+                    : ""
+                }`}
+              >
+                {pkg.recommended && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand px-2.5 py-0.5 text-[11px] font-semibold text-white">
+                    추천
+                  </span>
+                )}
+                <Coins className="mx-auto mb-2 h-5 w-5 text-brand" aria-hidden />
+                <p className="text-[20px] sm:text-[26px] font-bold tracking-[-0.02em] text-text-primary leading-none">
+                  {pkg.credits}
+                  <span className="ml-0.5 text-[13px] font-medium text-text-secondary">
+                    크레딧
+                  </span>
+                </p>
+                <p className="mt-3 text-[16px] sm:text-[19px] font-semibold text-text-primary">
+                  {formatKrw(pkg.price)}
+                </p>
+                <p className="mt-3 text-[12px] sm:text-[13px] leading-[1.5] text-text-secondary break-keep">
+                  이력서 약 {creditRuns(pkg.credits, creditCost("resume"))}개
+                </p>
+              </li>
+            ))}
+          </ul>
+        </Reveal>
       </div>
     </section>
   );
@@ -585,7 +608,8 @@ function Footer() {
         <div className="flex gap-6 text-[14px] text-text-secondary">
           <Link href="#features" className="hover:text-text-primary transition-colors">기능</Link>
           <Link href="#pricing" className="hover:text-text-primary transition-colors">요금</Link>
-          <Link href="/ui-test" className="hover:text-text-primary transition-colors">UI 테스트</Link>
+          <Link href="/privacy" className="hover:text-text-primary transition-colors">개인정보처리방침</Link>
+          <Link href="/terms" className="hover:text-text-primary transition-colors">이용약관</Link>
         </div>
       </div>
       <div className="max-w-5xl mx-auto mt-8 pt-6 border-t border-border">

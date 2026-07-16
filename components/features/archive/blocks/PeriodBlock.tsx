@@ -1,6 +1,7 @@
 "use client"
 
 import { PeriodPicker } from "@/components/ui/period-picker"
+import { formatPeriodString, parsePeriodString } from "@/lib/utils/period-format"
 import type { Block, PeriodBlockValue } from "@/types/archive"
 
 interface PeriodBlockProps {
@@ -9,27 +10,14 @@ interface PeriodBlockProps {
   onChange: (value: PeriodBlockValue) => void
 }
 
-function formatPeriodToString(val: PeriodBlockValue): string {
-  if (!val.start) return ""
-  const end = val.isCurrent ? "현재" : val.end
-  return end ? `${val.start} ~ ${end}` : val.start
-}
-
-function parsePeriodFromString(str: string): PeriodBlockValue {
-  const isCurrent = str.includes("현재")
-  const parts = str.split("~").map(s => s.trim())
-  return {
-    type: "period",
-    start: parts[0]?.replace(".", "-") ?? "",
-    end: isCurrent ? "" : (parts[1]?.replace(".", "-") ?? ""),
-    isCurrent,
-  }
+function toDisplay(val: PeriodBlockValue): string {
+  return formatPeriodString({ start: val.start, end: val.end, isCurrent: val.isCurrent })
 }
 
 export default function PeriodBlock({ block, readOnly, onChange }: PeriodBlockProps) {
   const val = block.value as PeriodBlockValue
   if (readOnly) {
-    const display = formatPeriodToString(val)
+    const display = toDisplay(val)
     return (
       <div className="flex flex-col gap-1 border-l-2 border-brand/30 pl-3.5">
         <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
@@ -42,8 +30,11 @@ export default function PeriodBlock({ block, readOnly, onChange }: PeriodBlockPr
   return (
     <PeriodPicker
       label={block.label}
-      value={formatPeriodToString(val)}
-      onChange={str => onChange(parsePeriodFromString(str))}
+      value={toDisplay(val)}
+      onChange={str => {
+        const { start, end, isCurrent } = parsePeriodString(str)
+        onChange({ type: "period", start, end, isCurrent })
+      }}
     />
   )
 }
