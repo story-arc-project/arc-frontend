@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import posthog from "posthog-js";
 
 import { isDemoMode } from "@/lib/demo/state";
-import { capture, identifyUser, resetUser } from "@/lib/analytics/client";
+import { capture, identifyUser, isIdentified, resetUser } from "@/lib/analytics/client";
 import { hashUserId } from "@/lib/analytics/hash";
 
 vi.mock("posthog-js", () => ({
@@ -12,6 +12,7 @@ vi.mock("posthog-js", () => ({
     capture: vi.fn(),
     identify: vi.fn(),
     reset: vi.fn(),
+    _isIdentified: vi.fn(() => false),
   },
 }));
 
@@ -24,12 +25,14 @@ const ph = posthog as unknown as {
   capture: ReturnType<typeof vi.fn>;
   identify: ReturnType<typeof vi.fn>;
   reset: ReturnType<typeof vi.fn>;
+  _isIdentified: ReturnType<typeof vi.fn>;
 };
 
 describe("analytics client — capture/identify/reset 가드(FRT-19)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     ph.__loaded = true;
+    ph._isIdentified.mockReturnValue(false);
     vi.mocked(isDemoMode).mockReturnValue(false);
   });
 
@@ -80,6 +83,20 @@ describe("analytics client — capture/identify/reset 가드(FRT-19)", () => {
   it("resetUser 는 활성 상태에서 posthog.reset 을 호출한다", () => {
     resetUser();
     expect(ph.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it("isIdentified 는 posthog 의 식별 여부를 그대로 전달한다(익명 방문자=false)", () => {
+    ph._isIdentified.mockReturnValue(false);
+    expect(isIdentified()).toBe(false);
+    ph._isIdentified.mockReturnValue(true);
+    expect(isIdentified()).toBe(true);
+  });
+
+  it("비활성 상태의 isIdentified 는 posthog 를 건드리지 않고 false", () => {
+    ph.__loaded = false;
+    ph._isIdentified.mockReturnValue(true);
+    expect(isIdentified()).toBe(false);
+    expect(ph._isIdentified).not.toHaveBeenCalled();
   });
 
   it("identify 해시 대기 중 resetUser 가 끼어들면 stale identify 를 취소한다", async () => {

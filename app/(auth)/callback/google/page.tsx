@@ -3,7 +3,13 @@
 import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api/client";
-import { capture, resetUser, clearFirstRecordMarker } from "@/lib/analytics";
+import {
+  capture,
+  resetUser,
+  clearFirstRecordMarker,
+  clearSignupMarker,
+  markSignupCompletedIfUnseen,
+} from "@/lib/analytics";
 import { clearOAuthState, readOAuthState } from "@/lib/auth/oauth-state";
 import { deleteAccountWithSocial } from "@/lib/api/auth-api";
 import { DELETE_INTENT } from "@/lib/auth/oauth-providers";
@@ -48,6 +54,7 @@ function GoogleCallbackHandler() {
           // 실행되지 않으므로, 삭제된 계정의 distinct_id 가 다음 사용자에 새지 않게 여기서 reset.
           resetUser();
           clearFirstRecordMarker();
+          clearSignupMarker();
           // 하드 내비게이션으로 AuthProvider 재마운트 → 컨텍스트 상태 정리.
           window.location.replace("/login?deleted=1");
         })
@@ -78,7 +85,11 @@ function GoogleCallbackHandler() {
         } else {
           // 미온보딩 소셜 로그인 = 신규 소셜 가입 완료 확정 지점(온보딩으로 진행).
           // onboarded=true 분기는 기존 사용자 재로그인이라 signup 으로 잡지 않는다.
-          capture("signup_completed", { method: "google" });
+          // 온보딩을 중도 이탈한 계정은 재로그인해도 onboarded=false 라 이 분기를 다시 타므로,
+          // 마커로 재발화를 막는다(백엔드에 '신규 계정' 신호가 없어 최선 노력).
+          if (markSignupCompletedIfUnseen()) {
+            capture("signup_completed", { method: "google" });
+          }
           router.push(`/signup?step=${FIRST_ONBOARDING_STEP}&email=${encodeURIComponent(result.data.user.email)}`);
         }
       })

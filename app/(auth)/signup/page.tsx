@@ -8,7 +8,7 @@ import { Button, DatePicker, Input, toast } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { api, ApiError } from "@/lib/api/client";
-import { capture } from "@/lib/analytics";
+import { capture, markSignupCompletedIfUnseen } from "@/lib/analytics";
 import { useAuth } from "@/hooks/useAuth";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { VerifyEmailResponse } from "@/types/auth";
@@ -175,7 +175,10 @@ function SignupForm() {
       } else {
         // 신규 가입(미온보딩)의 이메일 인증 완료 = 가입 완료 확정 지점.
         // onboarded=true 분기는 기존 사용자 재인증이라 signup 으로 잡지 않는다.
-        capture("signup_completed", { method: "email" });
+        // 온보딩 중도 이탈 후 재인증도 onboarded=false 로 이 분기를 다시 타므로 마커로 막는다.
+        if (markSignupCompletedIfUnseen()) {
+          capture("signup_completed", { method: "email" });
+        }
         goTo(FIRST_ONBOARDING_STEP);
       }
     } catch (e) {

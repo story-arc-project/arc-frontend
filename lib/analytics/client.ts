@@ -39,6 +39,15 @@ export async function identifyUser(emailSeed: string): Promise<void> {
   posthog.identify(distinctId);
 }
 
+// posthog 가 아직 특정 사용자로 식별된 상태인지. distinct_id 는 localStorage 에 남으므로
+// 새로고침·세션 만료로 앱 상태(ref)가 초기화돼도 이전 식별은 그대로 살아있다.
+// 한 번도 식별된 적 없는 익명 방문자는 false → 매 로드마다 reset 해 distinct_id 를
+// 갈아치우는 일(익명 퍼널 단절)을 막는다.
+export function isIdentified(): boolean {
+  if (!isActive()) return false;
+  return posthog._isIdentified();
+}
+
 // 로그아웃·세션 종료 시 익명 상태로 되돌려 다음 사용자와 세션이 섞이지 않게 한다.
 export function resetUser(): void {
   // 진행 중인 identify 를 먼저 무효화한다(비활성 상태여도 토큰은 올린다).
