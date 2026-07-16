@@ -25,7 +25,7 @@ import type {
   AnalysisStatus,
   BookmarkedSnapshot,
 } from "@/types/analysis";
-import type { ResumeListItem, ResumeVersion } from "@/types/resume";
+import type { ResumeVersion } from "@/types/resume";
 
 export type StubScenario = "data" | "empty";
 
@@ -365,21 +365,25 @@ export function keywordDetail(): ApiSuccessResponse<Record<string, unknown>> {
 }
 
 // ─── Resume (Export) ────────────────────────────────────────
-// 목록(`GET /export/resume`)의 data 는 **배열**이어야 한다 (export-api 가 Array 검사).
+// 목록(`GET /export/resume`)의 data 는 백엔드 계약대로 { count, contents } 래퍼다.
+
+export interface ResumeListEnvelope {
+  count: number;
+  contents: { id: string; created_at: string; updated_at: string }[];
+}
 
 export function resumeList(
   scenario: StubScenario,
-): ApiSuccessResponse<ResumeListItem[]> {
-  if (scenario === "empty") return success([]);
-  const items: ResumeListItem[] = [
+): ApiSuccessResponse<ResumeListEnvelope> {
+  if (scenario === "empty") return success({ count: 0, contents: [] });
+  const contents = [
     {
-      version_id: "resume-e2e-1",
-      language: "ko",
-      generated_at: "2026-03-10T09:00:00.000Z",
-      summary_preview: "협업과 기획 역량이 강점인 지원자입니다.",
+      id: "resume-e2e-1",
+      created_at: "2026-03-10T09:00:00.000Z",
+      updated_at: "2026-03-10T09:00:00.000Z",
     },
   ];
-  return success(items);
+  return success({ count: contents.length, contents });
 }
 
 const RESUME_VERSION: ResumeVersion = {

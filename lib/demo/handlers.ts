@@ -17,7 +17,7 @@ import type { AuthUser } from "@/types/auth";
 import type { Portfolio } from "@/types/portfolio";
 
 import { experienceStore, libraryStore, presetStore, resumeStore, portfolioStore } from "./store";
-import { seedResumeListItem, DEMO_RESUME_VERSION_ID } from "./seed";
+import { DEMO_RESUME_VERSION_ID } from "./seed";
 import { DEMO_PORTFOLIO_ID } from "./portfolio-seed";
 
 // 짧은 인공 지연으로 실제 API 호출처럼 보이게 한다.
@@ -160,9 +160,11 @@ export async function deleteAccountWithSocial(): Promise<void> {
 
 // ─── Resume (Export) ────────────────────────────────────────
 
-export async function createResume(params: { language: ResumeLanguage }): Promise<ResumeVersion> {
-  void params; // 데모는 언어 무관하게 동일 시드를 반환한다
-  return delay(resumeStore.get(), 600);
+export async function createResume(params: { language: ResumeLanguage }): Promise<void> {
+  void params; // 데모는 언어 무관하게 동일 시드를 쓴다
+  // 실제 서버처럼 id 를 돌려주지 않되, 목록에는 새 항목이 남아야 한다.
+  resumeStore.create();
+  await delay(undefined, 600);
 }
 
 export async function getResume(versionId: string): Promise<ResumeVersion> {
@@ -171,7 +173,7 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
 }
 
 export async function getResumeList(): Promise<ResumeListItem[]> {
-  return delay([seedResumeListItem]);
+  return delay(resumeStore.list());
 }
 
 export async function updateResume(versionId: string, data: ResumeVersion): Promise<ResumeVersion> {

@@ -186,36 +186,29 @@ export interface ResumeStore {
   remove(id: string): boolean;
 }
 
-// export-api.ts 의 sliceSummary 와 동일 규칙이지만 그 함수는 private 이라(앱 코드 0줄
-// 제약상 export 불가) 테스트 측에서 의도적으로 복제한다.
-function summaryPreview(version: ResumeVersion): string | null {
-  const summary = version.자기소개_요약;
-  if (!summary) return null;
-  const trimmed = summary.trim();
-  if (!trimmed) return null;
-  return trimmed.length > 50 ? `${trimmed.slice(0, 50)}…` : trimmed;
-}
-
 function createResumeStore(scenario: StubScenario): ResumeStore {
-  let items: ResumeListItem[] = clone(resumeList(scenario).data);
+  let items: ResumeListItem[] = resumeList(scenario).data.contents.map((c) => ({
+    version_id: c.id,
+    created_at: c.created_at,
+    updated_at: c.updated_at,
+  }));
   const seedVersion = resumeDetail().data;
   const versions = new Map<string, ResumeVersion>();
   let seq = 0;
 
-  // 목록 항목마다 상세 버전을 시드(언어·생성시각을 목록과 정합시킨다).
+  // 목록 항목마다 상세 버전을 시드(생성시각을 목록과 정합시킨다).
   for (const item of items) {
     const v = clone(seedVersion);
     v.version_id = item.version_id;
-    v.meta = { ...v.meta, language: item.language, generated_at: item.generated_at };
+    v.meta = { ...v.meta, generated_at: item.created_at };
     versions.set(item.version_id, v);
   }
 
   function toListItem(version: ResumeVersion): ResumeListItem {
     return {
       version_id: version.version_id ?? "",
-      language: version.meta.language,
-      generated_at: version.meta.generated_at,
-      summary_preview: summaryPreview(version),
+      created_at: version.meta.generated_at,
+      updated_at: version.meta.generated_at,
     };
   }
 

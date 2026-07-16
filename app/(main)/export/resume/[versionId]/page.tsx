@@ -163,9 +163,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
     if (!resume || regenerating) return;
     setRegenerating(true);
     try {
-      const created = await createResume({ language: resume.meta.language });
-      const newId = created.version_id;
-      if (!newId) throw new Error("version_id missing");
+      await createResume({ language: resume.meta.language });
       // '다시 만들기'도 새 레쥬메 버전이 만들어진 익스포트 완료다 — 모달 생성 경로만
       // 잡으면 퍼널이 이 사용자를 미완료로 센다(FRT-19).
       capture("export_completed", { export_type: "resume", language: resume.meta.language });
@@ -173,10 +171,12 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // 지우고, 현재 편집을 initial로 확정해 dirty를 해소한다 → 이어질 언마운트
       // cleanup이 dirtyRef=false를 보고 draft를 되살리지 않는다.
       // regenerating은 여기서 끄지 않는다: 이동이 실제로 끝나기 전 버튼이 재활성돼
-      // 두 번째 재생성이 겹치는 것을 막고, 새 버전 load()에서 리셋된다.
+      // 두 번째 재생성이 겹치는 것을 막는다.
       clearDraft(versionId);
       setInitial(resume);
-      router.push(`${basePath}/export/resume/${newId}`);
+      // 서버가 새 id 를 주지 않아 새 버전으로 바로 갈 수 없다 — 목록에서 확인한다.
+      toast("레쥬메를 다시 만들고 있어요. 완료되면 목록에 표시돼요", "info");
+      router.push(`${basePath}/export`);
     } catch {
       toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
       setRegenerating(false);
