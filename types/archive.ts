@@ -86,6 +86,13 @@ export interface BlockColumnDef {
 export interface BlockRow {
   id: string
   cells: Record<string, string | string[]>
+  /**
+   * intra-experience 블록 간 링크 (FRT-76). OutcomeList 활동 행이 '프로젝트로 연결'로
+   * 만든 프로젝트 행(다른 섹션 repeatable-cell 의 BlockRow)의 id 를 가리킨다.
+   * value(JSONB) 경로로 직렬화되므로 additive·무마이그레이션(컬럼이 아니라 row 필드라
+   * OutcomeList 단일컬럼 가드에 영향 없음). soft link — 대상 행이 사라지면 미연결로 복귀한다.
+   */
+  linkedProjectRowId?: string
 }
 
 export interface RepeatableCellBlockValue {
@@ -164,7 +171,25 @@ export interface Block {
    * 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다 — 로드 시 레지스트리에서 재공급된다.
    */
   variant?: 'outcome-list'
+  /**
+   * '프로젝트로 연결' 링크 설정 (FRT-76). OutcomeList 인스턴스별로 opt-in 한다 —
+   * 있으면 각 활동 행에 링크 버튼이 노출되고, 없으면 미노출(설정 가능한 on/off).
+   * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다
+   * (로드 시 레지스트리에서 재공급). 실제 참조는 `BlockRow.linkedProjectRowId` 에 저장된다.
+   */
+  linkConfig?: ProjectLinkConfig
   value: BlockValue
+}
+
+/**
+ * OutcomeList 활동 행 → 프로젝트 행 링크 설정 (FRT-76).
+ * `targetSectionId` 의 (첫) repeatable-cell 블록에 행을 만들고, 활동 텍스트를
+ * `titleColumnKey` 컬럼에 채운다. `label` 은 링크 버튼 문구(설정 가능, 기본 '프로젝트로 연결').
+ */
+export interface ProjectLinkConfig {
+  targetSectionId: string
+  titleColumnKey: string
+  label?: string
 }
 
 // ─── Experience Types (18) ──────────────────────────────────────

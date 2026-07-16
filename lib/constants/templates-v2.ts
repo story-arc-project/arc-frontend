@@ -224,10 +224,13 @@ function academicSocietyExtensions(): TemplateSection[] {
         createOutcomeList('단체 활동 / 성과', {
           placeholder: '예: 전국 케이스 경진대회 은상 수상',
           guide: '팀·학회가 함께 이뤄낸 것들을 떠올려보세요. 수상, 발간, 대회 참가 등 무엇이든 괜찮아요.',
+          // FRT-76: 활동 행 → 아래 '프로젝트 기록'(society-projects) 프로젝트 행으로 연결.
+          link: { targetSectionId: 'society-projects', titleColumnKey: 'name', label: '프로젝트로 연결' },
         }),
         createOutcomeList('개인 활동 / 성과', {
           placeholder: '예: 우수 부원 선정',
           guide: '내가 개인적으로 달성하거나 인정받은 것들을 적어주세요.',
+          link: { targetSectionId: 'society-projects', titleColumnKey: 'name', label: '프로젝트로 연결' },
         }),
         createOutcomeList('성장 / 변화', {
           itemLabel: '항목',
