@@ -150,11 +150,12 @@ export interface ResumeVersion {
   파싱경고: string[];
 }
 
+// 백엔드 GET /export/resume 의 contents 항목. 목록 응답에는 id 와 타임스탬프만 있고
+// 언어·요약은 결과(result) 안에 있어 단건 조회로만 얻을 수 있다.
 export interface ResumeListItem {
   version_id: string;
-  language: ResumeLanguage;
-  generated_at: string;
-  summary_preview: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Section emptiness helper ──────────────────────────────────────

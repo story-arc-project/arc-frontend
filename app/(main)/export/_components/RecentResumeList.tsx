@@ -12,35 +12,26 @@ import {
   ResumeMutationUnsupportedError,
 } from "@/lib/api/export-api";
 import { useBasePath } from "@/lib/utils/use-base-path";
+import { formatDateTime, formatRelativeTime } from "@/lib/utils/date-utils";
 import type { ResumeListItem } from "@/types/resume";
 
 interface RecentResumeListProps {
   onCreateClick: () => void;
+  reloadToken?: number;
 }
 
-const languageFlag: Record<string, string> = {
-  ko: "🇰🇷",
-  en: "🇺🇸",
-};
-
-function formatGeneratedAt(value: string): string {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
+// 서버가 제목을 주지 않아 만든 시각을 이름으로 쓴다.
+function resumeLabel(createdAt: string): string {
+  if (!createdAt) return "레쥬메";
+  const d = new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return "레쥬메";
+  return `${formatDateTime(createdAt)} 레쥬메`;
 }
 
-function shortenId(versionId: string): string {
-  if (!versionId) return "";
-  return versionId.length > 8 ? versionId.slice(0, 8) : versionId;
-}
-
-export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
+export function RecentResumeList({
+  onCreateClick,
+  reloadToken = 0,
+}: RecentResumeListProps) {
   const basePath = useBasePath();
   const [items, setItems] = useState<ResumeListItem[] | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -60,7 +51,7 @@ export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, reloadToken]);
 
   const handleDelete = async (versionId: string) => {
     if (!window.confirm("이 레쥬메를 삭제할까요?")) return;
@@ -144,21 +135,15 @@ export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
               className="flex min-w-0 flex-1 items-center gap-3"
             >
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-body-sm text-text-primary font-medium truncate">
-                    레쥬메 #{shortenId(item.version_id)}
-                  </span>
-                  <span className="text-caption text-text-tertiary shrink-0">
-                    {languageFlag[item.language] ?? ""}
-                  </span>
-                </div>
-                <p className="text-caption text-text-secondary truncate">
-                  {item.summary_preview ?? "요약 미리보기가 없어요"}
-                </p>
+                <span className="text-body-sm text-text-primary font-medium truncate block">
+                  {resumeLabel(item.created_at)}
+                </span>
               </div>
-              <span className="text-caption text-text-tertiary shrink-0 hidden sm:inline">
-                {formatGeneratedAt(item.generated_at)}
-              </span>
+              {item.created_at && (
+                <span className="text-caption text-text-tertiary shrink-0 hidden sm:inline">
+                  {formatRelativeTime(item.created_at)}
+                </span>
+              )}
             </Link>
             {deleteSupported && (
               <button

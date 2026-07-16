@@ -10,17 +10,18 @@ import * as demo from "@/lib/demo/handlers";
 
 // ─── Resume endpoints ──────────────────────────────────────────────
 
+// 생성은 큐잉만 한다 — 서버는 생성된 id 를 돌려주지 않으므로 반환값이 없다.
+// 완료 여부는 목록을 다시 조회해 확인한다.
 export async function createResume(
   params: { language: ResumeLanguage },
   options?: { signal?: AbortSignal },
-): Promise<ResumeVersion> {
+): Promise<void> {
   if (isDemoMode()) return demo.createResume(params);
-  const res = await api.post<ApiSuccessResponse<ResumeVersion>>(
+  await api.post<ApiSuccessResponse<unknown>>(
     "/export/resume",
     { language: params.language },
     options,
   );
-  return res.data;
 }
 
 export async function getResume(versionId: string): Promise<ResumeVersion> {
@@ -31,54 +32,39 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
   return res.data;
 }
 
-// Accept both the slim list shape and the full-payload shape. When the
-// backend returns full ResumeVersion objects, extract the fields we need.
+// 서버 응답: data = { count, contents: [{ id, created_at, updated_at }] }
 export async function getResumeList(): Promise<ResumeListItem[]> {
   if (isDemoMode()) return demo.getResumeList();
   const res = await api.get<ApiSuccessResponse<unknown>>("/export/resume");
-  const data = res.data;
+  const contents = readContents(res.data);
 
-  if (!Array.isArray(data)) return [];
-
-  return data.map((item) => toListItem(item)).filter((item) => item.version_id !== "");
+  return contents
+    .map((item) => toListItem(item))
+    .filter((item): item is ResumeListItem => item !== null);
 }
 
-function toListItem(raw: unknown): ResumeListItem {
-  if (raw === null || typeof raw !== "object") {
-    return { version_id: "", language: "ko", generated_at: "", summary_preview: null };
-  }
+// 래퍼가 벗겨진 배열로 오는 경우까지 받아둔다.
+function readContents(data: unknown): unknown[] {
+  if (Array.isArray(data)) return data;
+  if (data === null || typeof data !== "object") return [];
+  const contents = (data as Record<string, unknown>).contents;
+  return Array.isArray(contents) ? contents : [];
+}
+
+function toListItem(raw: unknown): ResumeListItem | null {
+  if (raw === null || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
 
-  const versionId = typeof r.version_id === "string" ? r.version_id : "";
-  const metaRaw = (r.meta as Record<string, unknown> | undefined) ?? {};
+  const id = typeof r.id === "string" ? r.id : "";
+  if (id === "") return null;
 
-  const rawLang =
-    (r.language as string | undefined) ??
-    (metaRaw.language as string | undefined);
-  const language: ResumeLanguage = rawLang === "en" ? "en" : "ko";
-
-  const generatedAt =
-    (r.generated_at as string | undefined) ??
-    (metaRaw.generated_at as string | undefined) ??
-    "";
-
-  const summaryPreview =
-    (typeof r.summary_preview === "string" ? r.summary_preview : undefined) ??
-    sliceSummary(typeof r.자기소개_요약 === "string" ? r.자기소개_요약 : null);
+  const createdAt = typeof r.created_at === "string" ? r.created_at : "";
 
   return {
-    version_id: versionId,
-    language,
-    generated_at: generatedAt,
-    summary_preview: summaryPreview ?? null,
+    version_id: id,
+    created_at: createdAt,
+    updated_at: typeof r.updated_at === "string" ? r.updated_at : createdAt,
   };
-}
-
-function sliceSummary(summary: string | null | undefined): string | null {
-  if (!summary) return null;
-  const trimmed = summary.trim();
-  if (!trimmed) return null;
-  return trimmed.length > 50 ? `${trimmed.slice(0, 50)}…` : trimmed;
 }
 
 // Server-side PATCH / DELETE are pending. Callers can catch this error and

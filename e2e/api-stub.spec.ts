@@ -3,10 +3,11 @@ import { expect, test, type Page } from "@playwright/test";
 import type { ApiSuccessResponse } from "@/types/api";
 import type { ExperienceListData } from "@/types/experience";
 import type { AnalysisSnapshot, AnalysisStatus, BookmarkedSnapshot } from "@/types/analysis";
-import type { ResumeListItem, ResumeVersion } from "@/types/resume";
+import type { ResumeVersion } from "@/types/resume";
 import type { LibraryDTO } from "@/lib/utils/library-mapper";
 import type { PresetDTO } from "@/lib/utils/preset-mapper";
 
+import type { ResumeListEnvelope } from "./fixtures/api-data";
 import { STUB_API_URL, stubApi } from "./fixtures/stub-api";
 
 /**
@@ -133,10 +134,12 @@ test.describe("FRT-28 API 스텁 fixtures", () => {
     expect(bookmarks).toHaveLength(1);
     expect(bookmarks[0].bookmarkedAt).toBeTruthy();
 
-    // Resume list (data 는 배열) + detail
-    const resumeListData = envelope<ResumeListItem[]>(results["/export/resume"]).data;
-    expect(Array.isArray(resumeListData)).toBe(true);
-    expect(resumeListData).toHaveLength(1);
+    // Resume list (data 는 { count, contents } 래퍼) + detail
+    const resumeListData = envelope<ResumeListEnvelope>(results["/export/resume"]).data;
+    expect(resumeListData.count).toBe(1);
+    expect(resumeListData.contents).toHaveLength(1);
+    expect(resumeListData.contents[0].id).toBeTruthy();
+    expect(resumeListData.contents[0].created_at).toBeTruthy();
 
     const resumeDetailData = envelope<ResumeVersion>(
       results["/export/resume/resume-e2e-1"],
@@ -175,7 +178,7 @@ test.describe("FRT-28 API 스텁 fixtures", () => {
     expect(envelope<AnalysisSnapshot[]>(results["/analysis/comprehensive"]).data).toHaveLength(0);
     expect(envelope<AnalysisSnapshot[]>(results["/analysis/keyword"]).data).toHaveLength(0);
     expect(envelope<BookmarkedSnapshot[]>(results["/analysis/bookmarks"]).data).toHaveLength(0);
-    expect(envelope<ResumeListItem[]>(results["/export/resume"]).data).toHaveLength(0);
+    expect(envelope<ResumeListEnvelope>(results["/export/resume"]).data.contents).toHaveLength(0);
   });
 
   test("미정의 엔드포인트는 네트워크 누수 없이 404로 응답한다", async ({ page }) => {

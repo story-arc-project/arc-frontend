@@ -771,12 +771,8 @@ export const seedResume: ResumeVersion = {
 
 export const seedResumeListItem = {
   version_id: DEMO_RESUME_ID,
-  language: "ko" as const,
-  generated_at: seedResume.meta.generated_at,
-  summary_preview:
-    seedResume.자기소개_요약 && seedResume.자기소개_요약.length > 50
-      ? `${seedResume.자기소개_요약.slice(0, 50)}…`
-      : seedResume.자기소개_요약,
+  created_at: seedResume.meta.generated_at,
+  updated_at: seedResume.meta.generated_at,
 };
 
 export const DEMO_RESUME_VERSION_ID = DEMO_RESUME_ID;

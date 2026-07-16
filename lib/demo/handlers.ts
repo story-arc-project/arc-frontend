@@ -160,9 +160,9 @@ export async function deleteAccountWithSocial(): Promise<void> {
 
 // ─── Resume (Export) ────────────────────────────────────────
 
-export async function createResume(params: { language: ResumeLanguage }): Promise<ResumeVersion> {
-  void params; // 데모는 언어 무관하게 동일 시드를 반환한다
-  return delay(resumeStore.get(), 600);
+export async function createResume(params: { language: ResumeLanguage }): Promise<void> {
+  void params; // 데모는 언어 무관하게 동일 시드를 쓴다
+  await delay(undefined, 600);
 }
 
 export async function getResume(versionId: string): Promise<ResumeVersion> {
