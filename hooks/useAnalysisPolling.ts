@@ -6,6 +6,7 @@ import {
   getComprehensiveList,
   getKeywordList,
 } from "@/lib/api/analysis-api";
+import { capture } from "@/lib/analytics";
 import type { AnalysisSnapshot, AnalysisType } from "@/types/analysis";
 
 const MAX_RETRIES = 20;
@@ -78,6 +79,9 @@ export default function useAnalysisPolling({
             const status = snapshot.status;
             if (status === "completed") {
               setPolling(false);
+              // 분석 실행 완료 확정 지점(FRT-19). type 은 comprehensive|keyword.
+              // 개별(individual) 분석은 자동 생성이라 이 폴링 대상이 아니다.
+              capture("analysis_completed", { analysis_type: type });
               router.push(`${redirectPath}/${analysisId}`);
               return;
             }

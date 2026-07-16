@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Dialog, Button, Input } from "@/components/ui";
 import { ApiError } from "@/lib/api/client";
 import { deleteAccountWithPassword } from "@/lib/api/auth-api";
+import { resetUser } from "@/lib/analytics";
 import {
   PROVIDER_LABELS,
   pickReauthProvider,
@@ -45,6 +46,11 @@ export function DeleteAccountDialog({
     setError(null);
     try {
       await deleteAccountWithPassword(password);
+      // 탈퇴 완료 — 분석 식별을 익명으로 되돌린다(하드 내비 전이라 AuthContext effect 미실행,
+      // 삭제된 계정의 distinct_id 가 다음 사용자에 새지 않게 여기서 reset).
+      resetUser();
+      // 1회성 마커는 사용자별 키라 여기서 비우지 않는다 — 이 기기의 다음 사용자는
+      // 자기 키로 정상 발화한다.
       // 성공: 하드 내비게이션으로 세션/컨텍스트 정리 후 로그인으로 이동.
       window.location.assign("/login?deleted=1");
     } catch (e) {

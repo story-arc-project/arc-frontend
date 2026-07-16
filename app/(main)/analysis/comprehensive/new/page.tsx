@@ -11,6 +11,7 @@ import {
   getSelectableExperiences,
   createComprehensiveAnalysis,
 } from "@/lib/api/analysis-api";
+import { capture } from "@/lib/analytics";
 import useAnalysisPolling from "@/hooks/useAnalysisPolling";
 import ExperienceSelector from "@/components/features/analysis/ExperienceSelector";
 
@@ -63,6 +64,8 @@ export default function ComprehensiveNewPage() {
 
   const startAnalysis = useCallback(async () => {
     setPhase("loading");
+    // 실행 직전 최종 선택 = "어떤 조합으로 분석을 시도했나"(FRT-19). 완료 못 가도 drop-off 관측.
+    capture("analysis_target_selected", { analysis_type: "comprehensive", count: selected.length });
     try {
       const { analysisId: id } = await createComprehensiveAnalysis(selected);
       if (id) {

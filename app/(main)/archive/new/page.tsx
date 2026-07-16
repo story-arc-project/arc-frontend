@@ -3,8 +3,10 @@
 import { useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 
-import { createExperience } from "@/lib/api/experience-api"
+import { createExperience, getExperiences } from "@/lib/api/experience-api"
 import { toSavePayload } from "@/lib/utils/experience-mapper"
+import { capture, markFirstRecordIfUnseen } from "@/lib/analytics"
+import { useAuth } from "@/hooks/useAuth"
 import { useBasePath } from "@/lib/utils/use-base-path"
 import { safeReturnTo } from "@/lib/utils/archive-context"
 import ExperienceFormV2, {
@@ -17,6 +19,8 @@ export default function ArchiveNewPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const basePath = useBasePath()
+  // 첫 기록 마커를 사용자별로 스코프하기 위한 시드(원본 이메일은 저장·전송되지 않는다).
+  const { user } = useAuth()
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -32,10 +36,22 @@ export default function ArchiveNewPage() {
   async function handleSave(exp: ExperienceV2) {
     setSaving(true)
     try {
-      const savedId = await createExperience(toSavePayload(exp))
+      const payload = toSavePayload(exp)
+      const savedId = await createExperience(payload)
       setError(null)
       // 저장 성공 — 미저장 플래그를 내려 beforeunload 경고 없이 목록으로 복귀한다.
       setHasUnsaved(false)
+      // 기록 생성 완료(FRT-19). status 로 draft·complete 를 구분한다.
+      capture("record_created", { experience_type: payload.type, status: exp.status })
+      // 최초 1회 판정: 서버 count===1 을 1차 근거로 하되, 전체 삭제 후 재생성 재발화를
+      // 디바이스 마커로 막는다(markFirstRecordIfUnseen). 네비게이션을 막지 않도록 fire-and-forget.
+      void getExperiences()
+        .then(async (list) => {
+          if (await markFirstRecordIfUnseen(list.count, user?.account.email ?? "")) {
+            capture("first_record_created", { experience_type: payload.type })
+          }
+        })
+        .catch(() => {})
       // 새 레코드는 방금 만든 것이므로 항상 전체 라이브러리로 복귀해 확실히 보이게 한다.
       // 수동 라이브러리 컨텍스트를 복원하면(lib=...) 새 레코드는 그 라이브러리 멤버가
       // 아니라 프리뷰를 닫는 순간 목록에서 사라진다(Codex P2). 복귀 시 ?id 로 미리보기만 도킹.

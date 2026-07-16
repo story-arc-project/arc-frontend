@@ -14,6 +14,7 @@ import {
   ResumeMutationUnsupportedError,
   updateResume,
 } from "@/lib/api/export-api";
+import { capture } from "@/lib/analytics";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { isEmptySection, type ResumeVersion } from "@/types/resume";
 import { DraftRestoreBanner } from "./_components/DraftRestoreBanner";
@@ -165,6 +166,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const created = await createResume({ language: resume.meta.language });
       const newId = created.version_id;
       if (!newId) throw new Error("version_id missing");
+      // '다시 만들기'도 새 레쥬메 버전이 만들어진 익스포트 완료다 — 모달 생성 경로만
+      // 잡으면 퍼널이 이 사용자를 미완료로 센다(FRT-19).
+      capture("export_completed", { export_type: "resume", language: resume.meta.language });
       // 재생성 확정 — dialog 약속대로 현재 편집/임시저장을 폐기한다. 기존 draft를
       // 지우고, 현재 편집을 initial로 확정해 dirty를 해소한다 → 이어질 언마운트
       // cleanup이 dirtyRef=false를 보고 draft를 되살리지 않는다.

@@ -11,6 +11,7 @@ import {
   getKeywordSuggestions,
   createKeywordAnalysis,
 } from "@/lib/api/analysis-api";
+import { capture } from "@/lib/analytics";
 import useAnalysisPolling from "@/hooks/useAnalysisPolling";
 import KeywordSelector from "@/components/features/analysis/KeywordSelector";
 
@@ -61,6 +62,13 @@ export default function KeywordNewPage() {
 
   const startAnalysis = useCallback(async () => {
     setPhase("loading");
+    // 실행 직전 최종 선택 = "어떤 키워드로 적합도를 확인하려 하나"(FRT-19). category 는 4분류.
+    const keywordCategories = Array.from(new Set(selectedKeywords.map((k) => k.category)));
+    capture("analysis_target_selected", {
+      analysis_type: "keyword",
+      count: selectedKeywords.length,
+      keyword_categories: keywordCategories,
+    });
     try {
       const labels = selectedKeywords.map((k) => k.label);
       const { analysisId: id } = await createKeywordAnalysis(labels);

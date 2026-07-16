@@ -12,6 +12,7 @@ import RightPanelV2 from "@/components/features/archive/RightPanelV2"
 import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
 import { useExperiences } from "@/hooks/useExperiences"
 import { useLibraries } from "@/hooks/useLibraries"
+import { capture } from "@/lib/analytics"
 import { toExperienceV2 } from "@/lib/utils/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
@@ -281,6 +282,9 @@ export default function ArchivePage() {
     async (exp: ExperienceV2) => {
       try {
         const newId = await apiDuplicate(exp.id)
+        // 복제도 새 기록이 만들어지는 생성 경로다 — 입력 폼만 계측하면 등뼈가 이 사용자를
+        // 미기록으로 센다(FRT-19). 서버는 원본을 그대로 복사하므로 유형·상태는 원본 값.
+        capture("record_created", { experience_type: exp.typeId, status: exp.status })
         setExperienceActionError(null)
         setSelectedId(newId)
         setMobileView("panel")
