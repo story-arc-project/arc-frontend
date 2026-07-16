@@ -4,7 +4,7 @@
 import type { Experience, ExperienceSavePayload, ExperienceUpdatePayload } from "@/types/experience";
 import type { LibraryDTO, LibraryUpsertPayload } from "@/lib/utils/library-mapper";
 import type { PresetDTO, PresetUpsertPayload } from "@/lib/utils/preset-mapper";
-import type { ResumeVersion } from "@/types/resume";
+import type { ResumeListItem, ResumeVersion } from "@/types/resume";
 import type { Portfolio } from "@/types/portfolio";
 
 import { buildPortfolio } from "@/lib/portfolio/build-portfolio";
@@ -13,6 +13,7 @@ import {
   seedLibraries,
   seedLibraryMembership,
   seedResume,
+  seedResumeListItem,
 } from "./seed";
 import { DEMO_PORTFOLIO_ID, DEMO_PORTFOLIO_PROFILE } from "./portfolio-seed";
 
@@ -24,6 +25,7 @@ let experiences: Experience[] = clone(seedExperiences);
 let libraries: LibraryDTO[] = clone(seedLibraries);
 const libraryMembership: Record<string, string[]> = clone(seedLibraryMembership);
 const resume: ResumeVersion = clone(seedResume);
+let resumeList: ResumeListItem[] = [clone(seedResumeListItem)];
 
 let nextId = 1000;
 
@@ -224,11 +226,21 @@ export const presetStore = {
   },
 };
 
-// ─── Resume (read-only) ─────────────────────────────────────
+// ─── Resume ─────────────────────────────────────────────────
 
 export const resumeStore = {
   get(): ResumeVersion {
     return clone(resume);
+  },
+  // 목록은 최신순. 실제 API 와 달리 결과 내용은 시드 하나를 공유한다.
+  list(): ResumeListItem[] {
+    return clone(resumeList);
+  },
+  create(): string {
+    const newId = genId("demo-resume");
+    const now = nowIso();
+    resumeList = [{ version_id: newId, created_at: now, updated_at: now }, ...resumeList];
+    return newId;
   },
 };
 
