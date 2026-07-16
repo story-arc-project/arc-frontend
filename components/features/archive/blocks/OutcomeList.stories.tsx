@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
 import { expect, userEvent, within } from "storybook/test"
-import { useState } from "react"
+import { useRef, useState } from "react"
 
 import OutcomeList from "./OutcomeList"
+import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
 import type { Block, RepeatableCellBlockValue } from "@/types/archive"
 
 const meta: Meta<typeof OutcomeList> = {
@@ -62,6 +63,60 @@ export const WithItems: Story = {
 /** 상세뷰(readOnly) — 개조식 불릿 목록으로 렌더. */
 export const ReadOnly: Story = {
   render: () => <Interactive initial={["전국 케이스 경진대회 은상 수상", "학회 저널 2호 공동 발간"]} readOnly />,
+}
+
+// ── FRT-76: '프로젝트로 연결' 링크 변형 ──────────────────────────────
+function makeLinkBlock(items: string[]): Block {
+  const base = makeBlock(items)
+  return {
+    ...base,
+    linkConfig: { targetSectionId: "society-projects", titleColumnKey: "name", label: "프로젝트로 연결" },
+  }
+}
+
+/** 인메모리 프로젝트 목록을 흉내내는 provider — 연결하면 목록에 쌓여 '연결됨' 칩이 뜬다. */
+function InteractiveWithLink({ initial }: { initial: string[] }) {
+  const [block, setBlock] = useState<Block>(() => makeLinkBlock(initial))
+  const projectsRef = useRef<Map<string, string>>(new Map())
+  const [, force] = useState(0)
+
+  const ctx: ProjectLinkContextValue = {
+    createProjectRow: (_section, _col, text) => {
+      const id = `proj-${projectsRef.current.size + 1}`
+      projectsRef.current.set(id, text)
+      force((n) => n + 1)
+      return id
+    },
+    getProjectRow: (_section, id) => {
+      const title = projectsRef.current.get(id)
+      return title === undefined ? null : { title }
+    },
+    scrollToProjectRow: () => {},
+  }
+
+  return (
+    <ProjectLinkProvider value={ctx}>
+      <OutcomeList
+        block={block}
+        onChange={(v: RepeatableCellBlockValue) => setBlock((b) => ({ ...b, value: v }))}
+      />
+    </ProjectLinkProvider>
+  )
+}
+
+/** 링크 opt-in — 각 행 옆에 '프로젝트로 연결' 버튼이 붙는다. */
+export const WithProjectLink: Story = {
+  render: () => <InteractiveWithLink initial={["전국 케이스 경진대회 은상 수상"]} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // 링크 버튼 클릭 → '연결됨' 칩으로 전환
+    await userEvent.click(canvas.getByRole("button", { name: "프로젝트로 연결" }))
+    expect(canvas.getByRole("button", { name: /연결됨/ })).toBeInTheDocument()
+    expect(canvas.queryByRole("button", { name: "프로젝트로 연결" })).toBeNull()
+    // 해제 → 다시 링크 버튼
+    await userEvent.click(canvas.getByRole("button", { name: "프로젝트 연결 해제" }))
+    expect(canvas.getByRole("button", { name: "프로젝트로 연결" })).toBeInTheDocument()
+  },
 }
 
 /** 추가 → 타이핑 → Enter로 다음 행 → 삭제 인터랙션. */

@@ -209,7 +209,8 @@ function RowEditor({
   onRemove: () => void
 }) {
   return (
-    <div className="bg-surface-secondary border border-border rounded-lg p-4">
+    // data-row-id: FRT-76 '프로젝트로 연결' 스크롤 앵커(전역 유일 row.id 로 scrollIntoView).
+    <div data-row-id={row.id} className="scroll-mt-20 bg-surface-secondary border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <span className="text-caption text-text-tertiary">#{index + 1}</span>
         <button
