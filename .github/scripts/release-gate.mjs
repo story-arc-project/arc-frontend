@@ -89,9 +89,16 @@ async function slack(method, params, post = false) {
   return data;
 }
 
-// 상세 릴리스 노트는 주간 Claude 루틴이 PR 본문에 써둔다 — 이 게이트는 그걸 절대 다시 쓰지 않는다.
-// 여기서 만드는 건 "새 커밋이 붙었으니 다시 봐달라"는 기계적 재요청뿐이다.
-// 호출 경로: 마커 부재 복구 · dev head 변경 재QA · 승인 메시지 소실 복구.
+// 주간 루틴이 PR 본문에 <!-- slack-summary … --> 로 남긴 Slack 문구를 꺼낸다.
+// 사람이 읽을 문구는 루틴(Claude)이 쓰고 게이트는 전달만 한다 — 여기서 요약을 다시 짓지 않는다.
+function extractSlackSummary(prBody) {
+  return (prBody || '').match(/<!--\s*slack-summary\s*([\s\S]*?)-->/)?.[1]?.trim() || null;
+}
+
+// 승인 요청을 게시하고 PR 본문의 상태 마커를 갱신한다.
+// 첫 게시  = 루틴이 써둔 slack-summary를 그대로 전달.
+// 재QA(dev head 변경) = 그 문구는 이미 스테일이므로 쓰지 않고, 짧은 기계적 재요청만 보낸다.
+// 호출 경로: 마커 부재(루틴이 연 새 PR·게시 실패 복구) · dev head 변경 재QA · 승인 메시지 소실 복구.
 async function postAndRecord(number, devSha, prevBody, oldTs) {
   if (oldTs) {
     try {
@@ -102,14 +109,16 @@ async function postAndRecord(number, devSha, prevBody, oldTs) {
     } catch (e) { log(`이전 메시지 만료 처리 실패(무시): ${e.message}`); }
   }
 
-  const text =
-    `:rocket: *dev → main 배포 검토* (재요청)\n<!channel>\n\n` +
-    `dev에 새 커밋이 반영돼 다시 확인이 필요해요.\n` +
+  const summary = extractSlackSummary(prevBody);
+  const text = (!oldTs && summary) ? summary : (
+    `:rocket: *dev → main 배포 검토*${oldTs ? ' (재요청)' : ''}\n<!channel>\n\n` +
+    (oldTs ? 'dev에 새 커밋이 반영돼 다시 확인이 필요해요.\n' : '') +
     `<${STAGING_URL}|dev.story-arc.org> 확인 후 *이 메시지에* :white_check_mark: 부탁드려요.\n\n` +
     `*승인 규칙* — ${ROSTER_N}명 중 ${QUORUM}명 :white_check_mark:` +
     (OVERRIDE_IDS.length ? ` (또는 48시간 경과 시 ${OVERRIDE_NAMES} 승인)` : '') +
     ` + CI 통과 → 자동 배포\n` +
-    `변경 내용은 <https://github.com/${REPO}/pull/${number}|PR #${number}>를 확인해주세요`;
+    `변경 내용은 <https://github.com/${REPO}/pull/${number}|PR #${number}>를 확인해주세요`
+  );
 
   const posted = await slack('chat.postMessage', { channel: CHANNEL, text, unfurl_links: false, link_names: true }, true);
   const postedAt = new Date().toISOString();
@@ -119,7 +128,7 @@ async function postAndRecord(number, devSha, prevBody, oldTs) {
     .trim();
   gh(['pr', 'edit', number, '--repo', REPO, '--body',
     `<!-- release-gate -->\n<!-- slack-ts: ${posted.ts} -->\n<!-- dev-sha: ${devSha} -->\n<!-- posted-at: ${postedAt} -->\n\n${notes}`]);
-  log(`Slack 승인 요청 재게시(ts=${posted.ts}, dev=${devSha.slice(0, 7)}). 다음 실행에서 반응·CI 평가.`);
+  log(`Slack 승인 요청 게시(ts=${posted.ts}, dev=${devSha.slice(0, 7)}, 문구=${(!oldTs && summary) ? '루틴 작성' : '기본 템플릿'}). 다음 실행에서 반응·CI 평가.`);
   return posted.ts;
 }
 
@@ -182,11 +191,12 @@ const devShaMarker = body.match(/<!--\s*dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1];
 const postedAtMarker = body.match(/<!--\s*posted-at:\s*(\S+)\s*-->/)?.[1];
 const remindedBefore = /<!--\s*reminded-24h\s*-->/.test(body);
 
-// 마커 부재(이전 게시 실패 복구) 또는 dev head 변경(승인 후 새 커밋 → 재QA 필요) 시 승인 요청 재게시.
+// 마커 부재(주간 루틴이 막 연 PR · 이전 게시 실패 복구) 또는
+// dev head 변경(승인 후 새 커밋 → 재QA 필요) 시 승인 요청을 게시한다.
 if (!ts || !devShaMarker || devShaMarker !== currentDevSha) {
-  const why = !ts ? '상태 마커 없음(게시 복구)' : `dev head 변경(${(devShaMarker || '?').slice(0, 7)}→${currentDevSha.slice(0, 7)}, 재QA 필요)`;
-  if (DRY_RUN) { log(`[DRY_RUN] 승인 요청 재게시 필요: ${why}`); process.exit(0); }
-  log(`승인 요청 재게시: ${why}`);
+  const why = !ts ? '상태 마커 없음(신규 PR 게시 또는 복구)' : `dev head 변경(${(devShaMarker || '?').slice(0, 7)}→${currentDevSha.slice(0, 7)}, 재QA 필요)`;
+  if (DRY_RUN) { log(`[DRY_RUN] 승인 요청 게시 필요: ${why}`); process.exit(0); }
+  log(`승인 요청 게시: ${why}`);
   await postAndRecord(number, currentDevSha, body, ts);
   process.exit(0);
 }
