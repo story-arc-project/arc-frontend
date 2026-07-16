@@ -1,0 +1,52 @@
+// FRT-19: 핵심 퍼널 이벤트 이름·페이로드 타입의 단일 출처.
+//
+// autocapture 를 끄고(FRT-18) 명시 이벤트만 전송해 무료 티어의 이벤트 예산을
+// "흐름 파악"에 집중한다. 완료 사실 자체는 DB(user·experience·analysis 행)에도 남지만,
+// 가입→온보딩→기록→분석→export 를 PostHog 안에서 하나의 퍼널로 잇기 위해 완료 등뼈를
+// 이벤트로 emit 한다. 단순 총량 집계는 DB(고객정보 API 등)로 넘겨 중복 계측을 피한다.
+
+export type SignupMethod = "email" | "google";
+// 개별(individual) 분석은 기록 저장 시 백엔드가 자동 생성 — 프론트에 "실행 완료" 관측
+// 지점이 없어 완료 이벤트에서 제외한다(후속 FRT-107).
+export type AnalysisKind = "comprehensive" | "keyword";
+export type ExportType = "resume";
+export type RecordStatus = "complete" | "draft";
+
+export const ANALYTICS_EVENTS = {
+  // ── 직전 선택 (drop-off 관측: "선택했지만 완료 안 함") ─────────────
+  signupMethodSelected: "signup_method_selected",
+  archiveTypeSelected: "archive_type_selected",
+  analysisTargetSelected: "analysis_target_selected",
+  // ── 완료 등뼈 (퍼널 스파인) ────────────────────────────────────
+  signupCompleted: "signup_completed",
+  onboardingCompleted: "onboarding_completed",
+  recordCreated: "record_created",
+  firstRecordCreated: "first_record_created",
+  analysisCompleted: "analysis_completed",
+  exportCompleted: "export_completed",
+  // ── placeholder: 이름·속성만 정의, emit 은 크레딧 과금 프로젝트(FRT-105)에서 ──
+  // 크레딧 잔액·원장 UI 가 아직 없어 여기서는 배선하지 않는다(dead call site 금지).
+  freeTokenExhausted: "free_token_exhausted",
+  tokenPurchaseCompleted: "token_purchase_completed",
+} as const;
+
+export type AnalyticsEventName =
+  (typeof ANALYTICS_EVENTS)[keyof typeof ANALYTICS_EVENTS];
+
+// 이벤트별 속성 계약. PII 금지 — 비식별 퍼널 메타만 싣는다.
+export interface AnalyticsEventProps {
+  signup_method_selected: { method: SignupMethod };
+  archive_type_selected: { experience_type: string };
+  analysis_target_selected:
+    | { analysis_type: "comprehensive"; count: number }
+    | { analysis_type: "keyword"; count: number; keyword_categories: string[] };
+  signup_completed: { method: SignupMethod };
+  onboarding_completed: Record<string, never>;
+  record_created: { experience_type: string; status: RecordStatus };
+  first_record_created: { experience_type: string };
+  analysis_completed: { analysis_type: AnalysisKind };
+  export_completed: { export_type: ExportType; language: string };
+  // placeholder — 실제 emit 시 확정할 속성(참고용)
+  free_token_exhausted: Record<string, never>;
+  token_purchase_completed: { credits: number; amount: number };
+}

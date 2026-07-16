@@ -8,6 +8,7 @@ import { Button, DatePicker, Input, toast } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { api, ApiError } from "@/lib/api/client";
+import { capture } from "@/lib/analytics";
 import { useAuth } from "@/hooks/useAuth";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { VerifyEmailResponse } from "@/types/auth";
@@ -172,6 +173,9 @@ function SignupForm() {
         // 하드 내비게이션으로 AuthProvider를 재마운트·refetch해야 GNB 계정 메뉴가 노출된다.
         window.location.assign("/dashboard");
       } else {
+        // 신규 가입(미온보딩)의 이메일 인증 완료 = 가입 완료 확정 지점.
+        // onboarded=true 분기는 기존 사용자 재인증이라 signup 으로 잡지 않는다.
+        capture("signup_completed", { method: "email" });
         goTo(FIRST_ONBOARDING_STEP);
       }
     } catch (e) {
@@ -227,12 +231,20 @@ function SignupForm() {
     }
   }
 
+  // 이메일로 계속(가입 경로 선택) — 소셜과 갈라 채널별 전환 차이를 본다.
+  function handleEmailContinue() {
+    if (!email) return;
+    capture("signup_method_selected", { method: "email" });
+    goTo("password");
+  }
+
   function handleSocial() {
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) {
       setSocialError("Google 로그인을 사용할 수 없어요");
       return;
     }
+    capture("signup_method_selected", { method: "google" });
     const redirectUri = `${window.location.origin}/callback/google`;
     const params = new URLSearchParams({
       client_id: clientId,
@@ -263,6 +275,9 @@ function SignupForm() {
         ...(worries.length > 0   && { worry: worries }),
         ...(interests.length > 0 && { interest: interests }),
       }, { auth: false });
+      // 온보딩 완료 확정 지점(성공 응답). DUPLICATE_ONBOARDING(이미 완료 재진입)은
+      // 아래 catch 에서 별도 처리하며 중복 발화하지 않는다.
+      capture("onboarding_completed", {});
       // 하드 내비게이션으로 AuthProvider를 재마운트·refetch해야 온보딩 직후 GNB 계정 메뉴가 노출된다.
       window.location.assign("/dashboard");
     } catch (e) {
@@ -360,10 +375,10 @@ function SignupForm() {
                     placeholder="name@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && email && goTo("password")}
+                    onKeyDown={(e) => e.key === "Enter" && handleEmailContinue()}
                   />
                   <Button
-                    onClick={() => goTo("password")}
+                    onClick={handleEmailContinue}
                     disabled={!email}
                   >
                     이메일로 계속하기

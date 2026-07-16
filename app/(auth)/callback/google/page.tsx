@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api/client";
+import { capture } from "@/lib/analytics";
 import { clearOAuthState, readOAuthState } from "@/lib/auth/oauth-state";
 import { deleteAccountWithSocial } from "@/lib/api/auth-api";
 import { DELETE_INTENT } from "@/lib/auth/oauth-providers";
@@ -71,6 +72,9 @@ function GoogleCallbackHandler() {
           // replace로 콜백 페이지를 히스토리에 남기지 않는다.
           window.location.replace("/dashboard");
         } else {
+          // 미온보딩 소셜 로그인 = 신규 소셜 가입 완료 확정 지점(온보딩으로 진행).
+          // onboarded=true 분기는 기존 사용자 재로그인이라 signup 으로 잡지 않는다.
+          capture("signup_completed", { method: "google" });
           router.push(`/signup?step=${FIRST_ONBOARDING_STEP}&email=${encodeURIComponent(result.data.user.email)}`);
         }
       })

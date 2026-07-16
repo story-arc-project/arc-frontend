@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Dialog } from "@/components/ui";
 import { createResume } from "@/lib/api/export-api";
+import { capture } from "@/lib/analytics";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import type { ResumeLanguage } from "@/types/resume";
 import { ResumeGenerationOverlay } from "./ResumeGenerationOverlay";
@@ -56,6 +57,8 @@ export function CreateResumeModal({ open, onClose }: CreateResumeModalProps) {
       if (!versionId) {
         throw new Error("version_id missing in response");
       }
+      // 익스포트 완료(FRT-19). 현재 이력서(resume)만 존재 — 경험 선택 UI 는 없고 언어만 고른다.
+      capture("export_completed", { export_type: "resume", language });
       router.push(`${basePath}/export/resume/${versionId}`);
       onClose();
     } catch (err) {

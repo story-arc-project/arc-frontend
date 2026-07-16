@@ -19,6 +19,7 @@ import type {
 import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks, createGroupBlock, isBlockEmpty, uid } from "@/lib/utils/block-utils"
+import { capture } from "@/lib/analytics"
 import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
 
 interface ExperienceFormV2Props {
@@ -181,6 +182,9 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   const handleTypeSelect = useCallback((id: ExperienceTypeId) => {
     setTypeId(id)
     setTypeError(false)
+    // TypeSelector 는 edit 모드에서 disabled 이므로 이 콜백은 새 기록 작성 흐름에서만 도달한다.
+    // 유형 선택 후 저장까지 못 간 drop-off 를 보기 위한 직전 선택 이벤트(FRT-19).
+    capture("archive_type_selected", { experience_type: id })
   }, [])
 
   const handleRequestTypeChange = useCallback((): boolean => {
