@@ -95,6 +95,14 @@ function extractSlackSummary(prBody) {
   return (prBody || '').match(/<!--\s*slack-summary\s*([\s\S]*?)-->/)?.[1]?.trim() || null;
 }
 
+// 노트 작성 시점(a) 이후 dev에 붙은 커밋 목록. squash 병합이면 --no-merges가 비므로 폴백한다.
+// a가 force-push 등으로 사라졌으면 git이 throw → 빈 문자열(섹션 생략).
+function commitsBetween(a, b) {
+  try {
+    return git(['log', '--no-merges', '--oneline', `${a}..${b}`]) || git(['log', '--oneline', `${a}..${b}`]);
+  } catch { return ''; }
+}
+
 // 승인 요청을 게시하고 PR 본문의 상태 마커를 갱신한다.
 // 첫 게시  = 루틴이 써둔 slack-summary를 그대로 전달.
 // 재QA(dev head 변경) = 그 문구는 이미 스테일이므로 쓰지 않고, 짧은 기계적 재요청만 보낸다.
@@ -122,13 +130,33 @@ async function postAndRecord(number, devSha, prevBody, oldTs) {
 
   const posted = await slack('chat.postMessage', { channel: CHANNEL, text, unfurl_links: false, link_names: true }, true);
   const postedAt = new Date().toISOString();
+
+  // 노트가 커버하는 dev SHA. 첫 게시 때 각인해두고 이후엔 그대로 물려준다 —
+  // 직전 dev-sha를 기준으로 잡으면 A→B→C로 두 번 밀릴 때 A..B 구간이 섹션에서 사라진다.
+  const notesBase = prevBody.match(/<!--\s*notes-dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1]
+    || prevBody.match(/<!--\s*dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1]
+    || devSha;
+
   // 마커만 교체하고 본문(상세 노트)은 그대로 둔다 — 통째로 덮어쓰면 릴리스 노트가 날아간다.
-  const notes = (prevBody || '')
-    .replace(/<!--\s*(?:release-gate|slack-ts:.*?|dev-sha:.*?|posted-at:.*?|reminded-24h|merge-error)\s*-->\n?/g, '')
+  let notes = (prevBody || '')
+    .replace(/<!--\s*(?:release-gate|slack-ts:.*?|notes-dev-sha:.*?|dev-sha:.*?|posted-at:.*?|reminded-24h|merge-error)\s*-->\n?/g, '')
+    .replace(/<!--\s*gate:added-commits\s*-->[\s\S]*?<!--\s*\/gate:added-commits\s*-->\n?/g, '') // 이전 회차 섹션 제거 후 재생성
     .trim();
+
+  // 노트 작성 이후 dev에 커밋이 붙었다면 그 사실을 본문에 남긴다. 게이트는 노트를 쓸 수 없지만
+  // (사람 글은 루틴 담당), 승인자와 Release 아카이브가 "노트에 없는 커밋"을 모르는 채로
+  // 넘어가는 건 막아야 한다 — 이 본문이 그대로 GitHub Release가 된다.
+  const added = notesBase !== devSha ? commitsBetween(notesBase, devSha) : '';
+  if (added) {
+    notes += `\n\n<!-- gate:added-commits -->\n---\n\n### ⚠️ 아래 커밋은 위 릴리스 노트에 반영되지 않았습니다\n`
+      + `노트 작성(\`${notesBase.slice(0, 7)}\`) 이후 dev에 추가된 커밋입니다 — 게이트가 자동 기록.\n\n`
+      + `\`\`\`\n${added}\n\`\`\`\n<!-- /gate:added-commits -->`;
+  }
+
   gh(['pr', 'edit', number, '--repo', REPO, '--body',
-    `<!-- release-gate -->\n<!-- slack-ts: ${posted.ts} -->\n<!-- dev-sha: ${devSha} -->\n<!-- posted-at: ${postedAt} -->\n\n${notes}`]);
-  log(`Slack 승인 요청 게시(ts=${posted.ts}, dev=${devSha.slice(0, 7)}, 문구=${(!oldTs && summary) ? '루틴 작성' : '기본 템플릿'}). 다음 실행에서 반응·CI 평가.`);
+    `<!-- release-gate -->\n<!-- slack-ts: ${posted.ts} -->\n<!-- dev-sha: ${devSha} -->\n`
+    + `<!-- notes-dev-sha: ${notesBase} -->\n<!-- posted-at: ${postedAt} -->\n\n${notes}`]);
+  log(`Slack 승인 요청 게시(ts=${posted.ts}, dev=${devSha.slice(0, 7)}, 문구=${(!oldTs && summary) ? '루틴 작성' : '기본 템플릿'}${added ? ', 노트 미반영 커밋 기록됨' : ''}). 다음 실행에서 반응·CI 평가.`);
   return posted.ts;
 }
 
@@ -294,16 +322,25 @@ if (approved) {
     mergedState = JSON.parse(gh(['pr', 'view', number, '--repo', REPO, '--json', 'state,mergedAt,mergeCommit']));
   } catch { /* 확인 실패 시 큐 등록(미확정)으로 보수 처리 */ }
   const isMerged = mergedState?.state === 'MERGED' || Boolean(mergedState?.mergedAt);
-  await slack('chat.postMessage', {
-    channel: CHANNEL, thread_ts: ts,
-    text: isMerged
-      ? `:tada: *배포 완료* — dev → main 머지됨 (${reason}, CI 통과). 프로덕션 반영이 진행됩니다.`
-      : `:inbox_tray: *배포 예약* — dev → main 머지가 대기열에 등록됐어요 (${reason}, CI 통과). 큐 통과 후 반영됩니다.`,
-  }, true);
-  log(isMerged ? `머지 완료(${reason}).` : `머지 큐 등록(${reason}).`);
+
   // 머지된 경우에만 릴리스 노트를 GitHub Release로 영구 아카이브(Slack=가볍게 / PR body=상세 / Release=아카이브).
   // 본문은 PR body 재사용 — 노트를 두 번 쓰지 않는다. 실패해도 머지는 이미 끝났으므로 경고만 남기고 성공 처리.
+  // Slack 알림보다 먼저 — 알림이 throw하면 이 실행이 죽고, 다음 실행은 main..dev=0으로 조기 종료해
+  // Release를 영영 못 남긴다(아카이브가 Slack 가용성에 매달리면 안 된다).
   if (isMerged) publishRelease(body, mergedState?.mergeCommit?.oid);
+
+  try {
+    await slack('chat.postMessage', {
+      channel: CHANNEL, thread_ts: ts,
+      text: isMerged
+        ? `:tada: *배포 완료* — dev → main 머지됨 (${reason}, CI 통과). 프로덕션 반영이 진행됩니다.`
+        : `:inbox_tray: *배포 예약* — dev → main 머지가 대기열에 등록됐어요 (${reason}, CI 통과). 큐 통과 후 반영됩니다.`,
+    }, true);
+  } catch (e) {
+    // 머지·아카이브는 이미 끝났다 — 알림 실패로 실행을 죽이면 다음 실행이 재시도할 여지도 없다.
+    log(`배포 완료 알림 게시 실패(무시 — 머지·Release는 완료됨): ${e.message}`);
+  }
+  log(isMerged ? `머지 완료(${reason}).` : `머지 큐 등록(${reason}).`);
   process.exit(0);
 }
 
