@@ -131,11 +131,17 @@ async function postAndRecord(number, devSha, prevBody, oldTs) {
   const posted = await slack('chat.postMessage', { channel: CHANNEL, text, unfurl_links: false, link_names: true }, true);
   const postedAt = new Date().toISOString();
 
-  // 노트가 커버하는 dev SHA. 첫 게시 때 각인해두고 이후엔 그대로 물려준다 —
+  // 노트가 커버하는 dev SHA. 한 번 각인하면 그대로 물려준다 —
   // 직전 dev-sha를 기준으로 잡으면 A→B→C로 두 번 밀릴 때 A..B 구간이 섹션에서 사라진다.
-  const notesBase = prevBody.match(/<!--\s*notes-dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1]
-    || prevBody.match(/<!--\s*dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1]
-    || devSha;
+  // 1순위는 주간 루틴이 PR 생성 시 남기는 notes-dev-sha: 루틴이 dev@A에서 노트를 쓴 뒤
+  // 게이트 첫 실행 전에 B가 붙으면, 마커가 없는 한 A..B를 알아낼 방법이 없다(기준이 B로 잡힘).
+  const notesBaseMarker = prevBody.match(/<!--\s*notes-dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1]
+    || prevBody.match(/<!--\s*dev-sha:\s*([0-9a-f]+)\s*-->/)?.[1];
+  if (!notesBaseMarker) {
+    log(`⚠️ notes-dev-sha 마커 없음 — 노트 기준을 현재 head(${devSha.slice(0, 7)})로 가정한다. `
+      + '루틴이 PR 생성 시 <!-- notes-dev-sha: SHA -->를 남기면 노트 작성~첫 게시 사이 커밋도 표면화된다.');
+  }
+  const notesBase = notesBaseMarker || devSha;
 
   // 마커만 교체하고 본문(상세 노트)은 그대로 둔다 — 통째로 덮어쓰면 릴리스 노트가 날아간다.
   let notes = (prevBody || '')
