@@ -4,7 +4,7 @@ import { createContext, useCallback, useEffect, useRef, useState } from "react";
 
 import type { AuthUser, AuthContextValue } from "@/types/auth";
 import { fetchCurrentUser, logoutUser } from "@/lib/api/auth-api";
-import { identifyUser, resetUser } from "@/lib/analytics";
+import { identifyUser, resetUser, clearFirstRecordMarker } from "@/lib/analytics";
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -44,6 +44,8 @@ export default function AuthProvider({
       // 서버에서 httpOnly 쿠키가 실제로 제거된 뒤에만 상태 정리 + 이동한다.
       // 분석 세션도 익명으로 되돌려 다음 사용자와 섞이지 않게 한다(FRT-19).
       resetUser();
+      // 같은 기기에서 다른 사용자가 로그인해도 첫 기록을 다시 잡을 수 있게 마커를 비운다.
+      clearFirstRecordMarker();
       identifiedEmailRef.current = null;
       setUser(null);
       window.location.assign("/login");
@@ -92,9 +94,15 @@ export default function AuthProvider({
   // 원본 이메일은 전송하지 않으며, 이후 퍼널 이벤트가 이 person 에 연결된다.
   useEffect(() => {
     const email = user?.account.email;
-    if (email && identifiedEmailRef.current !== email) {
-      identifiedEmailRef.current = email;
-      void identifyUser(email);
+    if (email) {
+      if (identifiedEmailRef.current !== email) {
+        identifiedEmailRef.current = email;
+        void identifyUser(email);
+      }
+    } else if (identifiedEmailRef.current !== null) {
+      // 사용자가 사라짐(세션 만료·소프트 로그아웃) → 익명으로 되돌려 이전 사용자에 오귀속되지 않게.
+      identifiedEmailRef.current = null;
+      resetUser();
     }
   }, [user]);
 

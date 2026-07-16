@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 
 import { createExperience, getExperiences } from "@/lib/api/experience-api"
 import { toSavePayload } from "@/lib/utils/experience-mapper"
-import { capture } from "@/lib/analytics"
+import { capture, markFirstRecordIfUnseen } from "@/lib/analytics"
 import { useBasePath } from "@/lib/utils/use-base-path"
 import { safeReturnTo } from "@/lib/utils/archive-context"
 import ExperienceFormV2, {
@@ -40,12 +40,11 @@ export default function ArchiveNewPage() {
       setHasUnsaved(false)
       // 기록 생성 완료(FRT-19). status 로 draft·complete 를 구분한다.
       capture("record_created", { experience_type: payload.type, status: exp.status })
-      // 최초 1회 판정: 방금 만든 것을 포함해 목록이 정확히 1건이면 첫 기록.
-      // 프론트에 카운터가 없어 서버 count 로 판정한다(localStorage 는 크로스기기 불안정).
-      // 네비게이션을 막지 않도록 fire-and-forget — 실패해도 기록 저장 흐름엔 영향 없다.
+      // 최초 1회 판정: 서버 count===1 을 1차 근거로 하되, 전체 삭제 후 재생성 재발화를
+      // 디바이스 마커로 막는다(markFirstRecordIfUnseen). 네비게이션을 막지 않도록 fire-and-forget.
       void getExperiences()
         .then((list) => {
-          if (list.count === 1) {
+          if (markFirstRecordIfUnseen(list.count)) {
             capture("first_record_created", { experience_type: payload.type })
           }
         })

@@ -81,4 +81,12 @@ describe("analytics client — capture/identify/reset 가드(FRT-19)", () => {
     resetUser();
     expect(ph.reset).toHaveBeenCalledTimes(1);
   });
+
+  it("identify 해시 대기 중 resetUser 가 끼어들면 stale identify 를 취소한다", async () => {
+    const pending = identifyUser("user@example.com"); // 해시 await 지점에서 양보
+    resetUser(); // identifyToken 증가 → 진행 중 identify 무효화
+    await pending;
+    expect(ph.identify).not.toHaveBeenCalled();
+    expect(ph.reset).toHaveBeenCalledTimes(1);
+  });
 });

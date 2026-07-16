@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api/client";
-import { capture } from "@/lib/analytics";
+import { capture, resetUser, clearFirstRecordMarker } from "@/lib/analytics";
 import { clearOAuthState, readOAuthState } from "@/lib/auth/oauth-state";
 import { deleteAccountWithSocial } from "@/lib/api/auth-api";
 import { DELETE_INTENT } from "@/lib/auth/oauth-providers";
@@ -44,6 +44,10 @@ function GoogleCallbackHandler() {
       }
       deleteAccountWithSocial(code)
         .then(() => {
+          // 탈퇴 완료 — 분석 식별을 익명으로 되돌린다. 하드 내비게이션이라 AuthContext effect 가
+          // 실행되지 않으므로, 삭제된 계정의 distinct_id 가 다음 사용자에 새지 않게 여기서 reset.
+          resetUser();
+          clearFirstRecordMarker();
           // 하드 내비게이션으로 AuthProvider 재마운트 → 컨텍스트 상태 정리.
           window.location.replace("/login?deleted=1");
         })
