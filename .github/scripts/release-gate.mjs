@@ -89,24 +89,10 @@ async function slack(method, params, post = false) {
   return data;
 }
 
-// 승인 요청 Slack 메시지를 (재)게시하고 PR 본문에 상태 마커를 기록한다.
-// oldTs가 있으면 이전 메시지를 "만료됨"으로 갱신해 스테일 승인을 막는다.
-// 최초 생성 · 마커 부재 복구 · dev head 변경 재QA — 세 경로가 공유한다.
-async function postAndRecord(number, devSha, oldTs) {
-  const compare = `https://github.com/${REPO}/compare/main...dev`;
-  // 머지 커밋이 있으면 그것을(PR 단위), 없으면(squash 병합 등) 일반 커밋을 배치로 요약한다 —
-  // 병합 전략과 무관하게 "0개/빈 목록"이 뜨지 않도록.
-  const merges = git(['log', 'origin/main..origin/dev', '--merges', '--pretty=%s'])
-    .split('\n').filter(Boolean);
-  const source = merges.length
-    ? merges
-    : git(['log', 'origin/main..origin/dev', '--no-merges', '--pretty=%s']).split('\n').filter(Boolean);
-  const items = source.slice(0, 10).map((s) => {
-    const m = s.match(/#(\d+) from [^/]+\/(.+)$/);
-    return m ? `• #${m[1]} — ${m[2]}` : `• ${s}`;
-  }).join('\n');
-  const more = source.length > 10 ? `\n…외 ${source.length - 10}건` : '';
-
+// 상세 릴리스 노트는 주간 Claude 루틴이 PR 본문에 써둔다 — 이 게이트는 그걸 절대 다시 쓰지 않는다.
+// 여기서 만드는 건 "새 커밋이 붙었으니 다시 봐달라"는 기계적 재요청뿐이다.
+// 호출 경로: 마커 부재 복구 · dev head 변경 재QA · 승인 메시지 소실 복구.
+async function postAndRecord(number, devSha, prevBody, oldTs) {
   if (oldTs) {
     try {
       await slack('chat.update', {
@@ -117,22 +103,52 @@ async function postAndRecord(number, devSha, oldTs) {
   }
 
   const text =
-    `:rocket: *dev → main 배포 검토* — ${source.length}개 변경\n\n` +
-    `dev를 프로덕션(main)으로 올릴 준비가 됐어요.\n` +
-    `:point_right: <${STAGING_URL}|dev.story-arc.org> 에서 확인한 뒤, *이 메시지에 :white_check_mark: 를 눌러주세요.*\n\n` +
-    `*이번 배치*\n${items}${more}\n\n` +
+    `:rocket: *dev → main 배포 검토* (재요청)\n<!channel>\n\n` +
+    `dev에 새 커밋이 반영돼 다시 확인이 필요해요.\n` +
+    `<${STAGING_URL}|dev.story-arc.org> 확인 후 *이 메시지에* :white_check_mark: 부탁드려요.\n\n` +
     `*승인 규칙* — ${ROSTER_N}명 중 ${QUORUM}명 :white_check_mark:` +
     (OVERRIDE_IDS.length ? ` (또는 48시간 경과 시 ${OVERRIDE_NAMES} 승인)` : '') +
     ` + CI 통과 → 자동 배포\n` +
-    `<${compare}|전체 변경 보기>  ·  <https://github.com/${REPO}/pull/${number}|PR #${number}>`;
+    `변경 내용은 <https://github.com/${REPO}/pull/${number}|PR #${number}>를 확인해주세요`;
 
-  const posted = await slack('chat.postMessage', { channel: CHANNEL, text, unfurl_links: false }, true);
+  const posted = await slack('chat.postMessage', { channel: CHANNEL, text, unfurl_links: false, link_names: true }, true);
   const postedAt = new Date().toISOString();
+  // 마커만 교체하고 본문(상세 노트)은 그대로 둔다 — 통째로 덮어쓰면 릴리스 노트가 날아간다.
+  const notes = (prevBody || '')
+    .replace(/<!--\s*(?:release-gate|slack-ts:.*?|dev-sha:.*?|posted-at:.*?|reminded-24h|merge-error)\s*-->\n?/g, '')
+    .trim();
   gh(['pr', 'edit', number, '--repo', REPO, '--body',
-    `<!-- release-gate -->\n<!-- slack-ts: ${posted.ts} -->\n<!-- dev-sha: ${devSha} -->\n<!-- posted-at: ${postedAt} -->\n\n` +
-    `자동 생성된 릴리스 PR입니다. 승인은 <#${CHANNEL}> 에서 진행됩니다.\n\n[전체 변경](${compare})`]);
-  log(`Slack 승인 요청 게시(ts=${posted.ts}, dev=${devSha.slice(0, 7)}). 다음 실행에서 반응·CI 평가.`);
+    `<!-- release-gate -->\n<!-- slack-ts: ${posted.ts} -->\n<!-- dev-sha: ${devSha} -->\n<!-- posted-at: ${postedAt} -->\n\n${notes}`]);
+  log(`Slack 승인 요청 재게시(ts=${posted.ts}, dev=${devSha.slice(0, 7)}). 다음 실행에서 반응·CI 평가.`);
   return posted.ts;
+}
+
+// 머지된 릴리스 노트를 GitHub Release로 영구 아카이브한다. PR body에서 상태 마커와 승인 안내만
+// 걷어내고 그대로 재사용 — 노트는 주간 루틴이 한 번만 쓴다.
+// 호출 시점엔 머지가 이미 끝났다 → 어떤 실패도 치명적이지 않으므로 로그만 남기고 삼킨다.
+function publishRelease(prBody, mergeSha) {
+  try {
+    const notes = prBody
+      .replace(/<!--[\s\S]*?-->/g, '') // 상태 마커
+      .replace(/^.*dev\.story-arc\.org에서 QA 후.*$/m, '') // 승인 요청 안내(배포 후엔 무의미)
+      .replace(/^\*\*승인 규칙\*\*.*$/m, '')
+      .trim();
+    const day = new Date().toISOString().slice(0, 10);
+    let tag = `release-${day}`;
+    let exists = false;
+    try { gh(['release', 'view', tag, '--repo', REPO]); exists = true; } catch { /* 없으면 그대로 사용 */ }
+    if (exists) {
+      // 같은 날 두 번 배포되면 태그가 충돌한다 — 머지 커밋으로 구분.
+      if (!mergeSha) { log(`Release 태그 ${tag} 존재 + 머지 커밋 미확인 — 발행 생략.`); return; }
+      tag = `${tag}-${mergeSha.slice(0, 7)}`;
+    }
+    const args = ['release', 'create', tag, '--repo', REPO, '--title', `🚀 릴리스 ${day}`, '--notes', notes];
+    if (mergeSha) args.push('--target', mergeSha);
+    gh(args);
+    log(`GitHub Release 발행: ${tag}`);
+  } catch (e) {
+    log(`Release 발행 실패(무시 — 머지는 완료됨): ${e.message}`);
+  }
 }
 
 // ── 1. dev가 main보다 앞섰나 ───────────────────────────────────────────────
@@ -150,15 +166,10 @@ const prs = JSON.parse(
     '--state', 'open', '--json', 'number,body,createdAt,isCrossRepository,headRepositoryOwner'])
 ).filter((p) => !p.isCrossRepository && (p.headRepositoryOwner?.login ?? OWNER) === OWNER);
 
+// 릴리스 PR은 주간 Claude 루틴(월 10시)이 상세 노트와 함께 만든다 — 이 게이트는 만들지 않는다.
+// 여기서 PR을 만들면 매시 배포를 재촉하는 꼴이 되고, 사람이 읽을 요약도 못 쓴다.
 if (prs.length === 0) {
-  if (DRY_RUN) { log('[DRY_RUN] PR 생성/게시 생략'); process.exit(0); }
-  log('열린 dev→main PR 없음 → 생성 + Slack 게시.');
-  // 생성 직후 재조회(레이스·포크 오매칭 위험) 대신 gh pr create가 찍는 PR URL에서 번호를 뽑는다.
-  const createOut = gh(['pr', 'create', '--repo', REPO, '--base', 'main', '--head', 'dev',
-    '--title', '🚀 릴리스: dev → main', '--body', '<!-- release-gate -->\n승인 대기 중…']);
-  const number = createOut.match(/\/pull\/(\d+)/)?.[1];
-  if (!number) fail(`PR 생성 후 번호 파싱 실패: ${createOut}`);
-  await postAndRecord(number, currentDevSha);
+  log('열린 dev→main PR 없음 — 주간 루틴이 생성할 때까지 대기. 종료.');
   process.exit(0);
 }
 
@@ -176,7 +187,7 @@ if (!ts || !devShaMarker || devShaMarker !== currentDevSha) {
   const why = !ts ? '상태 마커 없음(게시 복구)' : `dev head 변경(${(devShaMarker || '?').slice(0, 7)}→${currentDevSha.slice(0, 7)}, 재QA 필요)`;
   if (DRY_RUN) { log(`[DRY_RUN] 승인 요청 재게시 필요: ${why}`); process.exit(0); }
   log(`승인 요청 재게시: ${why}`);
-  await postAndRecord(number, currentDevSha, ts);
+  await postAndRecord(number, currentDevSha, body, ts);
   process.exit(0);
 }
 
@@ -193,7 +204,7 @@ try {
   // 마커만 믿고 매 실행 같은 지점에서 멈추지 않도록, 메시지가 사라졌을 때만 새로 게시하고 종료.
   if (/message_not_found/.test(e.message)) {
     log('승인 메시지가 사라짐(message_not_found) → 승인 요청 재게시.');
-    if (!DRY_RUN) await postAndRecord(number, currentDevSha);
+    if (!DRY_RUN) await postAndRecord(number, currentDevSha, body);
     process.exit(0);
   }
   throw e; // 그 외(전송 오류 등)는 표면화 — 중복 메시지 스팸 대신 다음 실행에서 재시도.
@@ -270,7 +281,7 @@ if (approved) {
   let mergedState = null;
   try {
     // gh pr view는 boolean `merged` 필드가 없다(Unknown JSON field로 throw) — state·mergedAt로 판정.
-    mergedState = JSON.parse(gh(['pr', 'view', number, '--repo', REPO, '--json', 'state,mergedAt']));
+    mergedState = JSON.parse(gh(['pr', 'view', number, '--repo', REPO, '--json', 'state,mergedAt,mergeCommit']));
   } catch { /* 확인 실패 시 큐 등록(미확정)으로 보수 처리 */ }
   const isMerged = mergedState?.state === 'MERGED' || Boolean(mergedState?.mergedAt);
   await slack('chat.postMessage', {
@@ -280,6 +291,9 @@ if (approved) {
       : `:inbox_tray: *배포 예약* — dev → main 머지가 대기열에 등록됐어요 (${reason}, CI 통과). 큐 통과 후 반영됩니다.`,
   }, true);
   log(isMerged ? `머지 완료(${reason}).` : `머지 큐 등록(${reason}).`);
+  // 머지된 경우에만 릴리스 노트를 GitHub Release로 영구 아카이브(Slack=가볍게 / PR body=상세 / Release=아카이브).
+  // 본문은 PR body 재사용 — 노트를 두 번 쓰지 않는다. 실패해도 머지는 이미 끝났으므로 경고만 남기고 성공 처리.
+  if (isMerged) publishRelease(body, mergedState?.mergeCommit?.oid);
   process.exit(0);
 }
 
