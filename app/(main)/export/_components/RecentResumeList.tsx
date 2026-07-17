@@ -136,8 +136,24 @@ export function RecentResumeList({
             >
               <div className="min-w-0 flex-1">
                 <span className="text-body-sm text-text-primary font-medium truncate block">
-                  {resumeLabel(item.created_at)}
+                  {item.title || resumeLabel(item.created_at)}
                 </span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  {item.language && (
+                    <span className="text-caption text-text-tertiary">
+                      {item.language === "en" ? "영문" : "국문"}
+                    </span>
+                  )}
+                  {item.status && item.status !== "completed" && (
+                    <span
+                      className={`text-caption ${
+                        item.status === "failed" ? "text-error" : "text-text-tertiary"
+                      }`}
+                    >
+                      {item.status === "failed" ? "실패" : "생성 중"}
+                    </span>
+                  )}
+                </div>
               </div>
               {item.created_at && (
                 <span className="text-caption text-text-tertiary shrink-0 hidden sm:inline">

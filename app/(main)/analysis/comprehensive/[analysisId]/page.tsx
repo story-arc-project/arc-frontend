@@ -15,23 +15,32 @@ import type {
   WeaknessSeverity,
 } from "@/types/analysis";
 import { weaknessSeverityLabel } from "@/types/analysis";
-import { getComprehensiveResult } from "@/lib/api/analysis-api";
+import { getComprehensiveResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
 import { isSafeHttpUrl } from "@/lib/utils/url-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
+import UnsupportedSchemaNotice from "@/components/features/analysis/common/UnsupportedSchemaNotice";
 
 export default function ComprehensiveDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
   const basePath = useBasePath();
   const [data, setData] = useState<ComprehensiveAnalysisResult | null>(null);
   const [error, setError] = useState(false);
+  const [unsupported, setUnsupported] = useState(false);
 
   useEffect(() => {
     getComprehensiveResult(analysisId)
       .then(setData)
-      .catch(() => setError(true));
+      .catch((e) => {
+        if (e instanceof UnsupportedSchemaError) setUnsupported(true);
+        else setError(true);
+      });
   }, [analysisId]);
+
+  if (unsupported) {
+    return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/comprehensive" />;
+  }
 
   if (error) {
     return (
@@ -105,6 +114,8 @@ export default function ComprehensiveDetailPage() {
 
         <hr className="border-border" />
 
+        <ExperiencesBlock experiences={data.experiences} />
+
         <SummaryBlock brief={data.briefSummary} detailed={data.detailedSummary} />
 
         <KeywordClusteringBlock clustering={data.keywordClustering} />
@@ -124,6 +135,30 @@ export default function ComprehensiveDetailPage() {
         <JobRecommendationsBlock items={data.validJobRecommendations} />
       </div>
     </main>
+  );
+}
+
+function ExperiencesBlock({
+  experiences,
+}: {
+  experiences: ComprehensiveAnalysisResult["experiences"];
+}) {
+  if (experiences.length === 0) return null;
+  return (
+    <section className="space-y-2">
+      <h2 className="text-title text-text-primary">포함된 경험 {experiences.length}개</h2>
+      <div className="flex flex-wrap gap-1.5">
+        {experiences.map((exp) =>
+          exp.title ? (
+            <Badge key={exp.id} variant="outline">{exp.title}</Badge>
+          ) : (
+            <Badge key={exp.id} variant="default" className="text-text-tertiary italic">
+              삭제된 경험
+            </Badge>
+          ),
+        )}
+      </div>
+    </section>
   );
 }
 

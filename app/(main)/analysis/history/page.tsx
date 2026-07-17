@@ -11,8 +11,8 @@ import {
   deleteAnalysis,
 } from "@/lib/api/analysis-api";
 import { formatDate } from "@/lib/utils/date-utils";
+import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Badge, Button, Dialog } from "@/components/ui";
-import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import FilterBar from "@/components/features/analysis/common/FilterBar";
 
@@ -104,10 +104,10 @@ export default function HistoryPage() {
 
   const [renameError, setRenameError] = useState<string | null>(null);
 
-  async function handleRename(id: string, title: string) {
+  async function handleRename(id: string, type: AnalysisType, title: string) {
     setRenameError(null);
     try {
-      await updateAnalysisMeta(id, { title });
+      await updateAnalysisMeta(id, type, { title });
       setItems((prev) =>
         prev.map((i) => (i.id === id ? { ...i, title } : i))
       );
@@ -218,7 +218,7 @@ export default function HistoryPage() {
                       {editId === item.id ? (
                         <InlineEdit
                           value={item.title}
-                          onSave={(v) => handleRename(item.id, v)}
+                          onSave={(v) => handleRename(item.id, item.type, v)}
                           onCancel={() => setEditId(null)}
                         />
                       ) : isNavigable ? (
@@ -226,18 +226,14 @@ export default function HistoryPage() {
                           href={`${ANALYSIS_DETAIL_PATH[item.type]}/${item.id}`}
                           className="text-body-sm text-text-primary font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
                         >
-                          {item.title}
+                          {getDisplayTitle(item.title)}
                         </Link>
                       ) : (
                         <span className="text-body-sm text-text-primary font-medium opacity-60 cursor-not-allowed">
-                          {item.title}
+                          {getDisplayTitle(item.title)}
                         </span>
                       )}
-                      {isNavigable && <ConfidenceBadge confidence={item.overallConfidence} />}
                     </div>
-                    <p className="text-body-sm text-text-secondary line-clamp-1">
-                      {item.summaryText}
-                    </p>
                     <p className="text-caption text-text-tertiary mt-1.5">
                       {formatDate(item.createdAt)}
                     </p>
@@ -252,7 +248,8 @@ export default function HistoryPage() {
                     <button
                       type="button"
                       onClick={() => setEditId(item.id)}
-                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                      disabled={item.type === "individual"}
+                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-tertiary disabled:hover:bg-transparent"
                       aria-label="이름 변경"
                     >
                       <Pencil size={16} />

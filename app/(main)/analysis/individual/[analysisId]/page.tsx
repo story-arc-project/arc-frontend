@@ -11,22 +11,31 @@ import type {
   SynergyPriority,
 } from "@/types/analysis";
 import { weaknessSeverityLabel, synergyPriorityLabel } from "@/types/analysis";
-import { getIndividualAnalysisResult } from "@/lib/api/analysis-api";
+import { getIndividualAnalysisResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui"
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
+import UnsupportedSchemaNotice from "@/components/features/analysis/common/UnsupportedSchemaNotice";
 
 export default function IndividualAnalysisDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
   const basePath = useBasePath();
   const [data, setData] = useState<IndividualAnalysisResult | null>(null);
   const [error, setError] = useState(false);
+  const [unsupported, setUnsupported] = useState(false);
 
   useEffect(() => {
     getIndividualAnalysisResult(analysisId)
       .then(setData)
-      .catch(() => setError(true));
+      .catch((e) => {
+        if (e instanceof UnsupportedSchemaError) setUnsupported(true);
+        else setError(true);
+      });
   }, [analysisId]);
+
+  if (unsupported) {
+    return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/individual" />;
+  }
 
   if (error) {
     return (

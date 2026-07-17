@@ -174,8 +174,6 @@ function snapshot(
     status: "completed",
     createdAt: "2026-03-01T09:00:00.000Z",
     experienceCount: 1,
-    summaryText: "분석 요약 텍스트입니다.",
-    overallConfidence: "partial",
     isBookmarked: false,
     ...partial,
   };
@@ -186,7 +184,6 @@ const INDIVIDUAL_SNAPSHOTS: AnalysisSnapshot[] = [
     id: "ind-1",
     type: "individual",
     title: "교내 개발 동아리 운영진 분석",
-    overallConfidence: "sufficient",
     selectedExperienceIds: ["exp-e2e-1"],
   }),
 ];

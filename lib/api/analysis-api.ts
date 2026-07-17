@@ -6,6 +6,7 @@ import type {
   AnalysisSnapshot,
   AnalysisType,
   AnalysisStatus,
+  ExperienceRef,
   IndividualAnalysisResult,
   IndividualAnalysisResultBody,
   IndividualWeakness,
@@ -30,7 +31,6 @@ import type {
   KeywordSuggestion,
   BookmarkedSnapshot,
   SelectableExperience,
-  ConfidenceLevel,
 } from "@/types/analysis";
 
 import { isDemoMode } from "@/lib/demo/state";
@@ -69,6 +69,53 @@ function asString(value: unknown, fallback = ""): string {
 }
 
 /**
+ * null 을 빈 문자열로 뭉개지 않는다 — 종합 분석 experiences[].title 은
+ * 경험이 삭제되면 null 로 오고, 그 신호를 화면에서 "삭제된 경험"으로 구분해야 한다(계약 §2.2).
+ */
+function asNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function mapExperienceRef(dto: unknown): ExperienceRef {
+  const r = asRecord(dto);
+  return {
+    id: asString(r.id),
+    title: asNullableString(r.title),
+  };
+}
+
+// ─── schema_version 가드 (계약 §3.5) ────────────────────────
+// 코드가 아는 스키마 버전. result 구조가 바뀌면 백엔드가 버전을 올리고 여기 추가한다.
+const KNOWN_SCHEMA_VERSIONS = new Set([
+  "keyword/4.1",
+  "individual/1.0",
+  "comprehensive/1.0",
+  "resume/1.0",
+]);
+
+/** result.schema_version 가 "모르는 값"으로 명시돼 올 때 던진다. 상세 페이지가 안내로 전환한다. */
+export class UnsupportedSchemaError extends Error {
+  constructor(readonly schemaVersion: string) {
+    super(`unsupported schema_version: ${schemaVersion}`);
+    this.name = "UnsupportedSchemaError";
+  }
+}
+
+/**
+ * 모르는 schema_version 이면 조용한 빈 화면 대신 "표시할 수 없습니다"로 전환한다(계약 §3.5).
+ * 부재(null)는 아직 계약을 이행하지 않은 백엔드로 보고 기존대로 렌더한다 — blank 금지.
+ * 즉 "필드 없음"과 "모르는 값이 명시적으로 옴"을 다르게 취급한다.
+ */
+function assertRenderableSchema(data: unknown): void {
+  const root = asRecord(data);
+  const result = asRecord(root.result);
+  const v = result.schema_version ?? result.schemaVersion;
+  if (typeof v === "string" && !KNOWN_SCHEMA_VERSIONS.has(v)) {
+    throw new UnsupportedSchemaError(v);
+  }
+}
+
+/**
  * 분석 생성 응답에서 id 를 추출한다(FRT-38).
  * 백엔드가 id 를 `data` 봉투 안(`{ data: { id } }`)에 넣을지, 기존 `{ status, message }`
  * 와 같은 최상위(`{ status, message, id }`)에 둘지 확정 전이므로 두 위치를 모두 본다.
@@ -89,12 +136,6 @@ function asBoolean(value: unknown, fallback = false): boolean {
 
 function asNumber(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function asConfidence(value: unknown): ConfidenceLevel {
-  return value === "sufficient" || value === "partial" || value === "insufficient"
-    ? value
-    : "partial";
 }
 
 function mapStatus(value: unknown): AnalysisStatus {
@@ -148,6 +189,7 @@ function mapSnapshot(
     r.selectedExperienceIds ?? r.selected_experience_ids ?? r.experience_ids;
   const singleExperienceId = r.experience_id ?? r.experienceId;
   const keywordsRaw = r.selectedKeywords ?? r.selected_keywords ?? r.keywords;
+  const experiencesRaw = r.experiences;
   return {
     id: asString(r.id),
     type: asAnalysisType(r.type, fallbackType),
@@ -155,8 +197,6 @@ function mapSnapshot(
     status: mapStatus(r.status),
     createdAt: asString(r.createdAt ?? r.created_at),
     experienceCount: asNumber(r.experienceCount ?? r.experience_count),
-    summaryText: asString(r.summaryText ?? r.summary_text ?? r.analysis_summary),
-    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
     selectedExperienceIds: Array.isArray(experienceIdsRaw)
       ? (experienceIdsRaw as string[])
@@ -165,6 +205,9 @@ function mapSnapshot(
         : undefined,
     selectedKeywords: Array.isArray(keywordsRaw)
       ? (keywordsRaw as string[])
+      : undefined,
+    experiences: Array.isArray(experiencesRaw)
+      ? experiencesRaw.map(mapExperienceRef)
       : undefined,
   };
 }
@@ -353,6 +396,8 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
+    // 경험 참조는 result 밖(엔벨로프)에 온다(계약 §3.6) — r 우선, body 는 방어적 폴백.
+    experiences: asArray(r.experiences ?? body.experiences).map(mapExperienceRef),
     userSchool: asString(body.userSchool ?? body.user_school),
     userDepartment: asString(body.userDepartment ?? body.user_department),
     briefSummary: asString(body.briefSummary ?? body.brief_summary),
@@ -514,7 +559,7 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
     analysisDate: asString(body.analysisDate ?? body.analysis_date ?? body.created_at),
     keywords: asStringArray(body.keywords ?? body.selectedKeywords ?? body.selected_keywords),
-    targetScenario: asString(body.targetScenario ?? body.target_scenario),
+    targetScenario: asString(body.targetScenario ?? body.target_scenario ?? body.target),
     keywordDefinitions: asArray(
       body.keywordDefinitions ?? body.keyword_definitions,
     ).map(mapKeywordDefinition),
@@ -570,6 +615,7 @@ export async function getIndividualAnalysisResult(
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/analysis/individual/${analysisId}`,
   );
+  assertRenderableSchema(res.data);
   return mapIndividualDetail(res.data);
 }
 
@@ -610,6 +656,7 @@ export async function getComprehensiveResult(
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/analysis/comprehensive/${analysisId}`,
   );
+  assertRenderableSchema(res.data);
   return mapComprehensiveDetail(res.data);
 }
 
@@ -618,13 +665,6 @@ export async function deleteComprehensiveAnalysis(
 ): Promise<void> {
   if (shouldMock()) return mock(async () => undefined);
   await api.delete<void>(`/analysis/comprehensive/${analysisId}`);
-}
-
-export async function getAnalysisStatus(
-  analysisId: string,
-): Promise<{ status: AnalysisStatus }> {
-  if (shouldMock()) return mock(async () => ({ status: "completed" as const }));
-  return api.get<{ status: AnalysisStatus }>(`/analysis/status/${analysisId}`);
 }
 
 // ─── Keyword ────────────────────────────────────────────────
@@ -655,12 +695,14 @@ export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
  */
 export async function createKeywordAnalysis(
   keywordLabels: string[],
+  target = "",
 ): Promise<{ analysisId: string | null }> {
   if (shouldMock())
     return mock(async () => ({ analysisId: "kw-new-" + Date.now() }));
+  // target 은 기본값 "" 이라 안 보내도 현재 동작과 동일하다(계약 §2.3, 하위호환).
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/keyword",
-    { keywords: keywordLabels },
+    { keywords: keywordLabels, target },
   );
   return { analysisId: extractAnalysisId(res) };
 }
@@ -672,6 +714,7 @@ export async function getKeywordResult(
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/analysis/keyword/${analysisId}`,
   );
+  assertRenderableSchema(res.data);
   return mapKeywordDetail(res.data);
 }
 
@@ -713,13 +756,21 @@ export async function removeBookmark(analysisId: string): Promise<void> {
 
 // ─── Meta / Delete ──────────────────────────────────────────
 
-/** PATCH /analysis/:id — 제목 변경 등 메타 수정 */
+/**
+ * PATCH /analysis/{type}/:id — 제목 변경 등 메타 수정.
+ * 계약(§2)상 경로는 타입별로 갈린다. individual 은 경험에 종속돼 이름을
+ * 따로 수정할 수 없으므로(경험명 변경 시 따라감) 에러를 던진다 — deleteAnalysis 와 동일.
+ */
 export async function updateAnalysisMeta(
   analysisId: string,
+  type: AnalysisType,
   data: { title: string },
 ): Promise<void> {
   if (shouldMock()) return mock(async () => undefined);
-  await api.patch<void>(`/analysis/${analysisId}`, data);
+  if (type === "individual") {
+    throw new Error("개별 분석은 이름을 바꿀 수 없어요.");
+  }
+  await api.patch<void>(`/analysis/${type}/${analysisId}`, data);
 }
 
 /**
@@ -767,9 +818,6 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
 
   const all = [...individual, ...comprehensive, ...keyword];
   const completed = all.filter((s) => s.status === "completed");
-  const improvementNeeded = completed.filter(
-    (s) => s.overallConfidence !== "sufficient",
-  ).length;
   const lastAnalysisAt = completed
     .map((s) => s.createdAt)
     .filter(Boolean)
@@ -787,7 +835,6 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
       totalExperiences: experiencesData.count,
       analysisCompleted: completed.length,
       lastAnalysisAt,
-      improvementNeeded,
     },
     recentIndividual: recentSlice(individual),
     recentComprehensive: recentSlice(comprehensive),

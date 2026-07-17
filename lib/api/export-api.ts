@@ -1,5 +1,6 @@
 import { api, ApiError } from "./client";
 import type { ApiSuccessResponse } from "@/types/api";
+import type { AnalysisStatus } from "@/types/analysis";
 import type {
   ResumeLanguage,
   ResumeListItem,
@@ -8,20 +9,64 @@ import type {
 import { isDemoMode } from "@/lib/demo/state";
 import * as demo from "@/lib/demo/handlers";
 
+// ─── Defensive parsing helpers ─────────────────────────────────────
+
+/** 백엔드 status("pending"|"queued"|"success"|"failed") → 프런트 enum. analysis-api 와 동일 규약. */
+function mapResumeStatus(value: unknown): AnalysisStatus | undefined {
+  switch (value) {
+    case "queued":
+      return "processing";
+    case "success":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "pending":
+    case "processing":
+      return "pending";
+    default:
+      return undefined; // 필드 부재(구 백엔드) → 상태 미표시
+  }
+}
+
+/**
+ * 생성 응답에서 id 를 추출한다(계약 §2.4: POST → { id, title }).
+ * 아직 계약 미이행 백엔드는 id 를 주지 않으므로 부재 시 null → 목록 새로고침으로 폴백.
+ */
+function extractResumeId(res: unknown): { id: string | null; title?: string } {
+  if (res === null || typeof res !== "object") return { id: null };
+  const root = res as Record<string, unknown>;
+  const data =
+    root.data && typeof root.data === "object"
+      ? (root.data as Record<string, unknown>)
+      : root;
+  const id =
+    (typeof data.id === "string" && data.id) ||
+    (typeof data.resume_id === "string" && data.resume_id) ||
+    "";
+  const title = typeof data.title === "string" ? data.title : undefined;
+  return { id: id || null, title };
+}
+
 // ─── Resume endpoints ──────────────────────────────────────────────
 
-// 생성은 큐잉만 한다 — 서버는 생성된 id 를 돌려주지 않으므로 반환값이 없다.
-// 완료 여부는 목록을 다시 조회해 확인한다.
+// 계약(§2.4)상 POST 는 { id, title } 을 돌려준다. id 가 오면 생성 직후 상세로 이동할 수
+// 있고(호출부 판단), 아직 계약 미이행 백엔드처럼 id 가 없으면 null → 목록 새로고침으로 폴백한다.
 export async function createResume(
-  params: { language: ResumeLanguage },
+  params: { language: ResumeLanguage; title?: string },
   options?: { signal?: AbortSignal },
-): Promise<void> {
-  if (isDemoMode()) return demo.createResume(params);
-  await api.post<ApiSuccessResponse<unknown>>(
+): Promise<{ id: string | null; title?: string }> {
+  if (isDemoMode()) {
+    await demo.createResume(params);
+    return { id: null };
+  }
+  const body: Record<string, unknown> = { language: params.language };
+  if (params.title !== undefined) body.title = params.title;
+  const res = await api.post<ApiSuccessResponse<unknown>>(
     "/export/resume",
-    { language: params.language },
+    body,
     options,
   );
+  return extractResumeId(res);
 }
 
 export async function getResume(versionId: string): Promise<ResumeVersion> {
@@ -59,11 +104,15 @@ function toListItem(raw: unknown): ResumeListItem | null {
   if (id === "") return null;
 
   const createdAt = typeof r.created_at === "string" ? r.created_at : "";
+  const language = r.language === "ko" || r.language === "en" ? r.language : undefined;
 
   return {
     version_id: id,
     created_at: createdAt,
     updated_at: typeof r.updated_at === "string" ? r.updated_at : createdAt,
+    title: typeof r.title === "string" && r.title ? r.title : undefined,
+    language,
+    status: mapResumeStatus(r.status),
   };
 }
 

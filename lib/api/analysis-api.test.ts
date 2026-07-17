@@ -27,7 +27,10 @@ import {
   getIndividualAnalysisList,
   getIndividualAnalysisResult,
   getComprehensiveResult,
+  getComprehensiveList,
   getKeywordResult,
+  updateAnalysisMeta,
+  UnsupportedSchemaError,
 } from "@/lib/api/analysis-api"
 
 const apiMock = vi.mocked(api)
@@ -176,6 +179,22 @@ describe("create*Analysis — 응답 ID 부재 처리 (FRT-38)", () => {
     apiMock.post.mockResolvedValue({ status: "success", message: "시작됨", id: "kw-top" })
     expect(await createKeywordAnalysis(["성장"])).toEqual({ analysisId: "kw-top" })
   })
+
+  it("키워드 분석: target 을 body 에 실어 보낸다 (계약 §2.3). 미지정 시 빈 문자열", async () => {
+    apiMock.post.mockResolvedValue(envelope({ id: "kw-1" }))
+    await createKeywordAnalysis(["리더십"], "스타트업 PM")
+    expect(apiMock.post).toHaveBeenCalledWith("/analysis/keyword", {
+      keywords: ["리더십"],
+      target: "스타트업 PM",
+    })
+
+    apiMock.post.mockClear()
+    await createKeywordAnalysis(["리더십"])
+    expect(apiMock.post).toHaveBeenCalledWith("/analysis/keyword", {
+      keywords: ["리더십"],
+      target: "",
+    })
+  })
 })
 
 describe("getIndividualAnalysisResult — isBookmarked 방어 파싱 (FRT-64)", () => {
@@ -265,6 +284,101 @@ describe("getKeywordResult — isBookmarked 방어 파싱 (FRT-64)", () => {
     )
     const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
     expect(res.isBookmarked).toBe(false)
+  })
+})
+
+describe("experiences 매핑 — BAC-58 / 계약 §2.2 (FRT-123)", () => {
+  it("종합 목록: experiences[{id,title}] 를 파싱하고 title=null 을 보존한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope([
+        {
+          id: "comp-1",
+          type: "comprehensive",
+          status: "success",
+          experiences: [
+            { id: "e1", title: "학회 활동" },
+            { id: "e2", title: null }, // 삭제된 경험
+          ],
+        },
+      ]),
+    )
+    const list = await getComprehensiveList()
+    expect(list[0].experiences).toEqual([
+      { id: "e1", title: "학회 활동" },
+      { id: "e2", title: null },
+    ])
+  })
+
+  it("종합 목록: experiences 부재 시 undefined (구 백엔드 폴백)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope([{ id: "comp-1", type: "comprehensive", status: "success", experience_count: 3 }]),
+    )
+    const list = await getComprehensiveList()
+    expect(list[0].experiences).toBeUndefined()
+    expect(list[0].experienceCount).toBe(3)
+  })
+
+  it("종합 단건: 엔벨로프 최상위 experiences 를 읽는다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "comp-1",
+        status: "success",
+        experiences: [{ id: "e1", title: "프로젝트" }, { id: "e2", title: null }],
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.experiences).toEqual([
+      { id: "e1", title: "프로젝트" },
+      { id: "e2", title: null },
+    ])
+  })
+})
+
+describe("schema_version 가드 — 부재 ≠ 미상 (FRT-123 계약 §3.5)", () => {
+  it("모르는 버전이 명시되면 UnsupportedSchemaError 를 던진다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", keywords: [], result: { schema_version: "keyword/9.9" } }),
+    )
+    await expect(getKeywordResult("kw-1")).rejects.toBeInstanceOf(UnsupportedSchemaError)
+  })
+
+  it("schema_version 부재(구 백엔드)면 던지지 않고 렌더한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", keywords: [], result: {} }),
+    )
+    await expect(getKeywordResult("kw-1")).resolves.toMatchObject({ id: "kw-1" })
+  })
+
+  it("아는 버전이면 정상 렌더한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed", result: { schema_version: "comprehensive/1.0" } }),
+    )
+    await expect(getComprehensiveResult("comp-1")).resolves.toMatchObject({ id: "comp-1" })
+  })
+})
+
+describe("updateAnalysisMeta — 타입별 PATCH 경로 (FRT-123 계약 §2)", () => {
+  it("comprehensive → PATCH /analysis/comprehensive/{id}", async () => {
+    apiMock.patch.mockResolvedValue(undefined)
+    await updateAnalysisMeta("comp-1", "comprehensive", { title: "새 이름" })
+    expect(apiMock.patch).toHaveBeenCalledWith("/analysis/comprehensive/comp-1", {
+      title: "새 이름",
+    })
+  })
+
+  it("keyword → PATCH /analysis/keyword/{id}", async () => {
+    apiMock.patch.mockResolvedValue(undefined)
+    await updateAnalysisMeta("kw-1", "keyword", { title: "새 이름" })
+    expect(apiMock.patch).toHaveBeenCalledWith("/analysis/keyword/kw-1", {
+      title: "새 이름",
+    })
+  })
+
+  it("individual 은 이름 수정 대상이 아니므로 throw (PATCH 미호출)", async () => {
+    await expect(
+      updateAnalysisMeta("ind-1", "individual", { title: "x" }),
+    ).rejects.toThrow()
+    expect(apiMock.patch).not.toHaveBeenCalled()
   })
 })
 

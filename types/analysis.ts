@@ -3,12 +3,20 @@
 import type { ImportanceLevel } from "./archive";
 
 export type AnalysisType = "individual" | "comprehensive" | "keyword";
-export type ConfidenceLevel = "sufficient" | "partial" | "insufficient";
 export type AnalysisStatus = "pending" | "processing" | "completed" | "failed";
 export type KeywordCategory = "skill" | "work_style" | "value" | "job_domain";
 export type { ImportanceLevel };
 
 // ─── Common Structures ──────────────────────────────────────
+
+/**
+ * 종합 분석에 포함된 경험 참조 (BAC-58, 계약 §2.2).
+ * title 은 경험이 삭제된 경우 null 로 온다 — 빈 문자열과 구분해 "삭제된 경험"으로 표시한다.
+ */
+export interface ExperienceRef {
+  id: string;
+  title: string | null;
+}
 
 export interface AnalysisSnapshot {
   id: string;
@@ -17,20 +25,14 @@ export interface AnalysisSnapshot {
   status: AnalysisStatus;
   createdAt: string;
   experienceCount: number;
-  summaryText: string;
-  overallConfidence: ConfidenceLevel;
   isBookmarked: boolean;
   selectedExperienceIds?: string[];
   selectedKeywords?: string[];
+  /** 종합 분석 목록에만 실린다 (계약 §2.2). experienceCount 보다 우선한다. */
+  experiences?: ExperienceRef[];
 }
 
 // ─── Korean Label Mappings ──────────────────────────────────
-
-export const confidenceLevelLabel: Record<ConfidenceLevel, string> = {
-  sufficient: "근거 충분",
-  partial: "일부 근거",
-  insufficient: "근거 부족",
-};
 
 export const keywordCategoryLabel: Record<KeywordCategory, string> = {
   skill: "직무/스킬",
@@ -205,6 +207,8 @@ export interface ComprehensiveAnalysisResult {
   id: string;
   status: AnalysisStatus;
   isBookmarked: boolean;
+  /** 분석에 포함된 경험 (계약 §2.2·§3.6). 삭제된 경험은 title=null. */
+  experiences: ExperienceRef[];
   userSchool: string;
   userDepartment: string;
   briefSummary: string;
@@ -346,7 +350,6 @@ export interface AnalysisHomeSummary {
     totalExperiences: number;
     analysisCompleted: number;
     lastAnalysisAt: string;
-    improvementNeeded: number;
   };
   recentIndividual: AnalysisSnapshot[];
   recentComprehensive: AnalysisSnapshot[];

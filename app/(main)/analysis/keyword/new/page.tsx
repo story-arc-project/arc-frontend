@@ -23,6 +23,7 @@ export default function KeywordNewPage() {
   const [selectedKeywords, setSelectedKeywords] = useState<
     { label: string; category: KeywordCategory }[]
   >([]);
+  const [target, setTarget] = useState("");
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
   const [analysisId, setAnalysisId] = useState<string | null>(null);
@@ -71,7 +72,7 @@ export default function KeywordNewPage() {
     });
     try {
       const labels = selectedKeywords.map((k) => k.label);
-      const { analysisId: id } = await createKeywordAnalysis(labels);
+      const { analysisId: id } = await createKeywordAnalysis(labels, target.trim());
       if (id) {
         setAnalysisId(id);
         return;
@@ -84,7 +85,7 @@ export default function KeywordNewPage() {
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selectedKeywords, router]);
+  }, [selectedKeywords, target, router]);
 
   if (phase === "loading") {
     return (
@@ -147,6 +148,24 @@ export default function KeywordNewPage() {
             selected={selectedKeywords}
             onChange={setSelectedKeywords}
             maxCount={3}
+          />
+        </section>
+
+        <section className="space-y-2">
+          <label htmlFor="keyword-target" className="text-title text-text-primary block">
+            목표 (선택)
+          </label>
+          <p className="text-body-sm text-text-secondary">
+            지원하려는 직무·상황을 적으면 그 맥락에 맞춰 분석해요.
+          </p>
+          <input
+            id="keyword-target"
+            type="text"
+            value={target}
+            onChange={(e) => setTarget(e.target.value.slice(0, 100))}
+            placeholder="예: 스타트업 PM 지원"
+            maxLength={100}
+            className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-brand focus-visible:ring-2 focus-visible:ring-brand"
           />
         </section>
 

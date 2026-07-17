@@ -6,8 +6,8 @@ import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getKeywordList, deleteKeywordAnalysis } from "@/lib/api/analysis-api";
 import { formatDate } from "@/lib/utils/date-utils";
+import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Button, Badge, Dialog } from "@/components/ui";
-import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 export default function KeywordAnalysisPage() {
@@ -123,7 +123,7 @@ export default function KeywordAnalysisPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="text-body-sm text-text-primary font-medium">
-                            {item.title}
+                            {getDisplayTitle(item.title)}
                           </span>
                         </div>
                         <p className="text-body-sm text-text-tertiary mt-1">
@@ -147,13 +147,9 @@ export default function KeywordAnalysisPage() {
                       >
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="text-body-sm text-text-primary font-medium">
-                            {item.title}
+                            {getDisplayTitle(item.title)}
                           </span>
-                          <ConfidenceBadge confidence={item.overallConfidence} />
                         </div>
-                        <p className="text-body-sm text-text-secondary line-clamp-1">
-                          {item.summaryText}
-                        </p>
                         {item.selectedKeywords && item.selectedKeywords.length > 0 && (
                           <div className="flex gap-1.5 mt-1.5 flex-wrap">
                             {item.selectedKeywords.map((kw) => (

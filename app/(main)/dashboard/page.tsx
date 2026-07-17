@@ -20,6 +20,7 @@ import { getAnalysisHomeSummary } from "@/lib/api/analysis-api";
 import { toExperienceV2 } from "@/lib/utils/experience-mapper";
 import { formatRelativeTime } from "@/lib/utils/date-utils";
 import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2";
+import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import {
   analysisTypeLabel,
   ANALYSIS_DETAIL_PATH,
@@ -27,7 +28,6 @@ import {
 import type { AnalysisHomeSummary, AnalysisSnapshot } from "@/types/analysis";
 import type { Experience } from "@/types/experience";
 import type { ExperienceTypeId } from "@/types/archive";
-import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -534,14 +534,10 @@ export default function DashboardPage() {
                             {analysisTypeLabel[snapshot.type]}
                           </Badge>
                           <span className="text-body-sm text-text-primary font-medium truncate">
-                            {snapshot.title}
+                            {getDisplayTitle(snapshot.title)}
                           </span>
                         </div>
-                        <p className="text-body-sm text-text-secondary line-clamp-1">
-                          {snapshot.summaryText}
-                        </p>
                         <div className="flex items-center gap-2 mt-2">
-                          <ConfidenceBadge confidence={snapshot.overallConfidence} />
                           <span className="text-caption text-text-tertiary">
                             {mounted ? formatRelativeTime(snapshot.createdAt) : "\u00A0"}
                           </span>

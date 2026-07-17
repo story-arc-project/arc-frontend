@@ -6,8 +6,8 @@ import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getComprehensiveList, deleteComprehensiveAnalysis } from "@/lib/api/analysis-api";
 import { formatDate } from "@/lib/utils/date-utils";
+import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Button, Dialog } from "@/components/ui";
-import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 export default function ComprehensiveAnalysisPage() {
@@ -120,7 +120,7 @@ export default function ComprehensiveAnalysisPage() {
                       {!isNavigable ? (
                         <div>
                           <span className="text-body-sm text-text-primary font-medium">
-                            {item.title}
+                            {getDisplayTitle(item.title)}
                           </span>
                           <p className="text-body-sm text-text-tertiary mt-1">
                             {item.status === "failed" ? "분석에 실패했습니다" : "분석 진행 중..."}
@@ -130,18 +130,12 @@ export default function ComprehensiveAnalysisPage() {
                         <Link href={`/analysis/comprehensive/${item.id}`} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <span className="text-body-sm text-text-primary font-medium">
-                              {item.title}
+                              {getDisplayTitle(item.title)}
                             </span>
-                            <ConfidenceBadge
-                              confidence={item.overallConfidence}
-                            />
                           </div>
-                          <p className="text-body-sm text-text-secondary line-clamp-1">
-                            {item.summaryText}
-                          </p>
                           <div className="flex items-center gap-2 mt-1.5">
                             <span className="text-caption text-text-tertiary">
-                              경험 {item.experienceCount}개
+                              경험 {item.experiences?.length ?? item.experienceCount}개
                             </span>
                             <span className="text-caption text-text-tertiary">
                               {formatDate(item.createdAt)}

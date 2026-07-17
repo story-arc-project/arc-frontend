@@ -19,8 +19,8 @@ import { analysisTypeLabel, ANALYSIS_DETAIL_PATH } from "@/types/analysis";
 import { getAnalysisHomeSummary } from "@/lib/api/analysis-api";
 import { formatRelativeTime } from "@/lib/utils/date-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
+import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Badge } from "@/components/ui";
-import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 
 const STAT_ICONS = [FileText, CheckCircle, Clock, AlertTriangle] as const;
@@ -111,7 +111,6 @@ export default function AnalysisHomePage() {
     { label: "전체 경험", value: data.stats.totalExperiences, color: "text-brand" },
     { label: "분석 완료", value: data.stats.analysisCompleted, color: "text-success" },
     { label: "최근 분석", value: data.stats.lastAnalysisAt ? formatRelativeTime(data.stats.lastAnalysisAt) : "-", color: "text-text-secondary" },
-    { label: "보완 필요", value: data.stats.improvementNeeded, color: data.stats.improvementNeeded > 0 ? "text-warning" : "text-text-tertiary" },
   ];
 
   const recentMap: Record<TabKey, typeof data.recentIndividual> = {
@@ -241,14 +240,10 @@ export default function AnalysisHomePage() {
                               {analysisTypeLabel[snapshot.type]}
                             </Badge>
                             <span className="text-body-sm text-text-primary font-medium truncate">
-                              {snapshot.title}
+                              {getDisplayTitle(snapshot.title)}
                             </span>
                           </div>
-                          <p className="text-body-sm text-text-secondary line-clamp-1">
-                            {snapshot.summaryText}
-                          </p>
                           <div className="flex items-center gap-2 mt-2">
-                            <ConfidenceBadge confidence={snapshot.overallConfidence} />
                             <span className="text-caption text-text-tertiary">
                               {formatRelativeTime(snapshot.createdAt)}
                             </span>
@@ -261,7 +256,7 @@ export default function AnalysisHomePage() {
                               {analysisTypeLabel[snapshot.type]}
                             </Badge>
                             <span className="text-body-sm text-text-primary font-medium truncate">
-                              {snapshot.title}
+                              {getDisplayTitle(snapshot.title)}
                             </span>
                           </div>
                           <p className="text-body-sm text-text-tertiary line-clamp-1">

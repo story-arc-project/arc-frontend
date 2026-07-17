@@ -13,23 +13,32 @@ import type {
   KeywordStoryline,
   MatchedExperience,
 } from "@/types/analysis";
-import { getKeywordResult } from "@/lib/api/analysis-api";
+import { getKeywordResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
 import { formatDateTime } from "@/lib/utils/date-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
+import UnsupportedSchemaNotice from "@/components/features/analysis/common/UnsupportedSchemaNotice";
 
 export default function KeywordDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
   const basePath = useBasePath();
   const [data, setData] = useState<KeywordAnalysisResult | null>(null);
   const [error, setError] = useState(false);
+  const [unsupported, setUnsupported] = useState(false);
 
   useEffect(() => {
     getKeywordResult(analysisId)
       .then(setData)
-      .catch(() => setError(true));
+      .catch((e) => {
+        if (e instanceof UnsupportedSchemaError) setUnsupported(true);
+        else setError(true);
+      });
   }, [analysisId]);
+
+  if (unsupported) {
+    return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/keyword" />;
+  }
 
   if (error) {
     return (

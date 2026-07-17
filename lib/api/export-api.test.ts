@@ -105,18 +105,84 @@ describe("getResumeList", () => {
   });
 });
 
-describe("createResume", () => {
-  it("language 만 보내고, data 없는 성공 응답에도 throw 하지 않는다", async () => {
+describe("createResume — id 이중경로 (FRT-123 계약 §2.4)", () => {
+  it("id 없는 응답(구 백엔드)에도 throw 하지 않고 { id: null } 을 돌려준다", async () => {
     mockPost.mockResolvedValue({
       status: "success",
       message: "Resume generation queued successfully.",
     });
 
-    await expect(createResume({ language: "ko" })).resolves.toBeUndefined();
+    await expect(createResume({ language: "ko" })).resolves.toEqual({ id: null });
     expect(mockPost).toHaveBeenCalledWith(
       "/export/resume",
       { language: "ko" },
       undefined,
     );
+  });
+
+  it("data.{id,title} 가 오면 그대로 추출한다 (계약 이행 백엔드)", async () => {
+    mockPost.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-1", title: "2026-07-17 resume" },
+    });
+
+    await expect(createResume({ language: "en" })).resolves.toEqual({
+      id: "res-1",
+      title: "2026-07-17 resume",
+    });
+  });
+
+  it("title 을 넘기면 body 에 실어 보낸다", async () => {
+    mockPost.mockResolvedValue({ status: "success", message: "ok", data: { id: "res-2" } });
+    await createResume({ language: "ko", title: "내 이력서" });
+    expect(mockPost).toHaveBeenCalledWith(
+      "/export/resume",
+      { language: "ko", title: "내 이력서" },
+      undefined,
+    );
+  });
+});
+
+describe("getResumeList — title/language/status 파싱 (FRT-123 계약 §2.4)", () => {
+  it("계약 필드가 오면 목록 항목에 싣는다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: {
+        count: 1,
+        contents: [
+          {
+            id: "r1",
+            created_at: "2026-07-17T02:30:00.000Z",
+            updated_at: "2026-07-17T02:35:00.000Z",
+            title: "내 이력서",
+            language: "en",
+            status: "success",
+          },
+        ],
+      },
+    });
+
+    const items = await getResumeList();
+    expect(items[0]).toMatchObject({
+      version_id: "r1",
+      title: "내 이력서",
+      language: "en",
+      status: "completed", // success → completed
+    });
+  });
+
+  it("계약 필드 부재 시 title/language/status 는 undefined (구 백엔드 폴백)", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { count: 1, contents: [{ id: "r1", created_at: "2026-07-17T02:30:00.000Z" }] },
+    });
+
+    const items = await getResumeList();
+    expect(items[0].title).toBeUndefined();
+    expect(items[0].language).toBeUndefined();
+    expect(items[0].status).toBeUndefined();
   });
 });
