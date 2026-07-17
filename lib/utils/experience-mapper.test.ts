@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import type { Block, BlockValue, CustomEntry, ExperienceV2 } from "@/types/archive"
+import type {
+  Block,
+  BlockValue,
+  CustomEntry,
+  ExperienceV2,
+  RepeatableCellBlockValue,
+} from "@/types/archive"
 import type { Experience } from "@/types/experience"
 import { getTemplateForType, TEMPLATE_VERSION } from "@/lib/constants/templates-v2"
 import {
@@ -488,6 +494,38 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
       makeExperience({ content: payload.content, importance: payload.importance }),
     )
     expect(reloaded.extensionBlocks.find(b => b.key === tableKey)?.lockColumns).toBe(true)
+  })
+
+  it("저장된 컬럼이 템플릿과 다르면 잠그지 않는다 — 커스터마이즈한 열을 되돌릴 수 있어야 (FRT-104)", () => {
+    const tableKey = "career-tasks.업무내용"
+    const tmplTable = careerBlocks().extensionBlocks.find(b => b.key === tableKey)!
+    const tmplValue = tmplTable.value as RepeatableCellBlockValue
+
+    // 잠금 도입 이전에 사용자가 열을 하나 추가해 둔 레코드
+    const customized: RepeatableCellBlockValue = {
+      ...tmplValue,
+      columns: [...tmplValue.columns, { key: "메모", label: "메모", blockType: "text" }],
+    }
+    const reloaded = toExperienceV2(
+      makeExperience({ content: { schema_version: 2, fields: { [tableKey]: customized } } }),
+    )
+    const loadedTable = reloaded.extensionBlocks.find(b => b.key === tableKey)
+    expect(loadedTable?.lockColumns).toBe(false)
+    expect((loadedTable?.value as RepeatableCellBlockValue).columns).toHaveLength(
+      tmplValue.columns.length + 1,
+    )
+  })
+
+  it("템플릿 열을 지운 레코드도 잠그지 않는다 — 지운 열을 복구할 수 있어야 (FRT-104)", () => {
+    const tableKey = "career-tasks.업무내용"
+    const tmplTable = careerBlocks().extensionBlocks.find(b => b.key === tableKey)!
+    const tmplValue = tmplTable.value as RepeatableCellBlockValue
+    const cleared: RepeatableCellBlockValue = { ...tmplValue, columns: [] }
+
+    const reloaded = toExperienceV2(
+      makeExperience({ content: { schema_version: 2, fields: { [tableKey]: cleared } } }),
+    )
+    expect(reloaded.extensionBlocks.find(b => b.key === tableKey)?.lockColumns).toBe(false)
   })
 
   it("키 없는(모호 라벨) 확장 블록은 custom 으로 보존된다 (Codex P1 회귀)", () => {

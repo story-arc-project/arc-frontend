@@ -1,8 +1,7 @@
-import { useState } from "react"
 import type { Meta, StoryObj } from "@storybook/nextjs"
-import { expect, userEvent, within } from "storybook/test"
+import { expect, within } from "storybook/test"
 
-import type { Block, RepeatableCellBlockValue } from "@/types/archive"
+import type { Block } from "@/types/archive"
 import RepeatableCellBlock from "./RepeatableCellBlock"
 
 const meta: Meta<typeof RepeatableCellBlock> = {
@@ -91,36 +90,6 @@ export const UnlockedColumns: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    expect(canvas.getByPlaceholderText("열 추가...")).toBeInTheDocument()
-    expect(canvas.getByRole("button", { name: "이름 열 삭제" })).toBeInTheDocument()
-  },
-}
-
-/**
- * 잠긴 표인데 컬럼이 비어 있는 레거시 레코드 — 잠금 이전에 사용자가 열을 전부 지운 경우.
- * 열 관리가 유일한 복구 수단이라 열어둔다. 첫 열을 추가해도 잠기지 않아야 나머지 열을 마저
- * 채우고 실수도 되돌릴 수 있다 (Codex P2 회귀).
- */
-export const LockedButColumnsCleared: Story = {
-  render: function Render() {
-    const [value, setValue] = useState<RepeatableCellBlockValue>({
-      type: "repeatable-cell",
-      columns: [],
-      rows: [],
-    })
-    return (
-      <RepeatableCellBlock
-        block={{ id: "rc-empty", type: "repeatable-cell", label: "프로젝트/연구활동", lockColumns: true, value }}
-        onChange={setValue}
-      />
-    )
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement)
-    // 빈 표의 복구 진입점이 열려 있다
-    await userEvent.type(canvas.getByPlaceholderText("열 이름..."), "이름")
-    await userEvent.click(canvas.getByRole("button", { name: "열 추가" }))
-    // 첫 열을 추가해도 갇히지 않는다 — 열 관리가 계속 열려 있다
     expect(canvas.getByPlaceholderText("열 추가...")).toBeInTheDocument()
     expect(canvas.getByRole("button", { name: "이름 열 삭제" })).toBeInTheDocument()
   },
