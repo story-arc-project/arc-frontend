@@ -5,6 +5,7 @@ import { useState } from "react"
 
 import OutcomeList from "./OutcomeList"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
+import { isBlockEmpty } from "@/lib/utils/block-utils"
 import type { Block, RepeatableCellBlockValue } from "@/types/archive"
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
@@ -106,15 +107,19 @@ describe("OutcomeList", () => {
     expect(inputs[0].value).toBe("B")
   })
 
-  it("마지막 행을 삭제하면 rows 가 비고 인풋 없이 추가 버튼만 남는다(빈 블록 불변식)", async () => {
+  it("마지막 행을 삭제하면 rows 는 비지만 입력칸 한 줄(placeholder)이 남는다(FRT-103)", async () => {
     const user = userEvent.setup()
     const onValue = vi.fn()
     render(<Harness initial={["A"]} onValue={onValue} />)
     await user.click(screen.getByRole("button", { name: /삭제/ }))
-    expect(screen.queryByRole("textbox")).toBeNull()
-    expect(screen.getByRole("button", { name: /추가/ })).toBeInTheDocument()
+    // 빈 블록 불변식: value 는 여전히 비어 있어야 한다(유령 섹션 방지).
     const last = onValue.mock.calls.at(-1)![0] as RepeatableCellBlockValue
     expect(last.rows).toHaveLength(0)
+    // FRT-103: 그래도 화면엔 바로 쓸 수 있는 빈 줄이 보인다(추가 버튼은 할 일이 없어 숨는다).
+    const inputs = textInputs()
+    expect(inputs).toHaveLength(1)
+    expect(inputs[0].value).toBe("")
+    expect(screen.queryByRole("button", { name: /추가/ })).toBeNull()
   })
 
   it("삭제해도 나머지 행의 안정 id 가 보존된다(FRT-76 앵커)", async () => {
@@ -160,6 +165,93 @@ describe("OutcomeList", () => {
     await user.type(textInputs()[0], "수상")
     const last = onValue.mock.calls.at(-1)![0] as RepeatableCellBlockValue
     expect(last.rows[0].cells.item).toBe("수상")
+  })
+})
+
+// ── FRT-103: 빈 상태 placeholder 행 ──────────────────────────────
+describe("OutcomeList — 빈 상태 placeholder(FRT-103)", () => {
+  it("rows 가 비어도 입력칸 한 줄을 미리 보여준다", () => {
+    render(<Harness initial={[]} />)
+    expect(textInputs()).toHaveLength(1)
+    expect(screen.getByPlaceholderText("예: 수상")).toBeInTheDocument()
+  })
+
+  it("이미 빈 줄이 있으므로 '추가' 버튼은 숨긴다", () => {
+    render(<Harness initial={[]} />)
+    expect(screen.queryByRole("button", { name: /추가/ })).toBeNull()
+  })
+
+  it("타이핑하기 전에는 onChange 를 한 번도 호출하지 않는다(빈 블록 불변식)", () => {
+    const onValue = vi.fn()
+    render(<Harness initial={[]} onValue={onValue} />)
+    expect(onValue).not.toHaveBeenCalled()
+  })
+
+  it("손대지 않으면 isBlockEmpty 가 여전히 참이다(상세뷰 유령 섹션 방지)", () => {
+    const block = makeBlock([])
+    render(<OutcomeList block={block} onChange={() => {}} />)
+    expect(textInputs()).toHaveLength(1)
+    expect(isBlockEmpty(block)).toBe(true)
+  })
+
+  it("첫 글자를 입력하면 그 텍스트를 담은 행 하나로 실체화한다", async () => {
+    const user = userEvent.setup()
+    const onValue = vi.fn()
+    render(<Harness initial={[]} onValue={onValue} />)
+    await user.type(textInputs()[0], "은상")
+    const last = onValue.mock.calls.at(-1)![0] as RepeatableCellBlockValue
+    expect(last.rows).toHaveLength(1)
+    expect(last.rows[0].cells.item).toBe("은상")
+  })
+
+  it("실체화된 행은 placeholder 와 같은 인풋 DOM 을 유지한다(리마운트 없음 = IME 보존)", async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={[]} />)
+    const before = textInputs()[0]
+    await user.type(before, "은")
+    // 같은 노드여야 한다 — key 가 바뀌어 리마운트되면 한글 조합 중 글자가 날아간다.
+    expect(textInputs()[0]).toBe(before)
+    expect(document.activeElement).toBe(before)
+  })
+
+  it("실체화하면 '추가' 버튼이 다시 나타난다", async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={[]} />)
+    await user.type(textInputs()[0], "은상")
+    expect(screen.getByRole("button", { name: /추가/ })).toBeInTheDocument()
+  })
+
+  it("placeholder 행에는 삭제 버튼이 없다", () => {
+    render(<Harness initial={[]} />)
+    expect(screen.queryByRole("button", { name: /삭제/ })).toBeNull()
+  })
+
+  it("placeholder 행에는 rowAction(FRT-76 연결 버튼)을 렌더하지 않는다", () => {
+    const rowAction = vi.fn(() => <button type="button">기록</button>)
+    render(<OutcomeList block={makeBlock([])} onChange={() => {}} rowAction={rowAction} />)
+    expect(screen.queryByRole("button", { name: "기록" })).toBeNull()
+    expect(rowAction).not.toHaveBeenCalled()
+  })
+
+  it("placeholder 에서 Enter 를 눌러도 행이 늘지 않고 커밋도 하지 않는다", async () => {
+    const user = userEvent.setup()
+    const onValue = vi.fn()
+    render(<Harness initial={[]} onValue={onValue} />)
+    await user.click(textInputs()[0])
+    await user.keyboard("{Enter}")
+    expect(textInputs()).toHaveLength(1)
+    expect(onValue).not.toHaveBeenCalled()
+  })
+
+  it("빈 상태 항목 수는 0 이다(placeholder 는 데이터가 아니다)", () => {
+    render(<Harness initial={[]} />)
+    expect(screen.getByText("0개 항목")).toBeInTheDocument()
+  })
+
+  it("readOnly 는 placeholder 없이 기존대로 '—' 만 보여준다", () => {
+    render(<Harness initial={[]} readOnly />)
+    expect(screen.queryByRole("textbox")).toBeNull()
+    expect(screen.getByText("—")).toBeInTheDocument()
   })
 })
 
