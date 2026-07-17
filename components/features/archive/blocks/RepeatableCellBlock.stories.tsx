@@ -1,9 +1,9 @@
+import { useState } from "react"
 import type { Meta, StoryObj } from "@storybook/nextjs"
 import { expect, userEvent, within } from "storybook/test"
-import { useState } from "react"
 
-import RepeatableCellBlock from "./RepeatableCellBlock"
 import type { Block, RepeatableCellBlockValue } from "@/types/archive"
+import RepeatableCellBlock from "./RepeatableCellBlock"
 
 const meta: Meta<typeof RepeatableCellBlock> = {
   title: "Features/Archive/Blocks/RepeatableCellBlock",
