@@ -279,7 +279,9 @@ export interface MatchedExperience {
   relevance: string; // high | medium | low
   relevanceSummary: string; // v4.1
   evidence: KeywordEvidence[];
-  matchedCriteria: number[]; // v4.1: compliance_criteria[].id 참조 배열
+  // v4.1: compliance_criteria[].id 참조 배열(number). 구버전 백엔드가 서술 문자열로
+  // 보내면 그 문자열을 보존한다(조인 불가 시 뱃지로 직접 표시).
+  matchedCriteria: (number | string)[];
   confidence: string;
   confidenceReason: string;
   isReferenceOnly: boolean; // v4.1: relevance=low 자동 태그 → [참고용]

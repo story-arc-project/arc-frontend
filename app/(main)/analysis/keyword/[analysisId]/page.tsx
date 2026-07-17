@@ -345,6 +345,10 @@ function ExperienceCard({
   criteria: Map<number, string>;
 }) {
   const rel = relevanceMeta[experience.relevance.toLowerCase()];
+  // relevanceSummary(v4.1)가 있으면 그것을, 없고 relevance 가 enum 밖 자유텍스트(구버전)면
+  // 원본 문자열을 본문으로 보여 준다 — 연관성 정보가 조용히 사라지지 않게.
+  const relevanceText =
+    experience.relevanceSummary || (!rel ? experience.relevance : "");
   return (
     <li className="bg-surface border border-border rounded-lg p-4 space-y-3">
       <div className="space-y-1">
@@ -359,9 +363,9 @@ function ExperienceCard({
           {[experience.organization, experience.period].filter(Boolean).join(" · ")}
         </p>
       </div>
-      {experience.relevanceSummary && (
+      {relevanceText && (
         <p className="text-body-sm text-text-secondary leading-relaxed whitespace-pre-line">
-          {experience.relevanceSummary}
+          {relevanceText}
         </p>
       )}
       {experience.confidence && (
@@ -378,9 +382,9 @@ function ExperienceCard({
         <div className="space-y-1">
           <p className="text-caption text-text-tertiary font-medium">충족 기준</p>
           <div className="flex flex-wrap gap-1.5">
-            {experience.matchedCriteria.map((id) => (
-              <Badge key={id} variant="outline">
-                {criteria.get(id) ?? `기준 ${id}`}
+            {experience.matchedCriteria.map((c, i) => (
+              <Badge key={i} variant="outline">
+                {typeof c === "number" ? (criteria.get(c) ?? `기준 ${c}`) : c}
               </Badge>
             ))}
           </div>

@@ -118,7 +118,13 @@ export class UnsupportedSchemaError extends Error {
 function assertRenderableSchema(data: unknown): void {
   const root = asRecord(data);
   const result = asRecord(root.result);
-  const v = result.schema_version ?? result.schemaVersion;
+  // 매퍼들은 result 래퍼가 없는 flat 응답도 지원하므로, schema_version 도
+  // result 안(중첩형)과 최상위(flat형) 양쪽에서 읽는다.
+  const v =
+    result.schema_version ??
+    result.schemaVersion ??
+    root.schema_version ??
+    root.schemaVersion;
   if (typeof v === "string" && !KNOWN_SCHEMA_VERSIONS.has(v)) {
     throw new UnsupportedSchemaError(v);
   }
@@ -460,17 +466,34 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
 // 불확실하므로 최상위 키는 A_ 접두사·무접두사·camelCase 를 모두 읽는다(백지 방지).
 // 내부 형태도 구버전(문자열 배열) ↔ 신버전(객체/숫자 배열) 이중호환으로 파싱한다.
 
-function asNumberArray(value: unknown): number[] {
+// 숫자 또는 숫자 문자열("3")을 number 로. 아니면 fallback.
+// compliance id ↔ matched_criteria 조인 대칭을 위해 둘 다 이 규칙을 쓴다.
+function asNumericId(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
+/**
+ * matched_criteria 를 조인 키(number)로 파싱하되, 구버전 백엔드가 기준을 서술 문자열로
+ * 보내는 경우(비숫자 문자열)엔 그 문자열을 그대로 보존해 화면이 조용히 비지 않게 한다.
+ * v4.1(number) → 조인, 구버전(text) → 문자열 뱃지 직접 표시.
+ */
+function mapMatchedCriteria(value: unknown): (number | string)[] {
   if (!Array.isArray(value)) return [];
   return value
-    .map((v) =>
-      typeof v === "number"
-        ? v
-        : typeof v === "string" && v.trim() !== ""
-          ? Number(v)
-          : NaN,
-    )
-    .filter((n) => Number.isFinite(n));
+    .map((v): number | string | null => {
+      if (typeof v === "number") return Number.isFinite(v) ? v : null;
+      if (typeof v === "string" && v.trim() !== "") {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : v;
+      }
+      return null;
+    })
+    .filter((v): v is number | string => v !== null);
 }
 
 function mapComplianceCriterion(dto: unknown, index: number): ComplianceCriterion {
@@ -480,7 +503,7 @@ function mapComplianceCriterion(dto: unknown, index: number): ComplianceCriterio
   }
   const r = asRecord(dto);
   return {
-    id: asNumber(r.id, index + 1),
+    id: asNumericId(r.id, index + 1),
     criterion: asString(r.criterion ?? r.text),
     signalDescription: asString(r.signalDescription ?? r.signal_description),
   };
@@ -529,7 +552,7 @@ function mapMatchedExperience(dto: unknown): MatchedExperience {
     relevance: asString(r.relevance),
     relevanceSummary: asString(r.relevanceSummary ?? r.relevance_summary),
     evidence: asArray(r.evidence).map(mapKeywordEvidence),
-    matchedCriteria: asNumberArray(r.matchedCriteria ?? r.matched_criteria),
+    matchedCriteria: mapMatchedCriteria(r.matchedCriteria ?? r.matched_criteria),
     confidence: asString(r.confidence),
     confidenceReason: asString(r.confidenceReason ?? r.confidence_reason),
     isReferenceOnly: asBoolean(r.isReferenceOnly ?? r.is_reference_only),
@@ -644,6 +667,10 @@ function mapInformationEnhancement(dto: unknown): InformationEnhancement {
   };
 }
 
+function isNonEmptyInformationEnhancement(e: InformationEnhancement): boolean {
+  return Boolean(e.target || e.missing || e.howToAdd || e.reason || e.priority);
+}
+
 function mapExperienceExpansion(dto: unknown): ExperienceExpansion {
   if (typeof dto === "string") {
     return {
@@ -662,6 +689,16 @@ function mapExperienceExpansion(dto: unknown): ExperienceExpansion {
     examples: asStringArray(r.examples),
     priority: asString(r.priority),
   };
+}
+
+function isNonEmptyExperienceExpansion(e: ExperienceExpansion): boolean {
+  return Boolean(
+    e.gapDescription ||
+      e.suggestedExperienceType ||
+      e.whyHelpful ||
+      e.examples.length > 0 ||
+      e.priority,
+  );
 }
 
 function mapRecommendationItem(dto: unknown): KeywordRecommendationItem {
@@ -724,15 +761,22 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
     storylines: asArray(body.storylines ?? body.E_storylines).map(mapKeywordStoryline),
     improvementGuide: {
       overallDirection: mapOverallDirection(guide.overallDirection ?? guide.overall_direction),
+      // 알맹이 없는 항목(모든 필드가 빈 문자열/빈 배열)은 걸러 빈 카드 렌더를 막는다.
       informationEnhancement: asArray(
         guide.informationEnhancement ?? guide.information_enhancement,
-      ).map(mapInformationEnhancement),
+      )
+        .map(mapInformationEnhancement)
+        .filter(isNonEmptyInformationEnhancement),
       experienceExpansion: asArray(
         guide.experienceExpansion ?? guide.experience_expansion,
-      ).map(mapExperienceExpansion),
+      )
+        .map(mapExperienceExpansion)
+        .filter(isNonEmptyExperienceExpansion),
       keywordSpecificRecommendations: asArray(
         guide.keywordSpecificRecommendations ?? guide.keyword_specific_recommendations,
-      ).map(mapKeywordSpecificRecommendation),
+      )
+        .map(mapKeywordSpecificRecommendation)
+        .filter((r) => r.keyword !== "" || r.recommendations.length > 0),
     },
   };
 }

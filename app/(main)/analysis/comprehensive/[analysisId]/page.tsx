@@ -148,11 +148,12 @@ function ExperiencesBlock({
     <section className="space-y-2">
       <h2 className="text-title text-text-primary">포함된 경험 {experiences.length}개</h2>
       <div className="flex flex-wrap gap-1.5">
-        {experiences.map((exp) =>
+        {experiences.map((exp, i) =>
           exp.title ? (
-            <Badge key={exp.id} variant="outline">{exp.title}</Badge>
+            <Badge key={exp.id || `exp-${i}`} variant="outline">{exp.title}</Badge>
           ) : (
-            <Badge key={exp.id} variant="default" className="text-text-tertiary italic">
+            // 삭제된 경험은 id 가 빈 문자열일 수 있어 인덱스로 키 충돌을 막는다.
+            <Badge key={exp.id || `deleted-${i}`} variant="default" className="text-text-tertiary italic">
               삭제된 경험
             </Badge>
           ),

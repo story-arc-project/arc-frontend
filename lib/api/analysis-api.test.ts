@@ -398,7 +398,7 @@ describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
     ])
   })
 
-  it("matched_criteria 를 number[] 로 파싱하고 숫자 아닌 값은 버린다", async () => {
+  it("matched_criteria: 숫자·숫자문자열은 number 로, 비숫자 문자열(구버전 서술기준)은 보존한다", async () => {
     apiMock.get.mockResolvedValue(
       envelope({
         id: "kw-1",
@@ -408,7 +408,7 @@ describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
             {
               keyword: "협업",
               experiences: [
-                { career_title: "경험", matched_criteria: [1, "3", "x", 5], is_reference_only: true, relevance_summary: "요약" },
+                { career_title: "경험", matched_criteria: [1, "3", "기준 서술문", 5, "", null], is_reference_only: true, relevance_summary: "요약" },
               ],
             },
           ],
@@ -417,9 +417,53 @@ describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
     )
     const res = await getKeywordResult("kw-1")
     const exp = res.matchedExperiences[0].experiences[0]
-    expect(exp.matchedCriteria).toEqual([1, 3, 5])
+    // 빈 문자열·null 은 버리고, 숫자문자열은 number 로, 서술 문자열은 그대로 보존(백지 방지)
+    expect(exp.matchedCriteria).toEqual([1, 3, "기준 서술문", 5])
     expect(exp.isReferenceOnly).toBe(true)
     expect(exp.relevanceSummary).toBe("요약")
+  })
+
+  it("compliance_criteria.id 가 숫자 문자열(\"3\")이어도 number 로 강제해 matched_criteria 와 조인 가능하게 한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          keyword_definitions: [
+            { keyword: "협업", compliance_criteria: [{ id: "3", criterion: "역할 분담" }] },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].complianceCriteria[0].id).toBe(3)
+  })
+
+  it("improvement_guide 의 알맹이 없는 빈 항목은 걸러낸다(빈 카드 방지)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          improvement_guide: {
+            information_enhancement: [
+              { target: "협업 경험", missing: "구체 성과" },
+              { target: "", missing: "", how_to_add: "", reason: "", priority: "" },
+              "",
+            ],
+            experience_expansion: [{}, { gap_description: "리더십 공백" }],
+            keyword_specific_recommendations: [
+              { keyword: "", recommendations: [] },
+              { keyword: "협업", recommendations: [{ title: "팀 프로젝트" }] },
+            ],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.improvementGuide.informationEnhancement).toHaveLength(1)
+    expect(res.improvementGuide.experienceExpansion).toHaveLength(1)
+    expect(res.improvementGuide.keywordSpecificRecommendations).toHaveLength(1)
   })
 
   it("key_quotes 를 객체 배열로 파싱한다 (문자열 폴백 포함)", async () => {
@@ -519,6 +563,14 @@ describe("schema_version 가드 — 부재 ≠ 미상 (FRT-123 계약 §3.5)", (
       envelope({ id: "comp-1", status: "completed", result: { schema_version: "comprehensive/1.0" } }),
     )
     await expect(getComprehensiveResult("comp-1")).resolves.toMatchObject({ id: "comp-1" })
+  })
+
+  it("flat 응답(result 래퍼 없음)의 최상위 schema_version 도 검사한다", async () => {
+    // 매퍼가 flat 형태를 지원하므로 schema_version 이 최상위에 오는 경우도 방어해야 한다.
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", schema_version: "keyword/9.9", keywords: [] }),
+    )
+    await expect(getKeywordResult("kw-1")).rejects.toBeInstanceOf(UnsupportedSchemaError)
   })
 })
 

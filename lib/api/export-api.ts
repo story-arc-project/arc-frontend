@@ -11,7 +11,12 @@ import * as demo from "@/lib/demo/handlers";
 
 // ─── Defensive parsing helpers ─────────────────────────────────────
 
-/** 백엔드 status("pending"|"queued"|"success"|"failed") → 프런트 enum. analysis-api 와 동일 규약. */
+/**
+ * 백엔드 status("pending"|"queued"|"success"|"failed") → 프런트 enum.
+ * analysis-api 의 mapStatus 와 값 매핑은 동일하다(queued→processing, success→completed,
+ * 이미 프런트형인 processing 은 그대로 통과). 단 목록 배지는 "미표시"가 유효 상태이므로
+ * 알 수 없는/부재 값은 mapStatus 처럼 "pending" 으로 뭉개지 않고 undefined 로 둔다.
+ */
 function mapResumeStatus(value: unknown): AnalysisStatus | undefined {
   switch (value) {
     case "queued":
@@ -20,11 +25,12 @@ function mapResumeStatus(value: unknown): AnalysisStatus | undefined {
       return "completed";
     case "failed":
       return "failed";
-    case "pending":
     case "processing":
+      return "processing";
+    case "pending":
       return "pending";
     default:
-      return undefined; // 필드 부재(구 백엔드) → 상태 미표시
+      return undefined; // 필드 부재(구 백엔드)·미지 값 → 상태 미표시
   }
 }
 

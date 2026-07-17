@@ -185,4 +185,23 @@ describe("getResumeList — title/language/status 파싱 (FRT-123 계약 §2.4)"
     expect(items[0].language).toBeUndefined();
     expect(items[0].status).toBeUndefined();
   });
+
+  it("status 매핑: queued→processing, 이미 프런트형 processing 은 통과, 미지 값은 undefined", async () => {
+    const cases: [string, string | undefined][] = [
+      ["queued", "processing"],
+      ["processing", "processing"],
+      ["pending", "pending"],
+      ["failed", "failed"],
+      ["weird-status", undefined],
+    ];
+    for (const [input, expected] of cases) {
+      mockGet.mockResolvedValue({
+        status: "success",
+        message: "ok",
+        data: { count: 1, contents: [{ id: "r1", created_at: "2026-07-17T02:30:00.000Z", status: input }] },
+      });
+      const items = await getResumeList();
+      expect(items[0].status).toBe(expected);
+    }
+  });
 });
