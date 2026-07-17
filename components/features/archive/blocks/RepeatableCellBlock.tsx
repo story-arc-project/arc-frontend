@@ -16,9 +16,12 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   const val = block.value as RepeatableCellBlockValue
   const [newColLabel, setNewColLabel] = useState("")
 
-  // 컬럼 고정 표시(FRT-104). 컬럼이 0개면 잠금을 무시한다 — 열 추가 UI 가 유일한 진입점이라
-  // 숨기면 빈 표에서 아무것도 할 수 없다(BlockRenderer 의 outcome-list 폴백과 같은 원칙).
-  const lockColumns = block.lockColumns === true && val.columns.length > 0
+  // 컬럼 고정 표시(FRT-104). 컬럼이 없는 채로 열린 표는 잠그지 않는다 — 열 추가 UI 가 유일한
+  // 진입점이라, 숨기면 빈 표에서 아무것도 할 수 없다(BlockRenderer 의 outcome-list 폴백과 같은 원칙).
+  // 판정을 마운트 시점에 고정하는 이유: 매 렌더 columns.length 로 보면 첫 열을 추가하는 순간
+  // 잠겨서 나머지 열을 못 채우고 방금 추가한 열도 못 지운다(잠금 이전에 열을 지운 레거시 레코드).
+  const [startedWithoutColumns] = useState(() => val.columns.length === 0)
+  const lockColumns = block.lockColumns === true && !startedWithoutColumns
 
   function addRow() {
     const row = createEmptyRow(val.columns)
