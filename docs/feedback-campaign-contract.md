@@ -55,6 +55,12 @@ BAC-34는 "conflict(이미 노출)면 프론트는 모달을 띄우지 않음"�
 
 라우터는 `app/src/api/feedback.py` 신설, `main.py`에 `app.include_router(feedback_router, prefix="/feedback")`. 인증은 기존 패턴 그대로 `payload: Annotated[AccessTokenPayload, Depends(check_auth)]`이며 `payload.sub`가 user id(UUID). 프론트는 쿠키(`credentials: "include"`)로 붙으므로 추가 작업이 없다.
 
+### 0. 세 엔드포인트 공통 — `campaign_id` 검증
+
+`campaign_id`는 **알려진 캠페인 목록에 대조해 검증**하고, 모르는 값이면 400으로 거절한다. v1의 유효값은 `"analysis-satisfaction"` 하나다(백엔드에 상수/enum으로 둔다).
+
+자유 문자열로 열어두면 안 되는 이유: dedup의 유니크 키가 `(user_id, campaign_id)`이므로 **오타 하나가 dedup을 통짜로 우회**한다. 구버전 클라이언트가 `"analysis-satisfacton"`으로 부르면 항상 `created=true`가 나와 사용자가 모달을 매번 다시 보고, 쓰레기 행이 쌓여도 아무도 눈치채지 못한다. 검증이 있으면 그 순간 400으로 드러난다.
+
 ### 1. 노출 기록 (dedup 의 핵심)
 
 ```
@@ -79,12 +85,24 @@ body   { "trigger_source": "analysis_completed" | "experience_threshold" }
 POST /feedback/campaigns/{campaign_id}/responses
 
 body   { "rating": 1..5          (필수),
-         "comment": string|null  (선택),
+         "comment": string|null  (선택, 최대 500자),
          "context": {...}|null   (선택) }
 
 200    { "status": "success", "message": "...",
          "data": { "responded_at": "2026-07-17T06:12:00Z" } }
+422    rating 범위 밖 또는 comment 초과 → Pydantic 검증 오류
 ```
+
+**검증은 요청 모델에서 한다** — DB 제약에 맡기지 않는다:
+
+```python
+class FeedbackResponseRequest(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=500)
+    context: dict[str, Any] | None = None
+```
+
+`rating=6`을 Pydantic이 통과시키면 INSERT에서 `CheckConstraint`가 `IntegrityError`를 던지고, 이는 잡히지 않으면 **500**으로 나간다. 프론트는 500을 서버 장애와 구분하지 못하고, "오류가 아닌 것을 오류로 던지지 않는다"는 정정 ③의 원칙과도 어긋난다. DB의 CHECK 제약은 **백스톱**으로 남겨두되(다른 경로의 잘못된 쓰기 방지), 사용자 입력 거절은 422로 한다.
 
 구현: `UPDATE ... SET rating, comment, responded_at=now() WHERE user_id AND campaign_id`. 정상 흐름에서는 `prompt-shown`이 먼저 불려 행이 있지만, **행이 없으면 방어적으로 upsert**한다(노출 기록이 유실돼도 응답은 잃지 않는다).
 
@@ -99,10 +117,12 @@ GET /feedback/campaigns/{campaign_id}/status
          "data": { "has_seen": bool, "has_responded": bool } }
 ```
 
-- `has_seen` = 노출 행 존재 여부. **dedup 기준은 이것**이다.
+- `has_seen` = 노출 행 존재 여부(= 노출 기록이 dedup의 **저장** 기준).
 - `has_responded` = rating 이 채워졌는지. 집계·분석용 보조 신호.
 
-**왜 응답이 아니라 노출이 기준인가**: 응답 기준이면 모달을 그냥 닫은 사용자는 서버에 기록이 없어 다음 방문에 또 뜬다. 노출을 기록해야 "닫으면 다시 안 뜬다"가 크로스 기기로 성립한다.
+> ⚠️ **이 엔드포인트는 노출 여부를 판정하는 곳이 아니다.** 판정은 `prompt-shown`의 `created`가 원자적으로 내린다(§1). 이 GET으로 조회한 뒤 "안 봤으면 띄운다"로 게이팅하면 §1이 배제한 SELECT-후-INSERT 레이스가 그대로 돌아온다 — 두 탭이 동시에 `has_seen=false`를 받아 둘 다 모달을 띄운다. 프론트(FRT-93)는 `prompt-shown` **하나만** 호출해 그 응답으로 결정하고, 이 GET은 관리/집계·디버깅용이다.
+
+**왜 응답이 아니라 노출을 기록하나**: 응답 기준이면 모달을 그냥 닫은 사용자는 서버에 기록이 없어 다음 방문에 또 뜬다. 노출을 기록해야 "닫으면 다시 안 뜬다"가 크로스 기기로 성립한다.
 
 ### 상태 전이
 
@@ -126,10 +146,11 @@ class FeedbackResponse(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True, sa_type=SAUUID)
     user_id: uuid.UUID = Field(foreign_key="users.id", sa_type=SAUUID, index=True)
     campaign_id: str = Field(nullable=False)
-    trigger_source: FeedbackTriggerSource = Field(nullable=True)   # 어느 게이트로 떴는지
-    shown_at: datetime = Field(sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False))
+    # 어느 게이트로 떴는지. 방어적 upsert(§2)로 생긴 행은 노출 기록이 없어 NULL이므로
+    # 반드시 Optional 이어야 한다 — non-Optional 로 두면 그 행을 되읽을 때 ValidationError 다.
+    trigger_source: FeedbackTriggerSource | None = Field(default=None, nullable=True)
     rating: int | None = Field(default=None, nullable=True)        # 미응답이면 NULL
-    comment: str | None = Field(default=None, nullable=True)       # PII 금지
+    comment: str | None = Field(default=None, max_length=500, nullable=True)   # PII 금지
     responded_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     context: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
     created_at: datetime = Field(default_factory=now, sa_column=Column(DateTime(timezone=True), server_default=func.now(), nullable=False))
@@ -151,7 +172,8 @@ class FeedbackTriggerSource(str, enum.Enum):
 
 주의할 점:
 
-- **3개 테이블이 아니라 1개**다. "노출 유무"=행 존재, "노출 시점"=`shown_at`, "평점+서술"=같은 행의 nullable 컬럼.
+- **3개 테이블이 아니라 1개**다. "노출 유무"=행 존재, "노출 시점"=`created_at`, "평점+서술"=같은 행의 nullable 컬럼.
+- **별도 `shown_at` 컬럼을 두지 않는다.** 정상 경로에서 행은 `prompt-shown` 시점에 생기므로 `shown_at`은 `created_at`과 항상 같은 값이 되고, 방어적 upsert 경로에서는 행이 응답 시점에 생겨 `shown_at`이 노출 시각이 아닌 거짓값이 된다. 노출 시각이 필요하면 `created_at`을 쓴다.
 - `UNIQUE(user_id, campaign_id)`가 dedup을 DB 레벨에서 보장한다. **기존 모델에 복합 유니크 제약 선례가 없으므로** `__table_args__` 명시가 필요하다.
 - `ondelete=`는 이 코드베이스에 사용 사례가 전무하므로 기존 컨벤션대로 생략한다(`user_id` FK만).
 
@@ -162,9 +184,11 @@ class FeedbackTriggerSource(str, enum.Enum):
 `comment`(자유텍스트)와 `context`가 이 기능의 **유일한 PII 리스크 지점**이다. 사용자가 "제 이메일은 ...로 연락 주세요" 같은 걸 쓸 수 있다.
 
 - `context`: 키 화이트리스트(`analysis_id`, `analysis_type`)만 허용. 그 외 키는 저장 전 버린다.
-- `comment`: **최대 500자**(`FEEDBACK_COMMENT_MAX_LENGTH`, `lib/feedback/campaigns.ts`). 프론트는 입력 단계에서 막고, **서버도 같은 값을 강제한다** — 501자 요청은 거절한다.
+- `comment`: **최대 500자**(`FEEDBACK_COMMENT_MAX_LENGTH`, `lib/feedback/campaigns.ts`). 프론트는 입력 단계에서 막고, **서버도 같은 값을 강제한다**(`FeedbackResponseRequest.comment` 의 `max_length=500`, 컬럼 `max_length` 는 백스톱) — 501자 요청은 422로 거절한다.
 
   > 경계는 "예: 500자" 같은 예시가 아니라 **정확한 값**이어야 한다. 양쪽이 다른 한도를 구현하면 프론트가 받은 값을 서버가 거절하고, 그 불일치는 사용자가 긴 의견을 다 쓴 다음에야 드러난다. 변경 시 이 문서·프론트 상수·서버 제약을 함께 고친다.
+
+  > **단위는 유니코드 코드 포인트다** — 숫자만 맞추면 경계가 일치하지 않는다. JS `"😀".length`는 **2**(UTF-16 code unit), Python `len("😀")`는 **1**(code point)이다. 이모지 300자를 쓰면 프론트는 600으로 세어 막고 서버는 300으로 세어 통과시켜, 같은 문자열에 두 경계가 갈린다. 서버(Python `len`·Pydantic `max_length`)가 이미 코드 포인트 기준이므로 **프론트가 `.length` 대신 `[...comment].length`(또는 `Intl.Segmenter` 없이 spread)로 센다** — FRT-94 입력 단계의 책임이다.
 - PostHog로는 `comment` 원문을 보내지 않는다(프론트 책임 — FRT-92). PostHog에는 rating·trigger_source 같은 비식별 메타만 싣는다. 원문은 서버에만 남는다.
 
 ## 프론트 쪽 결정 (백엔드가 알아야 할 것)
@@ -192,10 +216,12 @@ BAC-34/35가 나오기 전까지 프론트는 **플래그 off**로 머지된다(
 4. status 조회        → data: { has_seen: true, has_responded: false }
 5. responses 호출     → data: { responded_at: "..." }
 6. status 조회        → data: { has_seen: true, has_responded: true }
-7. rating=0 또는 6 으로 responses → CHECK 제약 위반으로 거부
+7. rating=0 또는 6 으로 responses → **422**(Pydantic 검증) — 500이 나오면 검증이 DB까지 샌 것이다
 8. 미응답 행은 responded_at NULL 유지
-9. comment 500자 → 통과 / 501자 → 거부   ← 경계는 정확히 일치해야 한다
+9. comment 500자 → 통과 / 501자 → 422   ← 경계는 정확히 일치해야 한다(단위 = 유니코드 코드 포인트)
 10. context 에 화이트리스트 밖 키(예: email) → 저장 전 버려짐
+11. 모르는 campaign_id(예: "analysis-satisfacton") → **400** — 200 이 나오면 dedup 이 우회된다
+12. prompt-shown 없이 responses 호출 → 방어적 upsert 로 행 생성, 이후 status 조회가 정상 동작(trigger_source 는 NULL 허용)
 ```
 
 ## 관련

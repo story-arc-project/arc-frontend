@@ -15,6 +15,10 @@ import type {
  * 자유텍스트 최대 길이. 계약 정본(docs/feedback-campaign-contract.md)이 못박은 값이며
  * 서버도 같은 한도를 강제한다 — 양쪽이 다른 경계를 구현하면 한쪽이 받은 값을 다른 쪽이
  * 거절한다. 변경 시 이 상수·문서·서버를 함께 고친다.
+ *
+ * **단위는 유니코드 코드 포인트다.** 서버(Python `len`)가 코드 포인트로 세므로 프론트도
+ * `.length`(UTF-16 code unit)가 아니라 `[...comment].length` 로 세야 경계가 일치한다 —
+ * `"😀".length` 는 2, `[..."😀"].length` 는 1이라 이모지가 섞이면 양쪽이 다른 지점에서 자른다.
  */
 export const FEEDBACK_COMMENT_MAX_LENGTH = 500;
 
