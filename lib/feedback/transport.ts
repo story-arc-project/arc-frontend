@@ -30,7 +30,10 @@ function captureFeedbackSubmitted(payload: FeedbackPayload): void {
       trigger_source: payload.triggerSource,
       rating: payload.rating,
       has_comment: Boolean(payload.comment?.trim()),
-      ...(payload.context?.analysisType
+      // analysisType 을 유니온으로 한 번 더 검증한 뒤에만 싣는다 — feedback-api 의 toContextPayload
+      // 와 같은 방어(캐스트로 위조된 값이 계약 밖 analysis_type 으로 새지 않게). 양쪽 sink 대칭.
+      ...(payload.context?.analysisType === "comprehensive" ||
+      payload.context?.analysisType === "keyword"
         ? { analysis_type: payload.context.analysisType }
         : {}),
     });
