@@ -24,6 +24,8 @@ export const ANALYTICS_EVENTS = {
   firstRecordCreated: "first_record_created",
   analysisCompleted: "analysis_completed",
   exportCompleted: "export_completed",
+  // ── 인앱 피드백 (FRT-92 전송 레이어가 emit) ───────────────────────
+  feedbackSubmitted: "feedback_submitted",
   // ── placeholder: 이름·속성만 정의, emit 은 크레딧 과금 프로젝트(FRT-105)에서 ──
   // 크레딧 잔액·원장 UI 가 아직 없어 여기서는 배선하지 않는다(dead call site 금지).
   freeTokenExhausted: "free_token_exhausted",
@@ -46,6 +48,17 @@ export interface AnalyticsEventProps {
   first_record_created: { experience_type: string };
   analysis_completed: { analysis_type: AnalysisKind };
   export_completed: { export_type: ExportType; language: string };
+  // 인앱 피드백 응답. PII 금지 — comment 원문·analysis_id 는 절대 싣지 않는다(서버에만 남긴다).
+  // 리터럴 유니온을 인라인한다: lib/feedback/types.ts 가 이미 이 파일(AnalysisKind)을 import 하므로
+  // 여기서 feedback 타입을 역참조하면 analytics ↔ feedback 순환이 된다. campaign_id 는 구조적으로
+  // FeedbackCampaignId 와 동일해 transport 가 그대로 넘겨도 타입이 맞는다.
+  feedback_submitted: {
+    campaign_id: "analysis-satisfaction";
+    trigger_source: "analysis_completed" | "experience_threshold";
+    rating: 1 | 2 | 3 | 4 | 5;
+    has_comment: boolean;
+    analysis_type?: AnalysisKind;
+  };
   // placeholder — 실제 emit 시 확정할 속성(참고용)
   free_token_exhausted: Record<string, never>;
   token_purchase_completed: { credits: number; amount: number };
