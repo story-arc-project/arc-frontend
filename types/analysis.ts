@@ -235,11 +235,19 @@ export interface KeywordSuggestion {
   relatedExperienceCount: number;
 }
 
+// A_keyword_definitions[].compliance_criteria[] — 부합 판단 기준(v4.1 명세 #9~11).
+// id 는 D_matched_experiences.matched_criteria 가 참조하는 식별 번호(1부터).
+export interface ComplianceCriterion {
+  id: number;
+  criterion: string;
+  signalDescription: string;
+}
+
 export interface KeywordDefinition {
   keyword: string;
   definition: string;
   synonyms: string[];
-  complianceCriteria: string[];
+  complianceCriteria: ComplianceCriterion[];
 }
 
 export interface KeywordSelectionCriteria {
@@ -252,6 +260,10 @@ export interface KeywordCoverage {
   relatedCount: number;
   totalCount: number;
   coveragePercent: number;
+  // v4.1: relevance 등급별 개수(코드 재집계)
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
 }
 
 export interface KeywordEvidence {
@@ -264,11 +276,13 @@ export interface MatchedExperience {
   careerTitle: string;
   organization: string;
   period: string;
-  relevance: string;
+  relevance: string; // high | medium | low
+  relevanceSummary: string; // v4.1
   evidence: KeywordEvidence[];
-  matchedCriteria: string[];
+  matchedCriteria: number[]; // v4.1: compliance_criteria[].id 참조 배열
   confidence: string;
   confidenceReason: string;
+  isReferenceOnly: boolean; // v4.1: relevance=low 자동 태그 → [참고용]
 }
 
 export interface KeywordMatchedGroup {
@@ -284,22 +298,87 @@ export interface KeywordStorylineStructure {
   destination: string;
 }
 
+export interface StorylineChronoItem {
+  order: number;
+  experience: string;
+  period: string;
+  isDated: boolean;
+}
+
+export interface StorylineTurningPoint {
+  experience: string;
+  period: string;
+  trigger: string;
+  whatChanged: string;
+}
+
+export interface StorylineConnectiveLogic {
+  fromExperience: string;
+  toExperience: string;
+  relationType: string; // 인과 | 심화 | 반성 | 확장
+  connection: string;
+  temporalNote: string | null;
+}
+
+export interface KeyQuote {
+  careerTitle: string;
+  quote: string;
+}
+
 export interface KeywordStoryline {
   keyword: string;
   storylineTitle: string;
+  tagline: string; // v4.1
+  timelineStatus: string; // v4.1: 시간순_확인됨 | 일부_불명확 | 대부분_불명확
+  timelineNote: string | null; // v4.1
+  chronologicalSequence: StorylineChronoItem[]; // v4.1
+  narrative: string; // v4.1
+  turningPoints: StorylineTurningPoint[]; // v4.1
+  connectiveLogic: StorylineConnectiveLogic[]; // v4.1
   structure: KeywordStorylineStructure;
   usedExperiences: { core: string[]; supporting: string[] };
-  keyQuotes: string[];
+  keyQuotes: KeyQuote[]; // v4.1: 객체 배열
+}
+
+export interface ImprovementOverallDirection {
+  currentProfileSummary: string;
+  shortTerm: string;
+  midTerm: string;
+  priorityKeyword: string;
+  priorityReason: string;
+}
+
+export interface InformationEnhancement {
+  target: string;
+  missing: string;
+  howToAdd: string;
+  reason: string;
+  priority: string; // 높음 | 중간 | 낮음
+}
+
+export interface ExperienceExpansion {
+  gapDescription: string;
+  suggestedExperienceType: string;
+  whyHelpful: string;
+  examples: string[];
+  priority: string;
+}
+
+export interface KeywordRecommendationItem {
+  type: string; // 확장 | 보완
+  title: string;
+  expectedEffect: string;
 }
 
 export interface KeywordSpecificRecommendation {
   keyword: string;
-  description: string;
+  recommendations: KeywordRecommendationItem[];
 }
 
 export interface KeywordImprovementGuide {
-  informationEnhancement: string[];
-  experienceExpansion: string[];
+  overallDirection: ImprovementOverallDirection | null; // v4.1 신설
+  informationEnhancement: InformationEnhancement[];
+  experienceExpansion: ExperienceExpansion[];
   keywordSpecificRecommendations: KeywordSpecificRecommendation[];
 }
 
@@ -308,6 +387,7 @@ export interface KeywordAnalysisResult {
   status: AnalysisStatus;
   isBookmarked: boolean;
   analysisDate: string;
+  analysisMode: string; // v4.1: knn | llm
   keywords: string[];
   targetScenario: string;
   keywordDefinitions: KeywordDefinition[];

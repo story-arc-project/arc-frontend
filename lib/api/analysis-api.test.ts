@@ -334,6 +334,171 @@ describe("experiences 매핑 — BAC-58 / 계약 §2.2 (FRT-123)", () => {
   })
 })
 
+describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
+  it("A_ 접두사 키를 읽는다 (계약 미이행 백엔드 방어)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          A_keyword_definitions: [{ keyword: "리더십", definition: "d", synonyms: [] }],
+          C_coverage: [{ keyword: "리더십", related_count: 2, total_count: 5 }],
+          D_matched_experiences: [{ keyword: "리더십", experiences: [] }],
+          E_storylines: [{ keyword: "리더십" }],
+          F_improvement_guide: {},
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].keyword).toBe("리더십")
+    expect(res.coverage[0].relatedCount).toBe(2)
+    expect(res.matchedExperiences[0].keyword).toBe("리더십")
+    expect(res.storylines[0].keyword).toBe("리더십")
+  })
+
+  it("compliance_criteria 를 객체 배열로 파싱한다 (id·criterion·signal)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          keyword_definitions: [
+            {
+              keyword: "협업",
+              compliance_criteria: [
+                { id: 1, criterion: "기준1", signal_description: "신호1" },
+                { id: 2, criterion: "기준2", signal_description: "신호2" },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].complianceCriteria).toEqual([
+      { id: 1, criterion: "기준1", signalDescription: "신호1" },
+      { id: 2, criterion: "기준2", signalDescription: "신호2" },
+    ])
+  })
+
+  it("구버전 compliance_criteria(문자열 배열)도 객체로 흡수한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          keyword_definitions: [{ keyword: "협업", compliance_criteria: ["기준A", "기준B"] }],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].complianceCriteria).toEqual([
+      { id: 1, criterion: "기준A", signalDescription: "" },
+      { id: 2, criterion: "기준B", signalDescription: "" },
+    ])
+  })
+
+  it("matched_criteria 를 number[] 로 파싱하고 숫자 아닌 값은 버린다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          matched_experiences: [
+            {
+              keyword: "협업",
+              experiences: [
+                { career_title: "경험", matched_criteria: [1, "3", "x", 5], is_reference_only: true, relevance_summary: "요약" },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    const exp = res.matchedExperiences[0].experiences[0]
+    expect(exp.matchedCriteria).toEqual([1, 3, 5])
+    expect(exp.isReferenceOnly).toBe(true)
+    expect(exp.relevanceSummary).toBe("요약")
+  })
+
+  it("key_quotes 를 객체 배열로 파싱한다 (문자열 폴백 포함)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          storylines: [
+            {
+              keyword: "협업",
+              key_quotes: [{ career_title: "A", quote: "인용1" }, "인용2"],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.storylines[0].keyQuotes).toEqual([
+      { careerTitle: "A", quote: "인용1" },
+      { careerTitle: "", quote: "인용2" },
+    ])
+  })
+
+  it("improvement_guide 의 overall_direction·구조화·중첩 추천을 파싱한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          improvement_guide: {
+            overall_direction: { priority_keyword: "협업", short_term: "st" },
+            information_enhancement: [
+              { target: "경험1", missing: "m", how_to_add: "h", reason: "r", priority: "높음" },
+            ],
+            keyword_specific_recommendations: [
+              {
+                keyword: "협업",
+                recommendations: [{ type: "확장", title: "활동", expected_effect: "효과" }],
+              },
+            ],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.improvementGuide.overallDirection?.priorityKeyword).toBe("협업")
+    expect(res.improvementGuide.informationEnhancement[0]).toMatchObject({
+      target: "경험1",
+      howToAdd: "h",
+      priority: "높음",
+    })
+    expect(res.improvementGuide.keywordSpecificRecommendations[0].recommendations[0]).toEqual({
+      type: "확장",
+      title: "활동",
+      expectedEffect: "효과",
+    })
+  })
+
+  it("구버전 keyword_specific_recommendations({keyword,description})도 흡수한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          improvement_guide: {
+            keyword_specific_recommendations: [{ keyword: "협업", description: "구버전 설명" }],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.improvementGuide.keywordSpecificRecommendations[0].recommendations).toEqual([
+      { type: "", title: "구버전 설명", expectedEffect: "" },
+    ])
+    expect(res.improvementGuide.overallDirection).toBeNull()
+  })
+})
+
 describe("schema_version 가드 — 부재 ≠ 미상 (FRT-123 계약 §3.5)", () => {
   it("모르는 버전이 명시되면 UnsupportedSchemaError 를 던진다", async () => {
     apiMock.get.mockResolvedValue(

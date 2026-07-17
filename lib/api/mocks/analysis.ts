@@ -479,6 +479,7 @@ export const mockKeywordResult: KeywordAnalysisResult = {
   status: "completed",
   isBookmarked: false,
   analysisDate: "2026-05-03T11:00:00Z",
+  analysisMode: "knn",
   keywords: ["문제 해결", "자기주도성"],
   targetScenario: "AI/ML 분야 신입 엔지니어 또는 데이터 사이언티스트 지원",
   keywordDefinitions: [
@@ -487,10 +488,10 @@ export const mockKeywordResult: KeywordAnalysisResult = {
       definition: "문제의 원인을 분석하고, 적절한 방법론을 선택해 실행 가능한 해결책을 도출하는 능력",
       synonyms: ["트러블슈팅", "분석적 사고", "해결 중심 사고"],
       complianceCriteria: [
-        "문제를 정의하고 원인을 파악한 경험이 있는가",
-        "복수의 해결 방안을 비교 검토한 경험이 있는가",
-        "해결 결과를 정량적으로 검증한 경험이 있는가",
-        "기술적 제약을 극복한 구체적 사례가 있는가",
+        { id: 1, criterion: "문제를 정의하고 원인을 파악한 경험이 있는가", signalDescription: "장애·오류·병목의 원인을 구체적으로 특정한 서술" },
+        { id: 2, criterion: "복수의 해결 방안을 비교 검토한 경험이 있는가", signalDescription: "선택지를 나열하고 트레이드오프를 따진 흔적" },
+        { id: 3, criterion: "해결 결과를 정량적으로 검증한 경험이 있는가", signalDescription: "수치·지표로 개선을 확인한 서술" },
+        { id: 4, criterion: "기술적 제약을 극복한 구체적 사례가 있는가", signalDescription: "라이브러리·환경 제약을 우회·해결한 코드 수준 서술" },
       ],
     },
     {
@@ -498,16 +499,16 @@ export const mockKeywordResult: KeywordAnalysisResult = {
       definition: "외부의 지시 없이 스스로 목표를 설정하고, 계획하고, 실행하며 완수하는 능력",
       synonyms: ["자기 동기부여", "주도성", "독립적 실행"],
       complianceCriteria: [
-        "스스로 프로젝트를 시작하고 완수한 경험이 있는가",
-        "목표를 스스로 설정하고 조정한 경험이 있는가",
-        "피드백 없이 독립적으로 의사결정한 사례가 있는가",
-        "중도 포기 없이 결과물을 완성한 경험이 있는가",
+        { id: 1, criterion: "스스로 프로젝트를 시작하고 완수한 경험이 있는가", signalDescription: "지시 없이 착수해 결과물까지 낸 서술" },
+        { id: 2, criterion: "목표를 스스로 설정하고 조정한 경험이 있는가", signalDescription: "목표·범위를 스스로 정하고 바꾼 흔적" },
+        { id: 3, criterion: "피드백 없이 독립적으로 의사결정한 사례가 있는가", signalDescription: "감독 없이 방법을 결정한 서술" },
+        { id: 4, criterion: "중도 포기 없이 결과물을 완성한 경험이 있는가", signalDescription: "완성된 산출물(대시보드·리포트 등) 존재" },
       ],
     },
   ],
   selectionCriteria: {
     summary:
-      "선택된 키워드('문제 해결', '자기주도성')와 관련된 행동, 성과, 역할 기술이 포함된 경험을 우선 선별했습니다.",
+      "선택된 키워드('문제 해결', '자기주도성')와 관련된 행동, 성과, 역할 기술이 포함된 경험을 우선 선별했습니다. 근거가 부족한 1개 경험은 제외했습니다.",
     criteria: [
       "단순 참여보다 구체적 행동과 결과가 있는 경험에 높은 가중치 부여",
       "개인 프로젝트 및 독립 실험 경험에 가산점 부여",
@@ -515,8 +516,8 @@ export const mockKeywordResult: KeywordAnalysisResult = {
     ],
   },
   coverage: [
-    { keyword: "문제 해결", relatedCount: 3, totalCount: 5, coveragePercent: 60 },
-    { keyword: "자기주도성", relatedCount: 3, totalCount: 5, coveragePercent: 60 },
+    { keyword: "문제 해결", relatedCount: 3, totalCount: 5, coveragePercent: 60, highCount: 2, mediumCount: 1, lowCount: 0 },
+    { keyword: "자기주도성", relatedCount: 3, totalCount: 5, coveragePercent: 60, highCount: 2, mediumCount: 0, lowCount: 1 },
   ],
   matchedExperiences: [
     {
@@ -526,7 +527,8 @@ export const mockKeywordResult: KeywordAnalysisResult = {
           careerTitle: "LLM 활용 뉴스 감성 분석 기반 하이브리드 주가 예측",
           organization: "개인 프로젝트",
           period: "2026.02 - 2026.05",
-          relevance: "기획부터 구현, 검증까지 전 과정을 독립적으로 수행한 개인 프로젝트로, 자기주도성 핵심 기준 다수를 충족",
+          relevance: "high",
+          relevanceSummary: "기획부터 구현, 검증까지 전 과정을 독립적으로 수행한 개인 프로젝트로, 자기주도성 핵심 기준 다수를 충족",
           evidence: [
             {
               type: "행동",
@@ -539,19 +541,17 @@ export const mockKeywordResult: KeywordAnalysisResult = {
               sourceQuote: "전략 수익률 대비 시장 수익률 비교 백테스팅 및 시각화",
             },
           ],
-          matchedCriteria: [
-            "스스로 프로젝트를 시작하고 완수한 경험이 있는가",
-            "목표를 스스로 설정하고 조정한 경험이 있는가",
-            "중도 포기 없이 결과물을 완성한 경험이 있는가",
-          ],
+          matchedCriteria: [1, 2, 4],
           confidence: "high",
           confidenceReason: "독립 수행 및 완성 결과물이 명확히 서술됨",
+          isReferenceOnly: false,
         },
         {
           careerTitle: "이커머스 매출 데이터 분석 및 시각화",
           organization: "개인 프로젝트",
           period: "2025.12 - 2026.01",
-          relevance: "스스로 분석 질문을 설정하고 Tableau 대시보드로 완성한 포트폴리오 프로젝트",
+          relevance: "high",
+          relevanceSummary: "스스로 분석 질문을 설정하고 Tableau 대시보드로 완성한 포트폴리오 프로젝트",
           evidence: [
             {
               type: "행동",
@@ -559,12 +559,28 @@ export const mockKeywordResult: KeywordAnalysisResult = {
               sourceQuote: "코호트 분석, 재구매율, 지역별 매출 등 비즈니스 관점 분석 질문 설정",
             },
           ],
-          matchedCriteria: [
-            "스스로 프로젝트를 시작하고 완수한 경험이 있는가",
-            "목표를 스스로 설정하고 조정한 경험이 있는가",
-          ],
+          matchedCriteria: [1, 2],
           confidence: "high",
           confidenceReason: "독립 수행 및 결과물(Tableau 대시보드) 완성이 명확",
+          isReferenceOnly: false,
+        },
+        {
+          careerTitle: "교내 스터디 그룹 참여",
+          organization: "한양대학교",
+          period: "2025.03 - 2025.06",
+          relevance: "low",
+          relevanceSummary: "참여 기록은 있으나 주도적 역할·성과 서술이 부족해 참고용으로만 반영",
+          evidence: [
+            {
+              type: "사건",
+              content: "머신러닝 스터디에 참여함",
+              sourceQuote: "매주 논문 리뷰 스터디에 참여",
+            },
+          ],
+          matchedCriteria: [1],
+          confidence: "low",
+          confidenceReason: "주도적 행동·성과 근거가 부족함",
+          isReferenceOnly: true,
         },
       ],
     },
@@ -575,7 +591,8 @@ export const mockKeywordResult: KeywordAnalysisResult = {
           careerTitle: "LLM 활용 뉴스 감성 분석 기반 하이브리드 주가 예측",
           organization: "개인 프로젝트",
           period: "2026.02 - 2026.05",
-          relevance: "yfinance 라이브러리 오류 해결, AI 환각 방지 기법 적용 등 기술적 문제를 구체적으로 해결",
+          relevance: "high",
+          relevanceSummary: "yfinance 라이브러리 오류 해결, AI 환각 방지 기법 적용 등 기술적 문제를 구체적으로 해결",
           evidence: [
             {
               type: "행동",
@@ -583,18 +600,17 @@ export const mockKeywordResult: KeywordAnalysisResult = {
               sourceQuote: "yfinance 라이브러리의 Multi-index 업데이트 오류를 get_level_values(0) 평탄화 로직으로 해결",
             },
           ],
-          matchedCriteria: [
-            "문제를 정의하고 원인을 파악한 경험이 있는가",
-            "기술적 제약을 극복한 구체적 사례가 있는가",
-          ],
+          matchedCriteria: [1, 4],
           confidence: "high",
           confidenceReason: "문제-원인-해결 흐름이 구체적으로 서술됨",
+          isReferenceOnly: false,
         },
         {
           careerTitle: "NLP 연구실 학부 인턴",
           organization: "한양대학교 자연어처리 연구실",
           period: "2025.09 - 2026.02",
-          relevance: "레이블 불일치 문제를 가이드라인 개선으로 해결한 데이터 품질 문제 해결 사례",
+          relevance: "medium",
+          relevanceSummary: "레이블 불일치 문제를 가이드라인 개선으로 해결한 데이터 품질 문제 해결 사례",
           evidence: [
             {
               type: "행동",
@@ -607,12 +623,10 @@ export const mockKeywordResult: KeywordAnalysisResult = {
               sourceQuote: "IAA 0.61 → 0.78 개선",
             },
           ],
-          matchedCriteria: [
-            "문제를 정의하고 원인을 파악한 경험이 있는가",
-            "해결 결과를 정량적으로 검증한 경험이 있는가",
-          ],
+          matchedCriteria: [1, 3],
           confidence: "high",
           confidenceReason: "정량적 개선 수치(IAA)와 해결 방법이 명확히 기재됨",
+          isReferenceOnly: false,
         },
       ],
     },
@@ -621,6 +635,33 @@ export const mockKeywordResult: KeywordAnalysisResult = {
     {
       keyword: "자기주도성",
       storylineTitle: "부스트캠프 수료 → 연구 참여 → 개인 프로젝트로 이어진 자기주도 성장",
+      tagline: "지시 없이 스스로 완성해온 AI 엔지니어",
+      timelineStatus: "시간순_확인됨",
+      timelineNote: null,
+      chronologicalSequence: [
+        { order: 1, experience: "네이버 부스트캠프 AI Tech 6기", period: "2024-07", isDated: true },
+        { order: 2, experience: "NLP 연구실 학부 인턴", period: "2025-09", isDated: true },
+        { order: 3, experience: "LLM 주가 예측 프로젝트", period: "2026-02", isDated: true },
+      ],
+      narrative:
+        "부스트캠프에서 팀 프로젝트로 기본기를 쌓은 뒤, 연구실 인턴으로 독립적 실험 설계와 데이터 품질 관리를 경험했다. 이 과정에서 감독 없이 스스로 방법을 결정하는 훈련이 쌓였고, 결국 LLM 주가 예측 개인 프로젝트에서 주제 선정부터 백테스팅 검증까지 전 과정을 혼자 완주했다. 지금은 문제를 스스로 정의하고 끝까지 밀어붙이는 자기주도적 실행력이 핵심 역량으로 자리 잡았다.",
+      turningPoints: [
+        {
+          experience: "NLP 연구실 학부 인턴",
+          period: "2025-09",
+          trigger: "레이블 불일치로 실험 신뢰도가 흔들린 사건",
+          whatChanged: "가이드라인을 스스로 보완해 데이터 품질을 관리하는 주도적 태도로 전환",
+        },
+      ],
+      connectiveLogic: [
+        {
+          fromExperience: "NLP 연구실 학부 인턴",
+          toExperience: "LLM 주가 예측 프로젝트",
+          relationType: "심화",
+          connection: "연구실에서 익힌 독립 실험 설계 능력이 개인 프로젝트 전 과정 완주로 이어졌다",
+          temporalNote: null,
+        },
+      ],
       structure: {
         start: "네이버 부스트캠프에서 체계적 교육과 팀 프로젝트를 통해 AI 기반을 쌓은 계기",
         development: "연구실 인턴으로 참여해 독립적 실험 설계와 데이터 품질 관리를 경험",
@@ -633,28 +674,58 @@ export const mockKeywordResult: KeywordAnalysisResult = {
         supporting: ["네이버 부스트캠프 AI Tech 6기"],
       },
       keyQuotes: [
-        "Gemma-2 LLM을 활용해 비정형 뉴스 데이터를 정량적 투자 지표로 변환",
-        "비즈니스 관점의 분석 질문을 스스로 설정하고 답을 도출",
+        { careerTitle: "LLM 주가 예측 프로젝트", quote: "Gemma-2 LLM을 활용해 비정형 뉴스 데이터를 정량적 투자 지표로 변환" },
+        { careerTitle: "이커머스 데이터 분석", quote: "비즈니스 관점의 분석 질문을 스스로 설정하고 답을 도출" },
       ],
     },
   ],
   improvementGuide: {
+    overallDirection: {
+      currentProfileSummary:
+        "개인 프로젝트 중심으로 문제 해결·자기주도성의 high 근거가 충분히 쌓여 있으나, 팀 맥락에서의 주도 사례는 상대적으로 얇습니다.",
+      shortTerm: "기술 블로그에 트러블슈팅 3건을 '문제-원인-해결-검증' 구조로 정리해 문제 해결 근거를 외부 검증 가능하게 만드세요.",
+      midTerm: "AI/ML 신입 지원에 맞춰, 팀 프로젝트에서 본인이 문제 해결을 주도한 사례를 1건 이상 확보하세요.",
+      priorityKeyword: "문제 해결",
+      priorityReason: "coverage는 충분하나 팀 맥락 근거가 없어 지원 시나리오에서 설득력이 약합니다.",
+    },
     informationEnhancement: [
-      "각 문제 해결 과정에서 '왜 이 방법을 선택했는가'에 대한 의사결정 근거 추가",
-      "자기주도 프로젝트에서 중간에 방향을 수정한 경험이 있다면 서술",
+      {
+        target: "LLM 주가 예측 프로젝트",
+        missing: "방법 선택의 의사결정 근거",
+        howToAdd: "'왜 Gemma-2를 골랐는지, 다른 후보 대비 트레이드오프'를 프로젝트 README에 1문단 추가",
+        reason: "compliance_criteria #2(복수 방안 비교)를 뒷받침하는 근거가 부족함",
+        priority: "높음",
+      },
+      {
+        target: "이커머스 데이터 분석",
+        missing: "중간 방향 수정 경험",
+        howToAdd: "분석 도중 가설을 바꾼 지점과 이유를 기록",
+        reason: "자기주도성 #2(목표 조정) 근거 보강",
+        priority: "중간",
+      },
     ],
     experienceExpansion: [
-      "외부 경진대회(캐글 등)에서 문제 해결 과정을 공개적으로 기록",
-      "팀 프로젝트에서 본인이 문제 해결을 주도한 사례 구체화",
+      {
+        gapDescription: "팀 맥락의 문제 해결 주도 경험 부족",
+        suggestedExperienceType: "협업 프로젝트/해커톤",
+        whyHelpful: "개인 역량이 팀에서도 발휘됨을 보여줘 지원 시나리오 설득력을 높임",
+        examples: ["교내 해커톤 리드", "오픈소스 이슈 해결 기여"],
+        priority: "높음",
+      },
     ],
     keywordSpecificRecommendations: [
       {
         keyword: "문제 해결",
-        description: "기술 블로그에 트러블슈팅 경험을 정리하면 '문제 해결 능력'을 외부에서 검증할 수 있습니다.",
+        recommendations: [
+          { type: "보완", title: "트러블슈팅 기술 블로그 시리즈", expectedEffect: "외부에서 검증 가능한 문제 해결 근거 확보" },
+          { type: "확장", title: "캐글 컴피티션 참여", expectedEffect: "정량 지표 기반 문제 해결 경험 추가" },
+        ],
       },
       {
         keyword: "자기주도성",
-        description: "개인 프로젝트를 GitHub에 정리하고 README에 동기·과정·결과를 명확히 기술하세요.",
+        recommendations: [
+          { type: "보완", title: "GitHub README에 동기·과정·결과 정리", expectedEffect: "자기주도 프로젝트의 완결성 가시화" },
+        ],
       },
     ],
   },

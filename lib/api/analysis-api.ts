@@ -22,12 +22,21 @@ import type {
   JobRecommendation,
   KeywordAnalysisResult,
   KeywordDefinition,
+  ComplianceCriterion,
   KeywordCoverage,
   KeywordEvidence,
   MatchedExperience,
   KeywordMatchedGroup,
   KeywordStoryline,
+  StorylineChronoItem,
+  StorylineTurningPoint,
+  StorylineConnectiveLogic,
+  KeyQuote,
   KeywordSpecificRecommendation,
+  KeywordRecommendationItem,
+  ImprovementOverallDirection,
+  InformationEnhancement,
+  ExperienceExpansion,
   KeywordSuggestion,
   BookmarkedSnapshot,
   SelectableExperience,
@@ -447,13 +456,45 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
   };
 }
 
+// v4.1 키워드 result 매퍼. 계약 §3.4 는 접두사 제거를 요구하지만 배포 상태가
+// 불확실하므로 최상위 키는 A_ 접두사·무접두사·camelCase 를 모두 읽는다(백지 방지).
+// 내부 형태도 구버전(문자열 배열) ↔ 신버전(객체/숫자 배열) 이중호환으로 파싱한다.
+
+function asNumberArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) =>
+      typeof v === "number"
+        ? v
+        : typeof v === "string" && v.trim() !== ""
+          ? Number(v)
+          : NaN,
+    )
+    .filter((n) => Number.isFinite(n));
+}
+
+function mapComplianceCriterion(dto: unknown, index: number): ComplianceCriterion {
+  // v4.1: { id, criterion, signal_description }. 구버전은 문자열이었다.
+  if (typeof dto === "string") {
+    return { id: index + 1, criterion: dto, signalDescription: "" };
+  }
+  const r = asRecord(dto);
+  return {
+    id: asNumber(r.id, index + 1),
+    criterion: asString(r.criterion ?? r.text),
+    signalDescription: asString(r.signalDescription ?? r.signal_description),
+  };
+}
+
 function mapKeywordDefinition(dto: unknown): KeywordDefinition {
   const r = asRecord(dto);
   return {
     keyword: asString(r.keyword),
     definition: asString(r.definition),
     synonyms: asStringArray(r.synonyms),
-    complianceCriteria: asStringArray(r.complianceCriteria ?? r.compliance_criteria),
+    complianceCriteria: asArray(
+      r.complianceCriteria ?? r.compliance_criteria,
+    ).map(mapComplianceCriterion),
   };
 }
 
@@ -464,6 +505,9 @@ function mapKeywordCoverage(dto: unknown): KeywordCoverage {
     relatedCount: asNumber(r.relatedCount ?? r.related_count),
     totalCount: asNumber(r.totalCount ?? r.total_count),
     coveragePercent: asNumber(r.coveragePercent ?? r.coverage_percent),
+    highCount: asNumber(r.highCount ?? r.high_count),
+    mediumCount: asNumber(r.mediumCount ?? r.medium_count),
+    lowCount: asNumber(r.lowCount ?? r.low_count),
   };
 }
 
@@ -483,10 +527,12 @@ function mapMatchedExperience(dto: unknown): MatchedExperience {
     organization: asString(r.organization),
     period: asString(r.period),
     relevance: asString(r.relevance),
+    relevanceSummary: asString(r.relevanceSummary ?? r.relevance_summary),
     evidence: asArray(r.evidence).map(mapKeywordEvidence),
-    matchedCriteria: asStringArray(r.matchedCriteria ?? r.matched_criteria),
+    matchedCriteria: asNumberArray(r.matchedCriteria ?? r.matched_criteria),
     confidence: asString(r.confidence),
     confidenceReason: asString(r.confidenceReason ?? r.confidence_reason),
+    isReferenceOnly: asBoolean(r.isReferenceOnly ?? r.is_reference_only),
   };
 }
 
@@ -498,6 +544,47 @@ function mapKeywordMatchedGroup(dto: unknown): KeywordMatchedGroup {
   };
 }
 
+function mapChronoItem(dto: unknown, index: number): StorylineChronoItem {
+  const r = asRecord(dto);
+  return {
+    order: asNumber(r.order, index + 1),
+    experience: asString(r.experience),
+    period: asString(r.period),
+    isDated: asBoolean(r.isDated ?? r.is_dated),
+  };
+}
+
+function mapTurningPoint(dto: unknown): StorylineTurningPoint {
+  const r = asRecord(dto);
+  return {
+    experience: asString(r.experience),
+    period: asString(r.period),
+    trigger: asString(r.trigger),
+    whatChanged: asString(r.whatChanged ?? r.what_changed),
+  };
+}
+
+function mapConnectiveLogic(dto: unknown): StorylineConnectiveLogic {
+  const r = asRecord(dto);
+  return {
+    fromExperience: asString(r.fromExperience ?? r.from_experience),
+    toExperience: asString(r.toExperience ?? r.to_experience),
+    relationType: asString(r.relationType ?? r.relation_type),
+    connection: asString(r.connection),
+    temporalNote: asNullableString(r.temporalNote ?? r.temporal_note),
+  };
+}
+
+function mapKeyQuote(dto: unknown): KeyQuote {
+  // v4.1: { career_title, quote }. 구버전은 문자열.
+  if (typeof dto === "string") return { careerTitle: "", quote: dto };
+  const r = asRecord(dto);
+  return {
+    careerTitle: asString(r.careerTitle ?? r.career_title),
+    quote: asString(r.quote ?? r.content ?? r.text),
+  };
+}
+
 function mapKeywordStoryline(dto: unknown): KeywordStoryline {
   const r = asRecord(dto);
   const structure = asRecord(r.structure);
@@ -505,6 +592,15 @@ function mapKeywordStoryline(dto: unknown): KeywordStoryline {
   return {
     keyword: asString(r.keyword),
     storylineTitle: asString(r.storylineTitle ?? r.storyline_title),
+    tagline: asString(r.tagline),
+    timelineStatus: asString(r.timelineStatus ?? r.timeline_status),
+    timelineNote: asNullableString(r.timelineNote ?? r.timeline_note),
+    chronologicalSequence: asArray(
+      r.chronologicalSequence ?? r.chronological_sequence,
+    ).map(mapChronoItem),
+    narrative: asString(r.narrative),
+    turningPoints: asArray(r.turningPoints ?? r.turning_points).map(mapTurningPoint),
+    connectiveLogic: asArray(r.connectiveLogic ?? r.connective_logic).map(mapConnectiveLogic),
     structure: {
       start: asString(structure.start),
       development: asString(structure.development),
@@ -516,33 +612,82 @@ function mapKeywordStoryline(dto: unknown): KeywordStoryline {
       core: asStringArray(used.core),
       supporting: asStringArray(used.supporting),
     },
-    keyQuotes: asStringArray(r.keyQuotes ?? r.key_quotes),
+    keyQuotes: asArray(r.keyQuotes ?? r.key_quotes).map(mapKeyQuote),
   };
 }
 
-/**
- * 보강 가이드의 항목들은 백엔드 확정 형태가 미정이라 string 또는 객체일 수 있다.
- * 객체일 경우 가장 의미 있는 텍스트 필드를 추려 문자열로 평탄화한다.
- */
-function coerceImprovementText(value: unknown): string {
-  if (typeof value === "string") return value;
-  const r = asRecord(value);
-  return asString(
-    r.description ??
-      r.text ??
-      r.content ??
-      r.suggestion ??
-      r.reason ??
-      r.recommendation,
-  );
+function mapOverallDirection(dto: unknown): ImprovementOverallDirection | null {
+  if (!dto || typeof dto !== "object") return null;
+  const r = asRecord(dto);
+  const d: ImprovementOverallDirection = {
+    currentProfileSummary: asString(r.currentProfileSummary ?? r.current_profile_summary),
+    shortTerm: asString(r.shortTerm ?? r.short_term),
+    midTerm: asString(r.midTerm ?? r.mid_term),
+    priorityKeyword: asString(r.priorityKeyword ?? r.priority_keyword),
+    priorityReason: asString(r.priorityReason ?? r.priority_reason),
+  };
+  return Object.values(d).some(Boolean) ? d : null;
+}
+
+function mapInformationEnhancement(dto: unknown): InformationEnhancement {
+  // v4.1: 구조화 객체. 구버전은 문자열이었다.
+  if (typeof dto === "string") {
+    return { target: "", missing: "", howToAdd: dto, reason: "", priority: "" };
+  }
+  const r = asRecord(dto);
+  return {
+    target: asString(r.target),
+    missing: asString(r.missing),
+    howToAdd: asString(r.howToAdd ?? r.how_to_add),
+    reason: asString(r.reason),
+    priority: asString(r.priority),
+  };
+}
+
+function mapExperienceExpansion(dto: unknown): ExperienceExpansion {
+  if (typeof dto === "string") {
+    return {
+      gapDescription: dto,
+      suggestedExperienceType: "",
+      whyHelpful: "",
+      examples: [],
+      priority: "",
+    };
+  }
+  const r = asRecord(dto);
+  return {
+    gapDescription: asString(r.gapDescription ?? r.gap_description),
+    suggestedExperienceType: asString(r.suggestedExperienceType ?? r.suggested_experience_type),
+    whyHelpful: asString(r.whyHelpful ?? r.why_helpful),
+    examples: asStringArray(r.examples),
+    priority: asString(r.priority),
+  };
+}
+
+function mapRecommendationItem(dto: unknown): KeywordRecommendationItem {
+  if (typeof dto === "string") return { type: "", title: dto, expectedEffect: "" };
+  const r = asRecord(dto);
+  return {
+    type: asString(r.type),
+    title: asString(r.title),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+  };
 }
 
 function mapKeywordSpecificRecommendation(dto: unknown): KeywordSpecificRecommendation {
-  if (typeof dto === "string") return { keyword: "", description: dto };
   const r = asRecord(dto);
+  const recsRaw = r.recommendations;
+  // v4.1: { keyword, recommendations[] }. 구버전은 { keyword, description } 또는 문자열.
+  if (Array.isArray(recsRaw)) {
+    return {
+      keyword: asString(r.keyword),
+      recommendations: recsRaw.map(mapRecommendationItem),
+    };
+  }
+  const legacy = typeof dto === "string" ? dto : asString(r.description ?? r.recommendation);
   return {
     keyword: asString(r.keyword),
-    description: coerceImprovementText(r.recommendation ?? r.description ?? r),
+    recommendations: legacy ? [{ type: "", title: legacy, expectedEffect: "" }] : [],
   };
 }
 
@@ -550,35 +695,41 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
   const r = asRecord(dto);
   // 응답이 result wrapper로 감싸져 올 가능성도 방어한다.
   const body = r.result && typeof r.result === "object" ? asRecord(r.result) : r;
-  const guide = asRecord(body.improvementGuide ?? body.improvement_guide);
-  const selection = asRecord(body.selectionCriteria ?? body.selection_criteria);
+  const guide = asRecord(
+    body.improvementGuide ?? body.improvement_guide ?? body.F_improvement_guide,
+  );
+  const selection = asRecord(
+    body.selectionCriteria ?? body.selection_criteria ?? body.B_selection_criteria,
+  );
 
   return {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
     analysisDate: asString(body.analysisDate ?? body.analysis_date ?? body.created_at),
+    analysisMode: asString(body.analysisMode ?? body.analysis_mode),
     keywords: asStringArray(body.keywords ?? body.selectedKeywords ?? body.selected_keywords),
     targetScenario: asString(body.targetScenario ?? body.target_scenario ?? body.target),
     keywordDefinitions: asArray(
-      body.keywordDefinitions ?? body.keyword_definitions,
+      body.keywordDefinitions ?? body.keyword_definitions ?? body.A_keyword_definitions,
     ).map(mapKeywordDefinition),
     selectionCriteria: {
       summary: asString(selection.summary),
       criteria: asStringArray(selection.criteria),
     },
-    coverage: asArray(body.coverage).map(mapKeywordCoverage),
+    coverage: asArray(body.coverage ?? body.C_coverage).map(mapKeywordCoverage),
     matchedExperiences: asArray(
-      body.matchedExperiences ?? body.matched_experiences,
+      body.matchedExperiences ?? body.matched_experiences ?? body.D_matched_experiences,
     ).map(mapKeywordMatchedGroup),
-    storylines: asArray(body.storylines).map(mapKeywordStoryline),
+    storylines: asArray(body.storylines ?? body.E_storylines).map(mapKeywordStoryline),
     improvementGuide: {
+      overallDirection: mapOverallDirection(guide.overallDirection ?? guide.overall_direction),
       informationEnhancement: asArray(
         guide.informationEnhancement ?? guide.information_enhancement,
-      ).map(coerceImprovementText).filter(Boolean),
+      ).map(mapInformationEnhancement),
       experienceExpansion: asArray(
         guide.experienceExpansion ?? guide.experience_expansion,
-      ).map(coerceImprovementText).filter(Boolean),
+      ).map(mapExperienceExpansion),
       keywordSpecificRecommendations: asArray(
         guide.keywordSpecificRecommendations ?? guide.keyword_specific_recommendations,
       ).map(mapKeywordSpecificRecommendation),
