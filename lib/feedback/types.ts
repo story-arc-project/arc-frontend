@@ -55,6 +55,10 @@ export interface FeedbackPayload {
   campaignId: FeedbackCampaignId;
   triggerSource: FeedbackTriggerSource;
   rating: FeedbackRating;
+  /**
+   * 자유텍스트. 길이 상한은 FEEDBACK_COMMENT_MAX_LENGTH(campaigns.ts)이며 서버도 같은
+   * 값을 강제한다 — 타입으로는 표현할 수 없으므로 입력 단계(FRT-94)에서 막는다.
+   */
   comment?: string;
   context?: FeedbackContext;
 }

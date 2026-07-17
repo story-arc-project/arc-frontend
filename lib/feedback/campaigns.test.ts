@@ -2,21 +2,43 @@ import { describe, expect, it } from "vitest";
 
 import {
   FEEDBACK_CAMPAIGNS,
+  FEEDBACK_COMMENT_MAX_LENGTH,
   feedbackCampaign,
   placeholderFor,
   questionCopyFor,
 } from "./campaigns";
 import type { FeedbackRating } from "./types";
 
+const allCampaigns = Object.values(FEEDBACK_CAMPAIGNS);
+
+describe("FEEDBACK_CAMPAIGNS (정본 집합)", () => {
+  // 계약 정본(docs/feedback-campaign-contract.md)이 "v1 은 캠페인 하나"로 못박았다.
+  // 캠페인이나 트리거가 늘면 서버 계약·문서도 함께 바뀌어야 하므로 여기서 잠근다.
+  it("v1 은 analysis-satisfaction 캠페인 하나뿐이다", () => {
+    expect(Object.keys(FEEDBACK_CAMPAIGNS)).toEqual(["analysis-satisfaction"]);
+  });
+
+  it("analysis-satisfaction 의 게이트는 정확히 둘이다", () => {
+    expect(feedbackCampaign("analysis-satisfaction").triggers).toEqual([
+      "analysis_completed",
+      "experience_threshold",
+    ]);
+  });
+
+  it("자유텍스트 상한이 서버와 합의한 500자다", () => {
+    expect(FEEDBACK_COMMENT_MAX_LENGTH).toBe(500);
+  });
+});
+
 describe("feedbackCampaign", () => {
-  it("id 로 캠페인을 찾는다(배열 순서 비의존)", () => {
+  it("id 로 캠페인을 찾는다", () => {
     expect(feedbackCampaign("analysis-satisfaction").id).toBe(
       "analysis-satisfaction",
     );
   });
 
   it("등록된 모든 캠페인이 자기 id 로 조회된다", () => {
-    for (const campaign of FEEDBACK_CAMPAIGNS) {
+    for (const campaign of allCampaigns) {
       expect(feedbackCampaign(campaign.id)).toBe(campaign);
     }
   });
@@ -44,7 +66,7 @@ describe("questionCopyFor", () => {
   });
 
   it("캠페인이 선언한 모든 트리거에 대해 빈 문구가 없다", () => {
-    for (const c of FEEDBACK_CAMPAIGNS) {
+    for (const c of allCampaigns) {
       for (const trigger of c.triggers) {
         expect(questionCopyFor(c, trigger).trim()).not.toBe("");
       }

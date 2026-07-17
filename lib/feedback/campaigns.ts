@@ -12,12 +12,23 @@ import type {
 } from "./types";
 
 /**
+ * 자유텍스트 최대 길이. 계약 정본(docs/feedback-campaign-contract.md)이 못박은 값이며
+ * 서버도 같은 한도를 강제한다 — 양쪽이 다른 경계를 구현하면 한쪽이 받은 값을 다른 쪽이
+ * 거절한다. 변경 시 이 상수·문서·서버를 함께 고친다.
+ */
+export const FEEDBACK_COMMENT_MAX_LENGTH = 500;
+
+/**
  * v1 은 캠페인 하나. 게이트는 둘(분석 완료 · 경험 3개 도달)이고 먼저 오는 것에 1회만
  * 뜬다(FRT-93). 캠페인을 쪼개지 않고 문구만 갈라, 서버 계약(unique(user_id, campaign_id))과
  * "사용자는 1회만 본다"는 결정을 함께 지킨다.
+ *
+ * 배열이 아니라 Record 로 두는 이유: 키가 FeedbackCampaignId 로 고정돼 있어 유니온에
+ * id 를 추가하면 config 를 채우기 전까지 컴파일이 막힌다. 배열 + `satisfies` 는 "config 의
+ * id 가 유니온에 속하는지"만 보고 역방향은 보지 않아, 조회 시 undefined 가 샐 수 있다.
  */
-export const FEEDBACK_CAMPAIGNS = [
-  {
+export const FEEDBACK_CAMPAIGNS = {
+  "analysis-satisfaction": {
     id: "analysis-satisfaction",
     triggers: ["analysis_completed", "experience_threshold"],
     questionCopy: {
@@ -30,11 +41,11 @@ export const FEEDBACK_CAMPAIGNS = [
     },
     highScoreMin: 4,
   },
-] as const satisfies readonly FeedbackCampaign[];
+} as const satisfies Record<FeedbackCampaignId, FeedbackCampaign>;
 
-/** id 로 캠페인을 조회한다(배열 순서 비의존). */
+/** id 로 캠페인을 조회한다. 키가 exhaustive 하게 강제되므로 undefined 가 나올 수 없다. */
 export function feedbackCampaign(id: FeedbackCampaignId): FeedbackCampaign {
-  return FEEDBACK_CAMPAIGNS.find((c) => c.id === id)!;
+  return FEEDBACK_CAMPAIGNS[id];
 }
 
 /** 모달을 띄운 게이트에 맞는 질문 문구를 고른다. */

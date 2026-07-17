@@ -162,7 +162,9 @@ class FeedbackTriggerSource(str, enum.Enum):
 `comment`(자유텍스트)와 `context`가 이 기능의 **유일한 PII 리스크 지점**이다. 사용자가 "제 이메일은 ...로 연락 주세요" 같은 걸 쓸 수 있다.
 
 - `context`: 키 화이트리스트(`analysis_id`, `analysis_type`)만 허용. 그 외 키는 저장 전 버린다.
-- `comment`: 길이 제한(예: 500자)으로 과다 페이로드 차단.
+- `comment`: **최대 500자**(`FEEDBACK_COMMENT_MAX_LENGTH`, `lib/feedback/campaigns.ts`). 프론트는 입력 단계에서 막고, **서버도 같은 값을 강제한다** — 501자 요청은 거절한다.
+
+  > 경계는 "예: 500자" 같은 예시가 아니라 **정확한 값**이어야 한다. 양쪽이 다른 한도를 구현하면 프론트가 받은 값을 서버가 거절하고, 그 불일치는 사용자가 긴 의견을 다 쓴 다음에야 드러난다. 변경 시 이 문서·프론트 상수·서버 제약을 함께 고친다.
 - PostHog로는 `comment` 원문을 보내지 않는다(프론트 책임 — FRT-92). PostHog에는 rating·trigger_source 같은 비식별 메타만 싣는다. 원문은 서버에만 남는다.
 
 ## 프론트 쪽 결정 (백엔드가 알아야 할 것)
@@ -192,6 +194,8 @@ BAC-34/35가 나오기 전까지 프론트는 **플래그 off**로 머지된다(
 6. status 조회        → data: { has_seen: true, has_responded: true }
 7. rating=0 또는 6 으로 responses → CHECK 제약 위반으로 거부
 8. 미응답 행은 responded_at NULL 유지
+9. comment 500자 → 통과 / 501자 → 거부   ← 경계는 정확히 일치해야 한다
+10. context 에 화이트리스트 밖 키(예: email) → 저장 전 버려짐
 ```
 
 ## 관련
