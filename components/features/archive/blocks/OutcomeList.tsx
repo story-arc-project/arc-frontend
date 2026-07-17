@@ -12,6 +12,7 @@ import { ArrowUpRight, Link2, Plus } from "lucide-react"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 import { createEmptyRow } from "@/lib/utils/block-utils"
 import { useProjectLink } from "@/contexts/ProjectLinkContext"
+import { usePlaceholderRow } from "./usePlaceholderRow"
 
 interface OutcomeListProps {
   block: Block
@@ -78,6 +79,13 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   const projectLink = useProjectLink()
   const linkEnabled = !!linkConfig && !!projectLink && !readOnly
 
+  // FRT-103: rows 가 비면 표시용 행 하나를 파생한다(value 에는 커밋되지 않음).
+  // 아래 길이 가드·항목 수는 계속 진짜 `rows` 를 본다.
+  const { displayRows, hasPlaceholder, isPlaceholderRow, materialize } = usePlaceholderRow(
+    rows,
+    val.columns,
+  )
+
   const listRef = useRef<HTMLDivElement>(null)
   // 다음 렌더에서 포커스할 행 id(예약). state 대신 ref 라 effect 안에서 setState 없이 정리한다.
   const pendingFocus = useRef<string | null>(null)
@@ -102,6 +110,13 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   }
 
   function updateText(rowId: string, text: string) {
+    if (isPlaceholderRow(rowId)) {
+      // FRT-103: 실제로 값이 채워질 때만 실체화한다. 같은 id 로 커밋하므로 렌더 key 가 그대로라
+      // 리마운트가 없다(포커스·한글 IME 조합 보존) → 포커스 예약도 필요 없다.
+      const row = materialize(rowId, colKey, text)
+      if (row) commit([row])
+      return
+    }
     commit(rows.map((r) => (r.id === rowId ? { ...r, cells: { ...r.cells, [colKey]: text } } : r)))
   }
 
@@ -150,6 +165,8 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
 
   // 행 액션 슬롯. rowAction(테스트/스토리북 escape hatch)이 우선. 그다음 링크 UI.
   function renderRowAction(row: BlockRow): ReactNode {
+    // FRT-103: 아직 실체가 없는 표시용 행에는 연결할 대상이 없다.
+    if (isPlaceholderRow(row.id)) return null
     if (rowAction) return rowAction(row)
     if (!linkEnabled || !linkConfig || !projectLink) return null
     const linkedId = row.linkedProjectRowId
@@ -195,6 +212,13 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>, index: number, row: BlockRow) {
     // IME 조합 중의 Enter/Backspace 는 조합 확정용이므로 행 조작을 트리거하지 않는다(한글 입력).
     if (e.nativeEvent.isComposing) return
+    // FRT-103: 표시용 행에서의 Enter 는 막는다. 그냥 두면 addAfter 가 진짜 rows(빈 배열) 위에서
+    // 돌아 placeholder 와 **다른 id** 의 빈 행을 커밋한다 → 리마운트 + 누른 적 없는 둘째 줄.
+    // Backspace 는 아래 `rows.length > 1` 가드가 진짜 rows(0)를 보므로 자동으로 막힌다.
+    if (isPlaceholderRow(row.id)) {
+      if (e.key === "Enter" && !e.shiftKey) e.preventDefault()
+      return
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       // Enter = 다음 행. Shift+Enter 는 기본 동작(줄바꿈)을 허용해 한 행 안에서 여러 줄 입력.
       e.preventDefault()
@@ -240,11 +264,13 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
       {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
 
       <div ref={listRef} className="border border-border rounded-md overflow-hidden">
-        {rows.map((row, index) => (
+        {displayRows.map((row, index) => (
           <div
             key={row.id}
             data-row-id={row.id}
-            className="flex items-start gap-2 border-b border-border px-3 py-2"
+            // border-b 는 아래에 다음 행이나 '추가' 버튼이 올 때만 구분선이다. 표시용 행 하나만
+            // 있는 빈 상태에서는 컨테이너 하단 테두리와 맞닿아 두 줄로 보이므로 뺀다.
+            className={`flex items-start gap-2 px-3 py-2 ${hasPlaceholder ? "" : "border-b border-border"}`}
           >
             <span className="text-brand font-bold leading-6 shrink-0 select-none">•</span>
             <AutoGrowInput
@@ -254,25 +280,32 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
               onKeyDown={(e) => handleKeyDown(e, index, row)}
             />
             {renderRowAction(row)}
-            <button
-              type="button"
-              onClick={() => removeRow(row.id)}
-              className="shrink-0 rounded p-1 leading-6 text-text-tertiary transition-colors hover:text-error"
-              aria-label={`${textOf(row).trim() || "항목"} 삭제`}
-            >
-              ×
-            </button>
+            {/* FRT-103: 표시용 행에는 지울 실체가 없다(누르면 no-op 인 죽은 버튼이 된다). */}
+            {!isPlaceholderRow(row.id) && (
+              <button
+                type="button"
+                onClick={() => removeRow(row.id)}
+                className="shrink-0 rounded p-1 leading-6 text-text-tertiary transition-colors hover:text-error"
+                aria-label={`${textOf(row).trim() || "항목"} 삭제`}
+              >
+                ×
+              </button>
+            )}
           </div>
         ))}
 
-        <button
-          type="button"
-          onClick={addAtEnd}
-          className="flex min-h-11 w-full items-center justify-center gap-1 text-body-sm text-text-secondary transition-colors hover:bg-surface-secondary sm:min-h-9"
-        >
-          <Plus size={16} />
-          {col?.label ?? "활동 / 성과"} 추가
-        </button>
+        {/* FRT-103: 표시용 빈 줄이 있을 때만 '추가' 를 숨긴다(눌러도 화면이 그대로라 고장으로 읽힌다).
+            `rows.length === 0` 로 판정하면 컬럼이 없어 빈 줄조차 못 그리는 블록에서 입력 수단이 사라진다. */}
+        {!hasPlaceholder && (
+          <button
+            type="button"
+            onClick={addAtEnd}
+            className="flex min-h-11 w-full items-center justify-center gap-1 text-body-sm text-text-secondary transition-colors hover:bg-surface-secondary sm:min-h-9"
+          >
+            <Plus size={16} />
+            {col?.label ?? "활동 / 성과"} 추가
+          </button>
+        )}
       </div>
     </div>
   )

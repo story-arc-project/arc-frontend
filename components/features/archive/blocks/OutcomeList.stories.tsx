@@ -50,9 +50,27 @@ function Interactive({ initial, readOnly }: { initial: string[]; readOnly?: bool
   )
 }
 
-/** 빈 상태 — '+ 활동 / 성과 추가' 버튼만 보인다. */
+/**
+ * 빈 상태 — 바로 쓸 수 있는 입력칸 한 줄이 미리 보인다(FRT-103).
+ * 이 줄은 value(rows)에 커밋되지 않아 손대지 않고 저장하면 블록은 빈 것으로 남는다.
+ */
 export const Empty: Story = {
   render: () => <Interactive initial={[]} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // 빈 상태: 입력칸은 있지만 아직 데이터가 아니라 '0개 항목'이고 삭제·추가 버튼은 없다.
+    const input = canvas.getByPlaceholderText("예: 전국 케이스 경진대회 은상 수상")
+    expect(canvas.getByText("0개 항목")).toBeInTheDocument()
+    expect(canvas.queryByRole("button", { name: /삭제/ })).toBeNull()
+    expect(canvas.queryByRole("button", { name: /추가/ })).toBeNull()
+
+    // 첫 입력으로 실체화 → 삭제·추가 버튼이 나타난다.
+    await userEvent.type(input, "전국 케이스 경진대회 은상 수상")
+    expect(canvas.getByText("1개 항목")).toBeInTheDocument()
+    expect(canvas.getByRole("button", { name: /추가/ })).toBeInTheDocument()
+    // 리마운트 없이 같은 인풋을 계속 쓴다(포커스·한글 IME 조합 보존).
+    expect(canvas.getByPlaceholderText("예: 전국 케이스 경진대회 은상 수상")).toBe(input)
+  },
 }
 
 /** 값이 있는 상태 — 각 행이 `• 텍스트 + ×`. */
