@@ -42,10 +42,26 @@ function hasTemplate(typeId: string): typeId is ExperienceTypeId {
   return typeId in EXPERIENCE_TYPE_MAP
 }
 
+/**
+ * 저장된 표의 컬럼이 템플릿 정의와 그대로인가. 잠금 이전(FRT-104)에는 사용자가 템플릿 표의 열을
+ * 추가·삭제할 수 있었으므로, 그런 레코드까지 잠그면 추가한 열을 지울 수도 지운 열을 되살릴 수도 없다.
+ * 키 집합만 본다 — 템플릿이 라벨만 손본 경우는 여전히 '그대로'다.
+ */
+function columnsMatchTemplate(templateValue: BlockValue, savedValue: BlockValue): boolean {
+  if (templateValue.type !== "repeatable-cell" || savedValue.type !== "repeatable-cell") return false
+  const a = templateValue.columns.map(c => c.key).sort()
+  const b = savedValue.columns.map(c => c.key).sort()
+  return a.length === b.length && a.every((key, i) => key === b[i])
+}
+
 function injectValue(block: Block, value: BlockValue | undefined): Block {
   if (value === undefined) return block
   // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)면 주입을 생략해 위젯 렌더 깨짐을 막는다.
   if (value.type !== block.type) return block
+  // 컬럼을 손댄 레코드는 잠금을 풀어 열 관리 UI 를 돌려준다(FRT-104).
+  if (block.lockColumns && !columnsMatchTemplate(block.value, value)) {
+    return { ...block, value, lockColumns: false }
+  }
   return { ...block, value }
 }
 
