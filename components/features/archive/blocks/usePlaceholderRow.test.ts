@@ -22,7 +22,16 @@ describe("usePlaceholderRow", () => {
     const { result } = renderHook(() => usePlaceholderRow([], COLUMNS))
     expect(result.current.displayRows).toHaveLength(1)
     expect(result.current.placeholder).not.toBeNull()
+    expect(result.current.hasPlaceholder).toBe(true)
     expect(result.current.displayRows[0].cells.item).toBe("")
+  })
+
+  // '추가' 버튼 은닉은 hasPlaceholder 로만 판정해야 한다 — rows.length===0 으로 판정하면
+  // 컬럼이 없어 빈 줄을 못 그리는 블록에서 줄도 버튼도 없는 막다른 길이 된다.
+  it("컬럼이 없으면 rows 가 비어도 hasPlaceholder 는 false 다", () => {
+    const { result } = renderHook(() => usePlaceholderRow([], []))
+    expect(result.current.hasPlaceholder).toBe(false)
+    expect(result.current.displayRows).toHaveLength(0)
   })
 
   it("파생한 행은 컬럼 타입에 맞는 빈 셀을 갖는다", () => {

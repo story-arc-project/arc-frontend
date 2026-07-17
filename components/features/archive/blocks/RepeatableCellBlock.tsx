@@ -24,7 +24,10 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
 
   // FRT-103: rows 가 비면 표시용 행 하나를 파생한다(value 에는 커밋되지 않음).
   // 항목 수·'행 추가' 노출은 계속 진짜 `val.rows` 를 본다.
-  const { displayRows, isPlaceholderRow, materialize } = usePlaceholderRow(val.rows, val.columns)
+  const { displayRows, hasPlaceholder, isPlaceholderRow, materialize } = usePlaceholderRow(
+    val.rows,
+    val.columns,
+  )
 
   function addRow() {
     const row = createEmptyRow(val.columns)
@@ -199,8 +202,8 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
             />
           ))}
 
-          {/* FRT-103: 빈 상태엔 이미 빈 행이 하나 있으므로 '행 추가' 는 할 일이 없다. */}
-          {val.rows.length > 0 && (
+          {/* FRT-103: 표시용 빈 행이 있을 때만 '행 추가' 를 숨긴다(할 일이 없다). */}
+          {!hasPlaceholder && (
             <Button
               type="button"
               variant="ghost"

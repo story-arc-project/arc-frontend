@@ -181,6 +181,17 @@ describe("OutcomeList — 빈 상태 placeholder(FRT-103)", () => {
     expect(screen.queryByRole("button", { name: /추가/ })).toBeNull()
   })
 
+  // BlockRenderer 는 columnCount<=1 을 OutcomeList 로 보낸다(0 포함). 컬럼이 없으면 빈 줄을
+  // 그릴 수 없으므로 '추가' 버튼이 유일한 입력 수단이다 — 이때까지 숨기면 막다른 길이 된다.
+  it("컬럼이 없어 빈 줄을 못 그리면 '추가' 버튼을 남겨 입력 수단을 보존한다", () => {
+    const block = makeBlock([])
+    const value = block.value as RepeatableCellBlockValue
+    render(<OutcomeList block={{ ...block, value: { ...value, columns: [] } }} onChange={() => {}} />)
+    // getAllByRole 은 0개일 때 throw 하므로 queryAll 로 부재를 단언한다.
+    expect(screen.queryAllByRole("textbox")).toHaveLength(0)
+    expect(screen.getByRole("button", { name: /추가/ })).toBeInTheDocument()
+  })
+
   it("타이핑하기 전에는 onChange 를 한 번도 호출하지 않는다(빈 블록 불변식)", () => {
     const onValue = vi.fn()
     render(<Harness initial={[]} onValue={onValue} />)

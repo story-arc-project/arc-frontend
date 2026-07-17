@@ -18,6 +18,10 @@ function cellFilled(value: string | string[]): boolean {
  *
  * 파생은 `useMemo` 로 한다(ref 를 렌더 중에 읽고 쓰면 `react-hooks/refs` 위반):
  * 비어 있는 동안은 같은 id 를 유지하고, 채워졌다가 다시 비면 새 id 를 만든다.
+ *
+ * ⚠️ useMemo 는 캐시 유지가 보장되는 API 가 아니다(React 가 캐시를 버리면 새 id 가 나온다).
+ * 지금의 React 에는 이 컴포넌트가 밟는 폐기 경로가 없어 안전하지만, 리마운트 회귀가 보이면
+ * 여기부터 의심할 것 — 보장이 필요해지면 useState + 렌더 중 리셋 패턴으로 바꾼다.
  */
 export function usePlaceholderRow(rows: BlockRow[], columns: BlockColumnDef[]) {
   // 컬럼이 없으면 그릴 셀도 없다 — 표시용 행을 만들지 않는다.
@@ -40,6 +44,12 @@ export function usePlaceholderRow(rows: BlockRow[], columns: BlockColumnDef[]) {
 
   return {
     displayRows: placeholder ? [placeholder] : rows,
+    /**
+     * 표시용 행을 그리는 중인가. '추가' 버튼은 **이때만** 숨긴다 — 이미 빈 줄이 있어서다.
+     * `rows.length === 0` 으로 대신 판정하면 안 된다: 컬럼이 없어 placeholder 를 못 만드는
+     * 블록에서 빈 줄도 버튼도 없는 막다른 길이 된다.
+     */
+    hasPlaceholder: placeholder !== null,
     isPlaceholderRow,
     materialize,
     placeholder,

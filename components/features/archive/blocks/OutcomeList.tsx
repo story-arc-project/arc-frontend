@@ -81,7 +81,10 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
 
   // FRT-103: rows 가 비면 표시용 행 하나를 파생한다(value 에는 커밋되지 않음).
   // 아래 길이 가드·항목 수는 계속 진짜 `rows` 를 본다.
-  const { displayRows, isPlaceholderRow, materialize } = usePlaceholderRow(rows, val.columns)
+  const { displayRows, hasPlaceholder, isPlaceholderRow, materialize } = usePlaceholderRow(
+    rows,
+    val.columns,
+  )
 
   const listRef = useRef<HTMLDivElement>(null)
   // 다음 렌더에서 포커스할 행 id(예약). state 대신 ref 라 effect 안에서 setState 없이 정리한다.
@@ -265,7 +268,9 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
           <div
             key={row.id}
             data-row-id={row.id}
-            className="flex items-start gap-2 border-b border-border px-3 py-2"
+            // border-b 는 아래에 다음 행이나 '추가' 버튼이 올 때만 구분선이다. 표시용 행 하나만
+            // 있는 빈 상태에서는 컨테이너 하단 테두리와 맞닿아 두 줄로 보이므로 뺀다.
+            className={`flex items-start gap-2 px-3 py-2 ${hasPlaceholder ? "" : "border-b border-border"}`}
           >
             <span className="text-brand font-bold leading-6 shrink-0 select-none">•</span>
             <AutoGrowInput
@@ -289,8 +294,9 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
           </div>
         ))}
 
-        {/* FRT-103: 빈 상태엔 이미 빈 줄이 하나 있으므로 '추가' 는 할 일이 없다(눌러도 화면이 그대로라 고장으로 읽힌다). */}
-        {rows.length > 0 && (
+        {/* FRT-103: 표시용 빈 줄이 있을 때만 '추가' 를 숨긴다(눌러도 화면이 그대로라 고장으로 읽힌다).
+            `rows.length === 0` 로 판정하면 컬럼이 없어 빈 줄조차 못 그리는 블록에서 입력 수단이 사라진다. */}
+        {!hasPlaceholder && (
           <button
             type="button"
             onClick={addAtEnd}
