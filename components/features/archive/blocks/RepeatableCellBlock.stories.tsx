@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
+import { expect, within } from "storybook/test"
 
 import RepeatableCellBlock from "./RepeatableCellBlock"
 import type { Block } from "@/types/archive"
@@ -43,6 +44,54 @@ export const WithGuide: Story = {
   args: {
     block: listBlock,
     readOnly: false,
+  },
+}
+
+/** 다중 컬럼 표 — 학회 '프로젝트/연구활동' 같은 기본 템플릿 표. */
+const tableBlock: Block = {
+  id: "rc-table",
+  type: "repeatable-cell",
+  label: "프로젝트/연구활동",
+  value: {
+    type: "repeatable-cell",
+    columns: [
+      { key: "name", label: "이름", blockType: "text" },
+      { key: "role", label: "역할", blockType: "text" },
+    ],
+    rows: [{ id: "r1", cells: { name: "학회 세미나 운영", role: "기획" } }],
+  },
+}
+
+/**
+ * 컬럼 고정(FRT-104) — 기본 템플릿의 표. 열 태그·'열 추가'가 사라지고 정해진 컬럼만 입력한다.
+ * 컬럼명은 각 행의 라벨로 남고, '행 추가'는 그대로 동작한다.
+ */
+export const LockedColumns: Story = {
+  args: {
+    block: { ...tableBlock, lockColumns: true },
+    readOnly: false,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // 열 관리 UI 는 없다
+    expect(canvas.queryByPlaceholderText("열 추가...")).toBeNull()
+    expect(canvas.queryByRole("button", { name: "이름 열 삭제" })).toBeNull()
+    // 입력 맥락(컬럼명)과 행 추가는 남는다
+    expect(canvas.getByText("이름")).toBeInTheDocument()
+    expect(canvas.getByRole("button", { name: /행 추가/ })).toBeInTheDocument()
+  },
+}
+
+/** 사용자가 직접 만든 커스텀 표 — 잠기지 않아 열 태그·'열 추가'로 컬럼을 관리한다(기존 동작). */
+export const UnlockedColumns: Story = {
+  args: {
+    block: tableBlock,
+    readOnly: false,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    expect(canvas.getByPlaceholderText("열 추가...")).toBeInTheDocument()
+    expect(canvas.getByRole("button", { name: "이름 열 삭제" })).toBeInTheDocument()
   },
 }
 

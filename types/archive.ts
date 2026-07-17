@@ -178,6 +178,13 @@ export interface Block {
    * (로드 시 레지스트리에서 재공급). 실제 참조는 `BlockRow.linkedProjectRowId` 에 저장된다.
    */
   linkConfig?: ProjectLinkConfig
+  /**
+   * 컬럼 고정 (FRT-104). `repeatable-cell` 에서 켜면 열 태그 줄(컬럼 pill·삭제·'열 추가' 입력)을
+   * 숨겨 정해진 컬럼만 입력하게 한다. 기본 템플릿의 표는 컬럼이 고정이라 이 관리 UI 가 산만하다 —
+   * 사용자가 직접 만드는 커스텀 표(createBlock 경로)는 잠기지 않는다. 표시 전용으로 value(JSONB)는 무변경.
+   * `variant` 와 동일하게 템플릿 정의에만 존재하며 직렬화되지 않는다(로드 시 레지스트리에서 재공급).
+   */
+  lockColumns?: boolean
   value: BlockValue
 }
 

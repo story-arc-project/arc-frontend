@@ -16,6 +16,10 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   const val = block.value as RepeatableCellBlockValue
   const [newColLabel, setNewColLabel] = useState("")
 
+  // 컬럼 고정 표시(FRT-104). 컬럼이 0개면 잠금을 무시한다 — 열 추가 UI 가 유일한 진입점이라
+  // 숨기면 빈 표에서 아무것도 할 수 없다(BlockRenderer 의 outcome-list 폴백과 같은 원칙).
+  const lockColumns = block.lockColumns === true && val.columns.length > 0
+
   function addRow() {
     const row = createEmptyRow(val.columns)
     onChange({ ...val, rows: [...val.rows, row] })
@@ -137,35 +141,37 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
         </div>
       ) : (
         <>
-          {/* Column tags */}
-          <div className="flex flex-wrap gap-1.5">
-            {val.columns.map(col => (
-              <span
-                key={col.key}
-                className="inline-flex items-center gap-1 bg-surface-secondary border border-border rounded-full pl-2.5 pr-1.5 py-0.5 text-caption text-text-secondary"
-              >
-                {col.label}
-                <button
-                  type="button"
-                  onClick={() => removeColumn(col.key)}
-                  className="rounded-full p-0.5 hover:bg-surface-tertiary transition-colors text-text-tertiary hover:text-error"
-                  aria-label={`${col.label} 열 삭제`}
+          {/* Column tags — 컬럼이 고정된 표(기본 템플릿)에서는 숨긴다. 각 행이 col.label 을 라벨로 그리므로 입력 맥락은 남는다. */}
+          {!lockColumns && (
+            <div className="flex flex-wrap gap-1.5">
+              {val.columns.map(col => (
+                <span
+                  key={col.key}
+                  className="inline-flex items-center gap-1 bg-surface-secondary border border-border rounded-full pl-2.5 pr-1.5 py-0.5 text-caption text-text-secondary"
                 >
-                  ×
-                </button>
-              </span>
-            ))}
-            <div className="flex gap-1">
-              <input
-                type="text"
-                className="h-6 w-24 rounded border border-border bg-surface px-2 text-caption text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-                placeholder="열 추가..."
-                value={newColLabel}
-                onChange={e => setNewColLabel(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addColumn() } }}
-              />
+                  {col.label}
+                  <button
+                    type="button"
+                    onClick={() => removeColumn(col.key)}
+                    className="rounded-full p-0.5 hover:bg-surface-tertiary transition-colors text-text-tertiary hover:text-error"
+                    aria-label={`${col.label} 열 삭제`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  className="h-6 w-24 rounded border border-border bg-surface px-2 text-caption text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+                  placeholder="열 추가..."
+                  value={newColLabel}
+                  onChange={e => setNewColLabel(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addColumn() } }}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Rows */}
           {val.rows.map((row, idx) => (

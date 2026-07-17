@@ -9,6 +9,7 @@ import {
   createLinkField,
   createOutcomeList,
   createPeriodField,
+  createRepeatableCell,
   createSelectField,
   createTagsField,
   createTextField,
@@ -156,6 +157,22 @@ describe("group block", () => {
     g.children = [req]
 
     expect(validateRequiredBlocks([g])).toEqual([])
+  })
+})
+
+describe("createRepeatableCell lockColumns (FRT-104)", () => {
+  const cols = [{ key: "name", label: "이름", blockType: "text" as const }]
+
+  it("기본으로 컬럼을 잠근다 — 템플릿 표는 컬럼이 고정이다", () => {
+    expect(createRepeatableCell("프로젝트/연구활동", cols).lockColumns).toBe(true)
+  })
+
+  it("lockColumns:false 로 열 관리를 다시 열 수 있다", () => {
+    expect(createRepeatableCell("표", cols, { lockColumns: false }).lockColumns).toBe(false)
+  })
+
+  it("createOutcomeList 는 컬럼을 잠그지 않는다 — 레거시 다중컬럼이 표로 폴백되면 열 관리가 필요하다", () => {
+    expect(createOutcomeList("단체 활동 / 성과").lockColumns).toBe(false)
   })
 })
 

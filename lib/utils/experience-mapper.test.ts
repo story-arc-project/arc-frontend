@@ -476,6 +476,20 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
     expect(reloaded.coreBlocks.find(b => b.key === "core.경험명")?.value).toEqual(text("헤더T"))
   })
 
+  it("lockColumns 는 직렬화되지 않고 로드 시 레지스트리에서 재공급된다 (FRT-104)", () => {
+    const { coreBlocks, extensionBlocks } = careerBlocks()
+    const tableKey = "career-tasks.업무내용"
+    expect(extensionBlocks.find(b => b.key === tableKey)?.lockColumns).toBe(true)
+
+    const payload = toSavePayload(makeExperienceV2({ coreBlocks, extensionBlocks }))
+    expect(JSON.stringify(payload.content)).not.toContain("lockColumns")
+
+    const reloaded = toExperienceV2(
+      makeExperience({ content: payload.content, importance: payload.importance }),
+    )
+    expect(reloaded.extensionBlocks.find(b => b.key === tableKey)?.lockColumns).toBe(true)
+  })
+
   it("키 없는(모호 라벨) 확장 블록은 custom 으로 보존된다 (Codex P1 회귀)", () => {
     const block: Block = {
       id: "x1",
