@@ -763,10 +763,51 @@ function mapKeywordSpecificRecommendation(dto: unknown): KeywordSpecificRecommen
   };
 }
 
+// 키워드 분석 본문(A-F)이 이 껍질에 직접 들어있는지 판별한다. 이중중첩 언랩의 종료 조건.
+const KEYWORD_CONTENT_KEYS = [
+  "keywordDefinitions", "keyword_definitions", "A_keyword_definitions",
+  "selectionCriteria", "selection_criteria", "B_selection_criteria",
+  "coverage", "C_coverage",
+  "matchedExperiences", "matched_experiences", "D_matched_experiences",
+  "storylines", "E_storylines",
+  "improvementGuide", "improvement_guide", "F_improvement_guide",
+];
+
+function hasKeywordContent(body: UnknownRecord): boolean {
+  return KEYWORD_CONTENT_KEYS.some((k) => k in body);
+}
+
+/**
+ * 백엔드 internal.py 가 keyword 결과만 상위 result 언랩을 빠뜨려
+ * `{ careers, result: { A-F }, status }` 형태로 한 겹 더 감싸 보낼 수 있다(계약 §3 미반영).
+ * 한 겹만 벗기면 A_* 를 못 뚫어 화면이 백지가 된다. 본문 키가 나타날 때까지 result 를 벗기되,
+ * 바깥 껍질의 메타(keywords·target·status 등)는 안쪽 본문과 얕게 병합해 보존한다.
+ * 단일중첩(정상 계약)이면 본문 키가 바로 있으므로 그대로 반환 — 회귀 없음.
+ */
+function unwrapKeywordBody(dto: UnknownRecord): UnknownRecord {
+  let body = dto;
+  // result 래퍼가 있으면 우선 한 겹 벗긴다(기존 동작 유지).
+  if (body.result && typeof body.result === "object" && !Array.isArray(body.result)) {
+    body = asRecord(body.result);
+  }
+  // 본문이 여전히 안 보이고 안쪽에 또 result 객체가 있으면(이중중첩) 병합해 뚫는다.
+  let guard = 0;
+  while (
+    !hasKeywordContent(body) &&
+    body.result &&
+    typeof body.result === "object" &&
+    !Array.isArray(body.result) &&
+    guard < 3
+  ) {
+    body = { ...body, ...asRecord(body.result) };
+    guard += 1;
+  }
+  return body;
+}
+
 function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
   const r = asRecord(dto);
-  // 응답이 result wrapper로 감싸져 올 가능성도 방어한다.
-  const body = r.result && typeof r.result === "object" ? asRecord(r.result) : r;
+  const body = unwrapKeywordBody(r);
   const guide = asRecord(
     body.improvementGuide ?? body.improvement_guide ?? body.F_improvement_guide,
   );

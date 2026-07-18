@@ -334,6 +334,69 @@ describe("experiences 매핑 — BAC-58 / 계약 §2.2 (FRT-123)", () => {
   })
 })
 
+describe("키워드 이중중첩 언랩 — internal.py result 누락 방어 (dual-compat)", () => {
+  // 백엔드 internal.py 가 keyword 결과만 상위 result 언랩을 빠뜨려
+  // { careers, result: { A-F }, status } 형태로 한 겹 더 감싸 보낼 수 있다(계약 §3 미반영).
+  // 한 겹만 벗기면 A_* 를 못 뚫어 화면이 백지가 된다 → 본문이 나올 때까지 result 를 벗긴다.
+  it("이중중첩(result.result)에서 A_* 본문을 뚫어 읽는다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          careers: ["백엔드"],
+          status: "completed",
+          result: {
+            A_keyword_definitions: [{ keyword: "리더십", definition: "d", synonyms: [] }],
+            C_coverage: [{ keyword: "리더십", related_count: 2, total_count: 5 }],
+            D_matched_experiences: [{ keyword: "리더십", experiences: [] }],
+            E_storylines: [{ keyword: "리더십" }],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].keyword).toBe("리더십")
+    expect(res.coverage[0].relatedCount).toBe(2)
+    expect(res.matchedExperiences[0].keyword).toBe("리더십")
+    expect(res.storylines[0].keyword).toBe("리더십")
+  })
+
+  it("이중중첩이어도 바깥 껍질의 메타(keywords·target)를 보존한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          keywords: ["리더십", "협업"],
+          target: "스타트업 PM",
+          result: {
+            A_keyword_definitions: [{ keyword: "리더십", definition: "d", synonyms: [] }],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywords).toEqual(["리더십", "협업"])
+    expect(res.targetScenario).toBe("스타트업 PM")
+    expect(res.keywordDefinitions[0].keyword).toBe("리더십")
+  })
+
+  it("단일중첩(정상 계약)은 그대로 읽는다 — 회귀 없음", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          A_keyword_definitions: [{ keyword: "리더십", definition: "d", synonyms: [] }],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].keyword).toBe("리더십")
+  })
+})
+
 describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
   it("A_ 접두사 키를 읽는다 (계약 미이행 백엔드 방어)", async () => {
     apiMock.get.mockResolvedValue(
