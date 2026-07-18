@@ -618,7 +618,9 @@ function Footer() {
         </div>
       </div>
       <div className="max-w-5xl mx-auto mt-8 pt-6 border-t border-border">
-        <p className="text-[13px] text-text-tertiary">© 2026 ARC. All rights reserved.</p>
+        <p className="text-[13px] text-text-tertiary">
+          © {new Date().getFullYear()} ARC. All rights reserved.
+        </p>
       </div>
     </footer>
   );
