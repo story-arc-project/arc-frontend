@@ -30,12 +30,27 @@ export default function ComprehensiveDetailPage() {
   const [unsupported, setUnsupported] = useState(false);
 
   useEffect(() => {
+    let active = true;
     getComprehensiveResult(analysisId)
-      .then(setData)
+      .then((d) => {
+        if (!active) return;
+        setError(false);
+        setUnsupported(false);
+        setData(d);
+      })
       .catch((e) => {
-        if (e instanceof UnsupportedSchemaError) setUnsupported(true);
-        else setError(true);
+        if (!active) return;
+        if (e instanceof UnsupportedSchemaError) {
+          setUnsupported(true);
+          setError(false);
+        } else {
+          setError(true);
+          setUnsupported(false);
+        }
       });
+    return () => {
+      active = false;
+    };
   }, [analysisId]);
 
   if (unsupported) {
