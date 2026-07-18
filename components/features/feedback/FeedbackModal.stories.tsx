@@ -1,0 +1,99 @@
+import { useState } from "react";
+
+import type { Meta, StoryObj } from "@storybook/nextjs";
+import { expect, fn, userEvent, within } from "storybook/test";
+
+import { FeedbackModal } from "./FeedbackModal";
+import type { FeedbackPayload, FeedbackTriggerSource } from "@/lib/feedback/types";
+
+const meta: Meta<typeof FeedbackModal> = {
+  title: "Features/Feedback/FeedbackModal",
+  component: FeedbackModal,
+  parameters: { layout: "centered" },
+};
+
+export default meta;
+type Story = StoryObj<typeof FeedbackModal>;
+
+function Wrapper(props: {
+  triggerSource?: FeedbackTriggerSource;
+  onSubmit?: (payload: FeedbackPayload) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <FeedbackModal
+      open={open}
+      campaignId="analysis-satisfaction"
+      triggerSource={props.triggerSource ?? "analysis_completed"}
+      context={{ analysisId: "demo-1", analysisType: "comprehensive" }}
+      onSubmit={props.onSubmit ?? (() => {})}
+      onClose={() => setOpen(false)}
+    />
+  );
+}
+
+/** 진입 직후 — 별점 미선택, 자유텍스트는 접혀 있고 제출은 비활성. */
+export const Default: Story = {
+  render: () => <Wrapper />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByRole("heading", { name: "방금 이 분석, 도움이 됐나요?" }),
+    ).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "보내기" })).toBeDisabled();
+  },
+};
+
+/** 높은 점수 선택 → 자유텍스트가 열리고 "가장 좋았던 점" placeholder. */
+export const HighScoreSelected: Story = {
+  render: () => <Wrapper />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("radio", { name: "별 5점" }));
+    await expect(
+      canvas.getByPlaceholderText("가장 좋았던 점이 있다면?"),
+    ).toBeEnabled();
+    await expect(canvas.getByRole("button", { name: "보내기" })).toBeEnabled();
+  },
+};
+
+/** 낮은 점수 선택 → 같은 텍스트칸, "무엇이 더 있으면" placeholder(점수 무관 항상 열림). */
+export const LowScoreSelected: Story = {
+  render: () => <Wrapper />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("radio", { name: "별 2점" }));
+    await expect(
+      canvas.getByPlaceholderText("무엇이 더 있으면 좋을까요?"),
+    ).toBeVisible();
+  },
+};
+
+/** 경험 도달 게이트 — 분석을 한 적 없는 사용자라 질문 문구가 다르다. */
+export const ExperienceThresholdTrigger: Story = {
+  render: () => <Wrapper triggerSource="experience_threshold" />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByRole("heading", { name: "ARC에 기록해 보니 어떠셨나요?" }),
+    ).toBeVisible();
+  },
+};
+
+/** 제출 흐름 — 별점+코멘트 입력 후 onSubmit 이 payload 로 호출된다. */
+export const SubmitFlow: Story = {
+  render: () => <Wrapper onSubmit={fn()} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("radio", { name: "별 4점" }));
+    await userEvent.type(
+      canvas.getByLabelText("한마디 의견 (선택)"),
+      "흐름이 매끄러웠어요",
+    );
+    await userEvent.click(canvas.getByRole("button", { name: "보내기" }));
+    // 제출 후 모달이 닫힌다.
+    await expect(
+      canvas.queryByRole("button", { name: "보내기" }),
+    ).not.toBeInTheDocument();
+  },
+};
