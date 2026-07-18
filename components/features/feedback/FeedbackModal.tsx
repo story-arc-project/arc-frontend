@@ -13,6 +13,7 @@ import {
   questionCopyFor,
 } from "@/lib/feedback/campaigns";
 import type {
+  FeedbackCampaign,
   FeedbackCampaignId,
   FeedbackContext,
   FeedbackPayload,
@@ -57,14 +58,18 @@ export function FeedbackModal({ open, ...rest }: FeedbackModalProps) {
     <Dialog open={open} onClose={rest.onClose} ariaLabel={question}>
       {/* 폼 상태(별점·코멘트)는 여기 내부에 둔다. Dialog 는 닫힐 때 children 을 언마운트하므로
           재오픈 시 자동으로 초기화된다 — 리셋 effect 가 필요 없다. */}
-      <FeedbackForm question={question} {...rest} />
+      <FeedbackForm campaign={campaign} question={question} {...rest} />
     </Dialog>
   );
 }
 
-type FeedbackFormProps = Omit<FeedbackModalProps, "open"> & { question: string };
+type FeedbackFormProps = Omit<FeedbackModalProps, "open"> & {
+  campaign: FeedbackCampaign;
+  question: string;
+};
 
 function FeedbackForm({
+  campaign,
   question,
   campaignId,
   triggerSource,
@@ -72,8 +77,6 @@ function FeedbackForm({
   onSubmit,
   onClose,
 }: FeedbackFormProps) {
-  const campaign = feedbackCampaign(campaignId);
-
   const [rating, setRating] = useState<FeedbackRating | null>(null);
   const [hoveredRating, setHoveredRating] = useState<FeedbackRating | null>(null);
   const [comment, setComment] = useState("");
@@ -172,11 +175,10 @@ function FeedbackForm({
 
       {/* 적응형 자유텍스트 — 별점 선택 시 점수 무관하게 항상 부드럽게 열림 */}
       <div
-        className="grid transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
-        style={{
-          gridTemplateRows: revealed ? "1fr" : "0fr",
-          opacity: revealed ? 1 : 0,
-        }}
+        className={[
+          "grid transition-[grid-template-rows,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          revealed ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        ].join(" ")}
       >
         <div className="overflow-hidden">
           <textarea
