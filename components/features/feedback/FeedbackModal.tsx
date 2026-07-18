@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { Star, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -76,11 +77,32 @@ function FeedbackForm({
   const [rating, setRating] = useState<FeedbackRating | null>(null);
   const [hoveredRating, setHoveredRating] = useState<FeedbackRating | null>(null);
   const [comment, setComment] = useState("");
+  const starRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const revealed = rating !== null;
   // hover 는 선택을 덮어써 미리보기를 준다. 채움 기준은 hover > 선택 순.
   const activeRating = hoveredRating ?? rating ?? 0;
   const placeholder = revealed ? placeholderFor(campaign, rating) : "";
+  // roving tabindex: 선택된 별 하나만 탭 정지(미선택이면 첫 별). 나머지는 화살표키로 이동한다.
+  const tabbableValue: FeedbackRating = rating ?? 1;
+
+  function moveRating(e: KeyboardEvent, current: FeedbackRating) {
+    let next: FeedbackRating | null = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      next = Math.min(current + 1, 5) as FeedbackRating;
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      next = Math.max(current - 1, 1) as FeedbackRating;
+    } else if (e.key === "Home") {
+      next = 1;
+    } else if (e.key === "End") {
+      next = 5;
+    }
+    if (next === null) return;
+    // radiogroup 규약: 화살표 이동 시 선택도 함께 옮기고 포커스를 넘긴다.
+    e.preventDefault();
+    setRating(next);
+    starRefs.current[next - 1]?.focus();
+  }
 
   function handleSubmit() {
     if (rating === null) return;
@@ -122,11 +144,16 @@ function FeedbackForm({
           return (
             <button
               key={value}
+              ref={(el) => {
+                starRefs.current[value - 1] = el;
+              }}
               type="button"
               role="radio"
               aria-checked={rating === value}
               aria-label={`별 ${value}점`}
+              tabIndex={value === tabbableValue ? 0 : -1}
               onClick={() => setRating(value)}
+              onKeyDown={(e) => moveRating(e, value)}
               onMouseEnter={() => setHoveredRating(value)}
               onFocus={() => setHoveredRating(value)}
               onBlur={() => setHoveredRating(null)}

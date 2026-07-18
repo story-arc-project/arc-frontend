@@ -120,6 +120,57 @@ describe("FeedbackModal", () => {
     expect([...textarea.value].length).toBe(FEEDBACK_COMMENT_MAX_LENGTH);
   });
 
+  it("서로게이트 페어(이모지)도 코드포인트 1개로 세어 상한에서 자른다", async () => {
+    // "😀".length 는 2(UTF-16), [..."😀"].length 는 1. `.length` 로 세는 회귀가 있으면
+    // 이 케이스는 상한의 절반 지점에서 잘려 실패한다 — 코드포인트 경계를 지키는지 검증한다.
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("radio", { name: "별 3점" }));
+
+    const textarea = screen.getByLabelText<HTMLTextAreaElement>("한마디 의견 (선택)");
+    const emoji = "😀".repeat(FEEDBACK_COMMENT_MAX_LENGTH + 5);
+    await user.click(textarea);
+    await user.paste(emoji);
+
+    expect([...textarea.value].length).toBe(FEEDBACK_COMMENT_MAX_LENGTH);
+    // UTF-16 code unit 로는 상한의 2배여야 서로게이트 페어가 온전히 보존된 것.
+    expect(textarea.value.length).toBe(FEEDBACK_COMMENT_MAX_LENGTH * 2);
+  });
+
+  it("별점 radiogroup 은 roving tabindex 로 한 개만 탭 정지를 갖는다", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    const radios = screen.getAllByRole("radio");
+
+    // 미선택이면 첫 별만 tabbable.
+    expect(radios.filter((r) => r.tabIndex === 0)).toHaveLength(1);
+    expect(radios[0].tabIndex).toBe(0);
+
+    // 선택하면 그 별로 탭 정지가 옮겨간다.
+    await user.click(screen.getByRole("radio", { name: "별 4점" }));
+    const after = screen.getAllByRole("radio");
+    expect(after.filter((r) => r.tabIndex === 0)).toHaveLength(1);
+    expect(after[3].tabIndex).toBe(0);
+  });
+
+  it("화살표키로 별점을 옮기면 선택도 함께 이동한다", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("radio", { name: "별 3점" }));
+
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("radio", { name: "별 4점" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+
+    await user.keyboard("{ArrowLeft}{ArrowLeft}");
+    expect(screen.getByRole("radio", { name: "별 2점" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  });
+
   it("닫기 버튼을 누르면 onClose 를 호출한다", async () => {
     const user = userEvent.setup();
     const { onClose } = renderModal();
