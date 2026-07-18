@@ -541,6 +541,95 @@ describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
     ])
     expect(res.improvementGuide.overallDirection).toBeNull()
   })
+
+  it("relevance=low 인데 is_reference_only 플래그가 없으면 참고용으로 파생한다 (codex P2)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          matched_experiences: [
+            {
+              keyword: "협업",
+              experiences: [
+                { career_title: "저신뢰", relevance: "low" },
+                { career_title: "고신뢰", relevance: "high" },
+                { career_title: "명시false", relevance: "low", is_reference_only: false },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    const exps = res.matchedExperiences[0].experiences
+    expect(exps[0].isReferenceOnly).toBe(true) // low + 플래그 없음 → 파생
+    expect(exps[1].isReferenceOnly).toBe(false) // high → 아님
+    expect(exps[2].isReferenceOnly).toBe(false) // 명시 false 는 존중
+  })
+
+  it("레거시 객체형 guide 텍스트({description}/{text}/{suggestion})를 보존한다 (codex P2)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          improvement_guide: {
+            information_enhancement: [{ description: "구버전 정보보강" }],
+            experience_expansion: [{ suggestion: "구버전 경험확장" }],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    // 빈값으로 걸러지지 않고 텍스트가 대표 필드에 실린다.
+    expect(res.improvementGuide.informationEnhancement).toHaveLength(1)
+    expect(res.improvementGuide.informationEnhancement[0].howToAdd).toBe("구버전 정보보강")
+    expect(res.improvementGuide.experienceExpansion).toHaveLength(1)
+    expect(res.improvementGuide.experienceExpansion[0].gapDescription).toBe("구버전 경험확장")
+  })
+
+  it("C_coverage 카운트 부재 시 matched relevance 로 높음/보통/참고 카운트를 파생한다 (codex P2)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          C_coverage: [{ keyword: "협업", related_count: 3, total_count: 5 }],
+          D_matched_experiences: [
+            {
+              keyword: "협업",
+              experiences: [
+                { career_title: "a", relevance: "high" },
+                { career_title: "b", relevance: "high" },
+                { career_title: "c", relevance: "low" },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.coverage[0]).toMatchObject({ highCount: 2, mediumCount: 0, lowCount: 1 })
+  })
+
+  it("C_coverage 가 이미 카운트를 주면 파생으로 덮어쓰지 않는다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          C_coverage: [{ keyword: "협업", high_count: 9, medium_count: 0, low_count: 0 }],
+          D_matched_experiences: [
+            { keyword: "협업", experiences: [{ career_title: "a", relevance: "low" }] },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.coverage[0].highCount).toBe(9) // 백엔드 값 신뢰
+    expect(res.coverage[0].lowCount).toBe(0)
+  })
 })
 
 describe("schema_version 가드 — 부재 ≠ 미상 (FRT-123 계약 §3.5)", () => {

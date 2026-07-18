@@ -534,6 +534,32 @@ function mapKeywordCoverage(dto: unknown): KeywordCoverage {
   };
 }
 
+/**
+ * C_coverage 가 총계·비율만 주고 high/medium/low 카운트를 안 줄 때(v4.1 과도기),
+ * D_matched_experiences 의 relevance 로 키워드별 카운트를 파생한다.
+ * 카운트가 하나라도 있으면 백엔드 값을 그대로 신뢰한다.
+ */
+function fillCoverageCounts(
+  coverage: KeywordCoverage[],
+  groups: KeywordMatchedGroup[],
+): KeywordCoverage[] {
+  return coverage.map((c) => {
+    if (c.highCount || c.mediumCount || c.lowCount) return c;
+    const group = groups.find((g) => g.keyword === c.keyword);
+    if (!group) return c;
+    let highCount = 0;
+    let mediumCount = 0;
+    let lowCount = 0;
+    for (const exp of group.experiences) {
+      if (exp.relevance === "high") highCount += 1;
+      else if (exp.relevance === "medium") mediumCount += 1;
+      else if (exp.relevance === "low") lowCount += 1;
+    }
+    if (!highCount && !mediumCount && !lowCount) return c;
+    return { ...c, highCount, mediumCount, lowCount };
+  });
+}
+
 function mapKeywordEvidence(dto: unknown): KeywordEvidence {
   const r = asRecord(dto);
   return {
@@ -555,7 +581,11 @@ function mapMatchedExperience(dto: unknown): MatchedExperience {
     matchedCriteria: mapMatchedCriteria(r.matchedCriteria ?? r.matched_criteria),
     confidence: asString(r.confidence),
     confidenceReason: asString(r.confidenceReason ?? r.confidence_reason),
-    isReferenceOnly: asBoolean(r.isReferenceOnly ?? r.is_reference_only),
+    // 명시 플래그가 없으면 relevance=low 를 참고용으로 파생한다(백엔드가 별도 플래그를
+    // 안 줘도 저신뢰 근거가 일반 매칭처럼 보이지 않도록). 명시 false 는 존중한다.
+    isReferenceOnly: asBoolean(
+      r.isReferenceOnly ?? r.is_reference_only ?? asString(r.relevance) === "low",
+    ),
   };
 }
 
@@ -661,7 +691,9 @@ function mapInformationEnhancement(dto: unknown): InformationEnhancement {
   return {
     target: asString(r.target),
     missing: asString(r.missing),
-    howToAdd: asString(r.howToAdd ?? r.how_to_add),
+    // 레거시 객체형({ description }/{ text }/{ suggestion })도 흡수해 항목이
+    // 빈값으로 걸러지지 않게 한다(구 mapper 의 텍스트 폴백 유지).
+    howToAdd: asString(r.howToAdd ?? r.how_to_add ?? r.description ?? r.text ?? r.suggestion),
     reason: asString(r.reason),
     priority: asString(r.priority),
   };
@@ -683,7 +715,10 @@ function mapExperienceExpansion(dto: unknown): ExperienceExpansion {
   }
   const r = asRecord(dto);
   return {
-    gapDescription: asString(r.gapDescription ?? r.gap_description),
+    // 레거시 객체형 텍스트 필드도 흡수(구 mapper 의 텍스트 폴백 유지).
+    gapDescription: asString(
+      r.gapDescription ?? r.gap_description ?? r.description ?? r.text ?? r.suggestion,
+    ),
     suggestedExperienceType: asString(r.suggestedExperienceType ?? r.suggested_experience_type),
     whyHelpful: asString(r.whyHelpful ?? r.why_helpful),
     examples: asStringArray(r.examples),
@@ -738,6 +773,13 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
   const selection = asRecord(
     body.selectionCriteria ?? body.selection_criteria ?? body.B_selection_criteria,
   );
+  const matchedExperiences = asArray(
+    body.matchedExperiences ?? body.matched_experiences ?? body.D_matched_experiences,
+  ).map(mapKeywordMatchedGroup);
+  const coverage = fillCoverageCounts(
+    asArray(body.coverage ?? body.C_coverage).map(mapKeywordCoverage),
+    matchedExperiences,
+  );
 
   return {
     id: asString(r.id ?? body.id),
@@ -754,10 +796,8 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
       summary: asString(selection.summary),
       criteria: asStringArray(selection.criteria),
     },
-    coverage: asArray(body.coverage ?? body.C_coverage).map(mapKeywordCoverage),
-    matchedExperiences: asArray(
-      body.matchedExperiences ?? body.matched_experiences ?? body.D_matched_experiences,
-    ).map(mapKeywordMatchedGroup),
+    coverage,
+    matchedExperiences,
     storylines: asArray(body.storylines ?? body.E_storylines).map(mapKeywordStoryline),
     improvementGuide: {
       overallDirection: mapOverallDirection(guide.overallDirection ?? guide.overall_direction),

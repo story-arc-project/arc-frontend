@@ -16,7 +16,7 @@ vi.mock("./client", async () => {
 vi.mock("@/lib/demo/state", () => ({ isDemoMode: () => false }));
 
 import { api } from "./client";
-import { createResume, getResumeList } from "./export-api";
+import { createResume, getResume, getResumeList } from "./export-api";
 
 const mockGet = vi.mocked(api.get);
 const mockPost = vi.mocked(api.post);
@@ -141,6 +141,60 @@ describe("createResume — id 이중경로 (FRT-123 계약 §2.4)", () => {
       { language: "ko", title: "내 이력서" },
       undefined,
     );
+  });
+});
+
+describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)", () => {
+  const content = {
+    meta: { format: "json", version: "1.0" },
+    인적사항: { 이름: "홍길동" },
+    학력: [],
+    경력: [],
+  };
+
+  it("본문이 data.result 한 겹에 감싸 오면 벗겨 반환한다 (계약 이행 백엔드)", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: {
+        id: "res-1",
+        title: "내 이력서",
+        language: "ko",
+        status: "success",
+        created_at: "2026-07-18T00:00:00.000Z",
+        updated_at: "2026-07-18T00:00:00.000Z",
+        result: content,
+      },
+    });
+
+    const resume = await getResume("res-1");
+    // 래퍼가 아니라 본문(인적사항)이 최상위로 온다.
+    expect(resume.인적사항).toEqual({ 이름: "홍길동" });
+    // 래퍼 id 를 version_id 로 보존한다.
+    expect(resume.version_id).toBe("res-1");
+  });
+
+  it("result 래퍼 없이 본문이 data 로 평탄화돼 와도 그대로 반환한다 (미래 백엔드 폴백)", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { version_id: "res-2", ...content },
+    });
+
+    const resume = await getResume("res-2");
+    expect(resume.인적사항).toEqual({ 이름: "홍길동" });
+    expect(resume.version_id).toBe("res-2");
+  });
+
+  it("본문에 version_id 가 이미 있으면 래퍼 id 로 덮어쓰지 않는다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "wrapper-id", result: { version_id: "inner-id", ...content } },
+    });
+
+    const resume = await getResume("wrapper-id");
+    expect(resume.version_id).toBe("inner-id");
   });
 });
 

@@ -77,10 +77,32 @@ export async function createResume(
 
 export async function getResume(versionId: string): Promise<ResumeVersion> {
   if (isDemoMode()) return demo.getResume(versionId);
-  const res = await api.get<ApiSuccessResponse<ResumeVersion>>(
+  const res = await api.get<ApiSuccessResponse<unknown>>(
     `/export/resume/${versionId}`,
   );
-  return res.data;
+  return unwrapResumeVersion(res.data);
+}
+
+/**
+ * 백엔드 GET /export/resume/{id} 는 본문을 data.result 한 겹에 감싸 돌려준다
+ * (data = { id, title, language, status, created_at, updated_at, result }).
+ * ResumeVersion 은 본문(인적사항/학력/경력…) 타입이므로 result 를 벗겨 반환한다.
+ * 백엔드가 §3 result 규약 통일로 나중에 data 자체를 본문으로 평탄화해도 안 깨지도록
+ * result 부재 시 data 그대로 폴백한다(dual-compat).
+ */
+function unwrapResumeVersion(data: unknown): ResumeVersion {
+  if (data !== null && typeof data === "object") {
+    const root = data as Record<string, unknown>;
+    if (root.result !== null && typeof root.result === "object") {
+      const content = root.result as ResumeVersion;
+      // 래퍼의 id 를 본문 version_id 로 보존(본문에 없을 수 있음).
+      if (content.version_id === undefined && typeof root.id === "string") {
+        return { ...content, version_id: root.id };
+      }
+      return content;
+    }
+  }
+  return data as ResumeVersion;
 }
 
 // 서버 응답: data = { count, contents: [{ id, created_at, updated_at }] }

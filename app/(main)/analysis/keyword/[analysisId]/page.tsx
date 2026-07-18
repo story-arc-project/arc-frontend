@@ -29,12 +29,29 @@ export default function KeywordDetailPage() {
   const [unsupported, setUnsupported] = useState(false);
 
   useEffect(() => {
+    // 클라이언트 이동으로 analysisId 가 바뀌면 이전 결과의 unsupported/error 플래그가
+    // 눌러붙지 않도록 성공·실패 두 경로 모두에서 상태를 정리한다. active 가드로 경합도 막는다.
+    let active = true;
     getKeywordResult(analysisId)
-      .then(setData)
+      .then((d) => {
+        if (!active) return;
+        setError(false);
+        setUnsupported(false);
+        setData(d);
+      })
       .catch((e) => {
-        if (e instanceof UnsupportedSchemaError) setUnsupported(true);
-        else setError(true);
+        if (!active) return;
+        if (e instanceof UnsupportedSchemaError) {
+          setUnsupported(true);
+          setError(false);
+        } else {
+          setError(true);
+          setUnsupported(false);
+        }
       });
+    return () => {
+      active = false;
+    };
   }, [analysisId]);
 
   if (unsupported) {

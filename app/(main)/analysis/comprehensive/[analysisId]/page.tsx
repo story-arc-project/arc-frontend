@@ -149,12 +149,16 @@ function ExperiencesBlock({
       <h2 className="text-title text-text-primary">포함된 경험 {experiences.length}개</h2>
       <div className="flex flex-wrap gap-1.5">
         {experiences.map((exp, i) =>
-          exp.title ? (
-            <Badge key={exp.id || `exp-${i}`} variant="outline">{exp.title}</Badge>
-          ) : (
+          // 계약: title === null 만 "삭제된 경험". 빈 문자열은 제목 없는 실제 경험이므로
+          // 삭제로 오표시하지 않고 제목 폴백을 쓴다(레거시 빈 제목 레코드 지원).
+          exp.title === null ? (
             // 삭제된 경험은 id 가 빈 문자열일 수 있어 인덱스로 키 충돌을 막는다.
             <Badge key={exp.id || `deleted-${i}`} variant="default" className="text-text-tertiary italic">
               삭제된 경험
+            </Badge>
+          ) : (
+            <Badge key={exp.id || `exp-${i}`} variant="outline">
+              {exp.title || "제목 없음"}
             </Badge>
           ),
         )}
