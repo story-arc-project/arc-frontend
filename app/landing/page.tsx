@@ -42,7 +42,7 @@ function Reveal({
 /* ── Mock UI frames ──────────────────────────────────────── */
 function ArchiveMockup() {
   return (
-    <div className="bg-white rounded-xl border border-border shadow-lg overflow-hidden">
+    <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
       <div className="bg-surface-tertiary border-b border-border px-5 py-3 flex items-center gap-2">
         <div className="w-3 h-3 rounded-full bg-gray-200" />
         <div className="w-3 h-3 rounded-full bg-gray-200" />
@@ -94,7 +94,7 @@ function AnalysisMockup() {
   const bars = [72, 58, 85, 43, 66, 91, 54];
   const labels = ["기획", "개발", "디자인", "리더십", "협업", "분석", "커뮤니케이션"];
   return (
-    <div className="bg-white rounded-xl border border-border shadow-lg overflow-hidden">
+    <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
       <div className="bg-surface-tertiary border-b border-border px-5 py-3 flex items-center gap-2">
         <div className="w-3 h-3 rounded-full bg-gray-200" />
         <div className="w-3 h-3 rounded-full bg-gray-200" />
@@ -129,7 +129,7 @@ function AnalysisMockup() {
 
 function ExportMockup() {
   return (
-    <div className="bg-white rounded-xl border border-border shadow-lg overflow-hidden">
+    <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
       <div className="bg-surface-tertiary border-b border-border px-5 py-3 flex items-center gap-2">
         <div className="w-3 h-3 rounded-full bg-gray-200" />
         <div className="w-3 h-3 rounded-full bg-gray-200" />
@@ -288,20 +288,25 @@ function Hero() {
   );
 }
 
-/* ── Social proof ────────────────────────────────────────── */
-function SocialProof() {
-  const logos = ["카카오", "네이버", "토스", "라인", "쿠팡", "배달의민족"];
+/* ── Value badges ────────────────────────────────────────── */
+function ValueBadges() {
+  const promises = ["기록·보관 무료", "월 구독 없음", "워터마크 없는 PDF"];
   return (
     <section className="py-12 px-6 border-y border-border">
       <div className="max-w-5xl mx-auto">
         <p className="text-[13px] text-text-tertiary text-center mb-8">
-          다양한 기업의 현직자와 취준생이 사용하고 있어요
+          부담 없이 시작할 수 있는 이유
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-8">
-          {logos.map((logo) => (
-            <span key={logo} className="text-[15px] font-semibold text-gray-300">
-              {logo}
-            </span>
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+          {promises.map((promise) => (
+            <div key={promise} className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-surface-brand flex items-center justify-center shrink-0">
+                <span className="text-[10px] text-brand font-bold">✓</span>
+              </span>
+              <span className="text-[15px] font-semibold text-text-secondary">
+                {promise}
+              </span>
+            </div>
           ))}
         </div>
       </div>
@@ -613,7 +618,7 @@ function Footer() {
         </div>
       </div>
       <div className="max-w-5xl mx-auto mt-8 pt-6 border-t border-border">
-        <p className="text-[13px] text-text-tertiary">© 2025 ARC. All rights reserved.</p>
+        <p className="text-[13px] text-text-tertiary">© 2026 ARC. All rights reserved.</p>
       </div>
     </footer>
   );
@@ -630,7 +635,7 @@ export default function LandingPage() {
       <Navbar />
       <main>
         <Hero />
-        <SocialProof />
+        <ValueBadges />
         <Features />
         <LandingDemo />
         <HowItWorks />
