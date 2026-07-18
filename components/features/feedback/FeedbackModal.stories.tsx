@@ -63,9 +63,11 @@ export const LowScoreSelected: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("radio", { name: "별 2점" }));
+    // 리빌은 opacity 200ms 전환이라 클릭 직후 toBeVisible 은 애니메이션 중간값(opacity~0)에
+    // 걸린다. disabled={!revealed} 해제(=enabled)로 "열렸음"을 결정적으로 검증한다.
     await expect(
       canvas.getByPlaceholderText("무엇이 더 있으면 좋을까요?"),
-    ).toBeVisible();
+    ).toBeEnabled();
   },
 };
 
