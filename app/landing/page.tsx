@@ -288,32 +288,6 @@ function Hero() {
   );
 }
 
-/* ── Value badges ────────────────────────────────────────── */
-function ValueBadges() {
-  const promises = ["기록·보관 무료", "월 구독 없음", "워터마크 없는 PDF"];
-  return (
-    <section className="py-12 px-6 border-y border-border">
-      <div className="max-w-5xl mx-auto">
-        <p className="text-[13px] text-text-tertiary text-center mb-8">
-          부담 없이 시작할 수 있는 이유
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
-          {promises.map((promise) => (
-            <div key={promise} className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-surface-brand flex items-center justify-center shrink-0">
-                <span className="text-[10px] text-brand font-bold">✓</span>
-              </span>
-              <span className="text-[15px] font-semibold text-text-secondary">
-                {promise}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 /* ── Feature sections ────────────────────────────────────── */
 function FeatureRow({
   eyebrow,
@@ -637,7 +611,6 @@ export default function LandingPage() {
       <Navbar />
       <main>
         <Hero />
-        <ValueBadges />
         <Features />
         <LandingDemo />
         <HowItWorks />
