@@ -2,11 +2,7 @@
 
 import { useMemo } from "react"
 import type { BlockColumnDef, BlockRow } from "@/types/archive"
-import { createEmptyRow } from "@/lib/utils/block-utils"
-
-function cellFilled(value: string | string[]): boolean {
-  return Array.isArray(value) ? value.length > 0 : value.trim() !== ""
-}
+import { cellFilled, createEmptyRow } from "@/lib/utils/block-utils"
 
 /**
  * 빈 반복 입력(rows.length===0)에 표시만 하는 행 하나를 파생한다(FRT-103).

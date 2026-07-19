@@ -195,9 +195,9 @@ export function cloneBlocks(blocks: Block[]): Block[] {
 
 // ─── Validation ─────────────────────────────────────────────────
 
-// 반복 입력 셀 하나가 실제로 채워졌는지. form-cards.ts·usePlaceholderRow.ts 의 동형 헬퍼를
-// 미러한다 — form-cards 가 이 모듈을 import 하므로 역방향 import 는 순환 참조라 두지 않는다.
-function cellFilled(cell: string | string[] | undefined): boolean {
+// 반복 입력 셀 하나가 실제로 채워졌는지. block-utils 는 types 만 import 하는 leaf 라
+// 순환 걱정 없이 여기서 export 하고 form-cards·usePlaceholderRow 가 재사용한다(단일 출처).
+export function cellFilled(cell: string | string[] | undefined): boolean {
   if (cell === undefined) return false
   return Array.isArray(cell) ? cell.length > 0 : cell.trim() !== ""
 }
