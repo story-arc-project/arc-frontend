@@ -10,6 +10,28 @@ interface DialogProps {
   className?: string;
 }
 
+const FOCUSABLE_SELECTOR =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * 트랩·초기 포커스 대상은 "실제로 포커스 가능한" 요소만이어야 한다. 셀렉터는 `<button>` 을
+ * disabled·tabindex="-1" 여부와 무관하게 매칭하므로, 그대로 쓰면 disabled 제출 버튼 같은
+ * 요소가 last 로 잡혀 Tab 이 트랩을 빠져나간다. disabled·roving tabindex(-1)·aria-hidden·
+ * 화면에서 감춰진(offsetParent 없는) 요소를 걸러 경계를 바로잡는다.
+ */
+function getFocusable(container: HTMLElement | null): HTMLElement[] {
+  if (!container) return [];
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+  ).filter(
+    (el) =>
+      !el.hasAttribute("disabled") &&
+      el.getAttribute("aria-hidden") !== "true" &&
+      el.tabIndex !== -1 &&
+      el.offsetParent !== null
+  );
+}
+
 export function Dialog({ open, onClose, ariaLabel, children, className }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
@@ -21,10 +43,7 @@ export function Dialog({ open, onClose, ariaLabel, children, className }: Dialog
 
       // Focus first focusable element inside dialog
       requestAnimationFrame(() => {
-        const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        focusable?.[0]?.focus();
+        getFocusable(dialogRef.current)[0]?.focus();
       });
     } else if (previousFocus.current) {
       previousFocus.current.focus();
@@ -44,10 +63,8 @@ export function Dialog({ open, onClose, ariaLabel, children, className }: Dialog
       }
 
       if (e.key === "Tab") {
-        const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        );
-        if (!focusable || focusable.length === 0) return;
+        const focusable = getFocusable(dialogRef.current);
+        if (focusable.length === 0) return;
 
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
