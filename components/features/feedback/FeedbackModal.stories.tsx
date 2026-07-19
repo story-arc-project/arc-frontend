@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import type { Meta, StoryObj } from "@storybook/nextjs";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
 import { FeedbackModal } from "./FeedbackModal";
 import type { FeedbackPayload, FeedbackTriggerSource } from "@/lib/feedback/types";
@@ -49,11 +49,13 @@ export const HighScoreSelected: Story = {
   render: () => <Wrapper />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("radio", { name: "별 5점" }));
+    await userEvent.click(await canvas.findByRole("radio", { name: "별 5점" }));
     await expect(
-      canvas.getByPlaceholderText("가장 좋았던 점이 있다면?"),
+      await canvas.findByPlaceholderText("가장 좋았던 점이 있다면?"),
     ).toBeEnabled();
-    await expect(canvas.getByRole("button", { name: "보내기" })).toBeEnabled();
+    await expect(
+      await canvas.findByRole("button", { name: "보내기" }),
+    ).toBeEnabled();
   },
 };
 
@@ -62,11 +64,11 @@ export const LowScoreSelected: Story = {
   render: () => <Wrapper />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("radio", { name: "별 2점" }));
+    await userEvent.click(await canvas.findByRole("radio", { name: "별 2점" }));
     // 리빌은 opacity 200ms 전환이라 클릭 직후 toBeVisible 은 애니메이션 중간값(opacity~0)에
     // 걸린다. disabled={!revealed} 해제(=enabled)로 "열렸음"을 결정적으로 검증한다.
     await expect(
-      canvas.getByPlaceholderText("무엇이 더 있으면 좋을까요?"),
+      await canvas.findByPlaceholderText("무엇이 더 있으면 좋을까요?"),
     ).toBeEnabled();
   },
 };
@@ -87,15 +89,20 @@ export const SubmitFlow: Story = {
   render: () => <Wrapper onSubmit={fn()} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("radio", { name: "별 4점" }));
+    // 별점 클릭 → 자유텍스트 리빌은 200ms opacity/grid 전환이다. 실제 브라우저(test-runner)
+    // 에선 전환·입력 정착 사이에 동기 getBy 가 순간적으로 빗나갈 수 있어 async findBy 로 정착을
+    // 기다린다(jsdom 은 즉시 통과하지만 chromium 타이밍에 걸렸음).
+    await userEvent.click(await canvas.findByRole("radio", { name: "별 4점" }));
     await userEvent.type(
-      canvas.getByLabelText("한마디 의견 (선택)"),
+      await canvas.findByLabelText("한마디 의견 (선택)"),
       "흐름이 매끄러웠어요",
     );
-    await userEvent.click(canvas.getByRole("button", { name: "보내기" }));
-    // 제출 후 모달이 닫힌다.
-    await expect(
-      canvas.queryByRole("button", { name: "보내기" }),
-    ).not.toBeInTheDocument();
+    await userEvent.click(await canvas.findByRole("button", { name: "보내기" }));
+    // 제출 후 모달이 닫힌다(언마운트도 비동기이므로 waitFor 로 관찰).
+    await waitFor(() =>
+      expect(
+        canvas.queryByRole("button", { name: "보내기" }),
+      ).not.toBeInTheDocument(),
+    );
   },
 };

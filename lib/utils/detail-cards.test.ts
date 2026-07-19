@@ -60,7 +60,9 @@ function filledCareerBlocks(): { core: Block[]; ext: Block[] } {
   ext = setVal(ext, "career-tasks.프로젝트/담당 업무", {
     type: "repeatable-cell",
     columns: [],
-    rows: [{ id: "r1", cells: {} }],
+    // 실제 값이 든 행이어야 "반복 기록" 카드가 정당하게 노출된다 — 빈 셀 행은 FRT-122 이후
+    // empty 로 판정돼 상세뷰에서 숨겨진다.
+    rows: [{ id: "r1", cells: { detail: "결제 API 서버 개발" } }],
   })
   return { core, ext }
 }
@@ -123,6 +125,23 @@ describe("buildDetailSections", () => {
     const last = sections.at(-1)
     expect(last?.label).toBe("추가 블록")
     expect(last?.blocks.map(b => b.label)).toEqual(["메모"])
+  })
+
+  it("빈 셀만 있는 반복 입력 행은 상세뷰에서 숨겨진다 — 유령 섹션 방지 (FRT-122)", () => {
+    // career-tasks.업무내용(repeat 카테고리)만 빈 셀 행으로 두면 "반복 기록" 섹션이 통째로
+    // 사라져야 한다(내용 없는 '+ 추가'·placeholder 실체화 후 삭제 경로가 '—'만 남기지 않도록).
+    const { core, ext } = filledCareerBlocks()
+    const blanked = setVal(ext, "career-tasks.업무내용", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: "r1", cells: { detail: "" } }],
+    })
+    const tmpl = getTemplateForType("career")
+    const sections = buildDetailSections(
+      makeExperienceV2({ coreBlocks: core, extensionBlocks: blanked }),
+      tmpl,
+    )
+    expect(sections.find(s => s.label === "반복 기록")).toBeUndefined()
   })
 
   it("매칭되지 않는 확장 블록(레거시 라벨)은 '추가 입력' 없이 정식 섹션에 합류한다", () => {

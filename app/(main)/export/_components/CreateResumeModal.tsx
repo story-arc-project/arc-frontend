@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button, Dialog } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { createResume } from "@/lib/api/export-api";
 import { capture } from "@/lib/analytics";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import type { ResumeLanguage } from "@/types/resume";
 import { ResumeGenerationOverlay } from "./ResumeGenerationOverlay";
 
@@ -21,6 +23,8 @@ export function CreateResumeModal({
   onClose,
   onCreated,
 }: CreateResumeModalProps) {
+  const router = useRouter();
+  const basePath = useBasePath();
   const [language, setLanguage] = useState<ResumeLanguage>("ko");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,13 +55,19 @@ export function CreateResumeModal({
     }, GENERATION_TIMEOUT_MS);
 
     try {
-      await createResume({ language }, { signal: controller.signal });
+      const { id } = await createResume({ language }, { signal: controller.signal });
       // 익스포트 완료(FRT-19). 현재 이력서(resume)만 존재 — 경험 선택 UI 는 없고 언어만 고른다.
       capture("export_completed", { export_type: "resume", language });
-      // 서버는 생성을 큐에 넣기만 하고 id 를 주지 않는다. 목록을 다시 불러 확인한다.
-      toast("레쥬메를 만들고 있어요. 완료되면 목록에 표시돼요", "info");
-      onCreated();
-      onClose();
+      if (id) {
+        // 계약(§2.4)을 이행한 백엔드는 id 를 준다 → 생성 직후 상세로 이동.
+        onClose();
+        router.push(`${basePath}/export/resume/${id}`);
+      } else {
+        // 아직 계약 미이행: 서버가 큐잉만 하고 id 를 주지 않는다 → 목록을 다시 불러 확인.
+        toast("레쥬메를 만들고 있어요. 완료되면 목록에 표시돼요", "info");
+        onCreated();
+        onClose();
+      }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         setError("생성이 오래 걸렸어요. 다시 시도해 주세요.");

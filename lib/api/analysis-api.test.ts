@@ -27,7 +27,10 @@ import {
   getIndividualAnalysisList,
   getIndividualAnalysisResult,
   getComprehensiveResult,
+  getComprehensiveList,
   getKeywordResult,
+  updateAnalysisMeta,
+  UnsupportedSchemaError,
 } from "@/lib/api/analysis-api"
 
 const apiMock = vi.mocked(api)
@@ -176,6 +179,22 @@ describe("create*Analysis — 응답 ID 부재 처리 (FRT-38)", () => {
     apiMock.post.mockResolvedValue({ status: "success", message: "시작됨", id: "kw-top" })
     expect(await createKeywordAnalysis(["성장"])).toEqual({ analysisId: "kw-top" })
   })
+
+  it("키워드 분석: target 을 body 에 실어 보낸다 (계약 §2.3). 미지정 시 빈 문자열", async () => {
+    apiMock.post.mockResolvedValue(envelope({ id: "kw-1" }))
+    await createKeywordAnalysis(["리더십"], "스타트업 PM")
+    expect(apiMock.post).toHaveBeenCalledWith("/analysis/keyword", {
+      keywords: ["리더십"],
+      target: "스타트업 PM",
+    })
+
+    apiMock.post.mockClear()
+    await createKeywordAnalysis(["리더십"])
+    expect(apiMock.post).toHaveBeenCalledWith("/analysis/keyword", {
+      keywords: ["리더십"],
+      target: "",
+    })
+  })
 })
 
 describe("getIndividualAnalysisResult — isBookmarked 방어 파싱 (FRT-64)", () => {
@@ -265,6 +284,628 @@ describe("getKeywordResult — isBookmarked 방어 파싱 (FRT-64)", () => {
     )
     const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
     expect(res.isBookmarked).toBe(false)
+  })
+})
+
+describe("experiences 매핑 — BAC-58 / 계약 §2.2 (FRT-123)", () => {
+  it("종합 목록: experiences[{id,title}] 를 파싱하고 title=null 을 보존한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope([
+        {
+          id: "comp-1",
+          type: "comprehensive",
+          status: "success",
+          experiences: [
+            { id: "e1", title: "학회 활동" },
+            { id: "e2", title: null }, // 삭제된 경험
+          ],
+        },
+      ]),
+    )
+    const list = await getComprehensiveList()
+    expect(list[0].experiences).toEqual([
+      { id: "e1", title: "학회 활동" },
+      { id: "e2", title: null },
+    ])
+  })
+
+  it("종합 목록: experiences 부재 시 undefined (구 백엔드 폴백)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope([{ id: "comp-1", type: "comprehensive", status: "success", experience_count: 3 }]),
+    )
+    const list = await getComprehensiveList()
+    expect(list[0].experiences).toBeUndefined()
+    expect(list[0].experienceCount).toBe(3)
+  })
+
+  it("종합 단건: 엔벨로프 최상위 experiences 를 읽는다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "comp-1",
+        status: "success",
+        experiences: [{ id: "e1", title: "프로젝트" }, { id: "e2", title: null }],
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.experiences).toEqual([
+      { id: "e1", title: "프로젝트" },
+      { id: "e2", title: null },
+    ])
+  })
+})
+
+describe("키워드 이중중첩 언랩 — internal.py result 누락 방어 (dual-compat)", () => {
+  // 백엔드 internal.py 가 keyword 결과만 상위 result 언랩을 빠뜨려
+  // { careers, result: { A-F }, status } 형태로 한 겹 더 감싸 보낼 수 있다(계약 §3 미반영).
+  // 한 겹만 벗기면 A_* 를 못 뚫어 화면이 백지가 된다 → 본문이 나올 때까지 result 를 벗긴다.
+  it("이중중첩(result.result)에서 A_* 본문을 뚫어 읽는다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          careers: ["백엔드"],
+          status: "completed",
+          result: {
+            A_keyword_definitions: [{ keyword: "리더십", definition: "d", synonyms: [] }],
+            C_coverage: [{ keyword: "리더십", related_count: 2, total_count: 5 }],
+            D_matched_experiences: [{ keyword: "리더십", experiences: [] }],
+            E_storylines: [{ keyword: "리더십" }],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].keyword).toBe("리더십")
+    expect(res.coverage[0].relatedCount).toBe(2)
+    expect(res.matchedExperiences[0].keyword).toBe("리더십")
+    expect(res.storylines[0].keyword).toBe("리더십")
+  })
+
+  it("이중중첩이어도 바깥 껍질의 메타(keywords·target)를 보존한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          keywords: ["리더십", "협업"],
+          target: "스타트업 PM",
+          result: {
+            A_keyword_definitions: [{ keyword: "리더십", definition: "d", synonyms: [] }],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywords).toEqual(["리더십", "협업"])
+    expect(res.targetScenario).toBe("스타트업 PM")
+    expect(res.keywordDefinitions[0].keyword).toBe("리더십")
+  })
+
+  it("단일중첩(정상 계약)은 그대로 읽는다 — 회귀 없음", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          A_keyword_definitions: [{ keyword: "리더십", definition: "d", synonyms: [] }],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].keyword).toBe("리더십")
+  })
+
+  it("단일중첩이면서 result 옆에 메타(keywords·target)가 있으면 보존한다 (codex P2)", async () => {
+    // 신형 응답은 result 껍질 옆에 keywords·target 을 함께 실어 보낸다. 첫 언랩이 result 로
+    // 통째 교체하면 이 메타가 사라져 헤더가 generic 이 되고 타깃 시나리오가 누락된다.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        keywords: ["리더십", "협업"],
+        target: "스타트업 PM",
+        result: {
+          A_keyword_definitions: [{ keyword: "리더십", definition: "d", synonyms: [] }],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywords).toEqual(["리더십", "협업"])
+    expect(res.targetScenario).toBe("스타트업 PM")
+    expect(res.keywordDefinitions[0].keyword).toBe("리더십")
+  })
+})
+
+describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
+  it("A_ 접두사 키를 읽는다 (계약 미이행 백엔드 방어)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          A_keyword_definitions: [{ keyword: "리더십", definition: "d", synonyms: [] }],
+          C_coverage: [{ keyword: "리더십", related_count: 2, total_count: 5 }],
+          D_matched_experiences: [{ keyword: "리더십", experiences: [] }],
+          E_storylines: [{ keyword: "리더십" }],
+          F_improvement_guide: {},
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].keyword).toBe("리더십")
+    expect(res.coverage[0].relatedCount).toBe(2)
+    expect(res.matchedExperiences[0].keyword).toBe("리더십")
+    expect(res.storylines[0].keyword).toBe("리더십")
+  })
+
+  it("compliance_criteria 를 객체 배열로 파싱한다 (id·criterion·signal)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          keyword_definitions: [
+            {
+              keyword: "협업",
+              compliance_criteria: [
+                { id: 1, criterion: "기준1", signal_description: "신호1" },
+                { id: 2, criterion: "기준2", signal_description: "신호2" },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].complianceCriteria).toEqual([
+      { id: 1, criterion: "기준1", signalDescription: "신호1" },
+      { id: 2, criterion: "기준2", signalDescription: "신호2" },
+    ])
+  })
+
+  it("구버전 compliance_criteria(문자열 배열)도 객체로 흡수한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          keyword_definitions: [{ keyword: "협업", compliance_criteria: ["기준A", "기준B"] }],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].complianceCriteria).toEqual([
+      { id: 1, criterion: "기준A", signalDescription: "" },
+      { id: 2, criterion: "기준B", signalDescription: "" },
+    ])
+  })
+
+  it("matched_criteria: 숫자·숫자문자열은 number 로, 비숫자 문자열(구버전 서술기준)은 보존한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          matched_experiences: [
+            {
+              keyword: "협업",
+              experiences: [
+                { career_title: "경험", matched_criteria: [1, "3", "기준 서술문", 5, "", null], is_reference_only: true, relevance_summary: "요약" },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    const exp = res.matchedExperiences[0].experiences[0]
+    // 빈 문자열·null 은 버리고, 숫자문자열은 number 로, 서술 문자열은 그대로 보존(백지 방지)
+    expect(exp.matchedCriteria).toEqual([1, 3, "기준 서술문", 5])
+    expect(exp.isReferenceOnly).toBe(true)
+    expect(exp.relevanceSummary).toBe("요약")
+  })
+
+  it("compliance_criteria.id 가 숫자 문자열(\"3\")이어도 number 로 강제해 matched_criteria 와 조인 가능하게 한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          keyword_definitions: [
+            { keyword: "협업", compliance_criteria: [{ id: "3", criterion: "역할 분담" }] },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywordDefinitions[0].complianceCriteria[0].id).toBe(3)
+  })
+
+  it("improvement_guide 의 알맹이 없는 빈 항목은 걸러낸다(빈 카드 방지)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          improvement_guide: {
+            information_enhancement: [
+              { target: "협업 경험", missing: "구체 성과" },
+              { target: "", missing: "", how_to_add: "", reason: "", priority: "" },
+              "",
+            ],
+            experience_expansion: [{}, { gap_description: "리더십 공백" }],
+            keyword_specific_recommendations: [
+              { keyword: "", recommendations: [] },
+              { keyword: "협업", recommendations: [{ title: "팀 프로젝트" }] },
+            ],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.improvementGuide.informationEnhancement).toHaveLength(1)
+    expect(res.improvementGuide.experienceExpansion).toHaveLength(1)
+    expect(res.improvementGuide.keywordSpecificRecommendations).toHaveLength(1)
+  })
+
+  it("key_quotes 를 객체 배열로 파싱한다 (문자열 폴백 포함)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          storylines: [
+            {
+              keyword: "협업",
+              key_quotes: [{ career_title: "A", quote: "인용1" }, "인용2"],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.storylines[0].keyQuotes).toEqual([
+      { careerTitle: "A", quote: "인용1" },
+      { careerTitle: "", quote: "인용2" },
+    ])
+  })
+
+  it("improvement_guide 의 overall_direction·구조화·중첩 추천을 파싱한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          improvement_guide: {
+            overall_direction: { priority_keyword: "협업", short_term: "st" },
+            information_enhancement: [
+              { target: "경험1", missing: "m", how_to_add: "h", reason: "r", priority: "높음" },
+            ],
+            keyword_specific_recommendations: [
+              {
+                keyword: "협업",
+                recommendations: [{ type: "확장", title: "활동", expected_effect: "효과" }],
+              },
+            ],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.improvementGuide.overallDirection?.priorityKeyword).toBe("협업")
+    expect(res.improvementGuide.informationEnhancement[0]).toMatchObject({
+      target: "경험1",
+      howToAdd: "h",
+      priority: "높음",
+    })
+    expect(res.improvementGuide.keywordSpecificRecommendations[0].recommendations[0]).toEqual({
+      type: "확장",
+      title: "활동",
+      expectedEffect: "효과",
+    })
+  })
+
+  it("구버전 keyword_specific_recommendations({keyword,description})도 흡수한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          improvement_guide: {
+            keyword_specific_recommendations: [{ keyword: "협업", description: "구버전 설명" }],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.improvementGuide.keywordSpecificRecommendations[0].recommendations).toEqual([
+      { type: "", title: "구버전 설명", expectedEffect: "" },
+    ])
+    expect(res.improvementGuide.overallDirection).toBeNull()
+  })
+
+  it("구버전 keyword_specific_recommendations 의 text/content/suggestion/reason 도 흡수한다 (codex P2)", async () => {
+    // 구 coerceImprovementText 는 description 외에 text/content/suggestion/reason 까지 폴백했다.
+    // 이 브랜치가 description/recommendation 만 보면 { keyword, text } 형태가 빈 카드가 된다.
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ["텍스트 폴백", { keyword: "협업", text: "텍스트 폴백" }],
+      ["콘텐츠 폴백", { keyword: "협업", content: "콘텐츠 폴백" }],
+      ["제안 폴백", { keyword: "협업", suggestion: "제안 폴백" }],
+      ["이유 폴백", { keyword: "협업", reason: "이유 폴백" }],
+    ]
+    for (const [expected, item] of cases) {
+      apiMock.get.mockResolvedValue(
+        envelope({
+          id: "kw-1",
+          status: "completed",
+          result: {
+            improvement_guide: { keyword_specific_recommendations: [item] },
+          },
+        }),
+      )
+      const res = await getKeywordResult("kw-1")
+      expect(res.improvementGuide.keywordSpecificRecommendations[0].recommendations).toEqual([
+        { type: "", title: expected, expectedEffect: "" },
+      ])
+    }
+  })
+
+  it("relevance=low 인데 is_reference_only 플래그가 없으면 참고용으로 파생한다 (codex P2)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          matched_experiences: [
+            {
+              keyword: "협업",
+              experiences: [
+                { career_title: "저신뢰", relevance: "low" },
+                { career_title: "고신뢰", relevance: "high" },
+                { career_title: "명시false", relevance: "low", is_reference_only: false },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    const exps = res.matchedExperiences[0].experiences
+    expect(exps[0].isReferenceOnly).toBe(true) // low + 플래그 없음 → 파생
+    expect(exps[1].isReferenceOnly).toBe(false) // high → 아님
+    expect(exps[2].isReferenceOnly).toBe(false) // 명시 false 는 존중
+  })
+
+  it("레거시 객체형 guide 텍스트({description}/{text}/{suggestion})를 보존한다 (codex P2)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          improvement_guide: {
+            information_enhancement: [{ description: "구버전 정보보강" }],
+            experience_expansion: [{ suggestion: "구버전 경험확장" }],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    // 빈값으로 걸러지지 않고 텍스트가 대표 필드에 실린다.
+    expect(res.improvementGuide.informationEnhancement).toHaveLength(1)
+    expect(res.improvementGuide.informationEnhancement[0].howToAdd).toBe("구버전 정보보강")
+    expect(res.improvementGuide.experienceExpansion).toHaveLength(1)
+    expect(res.improvementGuide.experienceExpansion[0].gapDescription).toBe("구버전 경험확장")
+  })
+
+  it("레거시 guide 텍스트가 {content}/{recommendation} 로 와도 보존한다 (codex P2 2차)", async () => {
+    // 제거된 coerceImprovementText 가 받던 content·recommendation 도 형제 매퍼(keyword_specific)와
+    // 동일하게 흡수해야 한다. 누락 시 정보보강·경험확장 카드가 빈값으로 걸러진다.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          improvement_guide: {
+            information_enhancement: [{ content: "content 정보보강" }],
+            experience_expansion: [{ recommendation: "recommendation 경험확장" }],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.improvementGuide.informationEnhancement).toHaveLength(1)
+    expect(res.improvementGuide.informationEnhancement[0].howToAdd).toBe("content 정보보강")
+    expect(res.improvementGuide.experienceExpansion).toHaveLength(1)
+    expect(res.improvementGuide.experienceExpansion[0].gapDescription).toBe("recommendation 경험확장")
+  })
+
+  it("C_coverage 카운트 부재 시 matched relevance 로 높음/보통/참고 카운트를 파생한다 (codex P2)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          C_coverage: [{ keyword: "협업", related_count: 3, total_count: 5 }],
+          D_matched_experiences: [
+            {
+              keyword: "협업",
+              experiences: [
+                { career_title: "a", relevance: "high" },
+                { career_title: "b", relevance: "high" },
+                { career_title: "c", relevance: "low" },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.coverage[0]).toMatchObject({ highCount: 2, mediumCount: 0, lowCount: 1 })
+  })
+
+  it("C_coverage 가 이미 카운트를 주면 파생으로 덮어쓰지 않는다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          C_coverage: [{ keyword: "협업", high_count: 9, medium_count: 0, low_count: 0 }],
+          D_matched_experiences: [
+            { keyword: "협업", experiences: [{ career_title: "a", relevance: "low" }] },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.coverage[0].highCount).toBe(9) // 백엔드 값 신뢰
+    expect(res.coverage[0].lowCount).toBe(0)
+  })
+
+  it("C_coverage 가 명시적 {0,0,0} 을 주면 매칭이 있어도 파생으로 덮지 않는다 (codex xhigh)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          // 명시적 0 = 백엔드의 권위 있는 무커버리지 신호. 필드 부재(과도기)와 구분해야 한다.
+          C_coverage: [{ keyword: "협업", high_count: 0, medium_count: 0, low_count: 0 }],
+          D_matched_experiences: [
+            { keyword: "협업", experiences: [{ career_title: "a", relevance: "high" }] },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    // 파생(highCount:1)으로 덮지 않고 명시적 0 을 그대로 신뢰한다.
+    expect(res.coverage[0].highCount).toBe(0)
+    expect(res.coverage[0].mediumCount).toBe(0)
+    expect(res.coverage[0].lowCount).toBe(0)
+  })
+
+  it("relevance 대소문자가 섞여도(Low/High) 참고용 파생·카운트가 동작한다 (codex xhigh)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          // 카운트 필드 부재 → 파생. relevance 는 대문자로 온다.
+          C_coverage: [{ keyword: "협업", related_count: 2, total_count: 5 }],
+          D_matched_experiences: [
+            {
+              keyword: "협업",
+              experiences: [
+                { career_title: "a", relevance: "Low" },
+                { career_title: "b", relevance: "High" },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    const exps = res.matchedExperiences[0].experiences
+    expect(exps[0].isReferenceOnly).toBe(true) // "Low" → 참고용 파생(대소문자 무관)
+    expect(exps[1].isReferenceOnly).toBe(false)
+    // 카운트 파생도 대소문자 무관하게 집계한다.
+    expect(res.coverage[0]).toMatchObject({ highCount: 1, mediumCount: 0, lowCount: 1 })
+  })
+})
+
+describe("schema_version 가드 — 부재 ≠ 미상 (FRT-123 계약 §3.5)", () => {
+  it("모르는 버전이 명시되면 UnsupportedSchemaError 를 던진다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", keywords: [], result: { schema_version: "keyword/9.9" } }),
+    )
+    await expect(getKeywordResult("kw-1")).rejects.toBeInstanceOf(UnsupportedSchemaError)
+  })
+
+  it("schema_version 부재(구 백엔드)면 던지지 않고 렌더한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", keywords: [], result: {} }),
+    )
+    await expect(getKeywordResult("kw-1")).resolves.toMatchObject({ id: "kw-1" })
+  })
+
+  it("아는 버전이면 정상 렌더한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed", result: { schema_version: "comprehensive/1.0" } }),
+    )
+    await expect(getComprehensiveResult("comp-1")).resolves.toMatchObject({ id: "comp-1" })
+  })
+
+  it("flat 응답(result 래퍼 없음)의 최상위 schema_version 도 검사한다", async () => {
+    // 매퍼가 flat 형태를 지원하므로 schema_version 이 최상위에 오는 경우도 방어해야 한다.
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", schema_version: "keyword/9.9", keywords: [] }),
+    )
+    await expect(getKeywordResult("kw-1")).rejects.toBeInstanceOf(UnsupportedSchemaError)
+  })
+
+  it("이중중첩(result.result)의 안쪽 schema_version 도 검사한다", async () => {
+    // internal.py 이중중첩 형태(result.result)에서 안쪽 result 가 모르는 버전을 선언하면
+    // 언랩 뒤 구 매퍼로 조용히 파싱되지 않도록, 중첩 result 체인 전 층을 검사해 throw 한다.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        keywords: [],
+        result: { careers: [], result: { schema_version: "keyword/9.9" } },
+      }),
+    )
+    await expect(getKeywordResult("kw-1")).rejects.toBeInstanceOf(UnsupportedSchemaError)
+  })
+
+  it("이중중첩이어도 아는 버전이면 정상 렌더한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        keywords: [],
+        result: { careers: [], result: { schema_version: "keyword/4.1", A_keyword_definitions: [] } },
+      }),
+    )
+    await expect(getKeywordResult("kw-1")).resolves.toMatchObject({ id: "kw-1" })
+  })
+
+  it("언랩이 도달하는 최대 깊이(result 4겹) 안쪽의 모르는 버전도 검사한다 (codex xhigh)", async () => {
+    // 언랩(unwrapKeywordBody)과 가드(assertRenderableSchema)가 같은 상수(MAX_RESULT_NESTING)로
+    // 깊이를 파생한다. 언랩이 뚫는 가장 깊은 층까지 schema_version 을 검사하지 않으면
+    // 모르는 버전이 검사망을 통과해 구 매퍼로 조용히 파싱된다 → 깊은 중첩도 throw 해야 한다.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        keywords: [],
+        result: { result: { result: { result: { schema_version: "keyword/9.9" } } } },
+      }),
+    )
+    await expect(getKeywordResult("kw-1")).rejects.toBeInstanceOf(UnsupportedSchemaError)
+  })
+})
+
+describe("updateAnalysisMeta — 타입별 PATCH 경로 (FRT-123 계약 §2)", () => {
+  it("comprehensive → PATCH /analysis/comprehensive/{id}", async () => {
+    apiMock.patch.mockResolvedValue(undefined)
+    await updateAnalysisMeta("comp-1", "comprehensive", { title: "새 이름" })
+    expect(apiMock.patch).toHaveBeenCalledWith("/analysis/comprehensive/comp-1", {
+      title: "새 이름",
+    })
+  })
+
+  it("keyword → PATCH /analysis/keyword/{id}", async () => {
+    apiMock.patch.mockResolvedValue(undefined)
+    await updateAnalysisMeta("kw-1", "keyword", { title: "새 이름" })
+    expect(apiMock.patch).toHaveBeenCalledWith("/analysis/keyword/kw-1", {
+      title: "새 이름",
+    })
+  })
+
+  it("individual 은 이름 수정 대상이 아니므로 throw (PATCH 미호출)", async () => {
+    await expect(
+      updateAnalysisMeta("ind-1", "individual", { title: "x" }),
+    ).rejects.toThrow()
+    expect(apiMock.patch).not.toHaveBeenCalled()
   })
 })
 
