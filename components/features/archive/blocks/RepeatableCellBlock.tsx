@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Block, RepeatableCellBlockValue, BlockRow, BlockColumnDef } from "@/types/archive"
-import { createEmptyRow, uid } from "@/lib/utils/block-utils"
+import { cellFilled, createEmptyRow, uid } from "@/lib/utils/block-utils"
 import { usePlaceholderRow } from "./usePlaceholderRow"
 
 interface RepeatableCellBlockProps {
@@ -83,14 +83,18 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   }
 
   if (readOnly) {
+    // FRT-122: 셀이 전부 빈 행은 상세뷰에서 감춘다. 채운 행과 빈 행이 섞인 블록(행 하나 채우고
+    // '행 추가'만 한 경우)에서 빈 행이 '—'만 있는 유령 행으로 남던 문제를 판정 층위에서 고친다.
+    // value(rows)는 그대로 둔다 — 편집 모드로 돌아가면 빈 행이 다시 보인다.
+    const visibleRows = val.rows.filter(row => Object.values(row.cells).some(cellFilled))
     return (
       <div className="flex flex-col gap-3 border-l-2 border-brand/30 pl-3.5">
         <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
-        {val.rows.length === 0 ? (
+        {visibleRows.length === 0 ? (
           <p className="text-body text-text-disabled">—</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {val.rows.map((row, idx) => (
+            {visibleRows.map((row, idx) => (
               <div
                 key={row.id}
                 className={[
