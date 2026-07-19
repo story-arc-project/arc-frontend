@@ -93,7 +93,15 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
 function unwrapResumeVersion(data: unknown): ResumeVersion {
   if (data !== null && typeof data === "object") {
     const root = data as Record<string, unknown>;
-    if (root.result !== null && typeof root.result === "object") {
+    // 배열은 본문 레코드가 아니다. result:[] 를 큐잉/플레이스홀더 센티넬로 쓰는 백엔드가
+    // 있으면 스프레드가 {} 로 뭉개져 meta 없는 껍데기를 ResumeVersion 으로 반환 → 상세
+    // 페이지가 resume.meta.language 에서 크래시한다(이 함수가 막으려던 바로 그 실패).
+    // 형제 언랩/가드(assertRenderableSchema·unwrapKeywordBody·unwrapList)와 동일하게 배열을 제외한다.
+    if (
+      root.result !== null &&
+      typeof root.result === "object" &&
+      !Array.isArray(root.result)
+    ) {
       const content = root.result as ResumeVersion;
       // 래퍼의 id 를 본문 version_id 로 보존(본문에 없을 수 있음).
       if (content.version_id === undefined && typeof root.id === "string") {
@@ -106,7 +114,11 @@ function unwrapResumeVersion(data: unknown): ResumeVersion {
     // (meta)를 갖고 후자는 갖지 않는다. meta 없는 래퍼를 ResumeVersion 으로 반환하면
     // 상세 페이지가 resume.meta.language 에서 크래시하므로, 본문일 때만 폴백하고
     // 아니면 throw → 호출부(상세 페이지)가 제어된 로딩/에러 상태를 보여준다.
-    if (root.meta !== null && typeof root.meta === "object") {
+    if (
+      root.meta !== null &&
+      typeof root.meta === "object" &&
+      !Array.isArray(root.meta)
+    ) {
       return root as unknown as ResumeVersion;
     }
   }

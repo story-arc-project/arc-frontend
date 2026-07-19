@@ -1,9 +1,12 @@
 import Link from "next/link";
 
 interface UnsupportedSchemaNoticeProps {
-  /** 데모/로컬 basePath (있으면 목록 링크 앞에 붙는다). */
+  /** 데모/로컬 basePath (없으면 ""). 목록 링크 앞에 그대로 붙는다. */
   basePath: string;
-  /** basePath 가 없을 때의 목록 경로. */
+  /**
+   * 분석 유형별 목록 경로("/analysis/individual" 등). basePath 가 있으면 앞에 붙어
+   * `${basePath}${fallbackHref}` 로 조합된다 — 데모 모드에서도 유형 맥락을 잃지 않는다.
+   */
   fallbackHref: string;
 }
 
@@ -28,7 +31,7 @@ export default function UnsupportedSchemaNotice({
           앱을 최신 버전으로 업데이트하면 볼 수 있어요.
         </p>
         <Link
-          href={basePath ? `${basePath}/analysis` : fallbackHref}
+          href={`${basePath}${fallbackHref}`}
           className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
         >
           목록으로 돌아가기

@@ -214,6 +214,25 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
 
     await expect(getResume("res-3")).rejects.toBeInstanceOf(Error);
   });
+
+  it("result 가 배열 센티넬([])이면 본문으로 오인하지 않고 throw 한다 (codex xhigh)", async () => {
+    // result:[] 를 큐잉/플레이스홀더로 쓰는 백엔드가 있으면 배열을 스프레드해 {} 로 뭉개
+    // meta 없는 껍데기를 반환 → 상세 페이지가 resume.meta.language 에서 크래시한다.
+    // 배열은 본문 레코드가 아니므로 result:null 과 같은 미완료 취급으로 throw 해야 한다.
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: {
+        id: "res-4",
+        title: "생성중",
+        language: "ko",
+        status: "processing",
+        result: [],
+      },
+    });
+
+    await expect(getResume("res-4")).rejects.toBeInstanceOf(Error);
+  });
 });
 
 describe("getResumeList — title/language/status 파싱 (FRT-123 계약 §2.4)", () => {

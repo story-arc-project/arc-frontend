@@ -93,6 +93,12 @@ function mapExperienceRef(dto: unknown): ExperienceRef {
   };
 }
 
+// result 래퍼 최대 중첩 깊이. schema_version 검사(assertRenderableSchema)와 본문 언랩
+// (unwrapKeywordBody)이 반드시 같은 깊이를 훑어야 한다 — 언랩이 더 깊이 뚫는데 가드가
+// 얕게 멈추면 모르는 schema_version 이 검사망을 통과해 구 매퍼로 조용히 파싱된다(2718b84
+// 계열 버그). 두 순회가 이 상수 하나에서 깊이를 파생해 구조적으로 어긋나지 않게 한다.
+const MAX_RESULT_NESTING = 4;
+
 // ─── schema_version 가드 (계약 §3.5) ────────────────────────
 // 코드가 아는 스키마 버전. result 구조가 바뀌면 백엔드가 버전을 올리고 여기 추가한다.
 const KNOWN_SCHEMA_VERSIONS = new Set([
@@ -122,7 +128,8 @@ function assertRenderableSchema(data: unknown): void {
   // 명시되면 언랩 후 구 매퍼로 조용히 파싱되지 않도록 throw 한다.
   let node = asRecord(data);
   let guard = 0;
-  while (guard <= 3) {
+  // guard 0..MAX_RESULT_NESTING → 언랩이 도달할 수 있는 가장 깊은 본문까지 각 층을 검사한다.
+  while (guard <= MAX_RESULT_NESTING) {
     const v = node.schema_version ?? node.schemaVersion;
     if (typeof v === "string" && !KNOWN_SCHEMA_VERSIONS.has(v)) {
       throw new UnsupportedSchemaError(v);
@@ -540,26 +547,46 @@ function mapKeywordCoverage(dto: unknown): KeywordCoverage {
   };
 }
 
+/** C_coverage 원본에 high/medium/low 카운트 필드가 하나라도 명시돼 있는지. */
+function hasExplicitCoverageCounts(raw: unknown): boolean {
+  const r = asRecord(raw);
+  return (
+    r.highCount !== undefined ||
+    r.high_count !== undefined ||
+    r.mediumCount !== undefined ||
+    r.medium_count !== undefined ||
+    r.lowCount !== undefined ||
+    r.low_count !== undefined
+  );
+}
+
 /**
  * C_coverage 가 총계·비율만 주고 high/medium/low 카운트를 안 줄 때(v4.1 과도기),
  * D_matched_experiences 의 relevance 로 키워드별 카운트를 파생한다.
- * 카운트가 하나라도 있으면 백엔드 값을 그대로 신뢰한다.
+ * 카운트 필드가 원본에 하나라도 명시돼 있으면(값이 0 이어도) 백엔드 값을 그대로 신뢰한다.
+ * ⚠️ 매핑 후 값(0)으로 판단하면 명시적 {0,0,0}(백엔드의 권위 있는 무커버리지 신호)과
+ * 필드 부재를 구분 못 해 파생이 덮어쓰므로, 원본 rawCoverage 로 "존재"를 판정한다.
+ * rawCoverage[i] 는 coverage[i] 와 1:1 (coverage = rawCoverage.map(mapKeywordCoverage)).
  */
 function fillCoverageCounts(
   coverage: KeywordCoverage[],
   groups: KeywordMatchedGroup[],
+  rawCoverage: unknown[],
 ): KeywordCoverage[] {
-  return coverage.map((c) => {
-    if (c.highCount || c.mediumCount || c.lowCount) return c;
+  return coverage.map((c, i) => {
+    if (hasExplicitCoverageCounts(rawCoverage[i])) return c;
     const group = groups.find((g) => g.keyword === c.keyword);
     if (!group) return c;
     let highCount = 0;
     let mediumCount = 0;
     let lowCount = 0;
     for (const exp of group.experiences) {
-      if (exp.relevance === "high") highCount += 1;
-      else if (exp.relevance === "medium") mediumCount += 1;
-      else if (exp.relevance === "low") lowCount += 1;
+      // relevance 는 원본 문자열이라 대소문자가 섞여 올 수 있다(UI 도 조회 시 toLowerCase 로
+      // 정규화한다). 파생 카운트도 같은 규칙으로 맞춰 "High" 가 누락되지 않게 한다.
+      const rel = exp.relevance.toLowerCase();
+      if (rel === "high") highCount += 1;
+      else if (rel === "medium") mediumCount += 1;
+      else if (rel === "low") lowCount += 1;
     }
     if (!highCount && !mediumCount && !lowCount) return c;
     return { ...c, highCount, mediumCount, lowCount };
@@ -589,8 +616,9 @@ function mapMatchedExperience(dto: unknown): MatchedExperience {
     confidenceReason: asString(r.confidenceReason ?? r.confidence_reason),
     // 명시 플래그가 없으면 relevance=low 를 참고용으로 파생한다(백엔드가 별도 플래그를
     // 안 줘도 저신뢰 근거가 일반 매칭처럼 보이지 않도록). 명시 false 는 존중한다.
+    // UI 가 relevance 를 toLowerCase 로 조회하므로 파생도 같은 규칙으로 정규화한다("Low" 포함).
     isReferenceOnly: asBoolean(
-      r.isReferenceOnly ?? r.is_reference_only ?? asString(r.relevance) === "low",
+      r.isReferenceOnly ?? r.is_reference_only ?? asString(r.relevance).toLowerCase() === "low",
     ),
   };
 }
@@ -808,13 +836,15 @@ function unwrapKeywordBody(dto: UnknownRecord): UnknownRecord {
     body = { ...body, ...asRecord(body.result) };
   }
   // 본문이 여전히 안 보이고 안쪽에 또 result 객체가 있으면(이중중첩) 병합해 뚫는다.
+  // 첫 병합이 이미 한 겹 소비했으므로 나머지 깊이(MAX_RESULT_NESTING - 1)만큼 더 뚫는다 —
+  // assertRenderableSchema 의 검사 깊이와 같은 상수에서 파생해 어긋나지 않게 한다.
   let guard = 0;
   while (
     !hasKeywordContent(body) &&
     body.result &&
     typeof body.result === "object" &&
     !Array.isArray(body.result) &&
-    guard < 3
+    guard < MAX_RESULT_NESTING - 1
   ) {
     body = { ...body, ...asRecord(body.result) };
     guard += 1;
@@ -834,9 +864,11 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
   const matchedExperiences = asArray(
     body.matchedExperiences ?? body.matched_experiences ?? body.D_matched_experiences,
   ).map(mapKeywordMatchedGroup);
+  const rawCoverage = asArray(body.coverage ?? body.C_coverage);
   const coverage = fillCoverageCounts(
-    asArray(body.coverage ?? body.C_coverage).map(mapKeywordCoverage),
+    rawCoverage.map(mapKeywordCoverage),
     matchedExperiences,
+    rawCoverage,
   );
 
   return {

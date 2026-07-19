@@ -739,6 +739,55 @@ describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
     expect(res.coverage[0].highCount).toBe(9) // 백엔드 값 신뢰
     expect(res.coverage[0].lowCount).toBe(0)
   })
+
+  it("C_coverage 가 명시적 {0,0,0} 을 주면 매칭이 있어도 파생으로 덮지 않는다 (codex xhigh)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          // 명시적 0 = 백엔드의 권위 있는 무커버리지 신호. 필드 부재(과도기)와 구분해야 한다.
+          C_coverage: [{ keyword: "협업", high_count: 0, medium_count: 0, low_count: 0 }],
+          D_matched_experiences: [
+            { keyword: "협업", experiences: [{ career_title: "a", relevance: "high" }] },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    // 파생(highCount:1)으로 덮지 않고 명시적 0 을 그대로 신뢰한다.
+    expect(res.coverage[0].highCount).toBe(0)
+    expect(res.coverage[0].mediumCount).toBe(0)
+    expect(res.coverage[0].lowCount).toBe(0)
+  })
+
+  it("relevance 대소문자가 섞여도(Low/High) 참고용 파생·카운트가 동작한다 (codex xhigh)", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          // 카운트 필드 부재 → 파생. relevance 는 대문자로 온다.
+          C_coverage: [{ keyword: "협업", related_count: 2, total_count: 5 }],
+          D_matched_experiences: [
+            {
+              keyword: "협업",
+              experiences: [
+                { career_title: "a", relevance: "Low" },
+                { career_title: "b", relevance: "High" },
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    const exps = res.matchedExperiences[0].experiences
+    expect(exps[0].isReferenceOnly).toBe(true) // "Low" → 참고용 파생(대소문자 무관)
+    expect(exps[1].isReferenceOnly).toBe(false)
+    // 카운트 파생도 대소문자 무관하게 집계한다.
+    expect(res.coverage[0]).toMatchObject({ highCount: 1, mediumCount: 0, lowCount: 1 })
+  })
 })
 
 describe("schema_version 가드 — 부재 ≠ 미상 (FRT-123 계약 §3.5)", () => {
@@ -795,6 +844,21 @@ describe("schema_version 가드 — 부재 ≠ 미상 (FRT-123 계약 §3.5)", (
       }),
     )
     await expect(getKeywordResult("kw-1")).resolves.toMatchObject({ id: "kw-1" })
+  })
+
+  it("언랩이 도달하는 최대 깊이(result 4겹) 안쪽의 모르는 버전도 검사한다 (codex xhigh)", async () => {
+    // 언랩(unwrapKeywordBody)과 가드(assertRenderableSchema)가 같은 상수(MAX_RESULT_NESTING)로
+    // 깊이를 파생한다. 언랩이 뚫는 가장 깊은 층까지 schema_version 을 검사하지 않으면
+    // 모르는 버전이 검사망을 통과해 구 매퍼로 조용히 파싱된다 → 깊은 중첩도 throw 해야 한다.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        keywords: [],
+        result: { result: { result: { result: { schema_version: "keyword/9.9" } } } },
+      }),
+    )
+    await expect(getKeywordResult("kw-1")).rejects.toBeInstanceOf(UnsupportedSchemaError)
   })
 })
 
