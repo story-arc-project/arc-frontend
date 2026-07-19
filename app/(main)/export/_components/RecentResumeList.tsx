@@ -124,27 +124,61 @@ export function RecentResumeList({
 
   return (
     <ul className="flex flex-col gap-2">
-      {items.map((item) => (
+      {items.map((item) => {
+        // status 가 없으면(구 백엔드) 기존처럼 이동 가능. 있으면 completed 만 이동 허용 —
+        // 생성 중/실패 행은 상세 payload 가 아직 없거나 실패라 not-found/에러 화면으로 샌다.
+        const isNavigable = !item.status || item.status === "completed";
+        const rowContent = (
+          <>
+            <div className="min-w-0 flex-1">
+              <span className="text-body-sm text-text-primary font-medium truncate block">
+                {item.title || resumeLabel(item.created_at)}
+              </span>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                {item.language && (
+                  <span className="text-caption text-text-tertiary">
+                    {item.language === "en" ? "영문" : "국문"}
+                  </span>
+                )}
+                {item.status && item.status !== "completed" && (
+                  <span
+                    className={`text-caption ${
+                      item.status === "failed" ? "text-error" : "text-text-tertiary"
+                    }`}
+                  >
+                    {item.status === "failed" ? "실패" : "생성 중"}
+                  </span>
+                )}
+              </div>
+            </div>
+            {item.created_at && (
+              <span className="text-caption text-text-tertiary shrink-0 hidden sm:inline">
+                {formatRelativeTime(item.created_at)}
+              </span>
+            )}
+          </>
+        );
+        return (
         <li key={item.version_id}>
           <div className="group flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:border-border-strong">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-brand text-brand">
               <FileText size={16} />
             </div>
-            <Link
-              href={`${basePath}/export/resume/${item.version_id}`}
-              className="flex min-w-0 flex-1 items-center gap-3"
-            >
-              <div className="min-w-0 flex-1">
-                <span className="text-body-sm text-text-primary font-medium truncate block">
-                  {resumeLabel(item.created_at)}
-                </span>
+            {isNavigable ? (
+              <Link
+                href={`${basePath}/export/resume/${item.version_id}`}
+                className="flex min-w-0 flex-1 items-center gap-3"
+              >
+                {rowContent}
+              </Link>
+            ) : (
+              <div
+                className="flex min-w-0 flex-1 items-center gap-3 cursor-default opacity-70"
+                aria-disabled="true"
+              >
+                {rowContent}
               </div>
-              {item.created_at && (
-                <span className="text-caption text-text-tertiary shrink-0 hidden sm:inline">
-                  {formatRelativeTime(item.created_at)}
-                </span>
-              )}
-            </Link>
+            )}
             {deleteSupported && (
               <button
                 type="button"
@@ -158,7 +192,8 @@ export function RecentResumeList({
             )}
           </div>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }

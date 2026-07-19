@@ -15,23 +15,47 @@ import type {
   WeaknessSeverity,
 } from "@/types/analysis";
 import { weaknessSeverityLabel } from "@/types/analysis";
-import { getComprehensiveResult } from "@/lib/api/analysis-api";
+import { getComprehensiveResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
 import { isSafeHttpUrl } from "@/lib/utils/url-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
+import UnsupportedSchemaNotice from "@/components/features/analysis/common/UnsupportedSchemaNotice";
 
 export default function ComprehensiveDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
   const basePath = useBasePath();
   const [data, setData] = useState<ComprehensiveAnalysisResult | null>(null);
   const [error, setError] = useState(false);
+  const [unsupported, setUnsupported] = useState(false);
 
   useEffect(() => {
+    let active = true;
     getComprehensiveResult(analysisId)
-      .then(setData)
-      .catch(() => setError(true));
+      .then((d) => {
+        if (!active) return;
+        setError(false);
+        setUnsupported(false);
+        setData(d);
+      })
+      .catch((e) => {
+        if (!active) return;
+        if (e instanceof UnsupportedSchemaError) {
+          setUnsupported(true);
+          setError(false);
+        } else {
+          setError(true);
+          setUnsupported(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, [analysisId]);
+
+  if (unsupported) {
+    return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/comprehensive" />;
+  }
 
   if (error) {
     return (
@@ -105,6 +129,8 @@ export default function ComprehensiveDetailPage() {
 
         <hr className="border-border" />
 
+        <ExperiencesBlock experiences={data.experiences} />
+
         <SummaryBlock brief={data.briefSummary} detailed={data.detailedSummary} />
 
         <KeywordClusteringBlock clustering={data.keywordClustering} />
@@ -124,6 +150,35 @@ export default function ComprehensiveDetailPage() {
         <JobRecommendationsBlock items={data.validJobRecommendations} />
       </div>
     </main>
+  );
+}
+
+function ExperiencesBlock({
+  experiences,
+}: {
+  experiences: ComprehensiveAnalysisResult["experiences"];
+}) {
+  if (experiences.length === 0) return null;
+  return (
+    <section className="space-y-2">
+      <h2 className="text-title text-text-primary">포함된 경험 {experiences.length}개</h2>
+      <div className="flex flex-wrap gap-1.5">
+        {experiences.map((exp, i) =>
+          // 계약: title === null 만 "삭제된 경험". 빈 문자열은 제목 없는 실제 경험이므로
+          // 삭제로 오표시하지 않고 제목 폴백을 쓴다(레거시 빈 제목 레코드 지원).
+          exp.title === null ? (
+            // 삭제된 경험은 id 가 빈 문자열일 수 있어 인덱스로 키 충돌을 막는다.
+            <Badge key={exp.id || `deleted-${i}`} variant="default" className="text-text-tertiary italic">
+              삭제된 경험
+            </Badge>
+          ) : (
+            <Badge key={exp.id || `exp-${i}`} variant="outline">
+              {exp.title || "제목 없음"}
+            </Badge>
+          ),
+        )}
+      </div>
+    </section>
   );
 }
 
