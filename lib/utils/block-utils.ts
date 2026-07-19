@@ -195,6 +195,13 @@ export function cloneBlocks(blocks: Block[]): Block[] {
 
 // ─── Validation ─────────────────────────────────────────────────
 
+// 반복 입력 셀 하나가 실제로 채워졌는지. form-cards.ts·usePlaceholderRow.ts 의 동형 헬퍼를
+// 미러한다 — form-cards 가 이 모듈을 import 하므로 역방향 import 는 순환 참조라 두지 않는다.
+function cellFilled(cell: string | string[] | undefined): boolean {
+  if (cell === undefined) return false
+  return Array.isArray(cell) ? cell.length > 0 : cell.trim() !== ""
+}
+
 export function isBlockEmpty(block: Block): boolean {
   const v = block.value
   switch (v.type) {
@@ -220,7 +227,11 @@ export function isBlockEmpty(block: Block): boolean {
         (v.url?.trim() ?? '') === ''
       )
     case 'repeatable-cell':
-      return v.rows.length === 0
+      // 행이 없거나, 모든 행의 모든 셀이 비어 있으면 empty (FRT-122). 빈 행 하나(방금 '+ 추가'
+      // 하거나 placeholder 에 한 글자 썼다 지운 실체화 행)를 non-empty 로 오판해 상세뷰·포트폴리오에
+      // '—'만 있는 유령 섹션이 남던 문제를 판정 층위에서 고친다(value/rows 는 그대로 둔다 —
+      // 행을 지우면 placeholder 리마운트로 포커스가 날아간다).
+      return v.rows.every(row => Object.values(row.cells).every(cell => !cellFilled(cell)))
     case 'table':
       return v.rows.length === 0
     case 'group':

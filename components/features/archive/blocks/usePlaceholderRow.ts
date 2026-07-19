@@ -11,8 +11,9 @@ function cellFilled(value: string | string[]): boolean {
 /**
  * 빈 반복 입력(rows.length===0)에 표시만 하는 행 하나를 파생한다(FRT-103).
  *
- * 이 행은 **value(rows)에 커밋되지 않는다** — `isBlockEmpty`(repeatable-cell 은 rows.length===0)
- * 불변식을 지켜야 손대지 않은 블록이 상세뷰·포트폴리오에 유령 섹션으로 남지 않는다(FRT-97 교훈).
+ * 이 행은 **value(rows)에 커밋되지 않는다** — 손대지 않은 블록이 상세뷰·포트폴리오에
+ * 유령 섹션으로 남지 않게 한다(FRT-97 교훈). FRT-122 이후엔 `isBlockEmpty` 가 빈 셀 행도
+ * empty 로 보므로 실체화된 빈 행이 커밋돼도 유령 섹션은 판정 층위에서 걸러진다.
  * 사용자가 실제로 값을 채우는 순간 `materialize` 가 **같은 id 의** 행을 돌려주고, 그 행을 커밋하면
  * 렌더 key 가 그대로라 React 가 리마운트하지 않는다 → 포커스와 한글 IME 조합이 보존된다.
  *
