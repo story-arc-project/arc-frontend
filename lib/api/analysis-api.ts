@@ -800,9 +800,12 @@ function hasKeywordContent(body: UnknownRecord): boolean {
  */
 function unwrapKeywordBody(dto: UnknownRecord): UnknownRecord {
   let body = dto;
-  // result 래퍼가 있으면 우선 한 겹 벗긴다(기존 동작 유지).
+  // result 래퍼가 있으면 우선 한 겹 벗긴다. 단 통째 교체가 아니라 얕게 병합한다 —
+  // 신형 응답은 result 옆에 keywords·target·status 등 메타를 함께 싣는데(계약 §2.3),
+  // 교체하면 그 메타가 사라져 헤더가 generic 이 되고 타깃 시나리오가 누락된다.
+  // 이중중첩 루프와 동일하게 안쪽 본문이 충돌 키를 이긴다.
   if (body.result && typeof body.result === "object" && !Array.isArray(body.result)) {
-    body = asRecord(body.result);
+    body = { ...body, ...asRecord(body.result) };
   }
   // 본문이 여전히 안 보이고 안쪽에 또 result 객체가 있으면(이중중첩) 병합해 뚫는다.
   let guard = 0;

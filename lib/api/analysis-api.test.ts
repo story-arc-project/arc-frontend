@@ -395,6 +395,26 @@ describe("키워드 이중중첩 언랩 — internal.py result 누락 방어 (du
     const res = await getKeywordResult("kw-1")
     expect(res.keywordDefinitions[0].keyword).toBe("리더십")
   })
+
+  it("단일중첩이면서 result 옆에 메타(keywords·target)가 있으면 보존한다 (codex P2)", async () => {
+    // 신형 응답은 result 껍질 옆에 keywords·target 을 함께 실어 보낸다. 첫 언랩이 result 로
+    // 통째 교체하면 이 메타가 사라져 헤더가 generic 이 되고 타깃 시나리오가 누락된다.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        keywords: ["리더십", "협업"],
+        target: "스타트업 PM",
+        result: {
+          A_keyword_definitions: [{ keyword: "리더십", definition: "d", synonyms: [] }],
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.keywords).toEqual(["리더십", "협업"])
+    expect(res.targetScenario).toBe("스타트업 PM")
+    expect(res.keywordDefinitions[0].keyword).toBe("리더십")
+  })
 })
 
 describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
