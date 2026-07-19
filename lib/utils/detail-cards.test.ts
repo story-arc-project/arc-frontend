@@ -50,14 +50,14 @@ function filledCareerBlocks(): { core: Block[]; ext: Block[] } {
 
   let ext = cloneBlocks(tmpl.extensions.flatMap(s => s.blocks))
   ext = setVal(ext, "career-info.회사명", text("ARC Inc"))
-  ext = setVal(ext, "career-info.재직기간", {
+  ext = setVal(ext, "career-info.근무 기간", {
     type: "period",
     start: "2025-01",
     end: "2025-06",
     isCurrent: false,
   })
-  ext = setVal(ext, "extended.배경/목표", textarea("성장하고 싶었다"))
-  ext = setVal(ext, "career-tasks.업무내용", {
+  ext = setVal(ext, "career-detail.지원 동기", textarea("성장하고 싶었다"))
+  ext = setVal(ext, "career-tasks.프로젝트/담당 업무", {
     type: "repeatable-cell",
     columns: [],
     rows: [{ id: "r1", cells: {} }],

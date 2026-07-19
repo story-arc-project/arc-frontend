@@ -238,6 +238,9 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   Record<ExperienceTypeId, Partial<Record<SectionCategory, string>>>
 > = {
   'academic-society': { repeat: '프로젝트 기록' },
+  'career': { repeat: '프로젝트 / 담당 업무 기록' },
+  'education': { detail: '수업 상세', repeat: '프로젝트 / 과제 / 제작물 기록' },
+  'extracurricular': { detail: '활동 상세', repeat: '미션 / 프로젝트 기록' },
 }
 
 // ─── Templates ──────────────────────────────────────────────────
