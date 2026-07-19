@@ -128,10 +128,10 @@ describe("buildDetailSections", () => {
   })
 
   it("빈 셀만 있는 반복 입력 행은 상세뷰에서 숨겨진다 — 유령 섹션 방지 (FRT-122)", () => {
-    // career-tasks.업무내용(repeat 카테고리)만 빈 셀 행으로 두면 "반복 기록" 섹션이 통째로
+    // career-tasks.프로젝트/담당 업무(repeat 카테고리)만 빈 셀 행으로 두면 "반복 기록" 섹션이 통째로
     // 사라져야 한다(내용 없는 '+ 추가'·placeholder 실체화 후 삭제 경로가 '—'만 남기지 않도록).
     const { core, ext } = filledCareerBlocks()
-    const blanked = setVal(ext, "career-tasks.업무내용", {
+    const blanked = setVal(ext, "career-tasks.프로젝트/담당 업무", {
       type: "repeatable-cell",
       columns: [],
       rows: [{ id: "r1", cells: { detail: "" } }],
