@@ -151,8 +151,11 @@ function educationExtensions(): TemplateSection[] {
         createTextareaField('수강 동기'),
         createTextareaField('수업 요약'),
         // 가장 중요했던 내용 — 소제목+설명 블록 반복. ③ 연결(블록반복 링크)은 후속 이슈.
+        // 소제목은 required 로 두지 않는다 — 이 블록은 optional 인 '수업 상세'(detail) 카드 안이라
+        // required 컬럼이 있으면 카드 전체가 필수로 판정돼(isRequiredBlock) 수강 동기·수업 요약만
+        // 채워도 진행도가 미완료로 오판된다.
         createRepeatableCell('가장 중요했던 내용', [
-          { key: 'title', label: '소제목', blockType: 'text', required: true },
+          { key: 'title', label: '소제목', blockType: 'text' },
           { key: 'detail', label: '자세한 설명', blockType: 'textarea' },
         ]),
       ],
@@ -210,8 +213,9 @@ function extracurricularExtensions(): TemplateSection[] {
         createTextareaField('지원 동기'),
         createTextareaField('활동 내용 요약'),
         // 가장 중요했던 경험 — 소제목+설명 블록 반복. ③ 연결(블록반복 링크)은 후속 이슈.
+        // 소제목 required 제외 — optional '활동 상세'(detail) 카드 진행도 오판 방지(수업과 동일).
         createRepeatableCell('가장 중요했던 경험', [
-          { key: 'title', label: '소제목', blockType: 'text', required: true },
+          { key: 'title', label: '소제목', blockType: 'text' },
           { key: 'detail', label: '설명', blockType: 'textarea' },
         ]),
       ],
