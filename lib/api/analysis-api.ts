@@ -762,7 +762,15 @@ function mapKeywordSpecificRecommendation(dto: unknown): KeywordSpecificRecommen
       recommendations: recsRaw.map(mapRecommendationItem),
     };
   }
-  const legacy = typeof dto === "string" ? dto : asString(r.description ?? r.recommendation);
+  // 구버전 객체형은 {description}뿐 아니라 {text}/{content}/{suggestion}/{reason} 로도 왔다
+  // (구 coerceImprovementText 커버 범위). description/recommendation 만 보면 그 형태가 빈
+  // 카드가 되므로 형제 매퍼(정보보강·경험확장)와 동일하게 텍스트 폴백을 모두 흡수한다.
+  const legacy =
+    typeof dto === "string"
+      ? dto
+      : asString(
+          r.description ?? r.text ?? r.content ?? r.suggestion ?? r.reason ?? r.recommendation,
+        );
   return {
     keyword: asString(r.keyword),
     recommendations: legacy ? [{ type: "", title: legacy, expectedEffect: "" }] : [],

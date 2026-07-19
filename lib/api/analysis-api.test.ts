@@ -605,6 +605,32 @@ describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
     expect(res.improvementGuide.overallDirection).toBeNull()
   })
 
+  it("구버전 keyword_specific_recommendations 의 text/content/suggestion/reason 도 흡수한다 (codex P2)", async () => {
+    // 구 coerceImprovementText 는 description 외에 text/content/suggestion/reason 까지 폴백했다.
+    // 이 브랜치가 description/recommendation 만 보면 { keyword, text } 형태가 빈 카드가 된다.
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ["텍스트 폴백", { keyword: "협업", text: "텍스트 폴백" }],
+      ["콘텐츠 폴백", { keyword: "협업", content: "콘텐츠 폴백" }],
+      ["제안 폴백", { keyword: "협업", suggestion: "제안 폴백" }],
+      ["이유 폴백", { keyword: "협업", reason: "이유 폴백" }],
+    ]
+    for (const [expected, item] of cases) {
+      apiMock.get.mockResolvedValue(
+        envelope({
+          id: "kw-1",
+          status: "completed",
+          result: {
+            improvement_guide: { keyword_specific_recommendations: [item] },
+          },
+        }),
+      )
+      const res = await getKeywordResult("kw-1")
+      expect(res.improvementGuide.keywordSpecificRecommendations[0].recommendations).toEqual([
+        { type: "", title: expected, expectedEffect: "" },
+      ])
+    }
+  })
+
   it("relevance=low 인데 is_reference_only 플래그가 없으면 참고용으로 파생한다 (codex P2)", async () => {
     apiMock.get.mockResolvedValue(
       envelope({
