@@ -1,6 +1,6 @@
 import type { Block, SectionCategory } from "@/types/archive"
 import { SECTION_CATEGORIES } from "@/types/archive"
-import { isBlockEmpty } from "@/lib/utils/block-utils"
+import { cellFilled, isBlockEmpty } from "@/lib/utils/block-utils"
 
 // 같은 그룹의 라벨은 같은 질문으로 간주 — core/type/extended 간 중복 필드를 숨긴다.
 const SEMANTIC_GROUPS: Record<string, string[]> = {
@@ -127,11 +127,6 @@ export function computeFormCards(
     cards,
     visibleCategories: cards.map(c => c.category),
   }
-}
-
-function cellFilled(v: string | string[] | undefined): boolean {
-  if (v === undefined) return false
-  return Array.isArray(v) ? v.length > 0 : v.trim() !== ""
 }
 
 /**

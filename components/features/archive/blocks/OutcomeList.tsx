@@ -131,8 +131,9 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   }
 
   function removeRow(rowId: string) {
-    // 마지막 행까지 지워 rows 가 [] 가 될 수 있게 둔다 — `isBlockEmpty`(rows.length===0)
-    // 불변식을 지켜야 빈 블록이 상세뷰·포트폴리오에서 유령 섹션으로 남지 않는다.
+    // 마지막 행까지 지워 rows 가 [] 가 될 수 있게 둔다. FRT-122 이후 `isBlockEmpty` 는
+    // 빈 셀 행도 empty 로 보므로 유령 섹션은 판정 층위에서 이미 막히지만, 실제 값이 없는 행을
+    // 굳이 남길 이유가 없어 그대로 제거한다.
     commit(rows.filter((r) => r.id !== rowId))
   }
 

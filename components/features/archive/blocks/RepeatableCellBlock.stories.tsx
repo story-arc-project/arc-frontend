@@ -176,3 +176,34 @@ export const ReadOnly: Story = {
     readOnly: true,
   },
 }
+
+/**
+ * FRT-122: 채운 행과 빈 행이 섞여도 상세뷰에는 채운 행만 보인다. 빈 행이 '#2 — —' 유령 행으로
+ * 남지 않는지 가드한다 (행 하나 채우고 '행 추가'만 한 뒤 저장한 시나리오).
+ */
+export const ReadOnlyHidesBlankRows: Story = {
+  args: {
+    block: {
+      ...listBlock,
+      value: {
+        type: "repeatable-cell",
+        columns: [
+          { key: "name", label: "활동", blockType: "text" },
+          { key: "role", label: "역할", blockType: "text" },
+        ],
+        rows: [
+          { id: "r1", cells: { name: "학회 세미나 운영", role: "기획" } },
+          { id: "r2", cells: { name: "", role: "" } },
+        ],
+      },
+    },
+    readOnly: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // 채운 행 #1 은 보이고, 빈 행 #2 는 렌더되지 않는다.
+    await expect(canvas.getByText("#1")).toBeInTheDocument()
+    await expect(canvas.queryByText("#2")).not.toBeInTheDocument()
+    await expect(canvas.getByText("학회 세미나 운영")).toBeInTheDocument()
+  },
+}
