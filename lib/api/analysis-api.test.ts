@@ -724,6 +724,32 @@ describe("schema_version 가드 — 부재 ≠ 미상 (FRT-123 계약 §3.5)", (
     )
     await expect(getKeywordResult("kw-1")).rejects.toBeInstanceOf(UnsupportedSchemaError)
   })
+
+  it("이중중첩(result.result)의 안쪽 schema_version 도 검사한다", async () => {
+    // internal.py 이중중첩 형태(result.result)에서 안쪽 result 가 모르는 버전을 선언하면
+    // 언랩 뒤 구 매퍼로 조용히 파싱되지 않도록, 중첩 result 체인 전 층을 검사해 throw 한다.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        keywords: [],
+        result: { careers: [], result: { schema_version: "keyword/9.9" } },
+      }),
+    )
+    await expect(getKeywordResult("kw-1")).rejects.toBeInstanceOf(UnsupportedSchemaError)
+  })
+
+  it("이중중첩이어도 아는 버전이면 정상 렌더한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        keywords: [],
+        result: { careers: [], result: { schema_version: "keyword/4.1", A_keyword_definitions: [] } },
+      }),
+    )
+    await expect(getKeywordResult("kw-1")).resolves.toMatchObject({ id: "kw-1" })
+  })
 })
 
 describe("updateAnalysisMeta — 타입별 PATCH 경로 (FRT-123 계약 §2)", () => {

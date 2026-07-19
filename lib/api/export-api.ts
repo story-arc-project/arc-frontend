@@ -101,8 +101,16 @@ function unwrapResumeVersion(data: unknown): ResumeVersion {
       }
       return content;
     }
+    // result 부재 = ① 백엔드가 §3 통일로 data 를 본문으로 평탄화(dual-compat) 또는
+    // ② 아직 생성이 안 끝났거나 실패한 레쥬메 래퍼(result:null). 전자는 본문 마커
+    // (meta)를 갖고 후자는 갖지 않는다. meta 없는 래퍼를 ResumeVersion 으로 반환하면
+    // 상세 페이지가 resume.meta.language 에서 크래시하므로, 본문일 때만 폴백하고
+    // 아니면 throw → 호출부(상세 페이지)가 제어된 로딩/에러 상태를 보여준다.
+    if (root.meta !== null && typeof root.meta === "object") {
+      return root as unknown as ResumeVersion;
+    }
   }
-  return data as ResumeVersion;
+  throw new Error("resume result not ready");
 }
 
 // 서버 응답: data = { count, contents: [{ id, created_at, updated_at }] }

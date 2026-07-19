@@ -196,6 +196,24 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
     const resume = await getResume("wrapper-id");
     expect(resume.version_id).toBe("inner-id");
   });
+
+  it("result 부재 + 본문 아님(생성중/실패 래퍼)이면 폴백하지 않고 throw 한다", async () => {
+    // result: null 이고 meta(본문 마커)도 없는 미완료 래퍼를 그대로 ResumeVersion 으로
+    // 반환하면 상세 페이지가 resume.meta.language 에서 크래시한다. 제어된 에러 상태로 보낸다.
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: {
+        id: "res-3",
+        title: "생성중",
+        language: "ko",
+        status: "processing",
+        result: null,
+      },
+    });
+
+    await expect(getResume("res-3")).rejects.toBeInstanceOf(Error);
+  });
 });
 
 describe("getResumeList — title/language/status 파싱 (FRT-123 계약 §2.4)", () => {

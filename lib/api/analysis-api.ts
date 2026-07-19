@@ -116,17 +116,23 @@ export class UnsupportedSchemaError extends Error {
  * 즉 "필드 없음"과 "모르는 값이 명시적으로 옴"을 다르게 취급한다.
  */
 function assertRenderableSchema(data: unknown): void {
-  const root = asRecord(data);
-  const result = asRecord(root.result);
-  // 매퍼들은 result 래퍼가 없는 flat 응답도 지원하므로, schema_version 도
-  // result 안(중첩형)과 최상위(flat형) 양쪽에서 읽는다.
-  const v =
-    result.schema_version ??
-    result.schemaVersion ??
-    root.schema_version ??
-    root.schemaVersion;
-  if (typeof v === "string" && !KNOWN_SCHEMA_VERSIONS.has(v)) {
-    throw new UnsupportedSchemaError(v);
+  // 매퍼들은 result 래퍼가 없는 flat 응답도, keyword 처럼 result 를 이중으로 감싼
+  // 응답(internal.py, 계약 §3 미반영)도 지원한다. 따라서 schema_version 을 최상위부터
+  // 중첩 result 체인을 따라 내려가며 각 층에서 검사한다 — 어느 층이든 모르는 값이
+  // 명시되면 언랩 후 구 매퍼로 조용히 파싱되지 않도록 throw 한다.
+  let node = asRecord(data);
+  let guard = 0;
+  while (guard <= 3) {
+    const v = node.schema_version ?? node.schemaVersion;
+    if (typeof v === "string" && !KNOWN_SCHEMA_VERSIONS.has(v)) {
+      throw new UnsupportedSchemaError(v);
+    }
+    if (node.result && typeof node.result === "object" && !Array.isArray(node.result)) {
+      node = asRecord(node.result);
+      guard += 1;
+    } else {
+      break;
+    }
   }
 }
 
