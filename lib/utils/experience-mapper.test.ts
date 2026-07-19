@@ -272,6 +272,37 @@ describe("toExperienceV2", () => {
     expect(byKey("society-info.지원 동기")?.label).toBe("지원 동기")
   })
 
+  it("v2: 인턴·수업·대외활동 개편(2026-07)으로 이동·제거된 구 필드 값도 유형 무관하게 보존한다", () => {
+    // orphanFieldsToBlocks 는 유형 무관 안전망 — 구 career/education/extracurricular 레코드의
+    // 사라진 키(재직기간·업무내용·수업 기록·담당 업무 등) 값이 소실되지 않아야 한다.
+    const cases: { type: "career" | "education" | "extracurricular"; key: string }[] = [
+      { type: "career", key: "career-info.재직기간" },
+      { type: "career", key: "career-tasks.업무내용" },
+      { type: "education", key: "edu-courses.수업 기록" },
+      { type: "extracurricular", key: "extra-detail.담당 업무/미션" },
+    ]
+    for (const { type, key } of cases) {
+      const v2 = toExperienceV2(
+        makeExperience({
+          type,
+          content: {
+            schema_version: 2,
+            template_version: TEMPLATE_VERSION,
+            title: "구 레코드",
+            summary: "",
+            status: "complete",
+            tags: [],
+            fields: { [key]: textarea("옛 값") },
+            custom: [],
+          },
+        }),
+      )
+      expect(v2.customBlocks.find(b => b.key === key)?.value, `${type}/${key}`).toEqual(
+        textarea("옛 값"),
+      )
+    }
+  })
+
   it("v2: 라운드트립에서 orphan 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
     const original = makeExperience({
       type: "academic-society",
@@ -466,7 +497,7 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
   it("필드 값이 키 기준으로 왕복 보존된다(라벨 충돌 무관)", () => {
     const { coreBlocks, extensionBlocks } = careerBlocks()
     const filledExt = extensionBlocks.map(b =>
-      b.key === "career-tasks.업무내용"
+      b.key === "career-tasks.프로젝트/담당 업무"
         ? b
         : b.key === "career-info.회사명"
           ? { ...b, value: text("ARC") }
@@ -484,7 +515,7 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
 
   it("lockColumns 는 직렬화되지 않고 로드 시 레지스트리에서 재공급된다 (FRT-104)", () => {
     const { coreBlocks, extensionBlocks } = careerBlocks()
-    const tableKey = "career-tasks.업무내용"
+    const tableKey = "career-tasks.프로젝트/담당 업무"
     expect(extensionBlocks.find(b => b.key === tableKey)?.lockColumns).toBe(true)
 
     const payload = toSavePayload(makeExperienceV2({ coreBlocks, extensionBlocks }))
@@ -497,7 +528,7 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
   })
 
   it("저장된 컬럼이 템플릿과 다르면 잠그지 않는다 — 커스터마이즈한 열을 되돌릴 수 있어야 (FRT-104)", () => {
-    const tableKey = "career-tasks.업무내용"
+    const tableKey = "career-tasks.프로젝트/담당 업무"
     const tmplTable = careerBlocks().extensionBlocks.find(b => b.key === tableKey)!
     const tmplValue = tmplTable.value as RepeatableCellBlockValue
 
@@ -517,7 +548,7 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
   })
 
   it("템플릿 열을 지운 레코드도 잠그지 않는다 — 지운 열을 복구할 수 있어야 (FRT-104)", () => {
-    const tableKey = "career-tasks.업무내용"
+    const tableKey = "career-tasks.프로젝트/담당 업무"
     const tmplTable = careerBlocks().extensionBlocks.find(b => b.key === tableKey)!
     const tmplValue = tmplTable.value as RepeatableCellBlockValue
     const cleared: RepeatableCellBlockValue = { ...tmplValue, columns: [] }

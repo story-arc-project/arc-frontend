@@ -70,13 +70,15 @@ test.describe("FRT-78 최상위 섹션 블록 추가 스모크", () => {
       // BlockEditModal 의 Dialog ariaLabel = "블록 설정".
       const modal = page.getByRole("dialog", { name: "블록 설정" });
       await expect(modal).toBeVisible();
-      await modal.getByPlaceholder("블록 이름을 입력하세요").fill("활동 내용");
+      // 대외활동 유형의 실제 필드('활동 내용 요약')와 substring 충돌하지 않는 이름을 쓴다
+      // (getByRole name 은 부분매칭이라 '활동 내용'은 '활동 내용 요약'에도 걸려 strict 위반).
+      await modal.getByPlaceholder("블록 이름을 입력하세요").fill("개인 메모");
       await modal.getByRole("button", { name: "확인", exact: true }).click();
 
       // ── 5. 생성된 텍스트 필드에 값 입력 ─────────────────────────────
-      // 새로 생성된 텍스트 블록의 input(label="활동 내용")에 값을 입력한다.
+      // 새로 생성된 텍스트 블록의 input(label="개인 메모")에 값을 입력한다.
       await page
-        .getByRole("textbox", { name: "활동 내용" })
+        .getByRole("textbox", { name: "개인 메모" })
         .fill("E2E 검증용 텍스트 값");
 
       // ── 6. 완료 저장 → 목록으로 복귀 ────────────────────────────────
@@ -85,7 +87,7 @@ test.describe("FRT-78 최상위 섹션 블록 추가 스모크", () => {
 
       // ── 7. 상세 미리보기에 섹션 라벨이 보인다 ────────────────────────
       // 카드 클릭(push peek) 없이 URL ?id= 가 이미 push 됐으므로 상세 패널이 렌더된다.
-      // buildDetailSections 가 group block children(활동 내용 = 비어 있지 않음)을
+      // buildDetailSections 가 group block children(개인 메모 = 비어 있지 않음)을
       // 섹션으로 변환해 h3에 섹션 이름을 출력한다.
       await expect(
         page.getByRole("heading", { level: 3, name: "나의 커스텀 섹션" }),
