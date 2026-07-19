@@ -698,6 +698,28 @@ describe("키워드 v4.1 매퍼 (FRT-123 Phase 2)", () => {
     expect(res.improvementGuide.experienceExpansion[0].gapDescription).toBe("구버전 경험확장")
   })
 
+  it("레거시 guide 텍스트가 {content}/{recommendation} 로 와도 보존한다 (codex P2 2차)", async () => {
+    // 제거된 coerceImprovementText 가 받던 content·recommendation 도 형제 매퍼(keyword_specific)와
+    // 동일하게 흡수해야 한다. 누락 시 정보보강·경험확장 카드가 빈값으로 걸러진다.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          improvement_guide: {
+            information_enhancement: [{ content: "content 정보보강" }],
+            experience_expansion: [{ recommendation: "recommendation 경험확장" }],
+          },
+        },
+      }),
+    )
+    const res = await getKeywordResult("kw-1")
+    expect(res.improvementGuide.informationEnhancement).toHaveLength(1)
+    expect(res.improvementGuide.informationEnhancement[0].howToAdd).toBe("content 정보보강")
+    expect(res.improvementGuide.experienceExpansion).toHaveLength(1)
+    expect(res.improvementGuide.experienceExpansion[0].gapDescription).toBe("recommendation 경험확장")
+  })
+
   it("C_coverage 카운트 부재 시 matched relevance 로 높음/보통/참고 카운트를 파생한다 (codex P2)", async () => {
     apiMock.get.mockResolvedValue(
       envelope({

@@ -725,9 +725,12 @@ function mapInformationEnhancement(dto: unknown): InformationEnhancement {
   return {
     target: asString(r.target),
     missing: asString(r.missing),
-    // 레거시 객체형({ description }/{ text }/{ suggestion })도 흡수해 항목이
-    // 빈값으로 걸러지지 않게 한다(구 mapper 의 텍스트 폴백 유지).
-    howToAdd: asString(r.howToAdd ?? r.how_to_add ?? r.description ?? r.text ?? r.suggestion),
+    // 레거시 객체형({ description }/{ text }/{ content }/{ suggestion }/{ recommendation })도
+    // 흡수해 항목이 빈값으로 걸러지지 않게 한다(제거된 coerceImprovementText 커버 범위 유지).
+    // reason·priority 는 이 타입의 별도 필드라 폴백에서 제외한다(중복 소비 방지).
+    howToAdd: asString(
+      r.howToAdd ?? r.how_to_add ?? r.description ?? r.text ?? r.content ?? r.suggestion ?? r.recommendation,
+    ),
     reason: asString(r.reason),
     priority: asString(r.priority),
   };
@@ -749,9 +752,10 @@ function mapExperienceExpansion(dto: unknown): ExperienceExpansion {
   }
   const r = asRecord(dto);
   return {
-    // 레거시 객체형 텍스트 필드도 흡수(구 mapper 의 텍스트 폴백 유지).
+    // 레거시 객체형 텍스트 필드({ content }/{ recommendation } 포함)도 흡수한다
+    // (제거된 coerceImprovementText 커버 범위 유지 — 형제 매퍼와 동일하게).
     gapDescription: asString(
-      r.gapDescription ?? r.gap_description ?? r.description ?? r.text ?? r.suggestion,
+      r.gapDescription ?? r.gap_description ?? r.description ?? r.text ?? r.content ?? r.suggestion ?? r.recommendation,
     ),
     suggestedExperienceType: asString(r.suggestedExperienceType ?? r.suggested_experience_type),
     whyHelpful: asString(r.whyHelpful ?? r.why_helpful),
