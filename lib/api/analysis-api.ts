@@ -880,7 +880,8 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
     status: mapStatus(r.status ?? body.status),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
     analysisDate: asString(
-      body.createdAt ?? body.created_at ?? body.analysisDate ?? body.analysis_date,
+      r.createdAt ?? r.created_at ?? body.createdAt ?? body.created_at ??
+        body.analysisDate ?? body.analysis_date,
     ),
     analysisMode: asString(body.analysisMode ?? body.analysis_mode),
     keywords: asStringArray(body.keywords ?? body.selectedKeywords ?? body.selected_keywords),
