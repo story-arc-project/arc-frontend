@@ -73,7 +73,8 @@ describe("downloadBlob", () => {
     vi.restoreAllMocks();
   });
 
-  it("앵커로 내려받고 객체 URL 을 회수한다", () => {
+  it("앵커로 내려받고, 다운로드가 시작될 여유를 준 뒤 객체 URL 을 회수한다", () => {
+    vi.useFakeTimers();
     const createObjectURL = vi.fn(() => "blob:fake");
     const revokeObjectURL = vi.fn();
     vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
@@ -88,7 +89,13 @@ describe("downloadBlob", () => {
     expect(anchor.download).toBe("레쥬메.pdf");
     expect(anchor.href).toContain("blob:fake");
     expect(click).toHaveBeenCalledOnce();
+    // 클릭 직후 회수하면 큰 파일 다운로드가 취소될 수 있다 — 아직 살아 있어야 한다.
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+
+    vi.runAllTimers();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:fake");
+
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 });

@@ -26,12 +26,36 @@ const CONTENT_WIDTH = 11906 - PAGE_MARGIN_X * 2;
 // 한글이 Calibri 로 떨어지지 않도록 한국어 기본 폰트를 지정한다.
 const FONT = "맑은 고딕";
 
+interface RunStyle {
+  size?: number;
+  bold?: boolean;
+  color?: string;
+}
+
+/**
+ * 줄바꿈을 살린 run 목록.
+ *
+ * Word 는 텍스트 안의 개행 문자를 공백으로 읽어 버린다(`<w:t>` 규칙). 줄을 나누려면
+ * 명시적인 break run 이 필요하다. 자기소개 요약처럼 여러 줄로 쓴 글이 미리보기
+ * (`whitespace-pre-wrap`)와 다르게 한 덩어리로 뭉치지 않도록 여기서 나눠 준다.
+ */
+function textRuns(text: string, style: RunStyle = {}): TextRun[] {
+  return text.split(/\r?\n/).map(
+    (segment, index) =>
+      new TextRun({
+        text: segment,
+        break: index === 0 ? undefined : 1,
+        bold: style.bold,
+        size: style.size ?? 20, // half-point. 20 = 10pt
+        color: style.color,
+        font: FONT,
+      }),
+  );
+}
+
 function line(
   text: string,
-  options: {
-    size?: number;
-    bold?: boolean;
-    color?: string;
+  options: RunStyle & {
     spacingAfter?: number;
     spacingBefore?: number;
     indent?: number;
@@ -40,15 +64,7 @@ function line(
   return new Paragraph({
     spacing: { after: options.spacingAfter ?? 40, before: options.spacingBefore },
     indent: options.indent ? { left: options.indent } : undefined,
-    children: [
-      new TextRun({
-        text,
-        bold: options.bold,
-        size: options.size ?? 20, // half-point. 20 = 10pt
-        color: options.color,
-        font: FONT,
-      }),
-    ],
+    children: textRuns(text, options),
   });
 }
 
@@ -95,7 +111,7 @@ function bulletLine(text: string): Paragraph {
   return new Paragraph({
     bullet: { level: 0 },
     spacing: { after: 20 },
-    children: [new TextRun({ text, size: 20, font: FONT })],
+    children: textRuns(text),
   });
 }
 

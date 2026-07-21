@@ -16,6 +16,36 @@ import {
 
 import type { DocEntry, ResumeDocument } from "@/lib/export/resume-document";
 
+/** 이 길이까지는 한 덩어리로 둔다 — 한글 어절과 보통 영단어가 여기 들어온다. */
+const MAX_UNBROKEN_CHARS = 18;
+/** URL·이메일에서 끊겨도 덜 거슬리는 자리. */
+const BREAK_AFTER = /[/\-_.?&=@:]/;
+
+/**
+ * 줄바꿈 후보 지점을 만든다.
+ *
+ * 텍스트를 공백으로만 쪼개는 react-pdf 는 긴 URL·이메일을 통째로 한 덩어리로 보고,
+ * 그게 본문 폭보다 길면 줄을 못 바꿔 페이지 밖으로 넘쳐 잘린다. 상한을 넘는 토큰만
+ * 끊어 주고 짧은 말은 그대로 둔다. 조각을 이어 붙이면 원문과 같아야 한다.
+ */
+export function splitLongToken(word: string): string[] {
+  if (word.length <= MAX_UNBROKEN_CHARS) return [word];
+
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const char of word) {
+    current += char;
+    if (BREAK_AFTER.test(char) || current.length >= MAX_UNBROKEN_CHARS) {
+      chunks.push(current);
+      current = "";
+    }
+  }
+  if (current) chunks.push(current);
+
+  return chunks;
+}
+
 // 한글 글리프가 있는 폰트를 직접 실어야 PDF 에서 글자가 깨지지 않는다.
 // public/fonts 의 subset 파일을 런타임에 받아 쓰므로 JS 번들에는 들어가지 않는다.
 let fontsRegistered = false;
@@ -30,8 +60,8 @@ function ensureFonts(): void {
       { src: "/fonts/Pretendard-Bold.ttf", fontWeight: 700 },
     ],
   });
-  // 기본 하이프네이션은 한글 단어를 어색하게 쪼갠다 — 단어를 통째로 유지한다.
-  Font.registerHyphenationCallback((word) => [word]);
+  // 기본 하이프네이션(영어 음절 패턴)은 한글 어절을 어색하게 쪼갠다.
+  Font.registerHyphenationCallback(splitLongToken);
 
   fontsRegistered = true;
 }

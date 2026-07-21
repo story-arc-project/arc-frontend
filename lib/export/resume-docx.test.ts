@@ -71,6 +71,24 @@ describe("buildResumeDocxFile", () => {
     expect(xml).toContain("데이터로 문제를 푸는 사람입니다.");
   });
 
+  it("여러 줄로 쓴 글의 줄바꿈을 지킨다", async () => {
+    // Word 는 텍스트 안의 개행 문자를 공백으로 읽는다 — break run 이 있어야 줄이 나뉜다.
+    const xml = await xmlOf({
+      language: "ko",
+      header: { contacts: [], links: [] },
+      sections: [
+        {
+          title: "자기소개",
+          entries: [{ text: "첫 줄입니다.\n둘째 줄입니다." }],
+        },
+      ],
+    });
+
+    expect(xml).toContain("첫 줄입니다.");
+    expect(xml).toContain("둘째 줄입니다.");
+    expect(xml).toMatch(/<w:br\s*\/>/);
+  });
+
   it("섹션이 하나도 없어도 문서를 만든다", async () => {
     const xml = await xmlOf({
       language: "ko",

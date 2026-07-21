@@ -10,6 +10,8 @@ const FORBIDDEN = /[\\/:*?"<>|]/g;
 const INVISIBLE = /\p{C}/gu;
 /** 이름 부분의 상한 — 전체 파일명이 OS 한계(255)에 닿지 않게 넉넉히 자른다. */
 const MAX_NAME_LENGTH = 60;
+/** blob URL 회수를 미루는 시간 — 브라우저가 다운로드를 집어들 여유. */
+const REVOKE_DELAY_MS = 60_000;
 
 function sanitizeName(raw: string | undefined): string {
   const cleaned = (raw ?? "")
@@ -63,7 +65,8 @@ export function downloadBlob(blob: Blob, fileName: string): void {
     anchor.click();
   } finally {
     anchor.remove();
-    // 클릭은 동기적으로 다운로드를 시작하므로 바로 회수해도 안전하다.
-    URL.revokeObjectURL(url);
+    // 클릭 직후 회수하면, blob URL 을 클릭 태스크 이후에 해석하는 브라우저에서
+    // 큰 PDF·DOCX 다운로드가 취소되거나 빈 파일로 떨어진다. 한 박자 늦춰 회수한다.
+    setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
   }
 }
