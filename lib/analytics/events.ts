@@ -11,12 +11,20 @@ export type SignupMethod = "email" | "google";
 export type AnalysisKind = "comprehensive" | "keyword";
 export type ExportType = "resume";
 export type RecordStatus = "complete" | "draft";
+// FRT-113: 증빙 첨부 수단. 파일 업로드와 링크(URL) 두 갈래뿐이다.
+export type AttachmentType = "file" | "url";
 
 export const ANALYTICS_EVENTS = {
+  // ── 진입 (drop-off 관측: "들어왔지만 아무것도 안 함") ───────────────
+  // 새 기록 입력 라우트 진입만 센다. 수정(edit) 진입을 섞으면
+  // "진입 → 유형선택 → 저장" 퍼널의 이탈률이 왜곡된다(FRT-113).
+  archiveEntryStarted: "archive_entry_started",
   // ── 직전 선택 (drop-off 관측: "선택했지만 완료 안 함") ─────────────
   signupMethodSelected: "signup_method_selected",
   archiveTypeSelected: "archive_type_selected",
   analysisTargetSelected: "analysis_target_selected",
+  // ── 커스터마이징 실사용 (입력 허들 최소화 vs 자유도 검증) ────────────
+  archiveAttachmentAdded: "archive_attachment_added",
   // ── 완료 등뼈 (퍼널 스파인) ────────────────────────────────────
   signupCompleted: "signup_completed",
   onboardingCompleted: "onboarding_completed",
@@ -37,6 +45,7 @@ export type AnalyticsEventName =
 
 // 이벤트별 속성 계약. PII 금지 — 비식별 퍼널 메타만 싣는다.
 export interface AnalyticsEventProps {
+  archive_entry_started: Record<string, never>;
   signup_method_selected: { method: SignupMethod };
   archive_type_selected: { experience_type: string };
   analysis_target_selected:
@@ -45,6 +54,8 @@ export interface AnalyticsEventProps {
   signup_completed: { method: SignupMethod };
   onboarding_completed: Record<string, never>;
   record_created: { experience_type: string; status: RecordStatus };
+  // 첨부 "여부"만 본다 — 파일명·URL 원문은 PII 위험이라 절대 싣지 않는다(타입으로 봉인).
+  archive_attachment_added: { attachment_type: AttachmentType };
   first_record_created: { experience_type: string };
   analysis_completed: { analysis_type: AnalysisKind };
   export_completed: { export_type: ExportType; language: string };

@@ -10,4 +10,5 @@ export {
   type AnalysisKind,
   type ExportType,
   type RecordStatus,
+  type AttachmentType,
 } from "./events";
