@@ -30,6 +30,18 @@ export const Empty: Story = {
   },
 }
 
+/** 라벨 아래 안내문(guide). 문서 확정본이 파일 첨부에도 가이드 문구를 지정한다(FRT-135). */
+export const WithGuide: Story = {
+  args: {
+    block: {
+      ...emptyFileBlock,
+      label: "강의계획서 첨부",
+      guide: "강의계획서(실라버스)를 첨부해주세요. PDF, 이미지, 문서 파일 모두 괜찮아요.",
+    },
+    readOnly: false,
+  },
+}
+
 /**
  * ReadOnly view with an attached file shown by name.
  * The fixture has no `fileId`, so FileBlock's getFileUrl() effect early-returns

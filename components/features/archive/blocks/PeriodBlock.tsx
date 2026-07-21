@@ -30,6 +30,7 @@ export default function PeriodBlock({ block, readOnly, onChange }: PeriodBlockPr
   return (
     <PeriodPicker
       label={block.label}
+      hint={block.guide}
       value={toDisplay(val)}
       onChange={str => {
         const { start, end, isCurrent } = parsePeriodString(str)

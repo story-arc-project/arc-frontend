@@ -243,6 +243,32 @@ describe("toExperienceV2", () => {
     expect(v2.customBlocks[0].value).toEqual(text("hi"))
   })
 
+  it("v2: text 로 저장된 값을 textarea 로 바뀐 블록에 그대로 싣는다(FRT-135 협업/팀원)", () => {
+    // 문서 확정본에 맞춰 career-detail.협업 / 팀원 이 text → textarea 가 됐다. 두 값 모양이
+    // {type,text} 로 같은데도 타입 불일치로 주입을 건너뛰면, 그 키는 이미 consumedKeys 라
+    // orphan 보존도 안 되고 재저장 때 빈 값으로 덮여 무음 손실이 난다.
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "인턴",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: { "career-detail.협업 / 팀원": text("팀장 1명, 인턴 2명") },
+          custom: [],
+        },
+      }),
+    )
+    const block = v2.extensionBlocks.find(b => b.key === "career-detail.협업 / 팀원")
+    // 블록 타입은 템플릿(textarea)을 따르고, 텍스트는 보존된다.
+    expect(block?.type).toBe("textarea")
+    expect(block?.value).toEqual(textarea("팀장 1명, 인턴 2명"))
+    // consumedKeys 에 잡힌 키이므로 custom 으로 중복 보존되지 않는다.
+    expect(v2.customBlocks.find(b => b.key === "career-detail.협업 / 팀원")).toBeUndefined()
+  })
+
   it("v2: 현재 템플릿에 없는 orphan fields 값을 custom 블록으로 보존한다(구 템플릿 개편)", () => {
     // 학회 개편(FRT-90 3차)으로 society-info.지원 동기 → society-detail.참여 동기 이동,
     // 범용 extended.배경/목표 제거. 기존 레코드의 그 값들이 소실되지 않아야 한다.
@@ -275,11 +301,18 @@ describe("toExperienceV2", () => {
   it("v2: 인턴·수업·대외활동 개편(2026-07)으로 이동·제거된 구 필드 값도 유형 무관하게 보존한다", () => {
     // orphanFieldsToBlocks 는 유형 무관 안전망 — 구 career/education/extracurricular 레코드의
     // 사라진 키(재직기간·업무내용·수업 기록·담당 업무 등) 값이 소실되지 않아야 한다.
-    const cases: { type: "career" | "education" | "extracurricular"; key: string }[] = [
+    const cases: {
+      type: "career" | "education" | "extracurricular" | "academic-society"
+      key: string
+    }[] = [
       { type: "career", key: "career-info.재직기간" },
       { type: "career", key: "career-tasks.업무내용" },
       { type: "education", key: "edu-courses.수업 기록" },
       { type: "extracurricular", key: "extra-detail.담당 업무/미션" },
+      // FRT-135 로 문서 확정본에서 사라진 필드들 — 학년(→이수 연도)·상태·활동 인증서(→활동 증빙).
+      { type: "education", key: "edu-info.학년" },
+      { type: "career", key: "career-info.상태" },
+      { type: "academic-society", key: "society-info.활동 인증서" },
     ]
     for (const { type, key } of cases) {
       const v2 = toExperienceV2(

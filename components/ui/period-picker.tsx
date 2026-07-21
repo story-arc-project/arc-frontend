@@ -13,6 +13,8 @@ import { DatePicker } from "./date-picker";
 
 interface PeriodPickerProps {
   label?: string;
+  /** 라벨 아래 안내문. 다른 입력 블록의 guide 와 같은 위계로 렌더된다. */
+  hint?: string;
   /** Stored format: "2023.03 ~ 2024.01" (월) · "2023.03.15 ~ 현재" (일) */
   value: string;
   onChange: (v: string) => void;
@@ -23,7 +25,7 @@ const GRANULARITIES: { key: PeriodGranularity; label: string }[] = [
   { key: "day", label: "일 단위" },
 ];
 
-export function PeriodPicker({ label, value, onChange }: PeriodPickerProps) {
+export function PeriodPicker({ label, hint, value, onChange }: PeriodPickerProps) {
   const [start, setStart] = useState(() => parsePeriodString(value).start);
   const [end, setEnd] = useState(() => parsePeriodString(value).end);
   const [isCurrent, setIsCurrent] = useState(() => parsePeriodString(value).isCurrent);
@@ -78,6 +80,7 @@ export function PeriodPicker({ label, value, onChange }: PeriodPickerProps) {
           ))}
         </div>
       </div>
+      {hint ? <p className="text-caption text-text-tertiary">{hint}</p> : null}
       <div className="flex items-center gap-2">
         <DatePicker
           mode={mode}

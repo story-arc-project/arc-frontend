@@ -77,19 +77,27 @@ export function createTextareaField(label: string, opts?: { required?: boolean; 
   return createBlock('textarea', label, opts)
 }
 
-export function createDateField(label: string, opts?: { required?: boolean }): Block {
+export function createDateField(label: string, opts?: { required?: boolean; guide?: string }): Block {
   return createBlock('date', label, opts)
 }
 
-export function createPeriodField(label: string, opts?: { required?: boolean }): Block {
+export function createPeriodField(label: string, opts?: { required?: boolean; guide?: string }): Block {
   return createBlock('period', label, opts)
 }
 
-export function createSelectField(label: string, options: string[], opts?: { required?: boolean }): Block {
+export function createSelectField(
+  label: string,
+  options: string[],
+  opts?: { required?: boolean; guide?: string },
+): Block {
   return createBlock('single-select', label, { ...opts, options })
 }
 
-export function createChecklistField(label: string, options: string[], opts?: { required?: boolean }): Block {
+export function createChecklistField(
+  label: string,
+  options: string[],
+  opts?: { required?: boolean; guide?: string },
+): Block {
   return createBlock('checklist', label, { ...opts, options })
 }
 
@@ -101,7 +109,7 @@ export function createLinkField(label: string, opts?: { required?: boolean; plac
   return createBlock('link', label, opts)
 }
 
-export function createFileField(label: string, opts?: { required?: boolean }): Block {
+export function createFileField(label: string, opts?: { required?: boolean; guide?: string }): Block {
   return createBlock('file', label, opts)
 }
 
@@ -113,9 +121,13 @@ export function createFileField(label: string, opts?: { required?: boolean }): B
 export function createRepeatableCell(
   label: string,
   columns: BlockColumnDef[],
-  opts?: { collapsed?: boolean; lockColumns?: boolean },
+  opts?: { collapsed?: boolean; lockColumns?: boolean; guide?: string },
 ): Block {
-  const base = createBlock('repeatable-cell', label, { columns, collapsed: opts?.collapsed })
+  const base = createBlock('repeatable-cell', label, {
+    columns,
+    collapsed: opts?.collapsed,
+    guide: opts?.guide,
+  })
   return { ...base, lockColumns: opts?.lockColumns ?? true }
 }
 

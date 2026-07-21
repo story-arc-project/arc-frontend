@@ -190,6 +190,7 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
   return (
     <fieldset className="flex flex-col gap-3">
       <legend className="text-label text-text-primary mb-1">{block.label}</legend>
+      {block.guide && <p className="text-caption text-text-tertiary -mt-2">{block.guide}</p>}
 
       {state === "uploading" ? (
         <div className="flex flex-col gap-2 rounded-md border border-border bg-surface px-4 py-3">

@@ -54,10 +54,30 @@ function columnsMatchTemplate(templateValue: BlockValue, savedValue: BlockValue)
   return a.length === b.length && a.every((key, i) => key === b[i])
 }
 
+/**
+ * text ↔ textarea 는 값 모양이 `{type, text}` 로 동일해 문자열을 그대로 옮겨 실을 수 있다.
+ * 이 변환이 없으면 템플릿이 한 줄 → 여러 줄(또는 반대)로 바뀔 때 타입 불일치로 주입이 생략되는데,
+ * 그 키는 이미 consumedKeys 라 orphan 보존도 안 되고 재저장 때 빈 값으로 덮인다(무음 손실).
+ * 라벨=안정키를 유지한 채 입력 위젯만 바꾸는 개편의 안전망이다.
+ *
+ * ⚠️ 완전 무손실은 textarea 로 넓히는 방향뿐이다. 반대로 여러 줄 → 한 줄로 좁히면 값 자체는
+ * 살아남지만 `<input>` 이 개행을 표시하지 못해, 사용자가 그 칸을 건드리는 순간 줄바꿈이 사라진 채
+ * 재저장된다. 템플릿을 textarea → text 로 되돌릴 일이 생기면 그때는 별도 이관이 필요하다.
+ */
+function textualCompatValue(block: Block, value: BlockValue): BlockValue | null {
+  if (value.type !== "text" && value.type !== "textarea") return null
+  if (block.type !== "text" && block.type !== "textarea") return null
+  return { type: block.type, text: value.text }
+}
+
 function injectValue(block: Block, value: BlockValue | undefined): Block {
   if (value === undefined) return block
   // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)면 주입을 생략해 위젯 렌더 깨짐을 막는다.
-  if (value.type !== block.type) return block
+  // 단 text↔textarea 는 값 모양이 같아 변환해 싣는다.
+  if (value.type !== block.type) {
+    const compat = textualCompatValue(block, value)
+    return compat ? { ...block, value: compat } : block
+  }
   // 컬럼을 손댄 레코드는 잠금을 풀어 열 관리 UI 를 돌려준다(FRT-104).
   if (block.lockColumns && !columnsMatchTemplate(block.value, value)) {
     return { ...block, value, lockColumns: false }
