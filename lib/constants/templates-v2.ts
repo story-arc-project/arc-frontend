@@ -123,8 +123,19 @@ function buildSettingsSection(): TemplateSection {
 
 // ─── Template Builders (per type) ───────────────────────────────
 
-/** 이수 연도 선택지 — 문서 확정본은 2026년 ~ 2000년 최근 순. */
-const COURSE_YEAR_OPTIONS: string[] = Array.from({ length: 27 }, (_, i) => `${2026 - i}년`)
+/** 이수 연도 선택지의 가장 오래된 해. 문서 확정본 기준. */
+const COURSE_YEAR_OLDEST = 2000
+/**
+ * 이수 연도 선택지 — 문서 확정본은 "2026년 ~ 2000년 최근 순".
+ * 상한을 2026 으로 고정하면 해가 바뀌는 순간 현재 연도를 고를 수 없게 되므로(이수 연도는 필수라
+ * 진행도까지 막힌다) 현재 연도와 문서 기준연도 중 큰 쪽을 상한으로 쓴다.
+ * 호출마다 새 배열을 만든다 — emptyValue 가 이 배열을 복사 없이 value.options 로 대입하기 때문에,
+ * 모듈 전역 배열을 재사용하면 모든 수업 레코드가 같은 인스턴스를 공유하게 된다.
+ */
+function courseYearOptions(): string[] {
+  const newest = Math.max(2026, new Date().getFullYear())
+  return Array.from({ length: newest - COURSE_YEAR_OLDEST + 1 }, (_, i) => `${newest - i}년`)
+}
 
 // 수업 — 프로토타입 확정본(2026-07). 기록 단위는 '강좌'.
 // FRT-135: 이수 시기를 '학년'에서 연도+학기로 교체하고 학과/학부·학위 과정·수업 분류·
@@ -156,11 +167,14 @@ function educationExtensions(): TemplateSection[] {
         }),
         // 이수 시기 = 연도 + 학기. 문서가 폐기한 '학년'은 제거했고, 기존 레코드의 값은
         // orphanFieldsToBlocks 안전망이 custom 블록으로 보존한다.
-        createSelectField('이수 연도', COURSE_YEAR_OPTIONS, {
+        createSelectField('이수 연도', courseYearOptions(), {
           required: true,
-          guide: '이 강좌를 수강한 연도와 학기를 선택해주세요.',
+          guide: '이 강좌를 수강한 연도를 선택해주세요.',
         }),
-        createSelectField('학기', ['1학기', '여름 계절학기', '2학기', '겨울 계절학기'], { required: true }),
+        createSelectField('학기', ['1학기', '여름 계절학기', '2학기', '겨울 계절학기'], {
+          required: true,
+          guide: '이 강좌를 수강한 학기를 선택해주세요.',
+        }),
         createSelectField('학위 과정', ['학사', '학·석사 통합', '석사', '석·박사 통합', '박사'], {
           guide: '이 강좌를 수강한 시점의 학위 과정을 선택해주세요.',
         }),
@@ -169,12 +183,17 @@ function educationExtensions(): TemplateSection[] {
           ['공통', '교양', '교직', '일반선택 (일선)', '전공선택 (전선)', '전공필수 (전필)', '대학원', '논문'],
           { guide: '이 강좌의 이수 구분을 선택해주세요.' },
         ),
+        // 문서는 학점·성적·성적 증빙을 '학점 / 성적' 한 필드(2단 배치)로 묶고 가이드도 하나만 뒀다.
+        // 2단 배치는 FRT-144 라 지금은 형제 블록으로 펼쳐지므로, 한 문장을 첫 칸에만 남기면
+        // 학점 칸이 성적·증빙까지 받는 것처럼 읽힌다. 문구를 각 칸이 받는 값으로 좁힌다.
         createSelectField('학점', ['1학점', '2학점', '3학점', '4학점', '기타'], {
-          guide: '이수 학점과 취득 성적을 적어주세요. 성적표 등 증빙 파일도 함께 첨부할 수 있어요.',
+          guide: '이수 학점을 선택해주세요.',
         }),
-        createSelectField('성적', [
-          'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'F', 'P (Pass)', 'NP (Non-Pass)',
-        ]),
+        createSelectField(
+          '성적',
+          ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'F', 'P (Pass)', 'NP (Non-Pass)'],
+          { guide: '취득 성적을 선택해주세요.' },
+        ),
         createFileField('성적 증빙', { guide: '성적표 등 성적을 증빙할 수 있는 파일을 첨부해주세요.' }),
         // 강의계획서 — "AI 가 분석해 강좌 내용을 파악한다"는 아직 확정 전이라 안내에 넣지 않는다.
         createFileField('강의계획서 첨부', {
@@ -423,7 +442,11 @@ function academicSocietyExtensions(): TemplateSection[] {
       label: '프로젝트/연구활동 기록',
       blocks: [
         // 컬럼 순서·필수 여부·구성은 문서 확정본 ③ 그대로.
-        // 문서에 없는 '발표/포스터/세미나 여부'·'피드백/질문과 대응'은 제거했다(구 값은 orphan 보존).
+        // 문서에 없는 '발표/포스터/세미나 여부'·'피드백/질문과 대응'은 제거했다.
+        // ⚠️ 이 두 컬럼의 셀 값은 orphanFieldsToBlocks 가 지켜주지 **않는다** — 그 안전망은 fields
+        // 키 단위로 돌고 'society-projects.프로젝트/연구활동' 키는 여전히 consumedKeys 다.
+        // 지금 값이 남는 이유는 injectValue 가 저장된 columns 를 통째로 복원하기 때문뿐이다.
+        // FRT-133 에서 '템플릿 컬럼 우선'으로 정규화할 때 이 셀들을 반드시 함께 이관할 것.
         createRepeatableCell(
           '프로젝트/연구활동',
           [

@@ -205,10 +205,12 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     const info = sectionsOf("education")[0]
     const optionsOf = (label: string) => info.blocks.find(b => b.label === label)?.options ?? []
 
+    // 상한은 현재 연도(문서 기준연도 2026 이 하한) — 해가 바뀌어도 올해를 고를 수 있어야 한다.
+    const newest = Math.max(2026, new Date().getFullYear())
     const years = optionsOf("이수 연도")
-    expect(years).toHaveLength(27)
-    expect(years[0]).toBe("2026년")
+    expect(years[0]).toBe(`${newest}년`)
     expect(years[years.length - 1]).toBe("2000년")
+    expect(years).toHaveLength(newest - 2000 + 1)
 
     expect(optionsOf("학기")).toEqual(["1학기", "여름 계절학기", "2학기", "겨울 계절학기"])
 
