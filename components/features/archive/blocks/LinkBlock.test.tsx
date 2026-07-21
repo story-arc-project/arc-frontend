@@ -74,6 +74,24 @@ describe("LinkBlock URL 첨부 계측", () => {
     expect(capture).toHaveBeenCalledTimes(2)
   })
 
+  it("기존 URL 을 고쳤다가 원래 값으로 되돌리면 발화하지 않는다", () => {
+    // 편집 모드에서 오타를 냈다 되돌리는 흐름 — 첨부가 새로 생긴 게 아니다.
+    const input = renderLinkBlock("https://arc.dev/existing")
+    fireEvent.change(input, { target: { value: "https://arc.dev/exist" } })
+    fireEvent.change(input, { target: { value: "https://arc.dev/existing" } })
+    fireEvent.blur(input)
+    expect(capture).not.toHaveBeenCalled()
+  })
+
+  it("표기만 다른 같은 URL(끝 슬래시)은 재발화하지 않는다", () => {
+    const input = renderLinkBlock()
+    fireEvent.change(input, { target: { value: "https://arc.dev" } })
+    fireEvent.blur(input)
+    fireEvent.change(input, { target: { value: "https://arc.dev/" } })
+    fireEvent.blur(input)
+    expect(capture).toHaveBeenCalledTimes(1)
+  })
+
   it("유효하지 않은 URL(입력 중 문자열·안전하지 않은 스킴)은 발화하지 않는다", () => {
     const input = renderLinkBlock()
     fireEvent.change(input, { target: { value: "arc.dev" } })

@@ -37,26 +37,33 @@ export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps)
   const val = block.value as LinkBlockValue
 
   // URL 첨부 계측(FRT-113). URL 입력은 keystroke 단위라 "확정" 시점을 blur 로 잡되,
-  // 두 가지 위양성을 막는다:
+  // 세 가지 위양성을 막는다:
   //  - urlEditedRef: 사용자가 실제로 타이핑했는가. 기존 링크를 focus 만 했다 나가는 경우를 거른다
   //    (편집 모드에서 값이 나중에 주입돼도 타이핑 없이는 발화하지 않는다).
-  //  - lastEmittedUrlRef: 마지막으로 발화한 URL. 같은 값으로 blur 를 반복해도 1회만 센다.
+  //  - knownUrlRef: "이미 첨부로 아는 URL". 첫 타이핑 직전 값(편집 전 원본)으로 기준선을 세워,
+  //    고쳤다가 원래대로 되돌린 경우를 거른다. 이후엔 마지막으로 발화한 URL 을 담는다.
+  //  - 비교는 원문이 아니라 getSafeHref 의 정규화 결과로 한다 — `https://a.dev` 와
+  //    `https://a.dev/` 는 같은 첨부다.
   const urlEditedRef = useRef(false)
-  const lastEmittedUrlRef = useRef<string | null>(null)
+  const knownUrlRef = useRef<string | null>(null)
 
   function handleUrlBlur() {
     if (!urlEditedRef.current) return
-    const url = val.url
     // 안전한 스킴의 유효 URL 만 첨부로 인정한다(입력 중 끊긴 문자열·javascript: 제외).
-    if (!getSafeHref(url)) return
-    if (lastEmittedUrlRef.current === url) return
-    lastEmittedUrlRef.current = url
+    const safeUrl = getSafeHref(val.url)
+    if (!safeUrl) return
+    if (knownUrlRef.current === safeUrl) return
+    knownUrlRef.current = safeUrl
     // URL 원문은 싣지 않는다(PII·식별 위험) — 첨부 "여부"만 본다.
     capture("archive_attachment_added", { attachment_type: "url" })
   }
 
   function update(field: keyof Omit<LinkBlockValue, "type">, v: string) {
-    if (field === "url") urlEditedRef.current = true
+    if (field === "url" && !urlEditedRef.current) {
+      urlEditedRef.current = true
+      // 편집을 시작한 순간의 값이 "이미 있던 첨부"다. 빈 값·무효값이면 기준선이 없다(null).
+      knownUrlRef.current = getSafeHref(val.url)
+    }
     onChange({ ...val, [field]: v })
   }
 
