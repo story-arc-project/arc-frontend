@@ -200,18 +200,21 @@ export default function ResumeDetailPage({ params }: PageProps) {
 
       if (format === "print") {
         setExportOpen(false);
-        handlePrint();
+        // 상태 반영 전에 인쇄하면 모달 오버레이가 인쇄물에 그대로 찍힌다
+        // (print.css 는 .no-print 만 숨기고 공용 Dialog 에는 그 클래스가 없다).
+        // 다음 매크로태스크로 미뤄 모달이 DOM 에서 빠진 뒤 인쇄창을 연다.
+        setTimeout(handlePrint, 0);
         return;
       }
 
       setExporting(format);
       try {
-        const { buildResumeDocument } = await import(
-          "@/lib/export/resume-document"
-        );
-        const { downloadBlob, resumeFileName } = await import(
-          "@/lib/export/download"
-        );
+        // 서로 의존이 없는 두 청크 — 순차로 기다릴 이유가 없다.
+        const [{ buildResumeDocument }, { downloadBlob, resumeFileName }] =
+          await Promise.all([
+            import("@/lib/export/resume-document"),
+            import("@/lib/export/download"),
+          ]);
         const doc = buildResumeDocument(resume);
 
         const blob =

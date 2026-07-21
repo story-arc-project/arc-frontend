@@ -110,19 +110,23 @@ function Bullet({ children }: { children: string }) {
 
 function Entry({ entry }: { entry: DocEntry }) {
   return (
-    // 한 항목이 페이지 경계에서 반 토막 나지 않게 붙여 둔다. 섹션 전체가 아니라
-    // 항목 단위라, 항목이 많은 섹션은 자연스럽게 다음 장으로 이어진다.
-    <View style={styles.entry} wrap={false}>
-      {(entry.title || entry.meta) && (
-        <View style={styles.entryRow}>
-          <Text style={styles.entryTitle}>{entry.title ?? ""}</Text>
-          {entry.meta && <Text style={styles.entryMeta}>{entry.meta}</Text>}
-        </View>
-      )}
-      {entry.subtitle && (
-        <Text style={styles.entrySubtitle}>{entry.subtitle}</Text>
-      )}
-      {entry.detail && <Text style={styles.entryDetail}>{entry.detail}</Text>}
+    // 항목 전체에 wrap={false} 를 걸면 한 페이지보다 긴 항목(불릿이 많은 경력 등)이
+    // 잘려 내용이 사라진다. 그래서 항목은 흐르게 두고, ①머리말(제목·기간·부제)만
+    // 붙여 두어 반 토막 나지 않게 하고 ②minPresenceAhead 로 페이지 맨 아래에서
+    // 제목만 남고 본문이 넘어가는 것을 막는다.
+    <View style={styles.entry} minPresenceAhead={36}>
+      <View wrap={false}>
+        {(entry.title || entry.meta) && (
+          <View style={styles.entryRow}>
+            <Text style={styles.entryTitle}>{entry.title ?? ""}</Text>
+            {entry.meta && <Text style={styles.entryMeta}>{entry.meta}</Text>}
+          </View>
+        )}
+        {entry.subtitle && (
+          <Text style={styles.entrySubtitle}>{entry.subtitle}</Text>
+        )}
+        {entry.detail && <Text style={styles.entryDetail}>{entry.detail}</Text>}
+      </View>
       {entry.text && <Text style={styles.entryText}>{entry.text}</Text>}
 
       {(entry.bulletGroups ?? []).map((group, gi) => (

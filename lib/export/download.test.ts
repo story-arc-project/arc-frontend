@@ -48,6 +48,14 @@ describe("resumeFileName", () => {
     ).toBe("레쥬메_20260721.pdf");
   });
 
+  it("제어·서식 문자를 지운다", () => {
+    // 파싱 결과에 섞여 들어올 수 있는 보이지 않는 문자들(NUL·유닛구분자·zero-width).
+    const noisy = `김${String.fromCharCode(0)}서${String.fromCharCode(31)}윤​`;
+    expect(
+      resumeFileName({ name: noisy, language: "ko", ext: "pdf", now: DATE }),
+    ).toBe("김서윤_레쥬메_20260721.pdf");
+  });
+
   it("아주 긴 이름을 잘라낸다", () => {
     const out = resumeFileName({
       name: "가".repeat(200),

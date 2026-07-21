@@ -6,11 +6,14 @@ import type { ResumeLanguage } from "@/types/resume";
 // 경로를 갈라놓거나 파일명에 쓸 수 없는 문자. 하이픈은 이름의 일부일 수 있어
 // (Seo-yun) 남기고, 공백은 sanitizeName 에서 밑줄로 바꾼다.
 const FORBIDDEN = /[\\/:*?"<>|]/g;
+// 제어·서식 문자(\p{C}). 파싱 결과에 섞여 들어오면 저장이 거부되거나 이름이 깨진다.
+const INVISIBLE = /\p{C}/gu;
 /** 이름 부분의 상한 — 전체 파일명이 OS 한계(255)에 닿지 않게 넉넉히 자른다. */
 const MAX_NAME_LENGTH = 60;
 
 function sanitizeName(raw: string | undefined): string {
   const cleaned = (raw ?? "")
+    .replace(INVISIBLE, "")
     .replace(FORBIDDEN, "")
     .replace(/\s+/g, "_")
     .replace(/^[._]+|[._]+$/g, "");
@@ -48,13 +51,18 @@ export function resumeFileName({
 /** Blob 을 사용자의 디스크로 내려보낸다. */
 export function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.rel = "noopener";
+  // 일부 브라우저(Firefox 계열)는 문서에 붙어 있지 않은 앵커의 click 을 무시한다.
+  // 붙였다 바로 떼면 화면에는 아무 흔적도 남지 않는다.
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
   try {
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.rel = "noopener";
     anchor.click();
   } finally {
+    anchor.remove();
     // 클릭은 동기적으로 다운로드를 시작하므로 바로 회수해도 안전하다.
     URL.revokeObjectURL(url);
   }

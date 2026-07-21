@@ -6,12 +6,13 @@
 
 import {
   compactStrings,
+  formatEducationPeriod,
+  formatGpa,
   formatPeriod,
   joinParts,
 } from "@/lib/export/resume-format";
 import {
   isEmptySection,
-  type Education,
   type ResumeLanguage,
   type ResumeVersion,
 } from "@/types/resume";
@@ -93,23 +94,11 @@ function usableItems<T>(items: T[] | null | undefined): T[] {
   return items.filter((item) => !isEmptySection(item));
 }
 
-// 학력은 "재직중" 같은 플래그 대신 졸업구분으로 진행 상태를 나타내 기간 규칙이 다르다.
-function formatEducationPeriod(edu: Education): string {
-  const start = edu.입학년월 ?? "";
-  const end = edu.졸업년월 ?? (edu.졸업구분 === "재학" ? "재학" : "");
-  return formatPeriod(start, end);
-}
-
-function formatGpa(edu: Education): string | null {
-  if (edu.학점 === null || edu.학점 === undefined) return null;
-  if (edu.만점 === null || edu.만점 === undefined) return `${edu.학점}`;
-  return `${edu.학점} / ${edu.만점}`;
-}
-
 // ─── build ─────────────────────────────────────────────────────────
 
 export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
   const 인적사항 = resume.인적사항;
+  const 요약 = text(resume.자기소개_요약);
 
   const header: ResumeDocumentHeader = {
     name: text(인적사항?.이름),
@@ -130,10 +119,7 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
   };
 
   const sections: (DocSection | null)[] = [
-    section(
-      "자기소개",
-      text(resume.자기소개_요약) ? [{ text: text(resume.자기소개_요약) }] : [],
-    ),
+    section("자기소개", 요약 ? [{ text: 요약 }] : []),
 
     section(
       "학력",
