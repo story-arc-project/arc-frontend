@@ -123,8 +123,12 @@ function buildSettingsSection(): TemplateSection {
 
 // ─── Template Builders (per type) ───────────────────────────────
 
-// 수업 — 프로토타입 확정본(2026-07). 기록 단위를 '강좌'로 바꾸고 대폭 간소화(② 3필드 / ③ 4컬럼).
-// 강의계획서·성장변화·관련도서·세부기간 등은 문서에서 제거 확정.
+/** 이수 연도 선택지 — 문서 확정본은 2026년 ~ 2000년 최근 순. */
+const COURSE_YEAR_OPTIONS: string[] = Array.from({ length: 27 }, (_, i) => `${2026 - i}년`)
+
+// 수업 — 프로토타입 확정본(2026-07). 기록 단위는 '강좌'.
+// FRT-135: 이수 시기를 '학년'에서 연도+학기로 교체하고 학과/학부·학위 과정·수업 분류·
+// 강의계획서를 문서대로 되살렸다. 문서에 없는 '공식 URL'은 제거.
 function educationExtensions(): TemplateSection[] {
   return [
     {
@@ -132,15 +136,50 @@ function educationExtensions(): TemplateSection[] {
       category: 'basic',
       label: '강좌 정보',
       blocks: [
-        createTextField('강좌명', { required: true }),
-        createTextField('교수 / 강사'),
-        createTextField('학교 / 기관', { required: true }),
-        createSelectField('학년', ['1학년', '2학년', '3학년', '4학년', '대학원', '기타'], { required: true }),
-        createSelectField('학기', ['1학기', '여름 계절', '2학기', '겨울 계절'], { required: true }),
-        createSelectField('학점', ['1학점', '2학점', '3학점', '4학점', '기타']),
-        createSelectField('성적', ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'D', 'F', 'P/NP']),
-        createFileField('성적 증빙'),
-        createLinkField('공식 URL'),
+        createTextField('강좌명', {
+          required: true,
+          guide: '수강한 강좌의 정확한 이름을 적어주세요.',
+          placeholder: '예: 마케팅원론, 데이터구조와 알고리즘',
+        }),
+        createTextField('교수 / 강사', {
+          guide: '강좌를 진행한 교수님이나 강사님의 이름을 적어주세요.',
+          placeholder: '예: OOO 교수',
+        }),
+        createTextField('학교 / 기관', {
+          required: true,
+          guide: '이 강좌를 수강한 학교나 교육 기관을 적어주세요.',
+          placeholder: '예: OO대학교',
+        }),
+        createTextField('학과 / 학부', {
+          guide: '이 강좌가 개설된 학과나 학부를 적어주세요.',
+          placeholder: '예: 경영학과',
+        }),
+        // 이수 시기 = 연도 + 학기. 문서가 폐기한 '학년'은 제거했고, 기존 레코드의 값은
+        // orphanFieldsToBlocks 안전망이 custom 블록으로 보존한다.
+        createSelectField('이수 연도', COURSE_YEAR_OPTIONS, {
+          required: true,
+          guide: '이 강좌를 수강한 연도와 학기를 선택해주세요.',
+        }),
+        createSelectField('학기', ['1학기', '여름 계절학기', '2학기', '겨울 계절학기'], { required: true }),
+        createSelectField('학위 과정', ['학사', '학·석사 통합', '석사', '석·박사 통합', '박사'], {
+          guide: '이 강좌를 수강한 시점의 학위 과정을 선택해주세요.',
+        }),
+        createSelectField(
+          '수업 분류',
+          ['공통', '교양', '교직', '일반선택 (일선)', '전공선택 (전선)', '전공필수 (전필)', '대학원', '논문'],
+          { guide: '이 강좌의 이수 구분을 선택해주세요.' },
+        ),
+        createSelectField('학점', ['1학점', '2학점', '3학점', '4학점', '기타'], {
+          guide: '이수 학점과 취득 성적을 적어주세요. 성적표 등 증빙 파일도 함께 첨부할 수 있어요.',
+        }),
+        createSelectField('성적', [
+          'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'F', 'P (Pass)', 'NP (Non-Pass)',
+        ]),
+        createFileField('성적 증빙', { guide: '성적표 등 성적을 증빙할 수 있는 파일을 첨부해주세요.' }),
+        // 강의계획서 — "AI 가 분석해 강좌 내용을 파악한다"는 아직 확정 전이라 안내에 넣지 않는다.
+        createFileField('강의계획서 첨부', {
+          guide: '강의계획서(실라버스)를 첨부해주세요. PDF, 이미지, 문서 파일 모두 괜찮아요.',
+        }),
       ],
     },
     {
@@ -148,16 +187,41 @@ function educationExtensions(): TemplateSection[] {
       category: 'detail',
       label: '수업 상세',
       blocks: [
-        createTextareaField('수강 동기'),
-        createTextareaField('수업 요약'),
-        // 가장 중요했던 내용 — 소제목+설명 블록 반복. ③ 연결(블록반복 링크)은 후속 이슈.
+        createTextareaField('수강 동기', {
+          guide: '이 강좌를 수강한 이유가 무엇인가요? 필수라서 들었더라도, 기대했던 점이 있었다면 함께 적어주세요.',
+          placeholder:
+            '예: 데이터 분석 직무를 준비하며 통계 기초를 다지고 싶었고, 교수님의 실습 중심 수업 방식이 잘 맞을 것 같아 신청했습니다',
+        }),
+        createTextareaField('수업 요약', {
+          guide: '이 강좌가 어떤 수업이었는지 자유롭게 요약해주세요. 다룬 주제, 수업 방식, 전체적인 흐름 등 무엇이든 좋아요.',
+          placeholder:
+            '예: 마케팅의 기본 개념부터 소비자 행동, 시장 세분화, 브랜드 포지셔닝까지 다뤘습니다. 매주 이론 강의와 함께 실제 기업 케이스를 분석하는 방식으로 진행됐습니다',
+        }),
+        // 가장 중요했던 내용 — 소제목+설명 블록 반복. ③ 연결(블록반복 링크)은 FRT-131.
         // 소제목은 required 로 두지 않는다 — 이 블록은 optional 인 '수업 상세'(detail) 카드 안이라
         // required 컬럼이 있으면 카드 전체가 필수로 판정돼(isRequiredBlock) 수강 동기·수업 요약만
         // 채워도 진행도가 미완료로 오판된다.
-        createRepeatableCell('가장 중요했던 내용', [
-          { key: 'title', label: '소제목', blockType: 'text' },
-          { key: 'detail', label: '자세한 설명', blockType: 'textarea' },
-        ]),
+        createRepeatableCell(
+          '가장 중요했던 내용',
+          [
+            {
+              key: 'title',
+              label: '소제목',
+              blockType: 'text',
+              placeholder: '예: 마케팅 4P 프레임의 실전 적용',
+            },
+            {
+              key: 'detail',
+              label: '설명',
+              blockType: 'textarea',
+              placeholder: '이 내용이 왜 중요했는지, 어떤 맥락에서 배웠는지 자유롭게 적어주세요',
+            },
+          ],
+          {
+            guide:
+              '이 강좌에서 나에게 가장 깊게 남은 개념, 이론, 관점을 단위별로 기록해주세요. 하나씩 소제목과 설명을 나눠 정리할 수 있어요.',
+          },
+        ),
       ],
     },
     {
@@ -165,17 +229,61 @@ function educationExtensions(): TemplateSection[] {
       category: 'repeat',
       label: '프로젝트 / 과제 / 제작물 기록',
       blocks: [
-        createRepeatableCell('프로젝트 / 과제 / 제작물', [
-          { key: 'name', label: '프로젝트명', blockType: 'text', required: true },
+        createRepeatableCell(
+          '프로젝트 / 과제 / 제작물',
+          [
+            {
+              key: 'name',
+              label: '프로젝트명',
+              blockType: 'text',
+              required: true,
+              guide: '이 과제나 프로젝트의 이름을 적어주세요.',
+              placeholder: '예: 학기말 팀 프로젝트 — 로컬 브랜드 마케팅 전략 제안',
+            },
+            {
+              key: 'type',
+              label: '유형',
+              blockType: 'single-select',
+              guide: '과제/프로젝트 유형을 선택해주세요.',
+              options: [
+                '개인 과제',
+                '개인 프로젝트',
+                '팀 과제',
+                '팀 프로젝트',
+                '학기말 프로젝트',
+                '중간 과제',
+                '기말 과제',
+                '기타',
+              ],
+            },
+            {
+              key: 'description',
+              label: '간단한 설명',
+              blockType: 'textarea',
+              guide: '이 프로젝트가 무엇이었는지 한두 문장으로 설명해주세요.',
+              placeholder:
+                '예: 지역 소상공인 브랜드를 골라 SNS 마케팅 전략을 제안한 팀 프로젝트. A+ 성적으로 마무리했습니다.',
+            },
+            {
+              key: 'work',
+              label: '내가 한 일',
+              blockType: 'textarea',
+              guide:
+                '이 프로젝트에서 내가 직접 맡은 부분은 무엇이었나요? 팀 과제라면 팀원 간 역할 분담도 함께 떠올려보세요.',
+              placeholder: '예: 인터뷰 설계와 소비자 조사를 담당했고, 팀원 4명과 역할을 나눠 3주간 진행했습니다',
+            },
+            {
+              key: 'output',
+              label: '결과물',
+              blockType: 'link',
+              guide: '이 프로젝트의 결과물을 첨부하거나 링크로 남겨주세요.',
+            },
+          ],
           {
-            key: 'type',
-            label: '유형',
-            blockType: 'single-select',
-            options: ['개인 과제', '개인 프로젝트', '팀 과제', '팀 프로젝트', '학기말', '중간', '기말', '기타'],
+            guide:
+              '이 강좌에서 수행한 과제, 팀 프로젝트, 개인 제작물 등을 단위별로 기록해주세요.',
           },
-          { key: 'description', label: '간단한 설명', blockType: 'textarea' },
-          { key: 'output', label: '결과물', blockType: 'link' },
-        ]),
+        ),
       ],
     },
   ]
@@ -262,7 +370,10 @@ function academicSocietyExtensions(): TemplateSection[] {
           guide: '학회 홈페이지나 소개 페이지가 있다면 붙여주세요. 없으면 비워둬도 괜찮아요.',
         }),
         createPeriodField('기간', { required: true }),
-        createFileField('활동 인증서'),
+        // 증빙은 문서 ④ '활동 증빙' 한 곳에만 둔다. commonCore 의 '증빙 자료'(file)가
+        // form-cards 의 isEvidenceBlock 로 항상 evidence 카드에 렌더되고, FileBlock 이
+        // 파일 + 파일 설명 + 증빙 유형을 이미 지원해 문서 ④와 그대로 맞는다.
+        // (여기 '활동 인증서'를 함께 두면 기본 정보·활동 증빙 두 곳에 증빙이 중복 노출된다.)
         createTextField('역할/직책', {
           required: true,
           guide: '학회 안에서 맡았던 포지션을 적어주세요. 기수·부서·팀이 있다면 함께 적으면 좋아요.',
@@ -311,54 +422,79 @@ function academicSocietyExtensions(): TemplateSection[] {
       category: 'repeat',
       label: '프로젝트/연구활동 기록',
       blocks: [
-        createRepeatableCell('프로젝트/연구활동', [
+        // 컬럼 순서·필수 여부·구성은 문서 확정본 ③ 그대로.
+        // 문서에 없는 '발표/포스터/세미나 여부'·'피드백/질문과 대응'은 제거했다(구 값은 orphan 보존).
+        createRepeatableCell(
+          '프로젝트/연구활동',
+          [
+            {
+              key: 'name',
+              label: '프로젝트/연구활동명',
+              blockType: 'text',
+              required: true,
+              guide: '이 프로젝트 또는 연구활동의 이름을 적어주세요',
+              placeholder: '예: 2024 전국 대학생 전략 케이스 경진대회',
+            },
+            {
+              key: 'role',
+              label: '직책/역할',
+              blockType: 'text',
+              required: true,
+              guide: '이 프로젝트에서 맡은 포지션을 적어주세요.',
+              placeholder: '예: 케이스 분석 리드, 발표자',
+            },
+            {
+              key: 'period',
+              label: '세부 기간',
+              blockType: 'text',
+              required: true,
+              guide: '이 프로젝트가 진행된 기간을 선택해주세요.',
+            },
+            {
+              key: 'goal',
+              label: '프로젝트 목표',
+              blockType: 'textarea',
+              guide: '이 프로젝트를 시작할 때 팀이 풀려고 했던 문제가 뭐였나요?',
+              placeholder: '예: 국내 유통 대기업의 신사업 진출 전략을 분석하고 대안 전략 제시',
+            },
+            {
+              key: 'work',
+              label: '내가 한 일',
+              blockType: 'textarea',
+              required: true,
+              guide: '이 프로젝트에서 내가 직접 맡은 부분은 어디였나요? 다른 팀원과 어떻게 나눴는지도 떠올려보세요',
+              placeholder: '예: 산업 조사와 경쟁사 분석을 담당했고, 팀원 4명과 역할을 나눠 주 2회 미팅으로 진행했습니다',
+            },
+            {
+              key: 'result',
+              label: '핵심 성과',
+              blockType: 'textarea',
+              required: true,
+              guide: '이 프로젝트가 끝났을 때 남은 게 있다면요? 결과물, 수치, 피드백 등 무엇이든 적어주세요.',
+              placeholder: '예: 대회 본선 진출 및 은상 수상 / 심사위원으로부터 전략 논리 구조에 긍정 피드백',
+            },
+            {
+              key: 'difficulty',
+              label: '어려움 / 문제 해결',
+              blockType: 'textarea',
+              guide: '진행하면서 막혔던 순간이 있었나요? 어떻게 넘겼는지 생각나는 대로 적어주세요',
+              placeholder:
+                '예: 팀원 간 분석 방향 이견으로 2주간 진척이 없었고, 외부 자료 추가 조사로 합의점을 찾았습니다',
+            },
+            {
+              // 문서는 파일+URL+설명의 '반복' 입력이지만 반복 블록 안의 반복은 중첩 1겹 제한에
+              // 걸려 아직 못 만든다. 지금은 링크 한 칸으로 근사하고 정식 구현은 FRT-143.
+              key: 'output',
+              label: '결과물',
+              blockType: 'link',
+              guide:
+                '이 프로젝트를 하면서 만든 것들을 링크로 남겨주세요. 발표 자료, 기획서, 보고서, 영상 등 무엇이든 괜찮아요.',
+            },
+          ],
           {
-            key: 'name',
-            label: '프로젝트/연구활동명',
-            blockType: 'text',
-            required: true,
-            guide: '이 프로젝트 또는 연구활동의 이름을 적어주세요',
-            placeholder: '예: 2024 전국 대학생 전략 케이스 경진대회',
+            guide: '학회 안에서 진행한 프로젝트나 연구활동을 단위별로 기록해주세요.',
           },
-          {
-            key: 'period',
-            label: '세부 기간',
-            blockType: 'text',
-            required: true,
-            guide: '이 프로젝트가 진행된 기간을 선택해주세요.',
-          },
-          {
-            key: 'role',
-            label: '직책/역할',
-            blockType: 'text',
-            required: true,
-            guide: '이 프로젝트에서 맡은 포지션을 적어주세요.',
-            placeholder: '예: 케이스 분석 리드, 발표자',
-          },
-          {
-            key: 'goal',
-            label: '연구/프로젝트 목표',
-            blockType: 'textarea',
-            guide: '이 프로젝트를 시작할 때 팀이 풀려고 했던 문제가 뭐였나요?',
-            placeholder: '예: 국내 유통 대기업의 신사업 진출 전략을 분석하고 대안 전략 제시',
-          },
-          {
-            key: 'work',
-            label: '내가 한 일',
-            blockType: 'textarea',
-            guide: '이 프로젝트에서 내가 직접 맡은 부분은 어디였나요? 다른 팀원과 어떻게 나눴는지도 떠올려보세요',
-            placeholder: '예: 산업 조사와 경쟁사 분석을 담당했고, 팀원 4명과 역할을 나눠 주 2회 미팅으로 진행했습니다',
-          },
-          {
-            key: 'result',
-            label: '핵심 성과',
-            blockType: 'textarea',
-            guide: '이 프로젝트가 끝났을 때 남은 게 있다면요? 결과물, 수치, 피드백 등 무엇이든 적어주세요.',
-            placeholder: '예: 대회 본선 진출 및 은상 수상 / 심사위원으로부터 전략 논리 구조에 긍정 피드백',
-          },
-          { key: 'presentation', label: '발표/포스터/세미나 여부', blockType: 'text' },
-          { key: 'feedback', label: '피드백/질문과 대응', blockType: 'textarea' },
-        ]),
+        ),
       ],
     },
   ]
@@ -396,7 +532,9 @@ function clubExtensions(): TemplateSection[] {
 }
 
 // 인턴 — 프로토타입 확정본(2026-07). 학회(FRT-90)와 동일한 3섹션 구조(basic/detail/repeat).
-// 산업/직무 '＋빠른 선택' 그룹 픽커는 후속 이슈 — 이번엔 태그·텍스트로 근사한다.
+// 산업/직무 '＋빠른 선택' 그룹 픽커는 후속 이슈(FRT-130) — 이번엔 태그·텍스트로 근사한다.
+// 그래서 문서의 "아래에서 선택해주세요" 류 안내는 싣지 않는다(없는 UI를 가리키게 된다).
+// 지원 동기 예시문장 삽입·성장/변화 회고 카드·프로젝트 감정 태깅은 FRT-132.
 function careerExtensions(): TemplateSection[] {
   return [
     {
@@ -404,17 +542,38 @@ function careerExtensions(): TemplateSection[] {
       category: 'basic',
       label: '근무 정보',
       blocks: [
-        createTextField('회사명', { required: true }),
-        // 산업/회사 종류 — 문서상 6카테고리 그룹 픽커. 이번엔 자유 태그로 근사(픽커는 후속 이슈).
-        createTagsField('산업 / 회사 종류'),
-        createTextField('부서 / 팀'),
-        // 직무/포지션 — 문서상 단일선택 픽커(15종). 세분화 목록이 미확정이라 자유 입력 텍스트로 둔다.
-        createTextField('직무 / 포지션', { required: true, placeholder: '예: 브랜드 마케팅 인턴' }),
-        createPeriodField('근무 기간', { required: true }),
-        createSelectField('근무 형태', ['풀타임', '파트타임', '원격', '하이브리드']),
-        createTextareaField('회사 소개'),
+        createTextField('회사명', {
+          required: true,
+          guide: '인턴으로 근무한 회사의 이름을 적어주세요.',
+          placeholder: '예: OO주식회사',
+        }),
+        // 산업/회사 종류 — 문서상 6카테고리 그룹 픽커. 이번엔 자유 태그로 근사(픽커는 FRT-130).
+        createTagsField('산업 / 회사 종류', {
+          guide: '이 회사가 속한 산업이나 종류를 자유롭게 입력해주세요. 여러 개 가능해요.',
+        }),
+        createTextField('부서 / 팀', {
+          guide: '소속된 부서와 팀 이름을 적어주세요.',
+          placeholder: '예: 마케팅본부 브랜드전략팀',
+        }),
+        // 직무/포지션 — 문서상 단일선택 픽커(15종). 픽커는 FRT-130, 지금은 자유 입력 텍스트.
+        createTextField('직무 / 포지션', {
+          required: true,
+          guide: '담당한 직무나 포지션을 적어주세요.',
+          placeholder: '예: 브랜드 마케팅 인턴',
+        }),
+        createPeriodField('근무 기간', {
+          required: true,
+          guide: '인턴 근무를 시작하고 종료한 시점을 선택해주세요.',
+        }),
+        createSelectField('근무 형태', ['풀타임', '파트타임', '원격', '하이브리드'], {
+          guide: '근무 형태를 선택해주세요.',
+        }),
+        createTextareaField('회사 소개', {
+          guide: '회사가 어떤 사업을 하는지, 규모나 특징을 간략히 설명해주세요.',
+          placeholder:
+            '예: B2C 뷰티 브랜드를 운영하는 스타트업으로, 국내외 온라인 유통을 중심으로 사업을 확장하고 있습니다 (임직원 OO명 규모)',
+        }),
         createLinkField('공식 URL'),
-        createSelectField('상태', ['진행 중', '완료']),
       ],
     },
     {
@@ -422,20 +581,40 @@ function careerExtensions(): TemplateSection[] {
       category: 'detail',
       label: '경험 상세',
       blocks: [
-        createTextareaField('지원 동기'),
+        createTextareaField('지원 동기', {
+          guide: '이 회사에 지원한 이유가 무엇인가요? 이 직무를 선택하게 된 계기가 있었나요?',
+          placeholder:
+            '예: 브랜드가 성장하는 과정을 실무에서 경험하고 싶어 지원했습니다',
+        }),
         createOutcomeList('팀이 진행한 프로젝트 / 업무', {
           itemLabel: '프로젝트 / 업무',
-          placeholder: '예) 상반기 신제품 런칭 캠페인 / 브랜드 리뉴얼 프로젝트',
+          placeholder: '예: 상반기 신제품 런칭 캠페인 / 브랜드 리뉴얼 프로젝트',
           guide:
             '내가 속한 팀이 근무 기간 동안 진행한 프로젝트나 주요 업무를 적어주세요. 내가 직접 담당하지 않았더라도 팀이 함께 움직인 일이면 좋아요.',
         }),
         createOutcomeList('나의 담당 업무 / 주요 성과', {
+          itemLabel: '담당 업무 / 성과',
+          placeholder: '예: 신제품 런칭 SNS 캠페인 운영',
+          guide:
+            '내가 담당했던 업무나 개인적으로 이룬 성과를 적어주세요. 각 항목은 아래에서 프로젝트 단위로 자세히 기록할 수 있어요.',
           // FRT-76: 활동 행 → 아래 '프로젝트/담당 업무 기록'(career-tasks) 프로젝트 행으로 연결.
           link: { targetSectionId: 'career-tasks', titleColumnKey: 'project', label: '프로젝트로 기록' },
         }),
-        createTextareaField('성장 / 변화'),
-        createTagsField('사용한 스킬 / 툴 / 기술'),
-        createTextField('협업 / 팀원'),
+        createTextareaField('성장 / 변화', {
+          guide: '이 인턴 경험을 통해 개선되거나 나아진 부분이 있나요?',
+          placeholder: '예: 회의 내용을 문서로 정리하는 습관이 생겼습니다',
+        }),
+        createTagsField('사용한 스킬 / 툴 / 기술', {
+          guide: '인턴 기간 동안 실제로 배우거나 사용한 툴, 언어, 기술을 태그로 추가해주세요.',
+        }),
+        // 문서 확정본은 여러 줄 텍스트. text→textarea 로 바뀌지만 값 모양이 {type,text} 로 같아
+        // experience-mapper 의 injectValue 텍스트 계열 호환이 구 레코드 값을 그대로 실어준다.
+        createTextareaField('협업 / 팀원', {
+          guide:
+            '함께 일한 팀 구성이나 협업 방식을 간략히 설명해주세요. 사수, 매니저, 다른 부서와의 협업 등이 있어요.',
+          placeholder:
+            '예: 팀장 1명, 시니어 1명, 인턴 2명 구성. 주 1회 위클리 미팅 + 디자인·개발 부서와 격주 협업',
+        }),
       ],
     },
     {
@@ -444,14 +623,59 @@ function careerExtensions(): TemplateSection[] {
       label: '프로젝트/담당 업무 기록',
       blocks: [
         createRepeatableCell('프로젝트/담당 업무', [
-          { key: 'project', label: '프로젝트명', blockType: 'text', required: true },
-          { key: 'role', label: '직책/역할', blockType: 'text' },
-          { key: 'period', label: '기간', blockType: 'text' },
-          { key: 'goal', label: '프로젝트 목표', blockType: 'textarea' },
-          { key: 'work', label: '내가 한 일', blockType: 'textarea' },
-          { key: 'result', label: '핵심 성과', blockType: 'textarea' },
-          { key: 'difficulty', label: '어려움 / 문제 해결', blockType: 'textarea' },
-          { key: 'output', label: '결과물', blockType: 'link' },
+          {
+            key: 'project',
+            label: '프로젝트명',
+            blockType: 'text',
+            required: true,
+            guide: '이 프로젝트 또는 담당 업무의 이름을 적어주세요.',
+          },
+          {
+            key: 'role',
+            label: '직책/역할',
+            blockType: 'text',
+            guide: '이 프로젝트에서 맡은 포지션을 적어주세요.',
+          },
+          {
+            key: 'period',
+            label: '기간',
+            blockType: 'text',
+            guide: '이 프로젝트가 진행된 기간을 선택해주세요.',
+          },
+          {
+            key: 'goal',
+            label: '프로젝트 목표',
+            blockType: 'textarea',
+            guide:
+              '이 프로젝트/업무의 목표가 무엇이었나요? 어떤 문제를 해결하거나 어떤 지표를 달성하려 했나요?',
+          },
+          {
+            key: 'work',
+            label: '내가 한 일',
+            blockType: 'textarea',
+            guide:
+              '이 프로젝트/업무에서 내가 직접 맡은 일은 무엇이었나요? 사수나 다른 팀원과 어떻게 역할을 나눴는지도 떠올려보세요.',
+          },
+          {
+            key: 'result',
+            label: '핵심 성과',
+            blockType: 'textarea',
+            guide:
+              '이 프로젝트/업무가 끝났을 때 남은 성과가 있나요? 수치, 결과물, 피드백 등 무엇이든 적어주세요.',
+          },
+          {
+            key: 'difficulty',
+            label: '어려움 / 문제 해결',
+            blockType: 'textarea',
+            guide: '진행하면서 막혔던 순간이 있었나요? 어떻게 넘겼는지 생각나는 대로 적어주세요.',
+          },
+          {
+            key: 'output',
+            label: '결과물',
+            blockType: 'link',
+            guide:
+              '이 프로젝트/업무를 하면서 만든 산출물을 첨부하거나 링크로 남겨주세요. 기획서, 보고서, 콘텐츠, 대시보드 등 무엇이든 괜찮아요.',
+          },
         ]),
       ],
     },
