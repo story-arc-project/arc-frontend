@@ -70,4 +70,24 @@ describe("FileBlock 파일 첨부 계측", () => {
     await waitFor(() => expect(start).toHaveBeenCalled())
     expect(capture).not.toHaveBeenCalled()
   })
+
+  it("업로드가 끝나기 전에 블록이 사라지면 발화하지 않는다", async () => {
+    // useFileUpload 는 언마운트 뒤 완료된 업로드도 결과를 그대로 돌려준다.
+    // 그 결과는 폼에 반영되지 않으므로 첨부로 세면 유령 집계가 된다.
+    let finishUpload: (value: UploadedFile | null) => void = () => {}
+    start.mockReturnValue(
+      new Promise<UploadedFile | null>((resolve) => {
+        finishUpload = resolve
+      }),
+    )
+    const view = render(<FileBlock block={emptyFileBlock} onChange={vi.fn()} />)
+    await selectFile()
+    await waitFor(() => expect(start).toHaveBeenCalled())
+
+    view.unmount()
+    finishUpload(uploaded)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(capture).not.toHaveBeenCalled()
+  })
 })

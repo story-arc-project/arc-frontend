@@ -40,20 +40,21 @@ export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps)
   // 세 가지 위양성을 막는다:
   //  - urlEditedRef: 사용자가 실제로 타이핑했는가. 기존 링크를 focus 만 했다 나가는 경우를 거른다
   //    (편집 모드에서 값이 나중에 주입돼도 타이핑 없이는 발화하지 않는다).
-  //  - knownUrlRef: "이미 첨부로 아는 URL". 첫 타이핑 직전 값(편집 전 원본)으로 기준선을 세워,
-  //    고쳤다가 원래대로 되돌린 경우를 거른다. 이후엔 마지막으로 발화한 URL 을 담는다.
+  //  - knownUrlsRef: "이미 첨부로 아는 URL"의 집합. 첫 타이핑 직전 값(편집 전 원본)을 기준선으로
+  //    깔고, 발화한 URL 을 계속 누적한다. 마지막 1개만 기억하면 A→B(발화)→A 로 되돌아왔을 때
+  //    처음부터 있던 A 가 새 첨부로 다시 잡힌다.
   //  - 비교는 원문이 아니라 getSafeHref 의 정규화 결과로 한다 — `https://a.dev` 와
   //    `https://a.dev/` 는 같은 첨부다.
   const urlEditedRef = useRef(false)
-  const knownUrlRef = useRef<string | null>(null)
+  const knownUrlsRef = useRef<Set<string>>(new Set())
 
   function handleUrlBlur() {
     if (!urlEditedRef.current) return
     // 안전한 스킴의 유효 URL 만 첨부로 인정한다(입력 중 끊긴 문자열·javascript: 제외).
     const safeUrl = getSafeHref(val.url)
     if (!safeUrl) return
-    if (knownUrlRef.current === safeUrl) return
-    knownUrlRef.current = safeUrl
+    if (knownUrlsRef.current.has(safeUrl)) return
+    knownUrlsRef.current.add(safeUrl)
     // URL 원문은 싣지 않는다(PII·식별 위험) — 첨부 "여부"만 본다.
     capture("archive_attachment_added", { attachment_type: "url" })
   }
@@ -61,8 +62,9 @@ export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps)
   function update(field: keyof Omit<LinkBlockValue, "type">, v: string) {
     if (field === "url" && !urlEditedRef.current) {
       urlEditedRef.current = true
-      // 편집을 시작한 순간의 값이 "이미 있던 첨부"다. 빈 값·무효값이면 기준선이 없다(null).
-      knownUrlRef.current = getSafeHref(val.url)
+      // 편집을 시작한 순간의 값이 "이미 있던 첨부"다. 빈 값·무효값이면 기준선이 없다.
+      const baseline = getSafeHref(val.url)
+      if (baseline) knownUrlsRef.current.add(baseline)
     }
     onChange({ ...val, [field]: v })
   }

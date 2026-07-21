@@ -83,6 +83,16 @@ describe("LinkBlock URL 첨부 계측", () => {
     expect(capture).not.toHaveBeenCalled()
   })
 
+  it("다른 URL 로 바꿔 발화한 뒤 원래 URL 로 되돌리면 다시 발화하지 않는다", () => {
+    // 고친 값에서 한 번 blur 가 끼는 실제 흐름 — 되돌아온 A 는 처음부터 있던 첨부다.
+    const input = renderLinkBlock("https://arc.dev/existing")
+    fireEvent.change(input, { target: { value: "https://arc.dev/other" } })
+    fireEvent.blur(input)
+    fireEvent.change(input, { target: { value: "https://arc.dev/existing" } })
+    fireEvent.blur(input)
+    expect(capture).toHaveBeenCalledTimes(1)
+  })
+
   it("표기만 다른 같은 URL(끝 슬래시)은 재발화하지 않는다", () => {
     const input = renderLinkBlock()
     fireEvent.change(input, { target: { value: "https://arc.dev" } })
