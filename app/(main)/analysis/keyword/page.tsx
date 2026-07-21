@@ -5,10 +5,12 @@ import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getKeywordList, deleteKeywordAnalysis } from "@/lib/api/analysis-api";
+import { isAnalysisRetryEnabled } from "@/lib/analysis/flags";
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Button, Badge, Dialog } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
+import RetryAnalysisButton from "@/components/features/analysis/common/RetryAnalysisButton";
 
 export default function KeywordAnalysisPage() {
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
@@ -110,12 +112,20 @@ export default function KeywordAnalysisPage() {
           <div className="space-y-3">
             {items.map((item) => {
               const isNavigable = item.status === "completed";
+              // 재시도 엔드포인트(BAC-42) 배포 전까지 플래그 off — 노출 없음
+              const canRetry = item.status === "failed" && isAnalysisRetryEnabled();
               return (
                 <div
                   key={item.id}
                   className={[
                     "bg-surface border border-border rounded-lg p-4",
-                    !isNavigable ? "opacity-60" : "hover:border-brand transition-colors",
+                    isNavigable
+                      ? "hover:border-brand transition-colors"
+                      : // 다시 시도할 수 있는 카드는 흐리게 두지 않는다 — 유일한 액션 버튼까지
+                        // 같이 흐려져 누를 수 있어 보이지 않는다.
+                        canRetry
+                        ? ""
+                        : "opacity-60",
                   ].join(" ")}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -139,6 +149,19 @@ export default function KeywordAnalysisPage() {
                         <p className="text-caption text-text-tertiary mt-1.5">
                           {formatDate(item.createdAt)}
                         </p>
+                        {canRetry && (
+                          <RetryAnalysisButton
+                            analysisId={item.id}
+                            analysisType="keyword"
+                            onRetried={() =>
+                              setItems((prev) =>
+                                prev.map((i) =>
+                                  i.id === item.id ? { ...i, status: "processing" } : i,
+                                ),
+                              )
+                            }
+                          />
+                        )}
                       </div>
                     ) : (
                       <Link

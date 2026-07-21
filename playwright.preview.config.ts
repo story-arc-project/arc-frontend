@@ -25,6 +25,8 @@ export default defineConfig({
       NEXT_PUBLIC_API_URL: API_ORIGIN,
       NEXT_PUBLIC_CONSENT_ENABLED: "true",
       NEXT_PUBLIC_PASSWORD_RESET_ENABLED: "true",
+      // 배포 전 기능도 프리뷰에서는 켠 상태로 촬영한다(FRT-108 분석 재시도).
+      NEXT_PUBLIC_ANALYSIS_RETRY_ENABLED: "true",
     },
   },
 });

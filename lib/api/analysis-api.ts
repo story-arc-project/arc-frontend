@@ -999,6 +999,29 @@ export async function deleteComprehensiveAnalysis(
   await api.delete<void>(`/analysis/comprehensive/${analysisId}`);
 }
 
+/**
+ * POST /analysis/comprehensive/{analysisId}/retry — 실패한 분석 재실행 (FRT-108 / BAC-42)
+ *
+ * body 를 보내지 않는다. 서버가 보관 중인 원 파라미터(experience_ids)를 그대로 재사용한다
+ * — 프런트가 되돌려 보내면 그 사이 삭제된 경험 때문에 400 이 난다.
+ * 새 행이 아니라 같은 레코드를 재실행하므로(status failed → queued) 응답의 id 는 원 id 와
+ * 같다. 호출부가 이미 id 를 알고 있어 반환하지 않는다.
+ *
+ * 실패는 삼키지 않고 ApiError 로 그대로 throw 한다 — 409(실패 상태가 아님)/404/429 를
+ * 호출부가 구분해 안내할 수 있어야 한다.
+ *
+ * ⚠️ 이 함수는 기능 플래그를 모른다(flag-agnostic). 노출 게이팅은 RetryAnalysisButton 이
+ * `isAnalysisRetryEnabled()` 로 수행한다.
+ */
+export async function retryComprehensiveAnalysis(
+  analysisId: string,
+): Promise<void> {
+  if (shouldMock()) return mock(async () => undefined);
+  await api.post<ApiSuccessResponse<unknown>>(
+    `/analysis/comprehensive/${analysisId}/retry`,
+  );
+}
+
 // ─── Keyword ────────────────────────────────────────────────
 
 /**
@@ -1053,6 +1076,17 @@ export async function getKeywordResult(
 export async function deleteKeywordAnalysis(analysisId: string): Promise<void> {
   if (shouldMock()) return mock(async () => undefined);
   await api.delete<void>(`/analysis/keyword/${analysisId}`);
+}
+
+/**
+ * POST /analysis/keyword/{analysisId}/retry — 실패한 분석 재실행 (FRT-108 / BAC-42)
+ * 계약·주의사항은 retryComprehensiveAnalysis 참고 (원 파라미터는 keywords + target).
+ */
+export async function retryKeywordAnalysis(analysisId: string): Promise<void> {
+  if (shouldMock()) return mock(async () => undefined);
+  await api.post<ApiSuccessResponse<unknown>>(
+    `/analysis/keyword/${analysisId}/retry`,
+  );
 }
 
 // ─── Bookmarks ──────────────────────────────────────────────
