@@ -10,6 +10,7 @@ import { CreateResumeModal } from "./_components/CreateResumeModal";
 
 export default function ExportPage() {
   const [createOpen, setCreateOpen] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
   const base = useBasePath();
   const isDemo = base === "/demo";
   const router = useRouter();
@@ -79,13 +80,17 @@ export default function ExportPage() {
           <div className="flex items-baseline justify-between mb-3">
             <h2 className="text-title text-text-primary">최근 만든 레쥬메</h2>
           </div>
-          <RecentResumeList onCreateClick={() => setCreateOpen(true)} />
+          <RecentResumeList
+            onCreateClick={() => setCreateOpen(true)}
+            reloadToken={reloadToken}
+          />
         </section>
       </div>
 
       <CreateResumeModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
+        onCreated={() => setReloadToken((n) => n + 1)}
       />
     </div>
   );

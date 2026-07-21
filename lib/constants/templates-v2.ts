@@ -52,19 +52,34 @@ export const TYPE_CATEGORIES = [
 
 // ─── Common Core (shared by all templates) ──────────────────────
 
-function buildCommonCore(): TemplateSection {
+/**
+ * 유형별 core 필드 제외 목록 — 프로토타입 확정본(2026-07).
+ * commonCore 는 모든 유형에 기간·역할/기여도·핵심 성과·증빙 자료를 공통 주입하고, 유형 섹션에
+ * 동의어 필드가 있으면 form-cards 가 자동 dedup 한다. 하지만 동의어 앵커가 없는 유형은 그 core
+ * 필드가 그대로 노출되어 "간소화" 의도를 해친다. 강좌 단위 수업(기간=이수시기·증빙=성적증빙으로
+ * 대체)과 성과 개조식이 없는 대외활동은 아래 필드를 core 에서 제거한다.
+ * ⚠️ '경험명'·'한 줄 요약'은 헤더 소유라 절대 제외하지 않는다.
+ */
+const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
+  education: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
+  extracurricular: ['핵심 성과'],
+}
+
+function buildCommonCore(typeId?: ExperienceTypeId): TemplateSection {
+  const exclude = new Set(typeId ? CORE_EXCLUDE[typeId] ?? [] : [])
+  const blocks = [
+    createTextField('경험명', { required: true, placeholder: '경험의 이름을 입력하세요' }),
+    { ...createPeriodField('기간', { required: true }), category: 'basic' as SectionCategory },
+    createTextField('한 줄 요약', { placeholder: '이 경험을 한 줄로 요약해주세요' }),
+    { ...createTextareaField('내 역할/기여도', { placeholder: '내가 맡은 역할과 기여한 부분을 작성해주세요' }), category: 'detail' as SectionCategory },
+    { ...createTextareaField('핵심 성과', { placeholder: '주요 성과나 결과를 작성해주세요' }), category: 'detail' as SectionCategory },
+    { ...createFileField('증빙 자료'), category: 'evidence' as SectionCategory },
+  ].filter(b => !exclude.has(b.label))
   return {
     id: 'core',
     label: '기본 정보',
     category: 'basic',
-    blocks: [
-      createTextField('경험명', { required: true, placeholder: '경험의 이름을 입력하세요' }),
-      { ...createPeriodField('기간', { required: true }), category: 'basic' as SectionCategory },
-      createTextField('한 줄 요약', { placeholder: '이 경험을 한 줄로 요약해주세요' }),
-      { ...createTextareaField('내 역할/기여도', { placeholder: '내가 맡은 역할과 기여한 부분을 작성해주세요' }), category: 'detail' as SectionCategory },
-      { ...createTextareaField('핵심 성과', { placeholder: '주요 성과나 결과를 작성해주세요' }), category: 'detail' as SectionCategory },
-      { ...createFileField('증빙 자료'), category: 'evidence' as SectionCategory },
-    ],
+    blocks,
   }
 }
 
@@ -108,42 +123,66 @@ function buildSettingsSection(): TemplateSection {
 
 // ─── Template Builders (per type) ───────────────────────────────
 
+// 수업 — 프로토타입 확정본(2026-07). 기록 단위를 '강좌'로 바꾸고 대폭 간소화(② 3필드 / ③ 4컬럼).
+// 강의계획서·성장변화·관련도서·세부기간 등은 문서에서 제거 확정.
 function educationExtensions(): TemplateSection[] {
   return [
     {
       id: 'edu-info',
       category: 'basic',
-      label: '학교 정보',
+      label: '강좌 정보',
       blocks: [
-        createTextField('학교명', { required: true, placeholder: '○○대학교' }),
-        createTextField('전공', { placeholder: '컴퓨터공학과' }),
-        createSelectField('재학/졸업 상태', ['재학중', '졸업', '휴학중', '졸업예정']),
-        createDateField('입학일'),
-        createDateField('졸업(예정)일'),
-        createFileField('전체 학기 성적표'),
+        createTextField('강좌명', { required: true }),
+        createTextField('교수 / 강사'),
+        createTextField('학교 / 기관', { required: true }),
+        createSelectField('학년', ['1학년', '2학년', '3학년', '4학년', '대학원', '기타'], { required: true }),
+        createSelectField('학기', ['1학기', '여름 계절', '2학기', '겨울 계절'], { required: true }),
+        createSelectField('학점', ['1학점', '2학점', '3학점', '4학점', '기타']),
+        createSelectField('성적', ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'D', 'F', 'P/NP']),
+        createFileField('성적 증빙'),
+        createLinkField('공식 URL'),
       ],
     },
     {
-      id: 'edu-courses',
-      category: 'repeat',
-      label: '수업 기록',
+      id: 'edu-detail',
+      category: 'detail',
+      label: '수업 상세',
       blocks: [
-        createRepeatableCell('수업 기록', [
-          { key: 'course_name', label: '수업명', blockType: 'text', required: true },
-          { key: 'professor', label: '교수', blockType: 'text' },
-          { key: 'department', label: '담당 전공 학과', blockType: 'text' },
-          { key: 'semester', label: '수강 학기/연도', blockType: 'text', required: true },
-          { key: 'grade', label: '취득 성적', blockType: 'text' },
-          { key: 'summary', label: '수업 요약', blockType: 'textarea' },
-          { key: 'achievement', label: '핵심 성과 기록', blockType: 'textarea' },
-          { key: 'team_project', label: '팀프로젝트/과제 내용', blockType: 'textarea' },
+        createTextareaField('수강 동기'),
+        createTextareaField('수업 요약'),
+        // 가장 중요했던 내용 — 소제목+설명 블록 반복. ③ 연결(블록반복 링크)은 후속 이슈.
+        // 소제목은 required 로 두지 않는다 — 이 블록은 optional 인 '수업 상세'(detail) 카드 안이라
+        // required 컬럼이 있으면 카드 전체가 필수로 판정돼(isRequiredBlock) 수강 동기·수업 요약만
+        // 채워도 진행도가 미완료로 오판된다.
+        createRepeatableCell('가장 중요했던 내용', [
+          { key: 'title', label: '소제목', blockType: 'text' },
+          { key: 'detail', label: '자세한 설명', blockType: 'textarea' },
         ]),
-        createTagsField('커리어에 준 영향'),
+      ],
+    },
+    {
+      id: 'edu-projects',
+      category: 'repeat',
+      label: '프로젝트 / 과제 / 제작물 기록',
+      blocks: [
+        createRepeatableCell('프로젝트 / 과제 / 제작물', [
+          { key: 'name', label: '프로젝트명', blockType: 'text', required: true },
+          {
+            key: 'type',
+            label: '유형',
+            blockType: 'single-select',
+            options: ['개인 과제', '개인 프로젝트', '팀 과제', '팀 프로젝트', '학기말', '중간', '기말', '기타'],
+          },
+          { key: 'description', label: '간단한 설명', blockType: 'textarea' },
+          { key: 'output', label: '결과물', blockType: 'link' },
+        ]),
       ],
     },
   ]
 }
 
+// 대외활동 — 프로토타입 확정본(2026-07). 인턴과 초점만 다르고(회사 근무 아닌 프로그램 참여)
+// ②·③ 구조는 수업과 동일한 최소 구성(② 3필드 / ③ 4컬럼).
 function extracurricularExtensions(): TemplateSection[] {
   return [
     {
@@ -152,31 +191,51 @@ function extracurricularExtensions(): TemplateSection[] {
       label: '활동 정보',
       blocks: [
         createTextField('활동명', { required: true }),
-        createTextField('주최/기관명'),
-        createPeriodField('기간', { required: true }),
-        createFileField('활동 인증서'),
-        createTextField('직책/역할', { required: true }),
-        createTextareaField('지원 동기'),
+        createSelectField(
+          '활동 유형',
+          ['서포터즈', '앰버서더', '기자단', '공모전', '봉사', '스터디', '리더십', '챌린지', '커뮤니티', '해외프로그램', '기타'],
+          { required: true },
+        ),
+        createTextField('기수 / 차수', { placeholder: '예: 12기' }),
+        createTextField('주최', { required: true }),
+        createTextField('주관 / 후원'),
+        createTextField('참여 역할 / 포지션', { placeholder: '예: OO기 정회원, 홍보 서포터즈' }),
+        createPeriodField('활동 기간', { required: true }),
+        createSelectField('활동 규모', ['10명 미만', '10~50명', '50~100명', '100~300명', '300명 이상']),
+        createLinkField('공식 URL'),
       ],
     },
     {
       id: 'extra-detail',
-      category: 'repeat',
-      label: '활동내용 상세',
-      collapsed: true,
+      category: 'detail',
+      label: '활동 상세',
       blocks: [
-        createTextareaField('담당 업무/미션'),
-        createRepeatableCell('내가 한 일', [
-          { key: 'action', label: '행동', blockType: 'textarea' },
+        createTextareaField('지원 동기'),
+        createTextareaField('활동 내용 요약'),
+        // 가장 중요했던 경험 — 소제목+설명 블록 반복. ③ 연결(블록반복 링크)은 후속 이슈.
+        // 소제목 required 제외 — optional '활동 상세'(detail) 카드 진행도 오판 방지(수업과 동일).
+        createRepeatableCell('가장 중요했던 경험', [
+          { key: 'title', label: '소제목', blockType: 'text' },
+          { key: 'detail', label: '설명', blockType: 'textarea' },
         ]),
-        createTextareaField('협업/커뮤니케이션 방식'),
-        createRepeatableCell('결과/성과', [
-          { key: 'type', label: '성과 유형', blockType: 'text' },
-          { key: 'metric', label: '수치', blockType: 'text' },
-          { key: 'description', label: '설명', blockType: 'textarea' },
+      ],
+    },
+    {
+      id: 'extra-missions',
+      category: 'repeat',
+      label: '미션 / 프로젝트 기록',
+      blocks: [
+        createRepeatableCell('미션 / 프로젝트', [
+          { key: 'name', label: '미션/프로젝트명', blockType: 'text', required: true },
+          {
+            key: 'type',
+            label: '유형',
+            blockType: 'single-select',
+            options: ['개인 미션', '팀 미션', '정기 미션', '오프라인', '콘텐츠 제작', '공모전', '봉사', '최종 프로젝트', '기타'],
+          },
+          { key: 'description', label: '간단한 설명', blockType: 'textarea' },
+          { key: 'output', label: '결과물', blockType: 'link' },
         ]),
-        createFileField('결과물/작업물'),
-        createTextField('추천인/증언'),
       ],
     },
   ]
@@ -336,6 +395,8 @@ function clubExtensions(): TemplateSection[] {
   ]
 }
 
+// 인턴 — 프로토타입 확정본(2026-07). 학회(FRT-90)와 동일한 3섹션 구조(basic/detail/repeat).
+// 산업/직무 '＋빠른 선택' 그룹 픽커는 후속 이슈 — 이번엔 태그·텍스트로 근사한다.
 function careerExtensions(): TemplateSection[] {
   return [
     {
@@ -344,32 +405,54 @@ function careerExtensions(): TemplateSection[] {
       label: '근무 정보',
       blocks: [
         createTextField('회사명', { required: true }),
-        createPeriodField('재직기간', { required: true }),
-        createSelectField('고용 형태', ['인턴', '계약직', '정규직', '프리랜서']),
-        createTextField('직책/직급', { required: true }),
-        createTextField('직무(업무분야)', { required: true }),
-        createTextField('급여'),
+        // 산업/회사 종류 — 문서상 6카테고리 그룹 픽커. 이번엔 자유 태그로 근사(픽커는 후속 이슈).
+        createTagsField('산업 / 회사 종류'),
+        createTextField('부서 / 팀'),
+        // 직무/포지션 — 문서상 단일선택 픽커(15종). 세분화 목록이 미확정이라 자유 입력 텍스트로 둔다.
+        createTextField('직무 / 포지션', { required: true, placeholder: '예: 브랜드 마케팅 인턴' }),
+        createPeriodField('근무 기간', { required: true }),
+        createSelectField('근무 형태', ['풀타임', '파트타임', '원격', '하이브리드']),
+        createTextareaField('회사 소개'),
+        createLinkField('공식 URL'),
+        createSelectField('상태', ['진행 중', '완료']),
+      ],
+    },
+    {
+      id: 'career-detail',
+      category: 'detail',
+      label: '경험 상세',
+      blocks: [
         createTextareaField('지원 동기'),
-        createTextField('팀/조직'),
-        createSelectField('근무 형태', ['재택', '출근', '혼합']),
+        createOutcomeList('팀이 진행한 프로젝트 / 업무', {
+          itemLabel: '프로젝트 / 업무',
+          placeholder: '예) 상반기 신제품 런칭 캠페인 / 브랜드 리뉴얼 프로젝트',
+          guide:
+            '내가 속한 팀이 근무 기간 동안 진행한 프로젝트나 주요 업무를 적어주세요. 내가 직접 담당하지 않았더라도 팀이 함께 움직인 일이면 좋아요.',
+        }),
+        createOutcomeList('나의 담당 업무 / 주요 성과', {
+          // FRT-76: 활동 행 → 아래 '프로젝트/담당 업무 기록'(career-tasks) 프로젝트 행으로 연결.
+          link: { targetSectionId: 'career-tasks', titleColumnKey: 'project', label: '프로젝트로 기록' },
+        }),
+        createTextareaField('성장 / 변화'),
+        createTagsField('사용한 스킬 / 툴 / 기술'),
+        createTextField('협업 / 팀원'),
       ],
     },
     {
       id: 'career-tasks',
       category: 'repeat',
-      label: '업무내용 기록',
+      label: '프로젝트/담당 업무 기록',
       blocks: [
-        createRepeatableCell('업무내용', [
-          { key: 'project', label: '프로젝트/업무명', blockType: 'text', required: true },
-          { key: 'period', label: '세부 기간', blockType: 'text' },
-          { key: 'role', label: '역할', blockType: 'text', required: true },
-          { key: 'detail', label: '업무내용 상세', blockType: 'textarea' },
-          { key: 'tools', label: '활용 툴', blockType: 'text' },
-          { key: 'collaboration', label: '협업 대상', blockType: 'text' },
-          { key: 'metrics', label: '성과 지표', blockType: 'textarea' },
-          { key: 'risk', label: '리스크/이슈 및 대응', blockType: 'textarea' },
+        createRepeatableCell('프로젝트/담당 업무', [
+          { key: 'project', label: '프로젝트명', blockType: 'text', required: true },
+          { key: 'role', label: '직책/역할', blockType: 'text' },
+          { key: 'period', label: '기간', blockType: 'text' },
+          { key: 'goal', label: '프로젝트 목표', blockType: 'textarea' },
+          { key: 'work', label: '내가 한 일', blockType: 'textarea' },
+          { key: 'result', label: '핵심 성과', blockType: 'textarea' },
+          { key: 'difficulty', label: '어려움 / 문제 해결', blockType: 'textarea' },
+          { key: 'output', label: '결과물', blockType: 'link' },
         ]),
-        createTextareaField('퇴사 사유'),
       ],
     },
   ]
@@ -865,7 +948,7 @@ function buildTemplate(typeId: ExperienceTypeId): TemplateV2 {
     typeId,
     label: info.label,
     icon: info.icon,
-    commonCore: withSectionKeys(buildCommonCore()),
+    commonCore: withSectionKeys(buildCommonCore(typeId)),
     extensions: [sharedExtended, ...typeExtensions].map(withSectionKeys),
     isSystem: true,
   }

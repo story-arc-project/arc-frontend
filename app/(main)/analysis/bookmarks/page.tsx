@@ -6,8 +6,8 @@ import type { BookmarkedSnapshot, AnalysisType } from "@/types/analysis";
 import { analysisTypeLabel, ANALYSIS_DETAIL_PATH, ANALYSIS_TYPE_FILTERS } from "@/types/analysis";
 import { getBookmarks } from "@/lib/api/analysis-api";
 import { formatDate } from "@/lib/utils/date-utils";
+import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Badge, Button } from "@/components/ui";
-import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import FilterBar from "@/components/features/analysis/common/FilterBar";
 
@@ -103,14 +103,10 @@ export default function BookmarksPage() {
                         {analysisTypeLabel[item.type]}
                       </Badge>
                       <span className="text-body-sm text-text-primary font-medium">
-                        {item.title}
+                        {getDisplayTitle(item.title)}
                       </span>
                     </div>
-                    <p className="text-body-sm text-text-secondary line-clamp-2">
-                      {item.summaryText}
-                    </p>
                     <div className="flex items-center gap-2 mt-2">
-                      <ConfidenceBadge confidence={item.overallConfidence} />
                       <span className="text-caption text-text-tertiary">
                         저장: {formatDate(item.bookmarkedAt)}
                       </span>

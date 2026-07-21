@@ -4,7 +4,8 @@ import { useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Block, RepeatableCellBlockValue, BlockRow, BlockColumnDef } from "@/types/archive"
-import { createEmptyRow, uid } from "@/lib/utils/block-utils"
+import { cellFilled, createEmptyRow, uid } from "@/lib/utils/block-utils"
+import { usePlaceholderRow } from "./usePlaceholderRow"
 
 interface RepeatableCellBlockProps {
   block: Block
@@ -16,6 +17,18 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   const val = block.value as RepeatableCellBlockValue
   const [newColLabel, setNewColLabel] = useState("")
 
+  // 컬럼 고정 표시(FRT-104). 잠글지 말지는 여기서 데이터를 보고 정하지 않는다 — 저장된 컬럼이
+  // 템플릿과 다른 레코드(잠금 이전에 열을 추가·삭제한 경우)는 매퍼(injectValue)가 이미 잠금을
+  // 풀어서 넘긴다. 여기서 val.columns 를 다시 보면 사용자가 열을 추가하는 순간 잠겨 갇힌다.
+  const lockColumns = block.lockColumns === true
+
+  // FRT-103: rows 가 비면 표시용 행 하나를 파생한다(value 에는 커밋되지 않음).
+  // 항목 수·'행 추가' 노출은 계속 진짜 `val.rows` 를 본다.
+  const { displayRows, hasPlaceholder, isPlaceholderRow, materialize } = usePlaceholderRow(
+    val.rows,
+    val.columns,
+  )
+
   function addRow() {
     const row = createEmptyRow(val.columns)
     onChange({ ...val, rows: [...val.rows, row] })
@@ -26,6 +39,13 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   }
 
   function updateCell(rowId: string, colKey: string, cellValue: string | string[]) {
+    if (isPlaceholderRow(rowId)) {
+      // FRT-103: 값이 실제로 채워질 때만 실체화한다(빈 값 선택으로는 커밋하지 않는다).
+      // 모든 컬럼 타입이 이 콜백 하나를 지나므로 타입별 분기가 필요 없다.
+      const row = materialize(rowId, colKey, cellValue)
+      if (row) onChange({ ...val, rows: [row] })
+      return
+    }
     onChange({
       ...val,
       rows: val.rows.map(r =>
@@ -63,14 +83,18 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   }
 
   if (readOnly) {
+    // FRT-122: 셀이 전부 빈 행은 상세뷰에서 감춘다. 채운 행과 빈 행이 섞인 블록(행 하나 채우고
+    // '행 추가'만 한 경우)에서 빈 행이 '—'만 있는 유령 행으로 남던 문제를 판정 층위에서 고친다.
+    // value(rows)는 그대로 둔다 — 편집 모드로 돌아가면 빈 행이 다시 보인다.
+    const visibleRows = val.rows.filter(row => Object.values(row.cells).some(cellFilled))
     return (
       <div className="flex flex-col gap-3 border-l-2 border-brand/30 pl-3.5">
         <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
-        {val.rows.length === 0 ? (
+        {visibleRows.length === 0 ? (
           <p className="text-body text-text-disabled">—</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {val.rows.map((row, idx) => (
+            {visibleRows.map((row, idx) => (
               <div
                 key={row.id}
                 className={[
@@ -137,58 +161,64 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
         </div>
       ) : (
         <>
-          {/* Column tags */}
-          <div className="flex flex-wrap gap-1.5">
-            {val.columns.map(col => (
-              <span
-                key={col.key}
-                className="inline-flex items-center gap-1 bg-surface-secondary border border-border rounded-full pl-2.5 pr-1.5 py-0.5 text-caption text-text-secondary"
-              >
-                {col.label}
-                <button
-                  type="button"
-                  onClick={() => removeColumn(col.key)}
-                  className="rounded-full p-0.5 hover:bg-surface-tertiary transition-colors text-text-tertiary hover:text-error"
-                  aria-label={`${col.label} 열 삭제`}
+          {/* Column tags — 컬럼이 고정된 표(기본 템플릿)에서는 숨긴다. 각 행이 col.label 을 라벨로 그리므로 입력 맥락은 남는다. */}
+          {!lockColumns && (
+            <div className="flex flex-wrap gap-1.5">
+              {val.columns.map(col => (
+                <span
+                  key={col.key}
+                  className="inline-flex items-center gap-1 bg-surface-secondary border border-border rounded-full pl-2.5 pr-1.5 py-0.5 text-caption text-text-secondary"
                 >
-                  ×
-                </button>
-              </span>
-            ))}
-            <div className="flex gap-1">
-              <input
-                type="text"
-                className="h-6 w-24 rounded border border-border bg-surface px-2 text-caption text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-                placeholder="열 추가..."
-                value={newColLabel}
-                onChange={e => setNewColLabel(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addColumn() } }}
-              />
+                  {col.label}
+                  <button
+                    type="button"
+                    onClick={() => removeColumn(col.key)}
+                    className="rounded-full p-0.5 hover:bg-surface-tertiary transition-colors text-text-tertiary hover:text-error"
+                    aria-label={`${col.label} 열 삭제`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  className="h-6 w-24 rounded border border-border bg-surface px-2 text-caption text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+                  placeholder="열 추가..."
+                  value={newColLabel}
+                  onChange={e => setNewColLabel(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addColumn() } }}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Rows */}
-          {val.rows.map((row, idx) => (
+          {/* Rows — 빈 상태에서는 표시용 행 하나(FRT-103). */}
+          {displayRows.map((row, idx) => (
             <RowEditor
               key={row.id}
               row={row}
               index={idx}
               columns={val.columns}
+              isPlaceholder={isPlaceholderRow(row.id)}
               onCellChange={(colKey, cellVal) => updateCell(row.id, colKey, cellVal)}
               onRemove={() => removeRow(row.id)}
             />
           ))}
 
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={addRow}
-            className="self-start"
-          >
-            <Plus size={16} className="mr-1" />
-            행 추가
-          </Button>
+          {/* FRT-103: 표시용 빈 행이 있을 때만 '행 추가' 를 숨긴다(할 일이 없다). */}
+          {!hasPlaceholder && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={addRow}
+              className="self-start"
+            >
+              <Plus size={16} className="mr-1" />
+              행 추가
+            </Button>
+          )}
         </>
       )}
     </div>
@@ -199,12 +229,15 @@ function RowEditor({
   row,
   index,
   columns,
+  isPlaceholder,
   onCellChange,
   onRemove,
 }: {
   row: BlockRow
   index: number
   columns: RepeatableCellBlockValue["columns"]
+  /** FRT-103: 아직 value 에 커밋되지 않은 표시용 행. 지울 실체가 없어 삭제 버튼을 숨긴다. */
+  isPlaceholder?: boolean
   onCellChange: (colKey: string, value: string | string[]) => void
   onRemove: () => void
 }) {
@@ -213,14 +246,16 @@ function RowEditor({
     <div data-row-id={row.id} className="scroll-mt-20 bg-surface-secondary border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <span className="text-caption text-text-tertiary">#{index + 1}</span>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="text-text-tertiary hover:text-error transition-colors p-1 rounded"
-          aria-label="행 삭제"
-        >
-          <Trash2 size={14} />
-        </button>
+        {!isPlaceholder && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-text-tertiary hover:text-error transition-colors p-1 rounded"
+            aria-label="행 삭제"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {columns.map(col => {

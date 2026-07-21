@@ -25,14 +25,14 @@ describe("computeFormCards", () => {
     }
   })
 
-  it("career: basic=근무정보, repeat=업무내용, detail=경험상세, evidence=증빙 카드가 보인다", () => {
+  it("career: basic=근무정보, repeat=프로젝트/담당 업무, detail=경험상세, evidence=증빙 카드가 보인다", () => {
     const { core, sections } = sectionsFor("career")
     const r = computeFormCards(core, sections)
     expect(r.visibleCategories).toEqual(["basic", "detail", "repeat", "evidence"])
     const basic = r.cards.find(c => c.category === "basic")!
     expect(basic.blocks.some(b => b.label === "회사명")).toBe(true)
     const repeat = r.cards.find(c => c.category === "repeat")!
-    expect(repeat.blocks.some(b => b.label === "업무내용")).toBe(true)
+    expect(repeat.blocks.some(b => b.label === "프로젝트/담당 업무")).toBe(true)
     const evidence = r.cards.find(c => c.category === "evidence")!
     expect(evidence.blocks.some(b => b.label === "증빙 자료")).toBe(true)
   })
@@ -54,8 +54,10 @@ describe("computeFormCards", () => {
     expect(all.filter(b => b.label === "기간").length).toBe(0)
   })
 
-  it("dedup(extracurricular): core 역할/성과가 type 섹션 동의어와 중복이면 숨긴다", () => {
-    const { core, sections } = sectionsFor("extracurricular")
+  it("dedup(career): core 역할/성과가 type 섹션 동의어와 중복이면 숨긴다", () => {
+    // career 는 '직무 / 포지션'(role)·'나의 담당 업무 / 주요 성과'(achievement)를 앵커로 가져
+    // 비어있는 core 역할/기여도·핵심 성과를 숨긴다. (수업·대외활동은 성과 앵커가 없어 노출 — 알려진 한계)
+    const { core, sections } = sectionsFor("career")
     const r = computeFormCards(core, sections)
     const all = r.cards.flatMap(c => c.blocks)
     expect(all.filter(b => b.label === "내 역할/기여도").length).toBe(0)
@@ -193,18 +195,18 @@ describe("isCardComplete / computeFormProgress", () => {
     expect(isCardComplete(repeat)).toBe(true)
   })
 
-  it("필수 컬럼 repeatable + optional 형제(교육 수업 기록): optional 만 채우면 미완료", () => {
+  it("필수 컬럼 repeatable + optional 형제(팀프로젝트 작업 기록): optional 만 채우면 미완료", () => {
     // Codex P2: block.required 는 false 지만 필수 컬럼을 가진 repeatable-cell 은 필수로 취급해야 한다.
-    const { core, sections } = sectionsFor("education")
+    const { core, sections } = sectionsFor("team-project")
     const r = computeFormCards(core, sections)
     const repeat = r.cards.find(c => c.category === "repeat")!
     const cell = repeat.blocks.find(b => b.value.type === "repeatable-cell")!
-    const tags = repeat.blocks.find(b => b.value.type === "tags")!
+    const sibling = repeat.blocks.find(b => b.value.type !== "repeatable-cell")!
     if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
     expect(cell.value.columns.some(c => c.required)).toBe(true)
     expect(cell.required).toBeFalsy()
-    // optional 태그 형제만 채움 → 필수 컬럼 미충족이므로 여전히 미완료여야 한다
-    tags.value = { type: "tags", tags: ["백엔드"] }
+    // optional 형제만 채움 → 필수 컬럼 미충족이므로 여전히 미완료여야 한다
+    sibling.value = { type: "textarea", text: "채움" }
     expect(isCardComplete(repeat)).toBe(false)
     // 필수 컬럼을 채운 행이 생기면 완료
     const filled: Record<string, string> = {}

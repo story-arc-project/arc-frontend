@@ -18,8 +18,7 @@ export function SocialLoginButtons({ onLogin, action }: SocialLoginButtonsProps)
                  text-body font-medium transition-opacity duration-150 cursor-pointer"
     >
       <SiGoogle size={17} />
-      <span className="sm:hidden">Google</span>
-      <span className="hidden sm:inline">{action ? `Google로 ${action}` : "Google"}</span>
+      <span>{action ? `Google로 ${action}` : "Google"}</span>
     </button>
   );
 }

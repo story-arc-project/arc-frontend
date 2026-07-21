@@ -228,11 +228,27 @@ function routeStateful(
     return { kind: "skip" };
   }
 
-  // resume 목록 / 생성
+  // resume 목록 / 생성 — 백엔드 계약: 목록은 { count, contents }, 생성은 큐잉만 하고 data 없음.
   if (/^\/export\/resume$/.test(pathname)) {
-    if (method === "GET") return RESPOND_OK(success(store.resume.getList()));
+    if (method === "GET") {
+      const items = store.resume.getList();
+      return RESPOND_OK(
+        success({
+          count: items.length,
+          contents: items.map((item) => ({
+            id: item.version_id,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+          })),
+        }),
+      );
+    }
     if (method === "POST") {
-      return RESPOND_OK(success(store.resume.create(resumeLanguage(body))));
+      store.resume.create(resumeLanguage(body));
+      return RESPOND_OK({
+        status: "success",
+        message: "Resume generation queued successfully.",
+      });
     }
     return { kind: "notfound" };
   }

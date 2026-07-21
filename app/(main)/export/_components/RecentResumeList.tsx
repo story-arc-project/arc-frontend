@@ -12,35 +12,26 @@ import {
   ResumeMutationUnsupportedError,
 } from "@/lib/api/export-api";
 import { useBasePath } from "@/lib/utils/use-base-path";
+import { formatDateTime, formatRelativeTime } from "@/lib/utils/date-utils";
 import type { ResumeListItem } from "@/types/resume";
 
 interface RecentResumeListProps {
   onCreateClick: () => void;
+  reloadToken?: number;
 }
 
-const languageFlag: Record<string, string> = {
-  ko: "🇰🇷",
-  en: "🇺🇸",
-};
-
-function formatGeneratedAt(value: string): string {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${yyyy}.${mm}.${dd} ${hh}:${mi}`;
+// 서버가 제목을 주지 않아 만든 시각을 이름으로 쓴다.
+function resumeLabel(createdAt: string): string {
+  if (!createdAt) return "레쥬메";
+  const d = new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return "레쥬메";
+  return `${formatDateTime(createdAt)} 레쥬메`;
 }
 
-function shortenId(versionId: string): string {
-  if (!versionId) return "";
-  return versionId.length > 8 ? versionId.slice(0, 8) : versionId;
-}
-
-export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
+export function RecentResumeList({
+  onCreateClick,
+  reloadToken = 0,
+}: RecentResumeListProps) {
   const basePath = useBasePath();
   const [items, setItems] = useState<ResumeListItem[] | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -60,7 +51,7 @@ export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, reloadToken]);
 
   const handleDelete = async (versionId: string) => {
     if (!window.confirm("이 레쥬메를 삭제할까요?")) return;
@@ -133,33 +124,61 @@ export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
 
   return (
     <ul className="flex flex-col gap-2">
-      {items.map((item) => (
+      {items.map((item) => {
+        // status 가 없으면(구 백엔드) 기존처럼 이동 가능. 있으면 completed 만 이동 허용 —
+        // 생성 중/실패 행은 상세 payload 가 아직 없거나 실패라 not-found/에러 화면으로 샌다.
+        const isNavigable = !item.status || item.status === "completed";
+        const rowContent = (
+          <>
+            <div className="min-w-0 flex-1">
+              <span className="text-body-sm text-text-primary font-medium truncate block">
+                {item.title || resumeLabel(item.created_at)}
+              </span>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                {item.language && (
+                  <span className="text-caption text-text-tertiary">
+                    {item.language === "en" ? "영문" : "국문"}
+                  </span>
+                )}
+                {item.status && item.status !== "completed" && (
+                  <span
+                    className={`text-caption ${
+                      item.status === "failed" ? "text-error" : "text-text-tertiary"
+                    }`}
+                  >
+                    {item.status === "failed" ? "실패" : "생성 중"}
+                  </span>
+                )}
+              </div>
+            </div>
+            {item.created_at && (
+              <span className="text-caption text-text-tertiary shrink-0 hidden sm:inline">
+                {formatRelativeTime(item.created_at)}
+              </span>
+            )}
+          </>
+        );
+        return (
         <li key={item.version_id}>
           <div className="group flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:border-border-strong">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-brand text-brand">
               <FileText size={16} />
             </div>
-            <Link
-              href={`${basePath}/export/resume/${item.version_id}`}
-              className="flex min-w-0 flex-1 items-center gap-3"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-body-sm text-text-primary font-medium truncate">
-                    레쥬메 #{shortenId(item.version_id)}
-                  </span>
-                  <span className="text-caption text-text-tertiary shrink-0">
-                    {languageFlag[item.language] ?? ""}
-                  </span>
-                </div>
-                <p className="text-caption text-text-secondary truncate">
-                  {item.summary_preview ?? "요약 미리보기가 없어요"}
-                </p>
+            {isNavigable ? (
+              <Link
+                href={`${basePath}/export/resume/${item.version_id}`}
+                className="flex min-w-0 flex-1 items-center gap-3"
+              >
+                {rowContent}
+              </Link>
+            ) : (
+              <div
+                className="flex min-w-0 flex-1 items-center gap-3 cursor-default opacity-70"
+                aria-disabled="true"
+              >
+                {rowContent}
               </div>
-              <span className="text-caption text-text-tertiary shrink-0 hidden sm:inline">
-                {formatGeneratedAt(item.generated_at)}
-              </span>
-            </Link>
+            )}
             {deleteSupported && (
               <button
                 type="button"
@@ -173,7 +192,8 @@ export function RecentResumeList({ onCreateClick }: RecentResumeListProps) {
             )}
           </div>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }

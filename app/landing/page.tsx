@@ -42,7 +42,7 @@ function Reveal({
 /* ── Mock UI frames ──────────────────────────────────────── */
 function ArchiveMockup() {
   return (
-    <div className="bg-white rounded-xl border border-border shadow-lg overflow-hidden">
+    <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
       <div className="bg-surface-tertiary border-b border-border px-5 py-3 flex items-center gap-2">
         <div className="w-3 h-3 rounded-full bg-gray-200" />
         <div className="w-3 h-3 rounded-full bg-gray-200" />
@@ -94,7 +94,7 @@ function AnalysisMockup() {
   const bars = [72, 58, 85, 43, 66, 91, 54];
   const labels = ["기획", "개발", "디자인", "리더십", "협업", "분석", "커뮤니케이션"];
   return (
-    <div className="bg-white rounded-xl border border-border shadow-lg overflow-hidden">
+    <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
       <div className="bg-surface-tertiary border-b border-border px-5 py-3 flex items-center gap-2">
         <div className="w-3 h-3 rounded-full bg-gray-200" />
         <div className="w-3 h-3 rounded-full bg-gray-200" />
@@ -129,7 +129,7 @@ function AnalysisMockup() {
 
 function ExportMockup() {
   return (
-    <div className="bg-white rounded-xl border border-border shadow-lg overflow-hidden">
+    <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden">
       <div className="bg-surface-tertiary border-b border-border px-5 py-3 flex items-center gap-2">
         <div className="w-3 h-3 rounded-full bg-gray-200" />
         <div className="w-3 h-3 rounded-full bg-gray-200" />
@@ -283,27 +283,6 @@ function Hero() {
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-white z-10 pointer-events-none" />
           <ArchiveMockup />
         </motion.div>
-      </div>
-    </section>
-  );
-}
-
-/* ── Social proof ────────────────────────────────────────── */
-function SocialProof() {
-  const logos = ["카카오", "네이버", "토스", "라인", "쿠팡", "배달의민족"];
-  return (
-    <section className="py-12 px-6 border-y border-border">
-      <div className="max-w-5xl mx-auto">
-        <p className="text-[13px] text-text-tertiary text-center mb-8">
-          다양한 기업의 현직자와 취준생이 사용하고 있어요
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-8">
-          {logos.map((logo) => (
-            <span key={logo} className="text-[15px] font-semibold text-gray-300">
-              {logo}
-            </span>
-          ))}
-        </div>
       </div>
     </section>
   );
@@ -613,7 +592,9 @@ function Footer() {
         </div>
       </div>
       <div className="max-w-5xl mx-auto mt-8 pt-6 border-t border-border">
-        <p className="text-[13px] text-text-tertiary">© 2025 ARC. All rights reserved.</p>
+        <p className="text-[13px] text-text-tertiary">
+          © {new Date().getFullYear()} ARC. All rights reserved.
+        </p>
       </div>
     </footer>
   );
@@ -630,7 +611,6 @@ export default function LandingPage() {
       <Navbar />
       <main>
         <Hero />
-        <SocialProof />
         <Features />
         <LandingDemo />
         <HowItWorks />

@@ -4,11 +4,13 @@ import {
   cloneBlocks,
   createChecklistField,
   createDateField,
+  createEmptyRow,
   createFileField,
   createGroupBlock,
   createLinkField,
   createOutcomeList,
   createPeriodField,
+  createRepeatableCell,
   createSelectField,
   createTagsField,
   createTextField,
@@ -52,6 +54,63 @@ describe("isBlockEmpty", () => {
     const byUrl = createFileField("f")
     if (byUrl.value.type === "file") byUrl.value.url = "https://x"
     expect(isBlockEmpty(byUrl)).toBe(false)
+  })
+})
+
+describe("isBlockEmpty repeatable-cell (FRT-122)", () => {
+  const cols = [{ key: "item", label: "활동 / 성과", blockType: "text" as const }]
+
+  function withRows(block: ReturnType<typeof createRepeatableCell>, rows: ReturnType<typeof createEmptyRow>[]) {
+    if (block.value.type === "repeatable-cell") block.value.rows = rows
+    return block
+  }
+
+  it("행이 하나도 없으면 empty 다", () => {
+    expect(isBlockEmpty(createRepeatableCell("표", cols))).toBe(true)
+  })
+
+  it("빈 셀만 있는 행 하나는 empty 다 — 유령 섹션을 만들지 않는다", () => {
+    const b = withRows(createRepeatableCell("표", cols), [createEmptyRow(cols)])
+    expect(isBlockEmpty(b)).toBe(true)
+  })
+
+  it("여러 개의 빈 행도 여전히 empty 다", () => {
+    const b = withRows(createRepeatableCell("표", cols), [createEmptyRow(cols), createEmptyRow(cols)])
+    expect(isBlockEmpty(b)).toBe(true)
+  })
+
+  it("셀 하나라도 채워지면 empty 가 아니다", () => {
+    const row = createEmptyRow(cols)
+    row.cells.item = "케이스 대회 은상"
+    const b = withRows(createRepeatableCell("표", cols), [row])
+    expect(isBlockEmpty(b)).toBe(false)
+  })
+
+  it("다중 컬럼: 마지막 셀 하나만 채워도 empty 가 아니다", () => {
+    const multi = [
+      { key: "a", label: "A", blockType: "text" as const },
+      { key: "b", label: "B", blockType: "text" as const },
+    ]
+    const row = createEmptyRow(multi)
+    row.cells.b = "값"
+    const b = createRepeatableCell("표", multi)
+    if (b.value.type === "repeatable-cell") b.value.rows = [row]
+    expect(isBlockEmpty(b)).toBe(false)
+  })
+
+  it("tags 셀(string[])이 채워지면 empty 가 아니다", () => {
+    const tcols = [{ key: "tags", label: "태그", blockType: "tags" as const }]
+    const row = createEmptyRow(tcols)
+    row.cells.tags = ["백엔드"]
+    const b = createRepeatableCell("표", tcols)
+    if (b.value.type === "repeatable-cell") b.value.rows = [row]
+    expect(isBlockEmpty(b)).toBe(false)
+  })
+
+  it("outcome-list 의 빈 행도 empty 다(placeholder 실체화 후 다시 비운 경우)", () => {
+    const b = createOutcomeList("성장 / 변화")
+    if (b.value.type === "repeatable-cell") b.value.rows = [createEmptyRow(b.value.columns)]
+    expect(isBlockEmpty(b)).toBe(true)
   })
 })
 
@@ -156,6 +215,22 @@ describe("group block", () => {
     g.children = [req]
 
     expect(validateRequiredBlocks([g])).toEqual([])
+  })
+})
+
+describe("createRepeatableCell lockColumns (FRT-104)", () => {
+  const cols = [{ key: "name", label: "이름", blockType: "text" as const }]
+
+  it("기본으로 컬럼을 잠근다 — 템플릿 표는 컬럼이 고정이다", () => {
+    expect(createRepeatableCell("프로젝트/연구활동", cols).lockColumns).toBe(true)
+  })
+
+  it("lockColumns:false 로 열 관리를 다시 열 수 있다", () => {
+    expect(createRepeatableCell("표", cols, { lockColumns: false }).lockColumns).toBe(false)
+  })
+
+  it("createOutcomeList 는 컬럼을 잠그지 않는다 — 레거시 다중컬럼이 표로 폴백되면 열 관리가 필요하다", () => {
+    expect(createOutcomeList("단체 활동 / 성과").lockColumns).toBe(false)
   })
 })
 

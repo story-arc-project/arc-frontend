@@ -3,12 +3,20 @@
 import type { ImportanceLevel } from "./archive";
 
 export type AnalysisType = "individual" | "comprehensive" | "keyword";
-export type ConfidenceLevel = "sufficient" | "partial" | "insufficient";
 export type AnalysisStatus = "pending" | "processing" | "completed" | "failed";
 export type KeywordCategory = "skill" | "work_style" | "value" | "job_domain";
 export type { ImportanceLevel };
 
 // ─── Common Structures ──────────────────────────────────────
+
+/**
+ * 종합 분석에 포함된 경험 참조 (BAC-58, 계약 §2.2).
+ * title 은 경험이 삭제된 경우 null 로 온다 — 빈 문자열과 구분해 "삭제된 경험"으로 표시한다.
+ */
+export interface ExperienceRef {
+  id: string;
+  title: string | null;
+}
 
 export interface AnalysisSnapshot {
   id: string;
@@ -17,20 +25,14 @@ export interface AnalysisSnapshot {
   status: AnalysisStatus;
   createdAt: string;
   experienceCount: number;
-  summaryText: string;
-  overallConfidence: ConfidenceLevel;
   isBookmarked: boolean;
   selectedExperienceIds?: string[];
   selectedKeywords?: string[];
+  /** 종합 분석 목록에만 실린다 (계약 §2.2). experienceCount 보다 우선한다. */
+  experiences?: ExperienceRef[];
 }
 
 // ─── Korean Label Mappings ──────────────────────────────────
-
-export const confidenceLevelLabel: Record<ConfidenceLevel, string> = {
-  sufficient: "근거 충분",
-  partial: "일부 근거",
-  insufficient: "근거 부족",
-};
 
 export const keywordCategoryLabel: Record<KeywordCategory, string> = {
   skill: "직무/스킬",
@@ -205,6 +207,8 @@ export interface ComprehensiveAnalysisResult {
   id: string;
   status: AnalysisStatus;
   isBookmarked: boolean;
+  /** 분석에 포함된 경험 (계약 §2.2·§3.6). 삭제된 경험은 title=null. */
+  experiences: ExperienceRef[];
   userSchool: string;
   userDepartment: string;
   briefSummary: string;
@@ -231,11 +235,19 @@ export interface KeywordSuggestion {
   relatedExperienceCount: number;
 }
 
+// A_keyword_definitions[].compliance_criteria[] — 부합 판단 기준(v4.1 명세 #9~11).
+// id 는 D_matched_experiences.matched_criteria 가 참조하는 식별 번호(1부터).
+export interface ComplianceCriterion {
+  id: number;
+  criterion: string;
+  signalDescription: string;
+}
+
 export interface KeywordDefinition {
   keyword: string;
   definition: string;
   synonyms: string[];
-  complianceCriteria: string[];
+  complianceCriteria: ComplianceCriterion[];
 }
 
 export interface KeywordSelectionCriteria {
@@ -248,6 +260,10 @@ export interface KeywordCoverage {
   relatedCount: number;
   totalCount: number;
   coveragePercent: number;
+  // v4.1: relevance 등급별 개수(코드 재집계)
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
 }
 
 export interface KeywordEvidence {
@@ -260,11 +276,15 @@ export interface MatchedExperience {
   careerTitle: string;
   organization: string;
   period: string;
-  relevance: string;
+  relevance: string; // high | medium | low
+  relevanceSummary: string; // v4.1
   evidence: KeywordEvidence[];
-  matchedCriteria: string[];
+  // v4.1: compliance_criteria[].id 참조 배열(number). 구버전 백엔드가 서술 문자열로
+  // 보내면 그 문자열을 보존한다(조인 불가 시 뱃지로 직접 표시).
+  matchedCriteria: (number | string)[];
   confidence: string;
   confidenceReason: string;
+  isReferenceOnly: boolean; // v4.1: relevance=low 자동 태그 → [참고용]
 }
 
 export interface KeywordMatchedGroup {
@@ -280,22 +300,87 @@ export interface KeywordStorylineStructure {
   destination: string;
 }
 
+export interface StorylineChronoItem {
+  order: number;
+  experience: string;
+  period: string;
+  isDated: boolean;
+}
+
+export interface StorylineTurningPoint {
+  experience: string;
+  period: string;
+  trigger: string;
+  whatChanged: string;
+}
+
+export interface StorylineConnectiveLogic {
+  fromExperience: string;
+  toExperience: string;
+  relationType: string; // 인과 | 심화 | 반성 | 확장
+  connection: string;
+  temporalNote: string | null;
+}
+
+export interface KeyQuote {
+  careerTitle: string;
+  quote: string;
+}
+
 export interface KeywordStoryline {
   keyword: string;
   storylineTitle: string;
+  tagline: string; // v4.1
+  timelineStatus: string; // v4.1: 시간순_확인됨 | 일부_불명확 | 대부분_불명확
+  timelineNote: string | null; // v4.1
+  chronologicalSequence: StorylineChronoItem[]; // v4.1
+  narrative: string; // v4.1
+  turningPoints: StorylineTurningPoint[]; // v4.1
+  connectiveLogic: StorylineConnectiveLogic[]; // v4.1
   structure: KeywordStorylineStructure;
   usedExperiences: { core: string[]; supporting: string[] };
-  keyQuotes: string[];
+  keyQuotes: KeyQuote[]; // v4.1: 객체 배열
+}
+
+export interface ImprovementOverallDirection {
+  currentProfileSummary: string;
+  shortTerm: string;
+  midTerm: string;
+  priorityKeyword: string;
+  priorityReason: string;
+}
+
+export interface InformationEnhancement {
+  target: string;
+  missing: string;
+  howToAdd: string;
+  reason: string;
+  priority: string; // 높음 | 중간 | 낮음
+}
+
+export interface ExperienceExpansion {
+  gapDescription: string;
+  suggestedExperienceType: string;
+  whyHelpful: string;
+  examples: string[];
+  priority: string;
+}
+
+export interface KeywordRecommendationItem {
+  type: string; // 확장 | 보완
+  title: string;
+  expectedEffect: string;
 }
 
 export interface KeywordSpecificRecommendation {
   keyword: string;
-  description: string;
+  recommendations: KeywordRecommendationItem[];
 }
 
 export interface KeywordImprovementGuide {
-  informationEnhancement: string[];
-  experienceExpansion: string[];
+  overallDirection: ImprovementOverallDirection | null; // v4.1 신설
+  informationEnhancement: InformationEnhancement[];
+  experienceExpansion: ExperienceExpansion[];
   keywordSpecificRecommendations: KeywordSpecificRecommendation[];
 }
 
@@ -304,6 +389,7 @@ export interface KeywordAnalysisResult {
   status: AnalysisStatus;
   isBookmarked: boolean;
   analysisDate: string;
+  analysisMode: string; // v4.1: knn | llm
   keywords: string[];
   targetScenario: string;
   keywordDefinitions: KeywordDefinition[];
@@ -346,7 +432,6 @@ export interface AnalysisHomeSummary {
     totalExperiences: number;
     analysisCompleted: number;
     lastAnalysisAt: string;
-    improvementNeeded: number;
   };
   recentIndividual: AnalysisSnapshot[];
   recentComprehensive: AnalysisSnapshot[];

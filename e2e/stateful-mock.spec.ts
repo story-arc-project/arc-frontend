@@ -3,8 +3,9 @@ import { expect, test, type Page } from "@playwright/test";
 import type { ApiSuccessResponse } from "@/types/api";
 import type { Experience, ExperienceListData } from "@/types/experience";
 import type { AnalysisSnapshot, BookmarkedSnapshot } from "@/types/analysis";
-import type { ResumeListItem, ResumeVersion } from "@/types/resume";
+import type { ResumeVersion } from "@/types/resume";
 
+import type { ResumeListEnvelope } from "./fixtures/api-data";
 import { STUB_API_URL, stubApi } from "./fixtures/stub-api";
 
 /**
@@ -212,22 +213,22 @@ test.describe("FRT-42 Stateful E2E mock", () => {
     await stubApi(page, { authed: true });
     await page.goto("/landing");
 
-    const before = data<ResumeListItem[]>(await apiFetch(page, "GET", "/export/resume"));
-    expect(before.map((r) => r.version_id)).toEqual(["resume-e2e-1"]);
+    const before = data<ResumeListEnvelope>(await apiFetch(page, "GET", "/export/resume"));
+    expect(before.contents.map((r) => r.id)).toEqual(["resume-e2e-1"]);
 
-    // create: 실제 소비 필드는 res.data(ResumeVersion) — export-api.createResume.
+    // create: 서버는 큐잉만 하고 id 를 주지 않는다 — 새 항목은 목록에서 확인한다.
     const created = await apiFetch(page, "POST", "/export/resume", { language: "en" });
     expect(created.ok).toBe(true);
-    const version = data<ResumeVersion>(created);
-    expect(version.meta.language).toBe("en");
-    const newId = version.version_id;
-    expect(typeof newId).toBe("string");
-    expect(newId).not.toBe("resume-e2e-1");
 
-    const afterCreate = data<ResumeListItem[]>(await apiFetch(page, "GET", "/export/resume"));
-    expect(afterCreate.map((r) => r.version_id).sort()).toEqual(
-      ["resume-e2e-1", newId].sort(),
+    const afterCreate = data<ResumeListEnvelope>(await apiFetch(page, "GET", "/export/resume"));
+    expect(afterCreate.contents).toHaveLength(2);
+    const newId = afterCreate.contents.map((r) => r.id).find((id) => id !== "resume-e2e-1");
+    expect(newId).toBeTruthy();
+
+    const version = data<ResumeVersion>(
+      await apiFetch(page, "GET", `/export/resume/${newId}`),
     );
+    expect(version.version_id).toBe(newId);
 
     // update(PATCH): res.data 가 갱신된 ResumeVersion — export-api.updateResume.
     const updatedVersion: ResumeVersion = { ...version, 자기소개_요약: "갱신된 요약" };
@@ -240,8 +241,8 @@ test.describe("FRT-42 Stateful E2E mock", () => {
     // delete: 목록에서 사라지고 상세는 404.
     const deleted = await apiFetch(page, "DELETE", "/export/resume/resume-e2e-1");
     expect(deleted.ok).toBe(true);
-    const afterDelete = data<ResumeListItem[]>(await apiFetch(page, "GET", "/export/resume"));
-    expect(afterDelete.map((r) => r.version_id)).toEqual([newId]);
+    const afterDelete = data<ResumeListEnvelope>(await apiFetch(page, "GET", "/export/resume"));
+    expect(afterDelete.contents.map((r) => r.id)).toEqual([newId]);
     const goneDetail = await apiFetch(page, "GET", "/export/resume/resume-e2e-1");
     expect(goneDetail.status).toBe(404);
   });

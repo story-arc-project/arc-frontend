@@ -6,6 +6,7 @@ import type {
   AnalysisSnapshot,
   AnalysisType,
   AnalysisStatus,
+  ExperienceRef,
   IndividualAnalysisResult,
   IndividualAnalysisResultBody,
   IndividualWeakness,
@@ -21,16 +22,24 @@ import type {
   JobRecommendation,
   KeywordAnalysisResult,
   KeywordDefinition,
+  ComplianceCriterion,
   KeywordCoverage,
   KeywordEvidence,
   MatchedExperience,
   KeywordMatchedGroup,
   KeywordStoryline,
+  StorylineChronoItem,
+  StorylineTurningPoint,
+  StorylineConnectiveLogic,
+  KeyQuote,
   KeywordSpecificRecommendation,
+  KeywordRecommendationItem,
+  ImprovementOverallDirection,
+  InformationEnhancement,
+  ExperienceExpansion,
   KeywordSuggestion,
   BookmarkedSnapshot,
   SelectableExperience,
-  ConfidenceLevel,
 } from "@/types/analysis";
 
 import { isDemoMode } from "@/lib/demo/state";
@@ -69,6 +78,72 @@ function asString(value: unknown, fallback = ""): string {
 }
 
 /**
+ * null 을 빈 문자열로 뭉개지 않는다 — 종합 분석 experiences[].title 은
+ * 경험이 삭제되면 null 로 오고, 그 신호를 화면에서 "삭제된 경험"으로 구분해야 한다(계약 §2.2).
+ */
+function asNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function mapExperienceRef(dto: unknown): ExperienceRef {
+  const r = asRecord(dto);
+  return {
+    id: asString(r.id),
+    title: asNullableString(r.title),
+  };
+}
+
+// result 래퍼 최대 중첩 깊이. schema_version 검사(assertRenderableSchema)와 본문 언랩
+// (unwrapKeywordBody)이 반드시 같은 깊이를 훑어야 한다 — 언랩이 더 깊이 뚫는데 가드가
+// 얕게 멈추면 모르는 schema_version 이 검사망을 통과해 구 매퍼로 조용히 파싱된다(2718b84
+// 계열 버그). 두 순회가 이 상수 하나에서 깊이를 파생해 구조적으로 어긋나지 않게 한다.
+const MAX_RESULT_NESTING = 4;
+
+// ─── schema_version 가드 (계약 §3.5) ────────────────────────
+// 코드가 아는 스키마 버전. result 구조가 바뀌면 백엔드가 버전을 올리고 여기 추가한다.
+const KNOWN_SCHEMA_VERSIONS = new Set([
+  "keyword/4.1",
+  "individual/1.0",
+  "comprehensive/1.0",
+  "resume/1.0",
+]);
+
+/** result.schema_version 가 "모르는 값"으로 명시돼 올 때 던진다. 상세 페이지가 안내로 전환한다. */
+export class UnsupportedSchemaError extends Error {
+  constructor(readonly schemaVersion: string) {
+    super(`unsupported schema_version: ${schemaVersion}`);
+    this.name = "UnsupportedSchemaError";
+  }
+}
+
+/**
+ * 모르는 schema_version 이면 조용한 빈 화면 대신 "표시할 수 없습니다"로 전환한다(계약 §3.5).
+ * 부재(null)는 아직 계약을 이행하지 않은 백엔드로 보고 기존대로 렌더한다 — blank 금지.
+ * 즉 "필드 없음"과 "모르는 값이 명시적으로 옴"을 다르게 취급한다.
+ */
+function assertRenderableSchema(data: unknown): void {
+  // 매퍼들은 result 래퍼가 없는 flat 응답도, keyword 처럼 result 를 이중으로 감싼
+  // 응답(internal.py, 계약 §3 미반영)도 지원한다. 따라서 schema_version 을 최상위부터
+  // 중첩 result 체인을 따라 내려가며 각 층에서 검사한다 — 어느 층이든 모르는 값이
+  // 명시되면 언랩 후 구 매퍼로 조용히 파싱되지 않도록 throw 한다.
+  let node = asRecord(data);
+  let guard = 0;
+  // guard 0..MAX_RESULT_NESTING → 언랩이 도달할 수 있는 가장 깊은 본문까지 각 층을 검사한다.
+  while (guard <= MAX_RESULT_NESTING) {
+    const v = node.schema_version ?? node.schemaVersion;
+    if (typeof v === "string" && !KNOWN_SCHEMA_VERSIONS.has(v)) {
+      throw new UnsupportedSchemaError(v);
+    }
+    if (node.result && typeof node.result === "object" && !Array.isArray(node.result)) {
+      node = asRecord(node.result);
+      guard += 1;
+    } else {
+      break;
+    }
+  }
+}
+
+/**
  * 분석 생성 응답에서 id 를 추출한다(FRT-38).
  * 백엔드가 id 를 `data` 봉투 안(`{ data: { id } }`)에 넣을지, 기존 `{ status, message }`
  * 와 같은 최상위(`{ status, message, id }`)에 둘지 확정 전이므로 두 위치를 모두 본다.
@@ -89,12 +164,6 @@ function asBoolean(value: unknown, fallback = false): boolean {
 
 function asNumber(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function asConfidence(value: unknown): ConfidenceLevel {
-  return value === "sufficient" || value === "partial" || value === "insufficient"
-    ? value
-    : "partial";
 }
 
 function mapStatus(value: unknown): AnalysisStatus {
@@ -148,6 +217,7 @@ function mapSnapshot(
     r.selectedExperienceIds ?? r.selected_experience_ids ?? r.experience_ids;
   const singleExperienceId = r.experience_id ?? r.experienceId;
   const keywordsRaw = r.selectedKeywords ?? r.selected_keywords ?? r.keywords;
+  const experiencesRaw = r.experiences;
   return {
     id: asString(r.id),
     type: asAnalysisType(r.type, fallbackType),
@@ -155,8 +225,6 @@ function mapSnapshot(
     status: mapStatus(r.status),
     createdAt: asString(r.createdAt ?? r.created_at),
     experienceCount: asNumber(r.experienceCount ?? r.experience_count),
-    summaryText: asString(r.summaryText ?? r.summary_text ?? r.analysis_summary),
-    overallConfidence: asConfidence(r.overallConfidence ?? r.overall_confidence),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
     selectedExperienceIds: Array.isArray(experienceIdsRaw)
       ? (experienceIdsRaw as string[])
@@ -165,6 +233,9 @@ function mapSnapshot(
         : undefined,
     selectedKeywords: Array.isArray(keywordsRaw)
       ? (keywordsRaw as string[])
+      : undefined,
+    experiences: Array.isArray(experiencesRaw)
+      ? experiencesRaw.map(mapExperienceRef)
       : undefined,
   };
 }
@@ -353,6 +424,8 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
+    // 경험 참조는 result 밖(엔벨로프)에 온다(계약 §3.6) — r 우선, body 는 방어적 폴백.
+    experiences: asArray(r.experiences ?? body.experiences).map(mapExperienceRef),
     userSchool: asString(body.userSchool ?? body.user_school),
     userDepartment: asString(body.userDepartment ?? body.user_department),
     briefSummary: asString(body.briefSummary ?? body.brief_summary),
@@ -402,13 +475,62 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
   };
 }
 
+// v4.1 키워드 result 매퍼. 계약 §3.4 는 접두사 제거를 요구하지만 배포 상태가
+// 불확실하므로 최상위 키는 A_ 접두사·무접두사·camelCase 를 모두 읽는다(백지 방지).
+// 내부 형태도 구버전(문자열 배열) ↔ 신버전(객체/숫자 배열) 이중호환으로 파싱한다.
+
+// 숫자 또는 숫자 문자열("3")을 number 로. 아니면 fallback.
+// compliance id ↔ matched_criteria 조인 대칭을 위해 둘 다 이 규칙을 쓴다.
+function asNumericId(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
+/**
+ * matched_criteria 를 조인 키(number)로 파싱하되, 구버전 백엔드가 기준을 서술 문자열로
+ * 보내는 경우(비숫자 문자열)엔 그 문자열을 그대로 보존해 화면이 조용히 비지 않게 한다.
+ * v4.1(number) → 조인, 구버전(text) → 문자열 뱃지 직접 표시.
+ */
+function mapMatchedCriteria(value: unknown): (number | string)[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v): number | string | null => {
+      if (typeof v === "number") return Number.isFinite(v) ? v : null;
+      if (typeof v === "string" && v.trim() !== "") {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : v;
+      }
+      return null;
+    })
+    .filter((v): v is number | string => v !== null);
+}
+
+function mapComplianceCriterion(dto: unknown, index: number): ComplianceCriterion {
+  // v4.1: { id, criterion, signal_description }. 구버전은 문자열이었다.
+  if (typeof dto === "string") {
+    return { id: index + 1, criterion: dto, signalDescription: "" };
+  }
+  const r = asRecord(dto);
+  return {
+    id: asNumericId(r.id, index + 1),
+    criterion: asString(r.criterion ?? r.text),
+    signalDescription: asString(r.signalDescription ?? r.signal_description),
+  };
+}
+
 function mapKeywordDefinition(dto: unknown): KeywordDefinition {
   const r = asRecord(dto);
   return {
     keyword: asString(r.keyword),
     definition: asString(r.definition),
     synonyms: asStringArray(r.synonyms),
-    complianceCriteria: asStringArray(r.complianceCriteria ?? r.compliance_criteria),
+    complianceCriteria: asArray(
+      r.complianceCriteria ?? r.compliance_criteria,
+    ).map(mapComplianceCriterion),
   };
 }
 
@@ -419,7 +541,56 @@ function mapKeywordCoverage(dto: unknown): KeywordCoverage {
     relatedCount: asNumber(r.relatedCount ?? r.related_count),
     totalCount: asNumber(r.totalCount ?? r.total_count),
     coveragePercent: asNumber(r.coveragePercent ?? r.coverage_percent),
+    highCount: asNumber(r.highCount ?? r.high_count),
+    mediumCount: asNumber(r.mediumCount ?? r.medium_count),
+    lowCount: asNumber(r.lowCount ?? r.low_count),
   };
+}
+
+/** C_coverage 원본에 high/medium/low 카운트 필드가 하나라도 명시돼 있는지. */
+function hasExplicitCoverageCounts(raw: unknown): boolean {
+  const r = asRecord(raw);
+  return (
+    r.highCount !== undefined ||
+    r.high_count !== undefined ||
+    r.mediumCount !== undefined ||
+    r.medium_count !== undefined ||
+    r.lowCount !== undefined ||
+    r.low_count !== undefined
+  );
+}
+
+/**
+ * C_coverage 가 총계·비율만 주고 high/medium/low 카운트를 안 줄 때(v4.1 과도기),
+ * D_matched_experiences 의 relevance 로 키워드별 카운트를 파생한다.
+ * 카운트 필드가 원본에 하나라도 명시돼 있으면(값이 0 이어도) 백엔드 값을 그대로 신뢰한다.
+ * ⚠️ 매핑 후 값(0)으로 판단하면 명시적 {0,0,0}(백엔드의 권위 있는 무커버리지 신호)과
+ * 필드 부재를 구분 못 해 파생이 덮어쓰므로, 원본 rawCoverage 로 "존재"를 판정한다.
+ * rawCoverage[i] 는 coverage[i] 와 1:1 (coverage = rawCoverage.map(mapKeywordCoverage)).
+ */
+function fillCoverageCounts(
+  coverage: KeywordCoverage[],
+  groups: KeywordMatchedGroup[],
+  rawCoverage: unknown[],
+): KeywordCoverage[] {
+  return coverage.map((c, i) => {
+    if (hasExplicitCoverageCounts(rawCoverage[i])) return c;
+    const group = groups.find((g) => g.keyword === c.keyword);
+    if (!group) return c;
+    let highCount = 0;
+    let mediumCount = 0;
+    let lowCount = 0;
+    for (const exp of group.experiences) {
+      // relevance 는 원본 문자열이라 대소문자가 섞여 올 수 있다(UI 도 조회 시 toLowerCase 로
+      // 정규화한다). 파생 카운트도 같은 규칙으로 맞춰 "High" 가 누락되지 않게 한다.
+      const rel = exp.relevance.toLowerCase();
+      if (rel === "high") highCount += 1;
+      else if (rel === "medium") mediumCount += 1;
+      else if (rel === "low") lowCount += 1;
+    }
+    if (!highCount && !mediumCount && !lowCount) return c;
+    return { ...c, highCount, mediumCount, lowCount };
+  });
 }
 
 function mapKeywordEvidence(dto: unknown): KeywordEvidence {
@@ -438,10 +609,17 @@ function mapMatchedExperience(dto: unknown): MatchedExperience {
     organization: asString(r.organization),
     period: asString(r.period),
     relevance: asString(r.relevance),
+    relevanceSummary: asString(r.relevanceSummary ?? r.relevance_summary),
     evidence: asArray(r.evidence).map(mapKeywordEvidence),
-    matchedCriteria: asStringArray(r.matchedCriteria ?? r.matched_criteria),
+    matchedCriteria: mapMatchedCriteria(r.matchedCriteria ?? r.matched_criteria),
     confidence: asString(r.confidence),
     confidenceReason: asString(r.confidenceReason ?? r.confidence_reason),
+    // 명시 플래그가 없으면 relevance=low 를 참고용으로 파생한다(백엔드가 별도 플래그를
+    // 안 줘도 저신뢰 근거가 일반 매칭처럼 보이지 않도록). 명시 false 는 존중한다.
+    // UI 가 relevance 를 toLowerCase 로 조회하므로 파생도 같은 규칙으로 정규화한다("Low" 포함).
+    isReferenceOnly: asBoolean(
+      r.isReferenceOnly ?? r.is_reference_only ?? asString(r.relevance).toLowerCase() === "low",
+    ),
   };
 }
 
@@ -453,6 +631,47 @@ function mapKeywordMatchedGroup(dto: unknown): KeywordMatchedGroup {
   };
 }
 
+function mapChronoItem(dto: unknown, index: number): StorylineChronoItem {
+  const r = asRecord(dto);
+  return {
+    order: asNumber(r.order, index + 1),
+    experience: asString(r.experience),
+    period: asString(r.period),
+    isDated: asBoolean(r.isDated ?? r.is_dated),
+  };
+}
+
+function mapTurningPoint(dto: unknown): StorylineTurningPoint {
+  const r = asRecord(dto);
+  return {
+    experience: asString(r.experience),
+    period: asString(r.period),
+    trigger: asString(r.trigger),
+    whatChanged: asString(r.whatChanged ?? r.what_changed),
+  };
+}
+
+function mapConnectiveLogic(dto: unknown): StorylineConnectiveLogic {
+  const r = asRecord(dto);
+  return {
+    fromExperience: asString(r.fromExperience ?? r.from_experience),
+    toExperience: asString(r.toExperience ?? r.to_experience),
+    relationType: asString(r.relationType ?? r.relation_type),
+    connection: asString(r.connection),
+    temporalNote: asNullableString(r.temporalNote ?? r.temporal_note),
+  };
+}
+
+function mapKeyQuote(dto: unknown): KeyQuote {
+  // v4.1: { career_title, quote }. 구버전은 문자열.
+  if (typeof dto === "string") return { careerTitle: "", quote: dto };
+  const r = asRecord(dto);
+  return {
+    careerTitle: asString(r.careerTitle ?? r.career_title),
+    quote: asString(r.quote ?? r.content ?? r.text),
+  };
+}
+
 function mapKeywordStoryline(dto: unknown): KeywordStoryline {
   const r = asRecord(dto);
   const structure = asRecord(r.structure);
@@ -460,6 +679,15 @@ function mapKeywordStoryline(dto: unknown): KeywordStoryline {
   return {
     keyword: asString(r.keyword),
     storylineTitle: asString(r.storylineTitle ?? r.storyline_title),
+    tagline: asString(r.tagline),
+    timelineStatus: asString(r.timelineStatus ?? r.timeline_status),
+    timelineNote: asNullableString(r.timelineNote ?? r.timeline_note),
+    chronologicalSequence: asArray(
+      r.chronologicalSequence ?? r.chronological_sequence,
+    ).map(mapChronoItem),
+    narrative: asString(r.narrative),
+    turningPoints: asArray(r.turningPoints ?? r.turning_points).map(mapTurningPoint),
+    connectiveLogic: asArray(r.connectiveLogic ?? r.connective_logic).map(mapConnectiveLogic),
     structure: {
       start: asString(structure.start),
       development: asString(structure.development),
@@ -471,72 +699,218 @@ function mapKeywordStoryline(dto: unknown): KeywordStoryline {
       core: asStringArray(used.core),
       supporting: asStringArray(used.supporting),
     },
-    keyQuotes: asStringArray(r.keyQuotes ?? r.key_quotes),
+    keyQuotes: asArray(r.keyQuotes ?? r.key_quotes).map(mapKeyQuote),
   };
 }
 
-/**
- * 보강 가이드의 항목들은 백엔드 확정 형태가 미정이라 string 또는 객체일 수 있다.
- * 객체일 경우 가장 의미 있는 텍스트 필드를 추려 문자열로 평탄화한다.
- */
-function coerceImprovementText(value: unknown): string {
-  if (typeof value === "string") return value;
-  const r = asRecord(value);
-  return asString(
-    r.description ??
-      r.text ??
-      r.content ??
-      r.suggestion ??
-      r.reason ??
-      r.recommendation,
+function mapOverallDirection(dto: unknown): ImprovementOverallDirection | null {
+  if (!dto || typeof dto !== "object") return null;
+  const r = asRecord(dto);
+  const d: ImprovementOverallDirection = {
+    currentProfileSummary: asString(r.currentProfileSummary ?? r.current_profile_summary),
+    shortTerm: asString(r.shortTerm ?? r.short_term),
+    midTerm: asString(r.midTerm ?? r.mid_term),
+    priorityKeyword: asString(r.priorityKeyword ?? r.priority_keyword),
+    priorityReason: asString(r.priorityReason ?? r.priority_reason),
+  };
+  return Object.values(d).some(Boolean) ? d : null;
+}
+
+function mapInformationEnhancement(dto: unknown): InformationEnhancement {
+  // v4.1: 구조화 객체. 구버전은 문자열이었다.
+  if (typeof dto === "string") {
+    return { target: "", missing: "", howToAdd: dto, reason: "", priority: "" };
+  }
+  const r = asRecord(dto);
+  return {
+    target: asString(r.target),
+    missing: asString(r.missing),
+    // 레거시 객체형({ description }/{ text }/{ content }/{ suggestion }/{ recommendation })도
+    // 흡수해 항목이 빈값으로 걸러지지 않게 한다(제거된 coerceImprovementText 커버 범위 유지).
+    // reason·priority 는 이 타입의 별도 필드라 폴백에서 제외한다(중복 소비 방지).
+    howToAdd: asString(
+      r.howToAdd ?? r.how_to_add ?? r.description ?? r.text ?? r.content ?? r.suggestion ?? r.recommendation,
+    ),
+    reason: asString(r.reason),
+    priority: asString(r.priority),
+  };
+}
+
+function isNonEmptyInformationEnhancement(e: InformationEnhancement): boolean {
+  return Boolean(e.target || e.missing || e.howToAdd || e.reason || e.priority);
+}
+
+function mapExperienceExpansion(dto: unknown): ExperienceExpansion {
+  if (typeof dto === "string") {
+    return {
+      gapDescription: dto,
+      suggestedExperienceType: "",
+      whyHelpful: "",
+      examples: [],
+      priority: "",
+    };
+  }
+  const r = asRecord(dto);
+  return {
+    // 레거시 객체형 텍스트 필드({ content }/{ recommendation } 포함)도 흡수한다
+    // (제거된 coerceImprovementText 커버 범위 유지 — 형제 매퍼와 동일하게).
+    gapDescription: asString(
+      r.gapDescription ?? r.gap_description ?? r.description ?? r.text ?? r.content ?? r.suggestion ?? r.recommendation,
+    ),
+    suggestedExperienceType: asString(r.suggestedExperienceType ?? r.suggested_experience_type),
+    whyHelpful: asString(r.whyHelpful ?? r.why_helpful),
+    examples: asStringArray(r.examples),
+    priority: asString(r.priority),
+  };
+}
+
+function isNonEmptyExperienceExpansion(e: ExperienceExpansion): boolean {
+  return Boolean(
+    e.gapDescription ||
+      e.suggestedExperienceType ||
+      e.whyHelpful ||
+      e.examples.length > 0 ||
+      e.priority,
   );
 }
 
-function mapKeywordSpecificRecommendation(dto: unknown): KeywordSpecificRecommendation {
-  if (typeof dto === "string") return { keyword: "", description: dto };
+function mapRecommendationItem(dto: unknown): KeywordRecommendationItem {
+  if (typeof dto === "string") return { type: "", title: dto, expectedEffect: "" };
   const r = asRecord(dto);
   return {
-    keyword: asString(r.keyword),
-    description: coerceImprovementText(r.recommendation ?? r.description ?? r),
+    type: asString(r.type),
+    title: asString(r.title),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
   };
+}
+
+function mapKeywordSpecificRecommendation(dto: unknown): KeywordSpecificRecommendation {
+  const r = asRecord(dto);
+  const recsRaw = r.recommendations;
+  // v4.1: { keyword, recommendations[] }. 구버전은 { keyword, description } 또는 문자열.
+  if (Array.isArray(recsRaw)) {
+    return {
+      keyword: asString(r.keyword),
+      recommendations: recsRaw.map(mapRecommendationItem),
+    };
+  }
+  // 구버전 객체형은 {description}뿐 아니라 {text}/{content}/{suggestion}/{reason} 로도 왔다
+  // (구 coerceImprovementText 커버 범위). description/recommendation 만 보면 그 형태가 빈
+  // 카드가 되므로 형제 매퍼(정보보강·경험확장)와 동일하게 텍스트 폴백을 모두 흡수한다.
+  const legacy =
+    typeof dto === "string"
+      ? dto
+      : asString(
+          r.description ?? r.text ?? r.content ?? r.suggestion ?? r.reason ?? r.recommendation,
+        );
+  return {
+    keyword: asString(r.keyword),
+    recommendations: legacy ? [{ type: "", title: legacy, expectedEffect: "" }] : [],
+  };
+}
+
+// 키워드 분석 본문(A-F)이 이 껍질에 직접 들어있는지 판별한다. 이중중첩 언랩의 종료 조건.
+const KEYWORD_CONTENT_KEYS = [
+  "keywordDefinitions", "keyword_definitions", "A_keyword_definitions",
+  "selectionCriteria", "selection_criteria", "B_selection_criteria",
+  "coverage", "C_coverage",
+  "matchedExperiences", "matched_experiences", "D_matched_experiences",
+  "storylines", "E_storylines",
+  "improvementGuide", "improvement_guide", "F_improvement_guide",
+];
+
+function hasKeywordContent(body: UnknownRecord): boolean {
+  return KEYWORD_CONTENT_KEYS.some((k) => k in body);
+}
+
+/**
+ * 백엔드 internal.py 가 keyword 결과만 상위 result 언랩을 빠뜨려
+ * `{ careers, result: { A-F }, status }` 형태로 한 겹 더 감싸 보낼 수 있다(계약 §3 미반영).
+ * 한 겹만 벗기면 A_* 를 못 뚫어 화면이 백지가 된다. 본문 키가 나타날 때까지 result 를 벗기되,
+ * 바깥 껍질의 메타(keywords·target·status 등)는 안쪽 본문과 얕게 병합해 보존한다.
+ * 단일중첩(정상 계약)이면 본문 키가 바로 있으므로 그대로 반환 — 회귀 없음.
+ */
+function unwrapKeywordBody(dto: UnknownRecord): UnknownRecord {
+  let body = dto;
+  // result 래퍼가 있으면 우선 한 겹 벗긴다. 단 통째 교체가 아니라 얕게 병합한다 —
+  // 신형 응답은 result 옆에 keywords·target·status 등 메타를 함께 싣는데(계약 §2.3),
+  // 교체하면 그 메타가 사라져 헤더가 generic 이 되고 타깃 시나리오가 누락된다.
+  // 이중중첩 루프와 동일하게 안쪽 본문이 충돌 키를 이긴다.
+  if (body.result && typeof body.result === "object" && !Array.isArray(body.result)) {
+    body = { ...body, ...asRecord(body.result) };
+  }
+  // 본문이 여전히 안 보이고 안쪽에 또 result 객체가 있으면(이중중첩) 병합해 뚫는다.
+  // 첫 병합이 이미 한 겹 소비했으므로 나머지 깊이(MAX_RESULT_NESTING - 1)만큼 더 뚫는다 —
+  // assertRenderableSchema 의 검사 깊이와 같은 상수에서 파생해 어긋나지 않게 한다.
+  let guard = 0;
+  while (
+    !hasKeywordContent(body) &&
+    body.result &&
+    typeof body.result === "object" &&
+    !Array.isArray(body.result) &&
+    guard < MAX_RESULT_NESTING - 1
+  ) {
+    body = { ...body, ...asRecord(body.result) };
+    guard += 1;
+  }
+  return body;
 }
 
 function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
   const r = asRecord(dto);
-  // 응답이 result wrapper로 감싸져 올 가능성도 방어한다.
-  const body = r.result && typeof r.result === "object" ? asRecord(r.result) : r;
-  const guide = asRecord(body.improvementGuide ?? body.improvement_guide);
-  const selection = asRecord(body.selectionCriteria ?? body.selection_criteria);
+  const body = unwrapKeywordBody(r);
+  const guide = asRecord(
+    body.improvementGuide ?? body.improvement_guide ?? body.F_improvement_guide,
+  );
+  const selection = asRecord(
+    body.selectionCriteria ?? body.selection_criteria ?? body.B_selection_criteria,
+  );
+  const matchedExperiences = asArray(
+    body.matchedExperiences ?? body.matched_experiences ?? body.D_matched_experiences,
+  ).map(mapKeywordMatchedGroup);
+  const rawCoverage = asArray(body.coverage ?? body.C_coverage);
+  const coverage = fillCoverageCounts(
+    rawCoverage.map(mapKeywordCoverage),
+    matchedExperiences,
+    rawCoverage,
+  );
 
   return {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
     analysisDate: asString(body.analysisDate ?? body.analysis_date ?? body.created_at),
+    analysisMode: asString(body.analysisMode ?? body.analysis_mode),
     keywords: asStringArray(body.keywords ?? body.selectedKeywords ?? body.selected_keywords),
-    targetScenario: asString(body.targetScenario ?? body.target_scenario),
+    targetScenario: asString(body.targetScenario ?? body.target_scenario ?? body.target),
     keywordDefinitions: asArray(
-      body.keywordDefinitions ?? body.keyword_definitions,
+      body.keywordDefinitions ?? body.keyword_definitions ?? body.A_keyword_definitions,
     ).map(mapKeywordDefinition),
     selectionCriteria: {
       summary: asString(selection.summary),
       criteria: asStringArray(selection.criteria),
     },
-    coverage: asArray(body.coverage).map(mapKeywordCoverage),
-    matchedExperiences: asArray(
-      body.matchedExperiences ?? body.matched_experiences,
-    ).map(mapKeywordMatchedGroup),
-    storylines: asArray(body.storylines).map(mapKeywordStoryline),
+    coverage,
+    matchedExperiences,
+    storylines: asArray(body.storylines ?? body.E_storylines).map(mapKeywordStoryline),
     improvementGuide: {
+      overallDirection: mapOverallDirection(guide.overallDirection ?? guide.overall_direction),
+      // 알맹이 없는 항목(모든 필드가 빈 문자열/빈 배열)은 걸러 빈 카드 렌더를 막는다.
       informationEnhancement: asArray(
         guide.informationEnhancement ?? guide.information_enhancement,
-      ).map(coerceImprovementText).filter(Boolean),
+      )
+        .map(mapInformationEnhancement)
+        .filter(isNonEmptyInformationEnhancement),
       experienceExpansion: asArray(
         guide.experienceExpansion ?? guide.experience_expansion,
-      ).map(coerceImprovementText).filter(Boolean),
+      )
+        .map(mapExperienceExpansion)
+        .filter(isNonEmptyExperienceExpansion),
       keywordSpecificRecommendations: asArray(
         guide.keywordSpecificRecommendations ?? guide.keyword_specific_recommendations,
-      ).map(mapKeywordSpecificRecommendation),
+      )
+        .map(mapKeywordSpecificRecommendation)
+        .filter((r) => r.keyword !== "" || r.recommendations.length > 0),
     },
   };
 }
@@ -570,6 +944,7 @@ export async function getIndividualAnalysisResult(
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/analysis/individual/${analysisId}`,
   );
+  assertRenderableSchema(res.data);
   return mapIndividualDetail(res.data);
 }
 
@@ -610,6 +985,7 @@ export async function getComprehensiveResult(
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/analysis/comprehensive/${analysisId}`,
   );
+  assertRenderableSchema(res.data);
   return mapComprehensiveDetail(res.data);
 }
 
@@ -618,13 +994,6 @@ export async function deleteComprehensiveAnalysis(
 ): Promise<void> {
   if (shouldMock()) return mock(async () => undefined);
   await api.delete<void>(`/analysis/comprehensive/${analysisId}`);
-}
-
-export async function getAnalysisStatus(
-  analysisId: string,
-): Promise<{ status: AnalysisStatus }> {
-  if (shouldMock()) return mock(async () => ({ status: "completed" as const }));
-  return api.get<{ status: AnalysisStatus }>(`/analysis/status/${analysisId}`);
 }
 
 // ─── Keyword ────────────────────────────────────────────────
@@ -655,12 +1024,14 @@ export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
  */
 export async function createKeywordAnalysis(
   keywordLabels: string[],
+  target = "",
 ): Promise<{ analysisId: string | null }> {
   if (shouldMock())
     return mock(async () => ({ analysisId: "kw-new-" + Date.now() }));
+  // target 은 기본값 "" 이라 안 보내도 현재 동작과 동일하다(계약 §2.3, 하위호환).
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/keyword",
-    { keywords: keywordLabels },
+    { keywords: keywordLabels, target },
   );
   return { analysisId: extractAnalysisId(res) };
 }
@@ -672,6 +1043,7 @@ export async function getKeywordResult(
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/analysis/keyword/${analysisId}`,
   );
+  assertRenderableSchema(res.data);
   return mapKeywordDetail(res.data);
 }
 
@@ -713,13 +1085,21 @@ export async function removeBookmark(analysisId: string): Promise<void> {
 
 // ─── Meta / Delete ──────────────────────────────────────────
 
-/** PATCH /analysis/:id — 제목 변경 등 메타 수정 */
+/**
+ * PATCH /analysis/{type}/:id — 제목 변경 등 메타 수정.
+ * 계약(§2)상 경로는 타입별로 갈린다. individual 은 경험에 종속돼 이름을
+ * 따로 수정할 수 없으므로(경험명 변경 시 따라감) 에러를 던진다 — deleteAnalysis 와 동일.
+ */
 export async function updateAnalysisMeta(
   analysisId: string,
+  type: AnalysisType,
   data: { title: string },
 ): Promise<void> {
   if (shouldMock()) return mock(async () => undefined);
-  await api.patch<void>(`/analysis/${analysisId}`, data);
+  if (type === "individual") {
+    throw new Error("개별 분석은 이름을 바꿀 수 없어요.");
+  }
+  await api.patch<void>(`/analysis/${type}/${analysisId}`, data);
 }
 
 /**
@@ -767,9 +1147,6 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
 
   const all = [...individual, ...comprehensive, ...keyword];
   const completed = all.filter((s) => s.status === "completed");
-  const improvementNeeded = completed.filter(
-    (s) => s.overallConfidence !== "sufficient",
-  ).length;
   const lastAnalysisAt = completed
     .map((s) => s.createdAt)
     .filter(Boolean)
@@ -787,7 +1164,6 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
       totalExperiences: experiencesData.count,
       analysisCompleted: completed.length,
       lastAnalysisAt,
-      improvementNeeded,
     },
     recentIndividual: recentSlice(individual),
     recentComprehensive: recentSlice(comprehensive),

@@ -5,8 +5,8 @@ import Link from "next/link";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getIndividualAnalysisList } from "@/lib/api/analysis-api";
 import { formatDate } from "@/lib/utils/date-utils";
+import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Button } from "@/components/ui";
-import ConfidenceBadge from "@/components/features/analysis/common/ConfidenceBadge";
 import AnalysisStatusBadge from "@/components/features/analysis/common/AnalysisStatusBadge";
 import FilterBar from "@/components/features/analysis/common/FilterBar";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
@@ -115,14 +115,10 @@ export default function IndividualAnalysisPage() {
                       >
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="text-body-sm text-text-primary font-medium">
-                            {item.title}
+                            {getDisplayTitle(item.title)}
                           </span>
                           <AnalysisStatusBadge status={displayStatus} />
-                          <ConfidenceBadge confidence={item.overallConfidence} />
                         </div>
-                        <p className="text-body-sm text-text-secondary line-clamp-1">
-                          {item.summaryText}
-                        </p>
                         <p className="text-caption text-text-tertiary mt-1.5">
                           {formatDate(item.createdAt)}
                         </p>
@@ -131,7 +127,7 @@ export default function IndividualAnalysisPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           <span className="text-body-sm text-text-primary font-medium">
-                            {item.title}
+                            {getDisplayTitle(item.title)}
                           </span>
                           <AnalysisStatusBadge status={displayStatus} />
                         </div>

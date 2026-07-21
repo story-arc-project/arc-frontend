@@ -1,6 +1,8 @@
 // ─── Resume (Export) API Types ──────────────────────────────────────
 // Korean property names are kept as-is from the backend schema.
 
+import type { AnalysisStatus } from "./analysis";
+
 export type ResumeLanguage = "ko" | "en";
 export type ResumeFormat = "json" | string;
 
@@ -150,11 +152,16 @@ export interface ResumeVersion {
   파싱경고: string[];
 }
 
+// 백엔드 GET /export/resume 의 contents 항목.
+// 계약(§2.4)상 서버가 목록에 title·language·status 를 실어야 한다. 아직 계약을 이행하지
+// 않은 백엔드에서는 이 셋이 없으므로 옵셔널로 두고, 부재 시 생성 시각 라벨로 폴백한다(dual-compat).
 export interface ResumeListItem {
   version_id: string;
-  language: ResumeLanguage;
-  generated_at: string;
-  summary_preview: string | null;
+  created_at: string;
+  updated_at: string;
+  title?: string;
+  language?: ResumeLanguage;
+  status?: AnalysisStatus;
 }
 
 // ─── Section emptiness helper ──────────────────────────────────────

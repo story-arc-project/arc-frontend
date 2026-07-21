@@ -11,6 +11,7 @@ import {
   getKeywordSuggestions,
   createKeywordAnalysis,
 } from "@/lib/api/analysis-api";
+import { capture } from "@/lib/analytics";
 import useAnalysisPolling from "@/hooks/useAnalysisPolling";
 import KeywordSelector from "@/components/features/analysis/KeywordSelector";
 
@@ -22,6 +23,7 @@ export default function KeywordNewPage() {
   const [selectedKeywords, setSelectedKeywords] = useState<
     { label: string; category: KeywordCategory }[]
   >([]);
+  const [target, setTarget] = useState("");
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
   const [analysisId, setAnalysisId] = useState<string | null>(null);
@@ -61,9 +63,16 @@ export default function KeywordNewPage() {
 
   const startAnalysis = useCallback(async () => {
     setPhase("loading");
+    // 실행 직전 최종 선택 = "어떤 키워드로 적합도를 확인하려 하나"(FRT-19). category 는 4분류.
+    const keywordCategories = Array.from(new Set(selectedKeywords.map((k) => k.category)));
+    capture("analysis_target_selected", {
+      analysis_type: "keyword",
+      count: selectedKeywords.length,
+      keyword_categories: keywordCategories,
+    });
     try {
       const labels = selectedKeywords.map((k) => k.label);
-      const { analysisId: id } = await createKeywordAnalysis(labels);
+      const { analysisId: id } = await createKeywordAnalysis(labels, target.trim());
       if (id) {
         setAnalysisId(id);
         return;
@@ -76,7 +85,7 @@ export default function KeywordNewPage() {
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selectedKeywords, router]);
+  }, [selectedKeywords, target, router]);
 
   if (phase === "loading") {
     return (
@@ -139,6 +148,24 @@ export default function KeywordNewPage() {
             selected={selectedKeywords}
             onChange={setSelectedKeywords}
             maxCount={3}
+          />
+        </section>
+
+        <section className="space-y-2">
+          <label htmlFor="keyword-target" className="text-title text-text-primary block">
+            목표 (선택)
+          </label>
+          <p className="text-body-sm text-text-secondary">
+            지원하려는 직무·상황을 적으면 그 맥락에 맞춰 분석해요.
+          </p>
+          <input
+            id="keyword-target"
+            type="text"
+            value={target}
+            onChange={(e) => setTarget(e.target.value.slice(0, 100))}
+            placeholder="예: 스타트업 PM 지원"
+            maxLength={100}
+            className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-brand focus-visible:ring-2 focus-visible:ring-brand"
           />
         </section>
 
