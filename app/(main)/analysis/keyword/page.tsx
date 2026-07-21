@@ -6,6 +6,7 @@ import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getKeywordList, deleteKeywordAnalysis } from "@/lib/api/analysis-api";
 import { isAnalysisRetryEnabled } from "@/lib/analysis/flags";
+import { useRetryRefresh } from "@/lib/analysis/use-retry-refresh";
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Button, Badge, Dialog } from "@/components/ui";
@@ -34,6 +35,9 @@ export default function KeywordAnalysisPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // 재시도 접수 후 잠시 동안만 목록을 다시 읽는다 — 그러지 않으면 '진행 중'에 고착된다.
+  const watchRetry = useRetryRefresh(loadData);
 
   const [deleteError, setDeleteError] = useState(false);
 
@@ -153,13 +157,14 @@ export default function KeywordAnalysisPage() {
                           <RetryAnalysisButton
                             analysisId={item.id}
                             analysisType="keyword"
-                            onRetried={() =>
+                            onRetried={() => {
                               setItems((prev) =>
                                 prev.map((i) =>
                                   i.id === item.id ? { ...i, status: "processing" } : i,
                                 ),
-                              )
-                            }
+                              );
+                              watchRetry();
+                            }}
                           />
                         )}
                       </div>
