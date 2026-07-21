@@ -2,6 +2,9 @@
 
 import { ReactNode } from "react";
 
+// 표기 규칙은 파일 내보내기(PDF·DOCX)와 공유한다 — 단일 출처는 lib/export/resume-format.
+export { formatPeriod } from "@/lib/export/resume-format";
+
 interface PreviewSectionProps {
   title: string;
   children: ReactNode;
@@ -49,17 +52,3 @@ export function PreviewBullets({ items }: { items: string[] }) {
   );
 }
 
-export function formatPeriod(
-  start: string | null,
-  end: string | null,
-  raw?: string | null,
-  ongoing?: boolean,
-): string {
-  if (raw && raw.trim()) return raw;
-  const s = (start ?? "").trim();
-  const e = ongoing ? "현재" : (end ?? "").trim();
-  if (!s && !e) return "";
-  if (!s) return e;
-  if (!e) return s;
-  return `${s} – ${e}`;
-}

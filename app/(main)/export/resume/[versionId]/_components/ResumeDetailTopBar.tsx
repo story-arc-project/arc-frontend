@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Printer, RefreshCcw, Save } from "lucide-react";
+import { ArrowLeft, Download, RefreshCcw, Save } from "lucide-react";
 import { Button } from "@/components/ui";
 
 interface ResumeDetailTopBarProps {
@@ -11,7 +11,7 @@ interface ResumeDetailTopBarProps {
   onBack: () => void;
   onSave: () => void;
   onRegenerate: () => void;
-  onPrint: () => void;
+  onExport: () => void;
 }
 
 export function ResumeDetailTopBar({
@@ -22,7 +22,7 @@ export function ResumeDetailTopBar({
   onBack,
   onSave,
   onRegenerate,
-  onPrint,
+  onExport,
 }: ResumeDetailTopBarProps) {
   return (
     <header
@@ -68,13 +68,12 @@ export function ResumeDetailTopBar({
           variant="secondary"
           size="sm"
           className="min-h-11 shrink-0 sm:min-h-0"
-          aria-label="PDF 다운로드"
-          onClick={onPrint}
-          title="인쇄 창에서 '대상'을 'PDF로 저장'으로 선택하세요"
+          aria-label="내보내기"
+          onClick={onExport}
         >
-          <Printer size={13} className="mr-1" />
-          <span className="sm:hidden">PDF</span>
-          <span className="hidden sm:inline">PDF 다운로드</span>
+          {/* 모바일은 아이콘만 — 옆의 '저장' 버튼과 라벨이 헷갈리지 않게(FRT-63 패턴). */}
+          <Download size={13} className="sm:mr-1" />
+          <span className="hidden sm:inline">내보내기</span>
         </Button>
       </div>
     </header>

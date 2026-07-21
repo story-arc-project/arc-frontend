@@ -19,6 +19,10 @@ import { useBasePath } from "@/lib/utils/use-base-path";
 import { isEmptySection, type ResumeVersion } from "@/types/resume";
 import { DraftRestoreBanner } from "./_components/DraftRestoreBanner";
 import { EmptyResumeState } from "./_components/EmptyResumeState";
+import {
+  ExportFormatDialog,
+  type ExportFormat,
+} from "./_components/ExportFormatDialog";
 import { ParsingWarningsBanner } from "./_components/ParsingWarningsBanner";
 import { RegenerateConfirmDialog } from "./_components/RegenerateConfirmDialog";
 import { ResumeDetailSkeleton } from "./_components/ResumeDetailSkeleton";
@@ -55,6 +59,8 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<ResumeDraft | null>(null);
   const [continueAnyway, setContinueAnyway] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
 
   const load = useCallback(async () => {
     // 새 버전 로드(재생성으로 이동해 온 경우 포함) 시 재생성 UI 상태를 초기화한다.
@@ -187,6 +193,52 @@ export default function ResumeDetailPage({ params }: PageProps) {
     if (typeof window !== "undefined") window.print();
   }, []);
 
+  // 파일 생성기(폰트·문서 라이브러리)는 무겁다 — 내보내기를 누른 순간에만 불러온다.
+  const handleExport = useCallback(
+    async (format: ExportFormat) => {
+      if (!resume || exporting) return;
+
+      if (format === "print") {
+        setExportOpen(false);
+        handlePrint();
+        return;
+      }
+
+      setExporting(format);
+      try {
+        const { buildResumeDocument } = await import(
+          "@/lib/export/resume-document"
+        );
+        const { downloadBlob, resumeFileName } = await import(
+          "@/lib/export/download"
+        );
+        const doc = buildResumeDocument(resume);
+
+        const blob =
+          format === "pdf"
+            ? await (await import("@/lib/export/resume-pdf")).renderResumePdf(doc)
+            : await (
+                await import("@/lib/export/resume-docx")
+              ).renderResumeDocx(doc);
+
+        downloadBlob(
+          blob,
+          resumeFileName({
+            name: doc.header.name,
+            language: doc.language,
+            ext: format,
+          }),
+        );
+        setExportOpen(false);
+      } catch {
+        toast.error("파일을 만들지 못했어요. 잠시 후 다시 시도해주세요.");
+      } finally {
+        setExporting(null);
+      }
+    },
+    [resume, exporting, handlePrint],
+  );
+
   const handleBack = useCallback(() => {
     if (dirty && resume) {
       const saved = writeDraft(versionId, resume);
@@ -289,7 +341,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
         onBack={handleBack}
         onSave={handleSave}
         onRegenerate={() => setRegenerateOpen(true)}
-        onPrint={handlePrint}
+        onExport={() => setExportOpen(true)}
       />
 
       {/* Mobile tab switcher */}
@@ -347,6 +399,13 @@ export default function ResumeDetailPage({ params }: PageProps) {
           </div>
         </main>
       </div>
+
+      <ExportFormatDialog
+        open={exportOpen}
+        busy={exporting}
+        onClose={() => setExportOpen(false)}
+        onSelect={handleExport}
+      />
 
       <RegenerateConfirmDialog
         open={regenerateOpen}

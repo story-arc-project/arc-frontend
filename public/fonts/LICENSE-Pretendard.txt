@@ -1,0 +1,19 @@
+Pretendard
+Copyright (c) 2021 Kil Hyung-jin, with Reserved Font Name Pretendard.
+https://github.com/orioncactus/pretendard
+
+Licensed under the SIL Open Font License, Version 1.1.
+https://scripts.sil.org/OFL
+
+이 디렉터리의 Pretendard-Regular.ttf · Pretendard-Bold.ttf 는 원본 배포본
+(packages/pretendard/dist/public/static/alternative/)에서 PDF 내보내기에 필요한
+문자 영역만 subset 한 파일이다.
+
+subset 범위: ASCII · Latin-1 · 일반 문장부호 · 통화기호 · 화살표 · 수학기호 ·
+기하도형 · CJK 문장부호 · 한글 자모 · 한글 음절(U+AC00–D7A3) · 전각 형태.
+
+재생성 명령:
+  pyftsubset Pretendard-<weight>.ttf \
+    --output-file=public/fonts/Pretendard-<weight>.ttf \
+    --unicodes="U+0020-007E,U+00A0-00FF,U+2000-206F,U+20A0-20BF,U+2100-214F,U+2190-21FF,U+2200-22FF,U+25A0-25FF,U+3000-303F,U+3130-318F,U+AC00-D7A3,U+FF00-FFEF" \
+    --layout-features='kern' --no-hinting --desubroutinize
