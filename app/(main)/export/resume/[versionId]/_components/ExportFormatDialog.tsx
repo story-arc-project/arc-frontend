@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Printer, type LucideIcon } from "lucide-react";
+import { FilePen, FileText, Printer, type LucideIcon } from "lucide-react";
 import { Dialog } from "@/components/ui";
 
 export type ExportFormat = "pdf" | "docx" | "print";
@@ -31,7 +31,8 @@ const CHOICES: Choice[] = [
   },
   {
     format: "docx",
-    icon: FileText,
+    // 펜 달린 아이콘 — "받은 뒤 직접 고칠 수 있다"는 이 선택지의 이유를 그림으로 반복한다.
+    icon: FilePen,
     label: "Word (.docx)",
     description: "받은 뒤에 직접 더 고칠 수 있어요.",
     busyLabel: "Word 파일을 만들고 있어요...",
