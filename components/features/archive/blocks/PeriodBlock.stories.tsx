@@ -25,6 +25,18 @@ export const Empty: Story = {
   },
 }
 
+/** 라벨 아래 안내문(guide). 문서 확정본이 기간 입력에도 가이드 문구를 지정한다(FRT-135). */
+export const WithGuide: Story = {
+  args: {
+    block: {
+      ...emptyPeriodBlock,
+      label: "근무 기간",
+      guide: "인턴 근무를 시작하고 종료한 시점을 선택해주세요.",
+    },
+    readOnly: false,
+  },
+}
+
 export const CurrentPeriod: Story = {
   args: {
     block: periodBlock,
