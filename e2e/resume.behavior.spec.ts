@@ -91,6 +91,42 @@ test.describe("FRT-43 레쥬메 생성·편집 동작", () => {
 });
 
 /**
+ * FRT-112 — 레쥬메 파일 내보내기(PDF·DOCX) 동작 E2E.
+ *
+ * PDF 는 한글 폰트(수 MB)를 런타임에 받아 만들기 때문에 스모크에서 제외하고,
+ * 순수 JS 로 즉시 만들어지는 Word(.docx) 로 "실제 파일이 규칙대로 떨어지는지"를 본다.
+ */
+test.describe("FRT-112 레쥬메 내보내기", () => {
+  test("내보내기에서 Word 를 고르면 이름 규칙대로 파일이 내려온다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/export/resume/resume-e2e-1");
+
+    await page
+      .locator("header")
+      .getByRole("button", { name: "내보내기" })
+      .click();
+
+    // 세 가지 형식이 모두 제시된다.
+    const dialog = page.getByRole("dialog", { name: "내보내기 형식 선택" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^PDF/ })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^인쇄/ })).toBeVisible();
+
+    const downloadPromise = page.waitForEvent("download");
+    await dialog.getByRole("button", { name: /^Word/ }).click();
+    const download = await downloadPromise;
+
+    // 파일명 규칙: {이름}_레쥬메_{YYYYMMDD}.docx (픽스처 인적사항 이름 = 김아크)
+    expect(download.suggestedFilename()).toMatch(/^김아크_레쥬메_\d{8}\.docx$/);
+
+    // 내려받고 나면 다이얼로그는 닫힌다.
+    await expect(dialog).toBeHidden();
+  });
+});
+
+/**
  * FRT-56 — 레쥬메 '다시 만들기' 재생성 동작(behavior) E2E.
  *
  * 편집(dirty) 중 재생성하면: (1) 새 레쥬메가 큐잉되고 목록으로 돌아가 거기에 반영되며,
