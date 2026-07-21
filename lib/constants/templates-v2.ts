@@ -629,16 +629,18 @@ function careerExtensions(): TemplateSection[] {
             blockType: 'text',
             required: true,
             guide: '이 프로젝트 또는 담당 업무의 이름을 적어주세요.',
+            placeholder: '예: 2025 상반기 신제품 런칭 SNS 캠페인',
           },
           {
             key: 'role',
-            label: '직책/역할',
+            label: '직책 / 역할',
             blockType: 'text',
             guide: '이 프로젝트에서 맡은 포지션을 적어주세요.',
+            placeholder: '예: 콘텐츠 기획, 카피 작성',
           },
           {
             key: 'period',
-            label: '기간',
+            label: '세부 기간',
             blockType: 'text',
             guide: '이 프로젝트가 진행된 기간을 선택해주세요.',
           },
@@ -648,6 +650,7 @@ function careerExtensions(): TemplateSection[] {
             blockType: 'textarea',
             guide:
               '이 프로젝트/업무의 목표가 무엇이었나요? 어떤 문제를 해결하거나 어떤 지표를 달성하려 했나요?',
+            placeholder: '예: 신제품 인지도를 확보하고 초기 판매량 목표 달성',
           },
           {
             key: 'work',
@@ -655,6 +658,8 @@ function careerExtensions(): TemplateSection[] {
             blockType: 'textarea',
             guide:
               '이 프로젝트/업무에서 내가 직접 맡은 일은 무엇이었나요? 사수나 다른 팀원과 어떻게 역할을 나눴는지도 떠올려보세요.',
+            placeholder:
+              '예: 인스타그램·틱톡 콘텐츠 기획 3주치를 담당했고, 사수와 주 2회 리뷰를 진행하며 방향을 조정했습니다',
           },
           {
             key: 'result',
@@ -662,12 +667,16 @@ function careerExtensions(): TemplateSection[] {
             blockType: 'textarea',
             guide:
               '이 프로젝트/업무가 끝났을 때 남은 성과가 있나요? 수치, 결과물, 피드백 등 무엇이든 적어주세요.',
+            placeholder:
+              '예: 캠페인 도달 12만 명 달성 / 초기 판매 목표 대비 118% 달성 / 팀장으로부터 콘텐츠 톤앤매너 기여 긍정 피드백',
           },
           {
             key: 'difficulty',
             label: '어려움 / 문제 해결',
             blockType: 'textarea',
             guide: '진행하면서 막혔던 순간이 있었나요? 어떻게 넘겼는지 생각나는 대로 적어주세요.',
+            placeholder:
+              '예: 광고 소재 심사 반려가 반복돼 일정이 밀렸고, 심사 가이드를 다시 분석해 표현을 수정하는 프로세스를 만들어 해결했습니다',
           },
           {
             key: 'output',
