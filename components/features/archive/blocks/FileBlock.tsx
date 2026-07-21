@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Paperclip, X } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
+import { capture } from "@/lib/analytics"
 import { getFileUrl, MAX_FILE_SIZE_BYTES } from "@/lib/api/files-api"
 import { useFileUpload } from "@/hooks/useFileUpload"
 import type { Block, FileBlockValue } from "@/types/archive"
@@ -109,6 +110,9 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
   async function handleSelect(file: File) {
     const uploaded = await start(file)
     if (!uploaded) return
+    // 업로드가 확정된 시점에만 첨부로 센다(FRT-113) — 실패·취소는 첨부가 아니다.
+    // 파일명·용량은 싣지 않는다(PII). 블록마다 발화하므로 이벤트 수 = 첨부 건수다.
+    capture("archive_attachment_added", { attachment_type: "file" })
     onChange({
       ...val,
       fileName: uploaded.originalName || file.name,

@@ -1,8 +1,10 @@
 "use client"
 
+import { useRef } from "react"
 import { ExternalLink, Link as LinkIcon } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
+import { capture } from "@/lib/analytics"
 import type { Block, LinkBlockValue } from "@/types/archive"
 
 interface LinkBlockProps {
@@ -34,7 +36,27 @@ function getDomain(url: string): string {
 export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps) {
   const val = block.value as LinkBlockValue
 
+  // URL 첨부 계측(FRT-113). URL 입력은 keystroke 단위라 "확정" 시점을 blur 로 잡되,
+  // 두 가지 위양성을 막는다:
+  //  - urlEditedRef: 사용자가 실제로 타이핑했는가. 기존 링크를 focus 만 했다 나가는 경우를 거른다
+  //    (편집 모드에서 값이 나중에 주입돼도 타이핑 없이는 발화하지 않는다).
+  //  - lastEmittedUrlRef: 마지막으로 발화한 URL. 같은 값으로 blur 를 반복해도 1회만 센다.
+  const urlEditedRef = useRef(false)
+  const lastEmittedUrlRef = useRef<string | null>(null)
+
+  function handleUrlBlur() {
+    if (!urlEditedRef.current) return
+    const url = val.url
+    // 안전한 스킴의 유효 URL 만 첨부로 인정한다(입력 중 끊긴 문자열·javascript: 제외).
+    if (!getSafeHref(url)) return
+    if (lastEmittedUrlRef.current === url) return
+    lastEmittedUrlRef.current = url
+    // URL 원문은 싣지 않는다(PII·식별 위험) — 첨부 "여부"만 본다.
+    capture("archive_attachment_added", { attachment_type: "url" })
+  }
+
   function update(field: keyof Omit<LinkBlockValue, "type">, v: string) {
+    if (field === "url") urlEditedRef.current = true
     onChange({ ...val, [field]: v })
   }
 
@@ -92,6 +114,7 @@ export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps)
         hintPosition="top"
         value={val.url}
         onChange={e => update("url", e.target.value)}
+        onBlur={handleUrlBlur}
       />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
