@@ -113,6 +113,13 @@ export function useFeedbackPrompt({
   // 서버 POST 를 중복으로 쏘지 않기 위한 가드이기도 하다. 결과(띄움·차단·실패)와 무관하게
   // 한 번 판정하면 다시 묻지 않는다 — 차단된 사용자에게 트리거가 바뀔 때마다 POST 를
   // 반복하면 서버는 매번 created=false 를 돌려줄 뿐이다.
+  //
+  // ⚠️ 이 가드는 **캠페인을 구분하지 않는다**. 서버 dedup 키는 (user_id, campaign_id) 인데
+  // 여기선 마운트당 1회다. FeedbackCampaignId 가 값 하나뿐인 지금은 같은 뜻이지만, 유니온이
+  // 넓어지면 어긋난다 — 한 훅에 campaignId 를 갈아끼우면 새 캠페인은 판정되지 않고 이전
+  // 캠페인의 prompt 가 그대로 열려 있게 된다. 같은 이유로 아래 resolvePrompt 는
+  // campaign.triggers("이 캠페인을 띄울 수 있는 게이트들")를 읽지 않고 두 게이트를 다 본다.
+  // 캠페인을 늘릴 때 이 두 가지를 함께 손봐야 한다.
   const decidedRef = useRef(false)
 
   useEffect(() => {

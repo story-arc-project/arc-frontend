@@ -20,6 +20,16 @@ function baseOptions() {
   }
 }
 
+/**
+ * 실패 경로가 남기는 로그를 가로챈다. 테스트 출력을 조용하게 만들려는 게 아니라
+ * **로그가 남는지 자체를 검증**하기 위한 것이다 — 이 기능은 실패해도 화면에 아무 증상이
+ * 없어(모달이 원래 안 뜰 수도 있다) 로그가 유일한 단서다. 스파이 없이 두면 catch 블록을
+ * 다시 비워도 아무 테스트도 실패하지 않는다.
+ */
+function spyOnErrorLog() {
+  return vi.spyOn(console, "error").mockImplementation(() => {})
+}
+
 /** 판정 effect 가 한 바퀴 돌 시간을 준다 — "호출되지 않았다"를 검증할 때 필요. */
 async function settle() {
   await act(async () => {
@@ -35,6 +45,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
 describe("useFeedbackPrompt — 차단 조건", () => {
@@ -140,8 +151,10 @@ describe("useFeedbackPrompt — 서버 판정 존중 (dedup)", () => {
     expect(result.current.open).toBe(false)
   })
 
-  it("조회가 실패하면 띄우지 않는다(fail-closed)", async () => {
-    markFeedbackPromptShownMock.mockRejectedValue(new Error("network"))
+  it("조회가 실패하면 띄우지 않고(fail-closed) 로그를 남긴다", async () => {
+    const errorLog = spyOnErrorLog()
+    const failure = new Error("network")
+    markFeedbackPromptShownMock.mockRejectedValue(failure)
 
     const { result } = renderHook(() =>
       useFeedbackPrompt({ ...baseOptions(), experienceCount: 3 }),
@@ -150,6 +163,11 @@ describe("useFeedbackPrompt — 서버 판정 존중 (dedup)", () => {
     await waitFor(() => expect(markFeedbackPromptShownMock).toHaveBeenCalled())
     await settle()
     expect(result.current.open).toBe(false)
+    // 삼키되 조용하지는 않게 — 이 단서가 없으면 피드백 수집이 0이 된 걸 아무도 모른다.
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining("prompt-shown"),
+      failure,
+    )
   })
 })
 
@@ -265,6 +283,7 @@ describe("useFeedbackPrompt — 1회 판정", () => {
   })
 
   it("조회 실패로 차단된 뒤에도 다시 조회하지 않는다", async () => {
+    spyOnErrorLog()
     markFeedbackPromptShownMock.mockRejectedValue(new Error("network"))
     const { rerender } = renderHook(
       (props: { experienceCount: number }) =>
