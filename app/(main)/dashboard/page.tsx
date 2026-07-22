@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui";
 import { useAuth } from "@/hooks/useAuth";
 import { useExperiences } from "@/hooks/useExperiences";
+import { useReportExperienceCount } from "@/contexts/FeedbackTriggerContext";
 import { getAnalysisHomeSummary } from "@/lib/api/analysis-api";
 import { toExperienceV2 } from "@/lib/utils/experience-mapper";
 import { formatRelativeTime } from "@/lib/utils/date-utils";
@@ -144,10 +145,13 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const {
     experiences,
+    count: expCount,
     isLoading: expLoading,
     error: expError,
     refetch: refetchExperiences,
   } = useExperiences();
+  // 이미 불러온 개수를 피드백 트리거로 흘린다(FRT-95). 추가 요청은 없다.
+  useReportExperienceCount(expCount, expLoading);
   const [summary, setSummary] = useState<AnalysisHomeSummary | null>(null);
   const [summaryError, setSummaryError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);

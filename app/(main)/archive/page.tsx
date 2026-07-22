@@ -12,6 +12,7 @@ import RightPanelV2 from "@/components/features/archive/RightPanelV2"
 import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
 import { useExperiences } from "@/hooks/useExperiences"
 import { useLibraries } from "@/hooks/useLibraries"
+import { useReportExperienceCount } from "@/contexts/FeedbackTriggerContext"
 import { capture } from "@/lib/analytics"
 import { toExperienceV2 } from "@/lib/utils/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
@@ -33,6 +34,7 @@ export default function ArchivePage() {
 
   const {
     experiences: apiExperiences,
+    count: experiencesCount,
     isLoading: isExperiencesLoading,
     error: experiencesError,
     refetch: refetchExperiences,
@@ -40,6 +42,9 @@ export default function ArchivePage() {
     deleteExperience: apiDelete,
     duplicateExperience: apiDuplicate,
   } = useExperiences()
+
+  // 이미 불러온 개수를 피드백 트리거로 흘린다(FRT-95). 추가 요청은 없다.
+  useReportExperienceCount(experiencesCount, isExperiencesLoading)
 
   const experiences = useMemo(() => apiExperiences.map(toExperienceV2), [apiExperiences])
 

@@ -13,6 +13,7 @@ import {
 } from "@/lib/api/analysis-api";
 import { capture } from "@/lib/analytics";
 import useAnalysisPolling from "@/hooks/useAnalysisPolling";
+import { useFeedbackTriggers } from "@/contexts/FeedbackTriggerContext";
 import KeywordSelector from "@/components/features/analysis/KeywordSelector";
 
 type Phase = "select" | "loading" | "error";
@@ -28,10 +29,14 @@ export default function KeywordNewPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [analysisId, setAnalysisId] = useState<string | null>(null);
 
+  const feedbackTriggers = useFeedbackTriggers();
+
   const { start: startPolling } = useAnalysisPolling({
     analysisId,
     type: "keyword",
     redirectPath: "/analysis/keyword",
+    // 완료 사실만 레이아웃의 FeedbackHost 로 넘긴다 — 모달은 이동한 결과 화면 위에서 뜬다.
+    onCompleted: (context) => feedbackTriggers?.reportAnalysisCompleted(context),
     onFailed: (msg) => {
       setPhase("error");
       setErrorMsg(msg);

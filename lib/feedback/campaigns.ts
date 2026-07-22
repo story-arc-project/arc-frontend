@@ -30,6 +30,15 @@ export const FEEDBACK_COMMENT_MAX_LENGTH = 500;
 export const FEEDBACK_EXPERIENCE_THRESHOLD = 3;
 
 /**
+ * 트리거가 걸린 뒤 모달을 띄우기까지의 지연(ms). 분석 결과나 방금 저장한 목록을 가리지 않고,
+ * 화면이 다 그려진 뒤에 말을 걸기 위한 완충이다 — "앱 진입 직후엔 뜨지 않는다"(FRT-95)도
+ * 실질적으로 이 지연이 지킨다.
+ *
+ * 문구·트리거 경계와 마찬가지로 타이밍도 컴포넌트가 아니라 이 config 에 둔다.
+ */
+export const FEEDBACK_PROMPT_DELAY_MS = 1_200;
+
+/**
  * v1 은 캠페인 하나. 게이트는 둘(분석 완료 · 경험 3개 도달)이고 먼저 오는 것에 1회만
  * 뜬다(FRT-93). 캠페인을 쪼개지 않고 문구만 갈라, 서버 계약(unique(user_id, campaign_id))과
  * "사용자는 1회만 본다"는 결정을 함께 지킨다.
