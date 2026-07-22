@@ -42,9 +42,11 @@ export default function KeywordAnalysisPage() {
   }, [loadData]);
 
   // 폴링은 스켈레톤·전면 오류 없이 조용히 갱신한다.
-  const refreshInBackground = useCallback(() => {
-    void loadData({ background: true });
-  }, [loadData]);
+  // Promise 를 그대로 돌려줘야 폴링이 완료를 기다린다(요청 겹침·응답 역전 방지).
+  const refreshInBackground = useCallback(
+    () => loadData({ background: true }),
+    [loadData],
+  );
 
   // 재시도 접수 후 잠시 동안만 목록을 다시 읽는다 — 그러지 않으면 '진행 중'에 고착된다.
   const watchRetry = useRetryRefresh(refreshInBackground);

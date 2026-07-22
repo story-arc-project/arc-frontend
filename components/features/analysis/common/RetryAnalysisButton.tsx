@@ -42,14 +42,22 @@ export default function RetryAnalysisButton({
     setFailed(false);
     try {
       await retryFn[analysisType](analysisId);
-      capture(ANALYTICS_EVENTS.analysisRetried, { analysis_type: analysisType });
-      onRetried();
     } catch {
       // 재시도 요청 자체가 실패했다 — 카드는 실패 상태로 남기고 다시 누를 수 있게 둔다.
       setFailed(true);
+      return;
     } finally {
       setBusy(false);
     }
+
+    // 여기부터는 서버가 이미 접수한 뒤다. 계측은 best-effort — PostHog 가 스토리지 오류로
+    // 던져도 성공한 재시도를 실패로 뒤집으면 안 된다.
+    try {
+      capture(ANALYTICS_EVENTS.analysisRetried, { analysis_type: analysisType });
+    } catch {
+      // 계측 실패는 사용자 흐름을 막지 않는다.
+    }
+    onRetried();
   }
 
   return (

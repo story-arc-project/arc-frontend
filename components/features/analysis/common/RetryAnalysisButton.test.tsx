@@ -108,6 +108,27 @@ describe("RetryAnalysisButton (FRT-108)", () => {
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeEnabled();
   });
 
+  it("계측이 던져도 접수된 재시도를 실패로 뒤집지 않는다", async () => {
+    retryComprehensive.mockResolvedValue(undefined);
+    // clearAllMocks 는 구현을 되돌리지 않는다 — Once 로 두어 다음 테스트에 새지 않게.
+    captureMock.mockImplementationOnce(() => {
+      throw new Error("posthog storage unavailable");
+    });
+    const onRetried = vi.fn();
+    render(
+      <RetryAnalysisButton
+        analysisId="comp-1"
+        analysisType="comprehensive"
+        onRetried={onRetried}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+
+    await waitFor(() => expect(onRetried).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("요청 중에는 버튼을 잠가 중복 요청을 막는다", async () => {
     let resolve: (() => void) | undefined;
     retryComprehensive.mockImplementation(
