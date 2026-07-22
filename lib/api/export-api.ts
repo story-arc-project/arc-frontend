@@ -192,6 +192,28 @@ function isUnsupportedStatus(err: unknown): err is ApiError {
   return err instanceof ApiError && (err.status === 501 || err.status === 405);
 }
 
+/**
+ * 저장(PATCH)만의 폴백 판정 — 405/501 에 **422** 를 더한다.
+ *
+ * 서버의 `ResumePatchRequest` 는 `title` 하나만, 그것도 필수로 받는다(arc-backend
+ * `app/src/api/models/request.py`). 우리가 보내는 레쥬메 본문에는 `title` 이 없으니
+ * pydantic 이 422 로 거절한다 — 즉 **레쥬메 내용을 저장할 경로가 아직 서버에 없다**.
+ * 405/501 과 원인은 같은데 코드만 다른 셈이라, 폴백에서 빠지면 고친 내용이 로컬에도
+ * 남지 못하고 그냥 사라진다(FRT-148).
+ *
+ * ⚠️ 임시 조치다. BAC-56(`result` 를 받는 PATCH)이 배포되면 **이 함수를 지우고**
+ * `isUnsupportedStatus` 로 되돌려야 한다. 그때는 422 가 제목 100자 초과 같은 진짜
+ * 검증 실패를 뜻하게 되는데, 그것까지 "곧 제공될 예정이에요" 안내로 삼키면
+ * 사용자는 무엇이 잘못됐는지 영영 모른다.
+ *
+ * 삭제(DELETE)에는 쓰지 않는다 — DELETE 는 서버에서 이미 동작하고 body 가 없어
+ * 422 가 날 이유가 없다. 여기에 묶으면 멀쩡한 삭제 버튼이 "곧 제공될 예정" 안내와
+ * 함께 숨는다(RecentResumeList 의 setDeleteSupported(false)).
+ */
+function isUnsupportedSaveStatus(err: unknown): err is ApiError {
+  return isUnsupportedStatus(err) || (err instanceof ApiError && err.status === 422);
+}
+
 export async function updateResume(
   versionId: string,
   data: ResumeVersion,
@@ -207,7 +229,7 @@ export async function updateResume(
     // 크래시한다. GET 과 같은 경계 처리를 태워 본문만, 정규화된 채로 돌려준다.
     return normalizeResumeVersion(unwrapResumeVersion(res.data));
   } catch (err) {
-    if (isUnsupportedStatus(err)) {
+    if (isUnsupportedSaveStatus(err)) {
       throw new ResumeMutationUnsupportedError(err.status);
     }
     throw err;
