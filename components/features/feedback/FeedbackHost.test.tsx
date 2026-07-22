@@ -180,6 +180,30 @@ describe("FeedbackHost", () => {
     expect(modal()).not.toBeInTheDocument();
   });
 
+  it.each(["/analysis/comprehensive/new", "/analysis/keyword/new"])(
+    "분석 생성 화면(%s)도 억제 대상이다",
+    async (pathname) => {
+      // 경험을 고르는 중이거나 결과를 기다리는 로딩 화면이다.
+      nav.pathname = pathname;
+      renderHost();
+      fire("경험보고");
+
+      await advance(FEEDBACK_PROMPT_DELAY_MS * 5);
+
+      expect(modal()).not.toBeInTheDocument();
+    },
+  );
+
+  it("분석 결과 상세는 억제 대상이 아니다(완료 트리거가 뜨는 곳)", async () => {
+    nav.pathname = "/analysis/keyword/an-1";
+    renderHost();
+    fire("분석보고");
+
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+
+    expect(modal()).toBeInTheDocument();
+  });
+
   it("입력을 마치고 화면을 벗어나면 그때 지연 후 띄운다", async () => {
     nav.pathname = "/archive/new";
     const { rerender } = renderHost();

@@ -35,8 +35,16 @@ const CAMPAIGN_ID = "analysis-satisfaction" as const;
 /**
  * 입력 도중에는 말을 걸지 않는다(FRT-95: "절대 피하는 타이밍"). 쓰던 걸 가리는 모달은
  * 피드백을 얻기는커녕 입력을 끊는다 — ARC 원칙의 "입력 허들 최소화"와 정면으로 어긋난다.
+ *
+ * 분석 생성(`/analysis/*​/new`)도 같은 이유로 넣는다. 경험을 고르는 중이고, 실행 후에는 결과를
+ * 기다리는 로딩 화면이다 — 목록에서 트리거가 걸린 채 이리로 넘어오는 경로가 실제로 있다.
+ * 분석 **완료** 트리거는 결과 상세로 이동한 뒤에 뜨므로 여기 걸리지 않는다.
  */
-const SUPPRESSED_PATHS = [/^\/archive\/new$/, /^\/archive\/[^/]+\/edit$/];
+const SUPPRESSED_PATHS = [
+  /^\/archive\/new$/,
+  /^\/archive\/[^/]+\/edit$/,
+  /^\/analysis\/[^/]+\/new$/,
+];
 
 function isSuppressedPath(pathname: string | null): boolean {
   if (!pathname) return false;
