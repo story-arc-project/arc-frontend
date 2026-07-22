@@ -31,6 +31,8 @@ export default defineConfig({
       // PREVIEW_RESUME_EXPERIENCE_SELECTION=false 로 넘기면 off 상태(현행)를 찍을 수 있다.
       NEXT_PUBLIC_RESUME_EXPERIENCE_SELECTION:
         process.env.PREVIEW_RESUME_EXPERIENCE_SELECTION ?? "true",
+      // 인앱 피드백(FRT-95)도 동일 — 프로덕션 기본값 off, BAC-34/35 라이브 후 켠다.
+      NEXT_PUBLIC_FEEDBACK_ENABLED: "true",
     },
   },
 });

@@ -10,6 +10,7 @@ import { capture } from "@/lib/analytics";
 import { toExperienceV2 } from "@/lib/utils/experience-mapper";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { useExperiences } from "@/hooks/useExperiences";
+import { useSuppressFeedback } from "@/contexts/FeedbackTriggerContext";
 import type { ResumeLanguage } from "@/types/resume";
 import { ResumeGenerationOverlay } from "./ResumeGenerationOverlay";
 
@@ -32,6 +33,10 @@ export function CreateResumeModal({
   onCreated,
   experienceSelectionEnabled = false,
 }: CreateResumeModalProps) {
+  // 레쥬메를 만드는 중에는 피드백 모달이 위에 겹치지 않게 한다(FRT-95). 목록과 같은 URL 에서
+  // 열리므로 Host 의 경로 억제로는 보이지 않는다 — 이 흐름이 직접 손을 든다.
+  useSuppressFeedback(open);
+
   const [language, setLanguage] = useState<ResumeLanguage>("ko");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

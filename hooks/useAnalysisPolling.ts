@@ -7,6 +7,7 @@ import {
   getKeywordList,
 } from "@/lib/api/analysis-api";
 import { capture } from "@/lib/analytics";
+import type { FeedbackContext } from "@/lib/feedback/types";
 import type { AnalysisSnapshot, AnalysisType } from "@/types/analysis";
 
 const MAX_RETRIES = 20;
@@ -21,6 +22,11 @@ interface UseAnalysisPollingOptions {
   redirectPath: string;
   onFailed: (msg: string) => void;
   onTimeout: (msg: string) => void;
+  /**
+   * 분석이 완료된 순간, 결과 화면으로 이동하기 **직전**에 부른다(FRT-95 피드백 트리거).
+   * 완료와 동시에 이 화면은 언마운트되므로, 완료 사실을 화면 밖으로 내보낼 유일한 지점이다.
+   */
+  onCompleted?: (context: FeedbackContext) => void;
 }
 
 async function fetchSnapshotStatus(
@@ -38,6 +44,7 @@ export default function useAnalysisPolling({
   redirectPath,
   onFailed,
   onTimeout,
+  onCompleted,
 }: UseAnalysisPollingOptions) {
   const router = useRouter();
   const abortRef = useRef<AbortController | null>(null);
@@ -47,8 +54,10 @@ export default function useAnalysisPolling({
   // `start` from being recreated on every render
   const onFailedRef = useRef(onFailed);
   const onTimeoutRef = useRef(onTimeout);
+  const onCompletedRef = useRef(onCompleted);
   useEffect(() => { onFailedRef.current = onFailed; }, [onFailed]);
   useEffect(() => { onTimeoutRef.current = onTimeout; }, [onTimeout]);
+  useEffect(() => { onCompletedRef.current = onCompleted; }, [onCompleted]);
 
   const start = useCallback(() => {
     if (!analysisId) return;
@@ -82,6 +91,8 @@ export default function useAnalysisPolling({
               // 분석 실행 완료 확정 지점(FRT-19). type 은 comprehensive|keyword.
               // 개별(individual) 분석은 자동 생성이라 이 폴링 대상이 아니다.
               capture("analysis_completed", { analysis_type: type });
+              // 이동 직전에 알린다 — push 뒤엔 이 화면이 사라져 신호를 낼 기회가 없다.
+              onCompletedRef.current?.({ analysisId, analysisType: type });
               router.push(`${redirectPath}/${analysisId}`);
               return;
             }
