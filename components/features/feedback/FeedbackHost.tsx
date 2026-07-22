@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 
-import { FeedbackModal } from "./FeedbackModal";
 import {
   FeedbackTriggerProvider,
   type FeedbackTriggerContextValue,
@@ -16,6 +15,7 @@ import {
 } from "@/lib/feedback/campaigns";
 import { submitFeedback } from "@/lib/feedback/transport";
 import type { FeedbackContext } from "@/lib/feedback/types";
+import { FeedbackModal } from "./FeedbackModal";
 
 // FRT-95: 인앱 피드백 모달의 **결합 지점**.
 //
@@ -39,11 +39,18 @@ const CAMPAIGN_ID = "analysis-satisfaction" as const;
  * 분석 생성(`/analysis/*​/new`)도 같은 이유로 넣는다. 경험을 고르는 중이고, 실행 후에는 결과를
  * 기다리는 로딩 화면이다 — 목록에서 트리거가 걸린 채 이리로 넘어오는 경로가 실제로 있다.
  * 분석 **완료** 트리거는 결과 상세로 이동한 뒤에 뜨므로 여기 걸리지 않는다.
+ *
+ * ⚠️ 이 목록은 Host 가 들고 있는 하드코딩 allowlist다 — **입력 화면을 새로 만들면 여기도 함께
+ * 고쳐야 하고, 빠뜨려도 아무 신호가 없다**. 판정 기준은 "미저장 편집 상태를 들고 있는 화면인가"
+ * 하나다(이력서 편집기가 dirty 가드를 가진 것처럼). 목록이 더 길어지면 경로를 여기서 열거하는
+ * 대신 화면이 스스로 "지금 입력 중"이라고 선언하는 쪽으로 뒤집는 게 맞다.
  */
 const SUPPRESSED_PATHS = [
   /^\/archive\/new$/,
   /^\/archive\/[^/]+\/edit$/,
   /^\/analysis\/[^/]+\/new$/,
+  // 이력서 편집기 — 저장 전 편집 상태(dirty)를 들고 있고 이탈 가드까지 있는 화면이다.
+  /^\/export\/resume\/[^/]+$/,
 ];
 
 function isSuppressedPath(pathname: string | null): boolean {
@@ -87,9 +94,12 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
     // 억제 경로에서는 타이머를 걸지 않고 **보류만** 한다. 버리면 그 방문에서는 다시 기회가
     // 없다 — 경로가 바뀌면 이 effect 가 다시 돌아 그때부터 지연을 센다.
     if (suppressed) return;
+    // 지연은 **지금 보고 있는 화면 기준**으로 다시 센다(deps 에 pathname). 트리거를 낸 화면에서
+    // 곧바로 다른 곳으로 이동하면, 살아남은 타이머가 이제 막 열린 화면 위에 0.x초 만에 모달을
+    // 띄운다 — "화면이 다 그려진 뒤에 말을 건다"는 이 지연의 존재 이유가 무너진다.
     const timer = setTimeout(() => setArmed(pending), FEEDBACK_PROMPT_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [pending, armed, suppressed]);
+  }, [pending, armed, suppressed, pathname]);
 
   const { open, triggerSource, context, close } = useFeedbackPrompt({
     campaignId: CAMPAIGN_ID,

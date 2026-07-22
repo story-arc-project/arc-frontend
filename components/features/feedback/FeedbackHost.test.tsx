@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-import { FeedbackHost } from "./FeedbackHost";
 import { useFeedbackTriggers } from "@/contexts/FeedbackTriggerContext";
 import { FEEDBACK_PROMPT_DELAY_MS } from "@/lib/feedback/campaigns";
 import type { FeedbackContext } from "@/lib/feedback/types";
+import { FeedbackHost } from "./FeedbackHost";
 
 const nav = vi.hoisted(() => ({ pathname: "/dashboard" }));
 vi.mock("next/navigation", () => ({ usePathname: () => nav.pathname }));
@@ -193,6 +193,49 @@ describe("FeedbackHost", () => {
       expect(modal()).not.toBeInTheDocument();
     },
   );
+
+  it("이력서 편집기도 억제 대상이다(미저장 편집 상태를 든 화면)", async () => {
+    nav.pathname = "/export/resume/v-1";
+    renderHost();
+    fire("경험보고");
+
+    await advance(FEEDBACK_PROMPT_DELAY_MS * 5);
+
+    expect(modal()).not.toBeInTheDocument();
+    expect(server.markFeedbackPromptShown).not.toHaveBeenCalled();
+  });
+
+  it("이력서 목록은 억제 대상이 아니다", async () => {
+    nav.pathname = "/export";
+    renderHost();
+    fire("경험보고");
+
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+
+    expect(modal()).toBeInTheDocument();
+  });
+
+  it("지연 도중 화면을 옮기면 새 화면 기준으로 지연을 다시 센다", async () => {
+    // 트리거를 낸 화면에서 곧바로 떠나면, 살아남은 타이머가 이제 막 열린 화면 위에
+    // 순식간에 모달을 띄운다 — 지연의 존재 이유가 무너지는 지점.
+    const { rerender } = renderHost();
+    fire("경험보고");
+    await advance(FEEDBACK_PROMPT_DELAY_MS - 100);
+
+    nav.pathname = "/analysis";
+    rerender(
+      <FeedbackHost>
+        <Triggers />
+      </FeedbackHost>,
+    );
+
+    // 옮긴 화면에서 아직 지연이 다 지나지 않았다.
+    await advance(FEEDBACK_PROMPT_DELAY_MS - 100);
+    expect(modal()).not.toBeInTheDocument();
+
+    await advance(100);
+    expect(modal()).toBeInTheDocument();
+  });
 
   it("분석 결과 상세는 억제 대상이 아니다(완료 트리거가 뜨는 곳)", async () => {
     nav.pathname = "/analysis/keyword/an-1";
