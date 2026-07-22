@@ -134,10 +134,14 @@ export function useFeedbackPrompt({
         )
         // created=false 는 이미 노출된 적 있음 — 정상 경로다(오류가 아니다).
         if (created) setPrompt(resolved)
-      } catch {
+      } catch (err) {
         // fail-closed. 조회 실패를 여기서 삼키는 건 의도적이다 — feedback-api 는 실패를
         // 정직하게 throw 하고(레이어 계약), "그래서 안 띄운다"는 판단은 이 훅의 몫이다.
-        // 로그는 남기지 않는다: 노출 판정 실패는 사용자에게도 개발자에게도 조치 대상이 아니다.
+        //
+        // 다만 **조용히** 삼키지는 않는다. 계약 정본이 경고했듯 이 엔드포인트가 불안정하면
+        // 피드백 수집이 소리 없이 0이 되고, 화면에는 아무 증상도 없어(모달이 원래 안 뜰
+        // 수도 있는 기능이라) 아무도 눈치채지 못한다. 로그가 유일한 단서다.
+        console.error("[feedback] prompt-shown failed", err)
       }
     })()
   }, [campaignId, experienceCount, analysisCompleted])
