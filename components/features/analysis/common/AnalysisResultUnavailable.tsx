@@ -54,21 +54,30 @@ export default function AnalysisResultUnavailable({
       >
         <p className="text-body text-text-secondary mb-1">{headline}</p>
         <p className="text-body-sm text-text-tertiary mb-3">{detail}</p>
-        {showRetry && (
-          <div className="mb-3">
+        {showRetry ? (
+          // 실패 화면의 핵심 행동은 재시도다 — 목록 링크를 같은 강도의 버튼으로 두면
+          // 둘이 경합해 다시 시도가 묻힌다. 목록은 텍스트 링크로 한 단 낮춘다.
+          <>
             <RetryAnalysisButton
               analysisId={analysisId}
               analysisType={analysisType}
               onRetried={() => onRetried?.()}
             />
-          </div>
+            <Link
+              href={`${basePath}${fallbackHref}`}
+              className="mt-4 text-body-sm text-text-secondary hover:text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+            >
+              목록으로 돌아가기
+            </Link>
+          </>
+        ) : (
+          <Link
+            href={`${basePath}${fallbackHref}`}
+            className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+          >
+            목록으로 돌아가기
+          </Link>
         )}
-        <Link
-          href={`${basePath}${fallbackHref}`}
-          className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
-        >
-          목록으로 돌아가기
-        </Link>
       </div>
     </main>
   );
