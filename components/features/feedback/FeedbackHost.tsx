@@ -89,7 +89,22 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  const suppressed = isSuppressedPath(pathname);
+  // 경로로는 볼 수 없는 입력 흐름(같은 URL 위에 열리는 생성 모달 등)이 스스로 올린 손들.
+  const [suppressors, setSuppressors] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  const setSuppressed = useCallback((key: string, active: boolean) => {
+    setSuppressors((prev) => {
+      if (prev.has(key) === active) return prev;
+      const next = new Set(prev);
+      if (active) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
+
+  const suppressed = isSuppressedPath(pathname) || suppressors.size > 0;
 
   useEffect(() => {
     if (!pending || armed) return;
@@ -110,8 +125,8 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
   });
 
   const value = useMemo<FeedbackTriggerContextValue>(
-    () => ({ reportExperienceCount, reportAnalysisCompleted }),
-    [reportExperienceCount, reportAnalysisCompleted],
+    () => ({ reportExperienceCount, reportAnalysisCompleted, setSuppressed }),
+    [reportExperienceCount, reportAnalysisCompleted, setSuppressed],
   );
 
   return (

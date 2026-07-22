@@ -104,11 +104,6 @@ export default function ArchivePage() {
     (loadingMembershipIds.has(activeLibrary!.id) || !loadedMembershipIds.has(activeLibrary!.id))
   const isLoading = isExperiencesLoading || isLibrariesLoading || isManualMembershipPending
 
-  // 이미 불러온 개수를 피드백 트리거로 흘린다(FRT-95). 추가 요청은 없다.
-  // 기준은 경험 요청 하나가 아니라 **화면 전체의 준비 상태**다 — 라이브러리·멤버십이 아직이면
-  // 화면은 '불러오는 중…'이고, 그 위로 1.2초 뒤 모달이 뜨면 목록도 못 본 채 말을 거는 꼴이 된다.
-  useReportExperienceCount(experiencesCount, isLoading)
-
   // ExperienceCard reads `experienceIds` for every manual library to decide
   // which library badges to render and which submenu items to mark as already
   // a member. That state is background-hydrated by `useLibraries`, so until
@@ -133,6 +128,12 @@ export default function ArchivePage() {
     ? libraries.filter(l => !membershipErrorIds.has(l.id))
     : undefined
   const hasMembershipErrors = erroredManualLibraries.length > 0
+
+  // 이미 불러온 개수를 피드백 트리거로 흘린다(FRT-95). 추가 요청은 없다.
+  // 기준은 경험 요청 하나가 아니라 **카드가 실제로 쓸 만해지는 시점**이다. '전체' 라이브러리에서는
+  // isManualMembershipPending 이 false 여도 멤버십이 아직 채워지는 중일 수 있고, 그동안
+  // librariesForCard 가 undefined 라 배지·라이브러리 이동이 비어 있다 — 그 위에 말을 걸지 않는다.
+  useReportExperienceCount(experiencesCount, isLoading || !allMembershipsSettled)
 
   const retryAllFailedMemberships = useCallback(() => {
     erroredManualLibraries.forEach(l => { void retryLibraryMembership(l.id) })

@@ -150,10 +150,12 @@ export default function DashboardPage() {
     error: expError,
     refetch: refetchExperiences,
   } = useExperiences();
-  // 이미 불러온 개수를 피드백 트리거로 흘린다(FRT-95). 추가 요청은 없다.
-  useReportExperienceCount(expCount, expLoading);
   const [summary, setSummary] = useState<AnalysisHomeSummary | null>(null);
   const [summaryError, setSummaryError] = useState(false);
+  // 이미 불러온 개수를 피드백 트리거로 흘린다(FRT-95). 추가 요청은 없다.
+  // 요약이 아직이면 '분석 완료'는 '…'이고 최근 분석·추천은 스켈레톤이다 — 사용자가 보러 온
+  // 맥락이 채 그려지기 전에 말을 걸지 않는다. 요약이 실패하면(summaryError) 영영 기다리지 않는다.
+  useReportExperienceCount(expCount, expLoading || (!summary && !summaryError));
   const [retryKey, setRetryKey] = useState(0);
   const [tab, setTab] = useState<TabKey>("individual");
   const [mounted, setMounted] = useState(false);

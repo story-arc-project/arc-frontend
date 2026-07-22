@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
-import { useFeedbackTriggers } from "@/contexts/FeedbackTriggerContext";
+import {
+  useFeedbackTriggers,
+  useSuppressFeedback,
+} from "@/contexts/FeedbackTriggerContext";
 import { FEEDBACK_PROMPT_DELAY_MS } from "@/lib/feedback/campaigns";
 import type { FeedbackContext } from "@/lib/feedback/types";
 import { FeedbackHost } from "./FeedbackHost";
@@ -203,6 +206,63 @@ describe("FeedbackHost", () => {
 
     expect(modal()).not.toBeInTheDocument();
     expect(server.markFeedbackPromptShown).not.toHaveBeenCalled();
+  });
+
+  it("화면이 스스로 억제를 선언하면, 경로가 멀쩡해도 띄우지 않는다", async () => {
+    // 목록과 같은 URL 위에 열리는 생성 모달처럼, 경로로는 보이지 않는 입력 흐름.
+    function Busy({ open }: { open: boolean }) {
+      useSuppressFeedback(open);
+      return null;
+    }
+    const { rerender } = render(
+      <FeedbackHost>
+        <Triggers />
+        <Busy open />
+      </FeedbackHost>,
+    );
+    fire("경험보고");
+
+    await advance(FEEDBACK_PROMPT_DELAY_MS * 5);
+    expect(modal()).not.toBeInTheDocument();
+    expect(server.markFeedbackPromptShown).not.toHaveBeenCalled();
+
+    // 흐름이 끝나면 보류돼 있던 신호가 살아난다.
+    rerender(
+      <FeedbackHost>
+        <Triggers />
+        <Busy open={false} />
+      </FeedbackHost>,
+    );
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+    expect(modal()).toBeInTheDocument();
+  });
+
+  it("선언이 둘이면 마지막 하나가 내려갈 때까지 유지된다", async () => {
+    function Busy({ open }: { open: boolean }) {
+      useSuppressFeedback(open);
+      return null;
+    }
+    const { rerender } = render(
+      <FeedbackHost>
+        <Triggers />
+        <Busy open />
+        <Busy open />
+      </FeedbackHost>,
+    );
+    fire("경험보고");
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+    expect(modal()).not.toBeInTheDocument();
+
+    // 하나만 내려가면 아직 억제 상태여야 한다 — 키가 겹쳐 서로를 덮으면 여기서 뜬다.
+    rerender(
+      <FeedbackHost>
+        <Triggers />
+        <Busy open={false} />
+        <Busy open />
+      </FeedbackHost>,
+    );
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+    expect(modal()).not.toBeInTheDocument();
   });
 
   it("설정 화면도 억제 대상이다(프로필 편집 폼)", async () => {

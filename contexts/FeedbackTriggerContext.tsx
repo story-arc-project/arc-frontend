@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect } from "react";
+import { createContext, useContext, useEffect, useId } from "react";
 
 import type { FeedbackContext } from "@/lib/feedback/types";
 
@@ -24,6 +24,11 @@ export interface FeedbackTriggerContextValue {
   reportExperienceCount: (count: number) => void;
   /** 분석이 방금 완료됐음을 보고한다. context 는 응답에 함께 실릴 최소 메타(PII 금지). */
   reportAnalysisCompleted: (context: FeedbackContext) => void;
+  /**
+   * "지금 말 걸지 마라"를 켜고 끈다. `key` 는 선언 주체 하나를 가리키며, 하나라도 켜져 있으면
+   * Host 는 모달을 띄우지도, 떠 있던 것을 유지하지도 않는다(경로 억제와 같은 취급).
+   */
+  setSuppressed: (key: string, active: boolean) => void;
 }
 
 /** provider 밖(스토리북·단위 테스트·비인증 화면)에서는 null → 소비 측이 조용히 no-op. */
@@ -53,4 +58,24 @@ export function useReportExperienceCount(
     if (isLoading) return;
     triggers?.reportExperienceCount(count);
   }, [triggers, count, isLoading]);
+}
+
+/**
+ * "이 컴포넌트가 살아 있는 동안(또는 `active` 인 동안) 피드백을 띄우지 마라"를 선언한다.
+ *
+ * Host 의 경로 목록으로는 **볼 수 없는 상태**가 있다 — 목록 화면 위에 열린 생성 모달처럼
+ * 같은 URL 안에서 열리고 닫히는 입력 흐름이 그렇다. 경로를 계속 열거하는 대신 그 흐름이
+ * 스스로 손을 들게 한다. 여러 곳이 동시에 선언해도 되며, 마지막 하나가 내려갈 때 풀린다.
+ *
+ * 언마운트 시 자동으로 해제되므로 호출부는 정리를 신경 쓰지 않아도 된다.
+ */
+export function useSuppressFeedback(active: boolean): void {
+  const triggers = useFeedbackTriggers();
+  // 같은 컴포넌트가 여러 번 마운트돼도 서로를 덮지 않도록 인스턴스마다 고유 키를 쓴다.
+  const key = useId();
+  useEffect(() => {
+    if (!active) return;
+    triggers?.setSuppressed(key, true);
+    return () => triggers?.setSuppressed(key, false);
+  }, [triggers, key, active]);
 }
