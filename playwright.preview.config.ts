@@ -25,6 +25,10 @@ export default defineConfig({
       NEXT_PUBLIC_API_URL: API_ORIGIN,
       NEXT_PUBLIC_CONSENT_ENABLED: "true",
       NEXT_PUBLIC_PASSWORD_RESET_ENABLED: "true",
+      // 봉인된 기능도 프리뷰에서는 켜서 실물을 확인한다(FRT-109 경험 선택).
+      // PREVIEW_RESUME_EXPERIENCE_SELECTION=false 로 넘기면 off 상태(현행)를 찍을 수 있다.
+      NEXT_PUBLIC_RESUME_EXPERIENCE_SELECTION:
+        process.env.PREVIEW_RESUME_EXPERIENCE_SELECTION ?? "true",
     },
   },
 });
