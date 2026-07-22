@@ -32,6 +32,12 @@ export const ANALYTICS_EVENTS = {
   firstRecordCreated: "first_record_created",
   analysisCompleted: "analysis_completed",
   exportCompleted: "export_completed",
+  // ── 복구 행동 (실패에서 빠져나오는가) ────────────────────────────
+  // 이벤트 정의서의 comprehensive_analysis_retried / keyword_analysis_retried 는
+  // "동일 조합 재요청"으로 실패 재시도와 성공 후 재활용을 섞어 정의했다.
+  // FRT-108 은 실패 전용으로 좁히므로 이름을 하나로 합치고 analysis_type 으로 가른다
+  // (analysis_completed 와 같은 결). 성공 건 재실행은 새 분석이라 여기 안 실린다.
+  analysisRetried: "analysis_retried",
   // ── 인앱 피드백 (FRT-92 전송 레이어가 emit) ───────────────────────
   feedbackSubmitted: "feedback_submitted",
   // ── placeholder: 이름·속성만 정의, emit 은 크레딧 과금 프로젝트(FRT-105)에서 ──
@@ -58,6 +64,9 @@ export interface AnalyticsEventProps {
   archive_attachment_added: { attachment_type: AttachmentType };
   first_record_created: { experience_type: string };
   analysis_completed: { analysis_type: AnalysisKind };
+  // 실패한 분석의 재시도 요청이 접수된 시점. 재시도 결과(성공/재실패)는
+  // analysis_completed 와 status 로 따로 관측한다.
+  analysis_retried: { analysis_type: AnalysisKind };
   export_completed: { export_type: ExportType; language: string };
   // 인앱 피드백 응답. PII 금지 — comment 원문·analysis_id 는 절대 싣지 않는다(서버에만 남긴다).
   // 리터럴 유니온을 인라인한다: lib/feedback/types.ts 가 이미 이 파일(AnalysisKind)을 import 하므로
