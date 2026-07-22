@@ -454,6 +454,20 @@ describe("resume 뮤테이션 실패 매핑", () => {
     },
   );
 
+  // 서버가 요청은 받아주면서(2xx) 본문 대신 {id, title} 만 돌려주는 경우 = 레쥬메 본문은
+  // 저장되지 않았다. 422 와 결과가 같으므로 판정도 같아야 임시 저장이 남는다.
+  it("updateResume: 2xx 인데 result 없는 응답도 폴백 신호로 본다", async () => {
+    mockPatch.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-1", title: "제목" },
+    });
+
+    await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
+      ResumeMutationUnsupportedError,
+    );
+  });
+
   it("updateResume: 그 밖의 실패는 그대로 올린다 — 폴백으로 삼키면 진짜 장애가 숨는다", async () => {
     mockPatch.mockRejectedValue(new ApiError(500, "server error"));
 

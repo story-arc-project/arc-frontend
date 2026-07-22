@@ -188,8 +188,12 @@ export class ResumeMutationUnsupportedError extends Error {
   }
 }
 
+function hasStatus(err: unknown, codes: readonly number[]): err is ApiError {
+  return err instanceof ApiError && codes.includes(err.status);
+}
+
 function isUnsupportedStatus(err: unknown): err is ApiError {
-  return err instanceof ApiError && (err.status === 501 || err.status === 405);
+  return hasStatus(err, [501, 405]);
 }
 
 /**
@@ -211,7 +215,7 @@ function isUnsupportedStatus(err: unknown): err is ApiError {
  * 함께 숨는다(RecentResumeList 의 setDeleteSupported(false)).
  */
 function isUnsupportedSaveStatus(err: unknown): err is ApiError {
-  return isUnsupportedStatus(err) || (err instanceof ApiError && err.status === 422);
+  return hasStatus(err, [501, 405, 422]);
 }
 
 export async function updateResume(
@@ -219,20 +223,31 @@ export async function updateResume(
   data: ResumeVersion,
 ): Promise<ResumeVersion> {
   if (isDemoMode()) return demo.updateResume(versionId, data);
+  let res: ApiSuccessResponse<unknown>;
   try {
-    const res = await api.patch<ApiSuccessResponse<unknown>>(
+    res = await api.patch<ApiSuccessResponse<unknown>>(
       `/export/resume/${versionId}`,
       data,
     );
-    // PATCH 도 GET 과 같은 래퍼({id, title, language, status, …, result})를 돌려준다.
-    // 그대로 반환하면 호출부가 본문 대신 래퍼를 상태에 넣어 resume.meta.language 에서
-    // 크래시한다. GET 과 같은 경계 처리를 태워 본문만, 정규화된 채로 돌려준다.
-    return normalizeResumeVersion(unwrapResumeVersion(res.data));
   } catch (err) {
     if (isUnsupportedSaveStatus(err)) {
       throw new ResumeMutationUnsupportedError(err.status);
     }
     throw err;
+  }
+
+  // PATCH 도 GET 과 같은 래퍼({id, title, language, status, …, result})를 돌려준다.
+  // 그대로 반환하면 호출부가 본문 대신 래퍼를 상태에 넣어 resume.meta.language 에서
+  // 크래시한다. GET 과 같은 경계 처리를 태워 본문만, 정규화된 채로 돌려준다.
+  try {
+    return normalizeResumeVersion(unwrapResumeVersion(res.data));
+  } catch {
+    // 2xx 인데 본문(result·meta)이 없다 = 현행 서버의 `UUIDDataWithTitle{id, title}`.
+    // 요청은 받아줬지만 **레쥬메 본문은 저장되지 않았다**(title 만 반영). 422 와 결과가
+    // 같으므로 판정도 같아야 한다 — 이 언랩 실패를 일반 에러로 흘리면 폴백을 못 타서
+    // 임시 저장이 남지 않고, 이 PR 이 막으려던 손실이 상태코드만 바꿔 재현된다.
+    // BAC-56 계약 §4(응답을 GET 과 같은 ResumeData 로 통일)가 이행되면 여기 안 온다.
+    throw new ResumeMutationUnsupportedError(200);
   }
 }
 

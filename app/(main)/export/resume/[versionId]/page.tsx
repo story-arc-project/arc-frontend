@@ -158,6 +158,10 @@ export default function ResumeDetailPage({ params }: PageProps) {
           toast.error("임시 저장도 실패했어요. 페이지를 닫지 마세요.");
         }
       } else {
+        // 서버 장애·오프라인도 편집을 잃을 이유는 아니다. 언마운트 핸들러에만 기대면
+        // 탭을 그대로 닫았을 때(cleanup 미실행) 고친 내용이 통째로 사라진다.
+        // dirty 는 그대로 두어 다음 저장/이탈 경로가 계속 살아 있게 한다.
+        writeDraft(versionId, resumeRef.current ?? snapshot);
         toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
       }
     } finally {
