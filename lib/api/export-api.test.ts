@@ -16,7 +16,7 @@ vi.mock("./client", async () => {
 vi.mock("@/lib/demo/state", () => ({ isDemoMode: () => false }));
 
 import { api } from "./client";
-import { createResume, getResume, getResumeList } from "./export-api";
+import { createResume, getResume, getResumeList, updateResume } from "./export-api";
 
 const mockGet = vi.mocked(api.get);
 const mockPost = vi.mocked(api.post);
@@ -319,6 +319,25 @@ describe("getResume — 인적사항.링크 정규화 (FRT-109, 백엔드 실값
 
     const resume = await getResume("res-l3");
     expect(resume.인적사항.링크).toEqual([]);
+  });
+
+  it("updateResume 도 같은 경계를 태운다 — 래퍼를 벗기고 링크를 정규화한다", async () => {
+    // PATCH 응답도 GET 과 같은 래퍼다. 래퍼를 그대로 돌려주면 호출부가 본문 대신 래퍼를
+    // 상태에 넣어 resume.meta.language 에서 크래시한다(codex 지적).
+    const mockPatch = vi.mocked(api.patch);
+    mockPatch.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: {
+        id: "res-u1",
+        title: "제목",
+        result: { ...base, 인적사항: { 이름: "홍길동", 링크: ["https://a.dev"] } },
+      },
+    });
+
+    const updated = await updateResume("res-u1", {} as never);
+    expect(updated.인적사항.링크).toEqual([{ label: null, url: "https://a.dev" }]);
+    expect(updated.version_id).toBe("res-u1");
   });
 
   it("인적사항 자체가 없으면 건드리지 않는다", async () => {

@@ -2,11 +2,11 @@ import { api, ApiError } from "./client";
 import type { ApiSuccessResponse } from "@/types/api";
 import type { AnalysisStatus } from "@/types/analysis";
 import type {
-  PersonalInfoLink,
   ResumeLanguage,
   ResumeListItem,
   ResumeVersion,
 } from "@/types/resume";
+import { normalizeResumeVersion } from "@/lib/export/resume-normalize";
 import { isDemoMode } from "@/lib/demo/state";
 import * as demo from "@/lib/demo/handlers";
 
@@ -96,36 +96,6 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
     `/export/resume/${versionId}`,
   );
   return normalizeResumeVersion(unwrapResumeVersion(res.data));
-}
-
-/**
- * 백엔드 실값과 프런트 내부 shape 이 어긋나는 지점을 파싱 경계에서 흡수한다.
- *
- * 인적사항.링크 — ai_analyst/src/ai/resume.py 의 `_SYS_KO` 스키마는 링크를 **문자열 배열**로
- * 내는데(EN 의 other_links 도 동일), 프런트는 { label, url } 객체 배열을 기대한다. 정규화가
- * 없으면 PreviewPersonalInfo 의 `l?.url?.trim()` 필터에 전부 걸려 링크가 통째로 사라진다.
- * 소비처(프리뷰·편집기)를 건드리지 않도록 객체 shape 을 정본으로 두고 문자열만 승격한다.
- * 이미 객체로 오는 백엔드도 그대로 통과시킨다(형제 언랩과 같은 dual-compat).
- */
-function normalizeResumeVersion(resume: ResumeVersion): ResumeVersion {
-  const personal = resume.인적사항;
-  if (personal === null || typeof personal !== "object") return resume;
-  return { ...resume, 인적사항: { ...personal, 링크: normalizeLinks(personal.링크) } };
-}
-
-function normalizeLinks(raw: unknown): PersonalInfoLink[] {
-  if (!Array.isArray(raw)) return [];
-  const links: PersonalInfoLink[] = [];
-  for (const item of raw) {
-    if (typeof item === "string") {
-      const url = item.trim();
-      // 공백뿐인 문자열은 링크가 아니다 — 편집기에 빈 행으로 남기지 않는다.
-      if (url !== "") links.push({ label: null, url });
-      continue;
-    }
-    if (item !== null && typeof item === "object") links.push(item as PersonalInfoLink);
-  }
-  return links;
 }
 
 /**
@@ -228,11 +198,14 @@ export async function updateResume(
 ): Promise<ResumeVersion> {
   if (isDemoMode()) return demo.updateResume(versionId, data);
   try {
-    const res = await api.patch<ApiSuccessResponse<ResumeVersion>>(
+    const res = await api.patch<ApiSuccessResponse<unknown>>(
       `/export/resume/${versionId}`,
       data,
     );
-    return res.data;
+    // PATCH 도 GET 과 같은 래퍼({id, title, language, status, …, result})를 돌려준다.
+    // 그대로 반환하면 호출부가 본문 대신 래퍼를 상태에 넣어 resume.meta.language 에서
+    // 크래시한다. GET 과 같은 경계 처리를 태워 본문만, 정규화된 채로 돌려준다.
+    return normalizeResumeVersion(unwrapResumeVersion(res.data));
   } catch (err) {
     if (isUnsupportedStatus(err)) {
       throw new ResumeMutationUnsupportedError(err.status);

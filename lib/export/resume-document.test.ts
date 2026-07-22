@@ -309,6 +309,18 @@ describe("buildResumeDocument — 학력", () => {
 
     expect(entry.meta).toBe("2021-03 – 재학중");
   });
+
+  // 선택지에서 뺐을 뿐 사용자가 그때 고른 레코드는 남아 있다. 새 값만 인정하면 그 레코드의
+  // 기간이 "2021-03 – 재학" 에서 "2021-03" 으로 조용히 줄어든다(codex P2).
+  it("선택지에서 뺀 구 값 '재학'도 그대로 닫는다", () => {
+    const [entry] = buildResumeDocument(
+      emptyResume({
+        학력: [{ ...edu, 졸업년월: null, 졸업구분: "재학" as never }],
+      }),
+    ).sections[0].entries;
+
+    expect(entry.meta).toBe("2021-03 – 재학");
+  });
 });
 
 describe("buildResumeDocument — 프로젝트", () => {

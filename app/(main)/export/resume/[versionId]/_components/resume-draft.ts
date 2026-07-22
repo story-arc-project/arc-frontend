@@ -1,3 +1,4 @@
+import { normalizeResumeVersion } from "@/lib/export/resume-normalize";
 import type { ResumeVersion } from "@/types/resume";
 
 const STORAGE_PREFIX = "arc:resume-draft:";
@@ -18,7 +19,10 @@ export function readDraft(versionId: string): ResumeDraft | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ResumeDraft;
     if (!parsed?.data || !parsed?.updated_at) return null;
-    return parsed;
+    // 임시 저장은 레쥬메 본문이 들어오는 또 하나의 경계다. 링크 정규화 도입 이전에 저장된
+    // draft 에는 백엔드가 준 문자열 링크가 그대로 들어 있을 수 있어, 여기서 정규화하지 않으면
+    // 복원 시 getResume 의 정규화를 우회해 링크가 화면에서 사라진다.
+    return { ...parsed, data: normalizeResumeVersion(parsed.data) };
   } catch {
     return null;
   }
