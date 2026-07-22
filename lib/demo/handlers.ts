@@ -160,8 +160,11 @@ export async function deleteAccountWithSocial(): Promise<void> {
 
 // ─── Resume (Export) ────────────────────────────────────────
 
-export async function createResume(params: { language: ResumeLanguage }): Promise<void> {
-  void params; // 데모는 언어 무관하게 동일 시드를 쓴다
+export async function createResume(params: {
+  language: ResumeLanguage;
+  experienceIds?: string[];
+}): Promise<void> {
+  void params; // 데모는 언어·경험 선택 무관하게 동일 시드를 쓴다
   // 실제 서버처럼 id 를 돌려주지 않되, 목록에는 새 항목이 남아야 한다.
   resumeStore.create();
   await delay(undefined, 600);

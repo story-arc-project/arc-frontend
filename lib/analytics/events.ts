@@ -67,7 +67,13 @@ export interface AnalyticsEventProps {
   // 실패한 분석의 재시도 요청이 접수된 시점. 재시도 결과(성공/재실패)는
   // analysis_completed 와 status 로 따로 관측한다.
   analysis_retried: { analysis_type: AnalysisKind };
-  export_completed: { export_type: ExportType; language: string };
+  // experience_count — 사용자가 레쥬메에 넣기로 고른 경험 수(FRT-109). 선택 UI 가 꺼져 있으면
+  // "고른" 개념 자체가 없으므로 싣지 않는다(0 이 아니라 부재).
+  export_completed: {
+    export_type: ExportType;
+    language: string;
+    experience_count?: number;
+  };
   // 인앱 피드백 응답. PII 금지 — comment 원문·analysis_id 는 절대 싣지 않는다(서버에만 남긴다).
   // 리터럴 유니온을 인라인한다: lib/feedback/types.ts 가 이미 이 파일(AnalysisKind)을 import 하므로
   // 여기서 feedback 타입을 역참조하면 analytics ↔ feedback 순환이 된다. campaign_id 는 구조적으로

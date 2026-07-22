@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Button, Dialog } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
+import { ResumeExperiencePicker } from "@/components/features/export/ResumeExperiencePicker";
 import { createResume } from "@/lib/api/export-api";
 import { capture } from "@/lib/analytics";
+import { toExperienceV2 } from "@/lib/utils/experience-mapper";
+import { useBasePath } from "@/lib/utils/use-base-path";
+import { useExperiences } from "@/hooks/useExperiences";
 import type { ResumeLanguage } from "@/types/resume";
 import { ResumeGenerationOverlay } from "./ResumeGenerationOverlay";
 
@@ -12,6 +17,11 @@ interface CreateResumeModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
+  /**
+   * 경험 선택 UI 노출 여부. 플래그(lib/export/flags.ts)는 **호출부**가 읽어 내려준다 —
+   * 여기서 직접 읽으면 NEXT_PUBLIC_* 빌드타임 인라인 탓에 Storybook·테스트에서 항상 false 다.
+   */
+  experienceSelectionEnabled?: boolean;
 }
 
 const GENERATION_TIMEOUT_MS = 60_000;
@@ -20,11 +30,41 @@ export function CreateResumeModal({
   open,
   onClose,
   onCreated,
+  experienceSelectionEnabled = false,
 }: CreateResumeModalProps) {
   const [language, setLanguage] = useState<ResumeLanguage>("ko");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const basePath = useBasePath();
+
+  const {
+    experiences: apiExperiences,
+    isLoading: isExperiencesLoading,
+    error: experiencesError,
+    refetch: refetchExperiences,
+  } = useExperiences();
+
+  // 최근에 손댄 기록부터 보여준다 — 방금 적은 경험을 찾으러 스크롤하지 않게.
+  // updatedAt 은 서버 응답에서 그대로 온 값이라 부재를 가정한다 — 한 항목만 비어도
+  // 정렬이 통째로 던져 목록이 아예 렌더되지 않는다(형제 경계 파싱과 같은 태도).
+  const experiences = useMemo(
+    () =>
+      apiExperiences
+        .map(toExperienceV2)
+        .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")),
+    [apiExperiences],
+  );
+
+  // 기본은 전체 선택 — 아무것도 건드리지 않으면 결과가 현행과 같아 회귀가 없고, 사용자는
+  // "빼기"만 하면 된다. 그래서 상태를 "고른 id" 가 아니라 **제외한 id** 로 들고 초기값이 ∅ 이다
+  // (목록 로드 후 전체를 선택 상태로 세팅하는 effect 가 필요 없어진다).
+  const [excludedIds, setExcludedIds] = useState<ReadonlySet<string>>(new Set());
+
+  const selectedIds = useMemo(
+    () => experiences.filter((e) => !excludedIds.has(e.id)).map((e) => e.id),
+    [experiences, excludedIds],
+  );
 
   useEffect(() => {
     return () => {
@@ -37,10 +77,24 @@ export function CreateResumeModal({
       setLanguage("ko");
       setSubmitting(false);
       setError(null);
+      setExcludedIds(new Set());
     }
   }, [open]);
 
+  // 무엇이 레쥬메에 들어갈지 확정할 수 없으면 생성을 막는다. 0개로 보내면 백엔드 생성기가
+  // 입력 0건이라 error envelope 를 반환해 status=failed 레쥬메만 남는다.
+  //
+  // 사유 문구는 여기서 만들지 않는다 — 로딩·실패·경험 0개는 아래 목록 자리가 이미 말하고
+  // 있어서, 같은 문장을 여기에 한 벌 더 두면 화면에 나오지 않는 쪽만 조용히 낡는다.
+  const canSubmit =
+    !experienceSelectionEnabled ||
+    (!isExperiencesLoading &&
+      !experiencesError &&
+      experiences.length > 0 &&
+      selectedIds.length > 0);
+
   const handleSubmit = async () => {
+    if (!canSubmit) return;
     setError(null);
     setSubmitting(true);
     const controller = new AbortController();
@@ -51,9 +105,22 @@ export function CreateResumeModal({
     }, GENERATION_TIMEOUT_MS);
 
     try {
-      await createResume({ language }, { signal: controller.signal });
-      // 익스포트 완료(FRT-19). 현재 이력서(resume)만 존재 — 경험 선택 UI 는 없고 언어만 고른다.
-      capture("export_completed", { export_type: "resume", language });
+      await createResume(
+        // 선택 기능이 꺼져 있으면 experience_ids 키 자체를 보내지 않는다 —
+        // 계약상 부재 = 전체 경험이라 현행 동작이 그대로 유지된다.
+        experienceSelectionEnabled
+          ? { language, experienceIds: selectedIds }
+          : { language },
+        { signal: controller.signal },
+      );
+      // 익스포트 완료(FRT-19). experience_count 는 선택 기능이 켜졌을 때만 의미가 있다.
+      capture("export_completed", {
+        export_type: "resume",
+        language,
+        ...(experienceSelectionEnabled
+          ? { experience_count: selectedIds.length }
+          : {}),
+      });
       // 생성은 비동기다 — 서버가 id 를 즉시 주더라도 본문(result)은 나중에 채워진다.
       // 생성 직후 상세로 이동하면 아직 준비 안 된 레쥬메를 로드해 "불러오지 못했어요"가 뜬다.
       // 상세로 튕기지 말고 목록에 남아 status 배지로 완료를 확인하게 한다("다시 만들기"와 대칭).
@@ -84,12 +151,14 @@ export function CreateResumeModal({
         open={open && !submitting}
         onClose={handleClose}
         ariaLabel="새 레쥬메 만들기"
-        className="max-w-md"
+        className={experienceSelectionEnabled ? "max-w-lg" : "max-w-md"}
       >
         <div>
           <h2 className="text-title text-text-primary">새 레쥬메 만들기</h2>
           <p className="text-body-sm text-text-secondary mt-1">
-            지금까지 기록한 모든 경험을 바탕으로 AI가 레쥬메 초안을 만들어요.
+            {experienceSelectionEnabled
+              ? "선택한 경험을 바탕으로 AI가 레쥬메 초안을 만들어요."
+              : "지금까지 기록한 모든 경험을 바탕으로 AI가 레쥬메 초안을 만들어요."}
           </p>
 
           <fieldset className="mt-5">
@@ -141,6 +210,68 @@ export function CreateResumeModal({
             </div>
           </fieldset>
 
+          {experienceSelectionEnabled && (
+            <div className="mt-5">
+              {isExperiencesLoading ? (
+                <p className="text-body-sm text-text-secondary">
+                  경험을 불러오는 중이에요…
+                </p>
+              ) : experiencesError ? (
+                // 목록을 못 읽으면 만들기가 잠긴다. 훅은 마운트 때 한 번만 읽으므로
+                // 재시도 수단이 없으면 사용자는 모달을 닫았다 여는 수밖에 없다.
+                <p className="text-body-sm text-error">
+                  경험을 불러오지 못했어요.{" "}
+                  <button
+                    type="button"
+                    onClick={() => void refetchExperiences()}
+                    className="text-error font-medium underline underline-offset-2"
+                  >
+                    다시 시도
+                  </button>
+                </p>
+              ) : experiences.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center">
+                  <p className="text-body-sm text-text-secondary">
+                    아직 기록한 경험이 없어요.
+                  </p>
+                  <Link
+                    href={`${basePath}/archive/new`}
+                    className="text-body-sm text-brand font-medium underline-offset-2 hover:underline"
+                  >
+                    첫 경험 기록하러 가기
+                  </Link>
+                </div>
+              ) : (
+                <ResumeExperiencePicker
+                  experiences={experiences}
+                  excludedIds={excludedIds}
+                  onToggle={(id) =>
+                    setExcludedIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    })
+                  }
+                  onSelectAll={() => setExcludedIds(new Set())}
+                  onClearAll={() =>
+                    setExcludedIds(new Set(experiences.map((e) => e.id)))
+                  }
+                />
+              )}
+            </div>
+          )}
+
+          {/* 로딩·실패·경험 0개는 위 목록 자리가 이미 사유를 말하고 있다. 여기서는 목록이
+              멀쩡히 보이는데도 만들기가 눌리지 않는 유일한 경우 — 0개 선택 — 만 설명한다. */}
+          {experienceSelectionEnabled &&
+            experiences.length > 0 &&
+            selectedIds.length === 0 && (
+              <p className="mt-3 text-caption text-text-tertiary">
+                레쥬메에 넣을 경험을 하나 이상 선택해 주세요.
+              </p>
+            )}
+
           {error && (
             <div
               role="alert"
@@ -164,7 +295,12 @@ export function CreateResumeModal({
             <Button variant="ghost" size="sm" onClick={handleClose}>
               취소
             </Button>
-            <Button variant="primary" size="sm" onClick={handleSubmit}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSubmit}
+              disabled={!canSubmit}
+            >
               만들기
             </Button>
           </div>

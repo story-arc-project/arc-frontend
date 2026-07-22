@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 
-import type { Education } from "@/types/resume";
+import {
+  전공구분_OPTIONS,
+  졸업구분_OPTIONS,
+  학위_OPTIONS,
+  type Education,
+} from "@/types/resume";
 import {
   AddItemButton,
   EditorCard,
@@ -48,9 +53,9 @@ function GpaInput({
   );
 }
 
-const 전공구분Options = ["주전공", "복수전공", "부전공", "연계전공"] as const;
-const 학위Options = ["학사", "석사", "박사", "전문학사"] as const;
-const 졸업구분Options = ["졸업", "재학", "휴학", "수료", "중퇴", "졸업예정"] as const;
+const 전공구분Options = 전공구분_OPTIONS;
+const 학위Options = 학위_OPTIONS;
+const 졸업구분Options = 졸업구분_OPTIONS;
 
 interface Props {
   value: Education[];

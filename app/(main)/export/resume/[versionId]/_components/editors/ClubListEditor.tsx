@@ -1,6 +1,6 @@
 "use client";
 
-import type { Club } from "@/types/resume";
+import { 단체구분_OPTIONS, type Club } from "@/types/resume";
 import {
   AddItemButton,
   BulletListEditor,
@@ -12,7 +12,7 @@ import {
   SortableList,
 } from "./shared";
 
-const 단체구분Options = ["동아리", "학회", "학생회", "기타"] as const;
+const 단체구분Options = 단체구분_OPTIONS;
 
 interface Props {
   value: Club[];

@@ -23,7 +23,15 @@ export function formatPeriod(
 // 학력은 "재직중" 같은 플래그 대신 졸업구분으로 진행 상태를 나타내 기간 규칙이 다르다.
 export function formatEducationPeriod(edu: Education): string {
   const start = edu.입학년월 ?? "";
-  const end = edu.졸업년월 ?? (edu.졸업구분 === "재학" ? "재학" : "");
+  // 백엔드가 내는 값은 "재학"이 아니라 "재학중"이다(resume.py _SYS_KO). 이 비교가 어긋나 있어
+  // 졸업년월이 없는 재학생의 학력 기간이 입학년월만 찍혀 나왔다(FRT-109에서 발견).
+  //
+  // 구 값 "재학"도 계속 받는다 — 선택지에서 뺐을 뿐 그때 사용자가 고른 레코드는 남아 있고,
+  // 새 값만 인정하면 그 레코드의 기간이 "2021-03 – 재학"에서 "2021-03"으로 줄어든다.
+  // (편집기는 EditorSelect 가 옵션 밖 값을 보존해 이미 안전하다 — 이 경로만 뚫려 있었다.)
+  const status: string = edu.졸업구분 ?? "";
+  const ongoing = status === "재학중" || status === "재학";
+  const end = edu.졸업년월 ?? (ongoing ? status : "");
   return formatPeriod(start, end);
 }
 
