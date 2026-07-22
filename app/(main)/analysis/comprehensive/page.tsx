@@ -28,7 +28,8 @@ export default function ComprehensiveAnalysisPage() {
     mutationEpoch.current += 1;
   }, []);
 
-  const loadData = useCallback(async (options?: { background?: boolean }) => {
+  // 반영했으면 true, 낡아서 버렸으면 false — 폴링이 관찰 기회를 헛되이 쓰지 않게 알려준다.
+  const loadData = useCallback(async (options?: { background?: boolean }): Promise<boolean> => {
     const background = options?.background === true;
     if (!background) {
       setLoading(true);
@@ -38,7 +39,7 @@ export default function ComprehensiveAnalysisPage() {
     try {
       const data = await getComprehensiveList();
       // 낡은 백그라운드 응답은 버린다. 전경 로드는 사용자가 기다리는 요청이라 그대로 적용한다.
-      if (background && mutationEpoch.current !== epochAtRequest) return;
+      if (background && mutationEpoch.current !== epochAtRequest) return false;
       setItems(data);
       setError(false);
     } catch {
@@ -47,6 +48,7 @@ export default function ComprehensiveAnalysisPage() {
     } finally {
       if (!background) setLoading(false);
     }
+    return true;
   }, []);
 
   useEffect(() => {

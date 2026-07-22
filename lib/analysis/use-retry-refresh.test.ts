@@ -116,6 +116,31 @@ describe("useRetryRefresh (FRT-108)", () => {
     expect(reload).toHaveBeenCalledTimes(2);
   });
 
+  it("낡아서 버려진 갱신은 관찰 기회를 쓰지 않는다", async () => {
+    // 호출부가 false 를 주면 "응답이 낡아 버렸다"는 뜻이다 — 서버를 들여다볼 기회를
+    // 쓴 게 아니므로 상한에서 깎으면 안 된다. 깎으면 사용자가 폴링 중에 목록을
+    // 건드리기만 해도 '진행 중' 카드가 결과를 못 보고 예산을 소진한다.
+    let calls = 0;
+    const reload = vi.fn(() => Promise.resolve(calls++ < 5 ? false : true));
+    const { result } = renderHook(() => useRetryRefresh(reload));
+
+    act(() => result.current());
+    await advance(10 * 60_000);
+
+    // 앞 5회가 버려졌으므로 적용 12회를 채우려면 총 17회 호출된다.
+    expect(reload).toHaveBeenCalledTimes(17);
+  });
+
+  it("전부 버려져도 무한히 돌지 않는다 (절대 상한)", async () => {
+    const reload = vi.fn(() => Promise.resolve(false));
+    const { result } = renderHook(() => useRetryRefresh(reload));
+
+    act(() => result.current());
+    await advance(30 * 60_000);
+
+    expect(reload).toHaveBeenCalledTimes(24);
+  });
+
   it("갱신이 실패해도 폴링을 멈추지 않는다", async () => {
     const reload = vi.fn(() => Promise.reject(new Error("network")));
     const { result } = renderHook(() => useRetryRefresh(reload));
