@@ -23,6 +23,13 @@ import type {
 export const FEEDBACK_COMMENT_MAX_LENGTH = 500;
 
 /**
+ * `experience_threshold` 게이트가 열리는 경험 개수(이상). 문구·점수 경계와 마찬가지로
+ * 트리거 경계도 훅(FRT-93)이 아니라 이 config 파일에 둔다 — 노출 조건을 바꿀 때 코드가
+ * 아니라 여기만 본다.
+ */
+export const FEEDBACK_EXPERIENCE_THRESHOLD = 3;
+
+/**
  * v1 은 캠페인 하나. 게이트는 둘(분석 완료 · 경험 3개 도달)이고 먼저 오는 것에 1회만
  * 뜬다(FRT-93). 캠페인을 쪼개지 않고 문구만 갈라, 서버 계약(unique(user_id, campaign_id))과
  * "사용자는 1회만 본다"는 결정을 함께 지킨다.
