@@ -25,6 +25,8 @@ export default defineConfig({
       NEXT_PUBLIC_API_URL: API_ORIGIN,
       NEXT_PUBLIC_CONSENT_ENABLED: "true",
       NEXT_PUBLIC_PASSWORD_RESET_ENABLED: "true",
+      // 인앱 피드백(FRT-95)도 동일 — 프로덕션 기본값 off, BAC-34/35 라이브 후 켠다.
+      NEXT_PUBLIC_FEEDBACK_ENABLED: "true",
     },
   },
 });
