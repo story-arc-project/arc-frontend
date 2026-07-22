@@ -42,14 +42,17 @@ export function CreateResumeModal({
     experiences: apiExperiences,
     isLoading: isExperiencesLoading,
     error: experiencesError,
+    refetch: refetchExperiences,
   } = useExperiences();
 
   // 최근에 손댄 기록부터 보여준다 — 방금 적은 경험을 찾으러 스크롤하지 않게.
+  // updatedAt 은 서버 응답에서 그대로 온 값이라 부재를 가정한다 — 한 항목만 비어도
+  // 정렬이 통째로 던져 목록이 아예 렌더되지 않는다(형제 경계 파싱과 같은 태도).
   const experiences = useMemo(
     () =>
       apiExperiences
         .map(toExperienceV2)
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+        .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")),
     [apiExperiences],
   );
 
@@ -80,20 +83,18 @@ export function CreateResumeModal({
 
   // 무엇이 레쥬메에 들어갈지 확정할 수 없으면 생성을 막는다. 0개로 보내면 백엔드 생성기가
   // 입력 0건이라 error envelope 를 반환해 status=failed 레쥬메만 남는다.
-  const blockedReason = !experienceSelectionEnabled
-    ? null
-    : isExperiencesLoading
-      ? "경험을 불러오는 중이에요."
-      : experiencesError
-        ? "경험을 불러오지 못했어요. 잠시 후 다시 시도해 주세요."
-        : experiences.length === 0
-          ? "아직 기록한 경험이 없어요."
-          : selectedIds.length === 0
-            ? "레쥬메에 넣을 경험을 하나 이상 선택해 주세요."
-            : null;
+  //
+  // 사유 문구는 여기서 만들지 않는다 — 로딩·실패·경험 0개는 아래 목록 자리가 이미 말하고
+  // 있어서, 같은 문장을 여기에 한 벌 더 두면 화면에 나오지 않는 쪽만 조용히 낡는다.
+  const canSubmit =
+    !experienceSelectionEnabled ||
+    (!isExperiencesLoading &&
+      !experiencesError &&
+      experiences.length > 0 &&
+      selectedIds.length > 0);
 
   const handleSubmit = async () => {
-    if (blockedReason !== null) return;
+    if (!canSubmit) return;
     setError(null);
     setSubmitting(true);
     const controller = new AbortController();
@@ -216,8 +217,17 @@ export function CreateResumeModal({
                   경험을 불러오는 중이에요…
                 </p>
               ) : experiencesError ? (
+                // 목록을 못 읽으면 만들기가 잠긴다. 훅은 마운트 때 한 번만 읽으므로
+                // 재시도 수단이 없으면 사용자는 모달을 닫았다 여는 수밖에 없다.
                 <p className="text-body-sm text-error">
-                  경험을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.
+                  경험을 불러오지 못했어요.{" "}
+                  <button
+                    type="button"
+                    onClick={() => void refetchExperiences()}
+                    className="text-error font-medium underline underline-offset-2"
+                  >
+                    다시 시도
+                  </button>
                 </p>
               ) : experiences.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center">
@@ -258,7 +268,7 @@ export function CreateResumeModal({
             experiences.length > 0 &&
             selectedIds.length === 0 && (
               <p className="mt-3 text-caption text-text-tertiary">
-                {blockedReason}
+                레쥬메에 넣을 경험을 하나 이상 선택해 주세요.
               </p>
             )}
 
@@ -289,7 +299,7 @@ export function CreateResumeModal({
               variant="primary"
               size="sm"
               onClick={handleSubmit}
-              disabled={blockedReason !== null}
+              disabled={!canSubmit}
             >
               만들기
             </Button>

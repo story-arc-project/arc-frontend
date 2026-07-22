@@ -27,12 +27,14 @@ vi.mock("@/lib/utils/use-base-path", () => ({ useBasePath: () => "" }));
 let mockExperiences: Experience[] = [];
 let mockLoading = false;
 let mockError: Error | null = null;
+const mockRefetch = vi.fn();
 
 vi.mock("@/hooks/useExperiences", () => ({
   useExperiences: () => ({
     experiences: mockExperiences,
     isLoading: mockLoading,
     error: mockError,
+    refetch: mockRefetch,
   }),
 }));
 
@@ -147,6 +149,17 @@ describe("CreateResumeModal — 경험 선택 (플래그 on)", () => {
     expect(
       (screen.getByRole("button", { name: "만들기" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  // 훅은 마운트 때 한 번만 읽는다 — 재시도 버튼이 없으면 실패한 사용자는 모달을 닫았다
+  // 여는 것 말고 복구 수단이 없다.
+  it("로드 실패 화면에서 다시 시도할 수 있다", async () => {
+    const user = userEvent.setup();
+    mockError = new Error("boom");
+    renderModal(true);
+
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
 
   it("선택 개수를 계측에 싣는다", async () => {

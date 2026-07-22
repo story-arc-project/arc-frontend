@@ -1,4 +1,4 @@
-import type { PersonalInfoLink, ResumeVersion } from "@/types/resume";
+import type { PersonalInfo, PersonalInfoLink, ResumeVersion } from "@/types/resume";
 
 /**
  * 백엔드 실값과 프런트 내부 shape 이 어긋나는 지점을 흡수한다.
@@ -15,9 +15,31 @@ import type { PersonalInfoLink, ResumeVersion } from "@/types/resume";
  * 저장된 draft 에는 정규화되지 않은 문자열 링크가 그대로 들어 있을 수 있고, 그 draft 를
  * 복원하면 정규화를 우회해 같은 증상이 되살아난다.
  */
+/**
+ * 인적사항이 통째로 빠진 본문을 위한 빈 값. 프리뷰는 isEmptySection 으로 그대로 숨기므로
+ * 화면에 새 섹션이 생기지는 않는다. 레쥬메마다 새 객체를 만든다 — 하나를 공유하면 배열이
+ * 여러 레쥬메에 물린다.
+ */
+function emptyPersonalInfo(): PersonalInfo {
+  return {
+    이름: null,
+    영문명: null,
+    생년월일: null,
+    이메일: null,
+    전화번호: null,
+    주소: null,
+    링크: [],
+  };
+}
+
 export function normalizeResumeVersion(resume: ResumeVersion): ResumeVersion {
   const personal = resume.인적사항;
-  if (personal === null || typeof personal !== "object") return resume;
+  // 인적사항 자체가 없는 본문도 unwrapResumeVersion 을 통과한다(그쪽은 meta 만 본다).
+  // 그대로 두면 PersonalInfoEditor 가 undefined.이름 에서 던져 편집 화면이 통째로 죽는다 —
+  // 링크만 챙기고 상위 부재를 흘려보내면 이 함수가 막으려던 실패가 한 겹 위에 남는다.
+  if (personal === null || typeof personal !== "object") {
+    return { ...resume, 인적사항: emptyPersonalInfo() };
+  }
   return { ...resume, 인적사항: { ...personal, 링크: normalizeLinks(personal.링크) } };
 }
 

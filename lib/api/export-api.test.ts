@@ -17,6 +17,7 @@ vi.mock("@/lib/demo/state", () => ({ isDemoMode: () => false }));
 
 import { api } from "./client";
 import { createResume, getResume, getResumeList, updateResume } from "./export-api";
+import { isEmptySection } from "@/types/resume";
 
 const mockGet = vi.mocked(api.get);
 const mockPost = vi.mocked(api.post);
@@ -340,7 +341,9 @@ describe("getResume — 인적사항.링크 정규화 (FRT-109, 백엔드 실값
     expect(updated.version_id).toBe("res-u1");
   });
 
-  it("인적사항 자체가 없으면 건드리지 않는다", async () => {
+  // 인적사항이 통째로 빠진 본문도 언랩을 통과한다(그쪽은 meta 만 본다). 그대로 흘려보내면
+  // PersonalInfoEditor 가 undefined.이름 에서 던져 편집 화면이 통째로 죽는다.
+  it("인적사항 자체가 없으면 빈 인적사항으로 채운다 — 편집기가 undefined 를 만나지 않게", async () => {
     mockGet.mockResolvedValue({
       status: "success",
       message: "ok",
@@ -348,7 +351,10 @@ describe("getResume — 인적사항.링크 정규화 (FRT-109, 백엔드 실값
     });
 
     const resume = await getResume("res-l4");
-    expect(resume.인적사항).toBeUndefined();
+    expect(resume.인적사항.링크).toEqual([]);
+    expect(resume.인적사항.이름).toBeNull();
+    // 프리뷰는 isEmptySection 으로 그대로 숨기므로 화면에 빈 섹션이 새로 생기지는 않는다.
+    expect(isEmptySection(resume.인적사항 as unknown as Record<string, unknown>)).toBe(true);
   });
 });
 
