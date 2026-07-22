@@ -116,7 +116,7 @@ export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps)
 
   return (
     <fieldset className="flex flex-col gap-3">
-      <legend className="text-label text-text-primary mb-1">{block.label}</legend>
+      <legend className="text-field-label text-text-primary mb-1">{block.label}</legend>
       <Input
         placeholder="https://..."
         hint={block.guide}

@@ -128,7 +128,7 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className="text-label text-text-primary">{block.label}</span>
+        <span className="text-field-label text-text-primary">{block.label}</span>
         <span className="text-caption text-text-tertiary">{val.rows.length}개 항목</span>
       </div>
 

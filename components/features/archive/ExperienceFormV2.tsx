@@ -569,7 +569,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
 
           {/* Tags */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-label text-text-primary">태그</label>
+            <label className="text-field-label text-text-primary">태그</label>
             <TagInput tags={tags} onChange={setTags} />
           </div>
 

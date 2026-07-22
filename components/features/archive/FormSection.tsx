@@ -83,7 +83,7 @@ export default function FormSection({
               )}
             </div>
             {description && (
-              <p className="text-caption text-text-tertiary mt-1">{description}</p>
+              <p className="text-body-sm text-text-tertiary mt-1">{description}</p>
             )}
           </div>
           {(onMoveUp || onMoveDown || onDelete) && (

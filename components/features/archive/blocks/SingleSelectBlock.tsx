@@ -70,7 +70,7 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-label text-text-primary">{block.label}</label>
+      <label className="text-field-label text-text-primary">{block.label}</label>
       {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
       <select
         value={val.selected}
