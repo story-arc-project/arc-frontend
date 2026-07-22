@@ -963,10 +963,11 @@ export async function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
  * POST /analysis/comprehensive
  * body: `{ experiences: string[] }`
  *
- * 백엔드 스펙상 응답은 `{ status, message }`만 반환하고 id 는 포함되지 않는다(FRT-38).
- * 서버가 id 를 확장 포함하면 그 값으로 후속 폴링을 진행하고, 부재 시 `analysisId: null`
- * 을 반환한다. 호출부는 null 을 오류가 아니라 "큐 적재됨"으로 보고 목록으로 안내한다.
- * (id 없이 목록에서 폴링 대상을 추측하는 우회는 race 때문에 하지 않는다.)
+ * 서버는 `{ status, message, data: { id, title } }` 로 답한다 — 생성된 분석 id 가 `data.id`
+ * 에 실린다(arc-backend dev `PostSuccessResponse(data=UUIDDataWithTitle(...))` 확인).
+ * 초기 스펙(FRT-38)은 `{ status, message }`만 반환해 id 가 없었고, 그때의 방어 경로를 그대로
+ * 남겨 둔다 — 부재 시 `analysisId: null` 이며, 호출부는 이를 오류가 아니라 "큐 적재됨"으로 보고
+ * 목록으로 안내한다. (id 없이 목록에서 폴링 대상을 추측하는 우회는 race 때문에 하지 않는다.)
  */
 export async function createComprehensiveAnalysis(
   experienceIds: string[],
@@ -1043,10 +1044,11 @@ export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
  * POST /analysis/keyword
  * body: `{ keywords: string[] }`
  *
- * 백엔드 스펙상 응답은 `{ status, message }`만 반환하고 id 는 포함되지 않는다(FRT-38).
- * 서버가 id 를 확장 포함하면 그 값으로 후속 폴링을 진행하고, 부재 시 `analysisId: null`
- * 을 반환한다. 호출부는 null 을 오류가 아니라 "큐 적재됨"으로 보고 목록으로 안내한다.
- * (id 없이 목록에서 폴링 대상을 추측하는 우회는 race 때문에 하지 않는다.)
+ * 서버는 `{ status, message, data: { id, title } }` 로 답한다 — 생성된 분석 id 가 `data.id`
+ * 에 실린다(arc-backend dev `PostSuccessResponse(data=UUIDDataWithTitle(...))` 확인).
+ * 초기 스펙(FRT-38)은 `{ status, message }`만 반환해 id 가 없었고, 그때의 방어 경로를 그대로
+ * 남겨 둔다 — 부재 시 `analysisId: null` 이며, 호출부는 이를 오류가 아니라 "큐 적재됨"으로 보고
+ * 목록으로 안내한다. (id 없이 목록에서 폴링 대상을 추측하는 우회는 race 때문에 하지 않는다.)
  */
 export async function createKeywordAnalysis(
   keywordLabels: string[],

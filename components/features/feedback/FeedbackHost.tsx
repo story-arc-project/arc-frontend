@@ -51,6 +51,8 @@ const SUPPRESSED_PATHS = [
   /^\/analysis\/[^/]+\/new$/,
   // 이력서 편집기 — 저장 전 편집 상태(dirty)를 들고 있고 이탈 가드까지 있는 화면이다.
   /^\/export\/resume\/[^/]+$/,
+  // 설정 = 프로필 편집 폼 한 장(ProfileEditForm 이 isDirty 를 든다). 같은 부류다.
+  /^\/settings$/,
 ];
 
 function isSuppressedPath(pathname: string | null): boolean {

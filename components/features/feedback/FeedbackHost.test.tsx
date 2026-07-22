@@ -205,6 +205,17 @@ describe("FeedbackHost", () => {
     expect(server.markFeedbackPromptShown).not.toHaveBeenCalled();
   });
 
+  it("설정 화면도 억제 대상이다(프로필 편집 폼)", async () => {
+    nav.pathname = "/settings";
+    renderHost();
+    fire("경험보고");
+
+    await advance(FEEDBACK_PROMPT_DELAY_MS * 5);
+
+    expect(modal()).not.toBeInTheDocument();
+    expect(server.markFeedbackPromptShown).not.toHaveBeenCalled();
+  });
+
   it("이력서 목록은 억제 대상이 아니다", async () => {
     nav.pathname = "/export";
     renderHost();
