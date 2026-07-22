@@ -51,6 +51,18 @@ export function Dialog({ open, onClose, ariaLabel, children, className }: Dialog
     }
   }, [open]);
 
+  // 언마운트로 닫히는 경로. 호출부가 `{open && <Dialog open={open} …/>}` 처럼 조건부로
+  // 렌더하면 이 컴포넌트는 open=false 를 **한 번도 받지 못한 채** 사라져, 위 effect 의 복원
+  // 분기가 영영 실행되지 않는다. 그러면 포커스가 <body> 로 떨어져 키보드 사용자는 모달을
+  // 닫는 순간 화면에서 자기 위치를 잃는다. 열려 있는 채 언마운트될 때만 복원한다 —
+  // open=false 를 정상적으로 받은 경우엔 위에서 이미 복원하고 ref 를 비우므로 중복되지 않는다.
+  useEffect(() => {
+    return () => {
+      previousFocus.current?.focus();
+      previousFocus.current = null;
+    };
+  }, []);
+
   // Trap focus + close on Escape
   useEffect(() => {
     if (!open) return;

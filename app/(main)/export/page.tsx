@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, PenLine, IdCard, Globe } from "lucide-react";
 import { useBasePath } from "@/lib/utils/use-base-path";
+import { isResumeExperienceSelectionEnabled } from "@/lib/export/flags";
 import { TrackCard } from "./_components/TrackCard";
 import { RecentResumeList } from "./_components/RecentResumeList";
 import { CreateResumeModal } from "./_components/CreateResumeModal";
@@ -87,11 +88,18 @@ export default function ExportPage() {
         </section>
       </div>
 
-      <CreateResumeModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={() => setReloadToken((n) => n + 1)}
-      />
+      {/* 열었을 때만 마운트한다 — 경험 목록 fetch 가 익스포트 페이지 진입마다 일어나지 않게
+          하고, 닫으면 언마운트로 선택 상태가 리셋된다(FRT-94 의 "리셋은 effect 가 아니라 언마운트로"). */}
+      {createOpen && (
+        <CreateResumeModal
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => setReloadToken((n) => n + 1)}
+          // 게이트는 호출부인 이 페이지가 쥔다(FRT-108 교훈 — 컴포넌트 안에서 읽으면
+          // 빌드타임 인라인 탓에 Storybook 에서 영영 false 다).
+          experienceSelectionEnabled={isResumeExperienceSelectionEnabled()}
+        />
+      )}
     </div>
   );
 }

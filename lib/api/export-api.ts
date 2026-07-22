@@ -6,6 +6,7 @@ import type {
   ResumeListItem,
   ResumeVersion,
 } from "@/types/resume";
+import { normalizeResumeVersion } from "@/lib/export/resume-normalize";
 import { isDemoMode } from "@/lib/demo/state";
 import * as demo from "@/lib/demo/handlers";
 
@@ -58,7 +59,20 @@ function extractResumeId(res: unknown): { id: string | null; title?: string } {
 // 계약(§2.4)상 POST 는 { id, title } 을 돌려준다. id 가 오면 생성 직후 상세로 이동할 수
 // 있고(호출부 판단), 아직 계약 미이행 백엔드처럼 id 가 없으면 null → 목록 새로고침으로 폴백한다.
 export async function createResume(
-  params: { language: ResumeLanguage; title?: string },
+  params: {
+    language: ResumeLanguage;
+    title?: string;
+    /**
+     * 레쥬메에 넣을 경험 id (FRT-109). 계약(BAC-45)상 `experience_ids` 는 Optional 이고
+     * **부재 = 사용자의 전체 경험**(현행 동작), 빈 배열 = 400 이다. 그래서 미지정을 []
+     * 로 뭉개면 안 되고 키 자체를 빼야 한다 — 0개 선택 차단은 호출부(모달)의 책임이다.
+     *
+     * ⚠️ 백엔드가 아직 이 필드를 받지 않는다(dev 기준 `ResumePostRequest` = language·title).
+     * pydantic 기본값이 extra="ignore" 라 보내도 422 가 아니라 200 으로 조용히 무시되므로,
+     * 노출 게이팅은 플래그(lib/export/flags.ts)가 호출부에서 수행한다. 이 함수는 flag-agnostic.
+     */
+    experienceIds?: string[];
+  },
   options?: { signal?: AbortSignal },
 ): Promise<{ id: string | null; title?: string }> {
   if (isDemoMode()) {
@@ -67,6 +81,7 @@ export async function createResume(
   }
   const body: Record<string, unknown> = { language: params.language };
   if (params.title !== undefined) body.title = params.title;
+  if (params.experienceIds !== undefined) body.experience_ids = params.experienceIds;
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/export/resume",
     body,
@@ -80,7 +95,7 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/export/resume/${versionId}`,
   );
-  return unwrapResumeVersion(res.data);
+  return normalizeResumeVersion(unwrapResumeVersion(res.data));
 }
 
 /**
@@ -183,11 +198,14 @@ export async function updateResume(
 ): Promise<ResumeVersion> {
   if (isDemoMode()) return demo.updateResume(versionId, data);
   try {
-    const res = await api.patch<ApiSuccessResponse<ResumeVersion>>(
+    const res = await api.patch<ApiSuccessResponse<unknown>>(
       `/export/resume/${versionId}`,
       data,
     );
-    return res.data;
+    // PATCH 도 GET 과 같은 래퍼({id, title, language, status, …, result})를 돌려준다.
+    // 그대로 반환하면 호출부가 본문 대신 래퍼를 상태에 넣어 resume.meta.language 에서
+    // 크래시한다. GET 과 같은 경계 처리를 태워 본문만, 정규화된 채로 돌려준다.
+    return normalizeResumeVersion(unwrapResumeVersion(res.data));
   } catch (err) {
     if (isUnsupportedStatus(err)) {
       throw new ResumeMutationUnsupportedError(err.status);

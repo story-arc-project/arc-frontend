@@ -409,7 +409,7 @@ const RESUME_VERSION: ResumeVersion = {
       학위: "학사",
       입학년월: "2022-03",
       졸업년월: null,
-      졸업구분: "재학",
+      졸업구분: "재학중",
       학점: null,
       만점: null,
       비고: null,
