@@ -65,6 +65,14 @@ export function EditorSelect(
   },
 ) {
   const { options, emptyLabel = "선택 안 함", className, ...rest } = props;
+
+  // 현재 값이 options 밖이면 그 값을 옵션으로 함께 낸다. 옵션이 없으면 select 의 selectedIndex
+  // 가 -1 이 되어 **값이 있는데 빈 칸으로 보이고**, 사용자가 손대는 순간 다른 값으로 덮인다.
+  // 백엔드 생성 프롬프트의 enum 이 프런트와 갈라질 때(FRT-109) 실제로 그랬고, 로컬 draft 에
+  // 남은 구 값도 같은 방식으로 사라진다. 정합성 회복은 옵션 배열이 하고, 여기서는 손실만 막는다.
+  const current = typeof rest.value === "string" ? rest.value : "";
+  const extra = current !== "" && !options.includes(current) ? current : null;
+
   return (
     <select
       {...rest}
@@ -76,6 +84,7 @@ export function EditorSelect(
           {opt}
         </option>
       ))}
+      {extra !== null && <option value={extra}>{extra}</option>}
     </select>
   );
 }

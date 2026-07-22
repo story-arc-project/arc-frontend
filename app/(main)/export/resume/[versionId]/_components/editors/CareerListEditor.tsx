@@ -1,6 +1,6 @@
 "use client";
 
-import type { Career } from "@/types/resume";
+import { 고용형태_OPTIONS, type Career } from "@/types/resume";
 import {
   AddItemButton,
   BulletListEditor,
@@ -12,7 +12,7 @@ import {
   SortableList,
 } from "./shared";
 
-const 고용형태Options = ["정규직", "계약직", "인턴", "파트타임", "프리랜서"] as const;
+const 고용형태Options = 고용형태_OPTIONS;
 
 interface Props {
   value: Career[];

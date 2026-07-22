@@ -300,14 +300,14 @@ describe("buildResumeDocument — 학력", () => {
     expect(entry.detail).toBe("3.72  ·  편입");
   });
 
-  it("졸업년월이 없고 재학이면 '재학'으로 닫는다", () => {
+  it("졸업년월이 없고 재학중이면 '재학중'으로 닫는다", () => {
     const [entry] = buildResumeDocument(
       emptyResume({
-        학력: [{ ...edu, 졸업년월: null, 졸업구분: "재학" }],
+        학력: [{ ...edu, 졸업년월: null, 졸업구분: "재학중" }],
       }),
     ).sections[0].entries;
 
-    expect(entry.meta).toBe("2021-03 – 재학");
+    expect(entry.meta).toBe("2021-03 – 재학중");
   });
 });
 
@@ -349,7 +349,7 @@ describe("buildResumeDocument — 나머지 섹션", () => {
           {
             id: 1,
             단체명: "ARC",
-            구분: "학회",
+            구분: "교내학회",
             기간_원문: "2024.03 - 2025.02",
             역할: "회장",
             활동내용: ["세미나 운영"],
@@ -359,7 +359,7 @@ describe("buildResumeDocument — 나머지 섹션", () => {
     ).sections[0].entries;
 
     expect(entry.title).toBe("ARC");
-    expect(entry.subtitle).toBe("학회 · 회장");
+    expect(entry.subtitle).toBe("교내학회 · 회장");
     expect(entry.meta).toBe("2024.03 - 2025.02");
   });
 

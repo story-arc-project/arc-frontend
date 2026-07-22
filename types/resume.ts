@@ -6,12 +6,36 @@ import type { AnalysisStatus } from "./analysis";
 export type ResumeLanguage = "ko" | "en";
 export type ResumeFormat = "json" | string;
 
-export type 전공구분 = "주전공" | "복수전공" | "부전공" | "연계전공";
-export type 학위 = "학사" | "석사" | "박사" | "전문학사";
-export type 졸업구분 = "졸업" | "재학" | "휴학" | "수료" | "중퇴" | "졸업예정";
-export type 고용형태 = "정규직" | "계약직" | "인턴" | "파트타임" | "프리랜서";
-export type 자격구분 = "자격증" | "면허" | "수료증";
-export type 단체구분 = "동아리" | "학회" | "학생회" | "기타";
+// ─── 선택지 enum ────────────────────────────────────────────────────
+//
+// 정본은 백엔드 생성 프롬프트(arc-backend `ai_analyst/src/ai/resume.py` 의 _SYS_KO 스키마)다.
+// FRT-109 에서 실값과 대조해 네 개가 어긋나 있던 것을 맞췄다 — 어긋나면 AI 가 실제로 낸 값
+// (예: 자격구분 "국가자격")이 편집기 드롭다운에 없어, 미리보기엔 보이는 값을 편집기에서는
+// 고를 수 없었다. 자격구분·단체구분은 기존 선택지와 교집합이 사실상 없어 통째로 교체했다.
+//
+// 선택지 배열이 정본이고 타입은 거기서 파생된다. 이전엔 union 타입과 편집기의 `…Options`
+// 배열이 같은 값을 각각 하드코딩해 **두 출처가 조용히 갈라진 것**이 이 결함의 뿌리였다.
+// 백엔드가 내지 않지만 사용자가 고를 수 있어야 하는 값(휴학·전문학사)은 남겨 표현력을 지킨다.
+
+export const 전공구분_OPTIONS = ["주전공", "복수전공", "부전공", "연계전공"] as const;
+export const 학위_OPTIONS = ["학사", "석사", "박사", "수료", "전문학사"] as const;
+export const 졸업구분_OPTIONS = ["졸업", "재학중", "졸업예정", "수료", "중퇴", "휴학"] as const;
+export const 고용형태_OPTIONS = ["정규직", "계약직", "인턴", "파트타임", "프리랜서"] as const;
+export const 자격구분_OPTIONS = ["국가자격", "민간자격", "어학", "기타"] as const;
+export const 단체구분_OPTIONS = [
+  "교내동아리",
+  "교내학회",
+  "연합동아리",
+  "외부학회",
+  "기타",
+] as const;
+
+export type 전공구분 = (typeof 전공구분_OPTIONS)[number];
+export type 학위 = (typeof 학위_OPTIONS)[number];
+export type 졸업구분 = (typeof 졸업구분_OPTIONS)[number];
+export type 고용형태 = (typeof 고용형태_OPTIONS)[number];
+export type 자격구분 = (typeof 자격구분_OPTIONS)[number];
+export type 단체구분 = (typeof 단체구분_OPTIONS)[number];
 
 export interface ResumeMeta {
   language: ResumeLanguage;

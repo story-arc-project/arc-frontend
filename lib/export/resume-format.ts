@@ -23,7 +23,9 @@ export function formatPeriod(
 // 학력은 "재직중" 같은 플래그 대신 졸업구분으로 진행 상태를 나타내 기간 규칙이 다르다.
 export function formatEducationPeriod(edu: Education): string {
   const start = edu.입학년월 ?? "";
-  const end = edu.졸업년월 ?? (edu.졸업구분 === "재학" ? "재학" : "");
+  // 백엔드가 내는 값은 "재학"이 아니라 "재학중"이다(resume.py _SYS_KO). 이 비교가 어긋나 있어
+  // 졸업년월이 없는 재학생의 학력 기간이 입학년월만 찍혀 나왔다(FRT-109에서 발견).
+  const end = edu.졸업년월 ?? (edu.졸업구분 === "재학중" ? "재학중" : "");
   return formatPeriod(start, end);
 }
 

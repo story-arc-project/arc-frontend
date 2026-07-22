@@ -1,6 +1,6 @@
 "use client";
 
-import type { Certification } from "@/types/resume";
+import { 자격구분_OPTIONS, type Certification } from "@/types/resume";
 import {
   AddItemButton,
   EditorCard,
@@ -11,7 +11,7 @@ import {
   SortableList,
 } from "./shared";
 
-const 자격구분Options = ["자격증", "면허", "수료증"] as const;
+const 자격구분Options = 자격구분_OPTIONS;
 
 interface Props {
   value: Certification[];
