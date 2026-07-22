@@ -56,6 +56,12 @@ export default defineConfig({
       NEXT_PUBLIC_CONSENT_ENABLED: "true",
       // 비밀번호 재설정(FRT-8)도 동일 — 진입점/흐름을 플래그 ON에서 검증한다(BAC-2 라이브 후 켬).
       NEXT_PUBLIC_PASSWORD_RESET_ENABLED: "true",
+      // 인앱 피드백(FRT-96). NEXT_PUBLIC_* 는 서버 기동 시점에 박히므로 러너의 webServer 가
+      // 하나인 이상 **전 스펙 전역 ON** 말고는 켤 방법이 없다. 그래서 노출 게이트를 2겹으로 둔다:
+      // 이 플래그(전역) + `stubApi(page, { feedback: true })`(스펙별 opt-in). 옵션을 주지 않은
+      // 스펙에서는 prompt-shown 이 404 로 떨어져 훅이 fail-closed 로 모달을 띄우지 않는다.
+      // 프로덕션 봉인과는 무관하다 — 이 env 는 e2e dev 서버 프로세스에만 주입된다.
+      NEXT_PUBLIC_FEEDBACK_ENABLED: "true",
     },
   },
 });
