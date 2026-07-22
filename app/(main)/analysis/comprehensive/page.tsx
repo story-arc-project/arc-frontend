@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getComprehensiveList, deleteComprehensiveAnalysis } from "@/lib/api/analysis-api";
+import { isAnalysisRetryEnabled } from "@/lib/analysis/flags";
+import { useRetryRefresh } from "@/lib/analysis/use-retry-refresh";
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Button, Dialog } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
+import RetryAnalysisButton from "@/components/features/analysis/common/RetryAnalysisButton";
 
 export default function ComprehensiveAnalysisPage() {
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
@@ -16,22 +19,51 @@ export default function ComprehensiveAnalysisPage() {
   const [error, setError] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(false);
+  // 사용자가 목록을 직접 바꾼 횟수(삭제·즐겨찾기·재시도 낙관적 갱신).
+  // 폴링 GET 은 요청 시점의 서버 스냅샷을 들고 오므로, 그 사이 로컬 변경이 있었다면
+  // 응답이 도착했을 땐 이미 낡았다 — 그대로 적용하면 방금 지운 카드가 되살아나고
+  // '진행 중'으로 바꿔둔 카드가 '실패'로 되돌아가 중복 재시도를 유발한다.
+  const mutationEpoch = useRef(0);
+  const markLocalMutation = useCallback(() => {
+    mutationEpoch.current += 1;
+  }, []);
+
+  // 반영했으면 true, 낡아서 버렸으면 false — 폴링이 관찰 기회를 헛되이 쓰지 않게 알려준다.
+  const loadData = useCallback(async (options?: { background?: boolean }): Promise<boolean> => {
+    const background = options?.background === true;
+    if (!background) {
+      setLoading(true);
+      setError(false);
+    }
+    const epochAtRequest = mutationEpoch.current;
     try {
       const data = await getComprehensiveList();
+      // 낡은 백그라운드 응답은 버린다. 전경 로드는 사용자가 기다리는 요청이라 그대로 적용한다.
+      if (background && mutationEpoch.current !== epochAtRequest) return false;
       setItems(data);
+      setError(false);
     } catch {
-      setError(true);
+      // 백그라운드 갱신 실패는 화면을 갈아치우지 않는다 — 이미 보고 있는 목록이 정답에 더 가깝다.
+      if (!background) setError(true);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
+    return true;
   }, []);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // 폴링은 스켈레톤·전면 오류 없이 조용히 갱신한다.
+  // Promise 를 그대로 돌려줘야 폴링이 완료를 기다린다(요청 겹침·응답 역전 방지).
+  const refreshInBackground = useCallback(
+    () => loadData({ background: true }),
+    [loadData],
+  );
+
+  // 재시도 접수 후 잠시 동안만 목록을 다시 읽는다 — 그러지 않으면 '진행 중'에 고착된다.
+  const watchRetry = useRetryRefresh(refreshInBackground);
 
   const [deleteError, setDeleteError] = useState(false);
 
@@ -40,6 +72,7 @@ export default function ComprehensiveAnalysisPage() {
     setDeleteError(false);
     try {
       await deleteComprehensiveAnalysis(deleteId);
+      markLocalMutation();
       setItems((prev) => prev.filter((i) => i.id !== deleteId));
       setDeleteId(null);
     } catch {
@@ -72,7 +105,7 @@ export default function ComprehensiveAnalysisPage() {
             </p>
             <button
               type="button"
-              onClick={loadData}
+              onClick={() => loadData()}
               className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
             >
               다시 시도
@@ -107,12 +140,20 @@ export default function ComprehensiveAnalysisPage() {
           <div className="space-y-3">
             {items.map((item) => {
               const isNavigable = item.status === "completed";
+              // 재시도 엔드포인트(BAC-42) 배포 전까지 플래그 off — 노출 없음
+              const canRetry = item.status === "failed" && isAnalysisRetryEnabled();
               return (
                 <div
                   key={item.id}
                   className={[
                     "bg-surface border border-border rounded-lg p-4",
-                    !isNavigable ? "opacity-60" : "hover:border-brand transition-colors",
+                    isNavigable
+                      ? "hover:border-brand transition-colors"
+                      : // 다시 시도할 수 있는 카드는 흐리게 두지 않는다 — 유일한 액션 버튼까지
+                        // 같이 흐려져 누를 수 있어 보이지 않는다.
+                        canRetry
+                        ? ""
+                        : "opacity-60",
                   ].join(" ")}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -125,6 +166,21 @@ export default function ComprehensiveAnalysisPage() {
                           <p className="text-body-sm text-text-tertiary mt-1">
                             {item.status === "failed" ? "분석에 실패했습니다" : "분석 진행 중..."}
                           </p>
+                          {canRetry && (
+                            <RetryAnalysisButton
+                              analysisId={item.id}
+                              analysisType="comprehensive"
+                              onRetried={() => {
+                                markLocalMutation();
+                                setItems((prev) =>
+                                  prev.map((i) =>
+                                    i.id === item.id ? { ...i, status: "processing" } : i,
+                                  ),
+                                );
+                                watchRetry();
+                              }}
+                            />
+                          )}
                         </div>
                       ) : (
                         <Link href={`/analysis/comprehensive/${item.id}`} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md">
@@ -148,13 +204,14 @@ export default function ComprehensiveAnalysisPage() {
                       <BookmarkToggle
                         analysisId={item.id}
                         isBookmarked={item.isBookmarked}
-                        onToggled={(next) =>
+                        onToggled={(next) => {
+                          markLocalMutation();
                           setItems((prev) =>
                             prev.map((i) =>
                               i.id === item.id ? { ...i, isBookmarked: next } : i,
                             ),
-                          )
-                        }
+                          );
+                        }}
                         size="sm"
                       />
                       <button

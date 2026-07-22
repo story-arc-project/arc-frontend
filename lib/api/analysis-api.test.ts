@@ -29,6 +29,8 @@ import {
   getComprehensiveResult,
   getComprehensiveList,
   getKeywordResult,
+  retryComprehensiveAnalysis,
+  retryKeywordAnalysis,
   updateAnalysisMeta,
   UnsupportedSchemaError,
 } from "@/lib/api/analysis-api"
@@ -949,5 +951,36 @@ describe("getKeywordResult — result 래퍼 내 is_bookmarked 보존 (FRT-64 P2
     )
     const res: KeywordAnalysisResult = await getKeywordResult("kw-2")
     expect(res.isBookmarked).toBe(true)
+  })
+})
+
+describe("retry — 실패 분석 재실행 (FRT-108 / BAC-42)", () => {
+  it("종합 재시도는 타입별 retry 경로로 POST 한다", async () => {
+    apiMock.post.mockResolvedValue(envelope({ id: "comp-1", title: "제목" }))
+    await retryComprehensiveAnalysis("comp-1")
+    expect(apiMock.post).toHaveBeenCalledWith("/analysis/comprehensive/comp-1/retry")
+  })
+
+  it("키워드 재시도는 타입별 retry 경로로 POST 한다", async () => {
+    apiMock.post.mockResolvedValue(envelope({ id: "kw-1", title: "제목" }))
+    await retryKeywordAnalysis("kw-1")
+    expect(apiMock.post).toHaveBeenCalledWith("/analysis/keyword/kw-1/retry")
+  })
+
+  it("body 를 보내지 않는다 — 원 파라미터는 서버 보관값을 재사용한다", async () => {
+    apiMock.post.mockResolvedValue(envelope({}))
+    await retryComprehensiveAnalysis("comp-1")
+    await retryKeywordAnalysis("kw-1")
+    // 두 번째 인자(body)가 붙으면 삭제된 경험 때문에 400 이 나는 경로가 생긴다.
+    for (const call of apiMock.post.mock.calls) {
+      expect(call).toHaveLength(1)
+    }
+  })
+
+  it("에러는 삼키지 않고 그대로 throw 한다 (409 = 실패 상태가 아님)", async () => {
+    const conflict = new Error("409")
+    apiMock.post.mockRejectedValue(conflict)
+    await expect(retryComprehensiveAnalysis("comp-1")).rejects.toBe(conflict)
+    await expect(retryKeywordAnalysis("kw-1")).rejects.toBe(conflict)
   })
 })
