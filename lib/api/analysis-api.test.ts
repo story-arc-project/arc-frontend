@@ -1123,3 +1123,73 @@ describe("hasResultBody — 본문 부재 판정 (FRT-134)", () => {
     expect(res.hasResultBody).toBe(false)
   })
 })
+
+describe("hasResultBody — 알맹이 없는 원소 (FRT-134 codex P2)", () => {
+  it("개별: resume/star 처럼 기본값이 없는 배열은 [{}] 도 본문이 아니다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-1",
+        status: "completed",
+        experience_id: "e1",
+        result: { star_format: {}, synergy_recommendations: [] },
+      }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.hasResultBody).toBe(false)
+  })
+
+  it("종합: resume_star_format: [{}] 는 본문이 아니다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed", result: { resume_star_format: [{}] } }),
+    )
+    const res: ComprehensiveAnalysisResult = await getComprehensiveResult("comp-1")
+    expect(res.hasResultBody).toBe(false)
+  })
+
+  it("키워드: A_keyword_definitions: [{}] 는 본문이 아니다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", result: { A_keyword_definitions: [{}] } }),
+    )
+    const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+    expect(res.hasResultBody).toBe(false)
+  })
+
+  it("기본 enum 이 붙는 매퍼(시너지)는 [{}] 도 본문으로 센다 — 화면이 실제로 카드를 그린다", async () => {
+    // 판정 기준은 "화면이 그릴 값이 있는가"다. SynergySection 은 items.length 만 보므로
+    // 빈 원소여도 '보통' 배지가 달린 카드를 그린다 — 안내 화면으로 보내면 오히려 어긋난다.
+    // 알맹이 없는 카드 자체를 거르는 건 이 판정이 아니라 매퍼의 필터가 할 일이다.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-1",
+        status: "completed",
+        experience_id: "e1",
+        result: { synergy_recommendations: [{}] },
+      }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.result.synergyRecommendations[0].priority).toBe("medium")
+    expect(res.hasResultBody).toBe(true)
+  })
+})
+
+describe("키워드 이중중첩 언랩 — 빈 껍질을 뚫는다 (FRT-134 codex P2)", () => {
+  it("중간 래퍼에 빈 A~F 키가 섞여도 안쪽 본문을 잃지 않는다", async () => {
+    // 종료 조건이 "키 존재"였을 때는 빈 A_keyword_definitions 하나 때문에 언랩이 멈춰
+    // 안쪽 E_storylines 를 통째로 잃었다 — 결과가 있는데 화면이 비는 최악의 조합.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          A_keyword_definitions: [],
+          result: {
+            E_storylines: [{ storyline_title: "협업으로 병목을 걷어낸 경험" }],
+          },
+        },
+      }),
+    )
+    const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+    expect(res.storylines).toHaveLength(1)
+    expect(res.hasResultBody).toBe(true)
+  })
+})

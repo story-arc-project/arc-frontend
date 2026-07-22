@@ -90,7 +90,9 @@ function asRecord(value: unknown): UnknownRecord {
 function hasAnyContent(value: unknown): boolean {
   if (typeof value === "string") return value !== "";
   if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.length > 0;
+  // 길이만 보면 `[{}]` 처럼 원소는 있으나 알맹이가 없는 배열을 본문으로 오판한다.
+  // 원소까지 재귀해야 화면 기준(그릴 값이 있는가)과 어긋나지 않는다.
+  if (Array.isArray(value)) return value.some(hasAnyContent);
   if (value && typeof value === "object") {
     return Object.values(value as UnknownRecord).some(hasAnyContent);
   }
@@ -854,7 +856,7 @@ function mapKeywordSpecificRecommendation(dto: unknown): KeywordSpecificRecommen
   };
 }
 
-// 키워드 분석 본문(A-F)이 이 껍질에 직접 들어있는지 판별한다. 이중중첩 언랩의 종료 조건.
+// 키워드 분석 본문(A-F)이 이 껍질에 알맹이와 함께 들어있는지 판별한다. 이중중첩 언랩의 종료 조건.
 const KEYWORD_CONTENT_KEYS = [
   "keywordDefinitions", "keyword_definitions", "A_keyword_definitions",
   "selectionCriteria", "selection_criteria", "B_selection_criteria",
@@ -864,8 +866,13 @@ const KEYWORD_CONTENT_KEYS = [
   "improvementGuide", "improvement_guide", "F_improvement_guide",
 ];
 
+/**
+ * 키가 있는지가 아니라 **값이 차 있는지**를 본다(FRT-134).
+ * 키 존재만 보면 중간 래퍼에 빈 A~F 키가 섞여 있을 때 언랩이 거기서 멈춰,
+ * 한 겹 더 안쪽에 있는 진짜 본문을 통째로 잃는다 — 화면은 결과가 있는데도 비어버린다.
+ */
 function hasKeywordContent(body: UnknownRecord): boolean {
-  return KEYWORD_CONTENT_KEYS.some((k) => k in body);
+  return KEYWORD_CONTENT_KEYS.some((k) => hasAnyContent(body[k]));
 }
 
 /**
