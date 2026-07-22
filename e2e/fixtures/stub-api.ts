@@ -71,7 +71,7 @@ export type { StubScenario };
  */
 export const STUB_API_URL = API_ORIGIN;
 
-const DEFAULT_PAGE_ORIGIN = "http://localhost:3000";
+export const DEFAULT_PAGE_ORIGIN = "http://localhost:3000";
 
 /** 피드백 응답 저장 시각(FRT-96). 고정값이라 스냅샷·단언이 시간에 흔들리지 않는다. */
 const FEEDBACK_RESPONDED_AT = "2026-03-02T09:00:00.000Z";
@@ -99,7 +99,11 @@ const GET_ROUTES: RouteDef[] = [
   { match: /^\/analysis\/status\/[^/]+$/, build: analysisStatus },
 ];
 
-function corsHeaders(origin: string): Record<string, string> {
+/**
+ * 스텁 응답에 반드시 실어야 하는 CORS 헤더. 스펙이 특정 경로만 국소적으로 덮을 때도(FRT-96
+ * `stubExperienceCount`) 이 함수를 재사용해야, CORS 계약이 바뀔 때 한 곳만 고치면 된다.
+ */
+export function corsHeaders(origin: string): Record<string, string> {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-credentials": "true",

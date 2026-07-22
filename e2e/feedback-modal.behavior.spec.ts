@@ -5,7 +5,7 @@ import type { Experience } from "@/types/experience";
 import { FEEDBACK_PROMPT_DELAY_MS } from "@/lib/feedback/campaigns";
 
 import { experienceList, success } from "./fixtures/api-data";
-import { STUB_API_URL, stubApi } from "./fixtures/stub-api";
+import { DEFAULT_PAGE_ORIGIN, STUB_API_URL, corsHeaders, stubApi } from "./fixtures/stub-api";
 
 /**
  * FRT-96 — 인앱 피드백 모달의 노출·중복방지 동작(behavior) E2E.
@@ -43,10 +43,7 @@ function makeCompleteExperiences(count: number): Experience[] {
   return Array.from({ length: count }, (_, i) => ({
     ...COMPLETE_SEED,
     id: `exp-e2e-feedback-${i + 1}`,
-    content: {
-      ...(COMPLETE_SEED.content as Record<string, unknown>),
-      title: `피드백 e2e 경험 ${i + 1}`,
-    },
+    content: { ...COMPLETE_SEED.content, title: `피드백 e2e 경험 ${i + 1}` },
   }));
 }
 
@@ -69,14 +66,13 @@ async function stubExperienceCount(page: Page, count: number): Promise<void> {
         await route.fallback();
         return;
       }
-      const origin = route.request().headers()["origin"] ?? "http://localhost:3000";
+      // CORS 헤더는 픽스처(corsHeaders)를 재사용한다 — 리터럴로 복제하면 계약이 바뀔 때
+      // 이 스펙만 조용히 낡아 브라우저가 응답을 못 읽는 형태로 깨진다(.claude/rules/testing.md).
+      const origin = route.request().headers()["origin"] ?? DEFAULT_PAGE_ORIGIN;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        headers: {
-          "access-control-allow-origin": origin,
-          "access-control-allow-credentials": "true",
-        },
+        headers: corsHeaders(origin),
         body: JSON.stringify(success({ count: contents.length, contents })),
       });
     },
@@ -159,8 +155,11 @@ test.describe("FRT-96 피드백 모달 노출", () => {
   });
 
   test("트리거가 충족되지 않으면 모달도, 노출 기록 요청도 없다", async ({ page }) => {
-    // 기본 시드는 경험 2개(임계 3 미만)이고 분석을 완료한 적도 없다 → 게이트가 하나도 안 열린다.
+    // 경험 2개(임계 3 미만)이고 분석을 완료한 적도 없다 → 게이트가 하나도 안 열린다.
+    // 개수는 **명시적으로** 고정한다 — 공용 시드가 2개라는 우연에 기대면, 누가 시드를 늘렸을 때
+    // 이 테스트가 "트리거 미충족"이라는 전제를 잃은 채 실패해 원인이 드러나지 않는다.
     const stub = await stubApi(page, { authed: true, scenario: "data", feedback: true });
+    await stubExperienceCount(page, 2);
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
@@ -256,9 +255,14 @@ test.describe("FRT-96 피드백 모달 중복방지", () => {
   test("모달 바깥을 클릭해 닫아도 다시 뜨지 않는다", async ({ page }) => {
     const { modal } = await openViaExperienceThreshold(page);
 
+    const urlBeforeClick = page.url();
+
     // 모달은 화면 중앙에 뜨므로 좌상단 모서리는 backdrop 이다.
     await page.mouse.click(10, 10);
     await expect(modal).toBeHidden();
+    // 사라진 **이유**까지 고정한다. 오버레이가 `fixed inset-0`(components/ui/dialog.tsx)을 잃으면
+    // 이 클릭은 GNB 링크를 눌러 화면을 옮기고, 그때도 모달은 사라져 위 단언만으로는 통과한다.
+    expect(page.url()).toBe(urlBeforeClick);
 
     await page.waitForTimeout(PAST_DELAY_MS);
     await expect(page.getByRole("dialog")).toHaveCount(0);
