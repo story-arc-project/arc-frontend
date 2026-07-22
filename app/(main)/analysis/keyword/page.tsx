@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
@@ -19,14 +19,26 @@ export default function KeywordAnalysisPage() {
   const [error, setError] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  // 사용자가 목록을 직접 바꾼 횟수(삭제·즐겨찾기·재시도 낙관적 갱신).
+  // 폴링 GET 은 요청 시점의 서버 스냅샷을 들고 오므로, 그 사이 로컬 변경이 있었다면
+  // 응답이 도착했을 땐 이미 낡았다 — 그대로 적용하면 방금 지운 카드가 되살아나고
+  // '진행 중'으로 바꿔둔 카드가 '실패'로 되돌아가 중복 재시도를 유발한다.
+  const mutationEpoch = useRef(0);
+  const markLocalMutation = useCallback(() => {
+    mutationEpoch.current += 1;
+  }, []);
+
   const loadData = useCallback(async (options?: { background?: boolean }) => {
     const background = options?.background === true;
     if (!background) {
       setLoading(true);
       setError(false);
     }
+    const epochAtRequest = mutationEpoch.current;
     try {
       const data = await getKeywordList();
+      // 낡은 백그라운드 응답은 버린다. 전경 로드는 사용자가 기다리는 요청이라 그대로 적용한다.
+      if (background && mutationEpoch.current !== epochAtRequest) return;
       setItems(data);
       setError(false);
     } catch {
@@ -58,6 +70,7 @@ export default function KeywordAnalysisPage() {
     setDeleteError(false);
     try {
       await deleteKeywordAnalysis(deleteId);
+      markLocalMutation();
       setItems((prev) => prev.filter((i) => i.id !== deleteId));
       setDeleteId(null);
     } catch {
@@ -170,6 +183,7 @@ export default function KeywordAnalysisPage() {
                             analysisId={item.id}
                             analysisType="keyword"
                             onRetried={() => {
+                              markLocalMutation();
                               setItems((prev) =>
                                 prev.map((i) =>
                                   i.id === item.id ? { ...i, status: "processing" } : i,
@@ -206,13 +220,14 @@ export default function KeywordAnalysisPage() {
                       <BookmarkToggle
                         analysisId={item.id}
                         isBookmarked={item.isBookmarked}
-                        onToggled={(next) =>
+                        onToggled={(next) => {
+                          markLocalMutation();
                           setItems((prev) =>
                             prev.map((i) =>
                               i.id === item.id ? { ...i, isBookmarked: next } : i,
                             ),
-                          )
-                        }
+                          );
+                        }}
                         size="sm"
                       />
                       <button
