@@ -2,6 +2,7 @@ import { api, ApiError } from "./client";
 import type { ApiSuccessResponse } from "@/types/api";
 import type { AnalysisStatus } from "@/types/analysis";
 import type {
+  PersonalInfoLink,
   ResumeLanguage,
   ResumeListItem,
   ResumeVersion,
@@ -58,7 +59,20 @@ function extractResumeId(res: unknown): { id: string | null; title?: string } {
 // 계약(§2.4)상 POST 는 { id, title } 을 돌려준다. id 가 오면 생성 직후 상세로 이동할 수
 // 있고(호출부 판단), 아직 계약 미이행 백엔드처럼 id 가 없으면 null → 목록 새로고침으로 폴백한다.
 export async function createResume(
-  params: { language: ResumeLanguage; title?: string },
+  params: {
+    language: ResumeLanguage;
+    title?: string;
+    /**
+     * 레쥬메에 넣을 경험 id (FRT-109). 계약(BAC-45)상 `experience_ids` 는 Optional 이고
+     * **부재 = 사용자의 전체 경험**(현행 동작), 빈 배열 = 400 이다. 그래서 미지정을 []
+     * 로 뭉개면 안 되고 키 자체를 빼야 한다 — 0개 선택 차단은 호출부(모달)의 책임이다.
+     *
+     * ⚠️ 백엔드가 아직 이 필드를 받지 않는다(dev 기준 `ResumePostRequest` = language·title).
+     * pydantic 기본값이 extra="ignore" 라 보내도 422 가 아니라 200 으로 조용히 무시되므로,
+     * 노출 게이팅은 플래그(lib/export/flags.ts)가 호출부에서 수행한다. 이 함수는 flag-agnostic.
+     */
+    experienceIds?: string[];
+  },
   options?: { signal?: AbortSignal },
 ): Promise<{ id: string | null; title?: string }> {
   if (isDemoMode()) {
@@ -67,6 +81,7 @@ export async function createResume(
   }
   const body: Record<string, unknown> = { language: params.language };
   if (params.title !== undefined) body.title = params.title;
+  if (params.experienceIds !== undefined) body.experience_ids = params.experienceIds;
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/export/resume",
     body,
@@ -80,7 +95,37 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/export/resume/${versionId}`,
   );
-  return unwrapResumeVersion(res.data);
+  return normalizeResumeVersion(unwrapResumeVersion(res.data));
+}
+
+/**
+ * 백엔드 실값과 프런트 내부 shape 이 어긋나는 지점을 파싱 경계에서 흡수한다.
+ *
+ * 인적사항.링크 — ai_analyst/src/ai/resume.py 의 `_SYS_KO` 스키마는 링크를 **문자열 배열**로
+ * 내는데(EN 의 other_links 도 동일), 프런트는 { label, url } 객체 배열을 기대한다. 정규화가
+ * 없으면 PreviewPersonalInfo 의 `l?.url?.trim()` 필터에 전부 걸려 링크가 통째로 사라진다.
+ * 소비처(프리뷰·편집기)를 건드리지 않도록 객체 shape 을 정본으로 두고 문자열만 승격한다.
+ * 이미 객체로 오는 백엔드도 그대로 통과시킨다(형제 언랩과 같은 dual-compat).
+ */
+function normalizeResumeVersion(resume: ResumeVersion): ResumeVersion {
+  const personal = resume.인적사항;
+  if (personal === null || typeof personal !== "object") return resume;
+  return { ...resume, 인적사항: { ...personal, 링크: normalizeLinks(personal.링크) } };
+}
+
+function normalizeLinks(raw: unknown): PersonalInfoLink[] {
+  if (!Array.isArray(raw)) return [];
+  const links: PersonalInfoLink[] = [];
+  for (const item of raw) {
+    if (typeof item === "string") {
+      const url = item.trim();
+      // 공백뿐인 문자열은 링크가 아니다 — 편집기에 빈 행으로 남기지 않는다.
+      if (url !== "") links.push({ label: null, url });
+      continue;
+    }
+    if (item !== null && typeof item === "object") links.push(item as PersonalInfoLink);
+  }
+  return links;
 }
 
 /**
