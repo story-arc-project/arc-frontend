@@ -172,6 +172,7 @@ export const mockIndividualAnalysisResult: IndividualAnalysisResult = {
   status: "completed",
   experienceId: "exp-v2-1",
   isBookmarked: false,
+  hasResultBody: true,
   result: {
     status: "completed",
     itemName: "LLM 활용 뉴스 감성 분석 기반 하이브리드 주가 예측 프로젝트",
@@ -308,6 +309,7 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
   id: "comp-1",
   status: "completed",
   isBookmarked: false,
+  hasResultBody: true,
   experiences: [
     { id: "exp-1", title: "부스트캠프 AI Tech" },
     { id: "exp-2", title: "NLP 연구실 인턴" },
@@ -478,6 +480,7 @@ export const mockKeywordResult: KeywordAnalysisResult = {
   id: "kw-1",
   status: "completed",
   isBookmarked: false,
+  hasResultBody: true,
   analysisDate: "2026-05-03T11:00:00Z",
   analysisMode: "knn",
   keywords: ["문제 해결", "자기주도성"],
