@@ -200,6 +200,30 @@ describe("FeedbackHost", () => {
     expect(modal()).toBeInTheDocument();
   });
 
+  it("떠 있는 동안 입력 화면으로 넘어가면 가리지 않고 물러났다가, 벗어나면 돌아온다", async () => {
+    const { rerender } = renderHost();
+    fire("경험보고");
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+    expect(modal()).toBeInTheDocument();
+
+    // 목록에서 '새 경험 추가'를 눌러 입력으로 들어간 상황.
+    nav.pathname = "/archive/new";
+    rerender(
+      <FeedbackHost>
+        <Triggers />
+      </FeedbackHost>,
+    );
+    expect(modal()).not.toBeInTheDocument();
+
+    nav.pathname = "/archive";
+    rerender(
+      <FeedbackHost>
+        <Triggers />
+      </FeedbackHost>,
+    );
+    expect(modal()).toBeInTheDocument();
+  });
+
   it("제출하면 전송 레이어로 payload 를 넘기고 모달을 닫는다", async () => {
     renderHost();
     fire("분석보고");

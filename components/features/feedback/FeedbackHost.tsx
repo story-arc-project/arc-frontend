@@ -72,14 +72,16 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  const suppressed = isSuppressedPath(pathname);
+
   useEffect(() => {
     if (!pending || armed) return;
     // 억제 경로에서는 타이머를 걸지 않고 **보류만** 한다. 버리면 그 방문에서는 다시 기회가
     // 없다 — 경로가 바뀌면 이 effect 가 다시 돌아 그때부터 지연을 센다.
-    if (isSuppressedPath(pathname)) return;
+    if (suppressed) return;
     const timer = setTimeout(() => setArmed(pending), FEEDBACK_PROMPT_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [pending, armed, pathname]);
+  }, [pending, armed, suppressed]);
 
   const { open, triggerSource, context, close } = useFeedbackPrompt({
     campaignId: CAMPAIGN_ID,
@@ -95,7 +97,10 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
   return (
     <FeedbackTriggerProvider value={value}>
       {children}
-      {triggerSource && (
+      {/* 억제는 **렌더 시점에도** 건다. 타이머를 거는 순간만 막으면, 지연이 끝나고 prompt-shown
+          응답을 기다리는 사이에 입력 화면으로 넘어간 사용자에게 모달이 덮인다. open 상태는
+          훅이 그대로 들고 있으므로, 입력을 마치고 벗어나면 다시 나타난다. */}
+      {triggerSource && !suppressed && (
         <FeedbackModal
           open={open}
           campaignId={CAMPAIGN_ID}
