@@ -83,12 +83,33 @@ async function stubExperienceCount(page: Page, count: number): Promise<void> {
   );
 }
 
+/**
+ * 판정 POST 가 나갔는지 먼저 확인한다. 모달을 곧장 기다리면 "안 뜬다"는 사실만 남고 원인은
+ * 안 보이는데, 이 단계가 실패하면 원인이 좁혀진다 — 훅은 플래그가 꺼져 있으면 POST 자체를
+ * 보내지 않기 때문이다(useFeedbackPrompt 의 isFeedbackEnabled 게이트).
+ *
+ * ⚠️ 가장 흔한 원인: **개발자가 띄워 둔 dev 서버를 재사용**한 경우. `reuseExistingServer` 가
+ * true 라 playwright.config 의 webServer 가 아예 기동되지 않고, 그러면 그 env 들
+ * (NEXT_PUBLIC_FEEDBACK_ENABLED 등)이 앱에 주입되지 않는다. 3000 포트의 기존 서버를 끄고
+ * 다시 돌리면 해결된다. consent·password-reset 스펙도 같은 조건을 공유한다.
+ */
+async function expectPromptDecided(stub: { mutations: { method: string; path: string }[] }) {
+  await expect
+    .poll(() => promptShownCalls(stub.mutations).length, {
+      message:
+        "prompt-shown POST 가 나가지 않았다 — NEXT_PUBLIC_FEEDBACK_ENABLED 가 주입되지 않은 " +
+        "dev 서버를 재사용했을 가능성이 높다(3000 포트의 기존 서버를 끄고 다시 실행할 것).",
+    })
+    .toBeGreaterThan(0);
+}
+
 /** 경험 트리거(3개 도달)로 모달이 뜬 상태까지 만든다. */
 async function openViaExperienceThreshold(page: Page) {
   const stub = await stubApi(page, { authed: true, scenario: "data", feedback: true });
   await stubExperienceCount(page, 3);
   await page.goto("/dashboard");
 
+  await expectPromptDecided(stub);
   const modal = page.getByRole("dialog", { name: EXPERIENCE_QUESTION });
   await expect(modal).toBeVisible();
   return { stub, modal };
@@ -126,6 +147,7 @@ test.describe("FRT-96 피드백 모달 노출", () => {
 
     // 폴링이 comp-1(completed)을 즉시 찾아 결과 상세로 이동한다.
     await expect(page).toHaveURL(/\/analysis\/comprehensive\/comp-1$/);
+    await expectPromptDecided(stub);
 
     // 생성 화면(`/analysis/*/new`)은 억제 경로다 — 신호는 거기서 **보류**됐다가 상세로
     // 이동한 뒤에야 지연을 세고 뜬다. 유닛이 pathname 을 흉내내던 부분이 여기서 실제로 확인된다.

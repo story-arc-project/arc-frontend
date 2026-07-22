@@ -50,6 +50,10 @@ export default defineConfig({
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000, // dev 콜드 컴파일 여유
+    // ⚠️ 아래 env 는 **이 config 가 서버를 직접 띄울 때만** 주입된다. `reuseExistingServer` 가
+    // true 인 로컬에서 개발자가 이미 3000 포트에 dev 서버를 띄워 뒀다면 webServer 블록이 통째로
+    // 건너뛰어져, 이 플래그들에 의존하는 스펙(consent · password-reset · feedback)이 실패한다.
+    // 그럴 땐 기존 서버를 끄고 다시 실행할 것. (CI 는 항상 새로 기동하므로 해당 없음)
     env: {
       NEXT_PUBLIC_API_URL: API_URL,
       // 동의 스텝 E2E는 플래그 ON에서 검증한다(프로덕션 기본값 off, BE 라이브 후 켬).
