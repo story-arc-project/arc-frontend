@@ -19,16 +19,21 @@ export default function KeywordAnalysisPage() {
   const [error, setError] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(false);
+  const loadData = useCallback(async (options?: { background?: boolean }) => {
+    const background = options?.background === true;
+    if (!background) {
+      setLoading(true);
+      setError(false);
+    }
     try {
       const data = await getKeywordList();
       setItems(data);
+      setError(false);
     } catch {
-      setError(true);
+      // 백그라운드 갱신 실패는 화면을 갈아치우지 않는다 — 이미 보고 있는 목록이 정답에 더 가깝다.
+      if (!background) setError(true);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, []);
 
@@ -36,8 +41,13 @@ export default function KeywordAnalysisPage() {
     loadData();
   }, [loadData]);
 
+  // 폴링은 스켈레톤·전면 오류 없이 조용히 갱신한다.
+  const refreshInBackground = useCallback(() => {
+    void loadData({ background: true });
+  }, [loadData]);
+
   // 재시도 접수 후 잠시 동안만 목록을 다시 읽는다 — 그러지 않으면 '진행 중'에 고착된다.
-  const watchRetry = useRetryRefresh(loadData);
+  const watchRetry = useRetryRefresh(refreshInBackground);
 
   const [deleteError, setDeleteError] = useState(false);
 
@@ -78,7 +88,7 @@ export default function KeywordAnalysisPage() {
             </p>
             <button
               type="button"
-              onClick={loadData}
+              onClick={() => loadData()}
               className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
             >
               다시 시도

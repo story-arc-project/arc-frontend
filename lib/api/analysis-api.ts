@@ -1010,8 +1010,8 @@ export async function deleteComprehensiveAnalysis(
  * 실패는 삼키지 않고 ApiError 로 그대로 throw 한다 — 409(실패 상태가 아님)/404/429 를
  * 호출부가 구분해 안내할 수 있어야 한다.
  *
- * ⚠️ 이 함수는 기능 플래그를 모른다(flag-agnostic). 노출 게이팅은 RetryAnalysisButton 이
- * `isAnalysisRetryEnabled()` 로 수행한다.
+ * ⚠️ 이 함수는 기능 플래그를 모른다(flag-agnostic). 노출 게이팅은 목록 페이지(호출부)가
+ * `isAnalysisRetryEnabled()` 로 수행한다 — 버튼 컴포넌트도 플래그를 모른다.
  */
 export async function retryComprehensiveAnalysis(
   analysisId: string,
