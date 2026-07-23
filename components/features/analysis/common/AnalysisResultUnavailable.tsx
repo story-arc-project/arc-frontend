@@ -43,14 +43,18 @@ export default function AnalysisResultUnavailable({
   canRetry = false,
   onRetried,
 }: AnalysisResultUnavailableProps) {
-  const { headline, detail } = messageFor(status);
   const showRetry = status === "failed" && canRetry && analysisType !== undefined;
+  const { headline, detail } = messageFor(status, showRetry);
+  // 기존 상세 화면의 error 분기와 같은 규칙: 데모(basePath 있음)면 유형별 목록 라우트가
+  // 없어(app/demo/analysis 아래엔 [analysisId] 만 존재) /demo/analysis 허브로 보낸다.
+  // fallbackHref(유형별 목록)는 basePath 가 없을 때만 쓴다 — 안 그러면 데모에서 404 다.
+  const listHref = basePath ? `${basePath}/analysis` : fallbackHref;
 
   return (
     <main className="px-4 py-8 sm:px-8">
       <div
         className="max-w-4xl mx-auto flex flex-col items-center justify-center py-16 text-center"
-        role="status"
+        role="alert"
       >
         <p className="text-body text-text-secondary mb-1">{headline}</p>
         <p className="text-body-sm text-text-tertiary mb-3">{detail}</p>
@@ -64,7 +68,7 @@ export default function AnalysisResultUnavailable({
               onRetried={() => onRetried?.()}
             />
             <Link
-              href={`${basePath}${fallbackHref}`}
+              href={listHref}
               className="mt-4 text-body-sm text-text-secondary hover:text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
             >
               목록으로 돌아가기
@@ -72,7 +76,7 @@ export default function AnalysisResultUnavailable({
           </>
         ) : (
           <Link
-            href={`${basePath}${fallbackHref}`}
+            href={listHref}
             className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
           >
             목록으로 돌아가기
@@ -83,11 +87,18 @@ export default function AnalysisResultUnavailable({
   );
 }
 
-function messageFor(status: AnalysisStatus): { headline: string; detail: string } {
+function messageFor(
+  status: AnalysisStatus,
+  showRetry: boolean,
+): { headline: string; detail: string } {
   if (status === "failed") {
     return {
       headline: "분석에 실패했습니다",
-      detail: "결과를 만들지 못했어요. 다시 시도하면 같은 조합으로 새로 분석합니다.",
+      // 재시도 버튼이 뜰 때만 "다시 시도"를 약속한다 — 플래그 off(현 배포 전량)·개별 분석처럼
+      // 버튼이 없을 땐 없는 행동을 가리키지 않게 목록에서 다시 요청하도록 안내한다.
+      detail: showRetry
+        ? "결과를 만들지 못했어요. 다시 시도하면 같은 조합으로 새로 분석합니다."
+        : "결과를 만들지 못했어요. 목록에서 다시 분석을 요청할 수 있어요.",
     };
   }
   if (status === "pending" || status === "processing") {

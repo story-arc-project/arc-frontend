@@ -45,6 +45,41 @@ describe("AnalysisResultUnavailable 상태별 안내 (FRT-134)", () => {
     expect(screen.getByText("분석에 실패했습니다")).toBeInTheDocument();
   });
 
+  it("재시도 버튼이 없으면 '다시 시도'를 약속하지 않는다 — 없는 행동을 가리키면 안 된다", () => {
+    render(
+      <AnalysisResultUnavailable
+        status="failed"
+        basePath=""
+        fallbackHref="/analysis/comprehensive"
+        analysisId="comp-1"
+        analysisType="comprehensive"
+        // canRetry 미지정(플래그 off) → 버튼 없음
+      />,
+    );
+    expect(
+      screen.getByText("결과를 만들지 못했어요. 목록에서 다시 분석을 요청할 수 있어요."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/다시 시도하면 같은 조합으로 새로 분석합니다/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("재시도 버튼이 뜰 때만 '다시 시도하면 새로 분석' 문구를 쓴다", () => {
+    render(
+      <AnalysisResultUnavailable
+        status="failed"
+        basePath=""
+        fallbackHref="/analysis/comprehensive"
+        analysisId="comp-1"
+        analysisType="comprehensive"
+        canRetry
+      />,
+    );
+    expect(
+      screen.getByText("결과를 만들지 못했어요. 다시 시도하면 같은 조합으로 새로 분석합니다."),
+    ).toBeInTheDocument();
+  });
+
   it("completed 인데 본문이 없으면 진행 중도 실패도 아닌 이상 상태로 안내한다", () => {
     render(
       <AnalysisResultUnavailable
@@ -57,7 +92,24 @@ describe("AnalysisResultUnavailable 상태별 안내 (FRT-134)", () => {
     expect(screen.getByText("결과를 표시할 수 없습니다")).toBeInTheDocument();
   });
 
-  it("어느 상태든 목록으로 돌아갈 길이 있다 — basePath 는 유형 경로 앞에 붙는다", () => {
+  it("일반 모드는 유형별 목록(fallbackHref)으로 돌아간다", () => {
+    render(
+      <AnalysisResultUnavailable
+        status="processing"
+        basePath=""
+        fallbackHref="/analysis/comprehensive"
+        analysisId="comp-1"
+      />,
+    );
+    expect(screen.getByRole("link", { name: "목록으로 돌아가기" })).toHaveAttribute(
+      "href",
+      "/analysis/comprehensive",
+    );
+  });
+
+  it("데모 모드는 유형별 목록 라우트가 없어 /demo/analysis 허브로 보낸다 — 404 회피", () => {
+    // app/demo/analysis 아래엔 [analysisId] 만 있고 individual/comprehensive/keyword
+    // 목록 라우트가 없다. fallbackHref 를 그대로 붙이면 /demo/analysis/comprehensive → 404.
     render(
       <AnalysisResultUnavailable
         status="processing"
@@ -68,7 +120,7 @@ describe("AnalysisResultUnavailable 상태별 안내 (FRT-134)", () => {
     );
     expect(screen.getByRole("link", { name: "목록으로 돌아가기" })).toHaveAttribute(
       "href",
-      "/demo/analysis/comprehensive",
+      "/demo/analysis",
     );
   });
 });
