@@ -40,6 +40,15 @@ export function AdminCustomersView() {
 
   // 검색창 입력은 로컬 상태로 즉시 반응하고, 디바운스된 값만 URL(→서버 조회)로 흘린다.
   const [input, setInput] = useState(qParam);
+  // 외부 요인(뒤로/앞으로 가기·링크)으로 URL 검색어가 바뀌면 입력창을 그 값으로 맞춘다. 이걸 안
+  // 하면 아래 디바운스 effect 가 낡은 input 으로 URL 을 되돌려 Back/Forward 를 무력화한다(Codex P2).
+  // 렌더 중 조정(React 권장 prev-value 패턴, archive/page.tsx 전례) — 우리 쪽 write 로 qParam 이
+  // 바뀐 경우엔 input 이 이미 같은 값이라 no-op → 루프 없음.
+  const [syncedQ, setSyncedQ] = useState(qParam);
+  if (qParam !== syncedQ) {
+    setSyncedQ(qParam);
+    setInput(qParam);
+  }
   const debouncedInput = useDebouncedValue(input, SEARCH_DEBOUNCE_MS);
 
   useEffect(() => {
@@ -54,6 +63,16 @@ export function AdminCustomersView() {
     page,
     limit: PAGE_SIZE,
   });
+
+  // 범위를 벗어난 딥링크(?page=99)는 전체 건수를 안 뒤 마지막 유효 페이지로 정규화한다. 안 하면
+  // 빈 목록과 "마지막 페이지" 범위가 동시에 뜨는 모순 상태가 된다(Codex P2).
+  useEffect(() => {
+    if (isLoading || error) return;
+    const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
+    if (page > totalPages) {
+      router.replace(buildHref(qParam, totalPages), { scroll: false });
+    }
+  }, [isLoading, error, count, page, qParam, router]);
 
   const handlePageChange = (next: number) => {
     router.push(buildHref(qParam, next), { scroll: false });
