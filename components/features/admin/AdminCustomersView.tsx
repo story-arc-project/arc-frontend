@@ -52,11 +52,15 @@ export function AdminCustomersView() {
   const debouncedInput = useDebouncedValue(input, SEARCH_DEBOUNCE_MS);
 
   useEffect(() => {
+    // 디바운스가 아직 현재 input 을 못 따라잡았으면(=외부 URL 변경 직후 옛값이 남아있는 상태)
+    // 쓰지 않는다. 이 가드가 없으면 Back/Forward 직후 낡은 debouncedInput 이 URL 을 되돌린다
+    // (Codex adversarial). debounced 가 input 과 같아진 뒤에만 = 사용자가 멈춘 로컬 편집일 때만 쓴다.
+    if (debouncedInput !== input) return;
     const next = debouncedInput.trim();
     if (next === qParam) return;
     // 검색어가 바뀌면 항상 1페이지로 리셋한다.
     router.replace(buildHref(next, 1), { scroll: false });
-  }, [debouncedInput, qParam, router]);
+  }, [debouncedInput, input, qParam, router]);
 
   const { customers, count, isLoading, error, reload } = useAdminCustomers({
     q: qParam,
