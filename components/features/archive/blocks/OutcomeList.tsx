@@ -258,7 +258,7 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="text-label text-text-primary">{block.label}</span>
+        <span className="text-field-label text-text-primary">{block.label}</span>
         <span className="text-caption text-text-tertiary">{rows.length}개 항목</span>
       </div>
 

@@ -83,7 +83,7 @@ export default function FormSection({
               )}
             </div>
             {description && (
-              <p className="text-caption text-text-tertiary mt-1">{description}</p>
+              <p className="text-body-sm text-text-tertiary mt-1">{description}</p>
             )}
           </div>
           {(onMoveUp || onMoveDown || onDelete) && (
@@ -154,6 +154,9 @@ export default function FormSection({
 
       {!collapsed && (
         <div className="px-5 py-5">
+          {description && (
+            <p className="text-body-sm text-text-tertiary mb-4">{description}</p>
+          )}
           <BlockList
             blocks={blocks}
             readOnly={readOnly}

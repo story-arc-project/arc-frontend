@@ -165,9 +165,10 @@ Noto Sans KR 의존성은 제거됨.
 | `.text-title` | 18px | 600 | — | 리스트 항목 제목 |
 | `.text-body-lg` | 17px | 400 | — | 중요 본문, 서브헤드 |
 | `.text-body` | 15px | 400 | — | 기본 본문 **← 기본값** |
-| `.text-body-sm` | 13px | 400 | — | 보조 설명 |
-| `.text-label` | 13px | 500 | — | 폼 레이블, 탭 |
-| `.text-caption` | 12px | 400 | — | 타임스탬프, 메타 정보 |
+| `.text-field-label` | 15px | 600 | — | 입력 폼 필드 레이블 |
+| `.text-body-sm` | 13px | 400 | — | 보조 설명, 섹션 안내 문구 |
+| `.text-label` | 13px | 500 | — | 탭, 칩, 네비게이션, 필터 |
+| `.text-caption` | 12px | 400 | — | 타임스탬프, 메타 정보, 필드 힌트 |
 
 ```tsx
 // ✅ 유틸리티 클래스 사용
@@ -180,6 +181,12 @@ Noto Sans KR 의존성은 제거됨.
 
 > **예외**: 랜딩 페이지 히어로처럼 임팩트가 필요한 경우에는 `text-[52px]` 등 임의 크기를 허용한다.
 > 단, 앱 내부(대시보드, 폼 등) 에서는 반드시 스케일을 따른다.
+
+> **`.text-field-label` vs `.text-label`** — 사용자가 값을 입력하는 필드의 이름은 위젯 종류와
+> 무관하게 **`.text-field-label`** 을 쓴다. `<Input>`·`<Textarea>`·`<DatePicker>`·`<PeriodPicker>` 는
+> 내부에서 이미 적용하므로 `label` prop 만 넘기면 되고, 자체적으로 `<label>`/`<legend>`/`<span>` 을
+> 그리는 컴포넌트는 직접 붙여야 한다. `.text-label` 은 입력 필드가 아닌 탭·칩·네비 전용이다.
+> (필드 라벨에 `.text-label` 을 쓰면 같은 화면 안에서 15px 과 13px 이 섞여 가짜 위계가 생긴다 — FRT-66/146)
 
 ---
 

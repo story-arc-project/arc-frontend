@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useId, useState } from "react"
 import { Plus, Trash2, Pencil, Check, X } from "lucide-react"
 import type { Block, SingleSelectBlockValue } from "@/types/archive"
 
@@ -17,6 +17,7 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
   const [newOption, setNewOption] = useState("")
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const [editValue, setEditValue] = useState("")
+  const selectId = useId()
 
   function addOption() {
     const trimmed = newOption.trim()
@@ -70,9 +71,10 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-label text-text-primary">{block.label}</label>
+      <label htmlFor={selectId} className="text-field-label text-text-primary">{block.label}</label>
       {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
       <select
+        id={selectId}
         value={val.selected}
         onChange={e => onChange({ ...val, selected: e.target.value })}
         className={[
