@@ -198,14 +198,22 @@ body {
   line-height: 1.4;
 }
 
-/* 아카이빙 입력 폼 입력값 14px — Notion 확정본(입력값 14px)을 아카이빙 한정 채택(FRT-146 C안).
+/* 아카이빙 입력 폼 "값 입력"만 14px — Notion 확정본(입력값 14px)을 아카이빙 한정 채택(FRT-146 C안).
    입력값은 공유 Input/Textarea 의 .text-body(15px)로 렌더되는데 그건 전역이라 못 바꾼다.
-   폼 섹션 래퍼(.archive-input-14)에서만 하위 input/textarea/select 를 눌러쓴다.
-   .text-body 와 같은 unlayered 규칙이라 레이어가 아니라 특이도(0,1,1 > 0,1,0)로 이긴다 — !important 불필요. */
-.archive-input-14 input,
+   폼 섹션 래퍼(.archive-input-14)에서 하위 input/textarea/select 를 눌러쓴다.
+   .text-body 와 같은 unlayered 규칙이라 레이어가 아니라 특이도(0,1,1 > 0,1,0)로 이긴다 — !important 불필요.
+   값이 아닌 두 컨트롤은 제외: ① 사용자 섹션 제목 편집 input(.text-title, 18px) ② 블록 설정 다이얼로그. */
+.archive-input-14 input:not(.text-title),
 .archive-input-14 textarea,
 .archive-input-14 select {
   font-size: 14px;
+}
+/* 블록 설정 다이얼로그(role="dialog")는 값 입력이 아니므로 원래 크기(text-body-sm 13px) 유지.
+   위 규칙과 같은 특이도(0,2,1)라 뒤에 두어 다이얼로그 안에서만 되돌린다. */
+.archive-input-14 [role="dialog"] input,
+.archive-input-14 [role="dialog"] textarea,
+.archive-input-14 [role="dialog"] select {
+  font-size: 13px;
 }
 
 input[type="date"]{
