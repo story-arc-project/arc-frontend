@@ -57,7 +57,9 @@ export function AdminCustomersView() {
     // (Codex adversarial). debounced 가 input 과 같아진 뒤에만 = 사용자가 멈춘 로컬 편집일 때만 쓴다.
     if (debouncedInput !== input) return;
     const next = debouncedInput.trim();
-    if (next === qParam) return;
+    // qParam 도 trim 해 비교한다 — ?q=%20kim 처럼 공백이 낀 딥링크를 마운트 즉시 재작성하지
+    // 않게(조회는 어차피 trim 된 값으로 나가므로 URL 만 조용히 바꾸는 헛 write 방지, Codex review).
+    if (next === qParam.trim()) return;
     // 검색어가 바뀌면 항상 1페이지로 리셋한다.
     router.replace(buildHref(next, 1), { scroll: false });
   }, [debouncedInput, input, qParam, router]);

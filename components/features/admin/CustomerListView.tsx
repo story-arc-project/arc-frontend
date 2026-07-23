@@ -95,27 +95,7 @@ export function CustomerListView({
             <ul>
               {customers.map((c) => (
                 <li key={c.id || c.email} className="border-b border-border last:border-b-0">
-                  <Link
-                    href={`${detailBasePath}/${c.id}`}
-                    className={`${GRID} py-3 transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand`}
-                  >
-                    <span className="truncate text-body-sm font-medium text-text-primary">
-                      {c.email || "—"}
-                    </span>
-                    <span className="truncate text-body-sm text-text-secondary">
-                      {c.name ?? "—"}
-                    </span>
-                    <span className="text-body-sm text-text-secondary">
-                      {planLabel(c.plan)}
-                    </span>
-                    <StatusCell status={c.status} />
-                    <span className="text-body-sm text-text-secondary">
-                      {c.onboarded ? "완료" : "—"}
-                    </span>
-                    <span className="text-body-sm text-text-tertiary">
-                      {formatDate(c.createdAt)}
-                    </span>
-                  </Link>
+                  <CustomerRow customer={c} detailBasePath={detailBasePath} />
                 </li>
               ))}
             </ul>
@@ -123,6 +103,50 @@ export function CustomerListView({
         </div>
       </div>
     </div>
+  );
+}
+
+// 행 하나. id 가 있어야 상세로 링크한다 — 방어 파싱상 id 가 빈 문자열이면 href 가
+// `/admin/customers/` 로 붕괴해 목록으로 되돌아가므로(조용한 no-op 클릭), 그럴 땐 비클릭 행으로
+// 렌더한다(Codex review).
+function CustomerRow({
+  customer: c,
+  detailBasePath,
+}: {
+  customer: AdminCustomer;
+  detailBasePath: string;
+}) {
+  const cells = (
+    <>
+      <span className="truncate text-body-sm font-medium text-text-primary">
+        {c.email || "—"}
+      </span>
+      <span className="truncate text-body-sm text-text-secondary">
+        {c.name ?? "—"}
+      </span>
+      <span className="text-body-sm text-text-secondary">
+        {planLabel(c.plan)}
+      </span>
+      <StatusCell status={c.status} />
+      <span className="text-body-sm text-text-secondary">
+        {c.onboarded ? "완료" : "—"}
+      </span>
+      <span className="text-body-sm text-text-tertiary">
+        {formatDate(c.createdAt)}
+      </span>
+    </>
+  );
+
+  if (!c.id) {
+    return <div className={`${GRID} py-3`}>{cells}</div>;
+  }
+  return (
+    <Link
+      href={`${detailBasePath}/${c.id}`}
+      className={`${GRID} py-3 transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand`}
+    >
+      {cells}
+    </Link>
   );
 }
 
