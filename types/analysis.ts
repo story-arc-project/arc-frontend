@@ -122,6 +122,12 @@ export interface IndividualAnalysisResult {
   status: AnalysisStatus;
   experienceId: string;
   isBookmarked: boolean;
+  /**
+   * 결과 본문이 실제로 도착했는지(FRT-134). false = 화면이 그릴 값이 하나도 없다 —
+   * 분석 진행 중·실패라 `result` 가 아직 null 이거나, 형태가 어긋나 언랩이 실패한 경우다.
+   * 상세 화면은 이때 조용한 빈 화면 대신 상태 안내로 전환한다.
+   */
+  hasResultBody: boolean;
   result: IndividualAnalysisResultBody;
 }
 
@@ -207,6 +213,12 @@ export interface ComprehensiveAnalysisResult {
   id: string;
   status: AnalysisStatus;
   isBookmarked: boolean;
+  /**
+   * 결과 본문이 실제로 도착했는지(FRT-134). 판정에서 `experiences` 는 제외한다 —
+   * 경험 참조는 result 밖 엔벨로프에서 오므로(계약 §3.6) 포함하면 본문 없이 경험 배지만
+   * 뜨는 화면이 "본문 있음"으로 오판된다.
+   */
+  hasResultBody: boolean;
   /** 분석에 포함된 경험 (계약 §2.2·§3.6). 삭제된 경험은 title=null. */
   experiences: ExperienceRef[];
   userSchool: string;
@@ -388,6 +400,11 @@ export interface KeywordAnalysisResult {
   id: string;
   status: AnalysisStatus;
   isBookmarked: boolean;
+  /**
+   * 결과 본문(A~F)이 실제로 도착했는지(FRT-134). 판정에서 `keywords`·`targetScenario` 는
+   * 제외한다 — 둘 다 result 밖 껍질 메타라(계약 §2.3) 본문 없이도 실려 온다.
+   */
+  hasResultBody: boolean;
   analysisDate: string;
   analysisMode: string; // v4.1: knn | llm
   keywords: string[];

@@ -984,3 +984,212 @@ describe("retry — 실패 분석 재실행 (FRT-108 / BAC-42)", () => {
     await expect(retryKeywordAnalysis("kw-1")).rejects.toBe(conflict)
   })
 })
+
+describe("hasResultBody — 본문 부재 판정 (FRT-134)", () => {
+  // 실재하는 트리거는 result:null 이다. 백엔드 계약이 `dict | None` 이라 진행 중·실패인
+  // 동안 result 가 계속 null 이고, 그동안 언랩은 엔벨로프로 폴백해 전 필드를 빈 값으로
+  // 만든다 — 상세 화면의 섹션 가드가 전부 걸려 헤더만 남은 빈 화면이 됐다.
+  const emptyBodies: [string, unknown][] = [
+    ["null (진행 중·실패)", null],
+    ["빈 배열", []],
+    ["빈 객체", {}],
+    ["값 없는 키만", { itemName: "", briefSummary: "", synergyRecommendations: [] }],
+  ]
+
+  describe("개별 분석", () => {
+    it.each(emptyBodies)("result: %s → hasResultBody false", async (_label, result) => {
+      apiMock.get.mockResolvedValue(
+        envelope({ id: "ind-1", status: "processing", experience_id: "e1", result }),
+      )
+      const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+      expect(res.hasResultBody).toBe(false)
+    })
+
+    it("엔벨로프 status 가 result.status 로 폴백돼도 본문으로 세지 않는다", async () => {
+      // mapIndividualDetail 은 result.status 를 `body.status ?? r.status` 로 채운다.
+      // 이걸 판정에 넣으면 본문이 통째로 없어도 status 하나 때문에 "본문 있음"이 된다.
+      apiMock.get.mockResolvedValue(
+        envelope({ id: "ind-1", status: "failed", experience_id: "e1", result: null }),
+      )
+      const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+      expect(res.result.status).toBe("failed")
+      expect(res.hasResultBody).toBe(false)
+    })
+
+    it("본문이 한 필드라도 차 있으면 true", async () => {
+      apiMock.get.mockResolvedValue(
+        envelope({
+          id: "ind-1",
+          status: "completed",
+          experience_id: "e1",
+          result: { brief_summary: "요약" },
+        }),
+      )
+      const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+      expect(res.hasResultBody).toBe(true)
+    })
+
+    it("result 래퍼 없는 flat 응답도 본문으로 인정한다", async () => {
+      apiMock.get.mockResolvedValue(
+        envelope({ id: "ind-1", status: "completed", experience_id: "e1", item_name: "프로젝트" }),
+      )
+      const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+      expect(res.hasResultBody).toBe(true)
+    })
+  })
+
+  describe("종합 분석", () => {
+    it.each(emptyBodies)("result: %s → hasResultBody false", async (_label, result) => {
+      apiMock.get.mockResolvedValue(envelope({ id: "comp-1", status: "processing", result }))
+      const res: ComprehensiveAnalysisResult = await getComprehensiveResult("comp-1")
+      expect(res.hasResultBody).toBe(false)
+    })
+
+    it("경험 참조만 있고 본문이 없으면 false — experiences 는 result 밖 엔벨로프다", async () => {
+      apiMock.get.mockResolvedValue(
+        envelope({
+          id: "comp-1",
+          status: "processing",
+          experiences: [{ id: "e1", title: "부스트캠프" }],
+          result: null,
+        }),
+      )
+      const res: ComprehensiveAnalysisResult = await getComprehensiveResult("comp-1")
+      expect(res.experiences).toHaveLength(1)
+      expect(res.hasResultBody).toBe(false)
+    })
+
+    it("본문이 한 필드라도 차 있으면 true", async () => {
+      apiMock.get.mockResolvedValue(
+        envelope({ id: "comp-1", status: "completed", result: { brief_summary: "요약" } }),
+      )
+      const res: ComprehensiveAnalysisResult = await getComprehensiveResult("comp-1")
+      expect(res.hasResultBody).toBe(true)
+    })
+  })
+
+  describe("키워드 분석", () => {
+    it.each(emptyBodies)("result: %s → hasResultBody false", async (_label, result) => {
+      apiMock.get.mockResolvedValue(envelope({ id: "kw-1", status: "processing", result }))
+      const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+      expect(res.hasResultBody).toBe(false)
+    })
+
+    it("껍질 메타(keywords·target)만 있으면 false — 본문 없이도 실려 온다", async () => {
+      apiMock.get.mockResolvedValue(
+        envelope({
+          id: "kw-1",
+          status: "processing",
+          result: { keywords: ["리더십"], target: "스타트업 PM" },
+        }),
+      )
+      const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+      expect(res.keywords).toEqual(["리더십"])
+      expect(res.hasResultBody).toBe(false)
+    })
+
+    it("본문 키가 있어도 값이 비면 false — 화면은 여전히 비어 있다", async () => {
+      apiMock.get.mockResolvedValue(
+        envelope({ id: "kw-1", status: "completed", result: { A_keyword_definitions: [] } }),
+      )
+      const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+      expect(res.hasResultBody).toBe(false)
+    })
+
+    it("본문(A~F)이 차 있으면 true", async () => {
+      apiMock.get.mockResolvedValue(
+        envelope({
+          id: "kw-1",
+          status: "completed",
+          result: {
+            A_keyword_definitions: [{ keyword: "리더십", definition: "정의" }],
+          },
+        }),
+      )
+      const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+      expect(res.hasResultBody).toBe(true)
+    })
+  })
+
+  it("내용 있는 배열 result 도 본문으로 세지 않는다", async () => {
+    // 빈 배열뿐 아니라 원소가 있는 배열도 마찬가지다 — 매퍼가 읽는 키가 하나도 없으므로
+    // 화면에 그릴 값이 없다. 배열을 레코드로 캐스팅하는 경로(typeof [] === "object")가
+    // 형태 불일치를 오류가 아니라 빈 값으로 번역하는 것을 여기서 막는다.
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "ind-1", status: "completed", experience_id: "e1", result: ["a", "b"] }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.result.itemName).toBe("")
+    expect(res.hasResultBody).toBe(false)
+  })
+})
+
+describe("hasResultBody — 알맹이 없는 원소 (FRT-134 codex P2)", () => {
+  it("개별: resume/star 처럼 기본값이 없는 배열은 [{}] 도 본문이 아니다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-1",
+        status: "completed",
+        experience_id: "e1",
+        result: { star_format: {}, synergy_recommendations: [] },
+      }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.hasResultBody).toBe(false)
+  })
+
+  it("종합: resume_star_format: [{}] 는 본문이 아니다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed", result: { resume_star_format: [{}] } }),
+    )
+    const res: ComprehensiveAnalysisResult = await getComprehensiveResult("comp-1")
+    expect(res.hasResultBody).toBe(false)
+  })
+
+  it("키워드: A_keyword_definitions: [{}] 는 본문이 아니다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "kw-1", status: "completed", result: { A_keyword_definitions: [{}] } }),
+    )
+    const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+    expect(res.hasResultBody).toBe(false)
+  })
+
+  it("기본 enum 이 붙는 매퍼(시너지)는 [{}] 도 본문으로 센다 — 화면이 실제로 카드를 그린다", async () => {
+    // 판정 기준은 "화면이 그릴 값이 있는가"다. SynergySection 은 items.length 만 보므로
+    // 빈 원소여도 '보통' 배지가 달린 카드를 그린다 — 안내 화면으로 보내면 오히려 어긋난다.
+    // 알맹이 없는 카드 자체를 거르는 건 이 판정이 아니라 매퍼의 필터가 할 일이다.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-1",
+        status: "completed",
+        experience_id: "e1",
+        result: { synergy_recommendations: [{}] },
+      }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.result.synergyRecommendations[0].priority).toBe("medium")
+    expect(res.hasResultBody).toBe(true)
+  })
+})
+
+describe("키워드 이중중첩 언랩 — 빈 껍질을 뚫는다 (FRT-134 codex P2)", () => {
+  it("중간 래퍼에 빈 A~F 키가 섞여도 안쪽 본문을 잃지 않는다", async () => {
+    // 종료 조건이 "키 존재"였을 때는 빈 A_keyword_definitions 하나 때문에 언랩이 멈춰
+    // 안쪽 E_storylines 를 통째로 잃었다 — 결과가 있는데 화면이 비는 최악의 조합.
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "kw-1",
+        status: "completed",
+        result: {
+          A_keyword_definitions: [],
+          result: {
+            E_storylines: [{ storyline_title: "협업으로 병목을 걷어낸 경험" }],
+          },
+        },
+      }),
+    )
+    const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
+    expect(res.storylines).toHaveLength(1)
+    expect(res.hasResultBody).toBe(true)
+  })
+})

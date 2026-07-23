@@ -65,8 +65,39 @@ function mocks() {
 
 type UnknownRecord = Record<string, unknown>;
 
+/**
+ * 배열은 레코드가 아니다(FRT-134). `typeof [] === "object"` 라 가드가 없으면 배열이 레코드로
+ * 캐스팅된다. assertRenderableSchema·unwrapKeywordBody 가 이미 쓰는 것과 같은 기준을
+ * 정규화 층에도 세워 세 지점이 어긋나지 않게 한다.
+ *
+ * ⚠️ 지금은 이 가드를 빼도 관측되는 동작 차이가 없다 — 배열의 키(숫자 인덱스·length)가
+ * 매퍼가 읽는 키와 겹치지 않아 어느 쪽이든 결과가 빈 값이고, 화면은 hasAnyContent 판정이
+ * 지킨다. 앞으로 body 를 키 기반으로 순회(Object.keys/values)하는 코드가 생기면 그때
+ * 배열이 조용히 새는 것을 막는 구조적 방어다. 뮤테이션 테스트로는 잡히지 않는다.
+ */
 function asRecord(value: unknown): UnknownRecord {
-  return value && typeof value === "object" ? (value as UnknownRecord) : {};
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : {};
+}
+
+/**
+ * 매핑 결과에 실제로 그릴 값이 하나라도 있는지 본다(FRT-134).
+ * 판정 기준을 백엔드 키 이름 목록이 아니라 **매핑 결과**로 두는 이유: 화면의 각 섹션이
+ * 쓰는 빈 값 판정과 같은 기준이 되고(= 화면이 아무것도 못 그리면 본문 부재), 키 이름이
+ * 늘어도 목록을 따로 유지보수하지 않아도 된다.
+ */
+function hasAnyContent(value: unknown): boolean {
+  if (typeof value === "string") return value !== "";
+  if (typeof value === "number") return Number.isFinite(value);
+  // 길이만 보면 `[{}]` 처럼 원소는 있으나 알맹이가 없는 배열을 본문으로 오판한다.
+  // 원소까지 재귀해야 화면 기준(그릴 값이 있는가)과 어긋나지 않는다.
+  if (Array.isArray(value)) return value.some(hasAnyContent);
+  if (value && typeof value === "object") {
+    return Object.values(value as UnknownRecord).some(hasAnyContent);
+  }
+  // boolean 은 컨텐츠로 치지 않는다 — 방어 파싱의 기본값(false)이 흔해 오탐을 만든다.
+  return false;
 }
 
 function asArray<T = unknown>(value: unknown): T[] {
@@ -369,6 +400,9 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
     status: mapStatus(r.status ?? body.status),
     experienceId: asString(r.experienceId ?? r.experience_id ?? body.experience_id),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
+    // result.status 는 본문이 아니라 엔벨로프에서 폴백돼 들어오는 메타다(위 `body.status ?? r.status`).
+    // 판정에 넣으면 본문이 통째로 없어도 status 하나 때문에 "본문 있음"이 된다.
+    hasResultBody: hasAnyContent({ ...result, status: "" }),
     result,
   };
 }
@@ -420,7 +454,7 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
   const additional = asRecord(body.additionalRecommendations ?? body.additional_recommendations);
   const diagnosis = asRecord(body.criticalDiagnosis ?? body.critical_diagnosis);
 
-  return {
+  const detail = {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
@@ -472,6 +506,19 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
       body.validJobRecommendations ?? body.valid_job_recommendations,
     ).map(mapJobRecommendation),
     missingInfoWarning: asString(body.missingInfoWarning ?? body.missing_info_warning),
+  };
+
+  return {
+    ...detail,
+    // id·status·isBookmarked·experiences 는 result 밖 엔벨로프에서 오는 메타다 —
+    // 판정에서 빼야 본문 없이 경험 배지만 뜨는 화면을 "본문 있음"으로 오판하지 않는다.
+    hasResultBody: hasAnyContent({
+      ...detail,
+      id: "",
+      status: "",
+      isBookmarked: false,
+      experiences: [],
+    }),
   };
 }
 
@@ -809,7 +856,7 @@ function mapKeywordSpecificRecommendation(dto: unknown): KeywordSpecificRecommen
   };
 }
 
-// 키워드 분석 본문(A-F)이 이 껍질에 직접 들어있는지 판별한다. 이중중첩 언랩의 종료 조건.
+// 키워드 분석 본문(A-F)이 이 껍질에 알맹이와 함께 들어있는지 판별한다. 이중중첩 언랩의 종료 조건.
 const KEYWORD_CONTENT_KEYS = [
   "keywordDefinitions", "keyword_definitions", "A_keyword_definitions",
   "selectionCriteria", "selection_criteria", "B_selection_criteria",
@@ -819,8 +866,13 @@ const KEYWORD_CONTENT_KEYS = [
   "improvementGuide", "improvement_guide", "F_improvement_guide",
 ];
 
+/**
+ * 키가 있는지가 아니라 **값이 차 있는지**를 본다(FRT-134).
+ * 키 존재만 보면 중간 래퍼에 빈 A~F 키가 섞여 있을 때 언랩이 거기서 멈춰,
+ * 한 겹 더 안쪽에 있는 진짜 본문을 통째로 잃는다 — 화면은 결과가 있는데도 비어버린다.
+ */
 function hasKeywordContent(body: UnknownRecord): boolean {
-  return KEYWORD_CONTENT_KEYS.some((k) => k in body);
+  return KEYWORD_CONTENT_KEYS.some((k) => hasAnyContent(body[k]));
 }
 
 /**
@@ -875,7 +927,7 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
     rawCoverage,
   );
 
-  return {
+  const detail = {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
@@ -915,6 +967,24 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
         .map(mapKeywordSpecificRecommendation)
         .filter((r) => r.keyword !== "" || r.recommendations.length > 0),
     },
+  };
+
+  return {
+    ...detail,
+    // 본문 키가 "있는지"(hasKeywordContent, 언랩 종료 조건)와 "그릴 값이 있는지"는 다른 질문이다 —
+    // A_keyword_definitions: [] 처럼 키만 오면 언랩은 끝나지만 화면은 여전히 비어 있다.
+    // 화면 기준으로 판정하되, 껍질 메타(keywords·target·mode·date, 계약 §2.3)는 뺀다 —
+    // 본문 없이도 실려 오므로 포함하면 빈 화면을 "본문 있음"으로 오판한다.
+    hasResultBody: hasAnyContent({
+      ...detail,
+      id: "",
+      status: "",
+      isBookmarked: false,
+      analysisDate: "",
+      analysisMode: "",
+      keywords: [],
+      targetScenario: "",
+    }),
   };
 }
 

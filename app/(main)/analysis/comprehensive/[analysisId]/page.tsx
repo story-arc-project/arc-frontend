@@ -19,8 +19,10 @@ import { getComprehensiveResult, UnsupportedSchemaError } from "@/lib/api/analys
 import { isSafeHttpUrl } from "@/lib/utils/url-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui";
+import { isAnalysisRetryEnabled } from "@/lib/analysis/flags";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import UnsupportedSchemaNotice from "@/components/features/analysis/common/UnsupportedSchemaNotice";
+import AnalysisResultUnavailable from "@/components/features/analysis/common/AnalysisResultUnavailable";
 
 export default function ComprehensiveDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
@@ -93,6 +95,23 @@ export default function ComprehensiveDetailPage() {
           ))}
         </div>
       </main>
+    );
+  }
+
+  // 본문이 안 왔으면 헤더와 경험 배지만 남은 빈 화면 대신 상태 안내로 전환한다(FRT-134).
+  if (!data.hasResultBody) {
+    return (
+      <AnalysisResultUnavailable
+        status={data.status}
+        basePath={basePath}
+        fallbackHref="/analysis/comprehensive"
+        analysisId={analysisId}
+        analysisType="comprehensive"
+        canRetry={isAnalysisRetryEnabled()}
+        onRetried={() =>
+          setData((prev) => (prev ? { ...prev, status: "processing" } : prev))
+        }
+      />
     );
   }
 
