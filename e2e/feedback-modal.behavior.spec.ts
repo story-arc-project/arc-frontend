@@ -184,11 +184,15 @@ test.describe("FRT-96 피드백 모달 중복방지", () => {
 
     await expect(modal).toBeHidden();
 
-    const responses = stub.mutations.filter(
-      (m) => m.method === "POST" && m.path === `${CAMPAIGN_PATH}/responses`,
-    );
-    expect(responses).toHaveLength(1);
-    expect(responses[0]).toMatchObject({
+    // 제출은 fire-and-forget(FRT-92) — 모달은 낙관적으로 즉시 닫히므로 toBeHidden 은 `/responses`
+    // POST 가 라우트 핸들러에 도착했음을 보장하지 않는다. mutations 를 **동기로** 읽으면 느린 CI
+    // 스케줄링에서 캡처 전에 필터가 돌아 헛실패한다 → 도착할 때까지 폴링한 뒤 payload 를 단언한다.
+    const responsesOf = () =>
+      stub.mutations.filter(
+        (m) => m.method === "POST" && m.path === `${CAMPAIGN_PATH}/responses`,
+      );
+    await expect.poll(() => responsesOf().length).toBe(1);
+    expect(responsesOf()[0]).toMatchObject({
       // 경험 게이트로 떴으므로 분석 컨텍스트가 없어야 맞다(feedback-api 가 null 로 명시 전송).
       body: { rating: 4, comment: "기록이 쉬워서 좋았어요", context: null },
     });
