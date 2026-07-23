@@ -153,11 +153,21 @@ export default function ResumeDetailPage({ params }: PageProps) {
         const saved = writeDraft(versionId, latest);
         if (saved) {
           setInitial(snapshot);
+          // 방금 쓴 임시 저장이 곧 지금 편집 중인 내용이다. 배너를 그대로 두면 '복원'이
+          // 화면에 없는 낡은 스냅샷(pendingDraft)을 되돌리면서 clearDraft 로 방금 쓴
+          // 최신 임시 저장까지 지운다 — 배너 하나가 편집을 두 번 잃게 만든다.
+          setPendingDraft(null);
           toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
         } else {
           toast.error("임시 저장도 실패했어요. 페이지를 닫지 마세요.");
         }
       } else {
+        // 서버 장애·오프라인도 편집을 잃을 이유는 아니다. 언마운트 핸들러에만 기대면
+        // 탭을 그대로 닫았을 때(cleanup 미실행) 고친 내용이 통째로 사라진다.
+        // dirty 는 그대로 두어 다음 저장/이탈 경로가 계속 살아 있게 한다.
+        if (writeDraft(versionId, resumeRef.current ?? snapshot)) {
+          setPendingDraft(null);
+        }
         toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
       }
     } finally {

@@ -15,8 +15,15 @@ vi.mock("./client", async () => {
 
 vi.mock("@/lib/demo/state", () => ({ isDemoMode: () => false }));
 
-import { api } from "./client";
-import { createResume, getResume, getResumeList, updateResume } from "./export-api";
+import { api, ApiError } from "./client";
+import {
+  createResume,
+  deleteResume,
+  getResume,
+  getResumeList,
+  ResumeMutationUnsupportedError,
+  updateResume,
+} from "./export-api";
 import { isEmptySection } from "@/types/resume";
 
 const mockGet = vi.mocked(api.get);
@@ -418,4 +425,76 @@ describe("getResumeList — title/language/status 파싱 (FRT-123 계약 §2.4)"
       expect(items[0].status).toBe(expected);
     }
   });
+});
+
+// ─── 저장·삭제 실패 매핑 ─────────────────────────────────────────────
+//
+// 폴백 판정은 두 호출이 **서로 다른 상태 집합**을 봐야 한다. 하나로 묶으면 편집 저장을
+// 살리려고 넣은 422 가 삭제 버튼까지 숨긴다(RecentResumeList 의 setDeleteSupported(false)).
+describe("resume 뮤테이션 실패 매핑", () => {
+  const mockPatch = vi.mocked(api.patch);
+  const mockDelete = vi.mocked(api.delete);
+
+  it("updateResume: 422 를 폴백 신호로 본다 — 서버가 본문을 아직 못 받는다(FRT-148)", async () => {
+    mockPatch.mockRejectedValue(new ApiError(422, "Unprocessable Entity"));
+
+    await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
+      ResumeMutationUnsupportedError,
+    );
+  });
+
+  it.each([501, 405])(
+    "updateResume: %i 도 기존대로 폴백 신호다",
+    async (status) => {
+      mockPatch.mockRejectedValue(new ApiError(status, "unsupported"));
+
+      await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
+        ResumeMutationUnsupportedError,
+      );
+    },
+  );
+
+  // 서버가 요청은 받아주면서(2xx) 본문 대신 {id, title} 만 돌려주는 경우 = 레쥬메 본문은
+  // 저장되지 않았다. 422 와 결과가 같으므로 판정도 같아야 임시 저장이 남는다.
+  it("updateResume: 2xx 인데 result 없는 응답도 폴백 신호로 본다", async () => {
+    mockPatch.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-1", title: "제목" },
+    });
+
+    await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
+      ResumeMutationUnsupportedError,
+    );
+  });
+
+  it("updateResume: 그 밖의 실패는 그대로 올린다 — 폴백으로 삼키면 진짜 장애가 숨는다", async () => {
+    mockPatch.mockRejectedValue(new ApiError(500, "server error"));
+
+    const err = await updateResume("res-1", {} as never).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).not.toBeInstanceOf(ResumeMutationUnsupportedError);
+  });
+
+  // DELETE 는 이미 서버에서 동작하고 body 가 없어 422 가 날 이유가 없다. 그런데도 422 를
+  // 폴백으로 매핑하면 "삭제 기능은 곧 제공될 예정" 안내가 뜨며 버튼이 사라진다 —
+  // 멀쩡한 기능을 없는 것으로 만든다.
+  it("deleteResume: 422 는 폴백 신호가 아니다 — 원래 에러 그대로 올린다", async () => {
+    mockDelete.mockRejectedValue(new ApiError(422, "Unprocessable Entity"));
+
+    const err = await deleteResume("res-1").catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).not.toBeInstanceOf(ResumeMutationUnsupportedError);
+  });
+
+  it.each([501, 405])(
+    "deleteResume: %i 은 기존대로 폴백 신호다",
+    async (status) => {
+      mockDelete.mockRejectedValue(new ApiError(status, "unsupported"));
+
+      await expect(deleteResume("res-1")).rejects.toBeInstanceOf(
+        ResumeMutationUnsupportedError,
+      );
+    },
+  );
 });
