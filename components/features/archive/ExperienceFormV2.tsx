@@ -510,7 +510,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       {/* Form sections — 4-card layout */}
       {template && formCards && (
         <ProjectLinkProvider value={projectLink}>
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-5 archive-input-14">
           {formCards.cards.map(card => (
             <FormSection
               key={card.category}
