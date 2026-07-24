@@ -4,9 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, PenLine, IdCard, Globe } from "lucide-react";
 import { useBasePath } from "@/lib/utils/use-base-path";
-import { isResumeExperienceSelectionEnabled } from "@/lib/export/flags";
+import {
+  isCoverLetterEnabled,
+  isResumeExperienceSelectionEnabled,
+} from "@/lib/export/flags";
 import { TrackCard } from "./_components/TrackCard";
 import { RecentResumeList } from "./_components/RecentResumeList";
+import { RecentCoverLetterList } from "./_components/RecentCoverLetterList";
 import { CreateResumeModal } from "./_components/CreateResumeModal";
 
 export default function ExportPage() {
@@ -15,6 +19,7 @@ export default function ExportPage() {
   const base = useBasePath();
   const isDemo = base === "/demo";
   const router = useRouter();
+  const coverLetterEnabled = isCoverLetterEnabled();
   const [generating, setGenerating] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -51,13 +56,25 @@ export default function ExportPage() {
               onClick={() => setCreateOpen(true)}
               actionLabel="새 레쥬메 만들기"
             />
-            <TrackCard
-              title="자기소개서"
-              description="성장 스토리를 글로 다듬어요."
-              icon={<PenLine size={20} />}
-              disabled
-              badgeText="Phase 1.5 예정"
-            />
+            {/* 게이트는 호출부인 이 페이지가 쥔다(FRT-108 교훈). 백엔드(BAC-62)에 자소서
+                파이프라인이 아직 없어 기본은 잠긴 카드 그대로다. */}
+            {coverLetterEnabled ? (
+              <TrackCard
+                title="자기소개서"
+                description="문항을 넣으면 기록을 바탕으로 초안을 만들어요."
+                icon={<PenLine size={20} />}
+                href={`${base}/export/cover-letter/new`}
+                actionLabel="새 자기소개서 만들기"
+              />
+            ) : (
+              <TrackCard
+                title="자기소개서"
+                description="성장 스토리를 글로 다듬어요."
+                icon={<PenLine size={20} />}
+                disabled
+                badgeText="Phase 1.5 예정"
+              />
+            )}
             <TrackCard
               title="명함"
               description="나를 한눈에 보여주는 명함을 만들어요."
@@ -86,6 +103,17 @@ export default function ExportPage() {
             reloadToken={reloadToken}
           />
         </section>
+
+        {coverLetterEnabled && (
+          <section>
+            <div className="mb-3 flex items-baseline justify-between">
+              <h2 className="text-title text-text-primary">최근 만든 자기소개서</h2>
+            </div>
+            <RecentCoverLetterList
+              onCreateClick={() => router.push(`${base}/export/cover-letter/new`)}
+            />
+          </section>
+        )}
       </div>
 
       {/* 열었을 때만 마운트한다 — 경험 목록 fetch 가 익스포트 페이지 진입마다 일어나지 않게

@@ -8,7 +8,10 @@ import type { ResumeListItem, ResumeVersion } from "@/types/resume";
 import type { Portfolio } from "@/types/portfolio";
 
 import { buildPortfolio } from "@/lib/portfolio/build-portfolio";
+import type { CoverLetterListItem, CoverLetterResult } from "@/types/cover-letter";
 import {
+  seedCoverLetter,
+  seedCoverLetterListItem,
   seedExperiences,
   seedLibraries,
   seedLibraryMembership,
@@ -26,6 +29,8 @@ let libraries: LibraryDTO[] = clone(seedLibraries);
 const libraryMembership: Record<string, string[]> = clone(seedLibraryMembership);
 const resume: ResumeVersion = clone(seedResume);
 let resumeList: ResumeListItem[] = [clone(seedResumeListItem)];
+const coverLetter: CoverLetterResult = clone(seedCoverLetter);
+let coverLetterList: CoverLetterListItem[] = [clone(seedCoverLetterListItem)];
 
 let nextId = 1000;
 
@@ -241,6 +246,38 @@ export const resumeStore = {
     const now = nowIso();
     resumeList = [{ version_id: newId, created_at: now, updated_at: now }, ...resumeList];
     return newId;
+  },
+};
+
+// ─── Cover letter (FRT-140) ─────────────────────────────────
+//
+// 레쥬메 데모와 같은 태도다 — 목록은 늘어나지만 본문은 시드 하나를 공유한다. 데모의 목적은
+// "생성이 정말 되는가"가 아니라 **화면과 흐름을 걸어보는 것**이기 때문이다.
+
+export const coverLetterStore = {
+  get(): CoverLetterResult {
+    return clone(coverLetter);
+  },
+  list(): CoverLetterListItem[] {
+    return clone(coverLetterList);
+  },
+  create(title?: string): string {
+    const newId = genId("demo-cover-letter");
+    const now = nowIso();
+    coverLetterList = [
+      {
+        id: newId,
+        created_at: now,
+        updated_at: now,
+        ...(title ? { title } : {}),
+        status: "completed",
+      },
+      ...coverLetterList,
+    ];
+    return newId;
+  },
+  remove(id: string): void {
+    coverLetterList = coverLetterList.filter((c) => c.id !== id);
   },
 };
 
