@@ -33,6 +33,9 @@ export default defineConfig({
         process.env.PREVIEW_RESUME_EXPERIENCE_SELECTION ?? "true",
       // 인앱 피드백(FRT-95)도 동일 — 프로덕션 기본값 off, BAC-34/35 라이브 후 켠다.
       NEXT_PUBLIC_FEEDBACK_ENABLED: "true",
+      // 자기소개서(FRT-140)도 봉인 상태다 — BAC-62(백엔드 파이프라인)가 없어 기본 off.
+      // 프리뷰에서는 켜서 실물을 확인한다(데모 시드가 본문·근거 경고를 공급한다).
+      NEXT_PUBLIC_COVER_LETTER_ENABLED: "true",
     },
   },
 });
