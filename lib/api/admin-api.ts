@@ -82,7 +82,10 @@ export async function getAdminCustomers(
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/admin/customers${buildQuery(query)}`,
   );
-  const data = asRecord(res.data);
+  // 봉투 변형 흡수(api.md 방어 파싱): 보통은 { data: { count, contents } } 지만, BAC-16/스테이징이
+  // 본문을 래핑 없이 { count, contents } 로 보낼 수도 있다. data 가 없으면 최상위 응답을 본문으로
+  // 본다 — 안 그러면 res.data 가 undefined 라 목록이 조용히 0명이 된다(Codex review).
+  const data = asRecord(res.data ?? res);
   const contents = asArray(data.contents).map(mapCustomer);
   // count 는 검색 조건 전체 건수(페이지네이션용). 서버가 안 주면 현재 페이지 길이로 폴백.
   const count = asNumber(data.count, contents.length);

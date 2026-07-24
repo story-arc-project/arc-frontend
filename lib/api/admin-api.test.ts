@@ -131,6 +131,16 @@ describe("getAdminCustomers — 응답 매핑", () => {
     expect(contents).toEqual([]);
   });
 
+  it("본문이 data 래퍼 없이 { count, contents } 로 와도 최상위에서 읽는다", async () => {
+    // BAC-16/스테이징이 봉투 없이 본문을 그대로 보내는 경우. res.data 가 undefined 라도
+    // 최상위로 폴백해야 목록이 조용히 0명이 되지 않는다(Codex review).
+    getMock.mockResolvedValue({ count: 42, contents: [{ id: "c1" }] });
+    const { count, contents } = await getAdminCustomers();
+    expect(count).toBe(42);
+    expect(contents).toHaveLength(1);
+    expect(contents[0].id).toBe("c1");
+  });
+
   it("count 가 없으면 현재 페이지 길이로 폴백한다", async () => {
     getMock.mockResolvedValue(
       ok({ contents: [{ id: "c1" }, { id: "c2" }] }),
