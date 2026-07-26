@@ -137,4 +137,29 @@ describe("AdminCustomersView — 외부 URL 변화(Back/Forward)", () => {
     expect(searchbox()).toHaveValue("bar");
     expect(nav.replace).not.toHaveBeenCalled();
   });
+
+  it("검색어는 그대로고 페이지만 바뀌는 history 이동도 미확정 입력을 되돌리지 않는다", async () => {
+    // `?q=foo&page=2` → `?q=foo` 처럼 q 가 안 바뀌는 이동. 디바운스(300ms)가 끝나기 전에 뒤로
+    // 가면 입력창에 남은 미확정 값이 그 뒤 URL 을 덮어써 방금의 이동을 무효로 만든다(Codex P2).
+    api.getAdminCustomers.mockImplementation(async () => ({
+      count: 1000,
+      contents: [{ id: "c1" }],
+    }));
+
+    nav.params = new URLSearchParams("q=foo&page=2");
+    const { rerender } = render(<AdminCustomersView />);
+    await flush();
+    nav.replace.mockClear();
+
+    // 디바운스가 끝나기 전에 타이핑만 해 둔다(아직 URL 에 안 실린 상태).
+    fireEvent.change(searchbox(), { target: { value: "bar" } });
+
+    // 뒤로가기: q 는 foo 그대로, page 만 사라진다.
+    nav.params = new URLSearchParams("q=foo");
+    rerender(<AdminCustomersView />);
+    await flush();
+
+    expect(searchbox()).toHaveValue("foo");
+    expect(nav.replace).not.toHaveBeenCalled();
+  });
 });

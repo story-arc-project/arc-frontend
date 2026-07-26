@@ -43,13 +43,20 @@ export function AdminCustomersView() {
 
   // 검색창 입력은 로컬 상태로 즉시 반응하고, 디바운스된 값만 URL(→서버 조회)로 흘린다.
   const [input, setInput] = useState(qParam);
-  // 외부 요인(뒤로/앞으로 가기·링크)으로 URL 검색어가 바뀌면 입력창을 그 값으로 맞춘다. 이걸 안
+  // 외부 요인(뒤로/앞으로 가기·링크)으로 URL 이 바뀌면 입력창을 URL 의 검색어로 맞춘다. 이걸 안
   // 하면 아래 디바운스 effect 가 낡은 input 으로 URL 을 되돌려 Back/Forward 를 무력화한다(Codex P2).
-  // 렌더 중 조정(React 권장 prev-value 패턴, archive/page.tsx 전례) — 우리 쪽 write 로 qParam 이
-  // 바뀐 경우엔 input 이 이미 같은 값이라 no-op → 루프 없음.
-  const [syncedQ, setSyncedQ] = useState(qParam);
-  if (qParam !== syncedQ) {
-    setSyncedQ(qParam);
+  //
+  // 기준은 q 단독이 아니라 **q+page 전체**다. `?q=foo&page=2` ↔ `?q=foo` 처럼 검색어가 그대로인
+  // 이동에서는 q 만 보면 동기화가 안 걸리고, 디바운스(300ms) 전에 눌린 뒤로가기가 남긴 미확정
+  // 입력이 그 뒤 URL 을 덮어써 방금의 이동을 무효로 만든다(Codex P2). 불변식으로 세우면:
+  // **어떤 내비게이션이든 그 뒤의 검색창은 URL 을 반영한다** — 갈라지는 건 자유 타이핑 중일 때뿐.
+  //
+  // 렌더 중 조정(React 권장 prev-value 패턴, archive/page.tsx 전례) — 우리 쪽 write 로 URL 이
+  // 바뀐 경우엔 input 이 이미 확정 검색어와 같아 no-op → 루프 없음.
+  const urlKey = `${page}|${qParam}`;
+  const [syncedUrl, setSyncedUrl] = useState(urlKey);
+  if (urlKey !== syncedUrl) {
+    setSyncedUrl(urlKey);
     setInput(qParam);
   }
   const debouncedInput = useDebouncedValue(input, SEARCH_DEBOUNCE_MS);
