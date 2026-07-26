@@ -307,15 +307,57 @@ export function comprehensiveDetail(): ApiSuccessResponse<Record<string, unknown
     },
     synergy_combinations: [],
     additional_recommendations: {
-      certifications: ["정보처리기사"],
+      certifications: [
+        {
+          name: "정보처리기사",
+          reason: "SW 직무 기본 자격",
+          expected_effect: "서류 통과 향상",
+          estimated_duration: "3~6개월",
+          url: null,
+          issuer: "한국산업인력공단",
+        },
+      ],
       clubs_and_societies: [],
-      projects_and_contests: ["교내 해커톤"],
+      projects_and_contests: [
+        {
+          name: "교내 해커톤",
+          organizer: "ARC 대학교",
+          reason: "실전 경험 보강",
+          expected_effect: "협업 이력 확보",
+          url: null,
+          deadline: null,
+          is_regular: true,
+        },
+      ],
     },
     resume_star_format: [],
     action_plan: {
       short_term: "정량 성과 정리",
       mid_term: "대외 활동 확장",
       long_term: "직무 포트폴리오 완성",
+    },
+    strength_diagnosis: {
+      one_line_verdict: "협업·기획 축이 고르게 잡힌 포트폴리오.",
+      strengths: [
+        {
+          id: 1,
+          category: "직무_연관성",
+          level: "strong",
+          title: "협업 주도성",
+          diagnosis: "동아리 운영에서 일관된 주도성이 확인됨.",
+          evidence: "동아리 운영 이력",
+          impact: "팀 직무 적합성 어필 가능",
+          leverage_action: "운영 성과를 수치로 정리하세요.",
+        },
+      ],
+      no_strength_diagnosis: {
+        has_issue: false,
+        reason: "",
+        improvement_direction: "",
+      },
+      standout_experience_types: ["동아리 운영"],
+      content_quality_highlights: [],
+      competitor_advantage: "기획·백엔드 균형이 또렷함.",
     },
     critical_diagnosis: {
       one_line_verdict: "방향성은 뚜렷하나 정량 근거 보강 필요.",
@@ -324,8 +366,10 @@ export function comprehensiveDetail(): ApiSuccessResponse<Record<string, unknown
       content_quality_issues: [],
       competitor_gap: "정량 성과에서 평균과 격차.",
     },
-    valid_job_recommendations: [],
+    verified_jobs: [],
+    expired_jobs: [],
     missing_info_warning: "",
+    schema_version: "comprehensive/2.0",
   });
 }
 

@@ -209,7 +209,7 @@ export const mockIndividualAnalysisResult: IndividualAnalysisResult = {
         {
           id: "w-1",
           category: "실험 한계",
-          severity: "high",
+          severity: "critical",
           title: "실전 투자 조건 미반영",
           diagnosis: "백테스팅 결과가 슬리피지, 거래 비용 등 현실 조건 없이 산출되어 있습니다.",
           evidence: "결과 수치에 거래 비용·슬리피지 가정이 명시되지 않음",
@@ -221,7 +221,7 @@ export const mockIndividualAnalysisResult: IndividualAnalysisResult = {
         {
           id: "w-2",
           category: "일반화",
-          severity: "medium",
+          severity: "major",
           title: "단일 종목 실험으로 일반화 근거 부족",
           diagnosis: "특정 종목·기간에 한정된 실험으로 전략의 범용성이 입증되지 않았습니다.",
           evidence: "실험 대상 종목 및 기간 범위가 제한적",
@@ -351,9 +351,48 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
     },
   ],
   additionalRecommendations: {
-    certifications: ["정보처리기사", "ADsP (데이터분석 준전문가)"],
-    clubsAndSocieties: ["AUSG (AWS 유저 그룹)", "캐글 코리아"],
-    projectsAndContests: ["Kaggle Competition 참여", "오픈소스 NLP 라이브러리 기여", "AI 해커톤 출전"],
+    certifications: [
+      {
+        name: "정보처리기사",
+        reason: "SW 직무 지원 시 기본 자격 요건을 충족합니다.",
+        expectedEffect: "서류 통과 가능성 향상",
+        estimatedDuration: "3~6개월",
+        url: "https://www.q-net.or.kr",
+        issuer: "한국산업인력공단",
+      },
+      {
+        name: "ADsP (데이터분석 준전문가)",
+        reason: "데이터 사이언스 직무와의 연관성을 보강합니다.",
+        expectedEffect: "데이터 직무 지원 근거 확보",
+        estimatedDuration: "1~2개월",
+        url: null,
+        issuer: "한국데이터산업진흥원",
+      },
+    ],
+    clubsAndSocieties: [
+      {
+        name: "AUSG (AWS 유저 그룹)",
+        type: "연합동아리",
+        schoolAffiliation: "한양대학교",
+        description: "AWS 기반 클라우드·서버리스 스터디 및 세미나",
+        reason: "클라우드 배포 경험을 보강할 수 있습니다.",
+        expectedEffect: "인프라 이해도 상승",
+        url: "https://ausg.me",
+        searchQuery: "AUSG AWS 유저 그룹",
+        searchVerified: true,
+      },
+    ],
+    projectsAndContests: [
+      {
+        name: "Kaggle Competition",
+        organizer: "Kaggle",
+        reason: "외부 검증 이력을 만들 수 있습니다.",
+        expectedEffect: "정량적 성과로 실력 증명",
+        url: "https://www.kaggle.com/competitions",
+        deadline: null,
+        isRegular: true,
+      },
+    ],
   },
   resumeStarFormat: [
     {
@@ -376,6 +415,47 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
     midTerm: "Kaggle Competition 또는 AI 해커톤으로 외부 검증 이력 1건 추가",
     longTerm: "오픈소스 NLP/CV 기여로 커뮤니티 인지도 확보 및 기술 블로그 운영",
   },
+  strengthDiagnosis: {
+    oneLineVerdict:
+      "LLM·NLP·CV를 아우르는 일관된 AI/ML 성장 라인과 정량 성과가 또렷한, 신입 기준 상위권 포트폴리오예요.",
+    strengths: [
+      {
+        id: "s-1",
+        category: "직무_연관성",
+        level: "outstanding",
+        title: "AI/ML 일관 라인",
+        diagnosis: "부스트캠프 → 연구실 인턴 → LLM 프로젝트로 직무 연관 경험이 끊김 없이 이어집니다.",
+        evidence: "3개 경험 모두 AI/ML 도메인, 각 단계가 다음 단계의 기반",
+        impact: "지원 직무와의 적합성을 한눈에 설득할 수 있음",
+        leverageAction: "성장 서사를 자기소개서 첫 문단에 배치하세요.",
+      },
+      {
+        id: "s-2",
+        category: "서류_품질",
+        level: "strong",
+        title: "정량 성과 제시",
+        diagnosis: "mAP 0.68, IAA 0.78 등 수치로 성과를 제시해 설득력이 높습니다.",
+        evidence: "각 경험에 측정 가능한 결과 수치 기재",
+        impact: "면접에서 성과를 구체적으로 설명하기 유리",
+        leverageAction: "수치가 나온 실험 조건도 함께 1줄씩 덧붙이세요.",
+      },
+    ],
+    noStrengthDiagnosis: {
+      hasIssue: false,
+      reason: "",
+      improvementDirection: "",
+    },
+    standoutExperienceTypes: ["연구 인턴", "개인 프로젝트"],
+    contentQualityHighlights: [
+      {
+        item: "'한국어 혐오 표현 탐지' 항목",
+        highlight: "IAA 0.61 → 0.78 개선을 원인·행동·결과로 구조화",
+        whyEffective: "문제 인식과 해결 과정이 드러나 연구 성숙도를 보여줌",
+      },
+    ],
+    competitorAdvantage:
+      "동일 학번 AI/ML 전공자 대비 프로젝트 다양성과 정량 성과 제시가 상위권입니다.",
+  },
   criticalDiagnosis: {
     oneLineVerdict:
       "AI/ML 기술 스택은 탄탄하지만, '왜 이 방법을 선택했는가'에 대한 의사결정 근거가 부족해 연구 성숙도가 낮게 보일 수 있어요.",
@@ -383,7 +463,7 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       {
         id: "cw-1",
         category: "의사결정 근거",
-        severity: "high",
+        severity: "critical",
         title: "기술 선택 이유가 서술되지 않음",
         diagnosis: "Gemma-2, YOLOv8, KLUE-BERT를 선택한 이유가 각 경험에 서술되어 있지 않습니다.",
         evidence: "기술 나열 위주의 서술, 비교 검토 과정 미기재",
@@ -393,7 +473,7 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       {
         id: "cw-2",
         category: "팀 기여",
-        severity: "medium",
+        severity: "major",
         title: "팀 프로젝트에서 개인 기여 불분명",
         diagnosis: "부스트캠프 Wrap-up, 버스 앱 개발에서 팀 내 본인 역할이 명확히 구분되지 않습니다.",
         evidence: "팀 성과로 서술, 개인 담당 영역 미기재",
@@ -412,20 +492,31 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
     competitorGap:
       "비슷한 학번 AI/ML 전공자 대비 프로젝트 다양성은 상위권이지만, 각 기술 선택에 대한 근거 서술은 평균 수준입니다.",
   },
-  validJobRecommendations: [
+  verifiedJobs: [
     {
       company: "네이버",
       role: "ML 엔지니어 (신입)",
-      deadline: "2026-06-30",
+      deadline: "2026-12-30",
       whyMatch: "LLM 파이프라인 경험과 부스트캠프 수료 이력이 직접 연결됩니다.",
       url: "https://example.com/jobs/naver-ml",
+      isValid: true,
     },
     {
       company: "카카오브레인",
       role: "AI 리서처 (인턴)",
-      deadline: "2026-07-15",
+      deadline: "상시채용",
       whyMatch: "NLP 연구실 인턴 경험과 독립적 AI 프로젝트 수행 이력이 연구 환경과 잘 맞습니다.",
       url: "https://example.com/jobs/kakao-brain",
+      isValid: true,
+    },
+  ],
+  expiredJobs: [
+    {
+      company: "라인",
+      role: "ML 엔지니어 (신입)",
+      deadline: "2026-06-30",
+      whyMatch: "추천 모델 경험과 맞으나 마감이 지났습니다.",
+      url: "https://example.com/jobs/line-ml",
     },
   ],
   missingInfoWarning:

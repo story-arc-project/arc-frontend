@@ -14,11 +14,18 @@ import type {
   IndividualStarFormat,
   IndividualActionPlan,
   WeaknessSeverity,
+  StrengthLevel,
   SynergyPriority,
   ComprehensiveAnalysisResult,
   ComprehensiveWeakness,
   SynergyCombination,
   ContentQualityIssue,
+  ContentQualityHighlight,
+  Certification,
+  ClubSociety,
+  ProjectContest,
+  Strength,
+  StrengthDiagnosis,
   JobRecommendation,
   KeywordAnalysisResult,
   KeywordDefinition,
@@ -135,7 +142,10 @@ const MAX_RESULT_NESTING = 4;
 const KNOWN_SCHEMA_VERSIONS = new Set([
   "keyword/4.1",
   "individual/1.0",
+  // comprehensive/1.0 은 구 레코드 호환용으로 유지한다 — 1.0 payload 엔 strength_diagnosis 가
+  // 없지만 매퍼가 부재를 빈 구조로 안전 처리하므로 렌더된다.
   "comprehensive/1.0",
+  "comprehensive/2.0",
   "resume/1.0",
 ]);
 
@@ -282,7 +292,15 @@ function mapBookmark(dto: unknown): BookmarkedSnapshot {
 }
 
 function asWeaknessSeverity(value: unknown): WeaknessSeverity {
-  return value === "high" || value === "medium" || value === "low" ? value : "medium";
+  // 미상값은 과소평가하지 않도록 "major"(중간) 로 폴백한다 — 약점을 "참고"로 눌러버리면
+  // 사용자에게 불이익(백엔드 프롬프트의 약점 보존 원칙과 같은 방향).
+  return value === "critical" || value === "major" || value === "minor" ? value : "major";
+}
+
+function asStrengthLevel(value: unknown): StrengthLevel {
+  return value === "outstanding" || value === "strong" || value === "notable"
+    ? value
+    : "notable";
 }
 
 function asSynergyPriority(value: unknown): SynergyPriority {
@@ -427,23 +445,118 @@ function mapContentQualityIssue(dto: unknown): ContentQualityIssue {
   };
 }
 
-function mapJobRecommendation(dto: unknown): JobRecommendation {
+function mapContentQualityHighlight(dto: unknown): ContentQualityHighlight {
   const r = asRecord(dto);
   return {
+    item: asString(r.item),
+    highlight: asString(r.highlight),
+    whyEffective: asString(r.whyEffective ?? r.why_effective),
+  };
+}
+
+// ── 추가 활동 추천 (v2.0 객체 배열) ─────────────────────────
+function mapCertification(dto: unknown): Certification {
+  const r = asRecord(dto);
+  return {
+    name: asString(r.name),
+    reason: asString(r.reason),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+    estimatedDuration: asString(r.estimatedDuration ?? r.estimated_duration),
+    url: asNullableString(r.url),
+    issuer: asString(r.issuer),
+  };
+}
+
+function mapClubSociety(dto: unknown): ClubSociety {
+  const r = asRecord(dto);
+  return {
+    name: asString(r.name),
+    type: asString(r.type),
+    schoolAffiliation: asString(r.schoolAffiliation ?? r.school_affiliation),
+    description: asString(r.description),
+    reason: asString(r.reason),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+    url: asNullableString(r.url),
+    searchQuery: asString(r.searchQuery ?? r.search_query),
+    searchVerified: asBoolean(r.searchVerified ?? r.search_verified),
+  };
+}
+
+function mapProjectContest(dto: unknown): ProjectContest {
+  const r = asRecord(dto);
+  return {
+    name: asString(r.name),
+    organizer: asString(r.organizer),
+    reason: asString(r.reason),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+    url: asNullableString(r.url),
+    deadline: asNullableString(r.deadline),
+    isRegular: asBoolean(r.isRegular ?? r.is_regular),
+  };
+}
+
+// ── 강점 진단 (v2.0) ────────────────────────────────────────
+function mapStrength(dto: unknown, index: number): Strength {
+  const r = asRecord(dto);
+  return {
+    id: asString(r.id, `s-${index}`),
+    category: asString(r.category),
+    level: asStrengthLevel(r.level),
+    title: asString(r.title),
+    diagnosis: asString(r.diagnosis),
+    evidence: asString(r.evidence),
+    impact: asString(r.impact),
+    leverageAction: asString(r.leverageAction ?? r.leverage_action),
+  };
+}
+
+/** strength_diagnosis 부재(구 1.0 레코드·진행중)에도 빈 구조를 돌려 화면이 안전히 건너뛴다. */
+function mapStrengthDiagnosis(dto: unknown): StrengthDiagnosis {
+  const r = asRecord(dto);
+  const noStrength = asRecord(r.noStrengthDiagnosis ?? r.no_strength_diagnosis);
+  return {
+    oneLineVerdict: asString(r.oneLineVerdict ?? r.one_line_verdict),
+    strengths: asArray(r.strengths).map((s, i) => mapStrength(s, i)),
+    noStrengthDiagnosis: {
+      hasIssue: asBoolean(noStrength.hasIssue ?? noStrength.has_issue),
+      reason: asString(noStrength.reason),
+      improvementDirection: asString(
+        noStrength.improvementDirection ?? noStrength.improvement_direction,
+      ),
+    },
+    standoutExperienceTypes: asStringArray(
+      r.standoutExperienceTypes ?? r.standout_experience_types,
+    ),
+    contentQualityHighlights: asArray(
+      r.contentQualityHighlights ?? r.content_quality_highlights,
+    ).map(mapContentQualityHighlight),
+    competitorAdvantage: asString(r.competitorAdvantage ?? r.competitor_advantage),
+  };
+}
+
+function mapJobRecommendation(dto: unknown): JobRecommendation {
+  const r = asRecord(dto);
+  const job: JobRecommendation = {
     company: asString(r.company),
     role: asString(r.role),
     deadline: asString(r.deadline),
     whyMatch: asString(r.whyMatch ?? r.why_match),
     url: asString(r.url),
   };
+  // is_valid 는 verified_jobs 에만 붙고 expired_jobs 엔 없다 — 있을 때만 반영한다.
+  const isValid = r.isValid ?? r.is_valid;
+  if (typeof isValid === "boolean") job.isValid = isValid;
+  return job;
 }
 
 /**
- * 종합 분석 응답 형태 (prefix 없는 평탄형, result wrapper도 방어):
+ * 종합 분석 응답 형태 v2.0 (comprehensive/2.0, prefix 없는 평탄형, result wrapper도 방어):
  * { status, user_school, user_department, brief_summary, detailed_summary,
  *   keyword_clustering, experience_insights, synergy_combinations[],
- *   additional_recommendations, resume_star_format[], action_plan,
- *   critical_diagnosis, valid_job_recommendations[], missing_info_warning }
+ *   additional_recommendations{certifications[], clubs_and_societies[], projects_and_contests[]},
+ *   resume_star_format[], action_plan, strength_diagnosis, critical_diagnosis,
+ *   verified_jobs[], expired_jobs[], missing_info_warning }
+ * 구 레코드(valid_job_recommendations, additional_recommendations 문자열 배열)도 폴백 지원.
  */
 function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
   const r = asRecord(dto);
@@ -479,18 +592,21 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
       body.synergyCombinations ?? body.synergy_combinations,
     ).map(mapSynergyCombination),
     additionalRecommendations: {
-      certifications: asStringArray(additional.certifications),
-      clubsAndSocieties: asStringArray(
+      certifications: asArray(additional.certifications).map(mapCertification),
+      clubsAndSocieties: asArray(
         additional.clubsAndSocieties ?? additional.clubs_and_societies,
-      ),
-      projectsAndContests: asStringArray(
+      ).map(mapClubSociety),
+      projectsAndContests: asArray(
         additional.projectsAndContests ?? additional.projects_and_contests,
-      ),
+      ).map(mapProjectContest),
     },
     resumeStarFormat: asArray(
       body.resumeStarFormat ?? body.resume_star_format,
     ).map(mapStarFormat),
     actionPlan: mapActionPlan(body.actionPlan ?? body.action_plan),
+    strengthDiagnosis: mapStrengthDiagnosis(
+      body.strengthDiagnosis ?? body.strength_diagnosis,
+    ),
     criticalDiagnosis: {
       oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
       weaknesses: asArray(diagnosis.weaknesses).map((w, i) => mapComprehensiveWeakness(w, i)),
@@ -502,9 +618,13 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
       ).map(mapContentQualityIssue),
       competitorGap: asString(diagnosis.competitorGap ?? diagnosis.competitor_gap),
     },
-    validJobRecommendations: asArray(
-      body.validJobRecommendations ?? body.valid_job_recommendations,
+    // v2.0: 채용공고는 후처리로 verified/expired 로 분리돼 온다. 구 레코드(valid_job_recommendations)는
+    // 마감 판정 전이므로 verifiedJobs 로 폴백한다(이중호환).
+    verifiedJobs: asArray(
+      body.verifiedJobs ?? body.verified_jobs ??
+        body.validJobRecommendations ?? body.valid_job_recommendations,
     ).map(mapJobRecommendation),
+    expiredJobs: asArray(body.expiredJobs ?? body.expired_jobs).map(mapJobRecommendation),
     missingInfoWarning: asString(body.missingInfoWarning ?? body.missing_info_warning),
   };
 

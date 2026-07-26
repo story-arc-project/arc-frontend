@@ -51,8 +51,11 @@ export const analysisTypeLabel: Record<AnalysisType, string> = {
 // 백엔드 응답: { id, status, experience_id, result }
 // result 안에 실제 분석 결과 트리가 들어 있다.
 
-export type WeaknessSeverity = "high" | "medium" | "low";
+// 백엔드 종합·개별 analyzer 공통 severity (comprehensive.py / individual.py: critical|major|minor).
+// strength_diagnosis 의 level(outstanding|strong|notable)과 1:1 대응한다(comprehensive.py L825~828).
+export type WeaknessSeverity = "critical" | "major" | "minor";
 export type SynergyPriority = "high" | "medium" | "low";
+export type StrengthLevel = "outstanding" | "strong" | "notable";
 
 export interface IndividualDeepAnalysis {
   careerValue: string;
@@ -131,11 +134,18 @@ export interface IndividualAnalysisResult {
   result: IndividualAnalysisResultBody;
 }
 
-// 진단/시너지 라벨
+// 진단/시너지 라벨 — 톤은 압박을 주지 않게(경쟁 지양, CLAUDE.md 제품 원칙).
 export const weaknessSeverityLabel: Record<WeaknessSeverity, string> = {
-  high: "심각",
-  medium: "보통",
-  low: "경미",
+  critical: "시급",
+  major: "주의",
+  minor: "참고",
+};
+
+// 강점 level(outstanding|strong|notable) 라벨. severity 와 1:1 대응하는 긍정 축.
+export const strengthLevelLabel: Record<StrengthLevel, string> = {
+  outstanding: "탁월",
+  strong: "강점",
+  notable: "눈에 띔",
 };
 
 export const synergyPriorityLabel: Record<SynergyPriority, string> = {
@@ -145,11 +155,14 @@ export const synergyPriorityLabel: Record<SynergyPriority, string> = {
 };
 
 // ─── Comprehensive Analysis Detail ──────────────────────────
-// 백엔드 응답 (prefix A_/B_… 제거된 형태):
+// 백엔드 응답 v2.0 (comprehensive/2.0, prefix 없는 형태):
 // status, user_school, user_department, brief_summary, detailed_summary,
 // keyword_clustering, experience_insights, synergy_combinations[],
-// additional_recommendations, resume_star_format[], action_plan,
-// critical_diagnosis, valid_job_recommendations[], missing_info_warning
+// additional_recommendations{certifications[], clubs_and_societies[], projects_and_contests[]},
+// resume_star_format[], action_plan, strength_diagnosis, critical_diagnosis,
+// verified_jobs[], expired_jobs[], missing_info_warning
+// (v2.0: strength_diagnosis 신설, valid_job_recommendations 는 후처리로 verified/expired 분리,
+//  additional_recommendations 항목은 문자열이 아니라 검증 필드가 붙은 객체다.)
 
 export interface KeywordClustering {
   personalityTendency: string[];
@@ -170,16 +183,87 @@ export interface SynergyCombination {
   applicableRoles: string[];
 }
 
+// 추가 활동 추천 — v2.0 은 검증(verify_*) 후 url·issuer·search_verified 등이 붙은 객체 배열이다.
+// url 은 검증 미통과 시 null 로 온다(빈 문자열로 뭉개지 않는다).
+export interface Certification {
+  name: string;
+  reason: string;
+  expectedEffect: string;
+  estimatedDuration: string;
+  /** verify_certifications_with_search 통과 시 공식 URL, 아니면 null. */
+  url: string | null;
+  /** 검증으로 확인된 주관기관 (프롬프트 단계엔 없고 후처리로 추가). */
+  issuer: string;
+}
+
+export interface ClubSociety {
+  name: string;
+  /** 교내동아리|교내학회|연합동아리|연합학회|외부학교 등. enum 강제 대신 원문 유지. */
+  type: string;
+  schoolAffiliation: string;
+  description: string;
+  reason: string;
+  expectedEffect: string;
+  url: string | null;
+  searchQuery: string;
+  searchVerified: boolean;
+}
+
+export interface ProjectContest {
+  name: string;
+  organizer: string;
+  reason: string;
+  expectedEffect: string;
+  url: string | null;
+  /** 마감일 (YYYY-MM-DD) 또는 미확인 시 null. */
+  deadline: string | null;
+  isRegular: boolean;
+}
+
 export interface AdditionalRecommendations {
-  certifications: string[];
-  clubsAndSocieties: string[];
-  projectsAndContests: string[];
+  certifications: Certification[];
+  clubsAndSocieties: ClubSociety[];
+  projectsAndContests: ProjectContest[];
 }
 
 export interface ContentQualityIssue {
   item: string;
   issue: string;
   improvementHint: string;
+}
+
+// ── 강점 진단 (v2.0 신설, critical_diagnosis 보다 먼저 출력) ──
+export interface ContentQualityHighlight {
+  item: string;
+  highlight: string;
+  whyEffective: string;
+}
+
+export interface Strength {
+  id: string;
+  category: string;
+  level: StrengthLevel;
+  title: string;
+  diagnosis: string;
+  evidence: string;
+  impact: string;
+  /** 강점을 극대화할 행동 (동사 시작). */
+  leverageAction: string;
+}
+
+export interface NoStrengthDiagnosis {
+  hasIssue: boolean;
+  reason: string;
+  improvementDirection: string;
+}
+
+export interface StrengthDiagnosis {
+  oneLineVerdict: string;
+  strengths: Strength[];
+  noStrengthDiagnosis: NoStrengthDiagnosis;
+  standoutExperienceTypes: string[];
+  contentQualityHighlights: ContentQualityHighlight[];
+  competitorAdvantage: string;
 }
 
 export interface ComprehensiveWeakness {
@@ -207,6 +291,12 @@ export interface JobRecommendation {
   deadline: string;
   whyMatch: string;
   url: string;
+  /**
+   * 마감일 유효 여부 — 코드 판정(filter_valid_jobs). verified_jobs 항목엔 true 로 붙고
+   * expired_jobs 항목엔 키 자체가 없어 undefined 로 온다(spec 문서의 "동일 구조"와 불일치).
+   * 마감 여부의 정본은 이 필드가 아니라 verifiedJobs/expiredJobs 배열 소속이다.
+   */
+  isValid?: boolean;
 }
 
 export interface ComprehensiveAnalysisResult {
@@ -231,8 +321,13 @@ export interface ComprehensiveAnalysisResult {
   additionalRecommendations: AdditionalRecommendations;
   resumeStarFormat: IndividualStarFormat[];
   actionPlan: IndividualActionPlan;
+  /** v2.0 신설. critical_diagnosis 보다 먼저 노출한다(앵커링 저항, 계약/프롬프트). */
+  strengthDiagnosis: StrengthDiagnosis;
   criticalDiagnosis: CriticalDiagnosis;
-  validJobRecommendations: JobRecommendation[];
+  /** 마감 유효 채용 공고 (verified_jobs). */
+  verifiedJobs: JobRecommendation[];
+  /** 마감 지난 채용 공고 (expired_jobs). 화면에서 약화 표기한다. */
+  expiredJobs: JobRecommendation[];
   missingInfoWarning: string;
 }
 

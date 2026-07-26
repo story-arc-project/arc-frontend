@@ -884,6 +884,166 @@ describe("schema_version 가드 — 부재 ≠ 미상 (FRT-123 계약 §3.5)", (
     )
     await expect(getKeywordResult("kw-1")).rejects.toBeInstanceOf(UnsupportedSchemaError)
   })
+
+  it("comprehensive/2.0 은 아는 버전이라 안내 대신 정상 렌더한다", async () => {
+    // 이 버그의 핵심 재현: 백엔드가 comprehensive/2.0 을 주입하는데 프론트가 1.0 만 알면
+    // 상세가 통째로 "표시할 수 없습니다" 안내로 빠졌다. 2.0 을 화이트리스트에 넣어 해소.
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed", result: { schema_version: "comprehensive/2.0" } }),
+    )
+    await expect(getComprehensiveResult("comp-1")).resolves.toMatchObject({ id: "comp-1" })
+  })
+})
+
+describe("종합 분석 v2.0 매퍼 (comprehensive/2.0)", () => {
+  function comp2(result: Record<string, unknown>) {
+    return envelope({
+      id: "comp-1",
+      status: "completed",
+      result: { schema_version: "comprehensive/2.0", ...result },
+    })
+  }
+
+  it("weaknesses.severity 를 critical|major|minor 로 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp2({
+        critical_diagnosis: {
+          weaknesses: [
+            { id: 1, severity: "critical", title: "a" },
+            { id: 2, severity: "major", title: "b" },
+            { id: 3, severity: "minor", title: "c" },
+          ],
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.criticalDiagnosis.weaknesses.map((w) => w.severity)).toEqual([
+      "critical",
+      "major",
+      "minor",
+    ])
+  })
+
+  it("모르는 severity 는 major 로 폴백한다 (약점 과소평가 금지)", async () => {
+    apiMock.get.mockResolvedValue(
+      comp2({ critical_diagnosis: { weaknesses: [{ id: 1, severity: "high", title: "a" }] } }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.criticalDiagnosis.weaknesses[0].severity).toBe("major")
+  })
+
+  it("additional_recommendations 를 객체 배열로 매핑한다 (문자열 배열로 뭉개지 않음)", async () => {
+    apiMock.get.mockResolvedValue(
+      comp2({
+        additional_recommendations: {
+          certifications: [
+            {
+              name: "정보처리기사",
+              reason: "r",
+              expected_effect: "e",
+              estimated_duration: "3개월",
+              url: null,
+              issuer: "한국산업인력공단",
+            },
+          ],
+          clubs_and_societies: [
+            { name: "AUSG", type: "연합동아리", school_affiliation: "한양대", search_verified: true, url: "https://ausg.me" },
+          ],
+          projects_and_contests: [
+            { name: "Kaggle", organizer: "Kaggle", is_regular: true, url: null, deadline: null },
+          ],
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    const { certifications, clubsAndSocieties, projectsAndContests } =
+      res.additionalRecommendations
+    expect(certifications[0]).toMatchObject({
+      name: "정보처리기사",
+      issuer: "한국산업인력공단",
+      url: null,
+    })
+    expect(clubsAndSocieties[0]).toMatchObject({
+      name: "AUSG",
+      type: "연합동아리",
+      schoolAffiliation: "한양대",
+      searchVerified: true,
+    })
+    expect(projectsAndContests[0]).toMatchObject({ name: "Kaggle", isRegular: true, deadline: null })
+  })
+
+  it("strength_diagnosis 를 매핑하고 level 을 outstanding|strong|notable 로 읽는다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp2({
+        strength_diagnosis: {
+          one_line_verdict: "강점 요약",
+          strengths: [
+            {
+              id: 1,
+              category: "직무_연관성",
+              level: "outstanding",
+              title: "일관 라인",
+              leverage_action: "서사를 앞세우세요",
+            },
+          ],
+          no_strength_diagnosis: { has_issue: false, reason: "", improvement_direction: "" },
+          standout_experience_types: ["연구 인턴"],
+          content_quality_highlights: [{ item: "i", highlight: "h", why_effective: "w" }],
+          competitor_advantage: "차별점",
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.strengthDiagnosis.oneLineVerdict).toBe("강점 요약")
+    expect(res.strengthDiagnosis.strengths[0]).toMatchObject({
+      level: "outstanding",
+      leverageAction: "서사를 앞세우세요",
+    })
+    expect(res.strengthDiagnosis.contentQualityHighlights[0].whyEffective).toBe("w")
+    expect(res.strengthDiagnosis.competitorAdvantage).toBe("차별점")
+  })
+
+  it("strength_diagnosis 부재(구 1.0 레코드)에도 빈 구조로 안전하게 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed", result: { schema_version: "comprehensive/1.0" } }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.strengthDiagnosis.strengths).toEqual([])
+    expect(res.strengthDiagnosis.oneLineVerdict).toBe("")
+  })
+
+  it("verified_jobs / expired_jobs 를 분리 매핑하고 is_valid 유무를 보존한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp2({
+        verified_jobs: [
+          { company: "네이버", role: "ML", deadline: "2026-12-30", why_match: "m", url: "https://x", is_valid: true },
+        ],
+        expired_jobs: [
+          { company: "라인", role: "ML", deadline: "2026-06-30", why_match: "m", url: "https://y" },
+        ],
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.verifiedJobs).toHaveLength(1)
+    expect(res.verifiedJobs[0].isValid).toBe(true)
+    expect(res.expiredJobs).toHaveLength(1)
+    // expired 는 is_valid 키가 없다(백엔드 filter_valid_jobs) — undefined 로 보존.
+    expect(res.expiredJobs[0].isValid).toBeUndefined()
+  })
+
+  it("구 레코드 valid_job_recommendations 는 verifiedJobs 로 폴백한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp2({
+        valid_job_recommendations: [
+          { company: "카카오", role: "AI", deadline: "상시채용", why_match: "m", url: "https://z" },
+        ],
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.verifiedJobs).toHaveLength(1)
+    expect(res.verifiedJobs[0].company).toBe("카카오")
+    expect(res.expiredJobs).toEqual([])
+  })
 })
 
 describe("updateAnalysisMeta — 타입별 PATCH 경로 (FRT-123 계약 §2)", () => {
