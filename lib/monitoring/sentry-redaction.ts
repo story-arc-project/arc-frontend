@@ -12,7 +12,13 @@ const SPAN_URL_KEYS = [
   "http.query",
   "url.full",
   "url.query",
+  // 서버 통합이 Referer 를 루트 스팬 속성으로 복사한다.
+  "http.request.header.referer",
 ] as const;
+
+// Referer 는 현재 주소를 통째로 담는다. 앱 전역 `Referrer-Policy: strict-origin`(FRT-83)이 이미
+// origin 만 남기지만, 프록시·설정 변경으로 헤더가 되살아나도 검색어가 새지 않게 한 겹 더 둔다.
+const HEADER_URL_KEYS = ["Referer", "referer", "Referrer", "referrer"] as const;
 
 // Replay 이벤트만 방문 URL 목록(`urls`)을 들고 온다 — 기본 Event 타입에는 없다.
 type EventWithUrls = Sentry.Event & { urls?: string[] };
@@ -57,8 +63,23 @@ export function installUrlRedaction(): void {
     for (const span of e.spans ?? []) {
       redactDataBag(span.data, SPAN_URL_KEYS);
     }
+    redactDataBag(e.request?.headers, HEADER_URL_KEYS);
+
     for (const crumb of e.breadcrumbs ?? []) {
       redactDataBag(crumb.data, BREADCRUMB_URL_KEYS);
+      // 콘솔 브레드크럼은 URL 이 **자유 문자열 안에** 들어온다. NEXT_PUBLIC_API_DEBUG 로거가
+      // 요청 경로를 통째로 찍으므로, 메시지와 인자까지 훑지 않으면 검색어가 그대로 실린다
+      // (Codex P2). 카테고리를 가리지 않고 훑어 다른 로그 경로가 생겨도 새지 않게 한다.
+      if (typeof crumb.message === "string") {
+        crumb.message = redactUrlOrQuery(crumb.message);
+      }
+      const args = (crumb.data as Record<string, unknown> | undefined)
+        ?.arguments;
+      if (Array.isArray(args)) {
+        (crumb.data as Record<string, unknown>).arguments = args.map((a) =>
+          typeof a === "string" ? redactUrlOrQuery(a) : a,
+        );
+      }
     }
 
     return event;

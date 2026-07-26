@@ -44,29 +44,21 @@ describe("SessionReplayGuard", () => {
     expect(sentry.stop).toHaveBeenCalled();
   });
 
-  it("admin 을 벗어나면 녹화를 다시 켠다", () => {
-    // 끄고 끝내면 SPA 세션이 새로고침 전까지 Replay 없이 남는다(Codex P2).
+  it("admin 을 벗어나도 다시 켜지 않는다(의도된 절충)", () => {
+    // 재개하면 뒤로가기로 `?q=고객이메일` 로 돌아올 때 Replay 의 history 리스너가 그 주소를
+    // 동기적으로 기록하고 stop() 이 그걸 flush 해 전송한다 — effect 로는 못 이긴다(Codex P1).
     nav.pathname = "/admin/customers";
     const { rerender } = render(<SessionReplayGuard />);
-    expect(sentry.start).not.toHaveBeenCalled();
 
     nav.pathname = "/dashboard";
     rerender(<SessionReplayGuard />);
-    expect(sentry.start).toHaveBeenCalledTimes(1);
+    expect(sentry.start).not.toHaveBeenCalled();
   });
 
-  it("admin 안에서 이동해도 다시 켜지 않는다", () => {
+  it("admin 안에서 이동해도 켜지 않는다", () => {
     nav.pathname = "/admin";
     const { rerender } = render(<SessionReplayGuard />);
     nav.pathname = "/admin/customers";
-    rerender(<SessionReplayGuard />);
-    expect(sentry.start).not.toHaveBeenCalled();
-  });
-
-  it("우리가 끈 적 없으면 임의로 켜지 않는다", () => {
-    nav.pathname = "/dashboard";
-    const { rerender } = render(<SessionReplayGuard />);
-    nav.pathname = "/archive";
     rerender(<SessionReplayGuard />);
     expect(sentry.start).not.toHaveBeenCalled();
   });

@@ -108,6 +108,41 @@ describe("installUrlRedaction — 고객 검색어가 모니터링으로 새지 
     expect(out.urls[1]).not.toContain("hong.gildong");
   });
 
+  it("Referer 헤더와 그 스팬 속성에서도 지운다", () => {
+    // 앱 전역 Referrer-Policy: strict-origin 이 1차 방어지만, 헤더가 되살아나도 새지 않게 한다.
+    const out = run({
+      request: {
+        headers: { Referer: `https://app.story-arc.org/admin/customers?q=${ENCODED}` },
+      },
+      contexts: {
+        trace: {
+          data: {
+            "http.request.header.referer": `https://app.story-arc.org/admin/customers?q=${ENCODED}`,
+          },
+        },
+      },
+    });
+
+    expect(JSON.stringify(out)).not.toContain("hong.gildong");
+  });
+
+  it("콘솔 브레드크럼의 메시지·인자에서도 지운다", () => {
+    // NEXT_PUBLIC_API_DEBUG 로거가 요청 경로를 통째로 찍으면 Sentry 가 브레드크럼으로 실어간다.
+    const out = run({
+      breadcrumbs: [
+        {
+          category: "console",
+          message: `[API →] GET /admin/customers?q=${ENCODED}`,
+          data: {
+            arguments: [`[API ←] 200 GET /admin/customers?q=${ENCODED}`],
+          },
+        },
+      ],
+    });
+
+    expect(JSON.stringify(out)).not.toContain("hong.gildong");
+  });
+
   it("검색어가 없는 평범한 이벤트는 건드리지 않는다", () => {
     const event = {
       request: { url: "https://app.story-arc.org/dashboard" },
