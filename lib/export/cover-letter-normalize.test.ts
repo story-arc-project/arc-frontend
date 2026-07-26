@@ -91,6 +91,40 @@ describe("normalizeCoverLetter", () => {
       expect(res.answers[0].grounding.unsupported_claims).toEqual([]);
     });
 
+    // grounded 와 claims 는 검증 결과의 두 축이다. 한쪽만 읽고 통과를 살리면 **읽지도 못한
+    // 검증이 "확인 완료"로 표시된다** — asStringArray 가 빈 배열을 만들어 "지적 사항 없음"과
+    // 구분되지 않기 때문이다(codex P1).
+    it.each([
+      ["null", null],
+      ["부재", undefined],
+      ["객체", { 0: "주장" }],
+      ["문자열", "주장 하나"],
+    ])("grounded=true 인데 unsupported_claims 가 %s 이면 통과로 보지 않는다", (_l, claims) => {
+      const res = normalizeCoverLetter({
+        answers: [
+          {
+            question: "Q",
+            cover_letter: "본문",
+            grounding: { grounded: true, unsupported_claims: claims, notes: "" },
+          },
+        ],
+      });
+      expect(res.answers[0].grounding.grounded).toBe(false);
+    });
+
+    it("두 축을 모두 읽을 수 있으면 통과를 그대로 살린다", () => {
+      const res = normalizeCoverLetter({
+        answers: [
+          {
+            question: "Q",
+            cover_letter: "본문",
+            grounding: { grounded: true, unsupported_claims: [], notes: "통과" },
+          },
+        ],
+      });
+      expect(res.answers[0].grounding.grounded).toBe(true);
+    });
+
     it("claims 의 비문자열·빈 문자열 원소는 걸러낸다", () => {
       const res = normalizeCoverLetter({
         answers: [

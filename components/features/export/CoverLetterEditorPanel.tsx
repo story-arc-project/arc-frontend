@@ -40,6 +40,15 @@ export function CoverLetterEditorPanel({
     return bits;
   }, [result.meta]);
 
+  // 검증 이후 본문이 바뀐 문항이 하나라도 있는지 — 요약 배지가 "확인됨"으로 남지 않게 한다.
+  const anyEdited = useMemo(() => {
+    if (!original) return false;
+    return result.answers.some((a, i) => {
+      const originalBody = original.answers[i]?.cover_letter;
+      return originalBody !== undefined && originalBody !== a.cover_letter;
+    });
+  }, [result.answers, original]);
+
   const updateAnswer = (index: number, coverLetter: string) => {
     onChange({
       ...result,
@@ -59,6 +68,7 @@ export function CoverLetterEditorPanel({
           <CoverLetterSummaryBadge
             allGrounded={isAllGrounded(result) && !hasUngroundedAnswer(result)}
             hasWarning={hasUngroundedAnswer(result)}
+            stale={anyEdited}
           />
           {metaBits.map((bit) => (
             <span key={bit} className="text-caption text-text-tertiary">

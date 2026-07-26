@@ -15,6 +15,9 @@ interface CoverLetterGroundingNoticeProps {
    * 사용자가 본문을 고쳐 검증 결과가 낡았는지. 명세의 "수정 시 (하이라이트) 해제"에 대응한다.
    * 낡았을 때 경고를 **지우지는 않는다** — 고쳤다고 근거가 생겼다는 보장이 없다. 대신
    * "다시 만들면 재검증된다"고 알려 사용자가 상태를 오해하지 않게 한다.
+   *
+   * **통과 문항에도 적용된다** — 통과 표시를 남겨 두면 사용자가 새로 써넣은 문장까지
+   * 검증된 것처럼 보이므로, 그때는 통과 문구 대신 "확인 안 됨"을 보여준다.
    */
   stale?: boolean;
 }
@@ -33,6 +36,22 @@ export function CoverLetterGroundingNotice({
 }: CoverLetterGroundingNoticeProps) {
   const claims = grounding.unsupported_claims;
   const hasProblem = !grounding.grounded || claims.length > 0;
+
+  // 고친 본문에는 이 검증이 해당하지 않는다. 통과 문구를 그대로 두면 **사용자가 방금 써넣은
+  // 문장이 "기록에 근거한 내용"으로 보증된다** — 근거 검증이 막으려던 실패를 화면이 직접
+  // 만드는 셈이다(codex P1). 경고(빨강)로 단정하지도 않는다: 고친 내용이 틀렸다는 근거도
+  // 없기 때문이다. "확인 안 됨"이라는 제3의 상태로 둔다.
+  if (stale && !hasProblem) {
+    return (
+      <p
+        className="mt-2 flex items-start gap-1.5 text-caption text-text-secondary"
+        role="status"
+      >
+        <AlertTriangle size={13} className="mt-px shrink-0 text-warning" aria-hidden="true" />
+        <span>본문을 고친 뒤로는 근거를 확인하지 않았어요. 사실을 직접 확인해 주세요.</span>
+      </p>
+    );
+  }
 
   if (!hasProblem) {
     return (

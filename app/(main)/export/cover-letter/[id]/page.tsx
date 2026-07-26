@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, History, Printer } from "lucide-react";
 
+import "./print.css";
+
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
@@ -21,6 +23,12 @@ import {
   writeDraft,
   type CoverLetterDraft,
 } from "@/lib/export/cover-letter-draft";
+import {
+  applyBaseline,
+  readBaseline,
+  writeBaselineIfAbsent,
+} from "@/lib/export/cover-letter-baseline";
+import { applyLimits, readLimits } from "@/lib/export/cover-letter-limits";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { CoverLetterEditorPanel } from "@/components/features/export/CoverLetterEditorPanel";
 import { CoverLetterPreview } from "@/components/features/export/CoverLetterPreview";
@@ -52,10 +60,15 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     setLoading(true);
     setError(null);
     try {
-      const data = await getCoverLetter(id);
+      // 생성 시 입력한 글자수 제한은 출력 계약에 없다 — 서버가 안 준 문항만 로컬 저장분으로
+      // 채운다(서버 값이 정본). 없으면 상한 없이 글자수만 보여주는 현재 동작 그대로다.
+      const data = applyLimits(await getCoverLetter(id), readLimits(id));
       setResult(data);
       setInitial(data);
-      setOriginal(data);
+      // 검증이 가리키는 본문은 **처음 받은 본문**이다. 저장이 성공하면 서버 본문이 편집본으로
+      // 바뀌는데, 그걸 기준으로 삼으면 사용자가 써넣은 문장이 "검증됨"으로 세탁된다.
+      writeBaselineIfAbsent(id, data);
+      setOriginal(applyBaseline(data, readBaseline(id)));
 
       const draft = readDraft(id);
       if (draft && isDraftNewer(draft, data)) {
@@ -98,7 +111,10 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     try {
       const updated = await updateCoverLetter(id, snapshot);
       setInitial(updated);
-      setOriginal(updated);
+      // ⚠️ original 은 갱신하지 않는다. 저장은 **재검증이 아니다** — 서버가 편집본을 그대로
+      // 돌려줄 뿐이라, 이걸 새 기준선으로 삼으면 "검증 이후 고쳐졌다"는 유일한 신호가 사라져
+      // 사용자가 써넣은 문장이 검증된 것처럼 보인다(codex P1). 재검증 시점을 정의하는 건
+      // 서버 계약(BAC-62)의 몫이고, 그때 이 자리에서 기준선을 갱신하면 된다.
       setResult((cur) => (cur === snapshot ? updated : cur));
       if (resultRef.current === snapshot) clearDraft(id);
       toast.success("저장됐어요");
@@ -236,8 +252,12 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   const empty = isEmptyCoverLetter(result);
 
   return (
-    <div className="flex flex-col">
-      <header className="no-print sticky top-[var(--gnb-h)] z-40 flex h-14 items-center gap-2 border-b border-border bg-surface/90 px-4 backdrop-blur-sm sm:px-6">
+    // 높이는 **한 번만** 정한다. 예전에는 아래 패널 행이 스스로 `100dvh - gnb (- 3.5rem)` 을
+    // 잡았는데, 그러면 정상 흐름에 남아 있는 헤더(3.5rem)와 모바일 탭바만큼 페이지가 화면보다
+    // 길어져 — 내부 스크롤을 가진 패널 밖에 **바깥 스크롤바가 하나 더 생기고** 패널 바닥이
+    // 화면 밑으로 내려갔다. 여기서 한 번 가두고 패널 행이 남은 공간을 flex 로 채운다.
+    <div className="flex h-[calc(100dvh-var(--gnb-h))] flex-col overflow-hidden">
+      <header className="no-print flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface/90 px-4 backdrop-blur-sm sm:px-6">
         <Button variant="ghost" size="sm" onClick={handleBack} className="-ml-2">
           <ChevronLeft size={16} className="mr-1" />
           <span className="hidden sm:inline">익스포트</span>
@@ -261,7 +281,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       </header>
 
       {/* 모바일 탭 전환 */}
-      <div className="no-print sticky top-[calc(var(--gnb-h)+3.5rem)] z-30 flex border-b border-border bg-surface md:hidden">
+      <div className="no-print flex shrink-0 border-b border-border bg-surface md:hidden">
         {(
           [
             { key: "editor", label: "편집" },
@@ -284,10 +304,13 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
         ))}
       </div>
 
-      <div className="flex h-[calc(100dvh-var(--gnb-h)-3.5rem)] flex-col md:h-[calc(100dvh-var(--gnb-h))] md:flex-row">
+      <div className="cover-letter-panels flex min-h-0 flex-1 flex-col md:flex-row">
+        {/* `relative` 는 장식이 아니다 — 안쪽 `sr-only` 는 `position:absolute` 인데, 스크롤
+            컨테이너가 static 이면 **absolute 자손이 overflow 클리핑을 빠져나가** 문서 높이를
+            늘려 바깥 스크롤바를 만든다(실측: 데스크톱 252px·모바일 597px 초과 → 0). */}
         <aside
           className={[
-            "no-print flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto border-border bg-surface md:max-w-[45%] md:flex-none md:basis-[45%] md:border-r",
+            "no-print relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto border-border bg-surface md:max-w-[45%] md:flex-none md:basis-[45%] md:border-r",
             mobileTab === "editor" ? "" : "hidden md:flex",
           ].join(" ")}
         >
@@ -333,7 +356,8 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
 
         <main
           className={[
-            "flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-surface-secondary",
+            // 인쇄 대상 면 — print.css 가 이 클래스로 높이·스크롤·숨김을 풀어 전체를 출력한다.
+            "cover-letter-preview-pane relative flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-surface-secondary",
             mobileTab === "preview" ? "" : "hidden md:flex",
           ].join(" ")}
         >

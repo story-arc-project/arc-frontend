@@ -224,8 +224,7 @@ export async function createCoverLetter(params: {
 }
 
 export async function getCoverLetter(id: string): Promise<CoverLetterResult> {
-  void id;
-  return delay(coverLetterStore.get());
+  return delay(coverLetterStore.get(id));
 }
 
 export async function getCoverLetterList(): Promise<CoverLetterListItem[]> {
@@ -236,9 +235,10 @@ export async function updateCoverLetter(
   id: string,
   data: CoverLetterResult,
 ): Promise<CoverLetterResult> {
-  void id;
   // 데모에서는 저장이 성공한다 — 서버 미구현 폴백(임시 저장 안내)은 실제 API 경로의 몫이다.
-  return delay(data);
+  // 성공했다고 말했으면 **저장한 내용이 남아야 한다**: 되돌려주기만 하면 상세 화면이 임시
+  // 저장을 지우고 성공을 표시한 뒤, 다시 열 때 시드가 편집을 조용히 덮는다(codex P2).
+  return delay(coverLetterStore.update(id, data));
 }
 
 export async function deleteCoverLetter(id: string): Promise<void> {

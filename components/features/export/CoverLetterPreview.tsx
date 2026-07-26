@@ -53,7 +53,8 @@ function AnswerBlock({
     typeof answer.max_chars === "number" && answer.cover_letter.length > answer.max_chars;
 
   return (
-    <section>
+    // cover-letter-answer: 인쇄 시 문항 하나가 페이지 경계에서 쪼개지지 않게 하는 훅.
+    <section className="cover-letter-answer">
       <header className="border-b border-border pb-2">
         <h3 className="text-body-sm font-semibold text-text-primary">
           <span className="text-text-tertiary">{index + 1}.</span> {answer.question}

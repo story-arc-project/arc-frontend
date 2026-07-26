@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs";
+import { expect, within } from "storybook/test";
 import { useState } from "react";
 
 import { CoverLetterEditorPanel } from "./CoverLetterEditorPanel";
@@ -118,5 +119,46 @@ export const 편집_후_검증_낡음: Story = {
         <CoverLetterEditorPanel result={edited} onChange={() => {}} original={original} />
       </div>
     );
+  },
+};
+
+/**
+ * **통과한 문항을 고친 경우.** 여기가 위험한 자리다 — 검증은 편집 전 본문에 대한 것이므로
+ * 통과 문구를 남겨 두면 사용자가 방금 써넣은 문장이 "내 기록에 근거한 내용"으로 보증된다
+ * (codex P1). 요약 배지도 "확인된 초안"으로 남아선 안 된다.
+ */
+export const 통과_문항을_고친_뒤: Story = {
+  render: () => {
+    // 문항 하나로 세운다 — 안 고친 문항이 함께 있으면 그쪽의 정당한 통과 문구와 섞여
+    // "고친 문항이 통과로 보이는가"를 가릴 수 없다.
+    const original: CoverLetterResult = {
+      answers: [answer()],
+      meta: { job_label: "데이터 분석/사이언스", region: "KR", all_grounded: true },
+    };
+    const edited: CoverLetterResult = {
+      ...original,
+      answers: [
+        {
+          ...original.answers[0],
+          cover_letter: "저는 3년간 팀장으로 조직을 이끌며 매출을 두 배로 늘렸습니다.",
+        },
+      ],
+    };
+    return (
+      <div className="max-w-xl bg-surface p-4">
+        <CoverLetterEditorPanel result={edited} onChange={() => {}} original={original} />
+      </div>
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // 고친 문항에 통과 문구가 남아 있으면 안 된다.
+    await expect(canvas.queryByText("내 기록에 근거한 내용이에요")).toBeNull();
+    await expect(
+      canvas.getByText(/본문을 고친 뒤로는 근거를 확인하지 않았어요/),
+    ).toBeVisible();
+    // 요약 배지도 통과를 주장하지 않는다.
+    await expect(canvas.queryByText("내 기록으로 확인된 초안이에요")).toBeNull();
+    await expect(canvas.getByText("고친 뒤로는 확인하지 않았어요")).toBeVisible();
   },
 };

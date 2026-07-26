@@ -8,6 +8,7 @@ import { toast } from "@/components/ui/toast";
 import { CoverLetterCollapsible } from "@/components/features/export/CoverLetterCollapsible";
 import { CoverLetterQuestionsField } from "@/components/features/export/CoverLetterQuestionsField";
 import { createCoverLetter } from "@/lib/api/cover-letter-api";
+import { writeLimits } from "@/lib/export/cover-letter-limits";
 import { capture } from "@/lib/analytics";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { useSuppressFeedback } from "@/contexts/FeedbackTriggerContext";
@@ -48,24 +49,30 @@ export default function NewCoverLetterPage() {
     abortRef.current = controller;
     const timeoutId = window.setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
 
+    // 빈 문항은 보내지 않는다 — 명세상 빈 목록이면 백엔드가 자유 형식 1건을 만든다.
+    // 여기서 "(자유 형식)" 문자열을 지어 보내면 그 문구가 문항 제목으로 굳어 버린다.
+    const asked = questions.filter((q) => q.question.trim() !== "");
+
     try {
-      await createCoverLetter(
+      const created = await createCoverLetter(
         {
           targetCompany,
           targetJob,
           motivation,
           careerGoal,
           extraNotes,
-          // 빈 문항은 보내지 않는다 — 명세상 빈 목록이면 백엔드가 자유 형식 1건을 만든다.
-          // 여기서 "(자유 형식)" 문자열을 지어 보내면 그 문구가 문항 제목으로 굳어 버린다.
-          questions: questions.filter((q) => q.question.trim() !== ""),
+          questions: asked,
         },
         { signal: controller.signal },
       );
 
+      // 입력한 글자수 제한은 출력 계약에 없다 — 여기서 남기지 않으면 결과 화면이 제한을
+      // 영영 모르고, 사용자가 적어 넣은 요구 조건을 넘겨도 아무 말을 하지 않는다.
+      if (created.id) writeLimits(created.id, asked);
+
       capture("export_completed", {
         export_type: "cover_letter",
-        question_count: questions.filter((q) => q.question.trim() !== "").length,
+        question_count: asked.length,
       });
 
       // 생성은 비동기다 — id 를 즉시 받아도 본문은 나중에 채워진다. 상세로 바로 보내면

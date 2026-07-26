@@ -42,9 +42,15 @@ function normalizeGrounding(raw: unknown): CoverLetterGrounding {
       notes: "",
     };
   }
+  // 두 필드를 **함께** 봐야 한다. `unsupported_claims` 가 배열이 아니면(null·객체·누락)
+  // 검증 결과의 절반을 읽지 못한 것이고, asStringArray 는 그것을 빈 배열로 만들어
+  // "지적 사항 없음"과 구분되지 않게 한다. 여기서 grounded 만 살리면 **읽지도 못한 검증이
+  // 통과로 표시된다** — 이 정규화가 fail-closed 를 택한 이유와 정반대다(codex P1).
+  const claimsReadable = Array.isArray(r.unsupported_claims);
+
   return {
     // boolean 이 아니면(부재·문자열 등) 통과로 보지 않는다.
-    grounded: r.grounded === true,
+    grounded: r.grounded === true && claimsReadable,
     unsupported_claims: asStringArray(r.unsupported_claims),
     notes: asString(r.notes),
   };

@@ -20,6 +20,12 @@ interface RecentCoverLetterListProps {
   reloadToken?: number;
 }
 
+/** 이전 조회가 끝난 뒤 다음 조회까지의 간격. 자소서 생성은 큐에 들어가 수십 초 걸린다. */
+const POLL_INTERVAL_MS = 5_000;
+/** 상한 — 무한 폴링을 만들지 않는다(목록은 원래 폴링하지 않는 화면이다). 요청 완료 기준
+ *  간격이라 실제 관찰 창은 2분을 넘는다. 상한에 닿으면 사용자가 눌러 잇는다. */
+const MAX_POLL_TICKS = 24;
+
 // 서버가 제목을 주지 않으면 만든 시각을 이름으로 쓴다(레쥬메 목록과 같은 규칙).
 function coverLetterLabel(createdAt: string): string {
   if (!createdAt) return "자기소개서";
@@ -37,6 +43,7 @@ export function RecentCoverLetterList({
   const [error, setError] = useState<Error | null>(null);
   const [deleteSupported, setDeleteSupported] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pollExhausted, setPollExhausted] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -52,6 +59,48 @@ export function RecentCoverLetterList({
   useEffect(() => {
     load();
   }, [load, reloadToken]);
+
+  // 생성은 비동기다 — 만들고 목록으로 돌아오면 첫 조회가 대개 'queued' 를 본다. 여기서
+  // 멈추면 그 행은 **서버가 다 만든 뒤에도** '생성 중'에 고착돼 열 수 없다(전체 새로고침만
+  // 탈출구다). 그래서 진행 중인 행이 있을 때만 유한 횟수 다시 읽는다.
+  const hasPending = (items ?? []).some((i) => i.status === "processing");
+
+  // 사람이 눌러 다시 읽으면 폴링 예산도 처음부터 다시 센다.
+  const handleManualReload = useCallback(() => {
+    setPollExhausted(false);
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!hasPending || pollExhausted) return;
+    let cancelled = false;
+    let ticks = 0;
+    let timer: ReturnType<typeof setTimeout>;
+
+    // setInterval 이 아니라 "끝난 뒤 다시 예약"이다 — 목록 GET 이 간격보다 오래 걸리면
+    // 요청이 겹치고, 늦게 도착한 옛 응답이 새 응답을 덮어써 상태가 되돌아간다
+    // (setItems 로 통째 교체하기 때문이다). lib/analysis/use-retry-refresh 와 같은 이유.
+    const schedule = () => {
+      timer = setTimeout(async () => {
+        ticks += 1;
+        await load(); // load 는 내부에서 실패를 흡수한다 — 한 번 실패해도 다음 차례로 잇는다.
+        if (cancelled) return;
+        // 진행 중인 행이 사라지면 hasPending 이 false 가 되고 이 effect 가 정리된다.
+        if (ticks >= MAX_POLL_TICKS) {
+          // 조용히 멈추면 '생성 중' 이 영원한 상태처럼 보인다 — 이을 길을 남긴다.
+          setPollExhausted(true);
+          return;
+        }
+        schedule();
+      }, POLL_INTERVAL_MS);
+    };
+    schedule();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [hasPending, pollExhausted, load]);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm("이 자기소개서를 삭제할까요?")) return;
@@ -115,7 +164,20 @@ export function RecentCoverLetterList({
   }
 
   return (
-    <ul className="flex flex-col gap-2">
+    <>
+      {pollExhausted && hasPending && (
+        <p className="mb-2 flex flex-wrap items-center gap-1.5 text-caption text-text-secondary">
+          생성이 예상보다 오래 걸리고 있어요.
+          <button
+            type="button"
+            onClick={handleManualReload}
+            className="font-medium text-brand underline underline-offset-2"
+          >
+            다시 불러오기
+          </button>
+        </p>
+      )}
+      <ul className="flex flex-col gap-2">
       {items.map((item) => {
         // status 가 없으면(구 백엔드) 이동 가능. 있으면 completed 만 허용 — 생성 중/실패 행은
         // 본문이 아직 없어 상세가 에러 화면으로 샌다(레쥬메 목록과 같은 판정).
@@ -180,6 +242,7 @@ export function RecentCoverLetterList({
           </li>
         );
       })}
-    </ul>
+      </ul>
+    </>
   );
 }

@@ -1,0 +1,52 @@
+/**
+ * 자소서 상세의 인쇄 규칙.
+ *
+ * `.no-print` 는 스타일시트가 없으면 아무 일도 하지 않는다 — 클래스만 붙여 두고 규칙을
+ * 안 실으면 GNB·편집 패널·탭바·sticky 헤더가 그대로 인쇄된다. 레쥬메의 print.css 는
+ * 그 라우트에 스코프돼 있어 여기까지 오지 않으므로 자소서 규칙을 따로 둔다.
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 20mm 15mm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+  }
+
+  /* GNB 자리로 비워 둔 상단 여백을 없앤다. */
+  body > [data-print-root] {
+    padding-top: 0 !important;
+  }
+
+  /* 화면용 높이 제한과 내부 스크롤을 푼다 — 안 풀면 첫 화면만큼만 인쇄되고 뒷장이 잘린다. */
+  .cover-letter-panels,
+  .cover-letter-preview-pane {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
+  .cover-letter-preview-pane {
+    padding: 0 !important;
+  }
+
+  /* 문항 하나가 페이지 경계에서 쪼개지지 않게 한다. */
+  .cover-letter-answer {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* 근거 하이라이트는 흑백 인쇄에서도 남아야 한다 — 배경색은 빠질 수 있으므로 밑줄이 정본. */
+  mark {
+    background: transparent !important;
+    color: inherit !important;
+  }
+}

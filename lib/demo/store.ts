@@ -30,6 +30,8 @@ const libraryMembership: Record<string, string[]> = clone(seedLibraryMembership)
 const resume: ResumeVersion = clone(seedResume);
 let resumeList: ResumeListItem[] = [clone(seedResumeListItem)];
 const coverLetter: CoverLetterResult = clone(seedCoverLetter);
+/** 데모에서 저장한 편집 — id 별로 시드 위에 덮인다(저장이 성공했다고 말했으면 남아야 한다). */
+const coverLetterEdits = new Map<string, CoverLetterResult>();
 let coverLetterList: CoverLetterListItem[] = [clone(seedCoverLetterListItem)];
 
 let nextId = 1000;
@@ -255,11 +257,18 @@ export const resumeStore = {
 // "생성이 정말 되는가"가 아니라 **화면과 흐름을 걸어보는 것**이기 때문이다.
 
 export const coverLetterStore = {
-  get(): CoverLetterResult {
-    return clone(coverLetter);
+  get(id?: string): CoverLetterResult {
+    // 저장한 편집이 있으면 그것을 돌려준다 — 시드로 되돌리면 "저장됐어요" 라고 말한 편집이
+    // 다시 열 때 사라져, 데모가 실제 동작과 반대되는 인상을 준다.
+    const edited = id ? coverLetterEdits.get(id) : undefined;
+    return clone(edited ?? coverLetter);
   },
   list(): CoverLetterListItem[] {
     return clone(coverLetterList);
+  },
+  update(id: string, data: CoverLetterResult): CoverLetterResult {
+    coverLetterEdits.set(id, clone(data));
+    return clone(data);
   },
   create(title?: string): string {
     const newId = genId("demo-cover-letter");
@@ -278,6 +287,7 @@ export const coverLetterStore = {
   },
   remove(id: string): void {
     coverLetterList = coverLetterList.filter((c) => c.id !== id);
+    coverLetterEdits.delete(id);
   },
 };
 
