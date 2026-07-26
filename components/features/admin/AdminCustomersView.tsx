@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import { useAdminCustomers } from "@/hooks/useAdminCustomers";
+import {
+  adminCustomersKey,
+  useAdminCustomers,
+} from "@/hooks/useAdminCustomers";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { CustomerListView } from "./CustomerListView";
 import { CustomerSearchBar } from "./CustomerSearchBar";
@@ -64,21 +67,27 @@ export function AdminCustomersView() {
     router.replace(buildHref(next, 1), { scroll: false });
   }, [debouncedInput, input, qParam, router]);
 
-  const { customers, count, isLoading, error, reload } = useAdminCustomers({
-    q: qParam,
-    page,
-    limit: PAGE_SIZE,
-  });
+  const { customers, count, isLoading, error, reload, settledKey } =
+    useAdminCustomers({
+      q: qParam,
+      page,
+      limit: PAGE_SIZE,
+    });
 
   // 범위를 벗어난 딥링크(?page=99)는 전체 건수를 안 뒤 마지막 유효 페이지로 정규화한다. 안 하면
   // 빈 목록과 "마지막 페이지" 범위가 동시에 뜨는 모순 상태가 된다(Codex P2).
   useEffect(() => {
-    if (isLoading || error) return;
+    if (error) return;
+    // count 가 **현재 파라미터로 받은 값일 때만** 깎는다. isLoading 만 보면 부족하다 — 훅은
+    // 자기 effect 안에서 setIsLoading(true) 하므로, 같은 패스에서 뒤에 도는 이 effect 는 아직
+    // 직전 쿼리의 isLoading=false·count 를 본다. 그 상태로 깎으면 `?q=희귀&page=1` → `?page=20`
+    // 같은 Back/Forward 가 멀쩡한 20페이지를 1페이지로 되돌린다(Codex adversarial).
+    if (settledKey !== adminCustomersKey(qParam, page, PAGE_SIZE)) return;
     const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
     if (page > totalPages) {
       router.replace(buildHref(qParam, totalPages), { scroll: false });
     }
-  }, [isLoading, error, count, page, qParam, router]);
+  }, [settledKey, error, count, page, qParam, router]);
 
   const handlePageChange = (next: number) => {
     router.push(buildHref(qParam, next), { scroll: false });

@@ -14,8 +14,16 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => nav.params,
 }));
 
+// 쿼리별로 다른 응답을 주도록 조작 가능한 스텁(초과 페이지 정규화 레이스 재현에 필요).
+type CustomersResult = { count: number; contents: unknown[] };
+
+const api = vi.hoisted(() => ({
+  getAdminCustomers:
+    vi.fn<(args?: { q?: string }) => Promise<CustomersResult>>(),
+}));
+
 vi.mock("@/lib/api/admin-api", () => ({
-  getAdminCustomers: vi.fn(async () => ({ count: 0, contents: [] })),
+  getAdminCustomers: api.getAdminCustomers,
 }));
 
 import { AdminCustomersView } from "./AdminCustomersView";
@@ -39,6 +47,11 @@ beforeEach(() => {
   nav.replace.mockClear();
   nav.push.mockClear();
   nav.params = new URLSearchParams();
+  api.getAdminCustomers.mockReset();
+  api.getAdminCustomers.mockImplementation(async () => ({
+    count: 0,
+    contents: [],
+  }));
 });
 
 afterEach(() => {
@@ -57,6 +70,50 @@ describe("AdminCustomersView — 검색어 URL 반영", () => {
     await flush();
 
     expect(nav.replace).toHaveBeenCalledWith("/admin/customers?q=kim", {
+      scroll: false,
+    });
+  });
+});
+
+describe("AdminCustomersView — 초과 페이지 정규화", () => {
+  it("직전 쿼리의 낡은 count 로 유효한 페이지를 깎지 않는다", async () => {
+    // ?q=희귀&page=1(1건) → ?page=20(1000건) 으로 Back/Forward.
+    // 훅이 자기 effect 안에서 setIsLoading(true) 하므로, 같은 패스의 정규화 effect 는 아직
+    // 직전 쿼리의 isLoading=false·count=1 을 본다. 그걸로 깎으면 멀쩡한 20페이지가 1페이지로
+    // 되돌아간다(Codex adversarial).
+    api.getAdminCustomers.mockImplementation(async (args) =>
+      args?.q
+        ? { count: 1, contents: [{ id: "c1" }] }
+        : { count: 1000, contents: [{ id: "c2" }] },
+    );
+
+    nav.params = new URLSearchParams("q=rare");
+    const { rerender } = render(<AdminCustomersView />);
+    await flush();
+
+    nav.replace.mockClear();
+
+    // 외부에서 검색어가 사라지고 20페이지로 이동.
+    nav.params = new URLSearchParams("page=20");
+    rerender(<AdminCustomersView />);
+    await flush();
+
+    // 1000건이면 20페이지는 유효 범위 — 어떤 되돌림도 없어야 한다.
+    expect(nav.replace).not.toHaveBeenCalled();
+  });
+
+  it("실제로 범위를 벗어난 페이지는 마지막 유효 페이지로 정규화한다", async () => {
+    api.getAdminCustomers.mockImplementation(async () => ({
+      count: 25,
+      contents: [{ id: "c1" }],
+    }));
+
+    nav.params = new URLSearchParams("page=99");
+    render(<AdminCustomersView />);
+    await flush();
+
+    // 25건 / 20 = 2페이지.
+    expect(nav.replace).toHaveBeenCalledWith("/admin/customers?page=2", {
       scroll: false,
     });
   });

@@ -1,4 +1,8 @@
+"use client";
+
+import type { MouseEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import type { AdminCustomer } from "@/types/admin";
@@ -25,6 +29,8 @@ const STATUS_META: Record<
   withdrawn: { label: "탈퇴", variant: "default" },
 };
 
+const COLUMN_COUNT = 5;
+
 function formatDate(iso: string): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -36,9 +42,8 @@ function formatDate(iso: string): string {
   });
 }
 
-// 5열 그리드를 헤더·행이 공유한다. 좁은 화면에선 컨테이너가 가로 스크롤(min-w)로 정렬 유지.
-const GRID =
-  "grid grid-cols-[minmax(200px,2fr)_minmax(120px,1fr)_90px_80px_120px] items-center gap-3 px-4";
+// 셀 공통 여백. 표 가장자리는 컨테이너와 붙지 않게 좌우를 더 준다.
+const CELL = "px-3 py-3 first:pl-4 last:pr-4";
 
 function StatusCell({ status }: { status: string }) {
   const meta = STATUS_META[status];
@@ -61,35 +66,57 @@ export function CustomerListView({
   return (
     <div className="rounded-lg border border-border bg-surface">
       <div className="overflow-x-auto">
-        <div className="min-w-[700px]">
-          {/* 헤더 */}
-          <div
-            className={`${GRID} border-b border-border py-3 text-caption font-medium text-text-tertiary`}
-            role="row"
-          >
-            <span>이메일</span>
-            <span>이름</span>
-            <span>상태</span>
-            <span>온보딩</span>
-            <span>가입일</span>
-          </div>
-
-          {isLoading ? (
-            <LoadingRows />
-          ) : error ? (
-            <ErrorState onRetry={onRetry} />
-          ) : customers.length === 0 ? (
-            <EmptyState query={query} />
-          ) : (
-            <ul>
-              {customers.map((c) => (
-                <li key={c.id || c.email} className="border-b border-border last:border-b-0">
-                  <CustomerRow customer={c} detailBasePath={detailBasePath} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        {/*
+          네이티브 table 로 열 관계를 시맨틱하게 준다 — div 그리드에 role="row" 만 붙이면
+          스크린리더가 각 값을 어느 열의 것인지 못 읽어 목록 해석이 불가능하다(Codex P2).
+          table-fixed + colgroup 이라야 긴 이메일이 truncate 되고 열 폭이 유지된다.
+        */}
+        <table className="w-full min-w-[700px] table-fixed border-collapse text-left">
+          <caption className="sr-only">가입 고객 목록</caption>
+          <colgroup>
+            <col className="w-[38%]" />
+            <col className="w-[20%]" />
+            <col className="w-[90px]" />
+            <col className="w-[80px]" />
+            <col className="w-[120px]" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-border text-caption font-medium text-text-tertiary">
+              <th scope="col" className={CELL}>
+                이메일
+              </th>
+              <th scope="col" className={CELL}>
+                이름
+              </th>
+              <th scope="col" className={CELL}>
+                상태
+              </th>
+              <th scope="col" className={CELL}>
+                온보딩
+              </th>
+              <th scope="col" className={CELL}>
+                가입일
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <LoadingRows />
+            ) : error ? (
+              <ErrorState onRetry={onRetry} />
+            ) : customers.length === 0 ? (
+              <EmptyState query={query} />
+            ) : (
+              customers.map((c) => (
+                <CustomerRow
+                  key={c.id || c.email}
+                  customer={c}
+                  detailBasePath={detailBasePath}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -98,6 +125,9 @@ export function CustomerListView({
 // 행 하나. id 가 있어야 상세로 링크한다 — 방어 파싱상 id 가 빈 문자열이면 href 가
 // `/admin/customers/` 로 붕괴해 목록으로 되돌아가므로(조용한 no-op 클릭), 그럴 땐 비클릭 행으로
 // 렌더한다(Codex review).
+//
+// 링크는 **이메일 셀 안**에 둔다. tr 을 통째로 <a> 로 감쌀 수 없으므로, 마우스 편의를 위한
+// 행 전체 클릭은 onClick 으로 주고 키보드·스크린리더 경로는 이 실제 링크가 담당한다.
 function CustomerRow({
   customer: c,
   detailBasePath,
@@ -105,89 +135,108 @@ function CustomerRow({
   customer: AdminCustomer;
   detailBasePath: string;
 }) {
-  const cells = (
-    <>
-      <span className="truncate text-body-sm font-medium text-text-primary">
-        {c.email || "—"}
-      </span>
-      <span className="truncate text-body-sm text-text-secondary">
-        {c.name ?? "—"}
-      </span>
-      <StatusCell status={c.status} />
-      <span className="text-body-sm text-text-secondary">
-        {c.onboarded ? "완료" : "—"}
-      </span>
-      <span className="text-body-sm text-text-tertiary">
-        {formatDate(c.createdAt)}
-      </span>
-    </>
-  );
+  const router = useRouter();
+  const href = c.id ? `${detailBasePath}/${c.id}` : null;
 
-  if (!c.id) {
-    return <div className={`${GRID} py-3`}>{cells}</div>;
-  }
+  const handleClick = (e: MouseEvent<HTMLTableRowElement>) => {
+    if (!href) return;
+    // 링크를 직접 눌렀으면 앵커가 이미 이동시킨다 — 중복 내비게이션 방지.
+    if ((e.target as HTMLElement).closest("a")) return;
+    router.push(href);
+  };
+
   return (
-    <Link
-      href={`${detailBasePath}/${c.id}`}
-      className={`${GRID} py-3 transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand`}
+    <tr
+      onClick={handleClick}
+      className={`border-b border-border last:border-b-0 ${
+        href ? "cursor-pointer transition-colors hover:bg-surface-tertiary" : ""
+      }`}
     >
-      {cells}
-    </Link>
+      <td className={`${CELL} truncate text-body-sm font-medium`}>
+        {href ? (
+          <Link
+            href={href}
+            className="text-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+          >
+            {c.email || "—"}
+          </Link>
+        ) : (
+          <span className="text-text-primary">{c.email || "—"}</span>
+        )}
+      </td>
+      <td className={`${CELL} truncate text-body-sm text-text-secondary`}>
+        {c.name ?? "—"}
+      </td>
+      <td className={CELL}>
+        <StatusCell status={c.status} />
+      </td>
+      <td className={`${CELL} text-body-sm text-text-secondary`}>
+        {c.onboarded ? "완료" : "—"}
+      </td>
+      <td className={`${CELL} text-body-sm text-text-tertiary`}>
+        {formatDate(c.createdAt)}
+      </td>
+    </tr>
   );
 }
 
 function LoadingRows() {
   return (
-    <ul aria-hidden="true">
+    <>
       {Array.from({ length: 8 }).map((_, i) => (
-        <li key={i} className="border-b border-border last:border-b-0">
-          <div className={`${GRID} py-3.5`}>
-            {Array.from({ length: 5 }).map((__, j) => (
-              <span
-                key={j}
-                className="h-4 animate-pulse rounded bg-surface-tertiary"
-              />
-            ))}
-          </div>
-        </li>
+        <tr key={i} className="border-b border-border last:border-b-0">
+          {Array.from({ length: COLUMN_COUNT }).map((__, j) => (
+            <td key={j} className={CELL} aria-hidden="true">
+              <span className="block h-4 animate-pulse rounded bg-surface-tertiary" />
+            </td>
+          ))}
+        </tr>
       ))}
-    </ul>
+    </>
   );
 }
 
 function EmptyState({ query }: { query: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-1 px-4 py-16 text-center">
-      <p className="text-body text-text-secondary">
-        {query
-          ? `"${query}"에 해당하는 고객이 없어요.`
-          : "아직 표시할 고객이 없어요."}
-      </p>
-      {query && (
-        <p className="text-body-sm text-text-tertiary">
-          이메일이나 이름의 일부로 다시 검색해 보세요.
-        </p>
-      )}
-    </div>
+    <tr>
+      <td colSpan={COLUMN_COUNT}>
+        <div className="flex flex-col items-center justify-center gap-1 px-4 py-16 text-center">
+          <p className="text-body text-text-secondary">
+            {query
+              ? `"${query}"에 해당하는 고객이 없어요.`
+              : "아직 표시할 고객이 없어요."}
+          </p>
+          {query && (
+            <p className="text-body-sm text-text-tertiary">
+              이메일이나 이름의 일부로 다시 검색해 보세요.
+            </p>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }
 
 function ErrorState({ onRetry }: { onRetry: () => void }) {
   return (
-    <div
-      role="alert"
-      className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
-    >
-      <p className="text-body text-text-secondary">
-        고객 목록을 불러오지 못했어요.
-      </p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="rounded-md border border-border px-4 py-2 text-body-sm font-medium text-text-primary transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-      >
-        다시 시도
-      </button>
-    </div>
+    <tr>
+      <td colSpan={COLUMN_COUNT}>
+        <div
+          role="alert"
+          className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center"
+        >
+          <p className="text-body text-text-secondary">
+            고객 목록을 불러오지 못했어요.
+          </p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-md border border-border px-4 py-2 text-body-sm font-medium text-text-primary transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+          >
+            다시 시도
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }
