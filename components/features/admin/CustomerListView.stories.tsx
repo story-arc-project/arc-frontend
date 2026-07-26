@@ -8,7 +8,6 @@ const sample: AdminCustomer[] = [
     id: "c1",
     email: "jiwoo.kim@example.com",
     name: "김지우",
-    plan: "pro",
     status: "active",
     onboarded: true,
     createdAt: "2026-06-14T02:11:00Z",
@@ -17,7 +16,6 @@ const sample: AdminCustomer[] = [
     id: "c2",
     email: "minho@example.com",
     name: "이민호",
-    plan: "free",
     status: "dormant",
     onboarded: false,
     createdAt: "2026-05-02T09:30:00Z",
@@ -26,7 +24,6 @@ const sample: AdminCustomer[] = [
     id: "c3",
     email: "no-name@example.com",
     name: null,
-    plan: "team",
     status: "suspended",
     onboarded: true,
     createdAt: "2026-04-20T12:00:00Z",
@@ -35,8 +32,7 @@ const sample: AdminCustomer[] = [
     id: "c4",
     email: "legacy@example.com",
     name: "박서연",
-    // 백엔드 enum 확정 전 미지 코드 — 원문 그대로 표시되는지 검증.
-    plan: "enterprise",
+    // 백엔드 enum 확정 전 미지 상태 코드 — 원문 그대로 표시되는지 검증.
     status: "pending_review",
     onboarded: false,
     createdAt: "2026-03-11T00:00:00Z",

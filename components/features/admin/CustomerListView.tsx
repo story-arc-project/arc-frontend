@@ -15,12 +15,6 @@ interface CustomerListViewProps {
 }
 
 // 백엔드 enum 확정 전 — 알려진 코드만 라벨/색을 주고, 미지 코드는 원문 그대로 표시한다.
-const PLAN_LABELS: Record<string, string> = {
-  free: "무료",
-  pro: "프로",
-  team: "팀",
-};
-
 const STATUS_META: Record<
   string,
   { label: string; variant: "success" | "warning" | "error" | "default" }
@@ -30,10 +24,6 @@ const STATUS_META: Record<
   suspended: { label: "정지", variant: "error" },
   withdrawn: { label: "탈퇴", variant: "default" },
 };
-
-function planLabel(plan: string): string {
-  return PLAN_LABELS[plan] ?? (plan || "—");
-}
 
 function formatDate(iso: string): string {
   if (!iso) return "—";
@@ -46,9 +36,9 @@ function formatDate(iso: string): string {
   });
 }
 
-// 6열 그리드를 헤더·행이 공유한다. 좁은 화면에선 컨테이너가 가로 스크롤(min-w)로 정렬 유지.
+// 5열 그리드를 헤더·행이 공유한다. 좁은 화면에선 컨테이너가 가로 스크롤(min-w)로 정렬 유지.
 const GRID =
-  "grid grid-cols-[minmax(200px,2fr)_minmax(120px,1fr)_90px_90px_80px_120px] items-center gap-3 px-4";
+  "grid grid-cols-[minmax(200px,2fr)_minmax(120px,1fr)_90px_80px_120px] items-center gap-3 px-4";
 
 function StatusCell({ status }: { status: string }) {
   const meta = STATUS_META[status];
@@ -79,7 +69,6 @@ export function CustomerListView({
           >
             <span>이메일</span>
             <span>이름</span>
-            <span>플랜</span>
             <span>상태</span>
             <span>온보딩</span>
             <span>가입일</span>
@@ -124,9 +113,6 @@ function CustomerRow({
       <span className="truncate text-body-sm text-text-secondary">
         {c.name ?? "—"}
       </span>
-      <span className="text-body-sm text-text-secondary">
-        {planLabel(c.plan)}
-      </span>
       <StatusCell status={c.status} />
       <span className="text-body-sm text-text-secondary">
         {c.onboarded ? "완료" : "—"}
@@ -156,7 +142,7 @@ function LoadingRows() {
       {Array.from({ length: 8 }).map((_, i) => (
         <li key={i} className="border-b border-border last:border-b-0">
           <div className={`${GRID} py-3.5`}>
-            {Array.from({ length: 6 }).map((__, j) => (
+            {Array.from({ length: 5 }).map((__, j) => (
               <span
                 key={j}
                 className="h-4 animate-pulse rounded bg-surface-tertiary"

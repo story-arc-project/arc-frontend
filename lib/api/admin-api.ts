@@ -55,7 +55,6 @@ function mapCustomer(raw: unknown): AdminCustomer {
     id: asString(r.id),
     email: asString(r.email),
     name: asNullableString(r.name),
-    plan: asString(r.plan),
     status: asString(r.status),
     onboarded: asBoolean(r.onboarded),
     // snake/camel 이중키 폴백 — 계약 확정 전 백엔드 표기 차이를 흡수.

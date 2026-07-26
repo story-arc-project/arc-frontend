@@ -5,7 +5,7 @@
 // 가 경계에서 camelCase 로 옮긴다. PII 는 최소만 노출한다 — 관리자 식별에 필요한 이메일·이름
 // 까지만, 전화·주소·결제정보는 계약에서 제외.
 
-/** 목록 행 1건. plan·status 는 백엔드 enum 코드 문자열(라벨 매핑은 표시 계층에서). */
+/** 목록 행 1건. status 는 백엔드 enum 코드 문자열(라벨 매핑은 표시 계층에서). */
 export interface AdminCustomer {
   /** 상세(FRT-17 /admin/customers/{id}) 이동 키. */
   id: string;
@@ -13,8 +13,6 @@ export interface AdminCustomer {
   email: string;
   /** 표시명 — 미설정이면 null. */
   name: string | null;
-  /** 요금제 코드(예: "free" | "pro"). 미지 코드는 원문 그대로 표시. */
-  plan: string;
   /** 계정 상태 코드(예: "active" | "dormant" | "withdrawn"). */
   status: string;
   /** 온보딩 완료 여부. */

@@ -63,7 +63,6 @@ describe("getAdminCustomers — 응답 매핑", () => {
             id: "c1",
             email: "a@b.com",
             name: "김철수",
-            plan: "pro",
             status: "active",
             onboarded: true,
             created_at: "2026-01-02T03:04:05Z",
@@ -77,7 +76,6 @@ describe("getAdminCustomers — 응답 매핑", () => {
       id: "c1",
       email: "a@b.com",
       name: "김철수",
-      plan: "pro",
       status: "active",
       onboarded: true,
       createdAt: "2026-01-02T03:04:05Z",
@@ -111,11 +109,20 @@ describe("getAdminCustomers — 응답 매핑", () => {
       id: "c1",
       email: "",
       name: null,
-      plan: "",
       status: "",
       onboarded: false,
       createdAt: "",
     });
+  });
+
+  it("서버가 plan 을 보내도 매핑에 싣지 않는다(플랜제 폐지)", async () => {
+    // 크레딧제로 전환돼 요금제 개념이 없다. BAC-16 이 계약 초안대로 plan 을 계속 내려보내더라도
+    // 관리자 화면에 없는 개념이 되살아나지 않도록 경계에서 버린다.
+    getMock.mockResolvedValue(
+      ok({ count: 1, contents: [{ id: "c1", plan: "pro" }] }),
+    );
+    const { contents } = await getAdminCustomers();
+    expect(contents[0]).not.toHaveProperty("plan");
   });
 
   it("contents 가 null 이어도 빈 배열로 흡수한다", async () => {
