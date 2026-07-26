@@ -1,0 +1,108 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// addEventProcessor 로 등록되는 함수를 붙잡아 실제 이벤트를 흘려본다.
+const sentry = vi.hoisted(() => ({
+  processors: [] as ((event: unknown) => unknown)[],
+}));
+
+vi.mock("@sentry/nextjs", () => ({
+  addEventProcessor: (fn: (event: unknown) => unknown) => {
+    sentry.processors.push(fn);
+  },
+}));
+
+import { installUrlRedaction } from "./sentry-redaction";
+
+const SECRET = "hong.gildong@example.com";
+const ENCODED = encodeURIComponent(SECRET);
+
+function run(event: unknown): unknown {
+  installUrlRedaction();
+  const processor = sentry.processors.at(-1);
+  if (!processor) throw new Error("이벤트 프로세서가 등록되지 않았다");
+  return processor(event);
+}
+
+beforeEach(() => {
+  sentry.processors = [];
+});
+
+describe("installUrlRedaction — 고객 검색어가 모니터링으로 새지 않는다", () => {
+  it("에러 이벤트의 요청 URL·쿼리에서 검색어를 지운다", () => {
+    const out = run({
+      request: {
+        url: `https://app.story-arc.org/admin/customers?q=${ENCODED}`,
+        query_string: `q=${ENCODED}&page=2`,
+      },
+    });
+
+    expect(JSON.stringify(out)).not.toContain("hong.gildong");
+    expect(JSON.stringify(out)).not.toContain(ENCODED);
+  });
+
+  it("백엔드 fetch 스팬과 trace 컨텍스트의 URL 도 지운다", () => {
+    const out = run({
+      contexts: {
+        trace: { data: { "url.query": `q=${ENCODED}` } },
+      },
+      spans: [
+        {
+          data: {
+            "http.url": `https://api.story-arc.org/admin/customers?q=${ENCODED}`,
+            "url.full": `https://api.story-arc.org/admin/customers?q=${ENCODED}`,
+          },
+        },
+      ],
+    });
+
+    expect(JSON.stringify(out)).not.toContain("hong.gildong");
+  });
+
+  it("내비게이션 브레드크럼(from/to)에서도 지운다", () => {
+    const out = run({
+      breadcrumbs: [
+        {
+          category: "navigation",
+          data: {
+            from: "/admin/customers",
+            to: `/admin/customers?q=${ENCODED}&page=2`,
+          },
+        },
+      ],
+    });
+
+    expect(JSON.stringify(out)).not.toContain("hong.gildong");
+    // 같은 이벤트의 무관한 값은 살아 있어야 디버깅이 된다.
+    expect(JSON.stringify(out)).toContain("page=2");
+  });
+
+  it("Session Replay 의 방문 URL 목록에서도 지운다", () => {
+    const out = run({
+      type: "replay_event",
+      urls: [
+        "/admin/customers",
+        `/admin/customers?q=${ENCODED}`,
+      ],
+    }) as { urls: string[] };
+
+    expect(out.urls[0]).toBe("/admin/customers");
+    expect(out.urls[1]).not.toContain("hong.gildong");
+  });
+
+  it("검색어가 없는 평범한 이벤트는 건드리지 않는다", () => {
+    const event = {
+      request: { url: "https://app.story-arc.org/dashboard" },
+      breadcrumbs: [{ data: { to: "/archive?page=2" } }],
+    };
+    const out = run(event) as typeof event;
+
+    expect(out.request.url).toBe("https://app.story-arc.org/dashboard");
+    expect(out.breadcrumbs[0].data.to).toBe("/archive?page=2");
+  });
+
+  it("URL 자리가 비었거나 형식이 달라도 던지지 않는다", () => {
+    expect(() =>
+      run({ request: {}, spans: [{ data: null }], breadcrumbs: [{}] }),
+    ).not.toThrow();
+  });
+});

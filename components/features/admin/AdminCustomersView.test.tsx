@@ -102,6 +102,32 @@ describe("AdminCustomersView — 초과 페이지 정규화", () => {
     expect(nav.replace).not.toHaveBeenCalled();
   });
 
+  it("정규화가 입력 중인 검색어를 지우지 않는다", async () => {
+    // `?q=foo&page=99` 딥링크가 로딩되는 동안 사용자가 타이핑하면, 응답이 와서 페이지를 깎는
+    // 순간 URL 동기화가 입력창을 옛 검색어로 되돌려 타이핑이 조용히 사라진다(Codex P2).
+    api.getAdminCustomers.mockImplementation(async () => ({
+      count: 25,
+      contents: [{ id: "c1" }],
+    }));
+
+    // 정규화가 정말 주소를 바꾸도록 스파이를 실제 URL 갱신에 연결한다 — 그래야 그 뒤의 입력창
+    // 동기화까지 재현된다(스파이만 두면 URL 이 안 바뀌어 버그가 드러나지 않는다).
+    nav.replace.mockImplementation((href: string) => {
+      nav.params = new URLSearchParams(href.split("?")[1] ?? "");
+    });
+
+    nav.params = new URLSearchParams("q=foo&page=99");
+    const { rerender } = render(<AdminCustomersView />);
+    // 응답이 오기 전(=정규화 전)에 타이핑.
+    fireEvent.change(searchbox(), { target: { value: "bar" } });
+    await flush();
+
+    // 정규화가 일어났다면 그 결과 URL 로 다시 렌더된다.
+    rerender(<AdminCustomersView />);
+
+    expect(searchbox()).toHaveValue("bar");
+  });
+
   it("실제로 범위를 벗어난 페이지는 마지막 유효 페이지로 정규화한다", async () => {
     api.getAdminCustomers.mockImplementation(async () => ({
       count: 25,

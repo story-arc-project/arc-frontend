@@ -90,11 +90,16 @@ export function AdminCustomersView() {
     // 직전 쿼리의 isLoading=false·count 를 본다. 그 상태로 깎으면 `?q=희귀&page=1` → `?page=20`
     // 같은 Back/Forward 가 멀쩡한 20페이지를 1페이지로 되돌린다(Codex adversarial).
     if (settledKey !== adminCustomersKey(qParam, page, PAGE_SIZE)) return;
+    // 검색창을 고쳐 둔 채 아직 디바운스가 안 끝났으면 미룬다. 여기서 replace 하면 page 가 바뀌고
+    // → 위 URL 동기화가 입력창을 URL 의 옛 검색어로 되돌려 **타이핑이 조용히 사라진다**
+    // (`?q=foo&page=99` 딥링크가 로딩되는 동안 타이핑한 경우, Codex P2). 곧 확정될 검색이 어차피
+    // 1페이지로 옮겨가므로 정규화는 그때 해도 늦지 않다.
+    if (input.trim() !== qParam.trim()) return;
     const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
     if (page > totalPages) {
       router.replace(buildHref(qParam, totalPages), { scroll: false });
     }
-  }, [settledKey, error, count, page, qParam, router]);
+  }, [settledKey, error, count, page, qParam, input, router]);
 
   const handlePageChange = (next: number) => {
     router.push(buildHref(qParam, next), { scroll: false });
