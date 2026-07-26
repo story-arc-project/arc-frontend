@@ -63,8 +63,8 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       } else {
         setPendingDraft(null);
         // 서버 본문이 draft 보다 새로우면 그 draft 는 낡았다 — 남겨 두면 다음 진입 때마다
-        // 배너가 다시 뜬다. 다만 비교 자체가 불가능했을 땐(isDraftNewer=false 의 다른 사유)
-        // 지우지 않는 편이 안전하므로 draft 가 실제로 있을 때만 정리한다.
+        // 배너가 다시 뜬다. 이 정리는 되돌릴 수 없으므로, "판정 불가"를 여기로 흘려보내지
+        // 않는 책임은 isDraftNewer 쪽에 있다(서버 시각을 못 읽으면 true 로 보존).
         if (draft) clearDraft(id);
       }
     } catch (err) {

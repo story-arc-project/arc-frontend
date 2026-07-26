@@ -117,12 +117,13 @@ export function normalizeCoverLetter(raw: unknown): CoverLetterResult {
   const actionPlan = asString(r.action_plan);
   const versionId = asString(r.version_id) || asString(r.id);
   const createdAt = asString(r.created_at);
+  const meta = normalizeMeta(r.meta);
 
   return {
     answers,
     ...(companyResearch.trim() ? { company_research: companyResearch } : {}),
     ...(actionPlan.trim() ? { action_plan: actionPlan } : {}),
-    ...(normalizeMeta(r.meta) ? { meta: normalizeMeta(r.meta) } : {}),
+    ...(meta ? { meta } : {}),
     ...(versionId ? { version_id: versionId } : {}),
     ...(createdAt ? { created_at: createdAt } : {}),
   };

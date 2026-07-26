@@ -54,17 +54,22 @@ export function clearDraft(id: string): void {
 /**
  * 임시 저장이 서버 본문보다 새로운가.
  *
+ * **false 는 "draft 를 버려도 된다"는 뜻이다** — 호출부가 그 신호로 `clearDraft` 를 부른다.
+ * 그래서 판정 불가를 false 로 떨어뜨리면 사용자의 미저장 편집이 조용히 사라진다.
+ *
  * 자소서는 서버가 생성 시각(`created_at`)만 준다 — 서버 쪽 편집 시각이 없다(저장 API 자체가
- * 없으니 당연하다). 비교 기준을 못 읽으면 **draft 를 우선하지 않는다**: 확실하지 않을 때
- * 사용자가 보고 있던 서버 본문을 임의로 덮어쓰는 쪽이 더 나쁜 실패다. 대신 draft 는 지우지
- * 않으므로(호출부가 clearDraft 를 부를 때만 사라진다) 편집이 유실되지는 않는다.
+ * 없으니 당연하다). 그 `created_at` 마저 못 읽으면 비교가 성립하지 않으므로 **draft 를 살린다**
+ * (`true` → 복원 배너 노출, 채택은 사용자 몫). 되돌릴 수 있는 배너 한 번이 되돌릴 수 없는
+ * 삭제보다 낫다. `resume-draft.ts` 의 `isDraftNewer` 와 같은 방향이다.
+ *
+ * 반대로 draft 자신의 시각이 깨졌으면 그 draft 는 신뢰할 수 없으므로 false(정리 대상)로 둔다.
  */
 export function isDraftNewer(draft: CoverLetterDraft, server: CoverLetterResult): boolean {
   const draftMs = Date.parse(draft.updated_at);
   if (Number.isNaN(draftMs)) return false;
 
   const serverMs = server.created_at ? Date.parse(server.created_at) : NaN;
-  if (Number.isNaN(serverMs)) return false;
+  if (Number.isNaN(serverMs)) return true;
 
   return draftMs > serverMs;
 }
