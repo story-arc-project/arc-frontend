@@ -36,6 +36,10 @@ function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString("ko-KR", {
+    // 타임존을 고정한다. 안 하면 서버(UTC)와 관리자 브라우저(KST)가 자정 근처 가입일을 서로 다른
+    // 날짜로 렌더해 하이드레이션 불일치가 나고, 화면의 날짜가 눈앞에서 바뀐다(Codex P2).
+    // 운영 기준시는 한국 시간이다.
+    timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

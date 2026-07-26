@@ -86,7 +86,12 @@ export async function getAdminCustomers(
   // 본다 — 안 그러면 res.data 가 undefined 라 목록이 조용히 0명이 된다(Codex review).
   const data = asRecord(res.data ?? res);
   const contents = asArray(data.contents).map(mapCustomer);
-  // count 는 검색 조건 전체 건수(페이지네이션용). 서버가 안 주면 현재 페이지 길이로 폴백.
-  const count = asNumber(data.count, contents.length);
+  // count 는 검색 조건 전체 건수(페이지네이션용). 서버가 안 주거나 숫자가 아니면 폴백하는데,
+  // **현재 페이지 길이만** 쓰면 안 된다 — 2페이지 이후에서 전체가 20건인 것처럼 보여 호출부가
+  // 페이지를 1로 깎고, 페이지네이션도 그 뒤를 막아 결과가 통째로 도달 불가능해진다(Codex P2).
+  // 이미 건너뛴 offset 을 더해 "적어도 이만큼은 있다"는 하한을 준다.
+  const skipped =
+    typeof query.offset === "number" && query.offset > 0 ? query.offset : 0;
+  const count = asNumber(data.count, skipped + contents.length);
   return { count, contents };
 }

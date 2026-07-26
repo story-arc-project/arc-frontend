@@ -45,6 +45,28 @@ afterEach(() => {
   cleanup();
 });
 
+describe("CustomerListView — 가입일 표기", () => {
+  it("자정 근처 가입일을 실행 환경 타임존과 무관하게 한국 날짜로 렌더한다", () => {
+    // UTC 로 읽으면 7/25, 한국시간으로는 7/26 인 시각. 타임존을 안 고정하면 서버(UTC)와
+    // 브라우저(KST)가 다른 날짜를 그려 하이드레이션 불일치가 난다(Codex P2).
+    renderList({
+      customers: [
+        {
+          id: "c9",
+          email: "edge@example.com",
+          name: "경계",
+          status: "active",
+          onboarded: true,
+          createdAt: "2026-07-25T15:30:00Z",
+        },
+      ],
+    });
+
+    const row = screen.getAllByRole("row")[1];
+    expect(within(row).getByText(/2026\.\s*07\.\s*26/)).toBeTruthy();
+  });
+});
+
 describe("CustomerListView — 표 시맨틱", () => {
   it("열 관계를 읽을 수 있는 table 로 렌더한다", () => {
     renderList();

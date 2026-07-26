@@ -4,6 +4,7 @@ import { ArrowLeft, Shield } from "lucide-react";
 
 import { requireAdmin } from "@/lib/auth/admin";
 import { AdminNav } from "@/components/features/admin/AdminNav";
+import { StopSessionReplay } from "@/components/features/admin/StopSessionReplay";
 
 // 사용자별 인가 판정이 필요하므로 정적 프리렌더/캐시를 끈다.
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ export default async function AdminLayout({
 
   return (
     <div className="flex min-h-dvh flex-col bg-surface-secondary">
+      {/* 고객 PII 가 녹화되지 않도록 admin 안에서는 Session Replay 를 멈춘다(Codex P1). */}
+      <StopSessionReplay />
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-border bg-surface px-4 sm:px-6">
         <span className="flex items-center gap-2 text-heading-3 font-bold tracking-widest text-text-primary">
           <Shield size={18} className="text-brand" aria-hidden="true" />
