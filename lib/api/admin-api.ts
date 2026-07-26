@@ -30,10 +30,6 @@ function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
-function asNumber(value: unknown, fallback = 0): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
 function asBoolean(value: unknown, fallback = false): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
@@ -86,12 +82,12 @@ export async function getAdminCustomers(
   // 본다 — 안 그러면 res.data 가 undefined 라 목록이 조용히 0명이 된다(Codex review).
   const data = asRecord(res.data ?? res);
   const contents = asArray(data.contents).map(mapCustomer);
-  // count 는 검색 조건 전체 건수(페이지네이션용). 서버가 안 주거나 숫자가 아니면 폴백하는데,
-  // **현재 페이지 길이만** 쓰면 안 된다 — 2페이지 이후에서 전체가 20건인 것처럼 보여 호출부가
-  // 페이지를 1로 깎고, 페이지네이션도 그 뒤를 막아 결과가 통째로 도달 불가능해진다(Codex P2).
-  // 이미 건너뛴 offset 을 더해 "적어도 이만큼은 있다"는 하한을 준다.
-  const skipped =
-    typeof query.offset === "number" && query.offset > 0 ? query.offset : 0;
-  const count = asNumber(data.count, skipped + contents.length);
+  // count 는 검색 조건 전체 건수(페이지네이션용). 서버가 안 주거나 숫자가 아니면 **추측하지 않고
+  // null(미상)로 둔다**. 페이지 길이나 offset 으로 총계를 지어내면 꽉 찬 페이지가 마지막 페이지처럼
+  // 보여 다음 페이지가 통째로 도달 불가능해지고, 호출부는 멀쩡한 페이지를 1로 깎는다(Codex P2).
+  // 모른다는 사실을 그대로 올려보내야 화면이 "총계 미상" 모드로 안전하게 동작한다.
+  const rawCount = data.count;
+  const count =
+    typeof rawCount === "number" && Number.isFinite(rawCount) ? rawCount : null;
   return { count, contents };
 }

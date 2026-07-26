@@ -23,7 +23,11 @@ export interface AdminCustomer {
 
 /** 목록 응답 봉투 data 부분: { count, contents }. count 는 검색 조건 전체 건수(페이지네이션용). */
 export interface AdminCustomerListData {
-  count: number;
+  /**
+   * 검색 조건 전체 건수. 서버가 안 주면 **null(미상)** — 페이지 길이나 offset 으로 총계를
+   * 지어내면 꽉 찬 페이지가 마지막 페이지처럼 보여 다음 페이지가 통째로 도달 불가능해진다.
+   */
+  count: number | null;
   contents: AdminCustomer[];
 }
 

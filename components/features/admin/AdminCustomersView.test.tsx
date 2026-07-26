@@ -145,6 +145,48 @@ describe("AdminCustomersView — 초과 페이지 정규화", () => {
   });
 });
 
+describe("AdminCustomersView — 입력 중 페이지 이동", () => {
+  it("검색어를 고쳐 둔 채 페이지를 누르면 입력을 버리지 않고 그 검색으로 이동한다", async () => {
+    // 낡은 qParam 으로 page=2 를 밀면, URL 동기화가 입력창을 옛 검색어로 되돌려 타이핑이
+    // 조용히 사라진다(Codex P2).
+    api.getAdminCustomers.mockImplementation(async () => ({
+      count: 1000,
+      contents: [{ id: "c1" }],
+    }));
+
+    nav.params = new URLSearchParams("q=foo");
+    render(<AdminCustomersView />);
+    await flush();
+    nav.push.mockClear();
+
+    // 디바운스가 끝나기 전에 타이핑 후 곧바로 페이지 버튼 클릭.
+    fireEvent.change(searchbox(), { target: { value: "bar" } });
+    fireEvent.click(screen.getByRole("button", { name: "다음 페이지" }));
+
+    expect(nav.push).toHaveBeenCalledWith("/admin/customers?q=bar", {
+      scroll: false,
+    });
+  });
+
+  it("검색어를 안 건드렸으면 평소대로 그 페이지로 이동한다", async () => {
+    api.getAdminCustomers.mockImplementation(async () => ({
+      count: 1000,
+      contents: [{ id: "c1" }],
+    }));
+
+    nav.params = new URLSearchParams("q=foo");
+    render(<AdminCustomersView />);
+    await flush();
+    nav.push.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "다음 페이지" }));
+
+    expect(nav.push).toHaveBeenCalledWith("/admin/customers?q=foo&page=2", {
+      scroll: false,
+    });
+  });
+});
+
 describe("AdminCustomersView — 외부 URL 변화(Back/Forward)", () => {
   it("history 로 검색어가 바뀌어도 낡은 입력으로 URL 을 되돌리지 않는다", async () => {
     nav.params = new URLSearchParams("q=foo");

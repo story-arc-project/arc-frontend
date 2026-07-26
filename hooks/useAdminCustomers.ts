@@ -16,8 +16,8 @@ interface UseAdminCustomersArgs {
 
 interface UseAdminCustomersResult {
   customers: AdminCustomer[];
-  /** 검색 조건 전체 건수(페이지네이션용). */
-  count: number;
+  /** 검색 조건 전체 건수. 서버가 안 주면 null(미상). */
+  count: number | null;
   isLoading: boolean;
   error: Error | null;
   reload: () => void;
@@ -51,7 +51,7 @@ export function useAdminCustomers({
   limit,
 }: UseAdminCustomersArgs): UseAdminCustomersResult {
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
-  const [count, setCount] = useState(0);
+  const [count, setCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [settledKey, setSettledKey] = useState<string | null>(null);

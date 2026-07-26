@@ -58,6 +58,25 @@ describe("installUrlRedaction — 고객 검색어가 모니터링으로 새지 
     expect(JSON.stringify(out)).not.toContain("hong.gildong");
   });
 
+  it("SDK 가 실제로 쓰는 fetch 스팬 키(url·http.query)도 지운다", () => {
+    // @sentry/core 의 fetch 계측은 `url`(항상)·`http.url`·`http.query`(= ?로 시작하는 search)를
+    // 싣는다. 실측으로 확인한 키 — 하나라도 빠지면 그 키로 검색어가 새 나간다(Codex P1).
+    const out = run({
+      spans: [
+        {
+          data: {
+            url: `https://api.story-arc.org/admin/customers?q=${ENCODED}`,
+            "http.query": `?q=${ENCODED}&limit=20`,
+          },
+        },
+      ],
+    });
+
+    expect(JSON.stringify(out)).not.toContain("hong.gildong");
+    // 검색어 외의 조회 조건은 디버깅을 위해 남아야 한다.
+    expect(JSON.stringify(out)).toContain("limit=20");
+  });
+
   it("내비게이션 브레드크럼(from/to)에서도 지운다", () => {
     const out = run({
       breadcrumbs: [

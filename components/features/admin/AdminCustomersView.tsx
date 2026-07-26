@@ -95,6 +95,9 @@ export function AdminCustomersView() {
     // (`?q=foo&page=99` 딥링크가 로딩되는 동안 타이핑한 경우, Codex P2). 곧 확정될 검색이 어차피
     // 1페이지로 옮겨가므로 정규화는 그때 해도 늦지 않다.
     if (input.trim() !== qParam.trim()) return;
+    // 전체 건수를 모르면(서버가 count 를 안 줌) 깎지 않는다 — 추측으로 유효한 페이지를 잘라내면
+    // 그 결과가 통째로 사라진다(Codex P2).
+    if (count === null) return;
     const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
     if (page > totalPages) {
       router.replace(buildHref(qParam, totalPages), { scroll: false });
@@ -102,6 +105,14 @@ export function AdminCustomersView() {
   }, [settledKey, error, count, page, qParam, input, router]);
 
   const handlePageChange = (next: number) => {
+    const pending = input.trim();
+    // 검색어를 고쳐 둔 채(디바운스 대기) 페이지를 누른 경우. 낡은 결과의 N페이지로 가면서 입력을
+    // 조용히 버리면 안 된다(위 URL 동기화가 입력창을 옛 검색어로 되돌린다, Codex P2). 곧 확정될
+    // 검색을 지금 확정해 1페이지로 보낸다 — 화면의 검색창과 결과가 어긋나지 않는다.
+    if (pending !== qParam.trim()) {
+      router.push(buildHref(pending, 1), { scroll: false });
+      return;
+    }
     router.push(buildHref(qParam, next), { scroll: false });
   };
 
@@ -129,6 +140,7 @@ export function AdminCustomersView() {
           page={page}
           pageSize={PAGE_SIZE}
           totalCount={count}
+          pageItemCount={customers.length}
           onPageChange={handlePageChange}
         />
       )}

@@ -134,7 +134,7 @@ describe("getAdminCustomers — 응답 매핑", () => {
   it("data 래퍼가 통째로 없어도 빈 목록을 반환한다", async () => {
     getMock.mockResolvedValue({ status: "success", message: "" });
     const { count, contents } = await getAdminCustomers();
-    expect(count).toBe(0);
+    expect(count).toBeNull();
     expect(contents).toEqual([]);
   });
 
@@ -148,14 +148,6 @@ describe("getAdminCustomers — 응답 매핑", () => {
     expect(contents[0].id).toBe("c1");
   });
 
-  it("count 가 없으면 현재 페이지 길이로 폴백한다", async () => {
-    getMock.mockResolvedValue(
-      ok({ contents: [{ id: "c1" }, { id: "c2" }] }),
-    );
-    const { count } = await getAdminCustomers();
-    expect(count).toBe(2);
-  });
-
   it("count 는 페이지 길이와 달라도 서버 값을 그대로 신뢰한다(전체 건수)", async () => {
     getMock.mockResolvedValue(
       ok({ count: 137, contents: [{ id: "c1" }, { id: "c2" }] }),
@@ -165,20 +157,24 @@ describe("getAdminCustomers — 응답 매핑", () => {
     expect(contents).toHaveLength(2);
   });
 
-  it("count 가 없을 때 2페이지 이후는 offset 을 더해 하한을 잡는다", async () => {
-    // 페이지 길이만 쓰면 전체가 20건인 것처럼 보여 호출부가 2페이지를 1페이지로 깎고,
-    // 그 결과가 통째로 도달 불가능해진다(Codex P2).
+  it("count 가 없으면 총계를 지어내지 않고 null(미상) 로 둔다", async () => {
+    // 페이지 길이나 offset 으로 총계를 만들면 꽉 찬 페이지가 마지막 페이지처럼 보여 다음
+    // 페이지가 통째로 도달 불가능해진다(Codex P2).
     getMock.mockResolvedValue(
       ok({ contents: Array.from({ length: 20 }, (_, i) => ({ id: `c${i}` })) }),
     );
-    const { count } = await getAdminCustomers({ limit: 20, offset: 20 });
-    expect(count).toBe(40);
+    const { count, contents } = await getAdminCustomers({
+      limit: 20,
+      offset: 20,
+    });
+    expect(count).toBeNull();
+    expect(contents).toHaveLength(20);
   });
 
-  it("count 가 없고 1페이지면 페이지 길이가 그대로 하한이다", async () => {
-    getMock.mockResolvedValue(ok({ contents: [{ id: "c1" }, { id: "c2" }] }));
-    const { count } = await getAdminCustomers({ limit: 20, offset: 0 });
-    expect(count).toBe(2);
+  it("count 가 숫자가 아니면 미상으로 본다", async () => {
+    getMock.mockResolvedValue(ok({ count: "137", contents: [{ id: "c1" }] }));
+    const { count } = await getAdminCustomers();
+    expect(count).toBeNull();
   });
 
   it("HTTP 실패는 그대로 throw 한다(삼키지 않음)", async () => {

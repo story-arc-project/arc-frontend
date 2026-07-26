@@ -4,7 +4,15 @@ import { redactUrlQuery } from "./redact-url";
 
 // URL 이 통째로 실리는 자리들. 브레드크럼은 내비게이션(from/to)·fetch(url), 스팬은 OTel 속성.
 const BREADCRUMB_URL_KEYS = ["url", "from", "to"] as const;
-const SPAN_URL_KEYS = ["http.url", "url.full", "url.query"] as const;
+// SDK 가 실제로 싣는 키를 실측해 맞췄다: fetch 계측은 `url`(항상)·`http.url`·`http.query`
+// (= parsedUrl.search)를 쓴다. 하나라도 빠뜨리면 검색어가 그 키로 새 나간다(Codex P1).
+const SPAN_URL_KEYS = [
+  "url",
+  "http.url",
+  "http.query",
+  "url.full",
+  "url.query",
+] as const;
 
 // Replay 이벤트만 방문 URL 목록(`urls`)을 들고 온다 — 기본 Event 타입에는 없다.
 type EventWithUrls = Sentry.Event & { urls?: string[] };
