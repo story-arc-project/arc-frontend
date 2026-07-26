@@ -121,10 +121,46 @@ describe("종합 분석 상세 — v2.0 섹션 렌더", () => {
     expect(screen.getByText("추천 자격증")).toBeInTheDocument();
   });
 
+  it("동아리 추천은 활동 내용과 추천 이유를 함께 보여준다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    // 회귀 시엔 `reason || description` 이라 description(그 단체가 무엇을 하는지)이 통째로 버려졌다.
+    expect(
+      await screen.findByText("AWS 기반 클라우드·서버리스 스터디 및 세미나"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("클라우드 배포 경험을 보강할 수 있습니다.")).toBeInTheDocument();
+  });
+
   it("마감된 채용 공고를 '마감된 공고'로 별도 표기한다", async () => {
     getResult.mockResolvedValue(result({ hasResultBody: true }));
     render(<ComprehensiveDetailPage />);
 
     expect(await screen.findByText("마감된 공고")).toBeInTheDocument();
+  });
+
+  it("마감 공고만 남았을 때 '유효' 표기를 붙이지 않는다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        hasResultBody: true,
+        verifiedJobs: [],
+        expiredJobs: [
+          {
+            company: "라인",
+            role: "ML 엔지니어",
+            deadline: "2026-06-30",
+            whyMatch: "마감이 지났습니다.",
+            url: "",
+          },
+        ],
+      }),
+    );
+    render(<ComprehensiveDetailPage />);
+
+    // 회귀 시엔 마감 공고만 깔린 섹션 제목이 "유효 채용 공고" 였다.
+    expect(await screen.findByRole("heading", { name: "채용 공고" })).toBeInTheDocument();
+    expect(screen.queryByText("유효 채용 공고")).not.toBeInTheDocument();
+    expect(screen.queryByText("유효 공고")).not.toBeInTheDocument();
+    expect(screen.getByText("마감된 공고")).toBeInTheDocument();
   });
 });

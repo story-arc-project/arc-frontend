@@ -386,12 +386,15 @@ function RecommendationLink({ url }: { url: string | null }) {
 function RecommendationCard({
   title,
   metas,
+  description,
   reason,
   expectedEffect,
   url,
 }: {
   title: string;
   metas?: string[];
+  /** 동아리·학회의 `description`(그 단체가 무엇을 하는지)은 추천 이유와 다른 정보다 — 같이 보여준다. */
+  description?: string;
   reason: string;
   expectedEffect: string;
   url: string | null;
@@ -407,6 +410,7 @@ function RecommendationCard({
           </Badge>
         ))}
       </div>
+      {description && <Field label="활동 내용" value={description} />}
       {reason && <Field label="추천 이유" value={reason} />}
       {expectedEffect && <Field label="기대 효과" value={expectedEffect} />}
       <RecommendationLink url={url} />
@@ -451,7 +455,8 @@ function AdditionalRecommendationsBlock({
               key={`${c.name}-${i}`}
               title={c.name}
               metas={[c.type, c.schoolAffiliation].filter(Boolean)}
-              reason={c.reason || c.description}
+              description={c.description}
+              reason={c.reason}
               expectedEffect={c.expectedEffect}
               url={c.url}
             />
@@ -802,13 +807,18 @@ function JobRecommendationsBlock({
   if (verified.length === 0 && expired.length === 0) return null;
   return (
     <section className="space-y-3">
-      <h2 className="text-title text-text-primary">유효 채용 공고</h2>
+      {/* 섹션 제목은 중립으로 둔다 — 유효 공고가 0건이고 마감 공고만 남는 경우가 흔해서
+          "유효 채용 공고" 아래 마감 공고만 깔리는 오표기를 만들지 않는다. */}
+      <h2 className="text-title text-text-primary">채용 공고</h2>
       {verified.length > 0 && (
-        <ul className="space-y-3">
-          {verified.map((j, i) => (
-            <JobCard key={`v-${j.company}-${j.role}-${i}`} job={j} />
-          ))}
-        </ul>
+        <div className="space-y-2">
+          {expired.length > 0 && <p className="text-label text-text-tertiary">유효 공고</p>}
+          <ul className="space-y-3">
+            {verified.map((j, i) => (
+              <JobCard key={`v-${j.company}-${j.role}-${i}`} job={j} />
+            ))}
+          </ul>
+        </div>
       )}
       {/* 마감 지난 공고는 약화 표기로 별도 노출한다(백엔드가 굳이 분리해 보낸 정보 보존). */}
       {expired.length > 0 && (
