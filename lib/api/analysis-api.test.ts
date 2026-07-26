@@ -932,6 +932,26 @@ describe("종합 분석 v2.0 매퍼 (comprehensive/2.0)", () => {
     expect(res.criticalDiagnosis.weaknesses[0].severity).toBe("major")
   })
 
+  it("숫자로 오는 id 를 버리지 않는다 — 계약상 number 라 인덱스 폴백으로 떨어지면 안 된다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp2({
+        critical_diagnosis: { weaknesses: [{ id: 7, severity: "major", title: "a" }] },
+        strength_diagnosis: { strengths: [{ id: 3, level: "strong", title: "b" }] },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.criticalDiagnosis.weaknesses[0].id).toBe("7")
+    expect(res.strengthDiagnosis.strengths[0].id).toBe("3")
+  })
+
+  it("id 가 아예 없으면 인덱스 폴백으로 키를 보장한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp2({ critical_diagnosis: { weaknesses: [{ severity: "major", title: "a" }] } }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.criticalDiagnosis.weaknesses[0].id).toBe("w-0")
+  })
+
   it("additional_recommendations 를 객체 배열로 매핑한다 (문자열 배열로 뭉개지 않음)", async () => {
     apiMock.get.mockResolvedValue(
       comp2({

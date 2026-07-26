@@ -116,6 +116,16 @@ function asString(value: unknown, fallback = ""): string {
 }
 
 /**
+ * 약점·강점의 `id` 는 백엔드 계약상 **number**(`"id": 1`)다. asString 으로 읽으면 항상
+ * 인덱스 폴백으로 떨어져 서버가 준 식별자를 조용히 버린다 — 숫자도 받아 문자열로 보존한다.
+ */
+function asIdString(value: unknown, fallback: string): string {
+  if (typeof value === "string" && value !== "") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return fallback;
+}
+
+/**
  * null 을 빈 문자열로 뭉개지 않는다 — 종합 분석 experiences[].title 은
  * 경험이 삭제되면 null 로 오고, 그 신호를 화면에서 "삭제된 경험"으로 구분해야 한다(계약 §2.2).
  */
@@ -314,7 +324,7 @@ function asStringArray(value: unknown): string[] {
 function mapIndividualWeakness(dto: unknown, index: number): IndividualWeakness {
   const r = asRecord(dto);
   return {
-    id: asString(r.id, `w-${index}`),
+    id: asIdString(r.id, `w-${index}`),
     category: asString(r.category),
     severity: asWeaknessSeverity(r.severity),
     title: asString(r.title),
@@ -329,7 +339,7 @@ function mapIndividualWeakness(dto: unknown, index: number): IndividualWeakness 
 function mapComprehensiveWeakness(dto: unknown, index: number): ComprehensiveWeakness {
   const r = asRecord(dto);
   return {
-    id: asString(r.id, `w-${index}`),
+    id: asIdString(r.id, `w-${index}`),
     category: asString(r.category),
     severity: asWeaknessSeverity(r.severity),
     title: asString(r.title),
@@ -499,7 +509,7 @@ function mapProjectContest(dto: unknown): ProjectContest {
 function mapStrength(dto: unknown, index: number): Strength {
   const r = asRecord(dto);
   return {
-    id: asString(r.id, `s-${index}`),
+    id: asIdString(r.id, `s-${index}`),
     category: asString(r.category),
     level: asStrengthLevel(r.level),
     title: asString(r.title),
