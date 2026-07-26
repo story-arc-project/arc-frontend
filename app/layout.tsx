@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 import { ToastContainer } from "@/components/ui";
+import { SessionReplayGuard } from "@/components/monitoring/SessionReplayGuard";
 import AuthProvider from "@/contexts/AuthContext";
 import PostHogProvider from "@/contexts/PostHogProvider";
 
@@ -24,6 +25,8 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col">
+        {/* admin 에 있는 동안만 Session Replay 를 끈다 — 고객 PII 가 URL 로 녹화되지 않게(FRT-16). */}
+        <SessionReplayGuard />
         <PostHogProvider>
           <AuthProvider>
             {children}
