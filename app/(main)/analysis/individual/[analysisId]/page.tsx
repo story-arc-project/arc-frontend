@@ -253,9 +253,9 @@ function StarFormatSection({
 }
 
 const severityVariant: Record<WeaknessSeverity, "error" | "warning" | "default"> = {
-  high: "error",
-  medium: "warning",
-  low: "default",
+  critical: "error",
+  major: "warning",
+  minor: "default",
 };
 
 function ItemDiagnosisSection({

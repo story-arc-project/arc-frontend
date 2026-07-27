@@ -74,3 +74,93 @@ describe("종합 분석 상세 — 본문 부재 화면 (FRT-134)", () => {
     );
   });
 });
+
+describe("종합 분석 상세 — v2.0 섹션 렌더", () => {
+  it("강점 진단 섹션을 critical_diagnosis 앞에 그린다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    const strength = await screen.findByRole("heading", { name: "강점 진단" });
+    const critical = screen.getByRole("heading", { name: "보완 포인트" });
+    expect(strength).toBeInTheDocument();
+    // DOM 순서상 강점 진단이 보완 포인트보다 앞에 온다(앵커링 저항).
+    expect(strength.compareDocumentPosition(critical)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it("강점이 없으면 개선 방향을 안내한다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        hasResultBody: true,
+        strengthDiagnosis: {
+          oneLineVerdict: "",
+          strengths: [],
+          noStrengthDiagnosis: {
+            hasIssue: true,
+            reason: "아직 직무 연관 경험이 부족합니다.",
+            improvementDirection: "관련 프로젝트를 1건 추가해보세요.",
+          },
+          standoutExperienceTypes: [],
+          contentQualityHighlights: [],
+          competitorAdvantage: "",
+        },
+      }),
+    );
+    render(<ComprehensiveDetailPage />);
+
+    expect(await screen.findByText("관련 프로젝트를 1건 추가해보세요.")).toBeInTheDocument();
+  });
+
+  it("추가 활동 추천을 객체 카드(이름·추천 이유)로 그린다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    // 회귀 시엔 asStringArray 로 뭉개져 자격증 섹션이 통째로 비었다.
+    expect(await screen.findByText("정보처리기사")).toBeInTheDocument();
+    expect(screen.getByText("추천 자격증")).toBeInTheDocument();
+  });
+
+  it("동아리 추천은 활동 내용과 추천 이유를 함께 보여준다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    // 회귀 시엔 `reason || description` 이라 description(그 단체가 무엇을 하는지)이 통째로 버려졌다.
+    expect(
+      await screen.findByText("AWS 기반 클라우드·서버리스 스터디 및 세미나"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("클라우드 배포 경험을 보강할 수 있습니다.")).toBeInTheDocument();
+  });
+
+  it("마감된 채용 공고를 '마감된 공고'로 별도 표기한다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    expect(await screen.findByText("마감된 공고")).toBeInTheDocument();
+  });
+
+  it("마감 공고만 남았을 때 '유효' 표기를 붙이지 않는다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        hasResultBody: true,
+        verifiedJobs: [],
+        expiredJobs: [
+          {
+            company: "라인",
+            role: "ML 엔지니어",
+            deadline: "2026-06-30",
+            whyMatch: "마감이 지났습니다.",
+            url: "",
+          },
+        ],
+      }),
+    );
+    render(<ComprehensiveDetailPage />);
+
+    // 회귀 시엔 마감 공고만 깔린 섹션 제목이 "유효 채용 공고" 였다.
+    expect(await screen.findByRole("heading", { name: "채용 공고" })).toBeInTheDocument();
+    expect(screen.queryByText("유효 채용 공고")).not.toBeInTheDocument();
+    expect(screen.queryByText("유효 공고")).not.toBeInTheDocument();
+    expect(screen.getByText("마감된 공고")).toBeInTheDocument();
+  });
+});
