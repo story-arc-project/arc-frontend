@@ -13,10 +13,11 @@ import type {
 import type { LibraryDTO, LibraryUpsertPayload } from "@/lib/utils/library-mapper";
 import type { PresetDTO, PresetUpsertPayload } from "@/lib/utils/preset-mapper";
 import type { ResumeLanguage, ResumeListItem, ResumeVersion } from "@/types/resume";
+import type { CoverLetterListItem, CoverLetterResult } from "@/types/cover-letter";
 import type { AuthUser } from "@/types/auth";
 import type { Portfolio } from "@/types/portfolio";
 
-import { experienceStore, libraryStore, presetStore, resumeStore, portfolioStore } from "./store";
+import { experienceStore, libraryStore, presetStore, resumeStore, portfolioStore, coverLetterStore } from "./store";
 import { DEMO_RESUME_VERSION_ID } from "./seed";
 import { DEMO_PORTFOLIO_ID } from "./portfolio-seed";
 
@@ -203,3 +204,44 @@ export async function getPortfolio(id: string): Promise<Portfolio | null> {
 }
 
 export const DEMO_RESUME_ID = DEMO_RESUME_VERSION_ID;
+
+// ─── Cover letter (Export, FRT-140) ─────────────────────────
+
+export async function createCoverLetter(params: {
+  targetCompany?: string;
+  targetJob?: string;
+  questions: { question: string }[];
+}): Promise<{ id: string | null }> {
+  // 데모는 입력과 무관하게 같은 시드 본문을 쓴다. 다만 목록에 남는 제목만은 입력을 반영해
+  // "내가 방금 만든 것"이 어느 행인지 알아볼 수 있게 한다.
+  const label = [params.targetCompany?.trim(), params.targetJob?.trim()]
+    .filter(Boolean)
+    .join(" · ");
+  coverLetterStore.create(label || undefined);
+  // 실제 서버처럼 생성은 비동기다 — id 를 돌려주지 않고 목록에서 확인하게 한다.
+  await delay(undefined, 900);
+  return { id: null };
+}
+
+export async function getCoverLetter(id: string): Promise<CoverLetterResult> {
+  return delay(coverLetterStore.get(id));
+}
+
+export async function getCoverLetterList(): Promise<CoverLetterListItem[]> {
+  return delay(coverLetterStore.list());
+}
+
+export async function updateCoverLetter(
+  id: string,
+  data: CoverLetterResult,
+): Promise<CoverLetterResult> {
+  // 데모에서는 저장이 성공한다 — 서버 미구현 폴백(임시 저장 안내)은 실제 API 경로의 몫이다.
+  // 성공했다고 말했으면 **저장한 내용이 남아야 한다**: 되돌려주기만 하면 상세 화면이 임시
+  // 저장을 지우고 성공을 표시한 뒤, 다시 열 때 시드가 편집을 조용히 덮는다(codex P2).
+  return delay(coverLetterStore.update(id, data));
+}
+
+export async function deleteCoverLetter(id: string): Promise<void> {
+  coverLetterStore.remove(id);
+  await delay(undefined);
+}

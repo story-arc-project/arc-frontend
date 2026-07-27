@@ -1,0 +1,248 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { PenLine, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui";
+import { toast } from "@/components/ui/toast";
+import { ApiError } from "@/lib/api/client";
+import {
+  CoverLetterMutationUnsupportedError,
+  deleteCoverLetter,
+  getCoverLetterList,
+} from "@/lib/api/cover-letter-api";
+import { useBasePath } from "@/lib/utils/use-base-path";
+import { formatDateTime, formatRelativeTime } from "@/lib/utils/date-utils";
+import type { CoverLetterListItem } from "@/types/cover-letter";
+
+interface RecentCoverLetterListProps {
+  onCreateClick: () => void;
+  reloadToken?: number;
+}
+
+/** 이전 조회가 끝난 뒤 다음 조회까지의 간격. 자소서 생성은 큐에 들어가 수십 초 걸린다. */
+const POLL_INTERVAL_MS = 5_000;
+/** 상한 — 무한 폴링을 만들지 않는다(목록은 원래 폴링하지 않는 화면이다). 요청 완료 기준
+ *  간격이라 실제 관찰 창은 2분을 넘는다. 상한에 닿으면 사용자가 눌러 잇는다. */
+const MAX_POLL_TICKS = 24;
+
+// 서버가 제목을 주지 않으면 만든 시각을 이름으로 쓴다(레쥬메 목록과 같은 규칙).
+function coverLetterLabel(createdAt: string): string {
+  if (!createdAt) return "자기소개서";
+  const d = new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return "자기소개서";
+  return `${formatDateTime(createdAt)} 자기소개서`;
+}
+
+export function RecentCoverLetterList({
+  onCreateClick,
+  reloadToken = 0,
+}: RecentCoverLetterListProps) {
+  const basePath = useBasePath();
+  const [items, setItems] = useState<CoverLetterListItem[] | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [deleteSupported, setDeleteSupported] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pollExhausted, setPollExhausted] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await getCoverLetterList();
+      setError(null);
+      setItems(data);
+    } catch (err) {
+      setError(err as Error);
+      setItems([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load, reloadToken]);
+
+  // 생성은 비동기다 — 만들고 목록으로 돌아오면 첫 조회가 대개 'queued' 를 본다. 여기서
+  // 멈추면 그 행은 **서버가 다 만든 뒤에도** '생성 중'에 고착돼 열 수 없다(전체 새로고침만
+  // 탈출구다). 그래서 진행 중인 행이 있을 때만 유한 횟수 다시 읽는다.
+  const hasPending = (items ?? []).some((i) => i.status === "processing");
+
+  // 사람이 눌러 다시 읽으면 폴링 예산도 처음부터 다시 센다.
+  const handleManualReload = useCallback(() => {
+    setPollExhausted(false);
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (!hasPending || pollExhausted) return;
+    let cancelled = false;
+    let ticks = 0;
+    let timer: ReturnType<typeof setTimeout>;
+
+    // setInterval 이 아니라 "끝난 뒤 다시 예약"이다 — 목록 GET 이 간격보다 오래 걸리면
+    // 요청이 겹치고, 늦게 도착한 옛 응답이 새 응답을 덮어써 상태가 되돌아간다
+    // (setItems 로 통째 교체하기 때문이다). lib/analysis/use-retry-refresh 와 같은 이유.
+    const schedule = () => {
+      timer = setTimeout(async () => {
+        ticks += 1;
+        await load(); // load 는 내부에서 실패를 흡수한다 — 한 번 실패해도 다음 차례로 잇는다.
+        if (cancelled) return;
+        // 진행 중인 행이 사라지면 hasPending 이 false 가 되고 이 effect 가 정리된다.
+        if (ticks >= MAX_POLL_TICKS) {
+          // 조용히 멈추면 '생성 중' 이 영원한 상태처럼 보인다 — 이을 길을 남긴다.
+          setPollExhausted(true);
+          return;
+        }
+        schedule();
+      }, POLL_INTERVAL_MS);
+    };
+    schedule();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [hasPending, pollExhausted, load]);
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("이 자기소개서를 삭제할까요?")) return;
+    setDeletingId(id);
+    try {
+      await deleteCoverLetter(id);
+      setItems((prev) => (prev ?? []).filter((c) => c.id !== id));
+      toast.success("자기소개서를 삭제했어요");
+    } catch (err) {
+      if (err instanceof CoverLetterMutationUnsupportedError) {
+        setDeleteSupported(false);
+        toast("삭제 기능은 곧 제공될 예정이에요", "info");
+      } else if (err instanceof ApiError && err.status === 404) {
+        // 이미 없는 것을 지우려 한 것뿐이다 — 사용자가 원한 결과와 같으므로 목록에서 뺀다.
+        setItems((prev) => (prev ?? []).filter((c) => c.id !== id));
+      } else {
+        toast.error("삭제에 실패했어요");
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  if (items === null) {
+    return (
+      <div className="space-y-2">
+        {[0, 1].map((i) => (
+          <div
+            key={i}
+            className="h-16 animate-pulse rounded-lg border border-border bg-surface-secondary"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (error && items.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-surface-secondary p-5 text-center">
+        <p className="text-body-sm text-text-secondary">목록을 불러오지 못했어요.</p>
+        <Button variant="ghost" size="sm" onClick={load} className="mt-2">
+          다시 시도
+        </Button>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-surface-secondary p-8 text-center">
+        <PenLine size={28} className="mx-auto text-text-tertiary" />
+        <p className="mt-3 text-body text-text-primary">아직 만든 자기소개서가 없어요.</p>
+        <p className="mt-1 text-body-sm text-text-secondary">
+          문항을 넣으면 기록을 바탕으로 초안을 만들어요.
+        </p>
+        <Button variant="primary" size="sm" onClick={onCreateClick} className="mt-4">
+          새 자기소개서 만들기
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {pollExhausted && hasPending && (
+        <p className="mb-2 flex flex-wrap items-center gap-1.5 text-caption text-text-secondary">
+          생성이 예상보다 오래 걸리고 있어요.
+          <button
+            type="button"
+            onClick={handleManualReload}
+            className="font-medium text-brand underline underline-offset-2"
+          >
+            다시 불러오기
+          </button>
+        </p>
+      )}
+      <ul className="flex flex-col gap-2">
+      {items.map((item) => {
+        // status 가 없으면(구 백엔드) 이동 가능. 있으면 completed 만 허용 — 생성 중/실패 행은
+        // 본문이 아직 없어 상세가 에러 화면으로 샌다(레쥬메 목록과 같은 판정).
+        const isNavigable = !item.status || item.status === "completed";
+        const rowContent = (
+          <>
+            <div className="min-w-0 flex-1">
+              <span className="block truncate text-body-sm font-medium text-text-primary">
+                {item.title || coverLetterLabel(item.created_at)}
+              </span>
+              {item.status && item.status !== "completed" && (
+                <span
+                  className={`mt-0.5 block text-caption ${
+                    item.status === "failed" ? "text-error" : "text-text-tertiary"
+                  }`}
+                >
+                  {item.status === "failed" ? "실패" : "생성 중"}
+                </span>
+              )}
+            </div>
+            {item.created_at && (
+              <span className="hidden shrink-0 text-caption text-text-tertiary sm:inline">
+                {formatRelativeTime(item.created_at)}
+              </span>
+            )}
+          </>
+        );
+
+        return (
+          <li key={item.id}>
+            <div className="group flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 transition-colors hover:border-border-strong">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-brand text-brand">
+                <PenLine size={16} />
+              </div>
+              {isNavigable ? (
+                <Link
+                  href={`${basePath}/export/cover-letter/${item.id}`}
+                  className="flex min-w-0 flex-1 items-center gap-3"
+                >
+                  {rowContent}
+                </Link>
+              ) : (
+                <div
+                  className="flex min-w-0 flex-1 cursor-default items-center gap-3 opacity-70"
+                  aria-disabled="true"
+                >
+                  {rowContent}
+                </div>
+              )}
+              {deleteSupported && (
+                <button
+                  type="button"
+                  onClick={() => handleDelete(item.id)}
+                  disabled={deletingId === item.id}
+                  className="rounded-md p-1.5 text-text-tertiary transition-colors hover:text-error disabled:opacity-40"
+                  aria-label="자기소개서 삭제"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
+          </li>
+        );
+      })}
+      </ul>
+    </>
+  );
+}

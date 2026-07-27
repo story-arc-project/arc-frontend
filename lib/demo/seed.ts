@@ -6,6 +6,7 @@
 import type { Experience } from "@/types/experience";
 import type { LibraryDTO } from "@/lib/utils/library-mapper";
 import type { ResumeVersion } from "@/types/resume";
+import type { CoverLetterResult } from "@/types/cover-letter";
 import type { AuthUser } from "@/types/auth";
 import type { Block } from "@/types/archive";
 
@@ -776,3 +777,72 @@ export const seedResumeListItem = {
 };
 
 export const DEMO_RESUME_VERSION_ID = DEMO_RESUME_ID;
+
+// ─── Cover letter (FRT-140) ─────────────────────────────────
+//
+// 백엔드(BAC-62)가 아직 없어 데모가 유일한 "걸어볼 수 있는" 경로다. 그래서 시드는
+// 잘 된 결과만 보여주지 않는다 — **근거 없는 주장이 섞인 초안**을 일부러 넣어,
+// 이 기능의 핵심인 경고·하이라이트가 실제로 보이게 한다.
+
+const DEMO_COVER_LETTER_ID = "demo-cover-letter-1";
+
+export const seedCoverLetter: CoverLetterResult = {
+  version_id: DEMO_COVER_LETTER_ID,
+  created_at: "2026-07-24T01:00:00.000Z",
+  meta: {
+    job_key: "data",
+    job_label: "데이터 분석/사이언스",
+    region: "KR",
+    num_questions: 2,
+    num_style_examples: 3,
+    company_research_used: true,
+    all_grounded: false,
+  },
+  company_research:
+    "고객의 신뢰를 최우선 가치로 두고, 자율과 책임을 함께 강조하는 문화를 지향합니다. 데이터 기반 의사결정을 조직 전반의 기본기로 삼습니다.",
+  action_plan:
+    "단기(3개월): SQL 윈도우 함수·실험 설계 복습\n중기(6개월): 도메인 지표 정의 경험 쌓기\n장기(1년): 데이터 프로덕트 기획까지 범위 넓히기",
+  answers: [
+    {
+      question: "지원 동기와 본인의 강점을 서술하시오. (1,000자 이내)",
+      max_chars: 1000,
+      cover_letter:
+        "데이터로 문제를 좁혀 가는 일에 가장 큰 동기를 느낍니다.\n\n학부 2학년 때 교내 데이터 분석 학회에 들어가면서 데이터를 다루기 시작했습니다. 처음 맡은 일은 설문 응답을 정리하는 단순 작업이었지만, 반복되는 전처리를 파이썬 스크립트로 옮기면서 작업 시간을 크게 줄였습니다. 그때 '반복을 줄이면 생각할 시간이 늘어난다'는 것을 배웠습니다.\n\n이후 팀 프로젝트에서는 이탈이 많은 구간을 찾는 분석을 맡았습니다. 3년간 팀장으로 조직을 이끈 경험을 살려 일정을 조율했고, 가설을 세우고 지표로 확인하는 과정을 반복해 결론을 좁혔습니다.\n\n귀사가 데이터를 조직의 기본기로 삼는다는 점에 끌렸습니다. 숫자로 확인하고 설득하는 방식으로 기여하고 싶습니다.",
+      grounding: {
+        grounded: false,
+        // 첫 번째는 본문에 그대로 있어 하이라이트되고, 두 번째는 없어 배너에만 뜬다 —
+        // 두 경로를 한 화면에서 확인할 수 있게 일부러 섞었다.
+        unsupported_claims: [
+          "3년간 팀장으로 조직을 이끈 경험",
+          "전국 대학생 데이터 분석 대회에서 대상을 받았습니다",
+        ],
+        notes: "기록에서 근거를 찾지 못한 주장 2건 (교정 반복 2회)",
+      },
+      writing_guide:
+        "전략\n두괄식으로 시작해 첫 문장에서 동기를 분명히 밝히세요.\n\n문단별 해설\n1문단 — 결론부터. 2문단 — 계기를 사실로. 3문단 — 성과를 숫자로.\n\n보완 포인트\n정량 성과(줄인 시간, 개선한 지표)를 기록에 남겨 두면 다음 초안이 더 단단해집니다.\n\n예상 면접 질문\n1. 전처리를 자동화한 구체적인 방법은?\n2. 이탈 구간을 어떤 지표로 정의했나요?\n3. 팀에서 의견이 갈렸을 때 어떻게 결정했나요?",
+    },
+    {
+      question: "입사 후 이루고 싶은 목표를 서술하시오. (500자 이내)",
+      max_chars: 500,
+      cover_letter:
+        "데이터가 의사결정에 실제로 쓰이게 만드는 사람이 되고 싶습니다.\n\n분석이 보고서로 끝나면 조직은 바뀌지 않습니다. 지표를 정의하고, 그 지표를 팀이 매일 보게 만드는 일까지가 분석이라고 생각합니다. 먼저 도메인을 익혀 숫자의 맥락을 이해하고, 이후에는 제가 정의한 지표로 팀의 판단이 빨라지는 데까지 기여하고 싶습니다.",
+      grounding: {
+        grounded: true,
+        unsupported_claims: [],
+        notes: "검증 통과 (교정 반복 0회)",
+      },
+      writing_guide:
+        "전략\n목표를 회사의 맥락과 연결하세요.\n\n체크리스트\n- 직무와 목표가 이어지는가\n- 추상적 다짐 대신 할 일이 보이는가",
+    },
+  ],
+};
+
+export const seedCoverLetterListItem = {
+  id: DEMO_COVER_LETTER_ID,
+  created_at: seedCoverLetter.created_at ?? "2026-07-24T01:00:00.000Z",
+  updated_at: seedCoverLetter.created_at ?? "2026-07-24T01:00:00.000Z",
+  title: "토스 · 데이터 분석 자기소개서",
+  status: "completed" as const,
+};
+
+export const DEMO_COVER_LETTER_VERSION_ID = DEMO_COVER_LETTER_ID;

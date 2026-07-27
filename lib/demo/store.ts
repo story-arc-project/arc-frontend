@@ -8,7 +8,10 @@ import type { ResumeListItem, ResumeVersion } from "@/types/resume";
 import type { Portfolio } from "@/types/portfolio";
 
 import { buildPortfolio } from "@/lib/portfolio/build-portfolio";
+import type { CoverLetterListItem, CoverLetterResult } from "@/types/cover-letter";
 import {
+  seedCoverLetter,
+  seedCoverLetterListItem,
   seedExperiences,
   seedLibraries,
   seedLibraryMembership,
@@ -26,6 +29,10 @@ let libraries: LibraryDTO[] = clone(seedLibraries);
 const libraryMembership: Record<string, string[]> = clone(seedLibraryMembership);
 const resume: ResumeVersion = clone(seedResume);
 let resumeList: ResumeListItem[] = [clone(seedResumeListItem)];
+const coverLetter: CoverLetterResult = clone(seedCoverLetter);
+/** 데모에서 저장한 편집 — id 별로 시드 위에 덮인다(저장이 성공했다고 말했으면 남아야 한다). */
+const coverLetterEdits = new Map<string, CoverLetterResult>();
+let coverLetterList: CoverLetterListItem[] = [clone(seedCoverLetterListItem)];
 
 let nextId = 1000;
 
@@ -241,6 +248,46 @@ export const resumeStore = {
     const now = nowIso();
     resumeList = [{ version_id: newId, created_at: now, updated_at: now }, ...resumeList];
     return newId;
+  },
+};
+
+// ─── Cover letter (FRT-140) ─────────────────────────────────
+//
+// 레쥬메 데모와 같은 태도다 — 목록은 늘어나지만 본문은 시드 하나를 공유한다. 데모의 목적은
+// "생성이 정말 되는가"가 아니라 **화면과 흐름을 걸어보는 것**이기 때문이다.
+
+export const coverLetterStore = {
+  get(id?: string): CoverLetterResult {
+    // 저장한 편집이 있으면 그것을 돌려준다 — 시드로 되돌리면 "저장됐어요" 라고 말한 편집이
+    // 다시 열 때 사라져, 데모가 실제 동작과 반대되는 인상을 준다.
+    const edited = id ? coverLetterEdits.get(id) : undefined;
+    return clone(edited ?? coverLetter);
+  },
+  list(): CoverLetterListItem[] {
+    return clone(coverLetterList);
+  },
+  update(id: string, data: CoverLetterResult): CoverLetterResult {
+    coverLetterEdits.set(id, clone(data));
+    return clone(data);
+  },
+  create(title?: string): string {
+    const newId = genId("demo-cover-letter");
+    const now = nowIso();
+    coverLetterList = [
+      {
+        id: newId,
+        created_at: now,
+        updated_at: now,
+        ...(title ? { title } : {}),
+        status: "completed",
+      },
+      ...coverLetterList,
+    ];
+    return newId;
+  },
+  remove(id: string): void {
+    coverLetterList = coverLetterList.filter((c) => c.id !== id);
+    coverLetterEdits.delete(id);
   },
 };
 
