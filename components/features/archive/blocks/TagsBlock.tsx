@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useId, useState } from "react"
 import { X } from "lucide-react"
 import type { Block, TagsBlockValue } from "@/types/archive"
 
@@ -13,6 +13,7 @@ interface TagsBlockProps {
 export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps) {
   const val = block.value as TagsBlockValue
   const [input, setInput] = useState("")
+  const inputId = useId()
 
   function addTag() {
     const trimmed = input.trim()
@@ -46,7 +47,7 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-label text-text-primary">{block.label}</label>
+      <label htmlFor={inputId} className="text-field-label text-text-primary">{block.label}</label>
       {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
       <div className="flex flex-wrap gap-1.5 min-h-[32px]">
         {val.tags.map(tag => (
@@ -68,6 +69,7 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
       </div>
       <div className="flex gap-2">
         <input
+          id={inputId}
           type="text"
           className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
           placeholder="태그 입력 후 Enter"

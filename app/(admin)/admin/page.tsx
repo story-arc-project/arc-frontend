@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Users, BarChart3, ScrollText, ArrowRight, type LucideIcon } from "lucide-react";
 
+import { isAdminCustomersEnabled } from "@/lib/admin/flags";
+
 export const metadata: Metadata = {
   title: "개요 · ARC Admin",
 };
@@ -11,27 +13,33 @@ interface OverviewSection {
   label: string;
   description: string;
   icon: LucideIcon;
+  /** 실제 기능 준비 여부 — false 면 "준비 중" 뱃지를 붙인다. */
+  ready: boolean;
 }
 
 // 개요는 admin 셸의 실 콘텐츠(랜딩). 각 운영 영역으로 가는 진입 카드를 제공한다.
+// 고객은 FRT-16 플래그(백엔드 배포 시 on)로 "준비 중" 여부가 갈린다.
 const SECTIONS: OverviewSection[] = [
   {
     href: "/admin/customers",
     label: "고객 정보 조회",
     description: "가입자 목록·검색·상세와 활동 요약. 개인정보 최소 노출 원칙.",
     icon: Users,
+    ready: isAdminCustomersEnabled(),
   },
   {
     href: "/admin/analytics",
     label: "행동 분석",
     description: "핵심 퍼널·리텐션·이탈 추적(PostHog).",
     icon: BarChart3,
+    ready: false,
   },
   {
     href: "/admin/audit-log",
     label: "감사 로그",
     description: "고객 데이터 조회·익스포트 기록 추적.",
     icon: ScrollText,
+    ready: false,
   },
 ];
 
@@ -58,9 +66,11 @@ export default function AdminOverviewPage() {
                 <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-secondary text-text-secondary">
                   <Icon size={20} aria-hidden="true" />
                 </span>
-                <span className="rounded bg-surface-tertiary px-2 py-0.5 text-caption text-text-tertiary">
-                  준비 중
-                </span>
+                {!section.ready && (
+                  <span className="rounded bg-surface-tertiary px-2 py-0.5 text-caption text-text-tertiary">
+                    준비 중
+                  </span>
+                )}
               </div>
               <div>
                 <h2 className="flex items-center gap-1 text-body-lg font-semibold text-text-primary">

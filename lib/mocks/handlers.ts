@@ -19,5 +19,24 @@ export const bookmarkHandlers = [
   http.delete("*/analysis/bookmarks/:id", () => new HttpResponse(null, { status: 204 })),
 ];
 
+// `retry*Analysis`는 body 없는 POST다(FRT-108). 계약(BAC-42)대로 200 + `{message, data:{id,title}}`
+// 로 응답해 성공 경로를 태운다. 실패 경로는 스토리에서 핸들러를 덮어써 만든다.
+export const analysisRetryHandlers = [
+  http.post("*/analysis/comprehensive/:id/retry", ({ params }) =>
+    HttpResponse.json({
+      status: "success",
+      message: "Queued retry.",
+      data: { id: params.id, title: "재시도" },
+    }),
+  ),
+  http.post("*/analysis/keyword/:id/retry", ({ params }) =>
+    HttpResponse.json({
+      status: "success",
+      message: "Queued retry.",
+      data: { id: params.id, title: "재시도" },
+    }),
+  ),
+];
+
 /** preview에 등록되는 전역 기본 핸들러. 새 API 호출 컴포넌트는 여기에 핸들러를 추가하면 된다. */
-export const defaultHandlers = [...bookmarkHandlers];
+export const defaultHandlers = [...bookmarkHandlers, ...analysisRetryHandlers];

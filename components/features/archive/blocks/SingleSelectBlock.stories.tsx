@@ -25,6 +25,18 @@ export const Empty: Story = {
   },
 }
 
+/** 라벨 아래 안내문(guide). 문서 확정본이 드롭다운에도 가이드 문구를 지정한다(FRT-135). */
+export const WithGuide: Story = {
+  args: {
+    block: {
+      ...emptySingleSelectBlock,
+      label: "수업 분류",
+      guide: "이 강좌의 이수 구분을 선택해주세요.",
+    },
+    readOnly: false,
+  },
+}
+
 export const WithData: Story = {
   args: {
     block: singleSelectBlock,

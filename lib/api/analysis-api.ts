@@ -14,11 +14,18 @@ import type {
   IndividualStarFormat,
   IndividualActionPlan,
   WeaknessSeverity,
+  StrengthLevel,
   SynergyPriority,
   ComprehensiveAnalysisResult,
   ComprehensiveWeakness,
   SynergyCombination,
   ContentQualityIssue,
+  ContentQualityHighlight,
+  Certification,
+  ClubSociety,
+  ProjectContest,
+  Strength,
+  StrengthDiagnosis,
   JobRecommendation,
   KeywordAnalysisResult,
   KeywordDefinition,
@@ -65,8 +72,39 @@ function mocks() {
 
 type UnknownRecord = Record<string, unknown>;
 
+/**
+ * 배열은 레코드가 아니다(FRT-134). `typeof [] === "object"` 라 가드가 없으면 배열이 레코드로
+ * 캐스팅된다. assertRenderableSchema·unwrapKeywordBody 가 이미 쓰는 것과 같은 기준을
+ * 정규화 층에도 세워 세 지점이 어긋나지 않게 한다.
+ *
+ * ⚠️ 지금은 이 가드를 빼도 관측되는 동작 차이가 없다 — 배열의 키(숫자 인덱스·length)가
+ * 매퍼가 읽는 키와 겹치지 않아 어느 쪽이든 결과가 빈 값이고, 화면은 hasAnyContent 판정이
+ * 지킨다. 앞으로 body 를 키 기반으로 순회(Object.keys/values)하는 코드가 생기면 그때
+ * 배열이 조용히 새는 것을 막는 구조적 방어다. 뮤테이션 테스트로는 잡히지 않는다.
+ */
 function asRecord(value: unknown): UnknownRecord {
-  return value && typeof value === "object" ? (value as UnknownRecord) : {};
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : {};
+}
+
+/**
+ * 매핑 결과에 실제로 그릴 값이 하나라도 있는지 본다(FRT-134).
+ * 판정 기준을 백엔드 키 이름 목록이 아니라 **매핑 결과**로 두는 이유: 화면의 각 섹션이
+ * 쓰는 빈 값 판정과 같은 기준이 되고(= 화면이 아무것도 못 그리면 본문 부재), 키 이름이
+ * 늘어도 목록을 따로 유지보수하지 않아도 된다.
+ */
+function hasAnyContent(value: unknown): boolean {
+  if (typeof value === "string") return value !== "";
+  if (typeof value === "number") return Number.isFinite(value);
+  // 길이만 보면 `[{}]` 처럼 원소는 있으나 알맹이가 없는 배열을 본문으로 오판한다.
+  // 원소까지 재귀해야 화면 기준(그릴 값이 있는가)과 어긋나지 않는다.
+  if (Array.isArray(value)) return value.some(hasAnyContent);
+  if (value && typeof value === "object") {
+    return Object.values(value as UnknownRecord).some(hasAnyContent);
+  }
+  // boolean 은 컨텐츠로 치지 않는다 — 방어 파싱의 기본값(false)이 흔해 오탐을 만든다.
+  return false;
 }
 
 function asArray<T = unknown>(value: unknown): T[] {
@@ -75,6 +113,16 @@ function asArray<T = unknown>(value: unknown): T[] {
 
 function asString(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
+}
+
+/**
+ * 약점·강점의 `id` 는 백엔드 계약상 **number**(`"id": 1`)다. asString 으로 읽으면 항상
+ * 인덱스 폴백으로 떨어져 서버가 준 식별자를 조용히 버린다 — 숫자도 받아 문자열로 보존한다.
+ */
+function asIdString(value: unknown, fallback: string): string {
+  if (typeof value === "string" && value !== "") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return fallback;
 }
 
 /**
@@ -104,7 +152,10 @@ const MAX_RESULT_NESTING = 4;
 const KNOWN_SCHEMA_VERSIONS = new Set([
   "keyword/4.1",
   "individual/1.0",
+  // comprehensive/1.0 은 구 레코드 호환용으로 유지한다 — 1.0 payload 엔 strength_diagnosis 가
+  // 없지만 매퍼가 부재를 빈 구조로 안전 처리하므로 렌더된다.
   "comprehensive/1.0",
+  "comprehensive/2.0",
   "resume/1.0",
 ]);
 
@@ -251,7 +302,15 @@ function mapBookmark(dto: unknown): BookmarkedSnapshot {
 }
 
 function asWeaknessSeverity(value: unknown): WeaknessSeverity {
-  return value === "high" || value === "medium" || value === "low" ? value : "medium";
+  // 미상값은 과소평가하지 않도록 "major"(중간) 로 폴백한다 — 약점을 "참고"로 눌러버리면
+  // 사용자에게 불이익(백엔드 프롬프트의 약점 보존 원칙과 같은 방향).
+  return value === "critical" || value === "major" || value === "minor" ? value : "major";
+}
+
+function asStrengthLevel(value: unknown): StrengthLevel {
+  return value === "outstanding" || value === "strong" || value === "notable"
+    ? value
+    : "notable";
 }
 
 function asSynergyPriority(value: unknown): SynergyPriority {
@@ -265,7 +324,7 @@ function asStringArray(value: unknown): string[] {
 function mapIndividualWeakness(dto: unknown, index: number): IndividualWeakness {
   const r = asRecord(dto);
   return {
-    id: asString(r.id, `w-${index}`),
+    id: asIdString(r.id, `w-${index}`),
     category: asString(r.category),
     severity: asWeaknessSeverity(r.severity),
     title: asString(r.title),
@@ -280,7 +339,7 @@ function mapIndividualWeakness(dto: unknown, index: number): IndividualWeakness 
 function mapComprehensiveWeakness(dto: unknown, index: number): ComprehensiveWeakness {
   const r = asRecord(dto);
   return {
-    id: asString(r.id, `w-${index}`),
+    id: asIdString(r.id, `w-${index}`),
     category: asString(r.category),
     severity: asWeaknessSeverity(r.severity),
     title: asString(r.title),
@@ -369,6 +428,9 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
     status: mapStatus(r.status ?? body.status),
     experienceId: asString(r.experienceId ?? r.experience_id ?? body.experience_id),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
+    // result.status 는 본문이 아니라 엔벨로프에서 폴백돼 들어오는 메타다(위 `body.status ?? r.status`).
+    // 판정에 넣으면 본문이 통째로 없어도 status 하나 때문에 "본문 있음"이 된다.
+    hasResultBody: hasAnyContent({ ...result, status: "" }),
     result,
   };
 }
@@ -393,23 +455,118 @@ function mapContentQualityIssue(dto: unknown): ContentQualityIssue {
   };
 }
 
-function mapJobRecommendation(dto: unknown): JobRecommendation {
+function mapContentQualityHighlight(dto: unknown): ContentQualityHighlight {
   const r = asRecord(dto);
   return {
+    item: asString(r.item),
+    highlight: asString(r.highlight),
+    whyEffective: asString(r.whyEffective ?? r.why_effective),
+  };
+}
+
+// ── 추가 활동 추천 (v2.0 객체 배열) ─────────────────────────
+function mapCertification(dto: unknown): Certification {
+  const r = asRecord(dto);
+  return {
+    name: asString(r.name),
+    reason: asString(r.reason),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+    estimatedDuration: asString(r.estimatedDuration ?? r.estimated_duration),
+    url: asNullableString(r.url),
+    issuer: asString(r.issuer),
+  };
+}
+
+function mapClubSociety(dto: unknown): ClubSociety {
+  const r = asRecord(dto);
+  return {
+    name: asString(r.name),
+    type: asString(r.type),
+    schoolAffiliation: asString(r.schoolAffiliation ?? r.school_affiliation),
+    description: asString(r.description),
+    reason: asString(r.reason),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+    url: asNullableString(r.url),
+    searchQuery: asString(r.searchQuery ?? r.search_query),
+    searchVerified: asBoolean(r.searchVerified ?? r.search_verified),
+  };
+}
+
+function mapProjectContest(dto: unknown): ProjectContest {
+  const r = asRecord(dto);
+  return {
+    name: asString(r.name),
+    organizer: asString(r.organizer),
+    reason: asString(r.reason),
+    expectedEffect: asString(r.expectedEffect ?? r.expected_effect),
+    url: asNullableString(r.url),
+    deadline: asNullableString(r.deadline),
+    isRegular: asBoolean(r.isRegular ?? r.is_regular),
+  };
+}
+
+// ── 강점 진단 (v2.0) ────────────────────────────────────────
+function mapStrength(dto: unknown, index: number): Strength {
+  const r = asRecord(dto);
+  return {
+    id: asIdString(r.id, `s-${index}`),
+    category: asString(r.category),
+    level: asStrengthLevel(r.level),
+    title: asString(r.title),
+    diagnosis: asString(r.diagnosis),
+    evidence: asString(r.evidence),
+    impact: asString(r.impact),
+    leverageAction: asString(r.leverageAction ?? r.leverage_action),
+  };
+}
+
+/** strength_diagnosis 부재(구 1.0 레코드·진행중)에도 빈 구조를 돌려 화면이 안전히 건너뛴다. */
+function mapStrengthDiagnosis(dto: unknown): StrengthDiagnosis {
+  const r = asRecord(dto);
+  const noStrength = asRecord(r.noStrengthDiagnosis ?? r.no_strength_diagnosis);
+  return {
+    oneLineVerdict: asString(r.oneLineVerdict ?? r.one_line_verdict),
+    strengths: asArray(r.strengths).map((s, i) => mapStrength(s, i)),
+    noStrengthDiagnosis: {
+      hasIssue: asBoolean(noStrength.hasIssue ?? noStrength.has_issue),
+      reason: asString(noStrength.reason),
+      improvementDirection: asString(
+        noStrength.improvementDirection ?? noStrength.improvement_direction,
+      ),
+    },
+    standoutExperienceTypes: asStringArray(
+      r.standoutExperienceTypes ?? r.standout_experience_types,
+    ),
+    contentQualityHighlights: asArray(
+      r.contentQualityHighlights ?? r.content_quality_highlights,
+    ).map(mapContentQualityHighlight),
+    competitorAdvantage: asString(r.competitorAdvantage ?? r.competitor_advantage),
+  };
+}
+
+function mapJobRecommendation(dto: unknown): JobRecommendation {
+  const r = asRecord(dto);
+  const job: JobRecommendation = {
     company: asString(r.company),
     role: asString(r.role),
     deadline: asString(r.deadline),
     whyMatch: asString(r.whyMatch ?? r.why_match),
     url: asString(r.url),
   };
+  // is_valid 는 verified_jobs 에만 붙고 expired_jobs 엔 없다 — 있을 때만 반영한다.
+  const isValid = r.isValid ?? r.is_valid;
+  if (typeof isValid === "boolean") job.isValid = isValid;
+  return job;
 }
 
 /**
- * 종합 분석 응답 형태 (prefix 없는 평탄형, result wrapper도 방어):
+ * 종합 분석 응답 형태 v2.0 (comprehensive/2.0, prefix 없는 평탄형, result wrapper도 방어):
  * { status, user_school, user_department, brief_summary, detailed_summary,
  *   keyword_clustering, experience_insights, synergy_combinations[],
- *   additional_recommendations, resume_star_format[], action_plan,
- *   critical_diagnosis, valid_job_recommendations[], missing_info_warning }
+ *   additional_recommendations{certifications[], clubs_and_societies[], projects_and_contests[]},
+ *   resume_star_format[], action_plan, strength_diagnosis, critical_diagnosis,
+ *   verified_jobs[], expired_jobs[], missing_info_warning }
+ * 구 레코드(valid_job_recommendations, additional_recommendations 문자열 배열)도 폴백 지원.
  */
 function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
   const r = asRecord(dto);
@@ -420,7 +577,7 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
   const additional = asRecord(body.additionalRecommendations ?? body.additional_recommendations);
   const diagnosis = asRecord(body.criticalDiagnosis ?? body.critical_diagnosis);
 
-  return {
+  const detail = {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
@@ -445,18 +602,21 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
       body.synergyCombinations ?? body.synergy_combinations,
     ).map(mapSynergyCombination),
     additionalRecommendations: {
-      certifications: asStringArray(additional.certifications),
-      clubsAndSocieties: asStringArray(
+      certifications: asArray(additional.certifications).map(mapCertification),
+      clubsAndSocieties: asArray(
         additional.clubsAndSocieties ?? additional.clubs_and_societies,
-      ),
-      projectsAndContests: asStringArray(
+      ).map(mapClubSociety),
+      projectsAndContests: asArray(
         additional.projectsAndContests ?? additional.projects_and_contests,
-      ),
+      ).map(mapProjectContest),
     },
     resumeStarFormat: asArray(
       body.resumeStarFormat ?? body.resume_star_format,
     ).map(mapStarFormat),
     actionPlan: mapActionPlan(body.actionPlan ?? body.action_plan),
+    strengthDiagnosis: mapStrengthDiagnosis(
+      body.strengthDiagnosis ?? body.strength_diagnosis,
+    ),
     criticalDiagnosis: {
       oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
       weaknesses: asArray(diagnosis.weaknesses).map((w, i) => mapComprehensiveWeakness(w, i)),
@@ -468,10 +628,27 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
       ).map(mapContentQualityIssue),
       competitorGap: asString(diagnosis.competitorGap ?? diagnosis.competitor_gap),
     },
-    validJobRecommendations: asArray(
-      body.validJobRecommendations ?? body.valid_job_recommendations,
+    // v2.0: 채용공고는 후처리로 verified/expired 로 분리돼 온다. 구 레코드(valid_job_recommendations)는
+    // 마감 판정 전이므로 verifiedJobs 로 폴백한다(이중호환).
+    verifiedJobs: asArray(
+      body.verifiedJobs ?? body.verified_jobs ??
+        body.validJobRecommendations ?? body.valid_job_recommendations,
     ).map(mapJobRecommendation),
+    expiredJobs: asArray(body.expiredJobs ?? body.expired_jobs).map(mapJobRecommendation),
     missingInfoWarning: asString(body.missingInfoWarning ?? body.missing_info_warning),
+  };
+
+  return {
+    ...detail,
+    // id·status·isBookmarked·experiences 는 result 밖 엔벨로프에서 오는 메타다 —
+    // 판정에서 빼야 본문 없이 경험 배지만 뜨는 화면을 "본문 있음"으로 오판하지 않는다.
+    hasResultBody: hasAnyContent({
+      ...detail,
+      id: "",
+      status: "",
+      isBookmarked: false,
+      experiences: [],
+    }),
   };
 }
 
@@ -809,7 +986,7 @@ function mapKeywordSpecificRecommendation(dto: unknown): KeywordSpecificRecommen
   };
 }
 
-// 키워드 분석 본문(A-F)이 이 껍질에 직접 들어있는지 판별한다. 이중중첩 언랩의 종료 조건.
+// 키워드 분석 본문(A-F)이 이 껍질에 알맹이와 함께 들어있는지 판별한다. 이중중첩 언랩의 종료 조건.
 const KEYWORD_CONTENT_KEYS = [
   "keywordDefinitions", "keyword_definitions", "A_keyword_definitions",
   "selectionCriteria", "selection_criteria", "B_selection_criteria",
@@ -819,8 +996,13 @@ const KEYWORD_CONTENT_KEYS = [
   "improvementGuide", "improvement_guide", "F_improvement_guide",
 ];
 
+/**
+ * 키가 있는지가 아니라 **값이 차 있는지**를 본다(FRT-134).
+ * 키 존재만 보면 중간 래퍼에 빈 A~F 키가 섞여 있을 때 언랩이 거기서 멈춰,
+ * 한 겹 더 안쪽에 있는 진짜 본문을 통째로 잃는다 — 화면은 결과가 있는데도 비어버린다.
+ */
 function hasKeywordContent(body: UnknownRecord): boolean {
-  return KEYWORD_CONTENT_KEYS.some((k) => k in body);
+  return KEYWORD_CONTENT_KEYS.some((k) => hasAnyContent(body[k]));
 }
 
 /**
@@ -875,11 +1057,14 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
     rawCoverage,
   );
 
-  return {
+  const detail = {
     id: asString(r.id ?? body.id),
     status: mapStatus(r.status ?? body.status),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
-    analysisDate: asString(body.analysisDate ?? body.analysis_date ?? body.created_at),
+    analysisDate: asString(
+      r.createdAt ?? r.created_at ?? body.createdAt ?? body.created_at ??
+        body.analysisDate ?? body.analysis_date,
+    ),
     analysisMode: asString(body.analysisMode ?? body.analysis_mode),
     keywords: asStringArray(body.keywords ?? body.selectedKeywords ?? body.selected_keywords),
     targetScenario: asString(body.targetScenario ?? body.target_scenario ?? body.target),
@@ -912,6 +1097,24 @@ function mapKeywordDetail(dto: unknown): KeywordAnalysisResult {
         .map(mapKeywordSpecificRecommendation)
         .filter((r) => r.keyword !== "" || r.recommendations.length > 0),
     },
+  };
+
+  return {
+    ...detail,
+    // 본문 키가 "있는지"(hasKeywordContent, 언랩 종료 조건)와 "그릴 값이 있는지"는 다른 질문이다 —
+    // A_keyword_definitions: [] 처럼 키만 오면 언랩은 끝나지만 화면은 여전히 비어 있다.
+    // 화면 기준으로 판정하되, 껍질 메타(keywords·target·mode·date, 계약 §2.3)는 뺀다 —
+    // 본문 없이도 실려 오므로 포함하면 빈 화면을 "본문 있음"으로 오판한다.
+    hasResultBody: hasAnyContent({
+      ...detail,
+      id: "",
+      status: "",
+      isBookmarked: false,
+      analysisDate: "",
+      analysisMode: "",
+      keywords: [],
+      targetScenario: "",
+    }),
   };
 }
 
@@ -960,10 +1163,11 @@ export async function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
  * POST /analysis/comprehensive
  * body: `{ experiences: string[] }`
  *
- * 백엔드 스펙상 응답은 `{ status, message }`만 반환하고 id 는 포함되지 않는다(FRT-38).
- * 서버가 id 를 확장 포함하면 그 값으로 후속 폴링을 진행하고, 부재 시 `analysisId: null`
- * 을 반환한다. 호출부는 null 을 오류가 아니라 "큐 적재됨"으로 보고 목록으로 안내한다.
- * (id 없이 목록에서 폴링 대상을 추측하는 우회는 race 때문에 하지 않는다.)
+ * 서버는 `{ status, message, data: { id, title } }` 로 답한다 — 생성된 분석 id 가 `data.id`
+ * 에 실린다(arc-backend dev `PostSuccessResponse(data=UUIDDataWithTitle(...))` 확인).
+ * 초기 스펙(FRT-38)은 `{ status, message }`만 반환해 id 가 없었고, 그때의 방어 경로를 그대로
+ * 남겨 둔다 — 부재 시 `analysisId: null` 이며, 호출부는 이를 오류가 아니라 "큐 적재됨"으로 보고
+ * 목록으로 안내한다. (id 없이 목록에서 폴링 대상을 추측하는 우회는 race 때문에 하지 않는다.)
  */
 export async function createComprehensiveAnalysis(
   experienceIds: string[],
@@ -996,6 +1200,29 @@ export async function deleteComprehensiveAnalysis(
   await api.delete<void>(`/analysis/comprehensive/${analysisId}`);
 }
 
+/**
+ * POST /analysis/comprehensive/{analysisId}/retry — 실패한 분석 재실행 (FRT-108 / BAC-42)
+ *
+ * body 를 보내지 않는다. 서버가 보관 중인 원 파라미터(experience_ids)를 그대로 재사용한다
+ * — 프런트가 되돌려 보내면 그 사이 삭제된 경험 때문에 400 이 난다.
+ * 새 행이 아니라 같은 레코드를 재실행하므로(status failed → queued) 응답의 id 는 원 id 와
+ * 같다. 호출부가 이미 id 를 알고 있어 반환하지 않는다.
+ *
+ * 실패는 삼키지 않고 ApiError 로 그대로 throw 한다 — 409(실패 상태가 아님)/404/429 를
+ * 호출부가 구분해 안내할 수 있어야 한다.
+ *
+ * ⚠️ 이 함수는 기능 플래그를 모른다(flag-agnostic). 노출 게이팅은 목록 페이지(호출부)가
+ * `isAnalysisRetryEnabled()` 로 수행한다 — 버튼 컴포넌트도 플래그를 모른다.
+ */
+export async function retryComprehensiveAnalysis(
+  analysisId: string,
+): Promise<void> {
+  if (shouldMock()) return mock(async () => undefined);
+  await api.post<ApiSuccessResponse<unknown>>(
+    `/analysis/comprehensive/${analysisId}/retry`,
+  );
+}
+
 // ─── Keyword ────────────────────────────────────────────────
 
 /**
@@ -1017,10 +1244,11 @@ export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
  * POST /analysis/keyword
  * body: `{ keywords: string[] }`
  *
- * 백엔드 스펙상 응답은 `{ status, message }`만 반환하고 id 는 포함되지 않는다(FRT-38).
- * 서버가 id 를 확장 포함하면 그 값으로 후속 폴링을 진행하고, 부재 시 `analysisId: null`
- * 을 반환한다. 호출부는 null 을 오류가 아니라 "큐 적재됨"으로 보고 목록으로 안내한다.
- * (id 없이 목록에서 폴링 대상을 추측하는 우회는 race 때문에 하지 않는다.)
+ * 서버는 `{ status, message, data: { id, title } }` 로 답한다 — 생성된 분석 id 가 `data.id`
+ * 에 실린다(arc-backend dev `PostSuccessResponse(data=UUIDDataWithTitle(...))` 확인).
+ * 초기 스펙(FRT-38)은 `{ status, message }`만 반환해 id 가 없었고, 그때의 방어 경로를 그대로
+ * 남겨 둔다 — 부재 시 `analysisId: null` 이며, 호출부는 이를 오류가 아니라 "큐 적재됨"으로 보고
+ * 목록으로 안내한다. (id 없이 목록에서 폴링 대상을 추측하는 우회는 race 때문에 하지 않는다.)
  */
 export async function createKeywordAnalysis(
   keywordLabels: string[],
@@ -1050,6 +1278,17 @@ export async function getKeywordResult(
 export async function deleteKeywordAnalysis(analysisId: string): Promise<void> {
   if (shouldMock()) return mock(async () => undefined);
   await api.delete<void>(`/analysis/keyword/${analysisId}`);
+}
+
+/**
+ * POST /analysis/keyword/{analysisId}/retry — 실패한 분석 재실행 (FRT-108 / BAC-42)
+ * 계약·주의사항은 retryComprehensiveAnalysis 참고 (원 파라미터는 keywords + target).
+ */
+export async function retryKeywordAnalysis(analysisId: string): Promise<void> {
+  if (shouldMock()) return mock(async () => undefined);
+  await api.post<ApiSuccessResponse<unknown>>(
+    `/analysis/keyword/${analysisId}/retry`,
+  );
 }
 
 // ─── Bookmarks ──────────────────────────────────────────────

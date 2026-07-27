@@ -10,6 +10,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { isAdminCustomersEnabled } from "@/lib/admin/flags";
+
 interface AdminNavItem {
   href: string;
   label: string;
@@ -22,12 +24,16 @@ interface AdminNavItem {
 
 // 후속 이슈가 채울 자리를 미리 잡아둔 네비. page.tsx 본문 교체 + ready:true 전환만으로 열린다.
 // 고객=FRT-16/17, 행동 분석=FRT-18~20, 감사 로그=BAC-14.
-const ADMIN_NAV_ITEMS: AdminNavItem[] = [
-  { href: "/admin", label: "개요", icon: LayoutDashboard, exact: true, ready: true },
-  { href: "/admin/customers", label: "고객", icon: Users, exact: false, ready: false },
-  { href: "/admin/analytics", label: "행동 분석", icon: BarChart3, exact: false, ready: false },
-  { href: "/admin/audit-log", label: "감사 로그", icon: ScrollText, exact: false, ready: false },
-];
+// 고객의 ready 는 FRT-16 플래그로 구동한다 — 백엔드(BAC-16) 배포 시 env 하나만 켜면 "준비 중"
+// 뱃지 제거와 페이지 개방이 동시에 일어난다.
+function getAdminNavItems(): AdminNavItem[] {
+  return [
+    { href: "/admin", label: "개요", icon: LayoutDashboard, exact: true, ready: true },
+    { href: "/admin/customers", label: "고객", icon: Users, exact: false, ready: isAdminCustomersEnabled() },
+    { href: "/admin/analytics", label: "행동 분석", icon: BarChart3, exact: false, ready: false },
+    { href: "/admin/audit-log", label: "감사 로그", icon: ScrollText, exact: false, ready: false },
+  ];
+}
 
 function isActive(pathname: string, href: string, exact: boolean): boolean {
   if (exact) return pathname === href;
@@ -36,6 +42,7 @@ function isActive(pathname: string, href: string, exact: boolean): boolean {
 
 export function AdminNav() {
   const pathname = usePathname();
+  const items = getAdminNavItems();
 
   return (
     <nav
@@ -43,7 +50,7 @@ export function AdminNav() {
       className="shrink-0 border-b border-border bg-surface md:w-56 md:border-b-0 md:border-r"
     >
       <ul className="flex gap-1 overflow-x-auto p-2 md:flex-col md:p-3">
-        {ADMIN_NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const active = isActive(pathname, item.href, item.exact);
           const Icon = item.icon;
           return (

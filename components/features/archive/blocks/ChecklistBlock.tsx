@@ -57,7 +57,7 @@ export default function ChecklistBlock({ block, readOnly, onChange }: ChecklistB
 
   return (
     <fieldset className="flex flex-col gap-2">
-      <legend className="text-label text-text-primary mb-1">{block.label}</legend>
+      <legend className="text-field-label text-text-primary mb-1">{block.label}</legend>
       <div className="flex flex-wrap gap-2">
         {val.options.map(option => (
           <label

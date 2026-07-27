@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 
 import { createExperience, getExperiences } from "@/lib/api/experience-api"
@@ -32,6 +32,17 @@ export default function ArchiveNewPage() {
   // 취소·이탈은 이 backTo 로 되돌아간다(아무것도 만들지 않았으므로 컨텍스트 복원이 안전).
   // 신뢰 불가 값이라 safeReturnTo 로 같은 출처 archive 경로만 통과시키고, 추가 디코딩하지 않는다.
   const backTo = safeReturnTo(searchParams.get("returnTo"), basePath, `${basePath}/archive`)
+
+  // 입력 폼 진입(FRT-113). archive_type_selected·record_created 와 이어 붙이면
+  // "진입 → 유형선택 → 저장" 구간별 이탈이 보인다. 여기가 유일한 새 기록 입력 진입점이다.
+  // 재진입(뒤로가기 후 다시 시작)은 각각 1건으로 세는 게 의도 — 세션 dedup 을 두지 않는다.
+  // ref 가드는 StrictMode 의 이중 마운트만 걸러 같은 진입이 2건으로 부풀지 않게 한다.
+  const entryCapturedRef = useRef(false)
+  useEffect(() => {
+    if (entryCapturedRef.current) return
+    entryCapturedRef.current = true
+    capture("archive_entry_started", {})
+  }, [])
 
   async function handleSave(exp: ExperienceV2) {
     setSaving(true)

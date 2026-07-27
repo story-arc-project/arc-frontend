@@ -37,7 +37,7 @@ export default function TypeSelector({ selectedId, onSelect, disabled, onRequest
     return (
       <div className="flex flex-col gap-4 mb-6">
         <div>
-          <h3 className="text-label text-text-primary mb-2">경험 유형</h3>
+          <h3 className="text-field-label text-text-primary mb-2">경험 유형</h3>
           <div className="flex flex-wrap items-center gap-2">
             <TypeChip
               icon={createElement(getIcon(selectedInfo.icon), { size: 14 })}
@@ -76,7 +76,7 @@ export default function TypeSelector({ selectedId, onSelect, disabled, onRequest
   return (
     <div className="flex flex-col gap-4 mb-6">
       <div>
-        <h3 className="text-label text-text-primary mb-2">경험 유형</h3>
+        <h3 className="text-field-label text-text-primary mb-2">경험 유형</h3>
         {!disabled && (
           <div className="relative mb-3">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />

@@ -91,6 +91,119 @@ test.describe("FRT-43 레쥬메 생성·편집 동작", () => {
 });
 
 /**
+ * FRT-112 — 레쥬메 파일 내보내기(PDF·DOCX) 동작 E2E.
+ *
+ * PDF 는 한글 폰트(수 MB)를 런타임에 받아 만들기 때문에 스모크에서 제외하고,
+ * 순수 JS 로 즉시 만들어지는 Word(.docx) 로 "실제 파일이 규칙대로 떨어지는지"를 본다.
+ */
+test.describe("FRT-112 레쥬메 내보내기", () => {
+  test("내보내기에서 Word 를 고르면 이름 규칙대로 파일이 내려온다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/export/resume/resume-e2e-1");
+
+    await page
+      .locator("header")
+      .getByRole("button", { name: "내보내기" })
+      .click();
+
+    // 세 가지 형식이 모두 제시된다.
+    const dialog = page.getByRole("dialog", { name: "내보내기 형식 선택" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^PDF/ })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /^인쇄/ })).toBeVisible();
+
+    const downloadPromise = page.waitForEvent("download");
+    await dialog.getByRole("button", { name: /^Word/ }).click();
+    const download = await downloadPromise;
+
+    // 파일명 규칙: {이름}_레쥬메_{YYYYMMDD}.docx (픽스처 인적사항 이름 = 김아크)
+    expect(download.suggestedFilename()).toMatch(/^김아크_레쥬메_\d{8}\.docx$/);
+
+    // 내려받고 나면 다이얼로그는 닫힌다.
+    await expect(dialog).toBeHidden();
+  });
+});
+
+/**
+ * FRT-148 — 서버가 편집 본문을 아직 못 받을 때(PATCH 422) 임시 저장으로 버티는 동작.
+ *
+ * 이때 화면에 낡은 복원 배너가 떠 있으면 배너 하나가 편집을 두 번 잃게 만든다:
+ * '복원'이 화면에 없는 옛 스냅샷을 되돌리면서 방금 쓴 최신 임시 저장까지 지운다.
+ * 폴백이 새 임시 저장을 쓰면 배너는 내려가야 한다.
+ */
+test.describe("FRT-148 저장 폴백과 복원 배너", () => {
+  const DRAFT_KEY = "arc:resume-draft:resume-e2e-1";
+
+  test("422 폴백이 임시 저장을 갱신하면 낡은 복원 배너가 사라진다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+
+    // 서버가 아직 본문을 받지 못하는 상태를 그대로 재현한다(ResumePatchRequest = title 필수).
+    // stubApi 뒤에 등록해야 이 라우트가 먼저 매칭된다.
+    await page.route("**/export/resume/resume-e2e-1", async (route) => {
+      if (route.request().method() !== "PATCH") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 422,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "error", message: "Unprocessable Entity" }),
+      });
+    });
+
+    // Arrange: 시드 레쥬메(generated_at 2026-03-10)보다 새 임시 저장을 심어 배너를 띄운다.
+    await page.addInitScript(
+      ([key, draft]) => window.localStorage.setItem(key, draft),
+      [
+        DRAFT_KEY,
+        JSON.stringify({
+          updated_at: "2026-06-01T00:00:00.000Z",
+          data: {
+            meta: {
+              language: "ko",
+              format: "json",
+              generated_at: "2026-03-10T09:00:00.000Z",
+              source_chars: 1200,
+            },
+            인적사항: { 이름: "김아크", 링크: [] },
+            자기소개_요약: "낡은 임시 저장",
+          },
+        }),
+      ] as const,
+    );
+
+    await page.goto("/export/resume/resume-e2e-1");
+    const banner = page.getByText("저장하지 못한 편집 내용이 있어요");
+    await expect(banner).toBeVisible();
+
+    // Act: 배너를 무시한 채 서버본을 고치고 저장한다 → 422 → 임시 저장 폴백.
+    await page.getByRole("button", { name: "자기소개", exact: true }).click();
+    await page
+      .getByPlaceholder("간단한 자기소개를 적어주세요.")
+      .fill("폴백으로 남는 편집 내용");
+    await page.getByRole("button", { name: "저장", exact: true }).click();
+    await expect(
+      page.getByText("편집 저장 기능은 곧 제공될 예정이에요", { exact: false }),
+    ).toBeVisible();
+
+    // Assert: 배너는 내려가고, localStorage 에는 방금 편집한 내용이 남는다.
+    await expect(banner).toHaveCount(0);
+    const stored = await page.evaluate(
+      (k) => window.localStorage.getItem(k),
+      DRAFT_KEY,
+    );
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored as string).data.자기소개_요약).toBe(
+      "폴백으로 남는 편집 내용",
+    );
+  });
+});
+
+/**
  * FRT-56 — 레쥬메 '다시 만들기' 재생성 동작(behavior) E2E.
  *
  * 편집(dirty) 중 재생성하면: (1) 새 레쥬메가 큐잉되고 목록으로 돌아가 거기에 반영되며,

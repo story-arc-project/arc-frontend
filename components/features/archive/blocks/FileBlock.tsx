@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Paperclip, X } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
+import { capture } from "@/lib/analytics"
 import { getFileUrl, MAX_FILE_SIZE_BYTES } from "@/lib/api/files-api"
 import { useFileUpload } from "@/hooks/useFileUpload"
 import type { Block, FileBlockValue } from "@/types/archive"
@@ -78,6 +79,15 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
   const { state, progress, error, start, cancel, reset } = useFileUpload()
   const [fetched, setFetched] = useState<{ id: string; url: string } | null>(null)
   const [urlError, setUrlError] = useState<string | null>(null)
+  // 업로드가 끝나기 전에 이 블록이 사라졌는지 판정한다(아래 handleSelect 참고).
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const resolvedUrl =
     fetched && fetched.id === val.fileId ? fetched.url : val.url
@@ -109,6 +119,12 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
   async function handleSelect(file: File) {
     const uploaded = await start(file)
     if (!uploaded) return
+    // useFileUpload 는 언마운트 뒤 완료된 업로드도 결과를 그대로 돌려준다. 이미 사라진 블록의
+    // 업로드는 onChange 가 폼에 닿지 않아 첨부로 남지 않으므로, 계측도 하지 않는다(유령 첨부 방지).
+    if (!mountedRef.current) return
+    // 업로드가 확정된 시점에만 첨부로 센다(FRT-113) — 실패·취소는 첨부가 아니다.
+    // 파일명·용량은 싣지 않는다(PII). 블록마다 발화하므로 이벤트 수 = 첨부 건수다.
+    capture("archive_attachment_added", { attachment_type: "file" })
     onChange({
       ...val,
       fileName: uploaded.originalName || file.name,
@@ -173,7 +189,8 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
 
   return (
     <fieldset className="flex flex-col gap-3">
-      <legend className="text-label text-text-primary mb-1">{block.label}</legend>
+      <legend className="text-field-label text-text-primary mb-1">{block.label}</legend>
+      {block.guide && <p className="text-caption text-text-tertiary -mt-2">{block.guide}</p>}
 
       {state === "uploading" ? (
         <div className="flex flex-col gap-2 rounded-md border border-border bg-surface px-4 py-3">

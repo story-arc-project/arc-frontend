@@ -1,26 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, AlertTriangle, ExternalLink } from "lucide-react";
 import type {
+  Certification,
+  ClubSociety,
   ComprehensiveAnalysisResult,
   ComprehensiveWeakness,
+  ContentQualityHighlight,
   ContentQualityIssue,
   CriticalDiagnosis,
   JobRecommendation,
   KeywordClustering,
+  ProjectContest,
+  Strength,
+  StrengthDiagnosis,
+  StrengthLevel,
   SynergyCombination,
   WeaknessSeverity,
 } from "@/types/analysis";
-import { weaknessSeverityLabel } from "@/types/analysis";
+import { strengthLevelLabel, weaknessSeverityLabel } from "@/types/analysis";
 import { getComprehensiveResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
 import { isSafeHttpUrl } from "@/lib/utils/url-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui";
+import { isAnalysisRetryEnabled } from "@/lib/analysis/flags";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import UnsupportedSchemaNotice from "@/components/features/analysis/common/UnsupportedSchemaNotice";
+import AnalysisResultUnavailable from "@/components/features/analysis/common/AnalysisResultUnavailable";
 
 export default function ComprehensiveDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
@@ -96,6 +105,23 @@ export default function ComprehensiveDetailPage() {
     );
   }
 
+  // 본문이 안 왔으면 헤더와 경험 배지만 남은 빈 화면 대신 상태 안내로 전환한다(FRT-134).
+  if (!data.hasResultBody) {
+    return (
+      <AnalysisResultUnavailable
+        status={data.status}
+        basePath={basePath}
+        fallbackHref="/analysis/comprehensive"
+        analysisId={analysisId}
+        analysisType="comprehensive"
+        canRetry={isAnalysisRetryEnabled()}
+        onRetried={() =>
+          setData((prev) => (prev ? { ...prev, status: "processing" } : prev))
+        }
+      />
+    );
+  }
+
   const userTitle = [data.userSchool, data.userDepartment].filter(Boolean).join(" · ");
 
   return (
@@ -143,11 +169,13 @@ export default function ComprehensiveDetailPage() {
 
         <AdditionalRecommendationsBlock additional={data.additionalRecommendations} />
 
+        <StrengthDiagnosisBlock diagnosis={data.strengthDiagnosis} />
+
         <CriticalDiagnosisBlock diagnosis={data.criticalDiagnosis} />
 
         <ActionPlanBlock plan={data.actionPlan} />
 
-        <JobRecommendationsBlock items={data.validJobRecommendations} />
+        <JobRecommendationsBlock verified={data.verifiedJobs} expired={data.expiredJobs} />
       </div>
     </main>
   );
@@ -340,47 +368,272 @@ function ResumeStarBlock({
   );
 }
 
+// 추천 항목 링크 — url 이 있고 안전한 http(s) 일 때만 "공식 페이지" 링크를 건다.
+function RecommendationLink({ url }: { url: string | null }) {
+  if (!url || !isSafeHttpUrl(url)) return null;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-caption text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+    >
+      공식 페이지 <ExternalLink size={12} aria-hidden="true" />
+    </a>
+  );
+}
+
+function RecommendationCard({
+  title,
+  metas,
+  description,
+  reason,
+  expectedEffect,
+  url,
+}: {
+  title: string;
+  metas?: string[];
+  /** 동아리·학회의 `description`(그 단체가 무엇을 하는지)은 추천 이유와 다른 정보다 — 같이 보여준다. */
+  description?: string;
+  reason: string;
+  expectedEffect: string;
+  url: string | null;
+}) {
+  const shownMetas = (metas ?? []).filter(Boolean);
+  return (
+    <li className="bg-surface border border-border rounded-lg p-4 space-y-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <h3 className="text-body-sm font-medium text-text-primary">{title}</h3>
+        {shownMetas.map((m) => (
+          <Badge key={m} variant="outline">
+            {m}
+          </Badge>
+        ))}
+      </div>
+      {description && <Field label="활동 내용" value={description} />}
+      {reason && <Field label="추천 이유" value={reason} />}
+      {expectedEffect && <Field label="기대 효과" value={expectedEffect} />}
+      <RecommendationLink url={url} />
+    </li>
+  );
+}
+
 function AdditionalRecommendationsBlock({
   additional,
 }: {
   additional: ComprehensiveAnalysisResult["additionalRecommendations"];
 }) {
-  const groups: { label: string; items: string[] }[] = [
-    { label: "추천 자격증", items: additional.certifications },
-    { label: "추천 동아리/모임", items: additional.clubsAndSocieties },
-    { label: "추천 프로젝트/공모전", items: additional.projectsAndContests },
-  ].filter((g) => g.items.length > 0);
-  if (groups.length === 0) return null;
+  const { certifications, clubsAndSocieties, projectsAndContests } = additional;
+  const empty =
+    certifications.length === 0 &&
+    clubsAndSocieties.length === 0 &&
+    projectsAndContests.length === 0;
+  if (empty) return null;
   return (
-    <section className="space-y-3">
+    <section className="space-y-4">
       <h2 className="text-title text-text-primary">추가 활동 추천</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {groups.map((g) => (
-          <div key={g.label} className="bg-surface border border-border rounded-lg p-4 space-y-2">
-            <p className="text-label text-brand font-medium">{g.label}</p>
-            <ul className="space-y-1">
-              {g.items.map((item, i) => (
-                <li
-                  key={i}
-                  className="flex gap-2 items-start text-body-sm text-text-secondary"
-                >
-                  <span className="mt-2 inline-block w-1.5 h-1.5 rounded-full bg-brand shrink-0" aria-hidden="true" />
-                  <span className="leading-relaxed">{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
+
+      {certifications.length > 0 && (
+        <RecommendationGroup label="추천 자격증">
+          {certifications.map((c: Certification, i) => (
+            <RecommendationCard
+              key={`${c.name}-${i}`}
+              title={c.name}
+              metas={[c.issuer, c.estimatedDuration].filter(Boolean)}
+              reason={c.reason}
+              expectedEffect={c.expectedEffect}
+              url={c.url}
+            />
+          ))}
+        </RecommendationGroup>
+      )}
+
+      {clubsAndSocieties.length > 0 && (
+        <RecommendationGroup label="추천 동아리/학회">
+          {clubsAndSocieties.map((c: ClubSociety, i) => (
+            <RecommendationCard
+              key={`${c.name}-${i}`}
+              title={c.name}
+              metas={[c.type, c.schoolAffiliation].filter(Boolean)}
+              description={c.description}
+              reason={c.reason}
+              expectedEffect={c.expectedEffect}
+              url={c.url}
+            />
+          ))}
+        </RecommendationGroup>
+      )}
+
+      {projectsAndContests.length > 0 && (
+        <RecommendationGroup label="추천 프로젝트/공모전">
+          {projectsAndContests.map((p: ProjectContest, i) => (
+            <RecommendationCard
+              key={`${p.name}-${i}`}
+              title={p.name}
+              metas={[
+                p.organizer,
+                p.deadline ? `마감 ${p.deadline}` : "",
+                p.isRegular ? "정기 개최" : "",
+              ].filter(Boolean)}
+              reason={p.reason}
+              expectedEffect={p.expectedEffect}
+              url={p.url}
+            />
+          ))}
+        </RecommendationGroup>
+      )}
     </section>
   );
 }
 
+function RecommendationGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-label text-text-tertiary">{label}</p>
+      <ul className="space-y-2">{children}</ul>
+    </div>
+  );
+}
+
 const severityVariant: Record<WeaknessSeverity, "error" | "warning" | "default"> = {
-  high: "error",
-  medium: "warning",
-  low: "default",
+  critical: "error",
+  major: "warning",
+  minor: "default",
 };
+
+const strengthLevelVariant: Record<StrengthLevel, "brand" | "success" | "default"> = {
+  outstanding: "brand",
+  strong: "success",
+  notable: "default",
+};
+
+// 강점 진단 — 계약/프롬프트상 critical_diagnosis 보다 먼저 노출한다(앵커링 저항).
+function StrengthDiagnosisBlock({ diagnosis }: { diagnosis: StrengthDiagnosis }) {
+  const hasStrengths = diagnosis.strengths.length > 0;
+  const empty =
+    !diagnosis.oneLineVerdict &&
+    !diagnosis.competitorAdvantage &&
+    !hasStrengths &&
+    diagnosis.standoutExperienceTypes.length === 0 &&
+    diagnosis.contentQualityHighlights.length === 0 &&
+    !diagnosis.noStrengthDiagnosis.reason &&
+    !diagnosis.noStrengthDiagnosis.improvementDirection;
+  if (empty) return null;
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-title text-text-primary">강점 진단</h2>
+
+      {diagnosis.oneLineVerdict && (
+        <div className="bg-surface-brand text-brand-dark rounded-lg p-4">
+          <p className="text-body-sm font-medium leading-relaxed">{diagnosis.oneLineVerdict}</p>
+        </div>
+      )}
+
+      {hasStrengths && (
+        <div className="space-y-3">
+          <p className="text-label text-text-tertiary">강점</p>
+          <ul className="space-y-3">
+            {diagnosis.strengths.map((s) => (
+              <StrengthCard key={s.id} strength={s} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* 강점이 없을 때만 사유·개선 방향을 안내한다(솔직한 빈 상태). */}
+      {!hasStrengths && (diagnosis.noStrengthDiagnosis.reason ||
+        diagnosis.noStrengthDiagnosis.improvementDirection) && (
+        <div className="space-y-2">
+          {diagnosis.noStrengthDiagnosis.reason && (
+            <InfoBlock label="현재 상태" body={diagnosis.noStrengthDiagnosis.reason} />
+          )}
+          {diagnosis.noStrengthDiagnosis.improvementDirection && (
+            <InfoBlock
+              label="강점을 만드는 방향"
+              body={diagnosis.noStrengthDiagnosis.improvementDirection}
+            />
+          )}
+        </div>
+      )}
+
+      {diagnosis.standoutExperienceTypes.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-label text-text-tertiary">돋보이는 경험 유형</p>
+          <div className="flex flex-wrap gap-1.5">
+            {diagnosis.standoutExperienceTypes.map((t) => (
+              <Badge key={t} variant="success">
+                {t}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {diagnosis.contentQualityHighlights.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-label text-text-tertiary">잘 작성된 항목</p>
+          <ul className="space-y-2">
+            {diagnosis.contentQualityHighlights.map((h, i) => (
+              <ContentQualityHighlightCard key={i} highlight={h} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {diagnosis.competitorAdvantage && (
+        <div className="space-y-2">
+          <p className="text-label text-text-tertiary">차별점</p>
+          <div className="bg-surface-secondary rounded-lg p-4">
+            <p className="text-body-sm text-text-secondary leading-relaxed whitespace-pre-line">
+              {diagnosis.competitorAdvantage}
+            </p>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function StrengthCard({ strength }: { strength: Strength }) {
+  return (
+    <li className="bg-surface border border-border rounded-lg p-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant={strengthLevelVariant[strength.level]}>
+          {strengthLevelLabel[strength.level]}
+        </Badge>
+        {strength.category && <Badge variant="outline">{strength.category}</Badge>}
+        <h3 className="text-body-sm font-medium text-text-primary">{strength.title}</h3>
+      </div>
+      {strength.diagnosis && <Field label="진단" value={strength.diagnosis} />}
+      {strength.evidence && <Field label="근거" value={strength.evidence} />}
+      {strength.impact && <Field label="영향" value={strength.impact} />}
+      {strength.leverageAction && <Field label="활용 방법" value={strength.leverageAction} />}
+    </li>
+  );
+}
+
+function ContentQualityHighlightCard({ highlight }: { highlight: ContentQualityHighlight }) {
+  return (
+    <li className="bg-surface border border-border rounded-lg p-3 space-y-1.5">
+      {highlight.item && (
+        <p className="text-body-sm font-medium text-text-primary">{highlight.item}</p>
+      )}
+      {highlight.highlight && (
+        <p className="text-body-sm text-text-secondary leading-relaxed">{highlight.highlight}</p>
+      )}
+      {highlight.whyEffective && (
+        <p className="text-caption text-brand leading-relaxed">→ {highlight.whyEffective}</p>
+      )}
+    </li>
+  );
+}
 
 function CriticalDiagnosisBlock({ diagnosis }: { diagnosis: CriticalDiagnosis }) {
   const empty =
@@ -512,39 +765,72 @@ function ActionPlanBlock({
   );
 }
 
-function JobRecommendationsBlock({ items }: { items: JobRecommendation[] }) {
-  if (items.length === 0) return null;
+function JobCard({ job, dimmed }: { job: JobRecommendation; dimmed?: boolean }) {
+  return (
+    <li
+      className={`bg-surface border border-border rounded-lg p-4 space-y-2 ${
+        dimmed ? "opacity-60" : ""
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-body-sm font-medium text-text-primary">
+          {job.company} · {job.role}
+        </h3>
+        {job.deadline && (
+          <Badge variant={dimmed ? "default" : "warning"}>
+            {dimmed ? "마감됨" : "마감"} {job.deadline}
+          </Badge>
+        )}
+      </div>
+      {job.whyMatch && <Field label="추천 이유" value={job.whyMatch} />}
+      {job.url && isSafeHttpUrl(job.url) && (
+        <a
+          href={job.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-caption text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+        >
+          공고 보기 <ExternalLink size={12} aria-hidden="true" />
+        </a>
+      )}
+    </li>
+  );
+}
+
+function JobRecommendationsBlock({
+  verified,
+  expired,
+}: {
+  verified: JobRecommendation[];
+  expired: JobRecommendation[];
+}) {
+  if (verified.length === 0 && expired.length === 0) return null;
   return (
     <section className="space-y-3">
-      <h2 className="text-title text-text-primary">유효 채용 공고</h2>
-      <ul className="space-y-3">
-        {items.map((j, i) => (
-          <li
-            key={`${j.company}-${j.role}-${i}`}
-            className="bg-surface border border-border rounded-lg p-4 space-y-2"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-body-sm font-medium text-text-primary">
-                {j.company} · {j.role}
-              </h3>
-              {j.deadline && (
-                <Badge variant="warning">마감 {j.deadline}</Badge>
-              )}
-            </div>
-            {j.whyMatch && <Field label="추천 이유" value={j.whyMatch} />}
-            {j.url && isSafeHttpUrl(j.url) && (
-              <a
-                href={j.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-caption text-brand font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
-              >
-                공고 보기 <ExternalLink size={12} aria-hidden="true" />
-              </a>
-            )}
-          </li>
-        ))}
-      </ul>
+      {/* 섹션 제목은 중립으로 둔다 — 유효 공고가 0건이고 마감 공고만 남는 경우가 흔해서
+          "유효 채용 공고" 아래 마감 공고만 깔리는 오표기를 만들지 않는다. */}
+      <h2 className="text-title text-text-primary">채용 공고</h2>
+      {verified.length > 0 && (
+        <div className="space-y-2">
+          {expired.length > 0 && <p className="text-label text-text-tertiary">유효 공고</p>}
+          <ul className="space-y-3">
+            {verified.map((j, i) => (
+              <JobCard key={`v-${j.company}-${j.role}-${i}`} job={j} />
+            ))}
+          </ul>
+        </div>
+      )}
+      {/* 마감 지난 공고는 약화 표기로 별도 노출한다(백엔드가 굳이 분리해 보낸 정보 보존). */}
+      {expired.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-label text-text-tertiary">마감된 공고</p>
+          <ul className="space-y-3">
+            {expired.map((j, i) => (
+              <JobCard key={`e-${j.company}-${j.role}-${i}`} job={j} dimmed />
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

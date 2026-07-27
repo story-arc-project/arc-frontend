@@ -25,6 +25,17 @@ export default defineConfig({
       NEXT_PUBLIC_API_URL: API_ORIGIN,
       NEXT_PUBLIC_CONSENT_ENABLED: "true",
       NEXT_PUBLIC_PASSWORD_RESET_ENABLED: "true",
+      // 배포 전 기능도 프리뷰에서는 켠 상태로 촬영한다(FRT-108 분석 재시도).
+      NEXT_PUBLIC_ANALYSIS_RETRY_ENABLED: "true",
+      // 봉인된 기능도 프리뷰에서는 켜서 실물을 확인한다(FRT-109 경험 선택).
+      // PREVIEW_RESUME_EXPERIENCE_SELECTION=false 로 넘기면 off 상태(현행)를 찍을 수 있다.
+      NEXT_PUBLIC_RESUME_EXPERIENCE_SELECTION:
+        process.env.PREVIEW_RESUME_EXPERIENCE_SELECTION ?? "true",
+      // 인앱 피드백(FRT-95)도 동일 — 프로덕션 기본값 off, BAC-34/35 라이브 후 켠다.
+      NEXT_PUBLIC_FEEDBACK_ENABLED: "true",
+      // 자기소개서(FRT-140)도 봉인 상태다 — BAC-62(백엔드 파이프라인)가 없어 기본 off.
+      // 프리뷰에서는 켜서 실물을 확인한다(데모 시드가 본문·근거 경고를 공급한다).
+      NEXT_PUBLIC_COVER_LETTER_ENABLED: "true",
     },
   },
 });

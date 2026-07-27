@@ -105,7 +105,7 @@ const SUBROUTES: SubRouteCase[] = [
     // 레쥬메 상세는 h1 이 없다. 비어있지 않은 섹션이 로드되면 편집기 상단바 버튼이 뜬다
     // (전부 빈 섹션이면 EmptyResumeState 가 가로채므로, 픽스처는 비어있지 않게 유지).
     landmark: async (page) => {
-      await expect(page.getByRole("button", { name: "PDF 다운로드" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "내보내기" })).toBeVisible();
     },
   },
 ];

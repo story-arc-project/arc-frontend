@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo, useRef, forwardRef, useImperativeHandle } from "react"
+import { useState, useEffect, useCallback, useId, useMemo, useRef, forwardRef, useImperativeHandle } from "react"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import TypeSelector from "./TypeSelector"
@@ -72,6 +72,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     initialExperience?.customBlocks ?? []
   )
   const [tags, setTags] = useState<string[]>(initialExperience?.tags ?? [])
+  const tagInputId = useId()
   const [importance, setImportance] = useState<ImportanceLevel | undefined>(
     initialExperience?.importance,
   )
@@ -509,7 +510,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       {/* Form sections — 4-card layout */}
       {template && formCards && (
         <ProjectLinkProvider value={projectLink}>
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-5 archive-input-14">
           {formCards.cards.map(card => (
             <FormSection
               key={card.category}
@@ -569,8 +570,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
 
           {/* Tags */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-label text-text-primary">태그</label>
-            <TagInput tags={tags} onChange={setTags} />
+            <label htmlFor={tagInputId} className="text-field-label text-text-primary">태그</label>
+            <TagInput inputId={tagInputId} tags={tags} onChange={setTags} />
           </div>
 
           {/* Action buttons — 입력 뷰 셸에서는 sticky 바로 이관되어 숨겨진다(hideInlineActions). */}
@@ -599,7 +600,7 @@ ExperienceFormV2.displayName = "ExperienceFormV2"
 export default ExperienceFormV2
 
 // ── Inline tag input ──────────────────────────────────────────────────────
-function TagInput({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
+function TagInput({ inputId, tags, onChange }: { inputId?: string; tags: string[]; onChange: (tags: string[]) => void }) {
   const [input, setInput] = useState("")
 
   function add() {
@@ -631,6 +632,7 @@ function TagInput({ tags, onChange }: { tags: string[]; onChange: (tags: string[
       </div>
       <div className="flex gap-2">
         <input
+          id={inputId}
           type="text"
           className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
           placeholder="태그 입력 후 Enter"

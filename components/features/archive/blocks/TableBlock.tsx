@@ -75,7 +75,7 @@ export default function TableBlock({ block, readOnly, onChange }: TableBlockProp
 
   return (
     <div className="flex flex-col gap-3">
-      <span className="text-label text-text-primary">{block.label}</span>
+      <span className="text-field-label text-text-primary">{block.label}</span>
 
       {val.columns.length === 0 ? (
         <div className="flex gap-2">

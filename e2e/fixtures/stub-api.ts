@@ -71,7 +71,10 @@ export type { StubScenario };
  */
 export const STUB_API_URL = API_ORIGIN;
 
-const DEFAULT_PAGE_ORIGIN = "http://localhost:3000";
+export const DEFAULT_PAGE_ORIGIN = "http://localhost:3000";
+
+/** 피드백 응답 저장 시각(FRT-96). 고정값이라 스냅샷·단언이 시간에 흔들리지 않는다. */
+const FEEDBACK_RESPONDED_AT = "2026-03-02T09:00:00.000Z";
 
 interface RouteDef {
   /** pathname 정규식 (앵커링되어 상호 배타적). */
@@ -96,7 +99,11 @@ const GET_ROUTES: RouteDef[] = [
   { match: /^\/analysis\/status\/[^/]+$/, build: analysisStatus },
 ];
 
-function corsHeaders(origin: string): Record<string, string> {
+/**
+ * 스텁 응답에 반드시 실어야 하는 CORS 헤더. 스펙이 특정 경로만 국소적으로 덮을 때도(FRT-96
+ * `stubExperienceCount`) 이 함수를 재사용해야, CORS 계약이 바뀔 때 한 곳만 고치면 된다.
+ */
+export function corsHeaders(origin: string): Record<string, string> {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-credentials": "true",
@@ -220,6 +227,10 @@ function routeStateful(
   if (/^\/analysis\/comprehensive$/.test(pathname)) {
     if (method === "GET")
       return RESPOND_OK(success(withBookmarkFlags(comprehensiveList(scenario).data, store)));
+    // 종합 분석 생성(FRT-96). 폴링(useAnalysisPolling)은 **목록에서** 이 id 를 찾아 상태를 읽으므로,
+    // 새 id 를 만들어 주면 목록에 없어 "결과를 찾을 수 없습니다" 로 끝난다. 시드에 이미 있는
+    // comp-1(status: completed)을 돌려줘 완료 흐름이 첫 폴링에 닫히게 한다.
+    if (method === "POST") return RESPOND_OK(success({ id: "comp-1" }));
     return { kind: "skip" };
   }
   if (/^\/analysis\/keyword$/.test(pathname)) {
@@ -296,6 +307,16 @@ export interface StubApiOptions {
    * 기본값은 seedDemoUser(true)를 그대로 사용한다.
    */
   hasPassword?: boolean;
+  /**
+   * 인앱 피드백(FRT-96) 엔드포인트를 응답할지. **기본 false** — 주지 않으면 prompt-shown 이
+   * 404 로 떨어지고, 훅(useFeedbackPrompt)이 fail-closed 라 모달이 뜨지 않는다.
+   *
+   * ⚠️ 이 opt-in 이 필요한 이유: `NEXT_PUBLIC_FEEDBACK_ENABLED` 는 dev 서버 기동 env 라
+   * playwright.config 에서 **전역으로** 켜진다. 노출 게이트의 나머지 한 겹인 "서버가 200 을
+   * 주느냐" 를 여기서 스펙별로 잠가야, 트리거 조건(경험 임계 등)이 나중에 바뀌어도 무관한
+   * 스펙에 모달이 새지 않는다. 시드 개수에 기대는 우연한 안전과는 다르다.
+   */
+  feedback?: boolean;
 }
 
 /** OPTIONS·GET 을 제외한, 앱이 보낸 변이 요청을 도착 순서대로 캡처한다(payload 단언용). */
@@ -324,6 +345,7 @@ export async function stubApi(
   const authed = options.authed ?? false;
   const onboardedOverride = options.onboarded;
   const hasPasswordOverride = options.hasPassword;
+  const feedback = options.feedback ?? false;
 
   // 테스트별 fresh store (이 클로저에만 상태가 존재 → 전역 누수 0).
   const store = createStatefulStore(scenario);
@@ -333,6 +355,10 @@ export async function stubApi(
   let sessionInvalidated = false;
   // 프로필 수정(FRT-21): PATCH 로 받은 변경분을 누적해 이후 /auth/me 가 반영하게 한다.
   let profilePatch: Record<string, unknown> = {};
+  // 인앱 피드백(FRT-96): 노출 기록이 남은 캠페인. 서버의 unique(user_id, campaign_id) +
+  // ON CONFLICT DO NOTHING 을 모사한다 — 첫 POST 만 created:true, 이후는 false.
+  // 페이지를 새로 열어도(=훅 재마운트) 모달이 다시 뜨지 않는 것은 오직 이 서버 판정이 보장한다.
+  const promptShownCampaigns = new Set<string>();
 
   await page.route(
     (url) => url.href.startsWith(STUB_API_URL),
@@ -466,6 +492,26 @@ export async function stubApi(
       if (method === "POST" && pathname === "/auth/refresh" && (sessionInvalidated || accountDeleted)) {
         await fulfillJson(401, { status: "error", message: "no session", code: "UNAUTHORIZED" });
         return;
+      }
+
+      // 인앱 피드백(FRT-96) — `feedback: true` 를 준 스펙에서만 응답한다. 옵션이 없으면 이 블록을
+      // 그대로 지나쳐 아래 404 로 떨어지고, 훅이 fail-closed 라 모달이 뜨지 않는다.
+      if (feedback && method === "POST") {
+        const promptShown = pathname.match(
+          /^\/feedback\/campaigns\/([^/]+)\/prompt-shown$/,
+        );
+        if (promptShown) {
+          const campaignId = promptShown[1];
+          // 노출 기록이 이번에 생겼는가 = 모달을 띄울까. 판정은 서버가 원자적으로 내린다(계약 §3).
+          const created = !promptShownCampaigns.has(campaignId);
+          promptShownCampaigns.add(campaignId);
+          await fulfillJson(200, success({ created }));
+          return;
+        }
+        if (/^\/feedback\/campaigns\/[^/]+\/responses$/.test(pathname)) {
+          await fulfillJson(200, success({ responded_at: FEEDBACK_RESPONDED_AT }));
+          return;
+        }
       }
 
       // experiences · bookmarks · resume · analysis 목록 → stateful 라우터.

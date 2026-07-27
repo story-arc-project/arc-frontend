@@ -15,8 +15,16 @@ vi.mock("./client", async () => {
 
 vi.mock("@/lib/demo/state", () => ({ isDemoMode: () => false }));
 
-import { api } from "./client";
-import { createResume, getResume, getResumeList } from "./export-api";
+import { api, ApiError } from "./client";
+import {
+  createResume,
+  deleteResume,
+  getResume,
+  getResumeList,
+  ResumeMutationUnsupportedError,
+  updateResume,
+} from "./export-api";
+import { isEmptySection } from "@/types/resume";
 
 const mockGet = vi.mocked(api.get);
 const mockPost = vi.mocked(api.post);
@@ -144,6 +152,41 @@ describe("createResume — id 이중경로 (FRT-123 계약 §2.4)", () => {
   });
 });
 
+describe("createResume — experience_ids (FRT-109 / BAC-45 계약)", () => {
+  it("experienceIds 를 넘기면 snake_case 로 body 에 싣는다", async () => {
+    mockPost.mockResolvedValue({ status: "success", message: "ok", data: { id: "res-3" } });
+
+    await createResume({ language: "ko", experienceIds: ["exp-1", "exp-2"] });
+
+    expect(mockPost).toHaveBeenCalledWith(
+      "/export/resume",
+      { language: "ko", experience_ids: ["exp-1", "exp-2"] },
+      undefined,
+    );
+  });
+
+  // 미지정은 "빈 배열"이 아니라 **키 자체의 부재**여야 한다. 서버 계약상 experience_ids 부재는
+  // 현행 동작(전체 경험)이고 빈 배열은 400 이므로, 여기서 [] 로 뭉개면 플래그 off 상태에서
+  // 레쥬메 생성이 통째로 실패한다.
+  it("experienceIds 를 안 넘기면 body 에 키 자체가 없다", async () => {
+    mockPost.mockResolvedValue({ status: "success", message: "ok", data: { id: "res-4" } });
+
+    await createResume({ language: "ko" });
+
+    const body = mockPost.mock.calls[0][1] as Record<string, unknown>;
+    expect("experience_ids" in body).toBe(false);
+  });
+
+  it("빈 배열을 명시적으로 넘기면 그대로 싣는다(차단은 호출부 책임)", async () => {
+    mockPost.mockResolvedValue({ status: "success", message: "ok", data: { id: "res-5" } });
+
+    await createResume({ language: "ko", experienceIds: [] });
+
+    const body = mockPost.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.experience_ids).toEqual([]);
+  });
+});
+
 describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)", () => {
   const content = {
     meta: { format: "json", version: "1.0" },
@@ -169,7 +212,8 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
 
     const resume = await getResume("res-1");
     // 래퍼가 아니라 본문(인적사항)이 최상위로 온다.
-    expect(resume.인적사항).toEqual({ 이름: "홍길동" });
+    // (toMatchObject — normalizeResumeVersion 이 링크를 항상 배열로 보장해 키가 하나 는다)
+    expect(resume.인적사항).toMatchObject({ 이름: "홍길동" });
     // 래퍼 id 를 version_id 로 보존한다.
     expect(resume.version_id).toBe("res-1");
   });
@@ -182,7 +226,7 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
     });
 
     const resume = await getResume("res-2");
-    expect(resume.인적사항).toEqual({ 이름: "홍길동" });
+    expect(resume.인적사항).toMatchObject({ 이름: "홍길동" });
     expect(resume.version_id).toBe("res-2");
   });
 
@@ -232,6 +276,92 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
     });
 
     await expect(getResume("res-4")).rejects.toBeInstanceOf(Error);
+  });
+});
+
+// 백엔드(ai_analyst/src/ai/resume.py `_SYS_KO`)는 인적사항.링크를 문자열 배열로 낸다.
+// 프런트 내부 shape 은 { label, url } 이라, 정규화가 없으면 PreviewPersonalInfo 의
+// `l?.url?.trim()` 필터에 전부 걸려 링크가 화면에서 조용히 사라진다.
+describe("getResume — 인적사항.링크 정규화 (FRT-109, 백엔드 실값 대조)", () => {
+  const base = { meta: { language: "ko", format: "korean_resume" }, 학력: [], 경력: [] };
+
+  it("문자열 배열로 오면 { label: null, url } 로 정규화한다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: {
+        id: "res-l1",
+        result: { ...base, 인적사항: { 이름: "홍길동", 링크: ["https://github.com/me", "  "] },
+        },
+      },
+    });
+
+    const resume = await getResume("res-l1");
+    // 공백뿐인 항목은 링크가 아니다 — 빈 행으로 남기지 않고 버린다.
+    expect(resume.인적사항.링크).toEqual([{ label: null, url: "https://github.com/me" }]);
+  });
+
+  it("이미 { label, url } 객체로 오면 그대로 통과시킨다 (dual-compat)", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: {
+        id: "res-l2",
+        result: {
+          ...base,
+          인적사항: { 이름: "홍길동", 링크: [{ label: "GitHub", url: "https://github.com/me" }] },
+        },
+      },
+    });
+
+    const resume = await getResume("res-l2");
+    expect(resume.인적사항.링크).toEqual([{ label: "GitHub", url: "https://github.com/me" }]);
+  });
+
+  it("링크 필드가 없거나 배열이 아니어도 빈 배열로 안전하게 만든다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-l3", result: { ...base, 인적사항: { 이름: "홍길동" } } },
+    });
+
+    const resume = await getResume("res-l3");
+    expect(resume.인적사항.링크).toEqual([]);
+  });
+
+  it("updateResume 도 같은 경계를 태운다 — 래퍼를 벗기고 링크를 정규화한다", async () => {
+    // PATCH 응답도 GET 과 같은 래퍼다. 래퍼를 그대로 돌려주면 호출부가 본문 대신 래퍼를
+    // 상태에 넣어 resume.meta.language 에서 크래시한다(codex 지적).
+    const mockPatch = vi.mocked(api.patch);
+    mockPatch.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: {
+        id: "res-u1",
+        title: "제목",
+        result: { ...base, 인적사항: { 이름: "홍길동", 링크: ["https://a.dev"] } },
+      },
+    });
+
+    const updated = await updateResume("res-u1", {} as never);
+    expect(updated.인적사항.링크).toEqual([{ label: null, url: "https://a.dev" }]);
+    expect(updated.version_id).toBe("res-u1");
+  });
+
+  // 인적사항이 통째로 빠진 본문도 언랩을 통과한다(그쪽은 meta 만 본다). 그대로 흘려보내면
+  // PersonalInfoEditor 가 undefined.이름 에서 던져 편집 화면이 통째로 죽는다.
+  it("인적사항 자체가 없으면 빈 인적사항으로 채운다 — 편집기가 undefined 를 만나지 않게", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-l4", result: { ...base } },
+    });
+
+    const resume = await getResume("res-l4");
+    expect(resume.인적사항.링크).toEqual([]);
+    expect(resume.인적사항.이름).toBeNull();
+    // 프리뷰는 isEmptySection 으로 그대로 숨기므로 화면에 빈 섹션이 새로 생기지는 않는다.
+    expect(isEmptySection(resume.인적사항 as unknown as Record<string, unknown>)).toBe(true);
   });
 });
 
@@ -295,4 +425,76 @@ describe("getResumeList — title/language/status 파싱 (FRT-123 계약 §2.4)"
       expect(items[0].status).toBe(expected);
     }
   });
+});
+
+// ─── 저장·삭제 실패 매핑 ─────────────────────────────────────────────
+//
+// 폴백 판정은 두 호출이 **서로 다른 상태 집합**을 봐야 한다. 하나로 묶으면 편집 저장을
+// 살리려고 넣은 422 가 삭제 버튼까지 숨긴다(RecentResumeList 의 setDeleteSupported(false)).
+describe("resume 뮤테이션 실패 매핑", () => {
+  const mockPatch = vi.mocked(api.patch);
+  const mockDelete = vi.mocked(api.delete);
+
+  it("updateResume: 422 를 폴백 신호로 본다 — 서버가 본문을 아직 못 받는다(FRT-148)", async () => {
+    mockPatch.mockRejectedValue(new ApiError(422, "Unprocessable Entity"));
+
+    await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
+      ResumeMutationUnsupportedError,
+    );
+  });
+
+  it.each([501, 405])(
+    "updateResume: %i 도 기존대로 폴백 신호다",
+    async (status) => {
+      mockPatch.mockRejectedValue(new ApiError(status, "unsupported"));
+
+      await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
+        ResumeMutationUnsupportedError,
+      );
+    },
+  );
+
+  // 서버가 요청은 받아주면서(2xx) 본문 대신 {id, title} 만 돌려주는 경우 = 레쥬메 본문은
+  // 저장되지 않았다. 422 와 결과가 같으므로 판정도 같아야 임시 저장이 남는다.
+  it("updateResume: 2xx 인데 result 없는 응답도 폴백 신호로 본다", async () => {
+    mockPatch.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-1", title: "제목" },
+    });
+
+    await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
+      ResumeMutationUnsupportedError,
+    );
+  });
+
+  it("updateResume: 그 밖의 실패는 그대로 올린다 — 폴백으로 삼키면 진짜 장애가 숨는다", async () => {
+    mockPatch.mockRejectedValue(new ApiError(500, "server error"));
+
+    const err = await updateResume("res-1", {} as never).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).not.toBeInstanceOf(ResumeMutationUnsupportedError);
+  });
+
+  // DELETE 는 이미 서버에서 동작하고 body 가 없어 422 가 날 이유가 없다. 그런데도 422 를
+  // 폴백으로 매핑하면 "삭제 기능은 곧 제공될 예정" 안내가 뜨며 버튼이 사라진다 —
+  // 멀쩡한 기능을 없는 것으로 만든다.
+  it("deleteResume: 422 는 폴백 신호가 아니다 — 원래 에러 그대로 올린다", async () => {
+    mockDelete.mockRejectedValue(new ApiError(422, "Unprocessable Entity"));
+
+    const err = await deleteResume("res-1").catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).not.toBeInstanceOf(ResumeMutationUnsupportedError);
+  });
+
+  it.each([501, 405])(
+    "deleteResume: %i 은 기존대로 폴백 신호다",
+    async (status) => {
+      mockDelete.mockRejectedValue(new ApiError(status, "unsupported"));
+
+      await expect(deleteResume("res-1")).rejects.toBeInstanceOf(
+        ResumeMutationUnsupportedError,
+      );
+    },
+  );
 });

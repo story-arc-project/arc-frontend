@@ -6,6 +6,7 @@ import type {
   ResumeListItem,
   ResumeVersion,
 } from "@/types/resume";
+import { normalizeResumeVersion } from "@/lib/export/resume-normalize";
 import { isDemoMode } from "@/lib/demo/state";
 import * as demo from "@/lib/demo/handlers";
 
@@ -58,7 +59,20 @@ function extractResumeId(res: unknown): { id: string | null; title?: string } {
 // 계약(§2.4)상 POST 는 { id, title } 을 돌려준다. id 가 오면 생성 직후 상세로 이동할 수
 // 있고(호출부 판단), 아직 계약 미이행 백엔드처럼 id 가 없으면 null → 목록 새로고침으로 폴백한다.
 export async function createResume(
-  params: { language: ResumeLanguage; title?: string },
+  params: {
+    language: ResumeLanguage;
+    title?: string;
+    /**
+     * 레쥬메에 넣을 경험 id (FRT-109). 계약(BAC-45)상 `experience_ids` 는 Optional 이고
+     * **부재 = 사용자의 전체 경험**(현행 동작), 빈 배열 = 400 이다. 그래서 미지정을 []
+     * 로 뭉개면 안 되고 키 자체를 빼야 한다 — 0개 선택 차단은 호출부(모달)의 책임이다.
+     *
+     * ⚠️ 백엔드가 아직 이 필드를 받지 않는다(dev 기준 `ResumePostRequest` = language·title).
+     * pydantic 기본값이 extra="ignore" 라 보내도 422 가 아니라 200 으로 조용히 무시되므로,
+     * 노출 게이팅은 플래그(lib/export/flags.ts)가 호출부에서 수행한다. 이 함수는 flag-agnostic.
+     */
+    experienceIds?: string[];
+  },
   options?: { signal?: AbortSignal },
 ): Promise<{ id: string | null; title?: string }> {
   if (isDemoMode()) {
@@ -67,6 +81,7 @@ export async function createResume(
   }
   const body: Record<string, unknown> = { language: params.language };
   if (params.title !== undefined) body.title = params.title;
+  if (params.experienceIds !== undefined) body.experience_ids = params.experienceIds;
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/export/resume",
     body,
@@ -80,7 +95,7 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
   const res = await api.get<ApiSuccessResponse<unknown>>(
     `/export/resume/${versionId}`,
   );
-  return unwrapResumeVersion(res.data);
+  return normalizeResumeVersion(unwrapResumeVersion(res.data));
 }
 
 /**
@@ -173,8 +188,34 @@ export class ResumeMutationUnsupportedError extends Error {
   }
 }
 
+function hasStatus(err: unknown, codes: readonly number[]): err is ApiError {
+  return err instanceof ApiError && codes.includes(err.status);
+}
+
 function isUnsupportedStatus(err: unknown): err is ApiError {
-  return err instanceof ApiError && (err.status === 501 || err.status === 405);
+  return hasStatus(err, [501, 405]);
+}
+
+/**
+ * 저장(PATCH)만의 폴백 판정 — 405/501 에 **422** 를 더한다.
+ *
+ * 서버의 `ResumePatchRequest` 는 `title` 하나만, 그것도 필수로 받는다(arc-backend
+ * `app/src/api/models/request.py`). 우리가 보내는 레쥬메 본문에는 `title` 이 없으니
+ * pydantic 이 422 로 거절한다 — 즉 **레쥬메 내용을 저장할 경로가 아직 서버에 없다**.
+ * 405/501 과 원인은 같은데 코드만 다른 셈이라, 폴백에서 빠지면 고친 내용이 로컬에도
+ * 남지 못하고 그냥 사라진다(FRT-148).
+ *
+ * ⚠️ 임시 조치다. BAC-56(`result` 를 받는 PATCH)이 배포되면 **이 함수를 지우고**
+ * `isUnsupportedStatus` 로 되돌려야 한다. 그때는 422 가 제목 100자 초과 같은 진짜
+ * 검증 실패를 뜻하게 되는데, 그것까지 "곧 제공될 예정이에요" 안내로 삼키면
+ * 사용자는 무엇이 잘못됐는지 영영 모른다.
+ *
+ * 삭제(DELETE)에는 쓰지 않는다 — DELETE 는 서버에서 이미 동작하고 body 가 없어
+ * 422 가 날 이유가 없다. 여기에 묶으면 멀쩡한 삭제 버튼이 "곧 제공될 예정" 안내와
+ * 함께 숨는다(RecentResumeList 의 setDeleteSupported(false)).
+ */
+function isUnsupportedSaveStatus(err: unknown): err is ApiError {
+  return hasStatus(err, [501, 405, 422]);
 }
 
 export async function updateResume(
@@ -182,17 +223,31 @@ export async function updateResume(
   data: ResumeVersion,
 ): Promise<ResumeVersion> {
   if (isDemoMode()) return demo.updateResume(versionId, data);
+  let res: ApiSuccessResponse<unknown>;
   try {
-    const res = await api.patch<ApiSuccessResponse<ResumeVersion>>(
+    res = await api.patch<ApiSuccessResponse<unknown>>(
       `/export/resume/${versionId}`,
       data,
     );
-    return res.data;
   } catch (err) {
-    if (isUnsupportedStatus(err)) {
+    if (isUnsupportedSaveStatus(err)) {
       throw new ResumeMutationUnsupportedError(err.status);
     }
     throw err;
+  }
+
+  // PATCH 도 GET 과 같은 래퍼({id, title, language, status, …, result})를 돌려준다.
+  // 그대로 반환하면 호출부가 본문 대신 래퍼를 상태에 넣어 resume.meta.language 에서
+  // 크래시한다. GET 과 같은 경계 처리를 태워 본문만, 정규화된 채로 돌려준다.
+  try {
+    return normalizeResumeVersion(unwrapResumeVersion(res.data));
+  } catch {
+    // 2xx 인데 본문(result·meta)이 없다 = 현행 서버의 `UUIDDataWithTitle{id, title}`.
+    // 요청은 받아줬지만 **레쥬메 본문은 저장되지 않았다**(title 만 반영). 422 와 결과가
+    // 같으므로 판정도 같아야 한다 — 이 언랩 실패를 일반 에러로 흘리면 폴백을 못 타서
+    // 임시 저장이 남지 않고, 이 PR 이 막으려던 손실이 상태코드만 바꿔 재현된다.
+    // BAC-56 계약 §4(응답을 GET 과 같은 ResumeData 로 통일)가 이행되면 여기 안 온다.
+    throw new ResumeMutationUnsupportedError(200);
   }
 }
 

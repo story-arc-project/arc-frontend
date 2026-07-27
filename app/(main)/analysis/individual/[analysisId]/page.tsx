@@ -16,6 +16,7 @@ import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui"
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import UnsupportedSchemaNotice from "@/components/features/analysis/common/UnsupportedSchemaNotice";
+import AnalysisResultUnavailable from "@/components/features/analysis/common/AnalysisResultUnavailable";
 
 export default function IndividualAnalysisDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
@@ -88,6 +89,19 @@ export default function IndividualAnalysisDetailPage() {
           ))}
         </div>
       </main>
+    );
+  }
+
+  // 본문이 안 왔으면 헤더만 남은 빈 화면 대신 상태 안내로 전환한다(FRT-134).
+  // 개별 분석은 재시도 엔드포인트가 없어 다시 시도 버튼을 붙이지 않는다.
+  if (!data.hasResultBody) {
+    return (
+      <AnalysisResultUnavailable
+        status={data.status}
+        basePath={basePath}
+        fallbackHref="/analysis/individual"
+        analysisId={analysisId}
+      />
     );
   }
 
@@ -239,9 +253,9 @@ function StarFormatSection({
 }
 
 const severityVariant: Record<WeaknessSeverity, "error" | "warning" | "default"> = {
-  high: "error",
-  medium: "warning",
-  low: "default",
+  critical: "error",
+  major: "warning",
+  minor: "default",
 };
 
 function ItemDiagnosisSection({

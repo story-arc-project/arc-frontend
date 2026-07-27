@@ -1,25 +1,12 @@
 "use client";
 
+// 기간·학점 표기는 파일 내보내기(PDF·DOCX)와 같은 규칙을 써야 한다 — 단일 출처는 lib/export/resume-format.
+import { formatEducationPeriod, formatGpa } from "@/lib/export/resume-format";
 import { isEmptySection, type Education } from "@/types/resume";
 import { PreviewRow, PreviewSection } from "./PreviewSection";
 
 interface Props {
   data: Education[];
-}
-
-function formatEducationRight(edu: Education): string {
-  const start = edu.입학년월 ?? "";
-  const end = edu.졸업년월 ?? (edu.졸업구분 === "재학" ? "재학" : "");
-  if (!start && !end) return "";
-  if (!start) return end;
-  if (!end) return start;
-  return `${start} – ${end}`;
-}
-
-function formatGpa(edu: Education): string | null {
-  if (edu.학점 === null || edu.학점 === undefined) return null;
-  if (edu.만점 === null || edu.만점 === undefined) return `${edu.학점}`;
-  return `${edu.학점} / ${edu.만점}`;
 }
 
 export function PreviewEducation({ data }: Props) {
@@ -60,7 +47,7 @@ export function PreviewEducation({ data }: Props) {
                 )}
               </div>
             }
-            right={formatEducationRight(edu)}
+            right={formatEducationPeriod(edu)}
           />
         );
       })}

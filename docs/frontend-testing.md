@@ -176,10 +176,21 @@ export const TogglesOn: Story = {
 
 `stubApi`의 핵심 시그니처:
 ```ts
-await stubApi(page, { scenario?: "data" | "empty", authed?: boolean }): Promise<StubApiHandle>
+await stubApi(page, {
+  scenario?: "data" | "empty",
+  authed?: boolean,
+  feedback?: boolean,   // 인앱 피드백 엔드포인트 응답 여부 (기본 false)
+}): Promise<StubApiHandle>
 // handle.mutations: { method, path, body }[]  — 도착 순서대로 캡처된 비-GET 요청
 ```
 가로채지 않은 요청은 명시적 404로 떨궈 **실 네트워크로 새지 않는다.**
+
+> **플래그는 전역, 서버 응답은 opt-in** (FRT-96) — `NEXT_PUBLIC_*`는 dev 서버 기동 시점에 박히고
+> 러너의 `webServer`는 하나뿐이라, `NEXT_PUBLIC_FEEDBACK_ENABLED`는 **전 스펙에 켜져 있다**.
+> 그래서 노출 게이트의 나머지 한 겹인 "서버가 `prompt-shown`에 200을 주느냐"를 `feedback: true`로
+> 스펙별로 잠근다. 옵션을 주지 않으면 404 → 훅이 fail-closed → 모달이 뜨지 않는다.
+> **경험 시드 개수(현재 2개)가 임계(3) 미만이라는 우연에 기대지 말 것** — 시드를 늘려도
+> 이 opt-in이 있어야 무관한 스펙에 모달이 새지 않는다.
 
 ### 5.4 새 `(main)` 스모크 추가 (FRT-30 패턴)
 진입 화면이 렌더되는지만 확인하는 가장 가벼운 테스트:

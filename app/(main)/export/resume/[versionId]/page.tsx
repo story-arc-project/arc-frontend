@@ -19,6 +19,10 @@ import { useBasePath } from "@/lib/utils/use-base-path";
 import { isEmptySection, type ResumeVersion } from "@/types/resume";
 import { DraftRestoreBanner } from "./_components/DraftRestoreBanner";
 import { EmptyResumeState } from "./_components/EmptyResumeState";
+import {
+  ExportFormatDialog,
+  type ExportFormat,
+} from "./_components/ExportFormatDialog";
 import { ParsingWarningsBanner } from "./_components/ParsingWarningsBanner";
 import { RegenerateConfirmDialog } from "./_components/RegenerateConfirmDialog";
 import { ResumeDetailSkeleton } from "./_components/ResumeDetailSkeleton";
@@ -55,6 +59,8 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<ResumeDraft | null>(null);
   const [continueAnyway, setContinueAnyway] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
 
   const load = useCallback(async () => {
     // 새 버전 로드(재생성으로 이동해 온 경우 포함) 시 재생성 UI 상태를 초기화한다.
@@ -147,11 +153,21 @@ export default function ResumeDetailPage({ params }: PageProps) {
         const saved = writeDraft(versionId, latest);
         if (saved) {
           setInitial(snapshot);
+          // 방금 쓴 임시 저장이 곧 지금 편집 중인 내용이다. 배너를 그대로 두면 '복원'이
+          // 화면에 없는 낡은 스냅샷(pendingDraft)을 되돌리면서 clearDraft 로 방금 쓴
+          // 최신 임시 저장까지 지운다 — 배너 하나가 편집을 두 번 잃게 만든다.
+          setPendingDraft(null);
           toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
         } else {
           toast.error("임시 저장도 실패했어요. 페이지를 닫지 마세요.");
         }
       } else {
+        // 서버 장애·오프라인도 편집을 잃을 이유는 아니다. 언마운트 핸들러에만 기대면
+        // 탭을 그대로 닫았을 때(cleanup 미실행) 고친 내용이 통째로 사라진다.
+        // dirty 는 그대로 두어 다음 저장/이탈 경로가 계속 살아 있게 한다.
+        if (writeDraft(versionId, resumeRef.current ?? snapshot)) {
+          setPendingDraft(null);
+        }
         toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
       }
     } finally {
@@ -186,6 +202,55 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const handlePrint = useCallback(() => {
     if (typeof window !== "undefined") window.print();
   }, []);
+
+  // 파일 생성기(폰트·문서 라이브러리)는 무겁다 — 내보내기를 누른 순간에만 불러온다.
+  const handleExport = useCallback(
+    async (format: ExportFormat) => {
+      if (!resume || exporting) return;
+
+      if (format === "print") {
+        setExportOpen(false);
+        // 상태 반영 전에 인쇄하면 모달 오버레이가 인쇄물에 그대로 찍힌다
+        // (print.css 는 .no-print 만 숨기고 공용 Dialog 에는 그 클래스가 없다).
+        // 다음 매크로태스크로 미뤄 모달이 DOM 에서 빠진 뒤 인쇄창을 연다.
+        setTimeout(handlePrint, 0);
+        return;
+      }
+
+      setExporting(format);
+      try {
+        // 서로 의존이 없는 두 청크 — 순차로 기다릴 이유가 없다.
+        const [{ buildResumeDocument }, { downloadBlob, resumeFileName }] =
+          await Promise.all([
+            import("@/lib/export/resume-document"),
+            import("@/lib/export/download"),
+          ]);
+        const doc = buildResumeDocument(resume);
+
+        const blob =
+          format === "pdf"
+            ? await (await import("@/lib/export/resume-pdf")).renderResumePdf(doc)
+            : await (
+                await import("@/lib/export/resume-docx")
+              ).renderResumeDocx(doc);
+
+        downloadBlob(
+          blob,
+          resumeFileName({
+            name: doc.header.name,
+            language: doc.language,
+            ext: format,
+          }),
+        );
+        setExportOpen(false);
+      } catch {
+        toast.error("파일을 만들지 못했어요. 잠시 후 다시 시도해주세요.");
+      } finally {
+        setExporting(null);
+      }
+    },
+    [resume, exporting, handlePrint],
+  );
 
   const handleBack = useCallback(() => {
     if (dirty && resume) {
@@ -289,7 +354,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
         onBack={handleBack}
         onSave={handleSave}
         onRegenerate={() => setRegenerateOpen(true)}
-        onPrint={handlePrint}
+        onExport={() => setExportOpen(true)}
       />
 
       {/* Mobile tab switcher */}
@@ -347,6 +412,13 @@ export default function ResumeDetailPage({ params }: PageProps) {
           </div>
         </main>
       </div>
+
+      <ExportFormatDialog
+        open={exportOpen}
+        busy={exporting}
+        onClose={() => setExportOpen(false)}
+        onSelect={handleExport}
+      />
 
       <RegenerateConfirmDialog
         open={regenerateOpen}
