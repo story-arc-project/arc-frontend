@@ -101,6 +101,20 @@ export function createChecklistField(
   return createBlock('checklist', label, { ...opts, options })
 }
 
+/**
+ * 이모티콘 알약 태그 입력(FRT-177). 저장은 `checklist {options, checked}` 그대로 두고
+ * `variant: 'mood-tag'` 마커로 MoodTagBlock UI 를 지정한다(무마이그레이션, OutcomeList 와 같은 패턴).
+ * 옵션은 기획 확정본이 정한 고정 프리셋이라 체크리스트의 옵션 추가·삭제 UI 를 노출하지 않는다 —
+ * 사용자가 프리셋 태그를 지워버리면 되돌릴 방법이 없기 때문이다.
+ */
+export function createMoodTagField(
+  label: string,
+  options: string[],
+  opts?: { required?: boolean; guide?: string },
+): Block {
+  return { ...createChecklistField(label, options, opts), variant: 'mood-tag' }
+}
+
 export function createTagsField(label: string, opts?: { required?: boolean; guide?: string }): Block {
   return createBlock('tags', label, opts)
 }

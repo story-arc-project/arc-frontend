@@ -336,6 +336,66 @@ describe("toExperienceV2", () => {
     }
   })
 
+  it("v2: FRT-177 로 폐기된 대외활동 '가장 중요했던 경험'(표 값)도 custom 으로 보존된다", () => {
+    // 확정본 정렬로 ② 가 개조식 2종 + 태그로 바뀌며 이 반복 블록이 사라졌다. 값이 있는
+    // 구 레코드는 표 값 통째로 '기타' 카드에 남아야 한다(무음 손실 금지).
+    const oldCell = {
+      type: "repeatable-cell" as const,
+      columns: [
+        { key: "title", label: "소제목", blockType: "text" as const },
+        { key: "detail", label: "설명", blockType: "textarea" as const },
+      ],
+      rows: [{ id: "row-1", cells: { title: "8월 캠페인", detail: "릴스 3편 제작" } }],
+    }
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "extracurricular",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "OO 서포터즈",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: { "extra-detail.가장 중요했던 경험": oldCell },
+          custom: [],
+        },
+      }),
+    )
+    const preserved = v2.customBlocks.find(b => b.key === "extra-detail.가장 중요했던 경험")
+    expect(preserved?.label).toBe("가장 중요했던 경험")
+    expect(preserved?.value).toEqual(oldCell)
+  })
+
+  it("v2: 구 레코드도 새로 추가된 템플릿 필드를 받는다 (템플릿 전량 재구성)", () => {
+    // FRT-177 로 ② 에 '주요 미션 / 프로젝트'·'주요 성과'·'활동 성격'이 추가됐다. v2 는 저장된
+    // 블록 배열이 아니라 레지스트리에서 블록을 다시 만들고 fields 값만 주입하므로, 그 필드가
+    // 없던 레코드에도 빈 칸으로 나타나야 한다(구 레코드가 새 질문을 영영 못 보는 일 방지).
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "extracurricular",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "OO 서포터즈",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: { "extra-detail.지원 동기": textarea("옛 지원 동기") },
+          custom: [],
+        },
+      }),
+    )
+    const labels = v2.extensionBlocks.map(b => b.label)
+    expect(labels).toContain("주요 미션 / 프로젝트")
+    expect(labels).toContain("주요 성과")
+    expect(labels).toContain("활동 성격")
+    // 기존 값은 그대로 살아있다.
+    expect(v2.extensionBlocks.find(b => b.label === "지원 동기")?.value).toEqual(
+      textarea("옛 지원 동기"),
+    )
+  })
+
   it("v2: 라운드트립에서 orphan 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
     const original = makeExperience({
       type: "academic-society",

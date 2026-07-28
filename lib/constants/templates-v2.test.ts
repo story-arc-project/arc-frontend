@@ -154,7 +154,7 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     expect(coreLabels).not.toContain("증빙 자료")
   })
 
-  it("대외활동은 core 핵심 성과를 노출하지 않는다 (성과 개조식 없음)", () => {
+  it("대외활동은 core 핵심 성과를 노출하지 않는다 (② 주요 성과·③ 핵심 성과 컬럼이 대신 묻는다)", () => {
     const coreLabels = getTemplateForType("extracurricular").commonCore.blocks.map(b => b.label)
     expect(coreLabels).not.toContain("핵심 성과")
     // 기간·역할은 유형 섹션(활동 기간·참여 역할)이 있어 core 를 유지해도 dedup 되므로 core 에 남는다.
@@ -169,15 +169,85 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     expect(coreLabels).toContain("증빙 자료")
   })
 
-  it("대외활동 ②·③ 은 수업과 동일한 최소 구조(② 3필드 / ③ 4컬럼)다", () => {
+  // ── FRT-177: 대외활동 문서 확정본 1:1 대조 ──────────────────────
+  //
+  // 출처: Notion 「완성된 입력항목 및 가이드라인 기획 내용」 > 대외활동 — 입력항목 명세.
+
+  it("대외활동 ② 는 문서 5필드 순서 그대로다 ('가장 중요했던 경험'은 폐기)", () => {
     const detail = detailOf("extracurricular")!
-    expect(detail.blocks.length).toBe(3)
-    const repeat = repeatOf("extracurricular")!
-    const cell = repeat.blocks.find(b => b.value.type === "repeatable-cell")!
+    expect(labelsIn(detail.blocks)).toEqual([
+      "지원 동기",
+      "활동 내용 요약",
+      "주요 미션 / 프로젝트",
+      "주요 성과",
+      "활동 성격",
+    ])
+  })
+
+  it("대외활동 ② '주요 미션 / 프로젝트'는 개조식이고 ③ 표로 연결된다", () => {
+    const detail = detailOf("extracurricular")!
+    const missions = detail.blocks.find(b => b.label === "주요 미션 / 프로젝트")!
+    expect(missions.variant).toBe("outcome-list")
+    expect(missions.linkConfig).toEqual({
+      targetSectionId: "extra-missions",
+      titleColumnKey: "name",
+      label: "프로젝트로 기록",
+    })
+    // 연결 대상 섹션·컬럼이 실제로 존재해야 버튼이 행을 만든다(없으면 조용히 미연결).
+    const target = getTemplateForType("extracurricular").extensions.find(s => s.id === "extra-missions")!
+    const cell = target.blocks.find(b => b.value.type === "repeatable-cell")!
     if (cell.value.type === "repeatable-cell") {
-      expect(cell.value.columns.length).toBe(4)
-      expect(cell.value.columns.some(c => c.required)).toBe(true)
+      expect(cell.value.columns.some(c => c.key === "name")).toBe(true)
     }
+    expect(detail.blocks.find(b => b.label === "주요 성과")?.variant).toBe("outcome-list")
+  })
+
+  it("대외활동 '활동 성격'은 이모티콘 태그 12종 프리셋 (저장은 checklist)", () => {
+    const mood = detailOf("extracurricular")!.blocks.find(b => b.label === "활동 성격")!
+    expect(mood.type).toBe("checklist")
+    expect(mood.variant).toBe("mood-tag")
+    expect(mood.value.type).toBe("checklist")
+    if (mood.value.type === "checklist") {
+      expect(mood.value.options).toHaveLength(12)
+      expect(mood.value.options[0]).toBe("🎨 창의적 표현")
+      expect(mood.value.options).toContain("💡 아이디어 발산")
+      expect(mood.value.checked).toEqual([])
+    }
+  })
+
+  it("대외활동 ③ 은 문서 7컬럼 순서·필수를 따른다", () => {
+    const columns = columnsOf("extracurricular", "extra-missions", "미션 / 프로젝트")
+    expect(columns.map(c => c.key)).toEqual([
+      "name", "type", "description", "work", "result", "difficulty", "output",
+    ])
+    // 문서상 필수: 프로젝트명·유형
+    expect(columns.filter(c => c.required).map(c => c.key)).toEqual(["name", "type"])
+    expect(columns.every(c => Boolean(c.guide))).toBe(true)
+  })
+
+  it("대외활동 ① 선택지는 문서 표기를 그대로 쓴다 (활동 유형 11종·규모 6종)", () => {
+    const info = sectionsOf("extracurricular")[0]
+    const optionsOf = (label: string) => info.blocks.find(b => b.label === label)?.options ?? []
+    const types = optionsOf("활동 유형")
+    expect(types).toHaveLength(11)
+    expect(types).toContain("공모전 / 경진대회")
+    expect(types).toContain("기자단 / 에디터")
+    expect(types).toContain("해외 프로그램 / 교환")
+    expect(optionsOf("활동 규모")).toEqual([
+      "10명 미만", "10~30명", "30~100명", "100~300명", "300명 이상", "잘 모름",
+    ])
+  })
+
+  it("대외활동 모든 입력 필드에 가이드라인이 붙어 있다", () => {
+    const blocks = sectionsOf("extracurricular").flatMap(s => s.blocks)
+    // 반복 블록은 컬럼마다 guide 를 갖고, 블록 자체 안내는 카드 설명이 맡는다
+    // (SECTION_DESCRIPTION_OVERRIDES) — 둘 다 실으면 같은 문장이 두 번 나온다.
+    const fields = blocks.filter(b => b.value.type !== "repeatable-cell")
+    expect(fields.filter(b => !b.guide).map(b => b.label)).toEqual([])
+    // 개조식(outcome-list)은 repeatable-cell 이지만 한 줄 입력이라 블록 guide 를 쓴다.
+    const outcomeLists = blocks.filter(b => b.variant === "outcome-list")
+    expect(outcomeLists).toHaveLength(2)
+    expect(outcomeLists.filter(b => !b.guide).map(b => b.label)).toEqual([])
   })
 
   // ── FRT-135: 문서 확정본 1:1 대조 ────────────────────────────────

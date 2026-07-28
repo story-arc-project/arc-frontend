@@ -6,6 +6,7 @@ import TextareaBlock from "./TextareaBlock"
 import DateBlock from "./DateBlock"
 import PeriodBlock from "./PeriodBlock"
 import ChecklistBlock from "./ChecklistBlock"
+import MoodTagBlock, { moodTagOptions } from "./MoodTagBlock"
 import SingleSelectBlock from "./SingleSelectBlock"
 import TagsBlock from "./TagsBlock"
 import LinkBlock from "./LinkBlock"
@@ -34,8 +35,14 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
         return <DateBlock block={block} readOnly={readOnly} onChange={handleChange} />
       case "period":
         return <PeriodBlock block={block} readOnly={readOnly} onChange={handleChange} />
-      case "checklist":
-        return <ChecklistBlock block={block} readOnly={readOnly} onChange={handleChange} />
+      case "checklist": {
+        // mood-tag 는 고정 프리셋 알약 UI(FRT-177). 그릴 태그를 하나도 못 구했을 때만
+        // (저장 options·템플릿 프리셋·checked 가 모두 빔) 옵션을 새로 만들 수 있는
+        // ChecklistBlock 으로 폴백한다 — 판정은 렌더와 같은 계산을 써야 갈리지 않는다.
+        return block.variant === "mood-tag" && moodTagOptions(block).length > 0
+          ? <MoodTagBlock block={block} readOnly={readOnly} onChange={handleChange} />
+          : <ChecklistBlock block={block} readOnly={readOnly} onChange={handleChange} />
+      }
       case "single-select":
         return <SingleSelectBlock block={block} readOnly={readOnly} onChange={handleChange} />
       case "tags":

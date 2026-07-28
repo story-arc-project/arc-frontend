@@ -168,9 +168,11 @@ export interface Block {
   /**
    * 렌더 모드 힌트 (FRT-97). type 을 바꾸지 않고 같은 블록을 다른 UI 로 그릴 때 쓴다.
    * `'outcome-list'` 는 단일컬럼 `repeatable-cell` 을 개조식 불릿-행(OutcomeList)으로 렌더한다.
+   * `'mood-tag'` 는 `checklist` 를 이모티콘 알약 태그(MoodTagBlock)로 렌더한다 — 옵션이 고정
+   * 프리셋이라 체크리스트의 옵션 추가·삭제 UI 를 숨긴다(FRT-177).
    * 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다 — 로드 시 레지스트리에서 재공급된다.
    */
-  variant?: 'outcome-list'
+  variant?: 'outcome-list' | 'mood-tag'
   /**
    * '프로젝트로 연결' 링크 설정 (FRT-76). OutcomeList 인스턴스별로 opt-in 한다 —
    * 있으면 각 활동 행에 링크 버튼이 노출되고, 없으면 미노출(설정 가능한 on/off).
@@ -241,6 +243,26 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   'career': { repeat: '프로젝트 / 담당 업무 기록' },
   'education': { detail: '수업 상세', repeat: '프로젝트 / 과제 / 제작물 기록' },
   'extracurricular': { detail: '활동 상세', repeat: '미션 / 프로젝트 기록' },
+}
+
+/**
+ * 유형별 섹션(카드) 안내 문구 오버라이드 (FRT-177). 카드 제목 아래 회색 설명 문단으로 렌더된다.
+ * 미지정 유형·카테고리는 폼의 기본 문구(detail 카드의 "선택 입력이에요…")로 폴백한다.
+ * 라벨 오버라이드와 마찬가지로 표시 전용이라 안정키·저장 shape 와 무관하다.
+ */
+export const SECTION_DESCRIPTION_OVERRIDES: Partial<
+  Record<ExperienceTypeId, Partial<Record<SectionCategory, string>>>
+> = {
+  'extracurricular': {
+    detail:
+      "이 활동에서의 경험을 정리해주세요. 개별 미션이나 프로젝트의 세부 내용은 아래 '미션 / 프로젝트 기록'에서 따로 기록할 수 있어요.",
+    // 문서 원문은 "위 '가장 중요했던 내용'에서"로 옛 필드명을 가리킨다 — 실제 필드명(주요 미션 /
+    // 프로젝트)으로 맞췄다. 안내가 화면에 없는 필드를 가리키면 그게 더 큰 혼선이다.
+    repeat:
+      "이 활동에서 수행한 미션, 프로젝트, 제작물 등을 단위별로 기록해주세요. 위 '주요 미션 / 프로젝트'에서 관련 항목을 프로젝트로 바로 연결할 수 있어요.",
+    evidence:
+      '수료증, 위촉장, 활동 확인서 등 이 활동을 공식적으로 증명할 수 있는 자료를 첨부해주세요.',
+  },
 }
 
 // ─── Templates ──────────────────────────────────────────────────
