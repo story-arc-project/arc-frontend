@@ -216,6 +216,7 @@ describe("useAnalysisProgressWatch — 완료를 관측한다", () => {
     expect(captureMock).toHaveBeenCalledTimes(1);
     expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
       analysis_type: "comprehensive",
+      analysis_id: "a",
     });
     expect(reportAnalysisCompleted).toHaveBeenCalledTimes(1);
     expect(reportAnalysisCompleted).toHaveBeenCalledWith({
@@ -484,5 +485,35 @@ describe("useAnalysisProgressWatch — 아직 목록에 안 뜬 분석 (codex �
     await advance(60_000);
 
     expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe("useAnalysisProgressWatch — 계측 실패가 흐름을 끊지 않는다 (codex 후속)", () => {
+  it("capture 가 던져도 피드백 트리거와 완료 알림은 나간다", async () => {
+    // posthog 가 브라우저 저장소 차단 등으로 던지면 effect 가 거기서 끊긴다. 게다가 그 id 는
+    // 이미 발화 기록에 들어가 다시 시도되지도 않는다 — 계측 실패로 사용자 흐름이 죽는다.
+    captureMock.mockImplementation(() => {
+      throw new Error("posthog unavailable");
+    });
+    const onCompleted = vi.fn();
+    const { rerender } = render({ items: [snap("a", "processing")], onCompleted });
+
+    rerender({ items: [snap("a", "completed")], onCompleted });
+
+    expect(reportAnalysisCompleted).toHaveBeenCalledTimes(1);
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+  });
+
+  it("완료 건마다 그 분석의 id 를 함께 싣는다 — 두 화면이 같은 완료를 봐도 접을 수 있게", async () => {
+    const { rerender } = render({
+      items: [snap("a", "processing"), snap("b", "processing")],
+    });
+
+    rerender({ items: [snap("a", "completed"), snap("b", "completed")] });
+
+    expect(captureMock.mock.calls.map((call) => call[1])).toEqual([
+      { analysis_type: "comprehensive", analysis_id: "a" },
+      { analysis_type: "comprehensive", analysis_id: "b" },
+    ]);
   });
 });

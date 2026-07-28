@@ -181,6 +181,7 @@ describe("키워드 분석 목록 — 진행 중 감시와 완료 관측 (FRT-17
     expect(toastMock.mock.calls[0][0]).toBe("분석이 완료됐어요.");
     expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
       analysis_type: "keyword",
+      analysis_id: "a",
     });
     expect(screen.getByRole("link", { name: /분석 a/ })).toHaveAttribute(
       "href",
@@ -199,6 +200,7 @@ describe("키워드 분석 목록 — 진행 중 감시와 완료 관측 (FRT-17
     expect(captureMock).toHaveBeenCalledTimes(1);
     expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
       analysis_type: "keyword",
+      analysis_id: "a",
     });
     expect(toastMock).toHaveBeenCalledTimes(1);
   });

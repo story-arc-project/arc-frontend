@@ -228,6 +228,7 @@ describe("종합 분석 목록 — 진행 중 감시와 완료 관측 (FRT-176)"
     expect(toastMock.mock.calls[0][0]).toBe("분석이 완료됐어요.");
     expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
       analysis_type: "comprehensive",
+      analysis_id: "a",
     });
     // 완료된 카드는 이제 상세로 들어갈 수 있다.
     expect(screen.getByRole("link", { name: /분석 a/ })).toHaveAttribute(
@@ -248,6 +249,7 @@ describe("종합 분석 목록 — 진행 중 감시와 완료 관측 (FRT-176)"
     expect(captureMock).toHaveBeenCalledTimes(1);
     expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
       analysis_type: "comprehensive",
+      analysis_id: "a",
     });
     expect(toastMock).toHaveBeenCalledTimes(1);
   });

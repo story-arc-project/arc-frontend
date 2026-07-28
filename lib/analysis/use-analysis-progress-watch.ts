@@ -140,7 +140,18 @@ export function useAnalysisProgressWatch({
 
     for (const item of completed) {
       // FRT-19 퍼널의 완료 등뼈. 코드베이스에서 이 이벤트를 내는 유일한 지점이다.
-      capture("analysis_completed", { analysis_type: type });
+      //
+      // 계측은 best-effort 다 — posthog 가 던지면(브라우저 저장소 차단 등) effect 가 거기서
+      // 끊겨 피드백 트리거도 토스트도 못 나가고, 이 id 는 이미 발화 기록에 들어가 다시 시도되지
+      // 않는다. 계측 실패가 사용자 흐름을 끊어서는 안 된다(RetryAnalysisButton 과 같은 규칙).
+      try {
+        capture("analysis_completed", {
+          analysis_type: type,
+          analysis_id: item.id,
+        });
+      } catch {
+        // 삼킨다. 관측이 없어도 완료는 완료다.
+      }
       triggersRef.current?.reportAnalysisCompleted({
         analysisId: item.id,
         analysisType: type,
@@ -166,8 +177,11 @@ export function useAnalysisProgressWatch({
   // ⚠️ 영영 나타나지 않는 id(다른 탭에서 지웠거나 URL 을 손으로 고친 경우)는 여기서 걸러내지
   // 못한다 — "아직 안 옴"과 "다시는 안 옴"이 이 자리에서는 구분되지 않는다. 이 화면에서 지운
   // 경우는 호출부가 표시를 즉시 거두므로 닫히고, 나머지는 생애 상한이 받아낸다(그 상한의 존재
-  // 이유다). 관측 횟수를 세는 방식도 검토했으나 렌더 중 ref 읽기·effect 내 setState 를 둘 다
-  // 금지하는 lint 규칙에 막혔고, 남는 위험이 상한 안이라 세지 않기로 했다.
+  // 이유다).
+  //
+  // "N 번 안 보이면 포기"도 검토했지만 채택하지 않았다. 그 둘을 **횟수로는 구분할 수 없어서**,
+  // 늦게 뜨는 정상 분석의 완료를 오히려 놓치게 된다 — 이 표시를 도입한 이유가 바로 그 완료를
+  // 잡기 위해서였다. 감시를 조금 낭비하는 쪽이 완료를 잃는 쪽보다 낫다.
   if (startedId !== null && !items.some((item) => item.id === startedId)) {
     inFlightIds.push(startedId);
   }

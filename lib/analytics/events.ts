@@ -63,7 +63,10 @@ export interface AnalyticsEventProps {
   // 첨부 "여부"만 본다 — 파일명·URL 원문은 PII 위험이라 절대 싣지 않는다(타입으로 봉인).
   archive_attachment_added: { attachment_type: AttachmentType };
   first_record_created: { experience_type: string };
-  analysis_completed: { analysis_type: AnalysisKind };
+  // analysis_id — 같은 완료를 두 곳에서 관측할 수 있어(목록을 두 탭·두 기기에 열어두면 각
+  // 화면이 독립적으로 전이를 본다) 이벤트만으로는 중복을 가려낼 수 없다. 서버 식별자를 실어
+  // 다운스트림에서 접을 수 있게 한다. 경로에 이미 드러나는 값이라 새 노출면이 아니다.
+  analysis_completed: { analysis_type: AnalysisKind; analysis_id: string };
   // 실패한 분석의 재시도 요청이 접수된 시점. 재시도 결과(성공/재실패)는
   // analysis_completed 와 status 로 따로 관측한다.
   analysis_retried: { analysis_type: AnalysisKind };
