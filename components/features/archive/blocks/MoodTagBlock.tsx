@@ -9,27 +9,45 @@ interface MoodTagBlockProps {
 }
 
 /**
+ * 화면에 그릴 태그 목록. 저장값의 options 를 우선하되,
+ * - options 가 비었거나 없으면 템플릿 프리셋(block.options)으로 복원하고,
+ * - 프리셋에 없는데 checked 에만 남은 값(프리셋 개편·손상값)도 뒤에 붙인다.
+ * 후자가 없으면 선택돼 있는데 화면에 안 보여 **해제할 방법이 사라진다**.
+ * BlockRenderer 가 폴백 여부를 판정할 때도 같은 계산을 써야 판정이 갈리지 않는다.
+ */
+export function moodTagOptions(block: Block): string[] {
+  const val = block.value as ChecklistBlockValue | undefined
+  const saved = Array.isArray(val?.options) ? val.options : []
+  const checked = Array.isArray(val?.checked) ? val.checked : []
+  const base = saved.length > 0 ? saved : block.options ?? []
+  return [...base, ...checked.filter(c => !base.includes(c))]
+}
+
+/**
  * 이모티콘 알약 태그 다중 선택(FRT-177). 값 shape 은 `checklist` 그대로이고
  * `block.variant === 'mood-tag'` 일 때 ChecklistBlock 대신 이 UI 로 렌더된다.
  * 옵션은 기획 확정본의 고정 프리셋이라 추가·삭제 UI 를 두지 않는다.
  */
 export default function MoodTagBlock({ block, readOnly, onChange }: MoodTagBlockProps) {
   const val = block.value as ChecklistBlockValue
+  const options = moodTagOptions(block)
+  const checked = Array.isArray(val?.checked) ? val.checked : []
 
   function toggle(option: string) {
-    const next = val.checked.includes(option)
-      ? val.checked.filter(c => c !== option)
-      : [...val.checked, option]
-    onChange({ ...val, checked: next })
+    const next = checked.includes(option)
+      ? checked.filter(c => c !== option)
+      : [...checked, option]
+    // 복원한 프리셋을 그대로 저장한다 — 다음 로드에서도 같은 목록이 보이도록.
+    onChange({ type: "checklist", options, checked: next })
   }
 
   if (readOnly) {
     return (
       <div className="flex flex-col gap-1.5 border-l-2 border-brand/30 pl-3.5">
         <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
-        {val.checked.length > 0 ? (
+        {checked.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
-            {val.checked.map(c => (
+            {checked.map(c => (
               <span
                 key={c}
                 className="bg-surface-brand text-brand-dark rounded-full px-2.5 py-0.5 text-caption font-medium"
@@ -50,8 +68,8 @@ export default function MoodTagBlock({ block, readOnly, onChange }: MoodTagBlock
       <legend className="text-field-label text-text-primary">{block.label}</legend>
       {block.guide && <p className="text-caption text-text-tertiary mb-1">{block.guide}</p>}
       <div className="flex flex-wrap gap-2">
-        {val.options.map(option => {
-          const selected = val.checked.includes(option)
+        {options.map(option => {
+          const selected = checked.includes(option)
           return (
             <label
               key={option}

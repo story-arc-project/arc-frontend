@@ -92,7 +92,7 @@ describe("BlockRenderer mood-tag 분기", () => {
     expect(screen.queryByPlaceholderText("항목 추가...")).toBeNull()
   })
 
-  it("옵션이 비면 옵션 관리가 되는 ChecklistBlock 으로 폴백한다", () => {
+  it("저장 options 가 비면 템플릿 프리셋으로 복원해 그대로 알약을 그린다", () => {
     const empty = makeBlock()
     render(
       <BlockRenderer
@@ -100,7 +100,54 @@ describe("BlockRenderer mood-tag 분기", () => {
         onChange={noop}
       />,
     )
+    expect(screen.getByRole("checkbox", { name: "🎨 창의적 표현" })).toBeDefined()
+    expect(screen.queryByPlaceholderText("항목 추가...")).toBeNull()
+  })
+
+  it("그릴 태그를 하나도 못 구하면 옵션을 만들 수 있는 ChecklistBlock 으로 폴백한다", () => {
+    const empty = makeBlock()
+    render(
+      <BlockRenderer
+        block={{ ...empty, options: undefined, value: { type: "checklist", options: [], checked: [] } }}
+        onChange={noop}
+      />,
+    )
     // ChecklistBlock 만 옵션 추가 입력을 갖는다 — 폴백이 걸렸다는 신호.
     expect(screen.getByPlaceholderText("항목 추가...")).toBeDefined()
+  })
+})
+
+/**
+ * 손상·개편된 저장값 방어. 선택돼 있는데 화면에 안 보이면 해제할 방법이 사라진다.
+ */
+describe("MoodTagBlock 손상값 복원", () => {
+  it("options 키가 아예 없어도 크래시하지 않고 프리셋으로 그린다", () => {
+    const block = {
+      ...makeBlock(),
+      value: { type: "checklist", checked: ["🤝 팀 협업"] } as unknown as ChecklistBlockValue,
+    }
+    render(<MoodTagBlock block={block} onChange={() => {}} />)
+    expect(
+      (screen.getByRole("checkbox", { name: "🤝 팀 협업" }) as HTMLInputElement).checked,
+    ).toBe(true)
+  })
+
+  it("프리셋에 없는 checked 값도 보여주고 해제할 수 있다 (프리셋 개편 대비)", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const block = {
+      ...makeBlock(),
+      value: { type: "checklist" as const, options: [], checked: ["🛰️ 폐기된 태그"] },
+    }
+    render(<MoodTagBlock block={block} onChange={onChange} />)
+
+    const stale = screen.getByRole("checkbox", { name: "🛰️ 폐기된 태그" }) as HTMLInputElement
+    expect(stale.checked).toBe(true)
+    await user.click(stale)
+    expect(onChange).toHaveBeenCalledWith({
+      type: "checklist",
+      options: [...TAGS, "🛰️ 폐기된 태그"],
+      checked: [],
+    })
   })
 })
