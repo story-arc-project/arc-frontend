@@ -227,9 +227,9 @@ function routeStateful(
   if (/^\/analysis\/comprehensive$/.test(pathname)) {
     if (method === "GET")
       return RESPOND_OK(success(withBookmarkFlags(comprehensiveList(scenario).data, store)));
-    // 종합 분석 생성(FRT-96). 폴링(useAnalysisPolling)은 **목록에서** 이 id 를 찾아 상태를 읽으므로,
-    // 새 id 를 만들어 주면 목록에 없어 "결과를 찾을 수 없습니다" 로 끝난다. 시드에 이미 있는
-    // comp-1(status: completed)을 돌려줘 완료 흐름이 첫 폴링에 닫히게 한다.
+    // 종합 분석 생성(FRT-96). 생성 후에는 목록으로 이동하고, 목록이 `?started=` 로 받은 이 id 의
+    // 완료를 관측해 피드백 트리거를 낸다(FRT-176). 시드에 이미 있는 comp-1(status: completed)을
+    // 돌려주면 첫 조회에서 곧바로 완료로 관측된다 — startedId 규칙이 이 경우를 덮는다.
     if (method === "POST") return RESPOND_OK(success({ id: "comp-1" }));
     return { kind: "skip" };
   }

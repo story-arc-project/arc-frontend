@@ -17,10 +17,19 @@ vi.mock("@/lib/api/analysis-api", () => ({
 
 vi.mock("@/lib/analysis/flags", () => ({ isAnalysisRetryEnabled: () => true }));
 
+let searchParams = new URLSearchParams();
+
 vi.mock("@/lib/analytics", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/analytics")>();
   return { ...actual, capture: vi.fn() };
 });
+
+// 목록은 `?started=` 로 "방금 만든 분석"을 받는다(FRT-176). 기본은 빈 파라미터.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchParams,
+}));
+
+vi.mock("@/components/ui/toast", () => ({ toast: vi.fn() }));
 
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
@@ -34,7 +43,13 @@ import {
   retryKeywordAnalysis,
 } from "@/lib/api/analysis-api";
 
+import { capture } from "@/lib/analytics";
+import { toast } from "@/components/ui/toast";
+
 import KeywordAnalysisPage from "./page";
+
+const captureMock = vi.mocked(capture);
+const toastMock = vi.mocked(toast);
 
 const getList = vi.mocked(getKeywordList);
 const deleteAnalysis = vi.mocked(deleteKeywordAnalysis);
@@ -45,6 +60,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
+  searchParams = new URLSearchParams();
 });
 
 afterEach(() => {
@@ -122,5 +138,76 @@ describe("키워드 분석 목록 — 재시도 폴링과 로컬 변경 (FRT-108
     await flush();
 
     expect(screen.queryByText("분석 b")).not.toBeInTheDocument();
+  });
+});
+
+// FRT-176: 종합 목록과 같은 감시를 키워드 목록에서도 건다.
+// 두 화면은 병렬 복제 구조라, 한쪽만 고치면 다른 쪽에 같은 결함이 남는다.
+describe("키워드 분석 목록 — 진행 중 감시와 완료 관측 (FRT-176)", () => {
+  it("진행 중 항목이 있으면 재시도를 누르지 않아도 목록을 다시 읽는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    render(<KeywordAnalysisPage />);
+    await flush();
+    expect(getList).toHaveBeenCalledTimes(1);
+
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    await advance(5_000);
+
+    expect(getList).toHaveBeenCalledTimes(2);
+  });
+
+  it("진행 중 항목이 없으면 목록을 다시 읽지 않는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    await advance(60_000);
+
+    expect(getList).toHaveBeenCalledTimes(1);
+  });
+
+  it("완료로 바뀌면 토스트를 띄우고 카드가 열린다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    render(<KeywordAnalysisPage />);
+    await flush();
+    expect(screen.getByText("분석 진행 중...")).toBeInTheDocument();
+
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+    await advance(5_000);
+
+    expect(toastMock).toHaveBeenCalledTimes(1);
+    expect(toastMock.mock.calls[0][0]).toBe("분석이 완료됐어요.");
+    expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
+      analysis_type: "keyword",
+    });
+    expect(screen.getByRole("link", { name: /분석 a/ })).toHaveAttribute(
+      "href",
+      "/analysis/keyword/a",
+    );
+  });
+
+  it("방금 만든 분석이 첫 조회부터 완료면 그 완료도 관측한다", async () => {
+    // 키워드 분석의 knn 경로는 LLM 을 타지 않아 수 초 만에 끝난다 — 전이가 아예 없다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "completed"), snap("old", "completed")]);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    expect(captureMock).toHaveBeenCalledTimes(1);
+    expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
+      analysis_type: "keyword",
+    });
+    expect(toastMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("`?started=` 없이 들어오면 이미 완료된 목록만으로는 아무 신호도 내지 않는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "completed"), snap("b", "completed")]);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    expect(captureMock).not.toHaveBeenCalled();
+    expect(toastMock).not.toHaveBeenCalled();
   });
 });

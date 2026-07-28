@@ -2,18 +2,26 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getKeywordList, deleteKeywordAnalysis } from "@/lib/api/analysis-api";
 import { isAnalysisRetryEnabled } from "@/lib/analysis/flags";
-import { useRetryRefresh } from "@/lib/analysis/use-retry-refresh";
+import { useAnalysisProgressWatch } from "@/lib/analysis/use-analysis-progress-watch";
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Button, Badge, Dialog } from "@/components/ui";
+import { toast } from "@/components/ui/toast";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import RetryAnalysisButton from "@/components/features/analysis/common/RetryAnalysisButton";
 
 export default function KeywordAnalysisPage() {
+  // 방금 만든 분석(FRT-176). 목록이 이 id 만은 "첫 조회에 이미 완료"여도 완료로 인정한다 —
+  // 빨리 끝나는 분석(knn 경로)은 전이가 존재하지 않아 그러지 않으면 완료 신호를 놓친다.
+  // URL 에 남겨둬도 관측은 id 당 1회로 막혀 있어 재발화하지 않는다.
+  // 라우터 컨텍스트 밖(스토리북·단위 테스트)에서는 null 이다 — 그때는 그냥 감시만 한다.
+  const startedId = useSearchParams()?.get("started") ?? null;
+
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -62,8 +70,23 @@ export default function KeywordAnalysisPage() {
     [loadData],
   );
 
-  // 재시도 접수 후 잠시 동안만 목록을 다시 읽는다 — 그러지 않으면 '진행 중'에 고착된다.
-  const watchRetry = useRetryRefresh(refreshInBackground);
+  // 진행 중인 분석이 있는 동안만 목록을 다시 읽고, 완료를 관측해 화면 밖으로 알린다.
+  // 재시도도 여기에 얹힌다 — 재시도 버튼이 카드를 낙관적으로 '진행 중'으로 바꾸므로
+  // 별도 무장 없이 같은 감시에 걸린다.
+  useAnalysisProgressWatch({
+    items,
+    type: "keyword",
+    startedId,
+    refresh: refreshInBackground,
+    onCompleted: (completed) => {
+      toast(
+        completed.length > 1
+          ? `분석 ${completed.length}건이 완료됐어요.`
+          : "분석이 완료됐어요.",
+        "success",
+      );
+    },
+  });
 
   const [deleteError, setDeleteError] = useState(false);
 
@@ -191,7 +214,6 @@ export default function KeywordAnalysisPage() {
                                   i.id === item.id ? { ...i, status: "processing" } : i,
                                 ),
                               );
-                              watchRetry();
                             }}
                           />
                         )}

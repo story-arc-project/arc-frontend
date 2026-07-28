@@ -18,10 +18,19 @@ vi.mock("@/lib/api/analysis-api", () => ({
 // 플래그는 빌드타임 인라인이라 스텁으로 열어야 재시도 버튼이 렌더된다.
 vi.mock("@/lib/analysis/flags", () => ({ isAnalysisRetryEnabled: () => true }));
 
+let searchParams = new URLSearchParams();
+
 vi.mock("@/lib/analytics", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/analytics")>();
   return { ...actual, capture: vi.fn() };
 });
+
+// 목록은 `?started=` 로 "방금 만든 분석"을 받는다(FRT-176). 기본은 빈 파라미터.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchParams,
+}));
+
+vi.mock("@/components/ui/toast", () => ({ toast: vi.fn() }));
 
 // next/link 는 앱 라우터 컨텍스트를 요구한다 — 표시 검증에는 순수 앵커로 충분하다.
 vi.mock("next/link", () => ({
@@ -36,8 +45,13 @@ import {
   retryComprehensiveAnalysis,
 } from "@/lib/api/analysis-api";
 
+import { capture } from "@/lib/analytics";
+import { toast } from "@/components/ui/toast";
+
 import ComprehensiveAnalysisPage from "./page";
 
+const captureMock = vi.mocked(capture);
+const toastMock = vi.mocked(toast);
 const getList = vi.mocked(getComprehensiveList);
 const deleteAnalysis = vi.mocked(deleteComprehensiveAnalysis);
 const retryAnalysis = vi.mocked(retryComprehensiveAnalysis);
@@ -47,6 +61,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
+  searchParams = new URLSearchParams();
 });
 
 afterEach(() => {
@@ -168,5 +183,80 @@ describe("종합 분석 목록 — 재시도 폴링과 로컬 변경 (FRT-108)",
     // 되돌아가면 '다시 시도'가 되살아나고, 사용자가 한 번 더 눌러 중복 재시도가 된다.
     expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
     expect(screen.getAllByText("분석 진행 중...")).toHaveLength(2);
+  });
+});
+
+// FRT-176: 대기 화면을 없앤 대신, 목록이 진행 중인 분석을 지켜보고 완료를 관측한다.
+// 완료 관측이 유일한 신호원이다 — 여기서 놓치면 완료 계측(FRT-19)과 피드백 트리거(FRT-95)가
+// 코드베이스 어디에서도 나가지 않는다.
+describe("종합 분석 목록 — 진행 중 감시와 완료 관측 (FRT-176)", () => {
+  it("진행 중 항목이 있으면 재시도를 누르지 않아도 목록을 다시 읽는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+    expect(getList).toHaveBeenCalledTimes(1);
+
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    await advance(5_000);
+
+    expect(getList).toHaveBeenCalledTimes(2);
+  });
+
+  it("진행 중 항목이 없으면 목록을 다시 읽지 않는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    await advance(60_000);
+
+    expect(getList).toHaveBeenCalledTimes(1);
+  });
+
+  it("완료로 바뀌면 토스트를 띄우고 카드가 열린다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+    expect(screen.getByText("분석 진행 중...")).toBeInTheDocument();
+    expect(toastMock).not.toHaveBeenCalled();
+
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+    await advance(5_000);
+
+    expect(toastMock).toHaveBeenCalledTimes(1);
+    expect(toastMock.mock.calls[0][0]).toBe("분석이 완료됐어요.");
+    expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
+      analysis_type: "comprehensive",
+    });
+    // 완료된 카드는 이제 상세로 들어갈 수 있다.
+    expect(screen.getByRole("link", { name: /분석 a/ })).toHaveAttribute(
+      "href",
+      "/analysis/comprehensive/a",
+    );
+  });
+
+  it("방금 만든 분석이 첫 조회부터 완료면 그 완료도 관측한다", async () => {
+    // 빨리 끝나는 분석은 '진행 중 → 완료' 전이가 존재하지 않는다. 전이만 보면
+    // 대기 화면 시절엔 잘 잡히던 이 경로의 완료 신호를 통째로 잃는다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "completed"), snap("old", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(captureMock).toHaveBeenCalledTimes(1);
+    expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
+      analysis_type: "comprehensive",
+    });
+    expect(toastMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("`?started=` 없이 들어오면 이미 완료된 목록만으로는 아무 신호도 내지 않는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "completed"), snap("b", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(captureMock).not.toHaveBeenCalled();
+    expect(toastMock).not.toHaveBeenCalled();
   });
 });
