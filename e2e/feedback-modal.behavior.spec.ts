@@ -21,8 +21,9 @@ import { DEFAULT_PAGE_ORIGIN, STUB_API_URL, corsHeaders, stubApi } from "./fixtu
  * 이 스펙만 2겹을 다 열고, 나머지 스펙은 2번이 닫혀 404 → 훅 fail-closed 로 모달이 뜨지 않는다.
  *
  * ⚠️ 시나리오 "분석 완료"는 시드 픽스처 `comp-1` 이 `status: "completed"` 인 데 의존한다
- *    (api-data.ts `snapshot()` 기본값). 이게 `processing` 으로 바뀌면 폴링이 3초 × 20회를
- *    돌아 타임아웃난다.
+ *    (api-data.ts `snapshot()` 기본값). 목록이 `?started=` 로 받은 그 id 가 첫 조회부터 완료라
+ *    곧바로 트리거가 걸린다(FRT-176). 이게 `processing` 으로 바뀌면 5초 폴링이 완료로 전이할
+ *    때까지 기다려야 하므로 이 스펙의 타이밍 전제가 무너진다.
  */
 
 const EXPERIENCE_QUESTION = "ARC에 기록해 보니 어떠셨나요?";

@@ -37,8 +37,15 @@ interface Options {
   startedId?: string | null;
   /** 목록을 조용히 다시 읽는다. `false` 를 돌려주면 "낡아서 버린 응답"으로 보고 예산에서 깎지 않는다. */
   refresh: () => boolean | void | Promise<boolean | void>;
-  /** 이번 갱신에서 완료로 관측된 항목들. 화면 알림(토스트)은 호출부가 정한다. */
-  onCompleted?: (completed: AnalysisSnapshot[]) => void;
+  /**
+   * 이 화면에서 **변화로 관측된** 완료들. 알림 문구는 호출부가 정한다.
+   *
+   * 도착했을 때 이미 끝나 있던 건(`startedId` 규칙으로 신호는 나가는 경우) 여기 담지 않는다 —
+   * 알릴 '변화'가 없기 때문이다. 담으면 방금 "분석을 시작했어요"를 본 사용자에게 곧바로
+   * "완료됐어요"가 겹쳐 뜬다. 계측·피드백 트리거는 "완료 사실"이 필요하지만 알림은 "변화"가
+   * 필요하다 — 조건이 다르므로 갈라 둔다.
+   */
+  onCompleted?: (transitioned: AnalysisSnapshot[]) => void;
 }
 
 interface Result {
@@ -105,6 +112,8 @@ export function useAnalysisProgressWatch({
     const prev = prevStatusRef.current;
     const fired = firedRef.current;
     const completed: AnalysisSnapshot[] = [];
+    /** 그중 이 화면에서 '진행 중 → 완료'로 **바뀌는 걸 본** 것들. 알림은 이것만 대상이다. */
+    const transitioned: AnalysisSnapshot[] = [];
 
     for (const item of items) {
       if (isAnalysisInFlight(item.status)) {
@@ -117,14 +126,15 @@ export function useAnalysisProgressWatch({
 
       const previous = prev?.get(item.id);
       // 직전에 진행 중/실패로 보고 있던 것이 완료됐다 = 이 화면에서 관측한 완료.
-      const transitioned = previous !== undefined && previous !== "completed";
+      const changed = previous !== undefined && previous !== "completed";
       // 방금 내가 건 분석은 첫 관측이 이미 완료여도 관측한 완료로 친다.
       const isJustStarted = item.id === startedId;
 
-      if (!transitioned && !isJustStarted) continue;
+      if (!changed && !isJustStarted) continue;
 
       fired.add(item.id);
       completed.push(item);
+      if (changed) transitioned.push(item);
     }
 
     // 목록에서 사라진 항목(삭제)의 기록은 정리한다 — 서버가 그 id 를 다시 주지 않으므로
@@ -158,7 +168,7 @@ export function useAnalysisProgressWatch({
       });
     }
     // 화면 알림은 건별이 아니라 한 번에 준다 — 여러 건이 같이 끝나면 토스트가 겹친다.
-    onCompletedRef.current?.(completed);
+    if (transitioned.length > 0) onCompletedRef.current?.(transitioned);
   }, [items, type, startedId]);
 
   // 감시 대상 = 지금 진행 중인 id 들. **불리언이 아니라 집합**으로 잡는다 — 불리언이면

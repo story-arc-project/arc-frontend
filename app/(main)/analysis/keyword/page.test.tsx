@@ -202,7 +202,9 @@ describe("키워드 분석 목록 — 진행 중 감시와 완료 관측 (FRT-17
       analysis_type: "keyword",
       analysis_id: "a",
     });
-    expect(toastMock).toHaveBeenCalledTimes(1);
+    // 토스트는 띄우지 않는다 — 방금 "분석을 시작했어요"를 본 사용자에게 곧바로
+    // "완료됐어요"가 겹쳐 뜨면 이상하다. 알릴 '변화'가 없으면 알리지 않는다.
+    expect(toastMock).not.toHaveBeenCalled();
   });
 
   it("`?started=` 없이 들어오면 이미 완료된 목록만으로는 아무 신호도 내지 않는다", async () => {

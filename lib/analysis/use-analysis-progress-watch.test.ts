@@ -260,7 +260,8 @@ describe("useAnalysisProgressWatch — 완료를 관측한다", () => {
       analysisId: "a",
       analysisType: "comprehensive",
     });
-    expect(onCompleted).toHaveBeenCalledTimes(1);
+    // 알림은 내지 않는다 — 도착했을 때 이미 끝나 있었으므로 알릴 '변화'가 없다.
+    expect(onCompleted).not.toHaveBeenCalled();
   });
 
   it("startedId 가 아직 진행 중이면 완료될 때 한 번만 발화한다", async () => {
@@ -514,6 +515,54 @@ describe("useAnalysisProgressWatch — 계측 실패가 흐름을 끊지 않는�
     expect(captureMock.mock.calls.map((call) => call[1])).toEqual([
       { analysis_type: "comprehensive", analysis_id: "a" },
       { analysis_type: "comprehensive", analysis_id: "b" },
+    ]);
+  });
+});
+
+describe("useAnalysisProgressWatch — 알릴 '변화'가 있을 때만 알린다 (사용자 지적)", () => {
+  it("도착했을 때 이미 끝나 있으면 신호는 내되 알림은 내지 않는다", async () => {
+    // 방금 "분석을 시작했어요"를 본 사용자에게 곧바로 "완료됐어요"가 겹쳐 뜨면 이상하다.
+    // 계측·피드백은 완료 '사실'이 필요하지만, 알림은 '변화'가 필요하다.
+    const onCompleted = vi.fn();
+    render({ items: [snap("a", "completed")], startedId: "a", onCompleted });
+
+    expect(captureMock).toHaveBeenCalledTimes(1);
+    expect(reportAnalysisCompleted).toHaveBeenCalledTimes(1);
+    expect(onCompleted).not.toHaveBeenCalled();
+  });
+
+  it("지켜보던 중 끝나면 알린다", async () => {
+    const onCompleted = vi.fn();
+    const { rerender } = render({
+      items: [snap("a", "processing")],
+      startedId: "a",
+      onCompleted,
+    });
+
+    rerender({ items: [snap("a", "completed")], startedId: "a", onCompleted });
+
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+    expect(onCompleted.mock.calls[0][0]).toHaveLength(1);
+  });
+
+  it("같은 갱신에 '이미 끝나 있던 것'과 '방금 끝난 것'이 섞이면 후자만 알린다", async () => {
+    const onCompleted = vi.fn();
+    const { rerender } = render({
+      items: [snap("watched", "processing")],
+      startedId: "arrived",
+      onCompleted,
+    });
+
+    rerender({
+      items: [snap("watched", "completed"), snap("arrived", "completed")],
+      startedId: "arrived",
+      onCompleted,
+    });
+
+    expect(captureMock).toHaveBeenCalledTimes(2);
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+    expect(onCompleted.mock.calls[0][0].map((s: AnalysisSnapshot) => s.id)).toEqual([
+      "watched",
     ]);
   });
 });
