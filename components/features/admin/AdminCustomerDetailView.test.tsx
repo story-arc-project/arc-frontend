@@ -165,3 +165,29 @@ describe("AdminCustomerDetailView — stale 응답", () => {
     expect(screen.queryByText("김지우")).toBeNull();
   });
 });
+
+describe("AdminCustomerDetailView — 접근성", () => {
+  it("불러오는 동안 상태를 읽을 수 있게 알린다", async () => {
+    // 골격을 통째로 aria-hidden 하면 스크린리더에는 아무 일도 없는 빈 화면이 된다.
+    getMock.mockImplementation(() => new Promise(() => {}));
+    render(<AdminCustomerDetailView id="c1" />);
+
+    expect(
+      await screen.findByRole("status", { name: "고객 정보를 불러오는 중" }),
+    ).toBeTruthy();
+  });
+
+  it("활동 요약을 라벨-값 관계가 드러나는 목록으로 렌더한다", async () => {
+    getMock.mockResolvedValue(detail);
+    const { container } = render(<AdminCustomerDetailView id="c1" />);
+    await screen.findByText("김지우");
+
+    // span 나열이면 "기록 12건 성공 7"이 어느 항목의 값인지 전달되지 않는다.
+    const terms = Array.from(container.querySelectorAll("dt")).map(
+      (el) => el.textContent,
+    );
+    expect(terms).toContain("기록");
+    expect(terms).toContain("개별 분석");
+    expect(terms).toContain("이력서");
+  });
+});

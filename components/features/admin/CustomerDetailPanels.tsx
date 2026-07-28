@@ -198,21 +198,21 @@ function ActivityRow({
   const unknown = !stat || stat.total === null;
   const breakdown = stat ? formatActivityStatusBreakdown(stat.byStatus) : null;
 
+  // dt/dd 로 라벨과 값의 관계를 시맨틱하게 준다 — span 나열이면 스크린리더가 "기록 12건 성공 7"을
+  // 어느 항목의 값인지 모른 채 이어 읽는다(목록 표를 table 로 둔 것과 같은 이유).
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-border py-3 last:border-b-0">
-      <span className="w-24 shrink-0 text-body-sm text-text-tertiary">
-        {label}
-      </span>
-      <span className="text-body font-medium text-text-primary">
+      <dt className="w-24 shrink-0 text-body-sm text-text-tertiary">{label}</dt>
+      <dd className="text-body font-medium text-text-primary">
         {unknown ? "—" : `${stat.total}건`}
-      </span>
+      </dd>
       {breakdown && (
-        <span className="text-body-sm text-text-secondary">{breakdown}</span>
+        <dd className="text-body-sm text-text-secondary">{breakdown}</dd>
       )}
       {stat?.lastAt && (
-        <span className="ml-auto text-caption text-text-tertiary">
+        <dd className="ml-auto text-caption text-text-tertiary">
           최근 {formatAdminDate(stat.lastAt)}
-        </span>
+        </dd>
       )}
     </div>
   );
@@ -221,11 +221,11 @@ function ActivityRow({
 function ActivityPanel({ activity }: { activity: AdminCustomerActivity }) {
   return (
     <Panel title="활동 요약">
-      <div className="flex flex-col">
+      <dl className="flex flex-col">
         {ACTIVITY_LABELS.map(({ key, label }) => (
           <ActivityRow key={key} label={label} stat={activity[key]} />
         ))}
-      </div>
+      </dl>
     </Panel>
   );
 }
@@ -244,10 +244,18 @@ export function CustomerDetailPanels({ detail }: { detail: AdminCustomerDetail }
   );
 }
 
-/** 로딩 골격 — 목록의 LoadingRows 와 같은 톤. */
+/**
+ * 로딩 골격 — 목록의 LoadingRows 와 같은 톤.
+ * 골격 자체에는 읽을 내용이 없으므로 role="status" + aria-label 로 "불러오는 중"만 알린다.
+ * 통째로 aria-hidden 하면 스크린리더에는 아무 일도 일어나지 않는 빈 화면이 된다.
+ */
 export function CustomerDetailSkeleton() {
   return (
-    <div className="mx-auto max-w-3xl" aria-hidden="true">
+    <div
+      className="mx-auto max-w-3xl"
+      role="status"
+      aria-label="고객 정보를 불러오는 중"
+    >
       <div className="mb-6">
         <span className="block h-4 w-20 animate-pulse rounded bg-surface-tertiary" />
         <span className="mt-3 block h-7 w-40 animate-pulse rounded bg-surface-tertiary" />
