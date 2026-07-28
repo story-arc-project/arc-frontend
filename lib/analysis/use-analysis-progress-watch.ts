@@ -128,10 +128,19 @@ export function useAnalysisProgressWatch({
     onCompletedRef.current?.(completed);
   }, [items, type, startedId]);
 
-  const active = items.some((item) => isInFlight(item.status));
+  // 감시 대상 = 지금 진행 중인 id 들. **불리언이 아니라 집합**으로 잡는다 — 불리언이면
+  // 예산이 소진된 뒤에 다른 카드를 재시도해도 값이 계속 true 라 폴링이 되살아나지 않고,
+  // 그 카드는 서버가 다 만든 뒤에도 '진행 중'에 고착된다(전체 새로고침만 탈출구다).
+  // 예산은 "이 집합이 마지막으로 바뀐 시점"부터 센다. 집합이 바뀌었다는 건 서버가 실제로
+  // 진행했거나 사용자가 방금 무언가를 걸었다는 뜻이라, 그때 다시 세는 게 맞다.
+  const inFlightKey = items
+    .filter((item) => isInFlight(item.status))
+    .map((item) => item.id)
+    .sort()
+    .join(",");
 
   useEffect(() => {
-    if (!active) return;
+    if (!inFlightKey) return;
     let cancelled = false;
     let ticks = 0;
     let dispatches = 0;
@@ -164,5 +173,5 @@ export function useAnalysisProgressWatch({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [active]);
+  }, [inFlightKey]);
 }

@@ -19,6 +19,7 @@ vi.mock("@/lib/api/analysis-api", () => ({
 vi.mock("@/lib/analysis/flags", () => ({ isAnalysisRetryEnabled: () => true }));
 
 let searchParams = new URLSearchParams();
+const replace = vi.fn();
 
 vi.mock("@/lib/analytics", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/analytics")>();
@@ -28,6 +29,7 @@ vi.mock("@/lib/analytics", async (importOriginal) => {
 // 목록은 `?started=` 로 "방금 만든 분석"을 받는다(FRT-176). 기본은 빈 파라미터.
 vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParams,
+  useRouter: () => ({ replace }),
 }));
 
 vi.mock("@/components/ui/toast", () => ({ toast: vi.fn() }));
@@ -258,5 +260,27 @@ describe("종합 분석 목록 — 진행 중 감시와 완료 관측 (FRT-176)"
 
     expect(captureMock).not.toHaveBeenCalled();
     expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it("관측을 마치면 `?started=` 를 URL 에서 지운다", async () => {
+    // 남겨두면 새로고침마다 같은 완료가 새 완료로 다시 세어진다 — 중복 방지 기록은
+    // 마운트를 넘기지 못한다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/comprehensive", { scroll: false });
+  });
+
+  it("아직 목록에 안 잡힌 `?started=` 는 지우지 않는다", async () => {
+    searchParams = new URLSearchParams("started=missing");
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(replace).not.toHaveBeenCalled();
   });
 });

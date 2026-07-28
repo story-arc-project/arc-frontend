@@ -143,7 +143,8 @@ test.describe("FRT-96 피드백 모달 노출", () => {
 
     // 기다리게 하지 않고 목록으로 보낸다(FRT-176). 방금 만든 id 는 `?started=` 로 넘어가고,
     // 목록이 그 완료를 관측해 트리거를 낸다 — 스텁의 comp-1 은 첫 조회부터 completed 다.
-    await expect(page).toHaveURL(/\/analysis\/comprehensive\?started=comp-1$/);
+    // 관측을 마치면 목록이 그 쿼리를 지우므로(새로고침마다 재발화 방지) 최종 URL 은 깨끗하다.
+    await expect(page).toHaveURL(/\/analysis\/comprehensive$/);
     await expectPromptDecided(stub);
 
     // 생성 화면(`/analysis/*/new`)은 억제 경로다 — 목록으로 넘어온 뒤에야 지연을 세고 뜬다.

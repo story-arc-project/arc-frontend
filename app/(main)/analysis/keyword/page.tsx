@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getKeywordList, deleteKeywordAnalysis } from "@/lib/api/analysis-api";
@@ -18,8 +18,8 @@ import RetryAnalysisButton from "@/components/features/analysis/common/RetryAnal
 export default function KeywordAnalysisPage() {
   // 방금 만든 분석(FRT-176). 목록이 이 id 만은 "첫 조회에 이미 완료"여도 완료로 인정한다 —
   // 빨리 끝나는 분석(knn 경로)은 전이가 존재하지 않아 그러지 않으면 완료 신호를 놓친다.
-  // URL 에 남겨둬도 관측은 id 당 1회로 막혀 있어 재발화하지 않는다.
   // 라우터 컨텍스트 밖(스토리북·단위 테스트)에서는 null 이다 — 그때는 그냥 감시만 한다.
+  const router = useRouter();
   const startedId = useSearchParams()?.get("started") ?? null;
 
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
@@ -87,6 +87,16 @@ export default function KeywordAnalysisPage() {
       );
     },
   });
+
+  // 관측이 끝났으면 쿼리를 지운다. 남겨두면 새로고침·재방문마다 같은 완료를 다시 발화해
+  // 퍼널 지표(analysis_completed)가 부풀고 피드백 트리거가 반복된다 — 중복 방지는 메모리
+  // 안의 기록이라 마운트를 넘기지 못하기 때문이다. 목록에 한 번이라도 잡힌 뒤로는 전이
+  // 관측이 그 항목을 덮으므로 이 표시는 더 필요 없다.
+  const startedSeen = startedId !== null && items.some((i) => i.id === startedId);
+  useEffect(() => {
+    if (!startedSeen) return;
+    router.replace("/analysis/keyword", { scroll: false });
+  }, [startedSeen, router]);
 
   const [deleteError, setDeleteError] = useState(false);
 

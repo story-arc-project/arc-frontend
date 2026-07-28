@@ -336,3 +336,38 @@ describe("useAnalysisProgressWatch — 완료를 관측한다", () => {
     expect(captureMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("useAnalysisProgressWatch — 예산 소진 뒤에도 새 작업은 다시 감시한다", () => {
+  it("예산을 다 쓴 뒤 다른 카드가 진행 중이 되면 폴링이 되살아난다", async () => {
+    // 불리언 하나로 감시하면 이미 진행 중인 항목이 값을 true 로 붙들고 있어 effect 가
+    // 다시 돌지 않는다 — 방금 재시도한 카드가 서버 완료 후에도 '진행 중'에 고착된다.
+    const refresh = vi.fn(() => true);
+    const { rerender } = render({
+      items: [snap("a", "processing"), snap("b", "failed")],
+      refresh,
+    });
+
+    await advance(60 * 60_000);
+    expect(refresh).toHaveBeenCalledTimes(60);
+
+    // b 재시도 — 목록이 낙관적으로 진행 중으로 바꾼다.
+    rerender({ items: [snap("a", "processing"), snap("b", "processing")], refresh });
+    await advance(5_000);
+
+    expect(refresh).toHaveBeenCalledTimes(61);
+  });
+
+  it("진행 중 항목의 pending → processing 전이만으로는 예산이 리셋되지 않는다", async () => {
+    const refresh = vi.fn(() => true);
+    const { rerender } = render({ items: [snap("a", "pending")], refresh });
+
+    await advance(5_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    rerender({ items: [snap("a", "processing")], refresh });
+    await advance(60 * 60_000);
+
+    // 같은 id 가 계속 진행 중일 뿐이므로 예산은 이어서 소진된다.
+    expect(refresh).toHaveBeenCalledTimes(60);
+  });
+});
