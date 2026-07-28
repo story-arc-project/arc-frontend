@@ -371,3 +371,31 @@ describe("useAnalysisProgressWatch — 예산 소진 뒤에도 새 작업은 다
     expect(refresh).toHaveBeenCalledTimes(60);
   });
 });
+
+describe("useAnalysisProgressWatch — 생애 상한 (codex 후속)", () => {
+  it("감시 대상이 계속 바뀌어도 결국 멈춘다 — 예산 리셋이 무한 폴링을 만들지 않는다", async () => {
+    // 완료·추가가 번갈아 일어나면 라운드마다 예산이 새로 세어진다. 리셋되지 않는
+    // 생애 상한이 없으면 목록을 열어둔 채로 요청이 영원히 나간다.
+    const refresh = vi.fn(() => true);
+    const { rerender } = render({ items: [snap("w-0", "processing")], refresh });
+
+    for (let round = 1; round <= 12; round += 1) {
+      await advance(60 * 60_000);
+      rerender({ items: [snap(`w-${round}`, "processing")], refresh });
+    }
+    await advance(60 * 60_000);
+
+    expect(refresh).toHaveBeenCalledTimes(240);
+  });
+
+  it("생애 상한에 닿기 전까지는 재시도가 정상적으로 되살아난다", async () => {
+    const refresh = vi.fn(() => true);
+    const { rerender } = render({ items: [snap("a", "processing")], refresh });
+
+    await advance(60 * 60_000);
+    rerender({ items: [snap("a", "processing"), snap("b", "processing")], refresh });
+    await advance(5_000);
+
+    expect(refresh).toHaveBeenCalledTimes(61);
+  });
+});

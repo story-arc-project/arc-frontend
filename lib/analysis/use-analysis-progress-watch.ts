@@ -14,6 +14,10 @@ const MAX_TICKS = 60;
 /** 절대 상한 — 버려진 응답까지 포함한 요청 횟수. 낡은 응답이 계속 버려지더라도
  *  폴링이 끝나도록 보장하는 안전판이다. */
 const MAX_DISPATCHES = 90;
+/** 이 화면에 머무는 동안의 **생애 상한**. 위 두 상한은 감시 대상이 바뀔 때마다 다시 세어지므로
+ *  (재시도를 되살리려면 그래야 한다), 그것만으로는 "완료·추가가 번갈아 일어나면 예산이 계속
+ *  갱신된다"는 구멍이 남는다. 이 값은 리셋되지 않아 무한 폴링을 최종적으로 막는다. */
+const MAX_LIFETIME_DISPATCHES = 240;
 
 type WatchableType = "comprehensive" | "keyword";
 
@@ -78,6 +82,8 @@ export function useAnalysisProgressWatch({
   const prevStatusRef = useRef<Map<string, AnalysisStatus> | null>(null);
   /** 완료를 이미 알린 id. 다시 진행 중으로 관측되면 지워 재발화를 허용한다. */
   const firedRef = useRef<Set<string>>(new Set());
+  /** 이 마운트에서 나간 갱신 요청 총계. 감시 대상이 바뀌어도 리셋하지 않는다. */
+  const lifetimeDispatchesRef = useRef(0);
 
   useEffect(() => {
     const prev = prevStatusRef.current;
@@ -141,6 +147,8 @@ export function useAnalysisProgressWatch({
 
   useEffect(() => {
     if (!inFlightKey) return;
+    // 생애 예산을 이미 다 썼으면 감시 대상이 바뀌어도 다시 시작하지 않는다.
+    if (lifetimeDispatchesRef.current >= MAX_LIFETIME_DISPATCHES) return;
     let cancelled = false;
     let ticks = 0;
     let dispatches = 0;
@@ -152,6 +160,7 @@ export function useAnalysisProgressWatch({
     const schedule = () => {
       timer = setTimeout(async () => {
         dispatches += 1;
+        lifetimeDispatchesRef.current += 1;
         // 호출부가 false 를 주면 "그 사이 목록이 바뀌어 응답을 버렸다"는 뜻이다.
         // 서버를 들여다볼 기회를 쓴 게 아니므로 상한에서 깎지 않는다 — 깎으면 폴링 중에
         // 삭제·즐겨찾기를 누르기만 해도 '진행 중' 카드가 결과를 못 본 채 예산을 잃는다.
@@ -163,7 +172,14 @@ export function useAnalysisProgressWatch({
           // (실패는 기회를 쓴 것으로 센다 — 서버가 계속 죽어 있으면 상한에서 멈춰야 한다.)
         }
         if (applied) ticks += 1;
-        if (cancelled || ticks >= MAX_TICKS || dispatches >= MAX_DISPATCHES) return;
+        if (
+          cancelled ||
+          ticks >= MAX_TICKS ||
+          dispatches >= MAX_DISPATCHES ||
+          lifetimeDispatchesRef.current >= MAX_LIFETIME_DISPATCHES
+        ) {
+          return;
+        }
         schedule();
       }, INTERVAL_MS);
     };
