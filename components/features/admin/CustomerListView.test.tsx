@@ -13,7 +13,7 @@ const customers: AdminCustomer[] = [
     id: "c1",
     email: "jiwoo@example.com",
     name: "김지우",
-    status: "active",
+    status: "verified",
     onboarded: true,
     createdAt: "2026-06-14T02:11:00Z",
   },
@@ -21,7 +21,7 @@ const customers: AdminCustomer[] = [
     id: "",
     email: "broken@example.com",
     name: null,
-    status: "dormant",
+    status: "unverified",
     onboarded: false,
     createdAt: "2026-05-02T09:30:00Z",
   },
@@ -55,7 +55,7 @@ describe("CustomerListView — 가입일 표기", () => {
           id: "c9",
           email: "edge@example.com",
           name: "경계",
-          status: "active",
+          status: "verified",
           onboarded: true,
           createdAt: "2026-07-25T15:30:00Z",
         },
@@ -111,5 +111,32 @@ describe("CustomerListView — 상태별 렌더", () => {
     renderList({ customers: [], error: new Error("boom") });
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+  });
+});
+
+describe("CustomerListView — 상태 라벨(FRT-17 정정)", () => {
+  // 백엔드 users.status 의 실재 값은 unverified|verified 둘뿐이다. FRT-16 이 임시로 쓰던
+  // active/dormant/suspended 는 존재하지 않으므로 라벨을 붙이면 안 된다.
+  it("실재 상태 코드에 한국어 라벨을 붙인다", () => {
+    renderList();
+    const rows = screen.getAllByRole("row");
+    expect(within(rows[1]).getByText("인증됨")).toBeTruthy();
+    expect(within(rows[2]).getByText("인증 전")).toBeTruthy();
+  });
+
+  it("모르는 상태 코드는 라벨을 지어내지 않고 원문을 보여준다", () => {
+    renderList({
+      customers: [
+        {
+          id: "cX",
+          email: "unknown@example.com",
+          name: null,
+          status: "pending_review",
+          onboarded: false,
+          createdAt: "2026-06-14T02:11:00Z",
+        },
+      ],
+    });
+    expect(screen.getByText("pending_review")).toBeTruthy();
   });
 });
