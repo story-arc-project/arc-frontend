@@ -81,6 +81,8 @@ export default function ComprehensiveAnalysisPage() {
     type: "comprehensive",
     startedId,
     refresh: refreshInBackground,
+    // 사용자가 기다리는 조회가 떠 있는 동안은 폴링하지 않는다(응답 역전 방지).
+    paused: loading,
     onCompleted: (completed) => {
       toast(
         completed.length > 1

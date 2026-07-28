@@ -131,7 +131,7 @@ test.describe("FRT-96 피드백 모달 노출", () => {
     });
   });
 
-  test("분석이 완료되면 이동해 간 목록 화면 위에서 모달이 뜬다", async ({ page }) => {
+  test("분석 완료 신호는 목록에서 보류됐다가 결과 화면에서 뜬다", async ({ page }) => {
     const stub = await stubApi(page, { authed: true, scenario: "data", feedback: true });
     // 경험은 2개 = 임계(3) 미만. 경험 게이트를 닫아 두어야 이 테스트가 **분석 게이트만** 본다.
     await stubExperienceCount(page, 2);
@@ -146,10 +146,17 @@ test.describe("FRT-96 피드백 모달 노출", () => {
     // 목록이 그 완료를 관측해 트리거를 낸다 — 스텁의 comp-1 은 첫 조회부터 completed 다.
     // 관측을 마치면 목록이 그 쿼리를 지우므로(새로고침마다 재발화 방지) 최종 URL 은 깨끗하다.
     await expect(page).toHaveURL(/\/analysis\/comprehensive$/);
+
+    // 목록은 억제 경로다 — 결과를 아직 못 본 사용자에게 "방금 이 분석, 도움이 됐나요?"를
+    // 물으면 단 한 번뿐인 노출 기회를 헛되이 쓴다. 신호는 버려지지 않고 **보류**된다.
+    await expect(page.getByRole("dialog", { name: ANALYSIS_QUESTION })).toBeHidden();
+    expect(promptShownCalls(stub.mutations)).toHaveLength(0);
+
+    // 완료 카드를 눌러 결과로 들어가면 그 화면 위에서 뜬다(대기 화면이 있던 시절과 같은 자리).
+    await page.getByRole("link", { name: /전체 경험 종합 분석/ }).click();
+    await expect(page).toHaveURL(/\/analysis\/comprehensive\/comp-1$/);
     await expectPromptDecided(stub);
 
-    // 생성 화면(`/analysis/*/new`)은 억제 경로다 — 목록으로 넘어온 뒤에야 지연을 세고 뜬다.
-    // 유닛이 pathname 을 흉내내던 부분이 여기서 실제로 확인된다.
     await expect(page.getByRole("dialog", { name: ANALYSIS_QUESTION })).toBeVisible();
     expect(promptShownCalls(stub.mutations)).toHaveLength(1);
     expect(promptShownCalls(stub.mutations)[0]).toMatchObject({

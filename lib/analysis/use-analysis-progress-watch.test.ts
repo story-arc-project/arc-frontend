@@ -63,6 +63,7 @@ type Props = {
   startedId?: string | null;
   refresh?: () => boolean | void | Promise<boolean | void>;
   onCompleted?: (completed: AnalysisSnapshot[]) => void;
+  paused?: boolean;
 };
 
 function render(initial: Props) {
@@ -74,6 +75,7 @@ function render(initial: Props) {
         startedId: props.startedId ?? null,
         refresh: props.refresh ?? (() => true),
         onCompleted: props.onCompleted,
+        paused: props.paused ?? false,
       }),
     { initialProps: initial },
   );
@@ -564,5 +566,44 @@ describe("useAnalysisProgressWatch — 알릴 '변화'가 있을 때만 알린�
     expect(onCompleted.mock.calls[0][0].map((s: AnalysisSnapshot) => s.id)).toEqual([
       "watched",
     ]);
+  });
+});
+
+describe("useAnalysisProgressWatch — 전경 로드와 겹치지 않는다 (codex 커넥터 P2)", () => {
+  it("paused 인 동안에는 폴링하지 않는다", async () => {
+    // 전경 응답은 무조건 적용되므로, 느린 첫 조회 위로 백그라운드 갱신이 겹치면
+    // 늦게 온 옛 스냅샷이 새 것을 덮어써 완료 카드가 '진행 중'으로 되돌아간다.
+    const refresh = vi.fn(() => true);
+    render({ items: [snap("a", "processing")], refresh, paused: true });
+
+    await advance(60_000);
+
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("전경 로드가 끝나면 그때부터 지켜본다", async () => {
+    const refresh = vi.fn(() => true);
+    const { rerender } = render({
+      items: [snap("a", "processing")],
+      refresh,
+      paused: true,
+    });
+
+    await advance(60_000);
+    expect(refresh).not.toHaveBeenCalled();
+
+    rerender({ items: [snap("a", "processing")], refresh, paused: false });
+    await advance(5_000);
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("`?started=` 만 있고 목록이 아직 비어도 전경 로드 중이면 폴링하지 않는다", async () => {
+    const refresh = vi.fn(() => true);
+    render({ items: [], startedId: "mine", refresh, paused: true });
+
+    await advance(60_000);
+
+    expect(refresh).not.toHaveBeenCalled();
   });
 });

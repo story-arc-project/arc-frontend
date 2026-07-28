@@ -197,6 +197,40 @@ describe("FeedbackHost", () => {
     },
   );
 
+  it.each(["/analysis/comprehensive", "/analysis/keyword"])(
+    "분석 목록(%s)도 억제 대상이다 — 결과를 아직 못 본 화면이다",
+    async (pathname) => {
+      // 완료는 목록에서 관측되지만(FRT-176), 캠페인이 묻는 건 "방금 이 분석, 도움이 됐나요?"다.
+      // 결과를 열어보기 전에 물으면 단 한 번뿐인 노출 기회를 헛되이 쓴다.
+      nav.pathname = pathname;
+      renderHost();
+      fire("분석보고");
+
+      await advance(FEEDBACK_PROMPT_DELAY_MS * 5);
+
+      expect(modal()).not.toBeInTheDocument();
+    },
+  );
+
+  it("목록에서 보류된 분석 완료 신호는 결과 화면으로 넘어가면 뜬다", async () => {
+    // 억제는 신호를 버리지 않고 보류한다 — 그러지 않으면 그 방문에서 기회가 사라진다.
+    nav.pathname = "/analysis/comprehensive";
+    const { rerender } = renderHost();
+    fire("분석보고");
+    await advance(FEEDBACK_PROMPT_DELAY_MS * 5);
+    expect(modal()).not.toBeInTheDocument();
+
+    nav.pathname = "/analysis/comprehensive/comp-1";
+    rerender(
+      <FeedbackHost>
+        <Triggers />
+      </FeedbackHost>,
+    );
+    await advance(FEEDBACK_PROMPT_DELAY_MS * 5);
+
+    expect(modal()).toBeInTheDocument();
+  });
+
   it("이력서 편집기도 억제 대상이다(미저장 편집 상태를 든 화면)", async () => {
     nav.pathname = "/export/resume/v-1";
     renderHost();

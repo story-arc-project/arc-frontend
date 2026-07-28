@@ -38,6 +38,15 @@ interface Options {
   /** 목록을 조용히 다시 읽는다. `false` 를 돌려주면 "낡아서 버린 응답"으로 보고 예산에서 깎지 않는다. */
   refresh: () => boolean | void | Promise<boolean | void>;
   /**
+   * 전경 로드(사용자가 기다리는 목록 조회)가 떠 있는 동안 `true`. 그동안은 폴링하지 않는다.
+   *
+   * 전경 응답은 **무조건 적용**된다(사용자가 기다린 요청이라 버릴 수 없다). 그래서 느린 첫
+   * 조회가 5초를 넘기면 그 위로 백그라운드 갱신이 겹치고, 늦게 도착한 옛 전경 응답이 새
+   * 스냅샷을 덮어써 완료 카드가 '진행 중'으로 되돌아간다 — 그러면 발화 기록까지 지워져
+   * 같은 완료가 다시 계측·알림된다.
+   */
+  paused?: boolean;
+  /**
    * 이 화면에서 **변화로 관측된** 완료들. 알림 문구는 호출부가 정한다.
    *
    * 도착했을 때 이미 끝나 있던 건(`startedId` 규칙으로 신호는 나가는 경우) 여기 담지 않는다 —
@@ -77,6 +86,7 @@ export function useAnalysisProgressWatch({
   startedId = null,
   refresh,
   onCompleted,
+  paused = false,
 }: Options): Result {
   const triggers = useFeedbackTriggers();
 
@@ -200,6 +210,8 @@ export function useAnalysisProgressWatch({
 
   useEffect(() => {
     if (!inFlightKey) return;
+    // 전경 로드와 겹치지 않게 한다 — 겹치면 응답 역전으로 상태가 되돌아간다.
+    if (paused) return;
     // 생애 예산을 이미 다 썼으면 감시 대상이 바뀌어도 다시 시작하지 않는다.
     if (lifetimeDispatchesRef.current >= MAX_LIFETIME_DISPATCHES) return;
     let cancelled = false;
@@ -242,7 +254,7 @@ export function useAnalysisProgressWatch({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [inFlightKey, rearmEpoch]);
+  }, [inFlightKey, rearmEpoch, paused]);
 
   return { rearm };
 }
