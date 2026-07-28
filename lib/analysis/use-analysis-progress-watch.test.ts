@@ -442,3 +442,47 @@ describe("useAnalysisProgressWatch — 화면을 떠났다 돌아와도 완료�
     });
   });
 });
+
+describe("useAnalysisProgressWatch — 아직 목록에 안 뜬 분석 (codex 후속)", () => {
+  it("방금 만든 분석이 첫 조회에 없으면 그것만으로도 감시를 건다", async () => {
+    // 생성 응답과 첫 목록 조회 사이에 그 행이 안 보일 수 있다. 진행 중 항목이 없다는
+    // 이유로 감시를 안 걸면 사용자는 "내 분석 어디 갔지" 상태로 새로고침까지 방치된다.
+    const refresh = vi.fn(() => true);
+    render({ items: [snap("old", "completed")], startedId: "mine", refresh });
+
+    await advance(5_000);
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("그 분석이 목록에 나타나 완료되면 감시를 멈춘다", async () => {
+    const refresh = vi.fn(() => true);
+    const { rerender } = render({
+      items: [snap("old", "completed")],
+      startedId: "mine",
+      refresh,
+    });
+
+    await advance(5_000);
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    rerender({
+      items: [snap("old", "completed"), snap("mine", "completed")],
+      startedId: "mine",
+      refresh,
+    });
+    await advance(60_000);
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(captureMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("startedId 가 없으면 진행 중도 없는 목록에서 요청을 내지 않는다", async () => {
+    const refresh = vi.fn(() => true);
+    render({ items: [snap("old", "completed")], refresh });
+
+    await advance(60_000);
+
+    expect(refresh).not.toHaveBeenCalled();
+  });
+});

@@ -155,11 +155,18 @@ export function useAnalysisProgressWatch({
   // 그 카드는 서버가 다 만든 뒤에도 '진행 중'에 고착된다(전체 새로고침만 탈출구다).
   // 예산은 "이 집합이 마지막으로 바뀐 시점"부터 센다. 집합이 바뀌었다는 건 서버가 실제로
   // 진행했거나 사용자가 방금 무언가를 걸었다는 뜻이라, 그때 다시 세는 게 맞다.
-  const inFlightKey = items
+  const inFlightIds = items
     .filter((item) => isAnalysisInFlight(item.status))
-    .map((item) => item.id)
-    .sort()
-    .join(",");
+    .map((item) => item.id);
+
+  // 방금 만든 분석이 **아직 목록에 안 뜬** 경우도 지켜본다. 생성 응답과 첫 목록 조회 사이에
+  // 그 행이 보이지 않을 수 있는데(복제 지연 등), 진행 중 항목이 하나도 없다는 이유로 감시를
+  // 걸지 않으면 사용자는 "내 분석이 어디 갔지" 상태로 남고 새로고침 전까지 아무 일도 없다.
+  if (startedId !== null && !items.some((item) => item.id === startedId)) {
+    inFlightIds.push(startedId);
+  }
+
+  const inFlightKey = inFlightIds.sort().join(",");
 
   useEffect(() => {
     if (!inFlightKey) return;

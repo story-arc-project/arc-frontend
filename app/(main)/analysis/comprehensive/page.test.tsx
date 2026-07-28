@@ -306,3 +306,19 @@ describe("`?started=` 수명 (codex 후속)", () => {
     expect(replace).toHaveBeenCalledWith("/analysis/comprehensive", { scroll: false });
   });
 });
+
+describe("재시도도 '방금 내가 건 분석'이다 (codex 후속)", () => {
+  it("재시도를 접수하면 `?started=` 표시를 되살린다", async () => {
+    // 실패로 끝나 표시를 지운 뒤 재시도하면, 되살리지 않는 한 재시도 도중 목록을 떠났다가
+    // 완료 후 돌아왔을 때 그 완료가 전이로도 표시로도 잡히지 않는다.
+    getList.mockResolvedValueOnce([snap("a", "failed")]);
+    retryAnalysis.mockResolvedValue(undefined);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+    await click(screen.getByRole("button", { name: "다시 시도" }));
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/comprehensive?started=a", { scroll: false });
+  });
+});

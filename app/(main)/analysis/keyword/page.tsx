@@ -232,8 +232,13 @@ export default function KeywordAnalysisPage() {
                                   i.id === item.id ? { ...i, status: "processing" } : i,
                                 ),
                               );
-                              // 사람이 누른 재시도는 자동 상한과 무관하게 다시 지켜본다.
+                              // 재시도도 '방금 내가 건 분석'이다 — 표시를 되살려야 재시도 도중
+                              // 목록을 떠났다가 완료 후 돌아왔을 때 그 완료를 관측할 수 있다.
                               rearm();
+                              router.replace(
+                                `/analysis/keyword?started=${encodeURIComponent(item.id)}`,
+                                { scroll: false },
+                              );
                             }}
                           />
                         )}
