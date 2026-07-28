@@ -225,7 +225,7 @@ describe("키워드 분석 목록 — 진행 중 감시와 완료 관측 (FRT-17
     expect(replace).toHaveBeenCalledWith("/analysis/keyword", { scroll: false });
   });
 
-  it("아직 목록에 안 잡힌 `?started=` 는 지우지 않는다", async () => {
+  it("목록에 아직 나타나지 않은 `?started=` 는 지우지 않는다", async () => {
     searchParams = new URLSearchParams("started=missing");
     getList.mockResolvedValueOnce([snap("a", "completed")]);
 
@@ -233,5 +233,27 @@ describe("키워드 분석 목록 — 진행 중 감시와 완료 관측 (FRT-17
     await flush();
 
     expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe("`?started=` 수명 (codex 후속)", () => {
+  it("아직 진행 중이면 쿼리를 지우지 않는다 — 떠났다 돌아왔을 때 완료를 잡아야 한다", async () => {
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("실패로 끝난 경우에도 쿼리를 지운다 — 더 지켜볼 완료가 없다", async () => {
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "failed")]);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/keyword", { scroll: false });
   });
 });

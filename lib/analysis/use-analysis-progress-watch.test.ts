@@ -399,3 +399,46 @@ describe("useAnalysisProgressWatch — 생애 상한 (codex 후속)", () => {
     expect(refresh).toHaveBeenCalledTimes(61);
   });
 });
+
+describe("useAnalysisProgressWatch — 사람이 누른 재시도는 상한에 갇히지 않는다 (codex 후속)", () => {
+  it("생애 상한에 닿은 뒤에도 rearm 하면 다시 지켜본다", async () => {
+    // 자동 상한은 지켜보는 사람이 없을 때를 위한 것이다. 버튼을 누른 사용자를 가두면
+    // 그 카드는 서버가 다 만든 뒤에도 '진행 중'에 머물고, 아무 반응도 없다.
+    const refresh = vi.fn(() => true);
+    const { result, rerender } = render({ items: [snap("w-0", "processing")], refresh });
+
+    for (let round = 1; round <= 12; round += 1) {
+      await advance(60 * 60_000);
+      rerender({ items: [snap(`w-${round}`, "processing")], refresh });
+    }
+    await advance(60 * 60_000);
+    expect(refresh).toHaveBeenCalledTimes(240);
+
+    // 사람이 재시도를 눌렀다 — 목록이 낙관적으로 진행 중으로 바꾸고 예산을 되살린다.
+    await act(async () => {
+      result.current.rearm();
+    });
+    rerender({ items: [snap("retried", "processing")], refresh });
+    await advance(5_000);
+
+    expect(refresh).toHaveBeenCalledTimes(241);
+  });
+});
+
+describe("useAnalysisProgressWatch — 화면을 떠났다 돌아와도 완료를 놓치지 않는다 (codex 후속)", () => {
+  it("진행 중일 때 떠났다가 완료 후 돌아오면 startedId 로 완료를 관측한다", async () => {
+    // 목록을 떠나면 직전 상태 기록도 함께 사라진다. 돌아왔을 때 이미 완료라면 전이가
+    // 존재하지 않으므로, `?started=` 표시가 남아 있어야만 그 완료를 잡을 수 있다.
+    const first = render({ items: [snap("a", "processing")], startedId: "a" });
+    expect(captureMock).not.toHaveBeenCalled();
+    first.unmount();
+
+    render({ items: [snap("a", "completed")], startedId: "a" });
+
+    expect(captureMock).toHaveBeenCalledTimes(1);
+    expect(reportAnalysisCompleted).toHaveBeenCalledWith({
+      analysisId: "a",
+      analysisType: "comprehensive",
+    });
+  });
+});

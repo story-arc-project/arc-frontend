@@ -7,7 +7,10 @@ import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getKeywordList, deleteKeywordAnalysis } from "@/lib/api/analysis-api";
 import { isAnalysisRetryEnabled } from "@/lib/analysis/flags";
-import { useAnalysisProgressWatch } from "@/lib/analysis/use-analysis-progress-watch";
+import {
+  isAnalysisInFlight,
+  useAnalysisProgressWatch,
+} from "@/lib/analysis/use-analysis-progress-watch";
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Button, Badge, Dialog } from "@/components/ui";
@@ -73,7 +76,7 @@ export default function KeywordAnalysisPage() {
   // 진행 중인 분석이 있는 동안만 목록을 다시 읽고, 완료를 관측해 화면 밖으로 알린다.
   // 재시도도 여기에 얹힌다 — 재시도 버튼이 카드를 낙관적으로 '진행 중'으로 바꾸므로
   // 별도 무장 없이 같은 감시에 걸린다.
-  useAnalysisProgressWatch({
+  const { rearm } = useAnalysisProgressWatch({
     items,
     type: "keyword",
     startedId,
@@ -88,15 +91,20 @@ export default function KeywordAnalysisPage() {
     },
   });
 
-  // 관측이 끝났으면 쿼리를 지운다. 남겨두면 새로고침·재방문마다 같은 완료를 다시 발화해
-  // 퍼널 지표(analysis_completed)가 부풀고 피드백 트리거가 반복된다 — 중복 방지는 메모리
-  // 안의 기록이라 마운트를 넘기지 못하기 때문이다. 목록에 한 번이라도 잡힌 뒤로는 전이
-  // 관측이 그 항목을 덮으므로 이 표시는 더 필요 없다.
-  const startedSeen = startedId !== null && items.some((i) => i.id === startedId);
+  // 그 분석이 **끝난 뒤에야** 쿼리를 지운다. 남겨두면 새로고침·재방문마다 같은 완료를 다시
+  // 발화해 퍼널 지표(analysis_completed)가 부풀고 피드백 트리거가 반복된다 — 중복 방지는
+  // 메모리 안의 기록이라 마운트를 넘기지 못하기 때문이다.
+  //
+  // 반대로 **진행 중일 때 지우면** 이 표시의 존재 이유가 무너진다: 걸어두고 목록을 떠났다가
+  // 완료된 뒤 돌아오면 새 마운트엔 직전 상태도 표시도 없어 '이미 완료'로만 보이고,
+  // 전이가 아니라는 이유로 완료 신호가 통째로 사라진다.
+  const startedSettled =
+    startedId !== null &&
+    items.some((i) => i.id === startedId && !isAnalysisInFlight(i.status));
   useEffect(() => {
-    if (!startedSeen) return;
+    if (!startedSettled) return;
     router.replace("/analysis/keyword", { scroll: false });
-  }, [startedSeen, router]);
+  }, [startedSettled, router]);
 
   const [deleteError, setDeleteError] = useState(false);
 
@@ -224,6 +232,8 @@ export default function KeywordAnalysisPage() {
                                   i.id === item.id ? { ...i, status: "processing" } : i,
                                 ),
                               );
+                              // 사람이 누른 재시도는 자동 상한과 무관하게 다시 지켜본다.
+                              rearm();
                             }}
                           />
                         )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { capture } from "@/lib/analytics";
 import { useFeedbackTriggers } from "@/contexts/FeedbackTriggerContext";
@@ -21,7 +21,7 @@ const MAX_LIFETIME_DISPATCHES = 240;
 
 type WatchableType = "comprehensive" | "keyword";
 
-function isInFlight(status: AnalysisStatus): boolean {
+export function isAnalysisInFlight(status: AnalysisStatus): boolean {
   return status === "pending" || status === "processing";
 }
 
@@ -39,6 +39,16 @@ interface Options {
   refresh: () => boolean | void | Promise<boolean | void>;
   /** 이번 갱신에서 완료로 관측된 항목들. 화면 알림(토스트)은 호출부가 정한다. */
   onCompleted?: (completed: AnalysisSnapshot[]) => void;
+}
+
+interface Result {
+  /**
+   * 사람이 방금 무언가를 걸었으니 예산을 처음부터 다시 세라. 자동 상한은 **지켜보는 사람이
+   * 없을 때** 무한 폴링을 막으려는 것이지, 버튼을 누른 사용자를 가두려는 게 아니다.
+   * (재시도 접수 직후 호출한다 — 그러지 않으면 상한에 닿은 화면에서 누른 재시도가
+   * 아무 반응도 없이 '진행 중'에 머문다.)
+   */
+  rearm: () => void;
 }
 
 /**
@@ -60,7 +70,7 @@ export function useAnalysisProgressWatch({
   startedId = null,
   refresh,
   onCompleted,
-}: Options): void {
+}: Options): Result {
   const triggers = useFeedbackTriggers();
 
   const refreshRef = useRef(refresh);
@@ -82,8 +92,14 @@ export function useAnalysisProgressWatch({
   const prevStatusRef = useRef<Map<string, AnalysisStatus> | null>(null);
   /** 완료를 이미 알린 id. 다시 진행 중으로 관측되면 지워 재발화를 허용한다. */
   const firedRef = useRef<Set<string>>(new Set());
-  /** 이 마운트에서 나간 갱신 요청 총계. 감시 대상이 바뀌어도 리셋하지 않는다. */
+  /** 이 마운트에서 나간 갱신 요청 총계. 감시 대상이 바뀌어도 리셋하지 않는다(사람이 rearm 하면 리셋). */
   const lifetimeDispatchesRef = useRef(0);
+  const [rearmEpoch, setRearmEpoch] = useState(0);
+
+  const rearm = useCallback(() => {
+    lifetimeDispatchesRef.current = 0;
+    setRearmEpoch((epoch) => epoch + 1);
+  }, []);
 
   useEffect(() => {
     const prev = prevStatusRef.current;
@@ -91,7 +107,7 @@ export function useAnalysisProgressWatch({
     const completed: AnalysisSnapshot[] = [];
 
     for (const item of items) {
-      if (isInFlight(item.status)) {
+      if (isAnalysisInFlight(item.status)) {
         // 재시도 등으로 다시 진행 중이 됐다 — 다음 완료는 새 완료다.
         // 판정을 호출부의 onRetried 타이밍에 결합시키지 않으려고 여기서 결정론적으로 지운다.
         fired.delete(item.id);
@@ -140,7 +156,7 @@ export function useAnalysisProgressWatch({
   // 예산은 "이 집합이 마지막으로 바뀐 시점"부터 센다. 집합이 바뀌었다는 건 서버가 실제로
   // 진행했거나 사용자가 방금 무언가를 걸었다는 뜻이라, 그때 다시 세는 게 맞다.
   const inFlightKey = items
-    .filter((item) => isInFlight(item.status))
+    .filter((item) => isAnalysisInFlight(item.status))
     .map((item) => item.id)
     .sort()
     .join(",");
@@ -189,5 +205,7 @@ export function useAnalysisProgressWatch({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [inFlightKey]);
+  }, [inFlightKey, rearmEpoch]);
+
+  return { rearm };
 }
