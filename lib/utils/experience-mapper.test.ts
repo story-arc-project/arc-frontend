@@ -336,6 +336,37 @@ describe("toExperienceV2", () => {
     }
   })
 
+  it("v2: FRT-177 로 폐기된 대외활동 '가장 중요했던 경험'(표 값)도 custom 으로 보존된다", () => {
+    // 확정본 정렬로 ② 가 개조식 2종 + 태그로 바뀌며 이 반복 블록이 사라졌다. 값이 있는
+    // 구 레코드는 표 값 통째로 '기타' 카드에 남아야 한다(무음 손실 금지).
+    const oldCell = {
+      type: "repeatable-cell" as const,
+      columns: [
+        { key: "title", label: "소제목", blockType: "text" as const },
+        { key: "detail", label: "설명", blockType: "textarea" as const },
+      ],
+      rows: [{ id: "row-1", cells: { title: "8월 캠페인", detail: "릴스 3편 제작" } }],
+    }
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "extracurricular",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "OO 서포터즈",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: { "extra-detail.가장 중요했던 경험": oldCell },
+          custom: [],
+        },
+      }),
+    )
+    const preserved = v2.customBlocks.find(b => b.key === "extra-detail.가장 중요했던 경험")
+    expect(preserved?.label).toBe("가장 중요했던 경험")
+    expect(preserved?.value).toEqual(oldCell)
+  })
+
   it("v2: 라운드트립에서 orphan 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
     const original = makeExperience({
       type: "academic-society",

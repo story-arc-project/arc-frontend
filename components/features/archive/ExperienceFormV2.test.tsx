@@ -281,3 +281,33 @@ describe("FRT-78 사용자 섹션 정렬·loose 편집 (Codex P2)", () => {
     expect(screen.getByRole("button", { name: "블록 편집" })).toBeInTheDocument()
   })
 })
+
+/**
+ * FRT-177 — 유형별 섹션 안내 문구(SECTION_DESCRIPTION_OVERRIDES) 배선.
+ * 문구가 상수에만 있고 카드에 안 걸리면 확정본 가이드가 사용자에게 도달하지 않는다.
+ */
+describe("FRT-177 섹션 안내 문구", () => {
+  it("대외활동은 활동 상세·미션 기록·활동 증빙 카드에 확정본 안내를 보여준다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectType(user)
+
+    expect(
+      screen.getByText(/개별 미션이나 프로젝트의 세부 내용은 아래/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/단위별로 기록해주세요/)).toBeInTheDocument()
+    expect(screen.getByText(/수료증, 위촉장, 활동 확인서/)).toBeInTheDocument()
+    // 유형 문구가 공통 기본 문구를 대체한다(둘이 겹쳐 나오지 않는다).
+    expect(screen.queryByText("선택 입력이에요. 채울수록 분석이 정확해져요")).toBeNull()
+  })
+
+  it("문구를 지정하지 않은 유형은 기존 공통 안내를 그대로 쓴다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await user.click(screen.getAllByRole("button", { name: "학회" })[0])
+
+    expect(
+      screen.getByText("선택 입력이에요. 채울수록 분석이 정확해져요"),
+    ).toBeInTheDocument()
+  })
+})

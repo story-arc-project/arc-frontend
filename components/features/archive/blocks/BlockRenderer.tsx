@@ -1,11 +1,12 @@
 "use client"
 
-import type { Block, BlockValue, RepeatableCellBlockValue } from "@/types/archive"
+import type { Block, BlockValue, ChecklistBlockValue, RepeatableCellBlockValue } from "@/types/archive"
 import TextBlock from "./TextBlock"
 import TextareaBlock from "./TextareaBlock"
 import DateBlock from "./DateBlock"
 import PeriodBlock from "./PeriodBlock"
 import ChecklistBlock from "./ChecklistBlock"
+import MoodTagBlock from "./MoodTagBlock"
 import SingleSelectBlock from "./SingleSelectBlock"
 import TagsBlock from "./TagsBlock"
 import LinkBlock from "./LinkBlock"
@@ -34,8 +35,15 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
         return <DateBlock block={block} readOnly={readOnly} onChange={handleChange} />
       case "period":
         return <PeriodBlock block={block} readOnly={readOnly} onChange={handleChange} />
-      case "checklist":
-        return <ChecklistBlock block={block} readOnly={readOnly} onChange={handleChange} />
+      case "checklist": {
+        // mood-tag 는 고정 프리셋 알약 UI(FRT-177). 옵션이 비어 있으면(구 레코드에서 옵션이
+        // 지워졌거나 손상된 값) 선택할 게 하나도 없는 빈 줄이 되므로, 옵션 관리가 가능한
+        // ChecklistBlock 으로 폴백해 사용자가 되살릴 수 있게 한다(OutcomeList 폴백과 동형).
+        const options = (block.value as ChecklistBlockValue).options
+        return block.variant === "mood-tag" && options.length > 0
+          ? <MoodTagBlock block={block} readOnly={readOnly} onChange={handleChange} />
+          : <ChecklistBlock block={block} readOnly={readOnly} onChange={handleChange} />
+      }
       case "single-select":
         return <SingleSelectBlock block={block} readOnly={readOnly} onChange={handleChange} />
       case "tags":

@@ -17,7 +17,7 @@ import type {
   ImportanceLevel,
   SectionCategory,
 } from "@/types/archive"
-import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
+import { SECTION_DESCRIPTION_OVERRIDES, SECTION_LABEL_OVERRIDES } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks, createEmptyRow, createGroupBlock, isBlockEmpty, uid } from "@/lib/utils/block-utils"
 import { capture } from "@/lib/analytics"
@@ -39,6 +39,22 @@ interface ExperienceFormV2Props {
   onVisibleSectionsChange?: (sections: { id: string; label: string }[]) => void
   /** 고정 카드 진행도(완료 카드 수/전체) 변경 알림. 값 입력마다 갱신된다. */
   onProgressChange?: (progress: { done: number; total: number }) => void
+}
+
+/** detail 카드의 공통 기본 안내 — 유형별 문구가 없을 때만 쓴다. */
+const DEFAULT_DETAIL_DESCRIPTION = "선택 입력이에요. 채울수록 분석이 정확해져요"
+
+/**
+ * 카드 안내 문구. 유형별 확정본 문구(SECTION_DESCRIPTION_OVERRIDES)가 있으면 그것을,
+ * 없으면 detail 카드에 한해 공통 문구를 쓴다(FRT-177 이전 동작 유지).
+ */
+function sectionDescription(
+  typeId: ExperienceTypeId | null,
+  category: SectionCategory,
+): string | undefined {
+  const override = typeId ? SECTION_DESCRIPTION_OVERRIDES[typeId]?.[category] : undefined
+  if (override) return override
+  return category === "detail" ? DEFAULT_DETAIL_DESCRIPTION : undefined
 }
 
 /**
@@ -520,7 +536,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
               blocks={card.blocks}
               optional={card.optional}
               showOptionalBadge={card.showOptionalBadge}
-              description={card.category === "detail" ? "선택 입력이에요. 채울수록 분석이 정확해져요" : undefined}
+              description={sectionDescription(typeId, card.category)}
               onChange={writeBackBlocks}
             />
           ))}

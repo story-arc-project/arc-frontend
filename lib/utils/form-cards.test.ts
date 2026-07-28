@@ -56,7 +56,7 @@ describe("computeFormCards", () => {
 
   it("dedup(career): core 역할/성과가 type 섹션 동의어와 중복이면 숨긴다", () => {
     // career 는 '직무 / 포지션'(role)·'나의 담당 업무 / 주요 성과'(achievement)를 앵커로 가져
-    // 비어있는 core 역할/기여도·핵심 성과를 숨긴다. (수업·대외활동은 성과 앵커가 없어 노출 — 알려진 한계)
+    // 비어있는 core 역할/기여도·핵심 성과를 숨긴다. (수업은 성과 앵커가 없어 CORE_EXCLUDE 로 제거)
     const { core, sections } = sectionsFor("career")
     const r = computeFormCards(core, sections)
     const all = r.cards.flatMap(c => c.blocks)
@@ -131,6 +131,38 @@ describe("computeFormCards", () => {
     const all = r.cards.flatMap(c => c.blocks).map(b => b.label)
     expect(all).toContain("배경/목표")
     expect(all).toContain("공개 설정")
+  })
+
+  // ── FRT-177: 대외활동이 확정본 4카드로 그려지는지 (문서 ①~④) ──
+  it("대외활동: 4카드가 모두 보이고 core 중복 필드는 유형 앵커에 흡수된다", () => {
+    const { core, sections } = sectionsFor("extracurricular")
+    const r = computeFormCards(core, sections)
+    expect(r.visibleCategories).toEqual(["basic", "detail", "repeat", "evidence"])
+
+    const all = r.cards.flatMap(c => c.blocks).map(b => b.label)
+    // core '기간'·'내 역할/기여도'는 '활동 기간'·'참여 역할 / 포지션' 동의어라 숨는다.
+    expect(all).not.toContain("기간")
+    expect(all).not.toContain("내 역할/기여도")
+    // core '핵심 성과'는 CORE_EXCLUDE 로 애초에 없다(② 주요 성과·③ 핵심 성과 컬럼이 대신 묻는다).
+    expect(all).not.toContain("핵심 성과")
+    // 문서 ④ 활동 증빙 = core 증빙 자료(파일+설명+증빙 유형).
+    expect(r.cards.find(c => c.category === "evidence")!.blocks.map(b => b.label)).toContain("증빙 자료")
+  })
+
+  it("대외활동 detail 카드는 확정본 ② 5필드 + 공개 설정만 갖는다", () => {
+    const { core, sections } = sectionsFor("extracurricular")
+    const r = computeFormCards(core, sections)
+    const labels = r.cards.find(c => c.category === "detail")!.blocks.map(b => b.label)
+    expect(labels).toEqual([
+      "지원 동기",
+      "활동 내용 요약",
+      "주요 미션 / 프로젝트",
+      "주요 성과",
+      "활동 성격",
+      "공개 설정",
+    ])
+    // 범용 확장(buildExtendedSection) 필드는 유형 전용 detail 이 있으므로 부재
+    expect(labels).not.toContain("배경/목표")
   })
 
   it("학회 템플릿: society-info 에 지원 동기가 없고 society-detail 에 참여 동기가 있다", () => {
