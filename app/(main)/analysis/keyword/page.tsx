@@ -115,6 +115,12 @@ export default function KeywordAnalysisPage() {
       await deleteKeywordAnalysis(deleteId);
       markLocalMutation();
       setItems((prev) => prev.filter((i) => i.id !== deleteId));
+      // 방금 지켜보던 분석을 지웠다면 표시부터 거둔다. 지워진 항목은 목록에 다시 나타나지
+      // 않으므로 `startedSettled` 가 영영 참이 되지 못하고, 쿼리가 URL 에 눌러앉아 새로고침할
+      // 때마다 돌아오지 않을 대상을 향한 감시가 처음부터 다시 시작된다.
+      if (deleteId === startedId) {
+        router.replace("/analysis/keyword", { scroll: false });
+      }
       setDeleteId(null);
     } catch {
       setDeleteError(true);

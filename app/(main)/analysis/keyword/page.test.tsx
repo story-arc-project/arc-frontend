@@ -273,3 +273,43 @@ describe("재시도도 '방금 내가 건 분석'이다 (codex 후속)", () => {
     expect(replace).toHaveBeenCalledWith("/analysis/keyword?started=a", { scroll: false });
   });
 });
+
+describe("지켜보던 분석을 지우면 표시부터 거둔다 (code-review 후속)", () => {
+  it("`?started=` 대상 카드를 삭제하면 쿼리를 지운다", async () => {
+    // 지워진 항목은 목록에 다시 나타나지 않는다. 표시를 그대로 두면 '아직 안 뜬 내 분석'으로
+    // 오인해 돌아오지 않을 대상을 계속 지켜보고, 쿼리가 URL 에 눌러앉아 새로고침할 때마다
+    // 그 헛된 감시가 처음부터 다시 시작된다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    deleteAnalysis.mockResolvedValue(undefined);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+    expect(replace).not.toHaveBeenCalled();
+
+    await click(screen.getByLabelText("삭제"));
+    await flush();
+    const dialog = screen.getByRole("dialog");
+    await click(within(dialog).getByRole("button", { name: "삭제" }));
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/keyword", { scroll: false });
+  });
+
+  it("다른 카드를 삭제하면 `?started=` 는 건드리지 않는다", async () => {
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "processing"), snap("b", "processing")]);
+    deleteAnalysis.mockResolvedValue(undefined);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    await click(screen.getAllByLabelText("삭제")[1]);
+    await flush();
+    const dialog = screen.getByRole("dialog");
+    await click(within(dialog).getByRole("button", { name: "삭제" }));
+    await flush();
+
+    expect(replace).not.toHaveBeenCalled();
+  });
+});
