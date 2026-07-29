@@ -276,7 +276,13 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
 
       {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
 
-      <div ref={listRef} className="border border-border rounded-md overflow-hidden">
+      {/* overflow-hidden 은 둥근 모서리 밖으로 새는 자식 배경을 자르지만, 역할 칩 드롭다운까지
+          잘라 등록된 역할이 반쯤 가려진다. 칩을 쓰는 블록만 열어두고 아래 '추가' 버튼에
+          rounded-b-md 를 줘서 hover 배경이 모서리를 넘지 않게 한다. */}
+      <div
+        ref={listRef}
+        className={`border border-border rounded-md ${block.roleTags ? "" : "overflow-hidden"}`}
+      >
         {displayRows.map((row, index) => (
           <div
             key={row.id}
@@ -322,7 +328,7 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
           <button
             type="button"
             onClick={addAtEnd}
-            className="flex min-h-11 w-full items-center justify-center gap-1 text-body-sm text-text-secondary transition-colors hover:bg-surface-secondary sm:min-h-9"
+            className="flex min-h-11 w-full items-center justify-center gap-1 rounded-b-md text-body-sm text-text-secondary transition-colors hover:bg-surface-secondary sm:min-h-9"
           >
             <Plus size={16} />
             {col?.label ?? "활동 / 성과"} 추가
