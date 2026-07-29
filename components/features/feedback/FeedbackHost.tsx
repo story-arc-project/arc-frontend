@@ -15,6 +15,7 @@ import {
 } from "@/lib/feedback/campaigns";
 import { submitFeedback } from "@/lib/feedback/transport";
 import type { FeedbackContext } from "@/lib/feedback/types";
+import type { AnalysisKind } from "@/lib/analytics";
 import { FeedbackModal } from "./FeedbackModal";
 
 // FRT-95: 인앱 피드백 모달의 **결합 지점**.
@@ -76,6 +77,41 @@ type TriggerSignal =
   | { kind: "experience"; count: number }
   | { kind: "analysis"; context: FeedbackContext };
 
+/** 완료를 관측할 수 있는 분석 종류 = 결과 경로의 두 번째 조각. individual 은 여기 없다. */
+const ANALYSIS_RESULT_KINDS: readonly AnalysisKind[] = ["comprehensive", "keyword"];
+
+/** `/analysis/(comprehensive|keyword)/<id>` 를 보고 있으면 그 분석의 메타를 준다. */
+function viewedAnalysis(pathname: string | null): FeedbackContext | null {
+  if (!pathname) return null;
+  const segments = pathname.split("/");
+  if (segments.length !== 4 || segments[1] !== "analysis") return null;
+  const analysisType = ANALYSIS_RESULT_KINDS.find((k) => k === segments[2]);
+  // `new` 는 생성 화면이지 분석 id 가 아니다(억제 경로라 여기까지 오지도 않지만, 오인하지 않는다).
+  if (!analysisType || !segments[3] || segments[3] === "new") return null;
+  return { analysisId: segments[3], analysisType };
+}
+
+/**
+ * 지연이 끝나 실제로 띄우는 순간, 질문의 대상을 **사용자가 보고 있는 분석**으로 맞춘다.
+ *
+ * 완료 관측이 대기 화면에서 목록으로 옮겨지면서(FRT-176) 신호를 낸 분석과 사용자가 열어본
+ * 분석이 갈릴 수 있게 됐다 — 한 번의 갱신에서 A·B 가 같이 완료되면 신호는 먼저 온 A 로
+ * 고정되는데(reportAnalysisCompleted 는 덮지 않는다) 사용자는 B 를 누를 수 있다. 그대로 두면
+ * "방금 이 분석"이라 물어놓고 payload 에는 A 의 id 가 실려, 어떤 결과에 대한 평가인지가 어긋난다.
+ * 대기 화면 시절에는 완료 즉시 그 분석의 상세로 보냈으므로 이 어긋남 자체가 없었다.
+ *
+ * 결과 화면 위라면 그 화면의 분석으로 귀속한다 — 질문이 가리키는 것과 payload 가 일치한다.
+ * 결과 화면이 아니면(문서화된 트레이드오프대로 다른 화면에서 뜨는 경우) 원래 신호를 그대로 둔다.
+ */
+function attributeToViewed(
+  signal: TriggerSignal,
+  pathname: string | null,
+): TriggerSignal {
+  if (signal.kind !== "analysis") return signal;
+  const viewed = viewedAnalysis(pathname);
+  return viewed ? { kind: "analysis", context: viewed } : signal;
+}
+
 export function FeedbackHost({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   // pending: 트리거는 걸렸지만 아직 띄울 때가 아님 / armed: 지연도 끝나 판정에 넘긴 신호.
@@ -121,7 +157,11 @@ export function FeedbackHost({ children }: { children: ReactNode }) {
     // 지연은 **지금 보고 있는 화면 기준**으로 다시 센다(deps 에 pathname). 트리거를 낸 화면에서
     // 곧바로 다른 곳으로 이동하면, 살아남은 타이머가 이제 막 열린 화면 위에 0.x초 만에 모달을
     // 띄운다 — "화면이 다 그려진 뒤에 말을 건다"는 이 지연의 존재 이유가 무너진다.
-    const timer = setTimeout(() => setArmed(pending), FEEDBACK_PROMPT_DELAY_MS);
+    // 같은 이유로 평가 **대상**도 여기서 확정한다 — 클로저의 pathname 은 늘 지금 보는 화면이다.
+    const timer = setTimeout(
+      () => setArmed(attributeToViewed(pending, pathname)),
+      FEEDBACK_PROMPT_DELAY_MS,
+    );
     return () => clearTimeout(timer);
   }, [pending, armed, suppressed, pathname]);
 

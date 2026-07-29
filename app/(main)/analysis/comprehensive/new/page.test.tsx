@@ -64,10 +64,11 @@ async function click(element: HTMLElement) {
 
 async function renderAndSelectTwo() {
   getExperiences.mockResolvedValue([exp("a"), exp("b")]);
-  render(<ComprehensiveNewPage />);
+  const view = render(<ComprehensiveNewPage />);
   await flush();
   await click(screen.getByText("경험 a"));
   await click(screen.getByText("경험 b"));
+  return view;
 }
 
 describe("새 종합 분석 — 걸어두고 목록으로 (FRT-176)", () => {
@@ -135,6 +136,29 @@ describe("새 종합 분석 — 걸어두고 목록으로 (FRT-176)", () => {
       settle({ analysisId: "comp-9" });
     });
     expect(createAnalysis).toHaveBeenCalledTimes(1);
+  });
+
+  it("응답이 오기 전에 화면을 떠나면, 뒤늦게 온 응답이 보던 화면을 빼앗지 않는다", async () => {
+    const { unmount } = await renderAndSelectTwo();
+    let settle!: (value: { analysisId: string | null }) => void;
+    createAnalysis.mockReturnValue(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    await flush();
+
+    // '목록으로' 링크나 전역 내비게이션으로 이탈 — 이 화면은 사라진다.
+    unmount();
+    await act(async () => {
+      settle({ analysisId: "comp-9" });
+    });
+
+    expect(push).not.toHaveBeenCalled();
+    // 시작했다는 사실 자체는 알린다 — 요청은 실제로 나갔고 분석은 돌고 있다.
+    expect(toastMock).toHaveBeenCalledTimes(1);
   });
 
   it("경험을 2개 미만 고르면 시작할 수 없다", async () => {

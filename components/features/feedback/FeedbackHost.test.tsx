@@ -231,6 +231,61 @@ describe("FeedbackHost", () => {
     expect(modal()).toBeInTheDocument();
   });
 
+  it("보류된 신호가 다른 분석 위에서 뜨면, 평가 대상을 그 화면의 분석으로 맞춘다", async () => {
+    // 한 번의 갱신에서 여러 건이 완료되면 신호는 먼저 온 an-1 로 고정된다(덮지 않는 규칙).
+    // 사용자가 comp-2 를 열면 "방금 이 분석"이라 물어놓고 payload 에는 an-1 이 실릴 수 있다.
+    nav.pathname = "/analysis/comprehensive";
+    const { rerender } = renderHost();
+    fire("분석보고");
+    await advance(FEEDBACK_PROMPT_DELAY_MS * 5);
+
+    nav.pathname = "/analysis/comprehensive/comp-2";
+    rerender(
+      <FeedbackHost>
+        <Triggers />
+      </FeedbackHost>,
+    );
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+
+    fireEvent.click(screen.getByRole("radio", { name: "별 4점" }));
+    fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+
+    expect(transport.submitFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerSource: "analysis_completed",
+        context: { analysisId: "comp-2", analysisType: "comprehensive" },
+      }),
+    );
+  });
+
+  it("결과 화면이 아닌 곳에서 뜨면 원래 완료 신호를 그대로 싣는다", async () => {
+    nav.pathname = "/dashboard";
+    renderHost();
+    fire("분석보고");
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+
+    fireEvent.click(screen.getByRole("radio", { name: "별 3점" }));
+    fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+
+    expect(transport.submitFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({ context: ANALYSIS }),
+    );
+  });
+
+  it("개별 분석 상세는 귀속 대상이 아니다 — 완료를 관측하지 않는 종류다", async () => {
+    nav.pathname = "/analysis/individual/ind-1";
+    renderHost();
+    fire("분석보고");
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+
+    fireEvent.click(screen.getByRole("radio", { name: "별 2점" }));
+    fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+
+    expect(transport.submitFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({ context: ANALYSIS }),
+    );
+  });
+
   it("이력서 편집기도 억제 대상이다(미저장 편집 상태를 든 화면)", async () => {
     nav.pathname = "/export/resume/v-1";
     renderHost();

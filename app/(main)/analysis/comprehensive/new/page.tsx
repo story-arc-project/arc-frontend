@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -41,6 +41,19 @@ export default function ComprehensiveNewPage() {
     fetchExperiences();
   }, [fetchExperiences]);
 
+  // 생성 요청이 도는 동안 사용자는 '목록으로'나 전역 내비게이션으로 떠날 수 있다. 그때 뒤늦게
+  // 도착한 응답이 router.push 를 부르면 보고 있던 화면을 빼앗아 목록으로 끌고 온다.
+  // 시작했다는 사실은 토스트로 알리되, **화면을 옮기는 건 이 화면에 남아 있을 때만** 한다.
+  // (초기값이 아니라 effect 본문에서 true 로 세운다 — StrictMode 이중 마운트에서 첫 정리가
+  //  false 로 내려놓은 뒤 다시 켜주는 곳이 없으면 영영 false 로 남는다.)
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // FRT-176: 분석을 걸면 기다리게 하지 않고 목록으로 보낸다.
   //
   // 예전에는 여기서 대기 화면을 띄우고 60초 예산으로 폴링하다가, 예산이 끝나면 "시간 초과"
@@ -53,6 +66,7 @@ export default function ComprehensiveNewPage() {
     try {
       const { analysisId: id } = await createComprehensiveAnalysis(selected);
       toast("분석을 시작했어요. 목록에서 진행 상황을 확인하세요.", "success");
+      if (!mountedRef.current) return;
       // 방금 만든 분석 id 를 목록에 알려준다 — 빨리 끝나는 분석은 목록의 첫 조회 시점에 이미
       // 완료라 '진행 중 → 완료' 전이가 없고, 그러면 완료 계측·피드백 트리거를 놓친다.
       // id 를 못 받는 레거시 응답(FRT-38)이면 추적 대상을 특정할 수 없어 그냥 목록으로 간다.
@@ -62,6 +76,7 @@ export default function ComprehensiveNewPage() {
           : "/analysis/comprehensive",
       );
     } catch {
+      if (!mountedRef.current) return;
       setSubmitting(false);
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
