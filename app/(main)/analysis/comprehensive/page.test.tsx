@@ -256,6 +256,40 @@ describe("종합 분석 목록 — 진행 중 감시와 완료 관측 (FRT-176)"
     expect(toastMock).not.toHaveBeenCalled();
   });
 
+  it("전경 재조회보다 먼저 떠난 폴링 응답은 뒤늦게 와도 버린다", async () => {
+    // `paused` 는 새 폴링 **예약**만 막는다 — 이미 날아간 요청은 되돌리지 못한다.
+    // 그 응답이 적용되면 완료가 '진행 중'으로 되돌아가고, 완료 기록이 지워져
+    // 같은 완료가 다음 폴링에서 다시 계측·알림된다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockRejectedValueOnce(new Error("network"));
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
+
+    // 목록이 비어 있어도 `?started=` 하나로 감시가 열린다 — 그 GET 을 응답 전에 붙잡는다.
+    const stalePoll = deferred<AnalysisSnapshot[]>();
+    getList.mockReturnValueOnce(stalePoll.promise);
+    await advance(5_000);
+    expect(getList).toHaveBeenCalledTimes(2);
+
+    // 그 사이 사용자가 '다시 시도' → 전경 응답이 먼저 도착한다.
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+    await click(screen.getByRole("button", { name: "다시 시도" }));
+    await flush();
+    expect(captureMock).toHaveBeenCalledTimes(1);
+
+    // 뒤늦게 도착한 낡은 스냅샷.
+    await act(async () => {
+      stalePoll.resolve([snap("a", "processing")]);
+    });
+
+    expect(screen.queryByText("분석 진행 중...")).not.toBeInTheDocument();
+    // 되돌아갔다면 다음 라운드에서 같은 완료가 한 번 더 세어진다.
+    await advance(5_000);
+    expect(captureMock).toHaveBeenCalledTimes(1);
+  });
+
   it("`?started=` 없이 들어오면 이미 완료된 목록만으로는 아무 신호도 내지 않는다", async () => {
     getList.mockResolvedValueOnce([snap("a", "completed"), snap("b", "completed")]);
 

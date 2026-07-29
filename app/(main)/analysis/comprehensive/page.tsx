@@ -30,10 +30,18 @@ export default function ComprehensiveAnalysisPage() {
   const [error, setError] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // 사용자가 목록을 직접 바꾼 횟수(삭제·즐겨찾기·재시도 낙관적 갱신).
-  // 폴링 GET 은 요청 시점의 서버 스냅샷을 들고 오므로, 그 사이 로컬 변경이 있었다면
-  // 응답이 도착했을 땐 이미 낡았다 — 그대로 적용하면 방금 지운 카드가 되살아나고
+  // "이 응답보다 **앞선 사실**이 이미 도착했다"를 세는 카운터.
+  //
+  // 폴링 GET 은 요청 시점의 서버 스냅샷을 들고 오므로, 그 사이에 더 새로운 사실이 화면에
+  // 반영됐다면 응답이 도착했을 땐 이미 낡았다 — 그대로 적용하면 방금 지운 카드가 되살아나고
   // '진행 중'으로 바꿔둔 카드가 '실패'로 되돌아가 중복 재시도를 유발한다.
+  //
+  // 올리는 곳이 둘이다: ① 사용자가 목록을 직접 바꿨을 때(삭제·즐겨찾기·재시도 낙관적 갱신),
+  // ② **전경 재조회를 시작했을 때**. ②를 빠뜨리면 초기 로드 실패 → 감시가 백그라운드 GET 을
+  // 이미 쏜 상태 → 사용자가 '다시 시도' → 전경 응답이 먼저 도착 → 뒤늦은 백그라운드 응답이
+  // 검사를 통과해 완료된 목록을 낡은 스냅샷으로 덮는다(되돌아간 '진행 중'이 완료 기록을 지워
+  // 같은 완료가 다시 계측·알림된다). `paused` 는 새 폴링 **예약**만 막지 이미 날아간 요청은
+  // 되돌리지 못하므로, 최신성 판정은 여기 한 곳에서 해야 한다.
   const mutationEpoch = useRef(0);
   const markLocalMutation = useCallback(() => {
     mutationEpoch.current += 1;
@@ -43,6 +51,8 @@ export default function ComprehensiveAnalysisPage() {
   const loadData = useCallback(async (options?: { background?: boolean }): Promise<boolean> => {
     const background = options?.background === true;
     if (!background) {
+      // 사용자가 기다리는 조회가 시작됐다 — 그 전에 날아간 백그라운드 응답은 모두 낡았다.
+      mutationEpoch.current += 1;
       setLoading(true);
       setError(false);
     }
