@@ -324,9 +324,12 @@ export default function ArchivePage() {
     )
   }, [createLibrary, runLibraryAction])
 
+  // 시스템 라이브러리("전체")는 클라이언트에서 합성한 항목이라 서버에 대응 행이 없다.
+  // LibraryDropdown 이 이름변경·삭제·색상 버튼을 렌더하지 않아 도달 경로는 없지만,
+  // handleMoveToLibrary 와 같은 수준으로 핸들러에서도 막는다.
   const handleRenameLibrary = useCallback((id: string, name: string) => {
     const library = libraries.find((item) => item.id === id)
-    if (!library) return
+    if (!library || library.isSystem) return
 
     runLibraryAction(
       updateLibrary(id, {
@@ -341,7 +344,7 @@ export default function ArchivePage() {
 
   const handleUpdateLibraryColor = useCallback((id: string, color: string) => {
     const library = libraries.find((item) => item.id === id)
-    if (!library) return
+    if (!library || library.isSystem) return
 
     runLibraryAction(
       updateLibrary(id, {
@@ -355,6 +358,9 @@ export default function ArchivePage() {
   }, [libraries, updateLibrary, runLibraryAction])
 
   const handleDeleteLibrary = useCallback((id: string) => {
+    const library = libraries.find((item) => item.id === id)
+    if (!library || library.isSystem) return
+
     runLibraryAction(
       deleteLibrary(id),
       "라이브러리를 삭제하지 못했어요",
@@ -365,7 +371,7 @@ export default function ArchivePage() {
         }
       },
     )
-  }, [clearFilters, deleteLibrary, runLibraryAction])
+  }, [clearFilters, deleteLibrary, libraries, runLibraryAction])
 
   const handleMoveToLibrary = useCallback((experienceId: string, libraryId: string) => {
     const library = libraries.find((item) => item.id === libraryId)

@@ -9,9 +9,6 @@ import type {
   LibraryFilter,
   Block,
   Preset,
-  Folder,
-  ExperienceWithFolder,
-  Template,
   ImportanceLevel,
 } from "@/types/archive"
 
@@ -213,52 +210,6 @@ export const samplePreset: Preset = {
   createdAt: "2025-04-01T00:00:00.000Z",
   updatedAt: "2025-05-01T00:00:00.000Z",
 }
-
-// ─── Legacy (ArchiveSidebar) fixtures ────────────────────────────────────────
-
-export const systemFolder: Folder = {
-  id: "folder-all",
-  name: "전체",
-  isSystem: true,
-}
-
-export const customFolder: Folder = {
-  id: "folder-custom-01",
-  name: "서류 준비",
-  isSystem: false,
-}
-
-export const sampleFolders: Folder[] = [systemFolder, customFolder]
-
-export const legacyTemplate: Template = {
-  id: "tmpl-career",
-  user_id: "system",
-  label: "경력",
-  is_system: true,
-  field_schema: [
-    { key: "company", label: "회사명", type: "text", required: true },
-    { key: "role", label: "직책", type: "text" },
-    { key: "period", label: "재직 기간", type: "period" },
-  ],
-}
-
-export const sampleTemplates: Template[] = [legacyTemplate]
-
-export const legacyExperience: ExperienceWithFolder = {
-  id: "legacy-exp-01",
-  user_id: "user-story-01",
-  templates_id: "tmpl-career",
-  raw_text: [
-    { key: "company", label: "회사명", value: "네이버" },
-    { key: "role", label: "직책", value: "소프트웨어 엔지니어" },
-    { key: "period", label: "재직 기간", value: "2022.07 ~ 재직 중" },
-  ],
-  created_at: "2025-01-10T09:00:00.000Z",
-  updated_at: "2025-06-01T14:30:00.000Z",
-  folderId: "folder-custom-01",
-}
-
-export const sampleLegacyExperiences: ExperienceWithFolder[] = [legacyExperience]
 
 // ─── Remaining block fixtures ────────────────────────────────────────────────
 

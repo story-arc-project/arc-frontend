@@ -430,54 +430,6 @@ export interface Preset {
 
 // ─── Legacy types (kept for migration reference, will be removed) ──
 
-/** @deprecated Use Block with type 'text' instead */
-export interface RawTextField {
-  key: string
-  label: string
-  value: string
-}
-
-/** @deprecated Use TemplateV2 instead */
-export interface TemplateField {
-  key: string
-  label: string
-  type: 'text' | 'textarea' | 'period' | 'select'
-  required?: boolean
-  options?: string[]
-  placeholder?: string
-}
-
-/** @deprecated Use TemplateV2 instead */
-export interface Template {
-  id: string
-  user_id: string
-  label: string
-  field_schema: TemplateField[]
-  is_system?: boolean
-}
-
-/** @deprecated Use ExperienceV2 instead */
-export interface Experience {
-  id: string
-  user_id: string
-  templates_id: string
-  raw_text: RawTextField[]
-  created_at: string
-  updated_at: string
-}
-
-/** @deprecated Use ExperienceV2 instead */
-export interface ExperienceWithFolder extends Experience {
-  folderId: string
-}
-
-/** @deprecated Use Library instead */
-export interface Folder {
-  id: string
-  name: string
-  isSystem: boolean
-}
-
 /** @deprecated Use Block system instead */
 export type CustomFieldType = 'text' | 'textarea' | 'date' | 'file'
 
