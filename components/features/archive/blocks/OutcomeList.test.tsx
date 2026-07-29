@@ -438,6 +438,20 @@ describe("OutcomeList — 프로젝트로 연결 (FRT-76)", () => {
     expect(screen.getByRole("button", { name: "회장 역할 태그 해제" })).toBeInTheDocument()
   })
 
+  it("연결된 제목을 설정된 titleColumnKey 로 조회한다(첫 컬럼이 아니라)", () => {
+    // 쓰기(createProjectRow)는 titleColumnKey 에 넣는데 읽기가 columns[0] 을 보면
+    // "제목 컬럼 = 첫 컬럼"이라는 우연에 기대게 된다. 동아리 ③ 은 첫 컬럼이 역할 칩이라
+    // 그 전제가 깨지고 제목 자리에 역할 태그가 나온다.
+    const getProjectRow = vi.fn(() => ({ title: "봄 정기 공연" }))
+    render(
+      <LinkHarness
+        initial={makeLinkBlock([{ id: "r0", item: "A", linkedProjectRowId: "proj-1" }])}
+        ctx={makeCtx({ getProjectRow })}
+      />,
+    )
+    expect(getProjectRow).toHaveBeenCalledWith("society-projects", "name", "proj-1")
+  })
+
   it("대상 프로젝트가 사라지면(stale) 링크 버튼으로 복귀한다", () => {
     render(
       <LinkHarness

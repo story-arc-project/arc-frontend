@@ -300,12 +300,12 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       )
       return row.id
     },
-    getProjectRow(targetSectionId, projectRowId) {
+    getProjectRow(targetSectionId, titleColumnKey, projectRowId) {
       const found = findProjectBlock(targetSectionId)
       const row = found?.value.rows.find(r => r.id === projectRowId)
       if (!row) return null
-      const firstColKey = found!.value.columns[0]?.key
-      const cell = firstColKey ? row.cells[firstColKey] : ""
+      // 쓰기와 같은 컬럼에서 읽는다(첫 컬럼이 아니라) — createProjectRow 와 대칭.
+      const cell = row.cells[titleColumnKey]
       const title = Array.isArray(cell) ? cell.join(", ") : (cell ?? "")
       return { title }
     },

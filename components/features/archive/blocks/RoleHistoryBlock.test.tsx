@@ -145,6 +145,24 @@ describe("RoleHistoryBlock", () => {
     expect(renameRole).not.toHaveBeenCalled()
   })
 
+  it("이름을 지운 뒤 그 행을 삭제하면 지우기 전 이름으로 태그를 정리한다", async () => {
+    // 비운 채로는 전파하지 않지만, 이어서 행을 지우는 건 명시적 확정이다. 이때 셀은 이미
+    // 비어 있어 지울 이름을 셀에서 읽을 수 없다 — 마지막으로 유효했던 이름을 기억해 둬야
+    // 태그가 영영 고아로 남지 않는다.
+    const user = userEvent.setup()
+    const removeRole = vi.fn()
+    render(<Harness initial={[{ role: "회장" }]} ctx={{ removeRole }} />)
+
+    await user.clear(screen.getByLabelText("역할명"))
+    await user.tab()
+    expect(removeRole).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole("button", { name: "역할 삭제" }))
+
+    expect(removeRole).toHaveBeenCalledTimes(1)
+    expect(removeRole).toHaveBeenCalledWith("회장")
+  })
+
   it("역할 행을 지우면 remove 를 전파한다", async () => {
     const user = userEvent.setup()
     const removeRole = vi.fn()

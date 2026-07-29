@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Plus } from "lucide-react"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 import { createEmptyRow } from "@/lib/utils/block-utils"
@@ -63,6 +63,19 @@ export default function RoleHistoryBlock({ block, readOnly, onChange }: RoleHist
   }
 
   /**
+   * 행별 '마지막으로 유효했던 역할명'. 이름을 비운 뒤 그 행을 지우면 셀에서는 지울 이름을
+   * 읽을 수 없어(빈 문자열) 태그가 영영 고아로 남는다 — 그때 쓰려고 들고 있는다.
+   * 커밋 이후에 기록하므로 삭제 클릭 시점에는 항상 직전 유효값이 들어 있다.
+   */
+  const lastNamesRef = useRef<Map<string, string>>(new Map())
+  useEffect(() => {
+    for (const r of rows) {
+      const name = roleOf(r)
+      if (name) lastNamesRef.current.set(r.id, name)
+    }
+  }, [rows])
+
+  /**
    * 그 이름을 아직 다른 행이 갖고 있는가. 같은 역할명이 두 행에 걸칠 수 있으므로
    * (예: 회장 재선출로 2023·2024 두 시기 모두 '회장') 남아 있으면 전파하지 않는다 —
    * 그러지 않으면 아직 유효한 역할의 태그까지 함께 지워지거나 이름이 바뀐다.
@@ -114,8 +127,9 @@ export default function RoleHistoryBlock({ block, readOnly, onChange }: RoleHist
 
   /** 행 삭제는 명시적 확정이라 즉시 전파한다(타이핑 중간 상태와 달리 되돌릴 여지가 없다). */
   function removeRow(rowId: string) {
-    const name = roleOfId(rowId)
+    const name = roleOfId(rowId) || lastNamesRef.current.get(rowId) || ""
     if (ctx && name && !heldByOtherRow(name, rowId)) ctx.removeRole(name)
+    lastNamesRef.current.delete(rowId)
     commit(rows.filter(r => r.id !== rowId))
   }
 

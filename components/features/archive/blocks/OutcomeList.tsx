@@ -181,7 +181,9 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
     if (!linkEnabled || !linkConfig || !projectLink) return null
     const linkedId = row.linkedProjectRowId
     // 대상 프로젝트가 실제로 존재할 때만 '연결됨'. 삭제됐으면(stale) 링크 버튼으로 복귀.
-    const linked = linkedId ? projectLink.getProjectRow(linkConfig.targetSectionId, linkedId) : null
+    const linked = linkedId
+      ? projectLink.getProjectRow(linkConfig.targetSectionId, linkConfig.titleColumnKey, linkedId)
+      : null
     // 빈/공백 행에서는 링크 버튼을 숨긴다 — 제목 없는 프로젝트 행 생성을 원천 차단.
     if (!linkedId && !textOf(row).trim()) return null
     if (linkedId && linked) {

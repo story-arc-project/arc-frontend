@@ -390,6 +390,23 @@ describe("FRT-178 동아리 역할 태그 동기화", () => {
     expect(screen.queryByRole("button", { name: "회장 역할 태그 해제" })).toBeNull()
   })
 
+  it("활동을 프로젝트로 기록하면 연결 제목이 역할이 아니라 프로젝트명이다", async () => {
+    // ③ 표의 첫 컬럼이 역할 칩이라, 제목을 columns[0] 에서 읽으면 빈 값이거나 역할 태그가 나온다.
+    // 쓰기(createProjectRow)와 같은 컬럼(titleColumnKey='name')에서 읽어야 한다.
+    const user = userEvent.setup()
+    renderForm()
+    await selectClub(user)
+
+    await user.type(
+      screen.getByPlaceholderText("예: 2024 봄 정기 공연 / 신입 부원 모집 캠페인 기획"),
+      "봄 정기 공연",
+    )
+    await user.click(screen.getByRole("button", { name: "프로젝트로 기록" }))
+
+    const linked = screen.getAllByRole("button", { name: /연결됨/ })[0]
+    expect(linked).toHaveAttribute("title", "봄 정기 공연")
+  })
+
   it("역할 행을 지우면 붙어 있던 태그도 사라진다", async () => {
     const user = userEvent.setup()
     renderForm()
