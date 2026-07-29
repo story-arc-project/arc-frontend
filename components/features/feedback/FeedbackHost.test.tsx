@@ -258,6 +258,60 @@ describe("FeedbackHost", () => {
     );
   });
 
+  it("모달이 뜬 뒤 다른 결과로 옮겨 보내면, 보낼 때 보던 결과로 나간다", async () => {
+    // 귀속을 '뜨는 순간'에 얼려두면, 노출 기록을 기다리는 사이나 모달이 떠 있는 동안
+    // 화면을 옮긴 사용자에게 화면은 C 인데 평가는 B 로 나가는 어긋남이 남는다.
+    nav.pathname = "/analysis/comprehensive/comp-b";
+    const { rerender } = renderHost();
+    fire("분석보고");
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+    expect(modal()).toBeInTheDocument();
+
+    nav.pathname = "/analysis/keyword/kw-c";
+    rerender(
+      <FeedbackHost>
+        <Triggers />
+      </FeedbackHost>,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "별 5점" }));
+    fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+
+    expect(transport.submitFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: { analysisId: "kw-c", analysisType: "keyword" },
+      }),
+    );
+  });
+
+  it("끝에 슬래시가 붙은 목록 경로도 억제한다", async () => {
+    // next.config 가 skipTrailingSlashRedirect 를 켜 둬서 정규화가 보장되지 않는다.
+    nav.pathname = "/analysis/comprehensive/";
+    renderHost();
+    fire("분석보고");
+
+    await advance(FEEDBACK_PROMPT_DELAY_MS * 5);
+
+    expect(modal()).not.toBeInTheDocument();
+    expect(server.markFeedbackPromptShown).not.toHaveBeenCalled();
+  });
+
+  it("끝에 슬래시가 붙은 결과 경로도 그 분석으로 귀속한다", async () => {
+    nav.pathname = "/analysis/keyword/kw-9/";
+    renderHost();
+    fire("분석보고");
+    await advance(FEEDBACK_PROMPT_DELAY_MS);
+
+    fireEvent.click(screen.getByRole("radio", { name: "별 5점" }));
+    fireEvent.click(screen.getByRole("button", { name: "보내기" }));
+
+    expect(transport.submitFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: { analysisId: "kw-9", analysisType: "keyword" },
+      }),
+    );
+  });
+
   it("결과 화면이 아닌 곳에서 뜨면 원래 완료 신호를 그대로 싣는다", async () => {
     nav.pathname = "/dashboard";
     renderHost();
