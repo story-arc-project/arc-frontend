@@ -956,3 +956,88 @@ describe("빈 사용자 섹션 prune (FRT-78)", () => {
     expect(custom[0].entryType === "section" && custom[0].label).toBe("빈 섹션")
   })
 })
+
+/**
+ * FRT-179 는 자격증에서 섹션을 통째로 없앤다(구 'cert-applied' 반복 기록). 필드를 추가·개명하는
+ * 다른 확정본 정렬과 달리, 표(repeatable-cell)와 파일 첨부가 통째로 템플릿에서 사라지는 형태라
+ * orphan 안전망이 실제로 그 값을 지키는지 여기서 못 박는다.
+ */
+describe("폐기 섹션 값 보존 (FRT-179 자격증)", () => {
+  const RETIRED_TABLE_KEY = "cert-applied.실무 적용 사례"
+  const RETIRED_FILE_KEY = "cert-applied.자격증 증빙"
+  const RETIRED_FIELD_KEY = "cert-info.자격 번호"
+
+  function retiredCertContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "정보처리기사",
+      summary: "",
+      status: "complete",
+      tags: [],
+      fields: {
+        "cert-info.자격증명": text("정보처리기사"),
+        [RETIRED_FIELD_KEY]: text("24201234567A"),
+        [RETIRED_TABLE_KEY]: {
+          type: "repeatable-cell",
+          columns: [
+            { key: "situation", label: "적용 상황/프로젝트명", blockType: "text", required: true },
+            { key: "work", label: "내가 한 일", blockType: "textarea" },
+          ],
+          rows: [{ id: "r1", cells: { situation: "사내 배치 자동화", work: "쿼리 튜닝" } }],
+        },
+        [RETIRED_FILE_KEY]: {
+          type: "file",
+          fileName: "cert.pdf",
+          description: "합격증",
+          evidenceType: "합격증",
+        },
+        // 빈 폐기 필드 — '기타' 카드에 빈 레거시 필드가 쌓이면 안 된다.
+        "cert-info.학습 방식": { type: "single-select", selected: "" },
+      },
+      custom: [],
+    }
+  }
+
+  it("템플릿에서 사라진 표·파일·필드 값이 customBlocks 로 보존된다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({ type: "certification", content: retiredCertContent() }),
+    )
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    const table = byKey(RETIRED_TABLE_KEY)
+    expect(table?.type).toBe("repeatable-cell")
+    expect(table?.value.type === "repeatable-cell" && table.value.rows[0].cells.situation).toBe(
+      "사내 배치 자동화",
+    )
+
+    const file = byKey(RETIRED_FILE_KEY)
+    expect(file?.type).toBe("file")
+    expect(file?.value.type === "file" && file.value.fileName).toBe("cert.pdf")
+
+    expect(byKey(RETIRED_FIELD_KEY)?.value).toEqual(text("24201234567A"))
+    // 현행 템플릿이 소비하는 키는 orphan 으로 중복되지 않는다.
+    expect(byKey("cert-info.자격증명")).toBeUndefined()
+    // 빈 폐기 필드는 승격하지 않는다.
+    expect(byKey("cert-info.학습 방식")).toBeUndefined()
+  })
+
+  it("보존된 값이 재저장 왕복에도 살아남는다 (무음 손실 없음)", () => {
+    const first = toExperienceV2(
+      makeExperience({ type: "certification", content: retiredCertContent() }),
+    )
+    const payload = toSavePayload(first)
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom.map(e => e.key)).toEqual(
+      expect.arrayContaining([RETIRED_TABLE_KEY, RETIRED_FILE_KEY, RETIRED_FIELD_KEY]),
+    )
+
+    const reloaded = toExperienceV2(
+      makeExperience({ type: "certification", content: payload.content }),
+    )
+    const table = reloaded.customBlocks.find(b => b.key === RETIRED_TABLE_KEY)
+    expect(table?.value.type === "repeatable-cell" && table.value.rows[0].cells.work).toBe(
+      "쿼리 튜닝",
+    )
+  })
+})

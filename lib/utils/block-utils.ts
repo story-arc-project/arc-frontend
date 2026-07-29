@@ -123,7 +123,16 @@ export function createLinkField(label: string, opts?: { required?: boolean; plac
   return createBlock('link', label, opts)
 }
 
-export function createFileField(label: string, opts?: { required?: boolean; guide?: string }): Block {
+/**
+ * 증빙 파일 첨부. FileBlockValue 는 파일 자체 외에 설명·증빙 유형을 함께 담으므로
+ * '파일 설명'·'증빙 유형'을 별도 블록으로 만들면 같은 입력칸이 두 벌 생긴다.
+ * `options` 를 주면 증빙 유형이 자유 입력 대신 드롭다운이 된다(FRT-179 자격증) — 유형마다
+ * 고를 수 있는 증빙이 다르므로 템플릿이 정한다. 안 주면 기존대로 자유 입력이다.
+ */
+export function createFileField(
+  label: string,
+  opts?: { required?: boolean; guide?: string; options?: string[] },
+): Block {
   return createBlock('file', label, opts)
 }
 

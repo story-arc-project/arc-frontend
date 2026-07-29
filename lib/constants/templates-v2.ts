@@ -68,17 +68,30 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   club: ['핵심 성과'],
   education: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
   extracurricular: ['핵심 성과'],
+  // 자격증 확정본은 취득일 하나로 시점을 받는다 — required 인 '기간'을 함께 두면 시작·종료를
+  // 억지로 묻게 된다. 역할·성과도 확정본에 없다(② 취득 배경이 대신 묻는다).
+  certification: ['기간', '내 역할/기여도', '핵심 성과'],
+}
+
+/**
+ * core '증빙 자료'의 증빙 유형 선택지 (FRT-179). FileBlockValue 가 파일과 함께 담는
+ * `evidenceType` 은 기본적으로 자유 입력인데, 확정본이 선택지를 정한 유형만 드롭다운으로 좁힌다.
+ * 무엇이 증빙이 되는지는 유형마다 다르므로 공통 상수가 아니라 유형별 맵이다.
+ */
+const CORE_EVIDENCE_OPTIONS: Partial<Record<ExperienceTypeId, string[]>> = {
+  certification: ['합격증/자격증 사본', '성적표/점수 확인서', '발급 확인서', '기타'],
 }
 
 function buildCommonCore(typeId?: ExperienceTypeId): TemplateSection {
   const exclude = new Set(typeId ? CORE_EXCLUDE[typeId] ?? [] : [])
+  const evidenceOptions = typeId ? CORE_EVIDENCE_OPTIONS[typeId] : undefined
   const blocks = [
     createTextField('경험명', { required: true, placeholder: '경험의 이름을 입력하세요' }),
     { ...createPeriodField('기간', { required: true }), category: 'basic' as SectionCategory },
     createTextField('한 줄 요약', { placeholder: '이 경험을 한 줄로 요약해주세요' }),
     { ...createTextareaField('내 역할/기여도', { placeholder: '내가 맡은 역할과 기여한 부분을 작성해주세요' }), category: 'detail' as SectionCategory },
     { ...createTextareaField('핵심 성과', { placeholder: '주요 성과나 결과를 작성해주세요' }), category: 'detail' as SectionCategory },
-    { ...createFileField('증빙 자료'), category: 'evidence' as SectionCategory },
+    { ...createFileField('증빙 자료', { options: evidenceOptions }), category: 'evidence' as SectionCategory },
   ].filter(b => !exclude.has(b.label))
   return {
     id: 'core',
@@ -1075,6 +1088,36 @@ function awardExtensions(): TemplateSection[] {
   ]
 }
 
+/** 자격증 분야 20종 — 확정본 표기 그대로. 대표 자격증을 괄호로 병기한 항목이 있다. */
+const CERTIFICATION_FIELD_OPTIONS = [
+  'IT/개발',
+  '데이터/AI',
+  '정보보안/네트워크',
+  '금융/투자(CFA 등)',
+  '회계/세무(CPA 등)',
+  '경영/마케팅',
+  '디자인/크리에이티브(GTQ 등)',
+  '법률/노무',
+  '부동산/공인중개',
+  '무역/물류',
+  '기계/전기/전자',
+  '건축/토목/안전',
+  '화학/환경',
+  '의료/보건',
+  '교육/상담',
+  '무도/체육',
+  '서비스/조리/미용',
+  '운전/중장비',
+  '공무원/국가고시',
+  '기타',
+] as const
+
+// 자격증 확정본(2026-07) — ① 자격증 정보 · ② 취득 배경 · ③ 자격증 증빙.
+// ⚠️ 다른 유형과 달리 **반복 기록 섹션이 없다.** 구 'cert-applied'(실무 적용 사례 표 + 자격증
+// 증빙 파일)를 통째로 없앤 결과이며, 그 값은 orphanFieldsToBlocks 가 '기타' 카드로 보존한다
+// (lib/utils/experience-mapper.test.ts '폐기 섹션 값 보존' 참고).
+// ③ 자격증 증빙은 별도 섹션을 만들지 않는다 — core '증빙 자료' FileBlock 이 파일·설명·증빙
+// 유형을 이미 함께 담으므로, 확정본의 세 항목이 그 한 블록으로 충족된다(CORE_EVIDENCE_OPTIONS).
 function certificationExtensions(): TemplateSection[] {
   return [
     {
@@ -1082,29 +1125,54 @@ function certificationExtensions(): TemplateSection[] {
       category: 'basic',
       label: '자격증 정보',
       blocks: [
-        createTextField('자격증명', { required: true }),
-        createTextField('발급 기관', { required: true }),
-        createDateField('취득일'),
-        createTextField('유효기간/갱신 필요 여부'),
-        createTextField('자격 번호'),
-        createTextField('성적/등급'),
-        createPeriodField('준비 기간'),
-        createSelectField('학습 방식', ['강의', '독학', '스터디', '부트캠프']),
-        createLinkField('핵심 공부 자료'),
+        createTextField('자격증명', {
+          required: true,
+          guide: '취득한 자격증의 정확한 이름을 적어주세요.',
+          placeholder: '예: 정보처리기사, ADsP, CFA Level 1',
+        }),
+        createSelectField('자격증 분야', [...CERTIFICATION_FIELD_OPTIONS], {
+          required: true,
+          guide:
+            '이 자격증이 속한 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
+        }),
+        createTextField('등급/급수', {
+          guide: '등급, 급수, 레벨 등이 있다면 적어주세요.',
+          placeholder: '예: 1급, 필기 합격, Level 1',
+        }),
+        createTextField('발급 기관', {
+          required: true,
+          guide: '이 자격증을 발급한 기관을 적어주세요.',
+          placeholder: '예: 한국산업인력공단, 한국데이터산업진흥원',
+        }),
+        createDateField('취득일', {
+          required: true,
+          guide: '자격증을 취득한 날짜를 선택해주세요.',
+        }),
+        createDateField('유효기간', {
+          guide: '유효기간이 있는 자격증이라면 만료일을 적어주세요.',
+        }),
       ],
     },
     {
-      id: 'cert-applied',
-      category: 'repeat',
-      label: '실무 적용 사례',
-      collapsed: true,
+      id: 'cert-background',
+      category: 'detail',
+      label: '취득 배경',
       blocks: [
-        createRepeatableCell('실무 적용 사례', [
-          { key: 'situation', label: '적용 상황/프로젝트명', blockType: 'text', required: true },
-          { key: 'work', label: '내가 한 일', blockType: 'textarea' },
-          { key: 'result', label: '결과/효과', blockType: 'textarea' },
-        ]),
-        createFileField('자격증 증빙'),
+        createTextareaField('취득 동기', {
+          guide: '이 자격증을 취득하게 된 이유나 배경을 적어주세요.',
+          placeholder:
+            '예: 데이터 분석 직무 전환을 준비하면서 관련 지식의 체계화가 필요하다고 판단해 취득했습니다.',
+        }),
+        createTextareaField('준비 기간/방법', {
+          guide: '얼마나 준비했고 어떻게 공부했는지 간단히 적어주세요.',
+          placeholder:
+            '예: 3개월간 실무 병행하며 준비, 퇴근 후 매일 2시간씩 기출 위주로 학습 — 특히 OO 과목이 약해 반복 회독으로 보완.',
+        }),
+        createTextareaField('활용 계획', {
+          guide: '이 자격증을 앞으로 어떻게 활용할 계획인가요?',
+          placeholder:
+            '예: 데이터 분석 직무 지원 시 실무 역량 증빙으로 활용하고, 추후 ADP 상위 자격증 취득으로 이어갈 계획입니다.',
+        }),
       ],
     },
   ]

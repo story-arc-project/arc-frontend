@@ -270,6 +270,7 @@ export const SECTION_LABEL_OVERRIDES: Partial<
 > = {
   'academic-society': { repeat: '프로젝트 기록' },
   'career': { repeat: '프로젝트 / 담당 업무 기록' },
+  'certification': { detail: '취득 배경', evidence: '자격증 증빙' },
   'club': { detail: '활동 상세', repeat: '활동 / 이벤트 기록' },
   'education': { detail: '수업 상세', repeat: '프로젝트 / 과제 / 제작물 기록' },
   'extracurricular': { detail: '활동 상세', repeat: '미션 / 프로젝트 기록' },
@@ -283,6 +284,11 @@ export const SECTION_LABEL_OVERRIDES: Partial<
 export const SECTION_DESCRIPTION_OVERRIDES: Partial<
   Record<ExperienceTypeId, Partial<Record<SectionCategory, string>>>
 > = {
+  'certification': {
+    detail:
+      '전부 선택 항목이지만, 이 중 하나만 채워도 이후 AI 분석과 자기소개서·이력서 문장 추천의 품질이 크게 달라져요.',
+    evidence: '자격증 사본이나 취득 증명 자료를 첨부해주세요.',
+  },
   'club': {
     detail:
       "이 동아리에서의 활동을 정리해주세요. 개별 이벤트나 프로젝트의 세부 내용은 아래 '활동 / 이벤트 기록'에서 따로 기록할 수 있어요.",

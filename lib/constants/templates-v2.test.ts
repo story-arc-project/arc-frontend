@@ -453,4 +453,108 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     expect(block.guide).toContain("사수, 매니저")
     expect(block.placeholder).toContain("위클리 미팅")
   })
+
+  // ─── 자격증 (FRT-179) ───
+  // 확정본은 ① 자격증 정보 · ② 취득 배경 · ③ 자격증 증빙 3섹션이고 **반복 기록 섹션이 없다**.
+  // 다른 유형과 달리 필드 추가가 아니라 섹션을 하나 없애는 구조 변경이라 회귀 위험이 크다.
+
+  it("자격증 ① 은 문서 6필드 순서 그대로다", () => {
+    const info = sectionsOf("certification")[0]
+    expect(info.category).toBe("basic")
+    expect(labelsIn(info.blocks)).toEqual([
+      "자격증명",
+      "자격증 분야",
+      "등급/급수",
+      "발급 기관",
+      "취득일",
+      "유효기간",
+    ])
+    // 문서에서 '(선택, 필드 삭제 가능)' 표기가 없는 4개가 필수다.
+    expect(info.blocks.filter(b => b.required).map(b => b.label)).toEqual([
+      "자격증명",
+      "자격증 분야",
+      "발급 기관",
+      "취득일",
+    ])
+    expect(info.blocks.find(b => b.label === "취득일")?.type).toBe("date")
+    expect(info.blocks.find(b => b.label === "유효기간")?.type).toBe("date")
+  })
+
+  it("자격증 분야 선택지는 문서 표기 20종을 그대로 쓴다", () => {
+    const field = sectionsOf("certification")[0].blocks.find(b => b.label === "자격증 분야")!
+    expect(field.type).toBe("single-select")
+    expect(field.options).toHaveLength(20)
+    expect(field.options?.[0]).toBe("IT/개발")
+    expect(field.options).toContain("금융/투자(CFA 등)")
+    expect(field.options).toContain("디자인/크리에이티브(GTQ 등)")
+    expect(field.options?.at(-1)).toBe("기타")
+  })
+
+  it("자격증 ② 취득 배경은 문서 3필드이고 전부 여러 줄 입력이다", () => {
+    const detail = detailOf("certification")!
+    expect(labelsIn(detail.blocks)).toEqual(["취득 동기", "준비 기간/방법", "활용 계획"])
+    expect(detail.blocks.every(b => b.type === "textarea")).toBe(true)
+  })
+
+  it("자격증은 반복 기록 섹션이 없다 — '실무 적용 사례' 표는 확정본에 없다", () => {
+    expect(repeatOf("certification")).toBeUndefined()
+    const labels = sectionsOf("certification").flatMap(s => labelsIn(s.blocks))
+    expect(labels).not.toContain("실무 적용 사례")
+  })
+
+  it("자격증 증빙은 core 증빙 자료 한 곳뿐 — 증빙 유형은 문서 4종 드롭다운이다", () => {
+    // FileBlock 이 이미 파일+설명+증빙 유형을 담으므로 별도 '파일 설명'·'증빙 유형' 블록을
+    // 만들면 같은 입력칸이 두 벌 생긴다. 학회와 같은 원칙 — 증빙은 한 곳뿐.
+    const sectionLabels = sectionsOf("certification").flatMap(s => labelsIn(s.blocks))
+    expect(sectionLabels).not.toContain("자격증 증빙")
+    expect(sectionLabels).not.toContain("증빙 유형")
+    expect(sectionLabels).not.toContain("파일 설명")
+
+    const evidence = getTemplateForType("certification").commonCore.blocks.find(
+      b => b.label === "증빙 자료",
+    )!
+    expect(evidence.options).toEqual([
+      "합격증/자격증 사본",
+      "성적표/점수 확인서",
+      "발급 확인서",
+      "기타",
+    ])
+  })
+
+  it("자격증은 core 기간·역할/기여도·핵심 성과를 노출하지 않는다 (확정본에 없다)", () => {
+    const coreLabels = getTemplateForType("certification").commonCore.blocks.map(b => b.label)
+    expect(coreLabels).not.toContain("기간")
+    expect(coreLabels).not.toContain("내 역할/기여도")
+    expect(coreLabels).not.toContain("핵심 성과")
+    // 증빙 자료는 남긴다 — ③ 자격증 증빙 카드가 이 블록이다.
+    expect(coreLabels).toContain("증빙 자료")
+  })
+
+  it("자격증은 유형 전용 detail 섹션을 소유한다 (extended 는 공개 설정만)", () => {
+    expect(detailOf("certification")).toBeDefined()
+    const ext = getTemplateForType("certification").extensions.find(s => s.id === "extended")!
+    expect(ext.blocks.map(b => b.label)).toEqual(["공개 설정"])
+  })
+
+  it("자격증 모든 입력 필드에 가이드라인이 붙어 있다", () => {
+    for (const s of sectionsOf("certification")) {
+      for (const b of s.blocks) {
+        expect(b.guide, `${s.id}/${b.label}`).toBeTruthy()
+      }
+    }
+  })
+
+  it("확정본에 없는 구 필드는 템플릿에서 사라진다 (값은 매퍼가 orphan 으로 보존)", () => {
+    const labels = sectionsOf("certification").flatMap(s => labelsIn(s.blocks))
+    for (const gone of [
+      "자격 번호",
+      "학습 방식",
+      "핵심 공부 자료",
+      "준비 기간",
+      "성적/등급",
+      "유효기간/갱신 필요 여부",
+    ]) {
+      expect(labels, gone).not.toContain(gone)
+    }
+  })
 })
