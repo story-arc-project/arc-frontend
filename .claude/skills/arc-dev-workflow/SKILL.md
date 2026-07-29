@@ -71,6 +71,7 @@ UI 변경 시 Storybook(`play`)·Playwright로 동작 확인 (→ `docs/frontend
 `superpowers:finishing-a-development-branch` → PR(base dev) → merge → 브랜치 삭제.
 
 - **PR은 항상 draft로 연다** — `gh pr create --draft`. ready 전환은 사용자 몫이다.
+  단 **주간 `dev → main` 릴리스 PR은 예외**(draft면 `release-gate` 자동 머지가 실패한다 → `git-workflow`).
 - **머지는 사용자 확인 후에만** — draft PR 오픈까지가 자율 범위다.
 
 ## 10. Output — 행동의 언어

@@ -21,7 +21,7 @@
 - **척추**: superpowers — `brainstorming` · `writing-plans` · `using-git-worktrees` · `subagent-driven-development`(SDD) · `test-driven-development`(TDD) · `finishing-a-development-branch` · `verification-before-completion`
 - **리뷰**: `/code-review medium --fix` (필수, 사용자 트리거) — Codex 리뷰는 폐지
 - **git 규약**: `git-workflow` 스킬(Git 작업 시 자동 로드) — dev 기반 2단계 전략,
-  PR base = dev, **PR은 항상 draft**(ready 전환·머지는 사용자)
+  PR base = dev, **PR은 항상 draft**(ready 전환·머지는 사용자) — 주간 `dev → main` 릴리스 PR만 예외
 - **UI 품질** (조건부): `/audit` `/critique` `/polish` `/normalize`
   - 새 컴포넌트/페이지 → `/audit` + `/critique`
   - 레이아웃·스타일 수정 → `/polish` (+ Storybook 시각 확인)
