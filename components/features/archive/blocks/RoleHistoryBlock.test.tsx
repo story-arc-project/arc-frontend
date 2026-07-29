@@ -114,6 +114,33 @@ describe("RoleHistoryBlock", () => {
     expect(removeRole).toHaveBeenCalledWith("공연팀장")
   })
 
+  it("같은 역할명이 두 행에 있으면 한 행을 지워도 remove 를 전파하지 않는다", async () => {
+    // 회장 재선출처럼 같은 이름이 서로 다른 시기 두 행에 걸쳐 있을 수 있다. 한 행만 지워도
+    // 다른 행이 여전히 그 이름을 갖고 있으면(=역할이 아직 유효하면) 폼 전체 태그를 지우면 안 된다.
+    const user = userEvent.setup()
+    const removeRole = vi.fn()
+    render(
+      <Harness initial={[{ role: "회장" }, { role: "회장" }]} ctx={{ removeRole }} />,
+    )
+
+    await user.click(screen.getAllByRole("button", { name: "회장 삭제" })[0])
+
+    expect(removeRole).not.toHaveBeenCalled()
+    expect(screen.getByDisplayValue("회장")).toBeDefined()
+  })
+
+  it("같은 역할명이 두 행에 있으면 한 행의 이름을 바꿔도 rename 을 전파하지 않는다", async () => {
+    const user = userEvent.setup()
+    const renameRole = vi.fn()
+    render(
+      <Harness initial={[{ role: "회장" }, { role: "회장" }]} ctx={{ renameRole }} />,
+    )
+
+    await user.type(screen.getAllByLabelText("역할명")[0], "단")
+
+    expect(renameRole).not.toHaveBeenCalled()
+  })
+
   it("기간만 바꾸면 아무것도 전파하지 않는다", async () => {
     const user = userEvent.setup()
     const renameRole = vi.fn()

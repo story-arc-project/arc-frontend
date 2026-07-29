@@ -85,7 +85,11 @@ export interface BlockColumnDef {
    * 셀 렌더 모드 힌트 (FRT-178). 블록의 `variant` 와 같은 역할을 컬럼 층위에서 한다.
    * `'role-chip'` 은 옵션 없는 `checklist` 컬럼을 자유 태그 입력이 아니라 역할 칩으로 렌더한다 —
    * 선택지가 상수가 아니라 같은 폼의 '역할 이력' 값에서 파생되기 때문이다(RoleHistoryContext).
-   * 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
+   *
+   * ⚠️ 블록 층위의 `variant` 와 달리 이건 `RepeatableCellBlockValue.columns` 안에 있어
+   * **value(JSONB)에 함께 저장된다** — 저장된 레코드를 다시 열면 템플릿이 아니라 저장값의
+   * columns 가 채택되므로(`injectValue`), 값을 읽는 쪽은 columns 에 `variant` 키가 실릴 수
+   * 있음을 전제해야 한다. 렌더 힌트일 뿐이라 무시해도 무해하다.
    */
   variant?: 'role-chip'
 }

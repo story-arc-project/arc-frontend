@@ -57,17 +57,32 @@ export default function RoleHistoryBlock({ block, readOnly, onChange }: RoleHist
    * 역할명 변경·삭제를 폼 전체 태그에 전파한다. 행 id 로 대조하므로 이름이 통째로 바뀌어도
    * 같은 행임을 알 수 있다. 이름을 저장하는 대가로 필요한 동기화다(id 를 저장하면 공짜지만
    * 저장된 JSONB 를 백엔드 분석이 읽을 수 없게 된다).
+   *
+   * ⚠️ 같은 역할명이 두 행에 걸쳐 있을 수 있다(예: 회장 재선출로 2023·2024 두 시기 모두 '회장').
+   * 이때 한 행만 지우거나 이름을 바꿔도 그 이름이 **다른 행에 여전히 남아 있으면** 전파하지
+   * 않는다 — 그러지 않으면 아직 유효한 역할의 태그까지 함께 지워지거나 이름이 바뀐다.
    */
   function commit(nextRows: BlockRow[]) {
     if (ctx) {
+      const afterNames = nextRows.map(roleOf).filter(Boolean)
       const nextById = new Map(nextRows.map(r => [r.id, r]))
+      const removedNames = new Set<string>()
+      const renamedPairs: [string, string][] = []
       for (const prev of rows) {
         const before = roleOf(prev)
         if (!before) continue
         const next = nextById.get(prev.id)
-        if (!next) ctx.removeRole(before)
-        else if (roleOf(next) !== before) ctx.renameRole(before, roleOf(next))
+        if (!next) {
+          if (!afterNames.includes(before)) removedNames.add(before)
+        } else {
+          const after = roleOf(next)
+          if (after !== before && !afterNames.includes(before)) {
+            renamedPairs.push([before, after])
+          }
+        }
       }
+      for (const name of removedNames) ctx.removeRole(name)
+      for (const [from, to] of renamedPairs) ctx.renameRole(from, to)
     }
     onChange({ ...val, rows: nextRows })
   }
