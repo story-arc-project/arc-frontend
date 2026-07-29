@@ -92,15 +92,57 @@ describe("RoleHistoryBlock", () => {
     expect(screen.queryByDisplayValue("회장")).toBeNull()
   })
 
-  it("역할명을 고치면 rename 을 전파한다", async () => {
+  it("역할명을 고치고 편집을 끝내면 rename 을 전파한다", async () => {
     const user = userEvent.setup()
     const renameRole = vi.fn()
     render(<Harness initial={[{ role: "회장" }]} ctx={{ renameRole }} />)
 
     await user.type(screen.getByLabelText("역할명"), "단")
+    // 타이핑 중에는 아직 전파하지 않는다 — 중간 상태는 사용자의 확정이 아니다.
+    expect(renameRole).not.toHaveBeenCalled()
+
+    await user.tab()
 
     expect(renameRole).toHaveBeenCalledTimes(1)
     expect(renameRole).toHaveBeenCalledWith("회장", "회장단")
+  })
+
+  it("역할명을 지우고 새로 쓰는 동안 태그를 잃지 않는다", async () => {
+    // 기존 이름을 지우고 새 이름을 치는 건 아주 평범한 편집이다. 키 입력마다 전파하면
+    // 텍스트가 빈 순간 renameRole(name, "") 이 나가 태그가 통째로 사라지고,
+    // 새 이름을 다 친 뒤엔 이어붙일 옛 이름이 남아 있지 않아 복구할 수 없다.
+    const user = userEvent.setup()
+    const renameRole = vi.fn()
+    const removeRole = vi.fn()
+    render(<Harness initial={[{ role: "회장" }]} ctx={{ renameRole, removeRole }} />)
+
+    const input = screen.getByLabelText("역할명")
+    await user.clear(input)
+    await user.type(input, "부회장")
+
+    expect(removeRole).not.toHaveBeenCalled()
+    expect(renameRole).not.toHaveBeenCalled()
+
+    await user.tab()
+
+    expect(removeRole).not.toHaveBeenCalled()
+    expect(renameRole).toHaveBeenCalledTimes(1)
+    expect(renameRole).toHaveBeenCalledWith("회장", "부회장")
+  })
+
+  it("이름을 비운 채 편집을 끝내면 태그를 지우지 않는다 — 고아로 남겨 되살릴 수 있게", async () => {
+    // 비우고 나간 건 "그 역할이 사라졌다"는 확정이 아니다. 태그를 지우면 되돌릴 수 없지만
+    // 고아로 두면 회색 뱃지로 보이고, 같은 이름을 다시 입력하는 순간 정상 태그로 되살아난다.
+    const user = userEvent.setup()
+    const renameRole = vi.fn()
+    const removeRole = vi.fn()
+    render(<Harness initial={[{ role: "회장" }]} ctx={{ renameRole, removeRole }} />)
+
+    await user.clear(screen.getByLabelText("역할명"))
+    await user.tab()
+
+    expect(removeRole).not.toHaveBeenCalled()
+    expect(renameRole).not.toHaveBeenCalled()
   })
 
   it("역할 행을 지우면 remove 를 전파한다", async () => {
@@ -137,6 +179,7 @@ describe("RoleHistoryBlock", () => {
     )
 
     await user.type(screen.getAllByLabelText("역할명")[0], "단")
+    await user.tab()
 
     expect(renameRole).not.toHaveBeenCalled()
   })
