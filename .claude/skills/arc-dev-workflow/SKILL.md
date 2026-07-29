@@ -5,8 +5,8 @@ description: ARC 코드 변경 작업(기능 개발·버그 수정·리팩토링
 
 # ARC Development Workflow
 
-> 개발 프로세스는 품질 기준으로 운영한다. 척추 = superpowers 스킬 · 리뷰 권위 = Codex ·
-> git 규약 = `git-workflow` 스킬(Git 작업 시 자동 로드).
+> 개발 프로세스는 품질 기준으로 운영한다. 척추 = superpowers 스킬 ·
+> 리뷰 = `/code-review medium --fix`(사용자 트리거) · git 규약 = `git-workflow` 스킬(자동 로드).
 
 ## 0. Triage — 복잡도 게이트
 
@@ -15,7 +15,7 @@ Trivial은 아래 조건이 *명백할 때만* 적용한다.
 
 - **Trivial** (1~2파일, UX/상태/API 변화 없음): Brainstorm·Plan·SDD**만** 생략.
   **3 Isolate(dev에서 분기)는 반드시 수행** → 4 Implement → 5 Validate.
-  **8 Review의 필수 `/codex:review --base dev`도 생략하지 않는다.**
+  **8 Review(`/code-review medium --fix`)도 생략하지 않는다.**
 - **Standard** (3~5파일 또는 UX/상태 변화): 전체 파이프라인
 - **Large** (6+파일, 새 기능/흐름): 전체 + 설계 문서
 
@@ -59,16 +59,19 @@ UI 변경 시 Storybook(`play`)·Playwright로 동작 확인 (→ `docs/frontend
 
 `superpowers:requesting-code-review` 체크리스트로 셀프 점검 후 리뷰 요청.
 
-## 8. Review (필수) — Codex가 최종 권위
+## 8. Review (필수) — `/code-review medium --fix`
 
-- 조건부 `/codex:adversarial-review --base dev` (3+파일 / UX / 상태 / API 변경 시)
-- 필수 `/codex:review --base dev`
-- Codex = 제안자, 실제 수정 = Claude. 반복 실패(2회) / 원인 불명 버그 → `/codex:rescue`.
+- **리뷰는 `/code-review medium --fix` 하나로 돌린다.** Claude가 임의로 트리거하지 않는다 —
+  사용자가 실행하고, Claude는 지적을 받아 수정·재검증한다.
+- **Codex 리뷰(`/codex:review` · `/codex:adversarial-review`)는 더 이상 돌리지 않는다.**
+  (`/codex:rescue`는 리뷰가 아니라 막힌 구현의 구조 요청이므로 별개다.)
 
 ## 9. Finish
 
 `superpowers:finishing-a-development-branch` → PR(base dev) → merge → 브랜치 삭제.
-**머지는 사용자 확인 후에만** — PR 오픈까지가 자율 범위다.
+
+- **PR은 항상 draft로 연다** — `gh pr create --draft`. ready 전환은 사용자 몫이다.
+- **머지는 사용자 확인 후에만** — draft PR 오픈까지가 자율 범위다.
 
 ## 10. Output — 행동의 언어
 

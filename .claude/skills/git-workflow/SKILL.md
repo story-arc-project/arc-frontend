@@ -96,9 +96,13 @@ git checkout -b feat/archive-input-form
 
 ```bash
 git push origin feat/archive-input-form
-# GitHub에서 PR 생성 (base: dev) → 리뷰 → dev로 merge → 브랜치 삭제
+gh pr create --draft --base dev --title "..." --body "..."
+# draft PR → 리뷰(/code-review medium --fix) → 사용자가 ready 전환 → dev로 merge → 브랜치 삭제
 # dev 실사용 검증 후 별도로 dev → main PR 진행
 ```
+
+**PR은 언제나 `--draft`로 연다.** ready for review 전환은 사용자가 한다 — Claude가
+`gh pr ready`를 임의로 실행하지 않는다. 머지도 마찬가지로 사용자 확인 후에만.
 
 PR 본문은 **행동의 언어**로 쓴다 (CLAUDE.md Communication 원칙) — 사용자/관리자가 무엇을 할 수
 있게 됐는지가 먼저, 구현 세부는 접힌 구현 노트로.
