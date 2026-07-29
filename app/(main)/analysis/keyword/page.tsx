@@ -2,27 +2,46 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import type { AnalysisSnapshot } from "@/types/analysis";
 import { getKeywordList, deleteKeywordAnalysis } from "@/lib/api/analysis-api";
 import { isAnalysisRetryEnabled } from "@/lib/analysis/flags";
-import { useRetryRefresh } from "@/lib/analysis/use-retry-refresh";
+import {
+  isAnalysisInFlight,
+  useAnalysisProgressWatch,
+} from "@/lib/analysis/use-analysis-progress-watch";
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Button, Badge, Dialog } from "@/components/ui";
+import { toast } from "@/components/ui/toast";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import RetryAnalysisButton from "@/components/features/analysis/common/RetryAnalysisButton";
 
 export default function KeywordAnalysisPage() {
+  // 방금 만든 분석(FRT-176). 목록이 이 id 만은 "첫 조회에 이미 완료"여도 완료로 인정한다 —
+  // 빨리 끝나는 분석(knn 경로)은 전이가 존재하지 않아 그러지 않으면 완료 신호를 놓친다.
+  // 라우터 컨텍스트 밖(스토리북·단위 테스트)에서는 null 이다 — 그때는 그냥 감시만 한다.
+  const router = useRouter();
+  const startedId = useSearchParams()?.get("started") ?? null;
+
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // 사용자가 목록을 직접 바꾼 횟수(삭제·즐겨찾기·재시도 낙관적 갱신).
-  // 폴링 GET 은 요청 시점의 서버 스냅샷을 들고 오므로, 그 사이 로컬 변경이 있었다면
-  // 응답이 도착했을 땐 이미 낡았다 — 그대로 적용하면 방금 지운 카드가 되살아나고
+  // "이 응답보다 **앞선 사실**이 이미 도착했다"를 세는 카운터.
+  //
+  // 폴링 GET 은 요청 시점의 서버 스냅샷을 들고 오므로, 그 사이에 더 새로운 사실이 화면에
+  // 반영됐다면 응답이 도착했을 땐 이미 낡았다 — 그대로 적용하면 방금 지운 카드가 되살아나고
   // '진행 중'으로 바꿔둔 카드가 '실패'로 되돌아가 중복 재시도를 유발한다.
+  //
+  // 올리는 곳이 둘이다: ① 사용자가 목록을 직접 바꿨을 때(삭제·즐겨찾기·재시도 낙관적 갱신),
+  // ② **전경 재조회를 시작했을 때**. ②를 빠뜨리면 초기 로드 실패 → 감시가 백그라운드 GET 을
+  // 이미 쏜 상태 → 사용자가 '다시 시도' → 전경 응답이 먼저 도착 → 뒤늦은 백그라운드 응답이
+  // 검사를 통과해 완료된 목록을 낡은 스냅샷으로 덮는다(되돌아간 '진행 중'이 완료 기록을 지워
+  // 같은 완료가 다시 계측·알림된다). `paused` 는 새 폴링 **예약**만 막지 이미 날아간 요청은
+  // 되돌리지 못하므로, 최신성 판정은 여기 한 곳에서 해야 한다.
   const mutationEpoch = useRef(0);
   const markLocalMutation = useCallback(() => {
     mutationEpoch.current += 1;
@@ -32,6 +51,8 @@ export default function KeywordAnalysisPage() {
   const loadData = useCallback(async (options?: { background?: boolean }): Promise<boolean> => {
     const background = options?.background === true;
     if (!background) {
+      // 사용자가 기다리는 조회가 시작됐다 — 그 전에 날아간 백그라운드 응답은 모두 낡았다.
+      mutationEpoch.current += 1;
       setLoading(true);
       setError(false);
     }
@@ -62,8 +83,40 @@ export default function KeywordAnalysisPage() {
     [loadData],
   );
 
-  // 재시도 접수 후 잠시 동안만 목록을 다시 읽는다 — 그러지 않으면 '진행 중'에 고착된다.
-  const watchRetry = useRetryRefresh(refreshInBackground);
+  // 진행 중인 분석이 있는 동안만 목록을 다시 읽고, 완료를 관측해 화면 밖으로 알린다.
+  // 재시도도 여기에 얹힌다 — 재시도 버튼이 카드를 낙관적으로 '진행 중'으로 바꾸므로
+  // 별도 무장 없이 같은 감시에 걸린다.
+  const { rearm } = useAnalysisProgressWatch({
+    items,
+    type: "keyword",
+    startedId,
+    refresh: refreshInBackground,
+    // 사용자가 기다리는 조회가 떠 있는 동안은 폴링하지 않는다(응답 역전 방지).
+    paused: loading,
+    onCompleted: (completed) => {
+      toast(
+        completed.length > 1
+          ? `분석 ${completed.length}건이 완료됐어요.`
+          : "분석이 완료됐어요.",
+        "success",
+      );
+    },
+  });
+
+  // 그 분석이 **끝난 뒤에야** 쿼리를 지운다. 남겨두면 새로고침·재방문마다 같은 완료를 다시
+  // 발화해 퍼널 지표(analysis_completed)가 부풀고 피드백 트리거가 반복된다 — 중복 방지는
+  // 메모리 안의 기록이라 마운트를 넘기지 못하기 때문이다.
+  //
+  // 반대로 **진행 중일 때 지우면** 이 표시의 존재 이유가 무너진다: 걸어두고 목록을 떠났다가
+  // 완료된 뒤 돌아오면 새 마운트엔 직전 상태도 표시도 없어 '이미 완료'로만 보이고,
+  // 전이가 아니라는 이유로 완료 신호가 통째로 사라진다.
+  const startedSettled =
+    startedId !== null &&
+    items.some((i) => i.id === startedId && !isAnalysisInFlight(i.status));
+  useEffect(() => {
+    if (!startedSettled) return;
+    router.replace("/analysis/keyword", { scroll: false });
+  }, [startedSettled, router]);
 
   const [deleteError, setDeleteError] = useState(false);
 
@@ -74,6 +127,12 @@ export default function KeywordAnalysisPage() {
       await deleteKeywordAnalysis(deleteId);
       markLocalMutation();
       setItems((prev) => prev.filter((i) => i.id !== deleteId));
+      // 방금 지켜보던 분석을 지웠다면 표시부터 거둔다. 지워진 항목은 목록에 다시 나타나지
+      // 않으므로 `startedSettled` 가 영영 참이 되지 못하고, 쿼리가 URL 에 눌러앉아 새로고침할
+      // 때마다 돌아오지 않을 대상을 향한 감시가 처음부터 다시 시작된다.
+      if (deleteId === startedId) {
+        router.replace("/analysis/keyword", { scroll: false });
+      }
       setDeleteId(null);
     } catch {
       setDeleteError(true);
@@ -191,7 +250,13 @@ export default function KeywordAnalysisPage() {
                                   i.id === item.id ? { ...i, status: "processing" } : i,
                                 ),
                               );
-                              watchRetry();
+                              // 재시도도 '방금 내가 건 분석'이다 — 표시를 되살려야 재시도 도중
+                              // 목록을 떠났다가 완료 후 돌아왔을 때 그 완료를 관측할 수 있다.
+                              rearm();
+                              router.replace(
+                                `/analysis/keyword?started=${encodeURIComponent(item.id)}`,
+                                { scroll: false },
+                              );
                             }}
                           />
                         )}

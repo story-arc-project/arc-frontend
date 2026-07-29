@@ -17,10 +17,21 @@ vi.mock("@/lib/api/analysis-api", () => ({
 
 vi.mock("@/lib/analysis/flags", () => ({ isAnalysisRetryEnabled: () => true }));
 
+let searchParams = new URLSearchParams();
+const replace = vi.fn();
+
 vi.mock("@/lib/analytics", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/analytics")>();
   return { ...actual, capture: vi.fn() };
 });
+
+// 목록은 `?started=` 로 "방금 만든 분석"을 받는다(FRT-176). 기본은 빈 파라미터.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchParams,
+  useRouter: () => ({ replace }),
+}));
+
+vi.mock("@/components/ui/toast", () => ({ toast: vi.fn() }));
 
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
@@ -34,7 +45,13 @@ import {
   retryKeywordAnalysis,
 } from "@/lib/api/analysis-api";
 
+import { capture } from "@/lib/analytics";
+import { toast } from "@/components/ui/toast";
+
 import KeywordAnalysisPage from "./page";
+
+const captureMock = vi.mocked(capture);
+const toastMock = vi.mocked(toast);
 
 const getList = vi.mocked(getKeywordList);
 const deleteAnalysis = vi.mocked(deleteKeywordAnalysis);
@@ -45,6 +62,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
+  searchParams = new URLSearchParams();
 });
 
 afterEach(() => {
@@ -122,5 +140,180 @@ describe("키워드 분석 목록 — 재시도 폴링과 로컬 변경 (FRT-108
     await flush();
 
     expect(screen.queryByText("분석 b")).not.toBeInTheDocument();
+  });
+});
+
+// FRT-176: 종합 목록과 같은 감시를 키워드 목록에서도 건다.
+// 두 화면은 병렬 복제 구조라, 한쪽만 고치면 다른 쪽에 같은 결함이 남는다.
+describe("키워드 분석 목록 — 진행 중 감시와 완료 관측 (FRT-176)", () => {
+  it("진행 중 항목이 있으면 재시도를 누르지 않아도 목록을 다시 읽는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    render(<KeywordAnalysisPage />);
+    await flush();
+    expect(getList).toHaveBeenCalledTimes(1);
+
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    await advance(5_000);
+
+    expect(getList).toHaveBeenCalledTimes(2);
+  });
+
+  it("진행 중 항목이 없으면 목록을 다시 읽지 않는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    await advance(60_000);
+
+    expect(getList).toHaveBeenCalledTimes(1);
+  });
+
+  it("완료로 바뀌면 토스트를 띄우고 카드가 열린다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    render(<KeywordAnalysisPage />);
+    await flush();
+    expect(screen.getByText("분석 진행 중...")).toBeInTheDocument();
+
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+    await advance(5_000);
+
+    expect(toastMock).toHaveBeenCalledTimes(1);
+    expect(toastMock.mock.calls[0][0]).toBe("분석이 완료됐어요.");
+    expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
+      analysis_type: "keyword",
+      analysis_id: "a",
+    });
+    expect(screen.getByRole("link", { name: /분석 a/ })).toHaveAttribute(
+      "href",
+      "/analysis/keyword/a",
+    );
+  });
+
+  it("방금 만든 분석이 첫 조회부터 완료면 그 완료도 관측한다", async () => {
+    // 키워드 분석의 knn 경로는 LLM 을 타지 않아 수 초 만에 끝난다 — 전이가 아예 없다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "completed"), snap("old", "completed")]);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    expect(captureMock).toHaveBeenCalledTimes(1);
+    expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
+      analysis_type: "keyword",
+      analysis_id: "a",
+    });
+    // 토스트는 띄우지 않는다 — 방금 "분석을 시작했어요"를 본 사용자에게 곧바로
+    // "완료됐어요"가 겹쳐 뜨면 이상하다. 알릴 '변화'가 없으면 알리지 않는다.
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it("`?started=` 없이 들어오면 이미 완료된 목록만으로는 아무 신호도 내지 않는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "completed"), snap("b", "completed")]);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    expect(captureMock).not.toHaveBeenCalled();
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it("관측을 마치면 `?started=` 를 URL 에서 지운다", async () => {
+    // 남겨두면 새로고침마다 같은 완료가 새 완료로 다시 세어진다 — 중복 방지 기록은
+    // 마운트를 넘기지 못한다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/keyword", { scroll: false });
+  });
+
+  it("목록에 아직 나타나지 않은 `?started=` 는 지우지 않는다", async () => {
+    searchParams = new URLSearchParams("started=missing");
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe("`?started=` 수명 (codex 후속)", () => {
+  it("아직 진행 중이면 쿼리를 지우지 않는다 — 떠났다 돌아왔을 때 완료를 잡아야 한다", async () => {
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("실패로 끝난 경우에도 쿼리를 지운다 — 더 지켜볼 완료가 없다", async () => {
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "failed")]);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/keyword", { scroll: false });
+  });
+});
+
+describe("재시도도 '방금 내가 건 분석'이다 (codex 후속)", () => {
+  it("재시도를 접수하면 `?started=` 표시를 되살린다", async () => {
+    // 실패로 끝나 표시를 지운 뒤 재시도하면, 되살리지 않는 한 재시도 도중 목록을 떠났다가
+    // 완료 후 돌아왔을 때 그 완료가 전이로도 표시로도 잡히지 않는다.
+    getList.mockResolvedValueOnce([snap("a", "failed")]);
+    retryAnalysis.mockResolvedValue(undefined);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+    await click(screen.getByRole("button", { name: "다시 시도" }));
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/keyword?started=a", { scroll: false });
+  });
+});
+
+describe("지켜보던 분석을 지우면 표시부터 거둔다 (code-review 후속)", () => {
+  it("`?started=` 대상 카드를 삭제하면 쿼리를 지운다", async () => {
+    // 지워진 항목은 목록에 다시 나타나지 않는다. 표시를 그대로 두면 '아직 안 뜬 내 분석'으로
+    // 오인해 돌아오지 않을 대상을 계속 지켜보고, 쿼리가 URL 에 눌러앉아 새로고침할 때마다
+    // 그 헛된 감시가 처음부터 다시 시작된다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    deleteAnalysis.mockResolvedValue(undefined);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+    expect(replace).not.toHaveBeenCalled();
+
+    await click(screen.getByLabelText("삭제"));
+    await flush();
+    const dialog = screen.getByRole("dialog");
+    await click(within(dialog).getByRole("button", { name: "삭제" }));
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/keyword", { scroll: false });
+  });
+
+  it("다른 카드를 삭제하면 `?started=` 는 건드리지 않는다", async () => {
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "processing"), snap("b", "processing")]);
+    deleteAnalysis.mockResolvedValue(undefined);
+
+    render(<KeywordAnalysisPage />);
+    await flush();
+
+    await click(screen.getAllByLabelText("삭제")[1]);
+    await flush();
+    const dialog = screen.getByRole("dialog");
+    await click(within(dialog).getByRole("button", { name: "삭제" }));
+    await flush();
+
+    expect(replace).not.toHaveBeenCalled();
   });
 });

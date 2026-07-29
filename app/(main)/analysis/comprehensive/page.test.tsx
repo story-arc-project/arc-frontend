@@ -18,10 +18,21 @@ vi.mock("@/lib/api/analysis-api", () => ({
 // 플래그는 빌드타임 인라인이라 스텁으로 열어야 재시도 버튼이 렌더된다.
 vi.mock("@/lib/analysis/flags", () => ({ isAnalysisRetryEnabled: () => true }));
 
+let searchParams = new URLSearchParams();
+const replace = vi.fn();
+
 vi.mock("@/lib/analytics", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/analytics")>();
   return { ...actual, capture: vi.fn() };
 });
+
+// 목록은 `?started=` 로 "방금 만든 분석"을 받는다(FRT-176). 기본은 빈 파라미터.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchParams,
+  useRouter: () => ({ replace }),
+}));
+
+vi.mock("@/components/ui/toast", () => ({ toast: vi.fn() }));
 
 // next/link 는 앱 라우터 컨텍스트를 요구한다 — 표시 검증에는 순수 앵커로 충분하다.
 vi.mock("next/link", () => ({
@@ -36,8 +47,13 @@ import {
   retryComprehensiveAnalysis,
 } from "@/lib/api/analysis-api";
 
+import { capture } from "@/lib/analytics";
+import { toast } from "@/components/ui/toast";
+
 import ComprehensiveAnalysisPage from "./page";
 
+const captureMock = vi.mocked(capture);
+const toastMock = vi.mocked(toast);
 const getList = vi.mocked(getComprehensiveList);
 const deleteAnalysis = vi.mocked(deleteComprehensiveAnalysis);
 const retryAnalysis = vi.mocked(retryComprehensiveAnalysis);
@@ -47,6 +63,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
+  searchParams = new URLSearchParams();
 });
 
 afterEach(() => {
@@ -168,5 +185,218 @@ describe("종합 분석 목록 — 재시도 폴링과 로컬 변경 (FRT-108)",
     // 되돌아가면 '다시 시도'가 되살아나고, 사용자가 한 번 더 눌러 중복 재시도가 된다.
     expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
     expect(screen.getAllByText("분석 진행 중...")).toHaveLength(2);
+  });
+});
+
+// FRT-176: 대기 화면을 없앤 대신, 목록이 진행 중인 분석을 지켜보고 완료를 관측한다.
+// 완료 관측이 유일한 신호원이다 — 여기서 놓치면 완료 계측(FRT-19)과 피드백 트리거(FRT-95)가
+// 코드베이스 어디에서도 나가지 않는다.
+describe("종합 분석 목록 — 진행 중 감시와 완료 관측 (FRT-176)", () => {
+  it("진행 중 항목이 있으면 재시도를 누르지 않아도 목록을 다시 읽는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+    expect(getList).toHaveBeenCalledTimes(1);
+
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    await advance(5_000);
+
+    expect(getList).toHaveBeenCalledTimes(2);
+  });
+
+  it("진행 중 항목이 없으면 목록을 다시 읽지 않는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    await advance(60_000);
+
+    expect(getList).toHaveBeenCalledTimes(1);
+  });
+
+  it("완료로 바뀌면 토스트를 띄우고 카드가 열린다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+    expect(screen.getByText("분석 진행 중...")).toBeInTheDocument();
+    expect(toastMock).not.toHaveBeenCalled();
+
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+    await advance(5_000);
+
+    expect(toastMock).toHaveBeenCalledTimes(1);
+    expect(toastMock.mock.calls[0][0]).toBe("분석이 완료됐어요.");
+    expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
+      analysis_type: "comprehensive",
+      analysis_id: "a",
+    });
+    // 완료된 카드는 이제 상세로 들어갈 수 있다.
+    expect(screen.getByRole("link", { name: /분석 a/ })).toHaveAttribute(
+      "href",
+      "/analysis/comprehensive/a",
+    );
+  });
+
+  it("방금 만든 분석이 첫 조회부터 완료면 그 완료도 관측한다", async () => {
+    // 빨리 끝나는 분석은 '진행 중 → 완료' 전이가 존재하지 않는다. 전이만 보면
+    // 대기 화면 시절엔 잘 잡히던 이 경로의 완료 신호를 통째로 잃는다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "completed"), snap("old", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(captureMock).toHaveBeenCalledTimes(1);
+    expect(captureMock).toHaveBeenCalledWith("analysis_completed", {
+      analysis_type: "comprehensive",
+      analysis_id: "a",
+    });
+    // 토스트는 띄우지 않는다 — 방금 "분석을 시작했어요"를 본 사용자에게 곧바로
+    // "완료됐어요"가 겹쳐 뜨면 이상하다. 알릴 '변화'가 없으면 알리지 않는다.
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it("전경 재조회보다 먼저 떠난 폴링 응답은 뒤늦게 와도 버린다", async () => {
+    // `paused` 는 새 폴링 **예약**만 막는다 — 이미 날아간 요청은 되돌리지 못한다.
+    // 그 응답이 적용되면 완료가 '진행 중'으로 되돌아가고, 완료 기록이 지워져
+    // 같은 완료가 다음 폴링에서 다시 계측·알림된다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockRejectedValueOnce(new Error("network"));
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
+
+    // 목록이 비어 있어도 `?started=` 하나로 감시가 열린다 — 그 GET 을 응답 전에 붙잡는다.
+    const stalePoll = deferred<AnalysisSnapshot[]>();
+    getList.mockReturnValueOnce(stalePoll.promise);
+    await advance(5_000);
+    expect(getList).toHaveBeenCalledTimes(2);
+
+    // 그 사이 사용자가 '다시 시도' → 전경 응답이 먼저 도착한다.
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+    await click(screen.getByRole("button", { name: "다시 시도" }));
+    await flush();
+    expect(captureMock).toHaveBeenCalledTimes(1);
+
+    // 뒤늦게 도착한 낡은 스냅샷.
+    await act(async () => {
+      stalePoll.resolve([snap("a", "processing")]);
+    });
+
+    expect(screen.queryByText("분석 진행 중...")).not.toBeInTheDocument();
+    // 되돌아갔다면 다음 라운드에서 같은 완료가 한 번 더 세어진다.
+    await advance(5_000);
+    expect(captureMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("`?started=` 없이 들어오면 이미 완료된 목록만으로는 아무 신호도 내지 않는다", async () => {
+    getList.mockResolvedValueOnce([snap("a", "completed"), snap("b", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(captureMock).not.toHaveBeenCalled();
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it("관측을 마치면 `?started=` 를 URL 에서 지운다", async () => {
+    // 남겨두면 새로고침마다 같은 완료가 새 완료로 다시 세어진다 — 중복 방지 기록은
+    // 마운트를 넘기지 못한다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/comprehensive", { scroll: false });
+  });
+
+  it("목록에 아직 나타나지 않은 `?started=` 는 지우지 않는다", async () => {
+    searchParams = new URLSearchParams("started=missing");
+    getList.mockResolvedValueOnce([snap("a", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe("`?started=` 수명 (codex 후속)", () => {
+  it("아직 진행 중이면 쿼리를 지우지 않는다 — 떠났다 돌아왔을 때 완료를 잡아야 한다", async () => {
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("실패로 끝난 경우에도 쿼리를 지운다 — 더 지켜볼 완료가 없다", async () => {
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "failed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/comprehensive", { scroll: false });
+  });
+});
+
+describe("재시도도 '방금 내가 건 분석'이다 (codex 후속)", () => {
+  it("재시도를 접수하면 `?started=` 표시를 되살린다", async () => {
+    // 실패로 끝나 표시를 지운 뒤 재시도하면, 되살리지 않는 한 재시도 도중 목록을 떠났다가
+    // 완료 후 돌아왔을 때 그 완료가 전이로도 표시로도 잡히지 않는다.
+    getList.mockResolvedValueOnce([snap("a", "failed")]);
+    retryAnalysis.mockResolvedValue(undefined);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+    await click(screen.getByRole("button", { name: "다시 시도" }));
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/comprehensive?started=a", { scroll: false });
+  });
+});
+
+describe("지켜보던 분석을 지우면 표시부터 거둔다 (code-review 후속)", () => {
+  it("`?started=` 대상 카드를 삭제하면 쿼리를 지운다", async () => {
+    // 지워진 항목은 목록에 다시 나타나지 않는다. 표시를 그대로 두면 '아직 안 뜬 내 분석'으로
+    // 오인해 돌아오지 않을 대상을 계속 지켜보고, 쿼리가 URL 에 눌러앉아 새로고침할 때마다
+    // 그 헛된 감시가 처음부터 다시 시작된다.
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "processing")]);
+    deleteAnalysis.mockResolvedValue(undefined);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+    expect(replace).not.toHaveBeenCalled();
+
+    await click(screen.getByLabelText("삭제"));
+    await flush();
+    const dialog = screen.getByRole("dialog");
+    await click(within(dialog).getByRole("button", { name: "삭제" }));
+    await flush();
+
+    expect(replace).toHaveBeenCalledWith("/analysis/comprehensive", { scroll: false });
+  });
+
+  it("다른 카드를 삭제하면 `?started=` 는 건드리지 않는다", async () => {
+    searchParams = new URLSearchParams("started=a");
+    getList.mockResolvedValueOnce([snap("a", "processing"), snap("b", "processing")]);
+    deleteAnalysis.mockResolvedValue(undefined);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    await click(screen.getAllByLabelText("삭제")[1]);
+    await flush();
+    const dialog = screen.getByRole("dialog");
+    await click(within(dialog).getByRole("button", { name: "삭제" }));
+    await flush();
+
+    expect(replace).not.toHaveBeenCalled();
   });
 });
