@@ -153,7 +153,14 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
 
   const hasUploaded = Boolean(val.fileId)
   const maxMb = Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))
-  const evidenceOptions = block.options?.length ? block.options : undefined
+  // 템플릿이 옵션을 정한 뒤에도 그 전에 자유 입력으로 저장된 값(레거시 데이터)이 있을 수 있다 —
+  // 목록에 없다고 빼면 드롭다운이 비어 보여 값이 사라진 것처럼 보인다. 현재 값을 목록에 얹어 보존한다.
+  const evidenceOptions =
+    block.options?.length
+      ? val.evidenceType && !block.options.includes(val.evidenceType)
+        ? [...block.options, val.evidenceType]
+        : block.options
+      : undefined
 
   if (readOnly) {
     return (

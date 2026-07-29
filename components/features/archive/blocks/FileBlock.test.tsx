@@ -115,6 +115,24 @@ describe("FileBlock 증빙 유형 (FRT-179)", () => {
     )
   })
 
+  it("선택지에 없는 기존 값도 목록에 남겨 선택 상태를 지킨다", () => {
+    // 자유 입력이던 시절 저장된 값이 드롭다운 도입 후 사라진 것처럼 보이면 안 된다.
+    render(
+      <FileBlock
+        block={{
+          ...emptyFileBlock,
+          value: { type: "file", fileName: "", description: "", evidenceType: "상장 사본" },
+          options: ["합격증/자격증 사본", "성적표/점수 확인서", "기타"],
+        }}
+        onChange={vi.fn()}
+      />,
+    )
+    const select = screen.getByLabelText("증빙 유형") as HTMLSelectElement
+    expect(select.value).toBe("상장 사본")
+    // 빈 선택 + 선택지 3종 + 레거시 값 1종
+    expect(screen.getAllByRole("option")).toHaveLength(5)
+  })
+
   it("선택지가 없으면 기존 자유 입력을 유지한다", () => {
     render(<FileBlock block={emptyFileBlock} onChange={vi.fn()} />)
     expect(screen.queryByLabelText("증빙 유형")).toBeNull()
