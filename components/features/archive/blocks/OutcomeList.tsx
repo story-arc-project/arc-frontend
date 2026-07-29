@@ -12,6 +12,7 @@ import { ArrowUpRight, Link2, Plus } from "lucide-react"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 import { createEmptyRow } from "@/lib/utils/block-utils"
 import { useProjectLink } from "@/contexts/ProjectLinkContext"
+import RoleChips from "./RoleChips"
 import { usePlaceholderRow } from "./usePlaceholderRow"
 
 interface OutcomeListProps {
@@ -154,14 +155,22 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   }
 
   // 참조만 해제(프로젝트 행은 존치) — soft link.
+  // ⚠️ 지울 건 `linkedProjectRowId` 하나다. `{ id, cells }` 로 다시 짜면 그때 존재하는
+  // 다른 행 필드(roleTags 등)까지 통째로 날아간다 — 필드가 늘 때마다 조용히 깨지는 형태였다.
   function unlinkRow(rowId: string) {
     commit(
-      rows.map((r) =>
-        r.id === rowId && r.linkedProjectRowId !== undefined
-          ? { id: r.id, cells: r.cells }
-          : r,
-      ),
+      rows.map((r) => {
+        if (r.id !== rowId || r.linkedProjectRowId === undefined) return r
+        const next = { ...r }
+        delete next.linkedProjectRowId
+        return next
+      }),
     )
+  }
+
+  // FRT-178: 이 행에 붙은 역할 태그. 행 필드라 컬럼(단일컬럼 전제)에 영향이 없다.
+  function updateRoles(rowId: string, next: string[]) {
+    commit(rows.map((r) => (r.id === rowId ? { ...r, roleTags: next } : r)))
   }
 
   // 행 액션 슬롯. rowAction(테스트/스토리북 escape hatch)이 우선. 그다음 링크 UI.
@@ -246,6 +255,9 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
             {filled.map((row) => (
               <li key={row.id} className="flex items-start gap-2 text-body-sm text-text-primary">
                 <span className="text-brand font-bold leading-6 shrink-0 select-none">•</span>
+                {block.roleTags && (
+                  <RoleChips readOnly value={row.roleTags ?? []} onChange={() => {}} />
+                )}
                 <span className="whitespace-pre-wrap">{textOf(row)}</span>
               </li>
             ))}
@@ -274,6 +286,15 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
             className={`flex items-start gap-2 px-3 py-2 ${hasPlaceholder ? "" : "border-b border-border"}`}
           >
             <span className="text-brand font-bold leading-6 shrink-0 select-none">•</span>
+            {/* FRT-178: 선택한 역할은 문서대로 텍스트 앞에 뱃지로 붙는다. 아직 실체가 없는
+                표시용 행에는 태그를 붙일 대상이 없어(커밋 경로가 텍스트 전용) 노출하지 않는다. */}
+            {block.roleTags && !isPlaceholderRow(row.id) && (
+              <RoleChips
+                inline
+                value={row.roleTags ?? []}
+                onChange={(next) => updateRoles(row.id, next)}
+              />
+            )}
             <AutoGrowInput
               value={textOf(row)}
               placeholder={col?.placeholder}

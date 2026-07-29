@@ -81,6 +81,13 @@ export interface BlockColumnDef {
   options?: string[]
   /** 입력 가이드라인(컬럼 라벨과 입력칸 사이 안내문). 반복 입력의 첫 행에만 렌더된다. */
   guide?: string
+  /**
+   * 셀 렌더 모드 힌트 (FRT-178). 블록의 `variant` 와 같은 역할을 컬럼 층위에서 한다.
+   * `'role-chip'` 은 옵션 없는 `checklist` 컬럼을 자유 태그 입력이 아니라 역할 칩으로 렌더한다 —
+   * 선택지가 상수가 아니라 같은 폼의 '역할 이력' 값에서 파생되기 때문이다(RoleHistoryContext).
+   * 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
+   */
+  variant?: 'role-chip'
 }
 
 export interface BlockRow {
@@ -93,6 +100,14 @@ export interface BlockRow {
    * OutcomeList 단일컬럼 가드에 영향 없음). soft link — 대상 행이 사라지면 미연결로 복귀한다.
    */
   linkedProjectRowId?: string
+  /**
+   * 이 행에 붙은 역할 태그 (FRT-178). '역할 이력'에 등록된 역할명을 값으로 갖는다.
+   * `linkedProjectRowId` 와 같은 이유로 컬럼이 아니라 **행 필드**다 — OutcomeList 는
+   * 단일컬럼 전제 위에서 동작하므로 둘째 컬럼을 만들면 그 전제가 깨진다. additive·무마이그레이션.
+   * 행 id 가 아니라 **이름**을 저장한다 — 저장된 JSONB 를 백엔드 분석이 그대로 읽어야 하므로.
+   * 이름이 바뀌거나 지워질 때의 동기화는 RoleHistoryContext 가 편집 시점에 전파한다.
+   */
+  roleTags?: string[]
 }
 
 export interface RepeatableCellBlockValue {
@@ -170,9 +185,11 @@ export interface Block {
    * `'outcome-list'` 는 단일컬럼 `repeatable-cell` 을 개조식 불릿-행(OutcomeList)으로 렌더한다.
    * `'mood-tag'` 는 `checklist` 를 이모티콘 알약 태그(MoodTagBlock)로 렌더한다 — 옵션이 고정
    * 프리셋이라 체크리스트의 옵션 추가·삭제 UI 를 숨긴다(FRT-177).
+   * `'role-history'` 는 `repeatable-cell` 을 접이식 역할 이력 패널(RoleHistoryBlock)로 렌더한다.
+   * 이 블록의 역할명이 폼 안의 모든 역할 칩 선택지가 된다(FRT-178).
    * 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다 — 로드 시 레지스트리에서 재공급된다.
    */
-  variant?: 'outcome-list' | 'mood-tag'
+  variant?: 'outcome-list' | 'mood-tag' | 'role-history'
   /**
    * '프로젝트로 연결' 링크 설정 (FRT-76). OutcomeList 인스턴스별로 opt-in 한다 —
    * 있으면 각 활동 행에 링크 버튼이 노출되고, 없으면 미노출(설정 가능한 on/off).
@@ -180,6 +197,14 @@ export interface Block {
    * (로드 시 레지스트리에서 재공급). 실제 참조는 `BlockRow.linkedProjectRowId` 에 저장된다.
    */
   linkConfig?: ProjectLinkConfig
+  /**
+   * 각 행에 역할 태그를 붙일 수 있게 한다 (FRT-178). OutcomeList 인스턴스별로 opt-in 한다 —
+   * `linkConfig` 와 같은 규약이다. 켜지 않은 블록에는 칩 UI 가 아예 노출되지 않으므로,
+   * 역할 개념이 없는 유형(대외활동 등)의 개조식 목록은 영향을 받지 않는다.
+   * 실제 선택값은 `BlockRow.roleTags` 에 저장된다.
+   * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
+   */
+  roleTags?: boolean
   /**
    * 컬럼 고정 (FRT-104). `repeatable-cell` 에서 켜면 열 태그 줄(컬럼 pill·삭제·'열 추가' 입력)을
    * 숨겨 정해진 컬럼만 입력하게 한다. 기본 템플릿의 표는 컬럼이 고정이라 이 관리 UI 가 산만하다 —
@@ -241,6 +266,7 @@ export const SECTION_LABEL_OVERRIDES: Partial<
 > = {
   'academic-society': { repeat: '프로젝트 기록' },
   'career': { repeat: '프로젝트 / 담당 업무 기록' },
+  'club': { detail: '활동 상세', repeat: '활동 / 이벤트 기록' },
   'education': { detail: '수업 상세', repeat: '프로젝트 / 과제 / 제작물 기록' },
   'extracurricular': { detail: '활동 상세', repeat: '미션 / 프로젝트 기록' },
 }
@@ -253,6 +279,14 @@ export const SECTION_LABEL_OVERRIDES: Partial<
 export const SECTION_DESCRIPTION_OVERRIDES: Partial<
   Record<ExperienceTypeId, Partial<Record<SectionCategory, string>>>
 > = {
+  'club': {
+    detail:
+      "이 동아리에서의 활동을 정리해주세요. 개별 이벤트나 프로젝트의 세부 내용은 아래 '활동 / 이벤트 기록'에서 따로 기록할 수 있어요.",
+    repeat:
+      "동아리에서 진행한 정기 이벤트, 공연, 프로젝트 등을 단위별로 기록해주세요. 위 '주요 활동 / 이벤트' 항목에서 프로젝트로 바로 연결할 수 있어요.",
+    evidence:
+      '임명장, 활동 확인서, 수상 내역, 공연 사진 등 이 동아리 활동을 증명할 수 있는 자료를 첨부해주세요.',
+  },
   'extracurricular': {
     detail:
       "이 활동에서의 경험을 정리해주세요. 개별 미션이나 프로젝트의 세부 내용은 아래 '미션 / 프로젝트 기록'에서 따로 기록할 수 있어요.",

@@ -165,6 +165,8 @@ export function createOutcomeList(
     guide?: string
     itemLabel?: string
     link?: ProjectLinkConfig
+    /** 각 행에 역할 태그 칩을 붙인다(FRT-178). `link` 와 같은 인스턴스별 opt-in. */
+    roleTags?: boolean
   },
 ): Block {
   const base = createRepeatableCell(label, [
@@ -175,7 +177,95 @@ export function createOutcomeList(
     variant: 'outcome-list',
     guide: opts?.guide,
     ...(opts?.link ? { linkConfig: opts.link } : {}),
+    ...(opts?.roleTags ? { roleTags: true } : {}),
   }
+}
+
+/**
+ * 역할 이력 입력(FRT-178). 저장은 3컬럼 `repeatable-cell`(`start`/`end`/`role`) 그대로 두고
+ * `variant: 'role-history'` 마커로 접이식 패널 UI 를 지정한다(무마이그레이션, OutcomeList 와 같은 패턴).
+ * 이 블록의 `role` 값들이 폼 안 모든 역할 칩의 선택지가 된다 — 선택지가 상수가 아니라
+ * 형제 블록의 값에서 파생되는 유일한 경우라, 파생·전파는 RoleHistoryContext 가 맡는다.
+ * 컬럼은 잠근다(lockColumns) — 이력 표에 사용자가 열을 더하면 파생 규칙이 성립하지 않는다.
+ */
+export function createRoleHistory(label: string, opts?: { guide?: string }): Block {
+  const base = createRepeatableCell(
+    label,
+    [
+      { key: 'start', label: '시작', blockType: 'period', placeholder: 'YYYY-MM' },
+      { key: 'end', label: '종료', blockType: 'period', placeholder: 'YYYY-MM' },
+      { key: 'role', label: '역할명', blockType: 'text', placeholder: '역할명 (예: 공연팀장)' },
+    ],
+    { guide: opts?.guide },
+  )
+  return { ...base, variant: 'role-history' }
+}
+
+/** `createRoleHistory` 블록에서 등록된 역할명을 순서대로 뽑는다(공백 제거·중복 제거). */
+export function roleNamesOf(block: Block): string[] {
+  if (block.value.type !== 'repeatable-cell') return []
+  const out: string[] = []
+  for (const row of block.value.rows) {
+    const cell = row.cells['role']
+    const name = (Array.isArray(cell) ? cell.join(', ') : (cell ?? '')).trim()
+    if (name && !out.includes(name)) out.push(name)
+  }
+  return out
+}
+
+/**
+ * 이 블록에 붙어 있는 역할 태그를 모두 `fn` 으로 바꾼 사본을 돌려준다 (FRT-178).
+ * 대상은 두 곳뿐이다 — OutcomeList 행의 `roleTags`, `variant: 'role-chip'` 컬럼의 셀.
+ * '역할 이력' 블록 자신의 `role` 컬럼은 variant 가 없어 건드리지 않는다(이미 편집된 원본이다).
+ * 바뀐 게 없으면 **같은 참조**를 돌려준다 — 이름 하나 고칠 때마다 폼 전체가 리렌더되지 않도록.
+ */
+export function mapRoleTags(block: Block, fn: (tags: string[]) => string[]): Block {
+  if (block.type === 'group') {
+    const children = block.children?.map(c => mapRoleTags(c, fn))
+    const changed = children?.some((c, i) => c !== block.children?.[i])
+    return changed ? { ...block, children } : block
+  }
+  if (block.value.type !== 'repeatable-cell') return block
+
+  const roleCols = block.value.columns.filter(c => c.variant === 'role-chip').map(c => c.key)
+  let touched = false
+  const rows = block.value.rows.map(row => {
+    let next = row
+    if (Array.isArray(row.roleTags)) {
+      const mapped = fn(row.roleTags)
+      if (mapped.length !== row.roleTags.length || mapped.some((t, i) => t !== row.roleTags?.[i])) {
+        next = { ...next, roleTags: mapped }
+      }
+    }
+    for (const key of roleCols) {
+      const cell = row.cells[key]
+      const tags = Array.isArray(cell) ? cell : []
+      const mapped = fn(tags)
+      if (mapped.length !== tags.length || mapped.some((t, i) => t !== tags[i])) {
+        next = { ...next, cells: { ...next.cells, [key]: mapped } }
+      }
+    }
+    if (next !== row) touched = true
+    return next
+  })
+
+  return touched ? { ...block, value: { ...block.value, rows } } : block
+}
+
+/** 역할명 치환기. `to` 가 비면 제거로 동작한다(이름을 지워 빈 칸이 된 경우). */
+export function renameRoleTag(from: string, to: string): (tags: string[]) => string[] {
+  const next = to.trim()
+  return tags => {
+    if (!tags.includes(from)) return tags
+    const replaced = next ? tags.map(t => (t === from ? next : t)) : tags.filter(t => t !== from)
+    // 이미 같은 이름이 붙어 있던 행에서 중복이 생기지 않게 한다.
+    return replaced.filter((t, i) => replaced.indexOf(t) === i)
+  }
+}
+
+/** 역할명 제거기. */
+export function removeRoleTag(name: string): (tags: string[]) => string[] {
+  return tags => (tags.includes(name) ? tags.filter(t => t !== name) : tags)
 }
 
 export function createGroupBlock(label: string): Block {

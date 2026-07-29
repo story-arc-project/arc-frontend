@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   cloneBlock,
+  roleNamesOf,
+  renameRoleTag,
+  removeRoleTag,
+  mapRoleTags,
+  createRoleHistory,
   cloneBlocks,
   createChecklistField,
   createDateField,
@@ -270,5 +275,99 @@ describe("createOutcomeList (FRT-97/FRT-76)", () => {
     if (b.value.type === "repeatable-cell") {
       expect(b.value.columns).toHaveLength(1)
     }
+  })
+})
+
+// ── FRT-178: 역할 태그 파생·전파 ────────────────────────────────
+
+describe("roleNamesOf", () => {
+  it("등록된 역할명을 입력 순서대로, 공백·중복 없이 뽑는다", () => {
+    const block = createRoleHistory("역할 이력")
+    if (block.value.type !== "repeatable-cell") throw new Error("unreachable")
+    block.value.rows = [
+      { id: "r1", cells: { start: "2024-03", end: "", role: " 회장 " } },
+      { id: "r2", cells: { start: "", end: "", role: "" } },
+      { id: "r3", cells: { start: "", end: "", role: "회장" } },
+      { id: "r4", cells: { start: "", end: "", role: "공연팀장" } },
+    ]
+    expect(roleNamesOf(block)).toEqual(["회장", "공연팀장"])
+  })
+
+  it("repeatable-cell 이 아니면 빈 목록", () => {
+    expect(roleNamesOf(createTextField("역할 / 직책"))).toEqual([])
+  })
+})
+
+describe("mapRoleTags", () => {
+  function outcomeWithTags(tags: string[]) {
+    const b = createOutcomeList("주요 활동 / 이벤트", { roleTags: true })
+    if (b.value.type !== "repeatable-cell") throw new Error("unreachable")
+    b.value.rows = [{ id: "r1", cells: { item: "정기 공연" }, roleTags: tags }]
+    return b
+  }
+
+  function tableWithRoleColumn(tags: string[]) {
+    const b = createRepeatableCell("활동 / 이벤트", [
+      { key: "role", label: "이 활동 때의 역할", blockType: "checklist", variant: "role-chip" },
+      { key: "name", label: "프로젝트명", blockType: "text" },
+    ])
+    if (b.value.type !== "repeatable-cell") throw new Error("unreachable")
+    b.value.rows = [{ id: "r1", cells: { role: tags, name: "봄 공연" } }]
+    return b
+  }
+
+  it("개조식 행의 roleTags 를 치환한다", () => {
+    const next = mapRoleTags(outcomeWithTags(["회장"]), renameRoleTag("회장", "회장단"))
+    if (next.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(next.value.rows[0].roleTags).toEqual(["회장단"])
+  })
+
+  it("role-chip 컬럼의 셀을 치환한다", () => {
+    const next = mapRoleTags(tableWithRoleColumn(["회장"]), renameRoleTag("회장", "회장단"))
+    if (next.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(next.value.rows[0].cells.role).toEqual(["회장단"])
+    expect(next.value.rows[0].cells.name).toBe("봄 공연")
+  })
+
+  it("role-chip 이 아닌 컬럼은 이름이 같아도 건드리지 않는다", () => {
+    // '역할 이력' 블록 자신의 role 컬럼(자유 텍스트)이 여기 걸리면 사용자가 입력 중인
+    // 이름이 자기 자신의 전파로 덮인다.
+    const history = createRoleHistory("역할 이력")
+    if (history.value.type !== "repeatable-cell") throw new Error("unreachable")
+    history.value.rows = [{ id: "r1", cells: { start: "", end: "", role: "회장" } }]
+    const next = mapRoleTags(history, renameRoleTag("회장", "회장단"))
+    expect(next).toBe(history)
+  })
+
+  it("삭제는 태그에서 그 이름만 뺀다", () => {
+    const next = mapRoleTags(outcomeWithTags(["회장", "총무"]), removeRoleTag("회장"))
+    if (next.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(next.value.rows[0].roleTags).toEqual(["총무"])
+  })
+
+  it("이름을 빈 값으로 고치면 제거로 동작한다", () => {
+    const next = mapRoleTags(outcomeWithTags(["회장"]), renameRoleTag("회장", "  "))
+    if (next.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(next.value.rows[0].roleTags).toEqual([])
+  })
+
+  it("치환 결과가 이미 붙어 있던 이름과 겹치면 중복을 만들지 않는다", () => {
+    const next = mapRoleTags(outcomeWithTags(["회장", "총무"]), renameRoleTag("회장", "총무"))
+    if (next.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(next.value.rows[0].roleTags).toEqual(["총무"])
+  })
+
+  it("바뀐 게 없으면 같은 참조를 돌려준다(불필요한 리렌더 방지)", () => {
+    const block = outcomeWithTags(["회장"])
+    expect(mapRoleTags(block, renameRoleTag("총무", "총무2"))).toBe(block)
+  })
+
+  it("group 블록의 자식까지 훑는다", () => {
+    const group = createGroupBlock("사용자 섹션")
+    group.children = [outcomeWithTags(["회장"])]
+    const next = mapRoleTags(group, renameRoleTag("회장", "회장단"))
+    const child = next.children![0]
+    if (child.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(child.value.rows[0].roleTags).toEqual(["회장단"])
   })
 })

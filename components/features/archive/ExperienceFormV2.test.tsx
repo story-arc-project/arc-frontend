@@ -311,3 +311,73 @@ describe("FRT-177 섹션 안내 문구", () => {
     ).toBeInTheDocument()
   })
 })
+
+/**
+ * FRT-178 — 동아리 역할 축. '역할 이력'의 역할명이 ②·③ 태그의 선택지가 되고,
+ * 이름을 고치거나 지우면 이미 붙어 있는 태그가 따라 움직인다.
+ * 이 전파는 폼 최상위(RoleHistoryProvider)만 할 수 있다 — 블록은 형제를 모른다.
+ */
+async function selectClub(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getAllByRole("button", { name: "동아리/교내 단체" })[0])
+}
+
+describe("FRT-178 동아리 역할 태그 동기화", () => {
+  it("동아리는 확정본 4카드와 안내 문구를 보여준다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectClub(user)
+
+    expect(screen.getByText(/개별 이벤트나 프로젝트의 세부 내용은 아래/)).toBeInTheDocument()
+    expect(screen.getByText(/정기 이벤트, 공연, 프로젝트 등을 단위별로/)).toBeInTheDocument()
+    expect(screen.getByText(/임명장, 활동 확인서, 수상 내역/)).toBeInTheDocument()
+    // 유형 문구가 공통 기본 문구를 대체한다(범용 확장 카드도 함께 걷힌다).
+    expect(screen.queryByText("선택 입력이에요. 채울수록 분석이 정확해져요")).toBeNull()
+    expect(screen.queryByText("배경/목표")).toBeNull()
+  })
+
+  it("역할 이력에 등록한 이름이 개조식 행의 선택지로 나온다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectClub(user)
+
+    await user.click(screen.getByRole("button", { name: /역할 이력 상세 기록/ }))
+    await user.type(screen.getByLabelText("역할명"), "회장")
+
+    // ② '주요 활동 / 이벤트' 행의 칩 버튼을 연다(개조식 2종 → 칩 버튼도 2개).
+    await user.click(screen.getAllByText("🏷️ 역할")[0])
+    expect(screen.getAllByRole("button", { name: "회장" }).length).toBeGreaterThan(0)
+  })
+
+  it("역할명을 고치면 이미 붙어 있는 태그가 따라 바뀐다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectClub(user)
+
+    await user.click(screen.getByRole("button", { name: /역할 이력 상세 기록/ }))
+    await user.type(screen.getByLabelText("역할명"), "회장")
+
+    await user.click(screen.getAllByText("🏷️ 역할")[0])
+    await user.click(screen.getAllByRole("button", { name: "회장" })[0])
+    expect(screen.getByRole("button", { name: "회장 역할 태그 해제" })).toBeInTheDocument()
+
+    // 이력에서 이름을 바꾸면 붙어 있던 뱃지도 새 이름이 된다.
+    await user.type(screen.getByLabelText("역할명"), "단")
+    expect(screen.getByRole("button", { name: "회장단 역할 태그 해제" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "회장 역할 태그 해제" })).toBeNull()
+  })
+
+  it("역할 행을 지우면 붙어 있던 태그도 사라진다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectClub(user)
+
+    await user.click(screen.getByRole("button", { name: /역할 이력 상세 기록/ }))
+    await user.type(screen.getByLabelText("역할명"), "회장")
+    await user.click(screen.getAllByText("🏷️ 역할")[0])
+    await user.click(screen.getAllByRole("button", { name: "회장" })[0])
+    expect(screen.getByRole("button", { name: "회장 역할 태그 해제" })).toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "회장 삭제" }))
+    expect(screen.queryByRole("button", { name: "회장 역할 태그 해제" })).toBeNull()
+  })
+})

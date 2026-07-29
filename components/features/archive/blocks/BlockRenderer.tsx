@@ -12,6 +12,7 @@ import TagsBlock from "./TagsBlock"
 import LinkBlock from "./LinkBlock"
 import FileBlock from "./FileBlock"
 import RepeatableCellBlock from "./RepeatableCellBlock"
+import RoleHistoryBlock, { hasRoleHistoryShape } from "./RoleHistoryBlock"
 import OutcomeList from "./OutcomeList"
 import TableBlock from "./TableBlock"
 
@@ -52,6 +53,11 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
       case "file":
         return <FileBlock block={block} readOnly={readOnly} onChange={handleChange} />
       case "repeatable-cell": {
+        // role-history 는 접이식 역할 이력 패널(FRT-178). 역할명을 읽을 `role` 컬럼이 없으면
+        // 이름을 하나도 만들어내지 못하므로 표형으로 폴백한다 — 판정은 렌더와 같은 계산을 쓴다.
+        if (block.variant === "role-history" && hasRoleHistoryShape(block)) {
+          return <RoleHistoryBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        }
         // outcome-list 는 개조식 불릿-행 UI(단일컬럼 전용). 사용자가 '열 추가'로 컬럼을
         // 늘린 레거시 값이면 데이터가 숨지 않도록 표형 RepeatableCellBlock 으로 폴백한다(FRT-97).
         const columnCount = (block.value as RepeatableCellBlockValue).columns.length

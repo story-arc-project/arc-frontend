@@ -250,6 +250,130 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     expect(outcomeLists.filter(b => !b.guide).map(b => b.label)).toEqual([])
   })
 
+  // ── FRT-178: 동아리 문서 확정본 1:1 대조 ────────────────────────
+  //
+  // 출처: Notion 「완성된 입력항목 및 가이드라인 기획 내용」 > 동아리 / 교내 단체 — 입력항목 명세.
+
+  it("동아리 ① 은 문서 9필드 순서 그대로다 (역할 이력 포함)", () => {
+    const info = sectionsOf("club")[0]
+    expect(labelsIn(info.blocks)).toEqual([
+      "동아리 / 단체명",
+      "단체 유형",
+      "소속 학교",
+      "학과 / 학부",
+      "소속 단위",
+      "활동 기간",
+      "역할 / 직책",
+      "역할 이력",
+      "활동 규모",
+      "공식 URL",
+    ])
+    // 문서상 필수: 단체명·단체 유형·활동 기간 (구 정의의 '직책/역할 필수'는 확정본에서 선택)
+    expect(info.blocks.filter(b => b.required).map(b => b.label)).toEqual([
+      "동아리 / 단체명",
+      "단체 유형",
+      "활동 기간",
+    ])
+  })
+
+  it("동아리 ① '역할 이력'은 기간+역할명 반복 입력이고 잠겨 있다", () => {
+    const history = sectionsOf("club")[0].blocks.find(b => b.label === "역할 이력")!
+    expect(history.variant).toBe("role-history")
+    expect(history.lockColumns).toBe(true)
+    if (history.value.type === "repeatable-cell") {
+      expect(history.value.columns.map(c => c.key)).toEqual(["start", "end", "role"])
+    }
+  })
+
+  it("동아리 ② 는 문서 5필드 순서 그대로다", () => {
+    const detail = detailOf("club")!
+    expect(labelsIn(detail.blocks)).toEqual([
+      "가입 동기",
+      "동아리 소개",
+      "주요 활동 / 이벤트",
+      "주요 성과",
+      "활동 성격",
+    ])
+  })
+
+  it("동아리 ② 개조식 2종은 역할 태그를 켜고, '주요 활동 / 이벤트'는 ③ 표로 연결된다", () => {
+    const detail = detailOf("club")!
+    const activities = detail.blocks.find(b => b.label === "주요 활동 / 이벤트")!
+    expect(activities.variant).toBe("outcome-list")
+    expect(activities.roleTags).toBe(true)
+    expect(activities.linkConfig).toEqual({
+      targetSectionId: "club-activities",
+      titleColumnKey: "name",
+      label: "프로젝트로 기록",
+    })
+    // 연결 대상 섹션·컬럼이 실제로 존재해야 버튼이 행을 만든다(없으면 조용히 미연결).
+    const target = getTemplateForType("club").extensions.find(s => s.id === "club-activities")!
+    const cell = target.blocks.find(b => b.value.type === "repeatable-cell")!
+    if (cell.value.type === "repeatable-cell") {
+      expect(cell.value.columns.some(c => c.key === "name")).toBe(true)
+    }
+    const results = detail.blocks.find(b => b.label === "주요 성과")!
+    expect(results.variant).toBe("outcome-list")
+    expect(results.roleTags).toBe(true)
+    // 링크는 '주요 활동 / 이벤트'만 — 성과 행에서 프로젝트를 만들면 제목이 성과 문장이 된다.
+    expect(results.linkConfig).toBeUndefined()
+  })
+
+  it("동아리 '활동 성격'은 대외활동과 다른 12종 프리셋을 쓴다", () => {
+    const mood = detailOf("club")!.blocks.find(b => b.label === "활동 성격")!
+    expect(mood.type).toBe("checklist")
+    expect(mood.variant).toBe("mood-tag")
+    if (mood.value.type === "checklist") {
+      expect(mood.value.options).toHaveLength(12)
+      expect(mood.value.options[0]).toBe("🎨 창작 / 예술")
+      expect(mood.value.options).toContain("🏛️ 자치 / 대표")
+      // 대외활동 프리셋(창의적 표현·아이덴티티가 아닌 성격 축)과 섞이지 않는다.
+      expect(mood.value.options).not.toContain("🎨 창의적 표현")
+      expect(mood.value.checked).toEqual([])
+    }
+  })
+
+  it("동아리 ③ 은 문서 8컬럼 순서·필수를 따르고 첫 컬럼이 역할 칩이다", () => {
+    const columns = columnsOf("club", "club-activities", "활동 / 이벤트")
+    expect(columns.map(c => c.key)).toEqual([
+      "role", "name", "type", "detail", "work", "result", "difficulty", "output",
+    ])
+    expect(columns[0].label).toBe("이 활동 때의 역할")
+    expect(columns[0].variant).toBe("role-chip")
+    // 역할 칩의 선택지는 '역할 이력'에서 파생된다 — 여기 상수 옵션을 두면 안 된다.
+    expect(columns[0].options).toBeUndefined()
+    // 문서상 필수: 프로젝트명·유형
+    expect(columns.filter(c => c.required).map(c => c.key)).toEqual(["name", "type"])
+    expect(columns.every(c => Boolean(c.guide))).toBe(true)
+  })
+
+  it("동아리 ① 선택지는 문서 표기를 그대로 쓴다 (단체 유형 10종·소속 단위 6종·규모 6종)", () => {
+    const info = sectionsOf("club")[0]
+    const optionsOf = (label: string) => info.blocks.find(b => b.label === label)?.options ?? []
+    const types = optionsOf("단체 유형")
+    expect(types).toHaveLength(10)
+    expect(types).toContain("공연 / 예술 (밴드·연극·댄스 등)")
+    expect(types).toContain("자치회 / 학생회")
+    expect(types).toContain("연합 동아리")
+    expect(optionsOf("소속 단위")).toEqual([
+      "중앙 동아리", "단과대 동아리", "학과 (과 동아리)", "연합 동아리", "학생회", "기타",
+    ])
+    // 규모 구간이 대외활동(30~100/100~300/300명 이상)과 다르다 — 동아리는 부원 규모다.
+    expect(optionsOf("활동 규모")).toEqual([
+      "10명 미만", "10~30명", "30~50명", "50~100명", "100명 이상", "잘 모름",
+    ])
+  })
+
+  it("동아리 모든 입력 필드에 가이드라인이 붙어 있다", () => {
+    const blocks = sectionsOf("club").flatMap(s => s.blocks)
+    const fields = blocks.filter(b => b.value.type !== "repeatable-cell")
+    expect(fields.filter(b => !b.guide).map(b => b.label)).toEqual([])
+    // 개조식 2종 + 역할 이력은 repeatable-cell 이지만 블록 guide 를 쓴다(한 줄/패널 입력).
+    const guided = blocks.filter(b => b.variant === "outcome-list" || b.variant === "role-history")
+    expect(guided).toHaveLength(3)
+    expect(guided.filter(b => !b.guide).map(b => b.label)).toEqual([])
+  })
+
   // ── FRT-135: 문서 확정본 1:1 대조 ────────────────────────────────
   //
   // 문서와 코드가 충돌하면 문서가 맞다. 여기 기대값의 출처는 Notion

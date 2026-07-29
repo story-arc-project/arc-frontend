@@ -1,0 +1,157 @@
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { cleanup, render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { useState } from "react"
+
+import RoleHistoryBlock, { hasRoleHistoryShape } from "./RoleHistoryBlock"
+import BlockRenderer from "./BlockRenderer"
+import { createRoleHistory, createRepeatableCell } from "@/lib/utils/block-utils"
+import { RoleHistoryProvider, type RoleHistoryContextValue } from "@/contexts/RoleHistoryContext"
+import type { Block, RepeatableCellBlockValue } from "@/types/archive"
+
+// globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
+afterEach(cleanup)
+
+function makeBlock(roles: { start?: string; end?: string; role: string }[] = []): Block {
+  const block = createRoleHistory("역할 이력", { guide: "시기별로 기록해주세요." })
+  const value = block.value as RepeatableCellBlockValue
+  return {
+    ...block,
+    value: {
+      ...value,
+      rows: roles.map((r, i) => ({
+        id: `row-${i}`,
+        cells: { start: r.start ?? "", end: r.end ?? "", role: r.role },
+      })),
+    },
+  }
+}
+
+function Harness({
+  initial = [],
+  ctx,
+}: {
+  initial?: { role: string }[]
+  ctx?: Partial<RoleHistoryContextValue>
+}) {
+  const [block, setBlock] = useState(() => makeBlock(initial))
+  const value: RoleHistoryContextValue = {
+    roles: [],
+    renameRole: vi.fn(),
+    removeRole: vi.fn(),
+    ...ctx,
+  }
+  return (
+    <RoleHistoryProvider value={value}>
+      <RoleHistoryBlock block={block} onChange={v => setBlock(prev => ({ ...prev, value: v }))} />
+    </RoleHistoryProvider>
+  )
+}
+
+describe("RoleHistoryBlock", () => {
+  it("기록이 없으면 접혀 있고 버튼으로 펼친다", async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+
+    expect(screen.queryByLabelText("역할명")).toBeNull()
+    await user.click(screen.getByRole("button", { name: /역할 이력 상세 기록/ }))
+    expect(screen.getByText("시기별로 기록해주세요.")).toBeDefined()
+    // 펼치자마자 바로 쓸 수 있는 빈 줄이 있어야 한다(FRT-103) — 없으면 '역할 추가' 버튼만
+    // 놓인 빈 상자가 되고, 그 버튼은 이미 빈 줄이 있을 때 숨는 쪽이 맞다.
+    expect(screen.getByLabelText("역할명")).toBeDefined()
+    expect(screen.queryByRole("button", { name: "역할 추가" })).toBeNull()
+  })
+
+  it("표시용 빈 줄은 value 에 커밋되지 않는다(유령 섹션 방지)", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(
+      <RoleHistoryBlock block={makeBlock()} onChange={onChange} />,
+    )
+    await user.click(screen.getByRole("button", { name: /역할 이력 상세 기록/ }))
+    expect(onChange).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText("역할명"), "회")
+    expect(onChange).toHaveBeenCalled()
+  })
+
+  it("이미 기록이 있으면 펼친 채로 보여준다", () => {
+    // 접어두면 입력한 값이 화면에서 사라져 보인다.
+    render(<Harness initial={[{ role: "회장" }]} />)
+    expect(screen.getByDisplayValue("회장")).toBeDefined()
+  })
+
+  it("역할을 추가하고 삭제할 수 있다", async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={[{ role: "회장" }]} />)
+
+    await user.click(screen.getByRole("button", { name: "역할 추가" }))
+    expect(screen.getAllByLabelText("역할명")).toHaveLength(2)
+
+    await user.click(screen.getByRole("button", { name: "회장 삭제" }))
+    expect(screen.queryByDisplayValue("회장")).toBeNull()
+  })
+
+  it("역할명을 고치면 rename 을 전파한다", async () => {
+    const user = userEvent.setup()
+    const renameRole = vi.fn()
+    render(<Harness initial={[{ role: "회장" }]} ctx={{ renameRole }} />)
+
+    await user.type(screen.getByLabelText("역할명"), "단")
+
+    expect(renameRole).toHaveBeenCalledTimes(1)
+    expect(renameRole).toHaveBeenCalledWith("회장", "회장단")
+  })
+
+  it("역할 행을 지우면 remove 를 전파한다", async () => {
+    const user = userEvent.setup()
+    const removeRole = vi.fn()
+    render(<Harness initial={[{ role: "공연팀장" }]} ctx={{ removeRole }} />)
+
+    await user.click(screen.getByRole("button", { name: "공연팀장 삭제" }))
+
+    expect(removeRole).toHaveBeenCalledTimes(1)
+    expect(removeRole).toHaveBeenCalledWith("공연팀장")
+  })
+
+  it("기간만 바꾸면 아무것도 전파하지 않는다", async () => {
+    const user = userEvent.setup()
+    const renameRole = vi.fn()
+    const removeRole = vi.fn()
+    render(<Harness initial={[{ role: "회장" }]} ctx={{ renameRole, removeRole }} />)
+
+    await user.type(screen.getByLabelText("역할 시작 시점"), "2024-03")
+
+    expect(renameRole).not.toHaveBeenCalled()
+    expect(removeRole).not.toHaveBeenCalled()
+  })
+
+  it("readOnly 는 기간·역할명을 목록으로 보여준다", () => {
+    render(
+      <RoleHistoryBlock
+        readOnly
+        block={makeBlock([{ start: "2024-03", end: "2024-12", role: "회장" }])}
+        onChange={() => {}}
+      />,
+    )
+    expect(screen.getByText(/2024-03 – 2024-12/)).toBeDefined()
+    expect(screen.getByText(/회장/)).toBeDefined()
+  })
+})
+
+describe("BlockRenderer 폴백", () => {
+  it("role 컬럼이 있으면 역할 이력 패널로 그린다", () => {
+    render(<BlockRenderer block={makeBlock([{ role: "회장" }])} onChange={() => {}} />)
+    expect(screen.getByLabelText("역할명")).toBeDefined()
+  })
+
+  it("role 컬럼이 없으면 표형으로 폴백한다 — 이름을 만들어낼 자리가 없으므로", () => {
+    const broken: Block = {
+      ...createRepeatableCell("역할 이력", [{ key: "note", label: "메모", blockType: "text" }]),
+      variant: "role-history",
+    }
+    expect(hasRoleHistoryShape(broken)).toBe(false)
+    render(<BlockRenderer block={broken} onChange={() => {}} />)
+    expect(screen.queryByRole("button", { name: /역할 이력 상세 기록/ })).toBeNull()
+  })
+})

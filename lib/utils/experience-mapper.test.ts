@@ -396,6 +396,88 @@ describe("toExperienceV2", () => {
     )
   })
 
+  it("v2: FRT-178 로 라벨이 바뀐 구 동아리 필드도 custom 으로 보존된다", () => {
+    // 확정본 정렬로 '단체 소개'→'동아리 소개'(②로 이동)·'기간'→'활동 기간'이 되며 안정키가
+    // 바뀐다. 구 레코드의 값은 '기타' 카드에 그대로 남아야 한다(무음 손실 금지).
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "club",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "OO 밴드",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: {
+            "club-info.단체 소개": textarea("30년 역사의 중앙 밴드 동아리"),
+            "club-info.직책/역할": text("공연팀장"),
+          },
+          custom: [],
+        },
+      }),
+    )
+    expect(v2.customBlocks.find(b => b.key === "club-info.단체 소개")?.value).toEqual(
+      textarea("30년 역사의 중앙 밴드 동아리"),
+    )
+    expect(v2.customBlocks.find(b => b.key === "club-info.직책/역할")?.value).toEqual(
+      text("공연팀장"),
+    )
+  })
+
+  it("v2: 구 동아리 표(5컬럼)는 저장된 컬럼을 그대로 유지하고 잠금이 풀린다", () => {
+    // ③ 컬럼이 5→8 로 바뀌었지만 injectValue 는 저장값을 통째로 채택한다 — 구 레코드의
+    // '세부 기간' 같은 폐기 컬럼 값이 화면에서 사라지면 안 된다. 대신 컬럼이 템플릿과
+    // 달라졌으므로 열 관리 UI 를 돌려준다(FRT-104).
+    const oldTable = {
+      type: "repeatable-cell" as const,
+      columns: [
+        { key: "name", label: "활동명", blockType: "text" as const },
+        { key: "period", label: "세부 기간", blockType: "text" as const },
+        { key: "role", label: "직책/역할", blockType: "text" as const },
+        { key: "detail", label: "활동내용 상세", blockType: "textarea" as const },
+        { key: "result", label: "행사/운영 성과", blockType: "textarea" as const },
+      ],
+      rows: [
+        {
+          id: "row-1",
+          cells: {
+            name: "봄 정기 공연",
+            period: "2024-03",
+            role: "공연팀장",
+            detail: "6개 팀 무대",
+            result: "관객 500명",
+          },
+        },
+      ],
+    }
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "club",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "OO 밴드",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: { "club-activities.활동 기록": oldTable },
+          custom: [],
+        },
+      }),
+    )
+    // 블록 라벨이 '활동 / 이벤트'로 바뀌어 안정키가 달라졌으므로 '기타' 카드로 보존된다.
+    const preserved = v2.customBlocks.find(b => b.key === "club-activities.활동 기록")
+    expect(preserved?.value).toEqual(oldTable)
+    // 새 템플릿의 8컬럼 표는 빈 채로 함께 나타난다(구 레코드도 새 질문을 볼 수 있게).
+    const fresh = v2.extensionBlocks.find(b => b.label === "활동 / 이벤트")
+    if (fresh?.value.type === "repeatable-cell") {
+      expect(fresh.value.columns.map(c => c.key)).toEqual([
+        "role", "name", "type", "detail", "work", "result", "difficulty", "output",
+      ])
+    }
+  })
+
   it("v2: 라운드트립에서 orphan 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
     const original = makeExperience({
       type: "academic-society",

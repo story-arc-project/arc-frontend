@@ -5,6 +5,7 @@ import { useState } from "react"
 
 import OutcomeList from "./OutcomeList"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
+import { RoleHistoryProvider } from "@/contexts/RoleHistoryContext"
 import { isBlockEmpty } from "@/lib/utils/block-utils"
 import type { Block, RepeatableCellBlockValue } from "@/types/archive"
 
@@ -268,7 +269,8 @@ describe("OutcomeList — 빈 상태 placeholder(FRT-103)", () => {
 
 // ── FRT-76: '프로젝트로 연결' 링크 UI ────────────────────────────────
 function makeLinkBlock(
-  rows: { id: string; item: string; linkedProjectRowId?: string }[] = [],
+  rows: { id: string; item: string; linkedProjectRowId?: string; roleTags?: string[] }[] = [],
+  extra?: Partial<Block>,
 ): Block {
   return {
     id: "b1",
@@ -283,8 +285,10 @@ function makeLinkBlock(
         id: r.id,
         cells: { item: r.item },
         ...(r.linkedProjectRowId ? { linkedProjectRowId: r.linkedProjectRowId } : {}),
+        ...(r.roleTags ? { roleTags: r.roleTags } : {}),
       })),
     },
+    ...extra,
   }
 }
 
@@ -390,6 +394,48 @@ describe("OutcomeList — 프로젝트로 연결 (FRT-76)", () => {
     await user.click(screen.getByRole("button", { name: "프로젝트 연결 해제" }))
     const last = onValue.mock.calls.at(-1)![0] as RepeatableCellBlockValue
     expect(last.rows[0].linkedProjectRowId).toBeUndefined()
+  })
+
+  it("연결 해제가 같은 행의 다른 필드(역할 태그)를 함께 지우지 않는다", async () => {
+    // 행을 `{ id, cells }` 로 다시 짜면 그때 존재하는 다른 행 필드가 통째로 날아간다 —
+    // 행 필드가 늘 때마다 조용히 깨지는 형태였다(FRT-178).
+    const user = userEvent.setup()
+    const onValue = vi.fn()
+    render(
+      <LinkHarness
+        initial={makeLinkBlock([
+          { id: "r0", item: "A", linkedProjectRowId: "proj-1", roleTags: ["회장"] },
+        ])}
+        ctx={makeCtx()}
+        onValue={onValue}
+      />,
+    )
+    await user.click(screen.getByRole("button", { name: "프로젝트 연결 해제" }))
+    const last = onValue.mock.calls.at(-1)![0] as RepeatableCellBlockValue
+    expect(last.rows[0].linkedProjectRowId).toBeUndefined()
+    expect(last.rows[0].roleTags).toEqual(["회장"])
+  })
+
+  it("roleTags opt-in 을 안 한 블록에는 역할 칩이 없다", () => {
+    render(
+      <RoleHistoryProvider value={{ roles: ["회장"], renameRole: vi.fn(), removeRole: vi.fn() }}>
+        <LinkHarness initial={makeLinkBlock([{ id: "r0", item: "A" }])} ctx={makeCtx()} />
+      </RoleHistoryProvider>,
+    )
+    expect(screen.queryByText("🏷️ 역할")).toBeNull()
+  })
+
+  it("roleTags 를 켠 블록은 각 행에 역할 칩을 노출한다 (FRT-178)", () => {
+    render(
+      <RoleHistoryProvider value={{ roles: ["회장"], renameRole: vi.fn(), removeRole: vi.fn() }}>
+        <LinkHarness
+          initial={makeLinkBlock([{ id: "r0", item: "A", roleTags: ["회장"] }], { roleTags: true })}
+          ctx={makeCtx()}
+        />
+      </RoleHistoryProvider>,
+    )
+    expect(screen.getByText("🏷️ 역할")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "회장 역할 태그 해제" })).toBeInTheDocument()
   })
 
   it("대상 프로젝트가 사라지면(stale) 링크 버튼으로 복귀한다", () => {
