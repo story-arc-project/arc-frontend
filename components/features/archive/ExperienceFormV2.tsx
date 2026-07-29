@@ -19,10 +19,21 @@ import type {
 } from "@/types/archive"
 import { SECTION_DESCRIPTION_OVERRIDES, SECTION_LABEL_OVERRIDES } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
-import { cloneBlocks, createEmptyRow, createGroupBlock, isBlockEmpty, uid } from "@/lib/utils/block-utils"
+import {
+  cloneBlocks,
+  createEmptyRow,
+  createGroupBlock,
+  isBlockEmpty,
+  mapRoleTags,
+  removeRoleTag,
+  renameRoleTag,
+  roleNamesOf,
+  uid,
+} from "@/lib/utils/block-utils"
 import { capture } from "@/lib/analytics"
 import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
+import { RoleHistoryProvider, type RoleHistoryContextValue } from "@/contexts/RoleHistoryContext"
 
 interface ExperienceFormV2Props {
   mode: "new" | "edit"
@@ -289,12 +300,12 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       )
       return row.id
     },
-    getProjectRow(targetSectionId, projectRowId) {
+    getProjectRow(targetSectionId, titleColumnKey, projectRowId) {
       const found = findProjectBlock(targetSectionId)
       const row = found?.value.rows.find(r => r.id === projectRowId)
       if (!row) return null
-      const firstColKey = found!.value.columns[0]?.key
-      const cell = firstColKey ? row.cells[firstColKey] : ""
+      // 쓰기와 같은 컬럼에서 읽는다(첫 컬럼이 아니라) — createProjectRow 와 대칭.
+      const cell = row.cells[titleColumnKey]
       const title = Array.isArray(cell) ? cell.join(", ") : (cell ?? "")
       return { title }
     },
@@ -307,6 +318,31 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       })
     },
   }), [findProjectBlock])
+
+  // ── FRT-178: 역할 이력 → 역할 태그 파생·동기화 (RoleHistoryContext provider) ──
+  // 태그 선택지가 상수가 아니라 형제 블록('역할 이력')의 값에서 나온다. 블록은 형제를 모르므로
+  // 폼이 목록을 공급하고, 이름 변경·삭제는 폼이 전 블록에 전파한다(태그는 이름으로 저장된다).
+  const roles = useMemo(() => {
+    for (const section of extensionSections) {
+      const block = section.blocks.find(b => b.variant === "role-history")
+      if (block) return roleNamesOf(block)
+    }
+    return []
+  }, [extensionSections])
+
+  const applyRoleTags = useCallback((fn: (tags: string[]) => string[]) => {
+    setCoreBlocks(prev => prev.map(b => mapRoleTags(b, fn)))
+    setExtensionSections(prev =>
+      prev.map(s => ({ ...s, blocks: s.blocks.map(b => mapRoleTags(b, fn)) })),
+    )
+    setCustomBlocks(prev => prev.map(b => mapRoleTags(b, fn)))
+  }, [])
+
+  const roleHistory = useMemo<RoleHistoryContextValue>(() => ({
+    roles,
+    renameRole: (from, to) => applyRoleTags(renameRoleTag(from, to)),
+    removeRole: name => applyRoleTags(removeRoleTag(name)),
+  }), [roles, applyRoleTags])
 
   // ── Header input handler (경험명 / 한 줄 요약 only) ──────────────
   function handleCoreBlockChange(blockId: string, value: BlockValue) {
@@ -526,6 +562,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       {/* Form sections — 4-card layout */}
       {template && formCards && (
         <ProjectLinkProvider value={projectLink}>
+        <RoleHistoryProvider value={roleHistory}>
         <div className="flex flex-col gap-5 archive-input-14">
           {formCards.cards.map(card => (
             <FormSection
@@ -605,6 +642,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             </div>
           )}
         </div>
+        </RoleHistoryProvider>
         </ProjectLinkProvider>
       )}
     </div>

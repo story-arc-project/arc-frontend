@@ -125,12 +125,50 @@ describe("computeFormCards", () => {
     expect(labels).toContain("공개 설정")
   })
 
-  it("비-커스텀 유형(club)은 범용 확장 필드(배경/목표·공개 설정)를 유지한다", () => {
-    const { core, sections } = sectionsFor("club")
+  // detail 섹션을 정의하지 않은 유형은 지금도 범용 확장 카드로 폴백한다.
+  // (club 은 FRT-178 에서 자기 detail 섹션을 갖게 되어 더는 이 예시가 아니다.)
+  it("비-커스텀 유형(volunteer)은 범용 확장 필드(배경/목표·공개 설정)를 유지한다", () => {
+    const { core, sections } = sectionsFor("volunteer")
     const r = computeFormCards(core, sections)
     const all = r.cards.flatMap(c => c.blocks).map(b => b.label)
     expect(all).toContain("배경/목표")
     expect(all).toContain("공개 설정")
+  })
+
+  // ── FRT-178: 동아리가 확정본 4카드로 그려지는지 (문서 ①~④) ──
+  it("동아리: 4카드가 모두 보이고 범용 확장 카드가 걷힌다", () => {
+    const { core, sections } = sectionsFor("club")
+    const r = computeFormCards(core, sections)
+    expect(r.visibleCategories).toEqual(["basic", "detail", "repeat", "evidence"])
+
+    const all = r.cards.flatMap(c => c.blocks).map(b => b.label)
+    // detail 섹션이 생겼으므로 범용 확장 필드는 더 이상 붙지 않는다.
+    expect(all).not.toContain("배경/목표")
+    expect(all).not.toContain("내가 한 행동")
+    expect(all).not.toContain("배운 점")
+    // core '기간'·'내 역할/기여도'는 '활동 기간'·'역할 / 직책' 동의어라 숨는다.
+    expect(all).not.toContain("기간")
+    expect(all).not.toContain("내 역할/기여도")
+    // core '핵심 성과'는 CORE_EXCLUDE 로 애초에 없다(② 주요 성과·③ 핵심 성과 컬럼이 대신 묻는다).
+    expect(all).not.toContain("핵심 성과")
+    // 문서 ④ 활동 증빙 = core 증빙 자료.
+    expect(r.cards.find(c => c.category === "evidence")!.blocks.map(b => b.label)).toContain("증빙 자료")
+    // 공개 설정은 보존(설정 섹션).
+    expect(all).toContain("공개 설정")
+  })
+
+  it("동아리 detail 카드는 확정본 5필드 + 공개 설정만 갖는다", () => {
+    const { core, sections } = sectionsFor("club")
+    const r = computeFormCards(core, sections)
+    const detail = r.cards.find(c => c.category === "detail")!
+    expect(detail.blocks.map(b => b.label)).toEqual([
+      "가입 동기",
+      "동아리 소개",
+      "주요 활동 / 이벤트",
+      "주요 성과",
+      "활동 성격",
+      "공개 설정",
+    ])
   })
 
   // ── FRT-177: 대외활동이 확정본 4카드로 그려지는지 (문서 ①~④) ──

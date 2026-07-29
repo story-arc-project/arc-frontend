@@ -18,8 +18,19 @@ export interface ProjectLinkContextValue {
    * 컬럼에 활동 텍스트를 채운다. 새 프로젝트 행 id 를 동기 반환(대상 섹션 없으면 null).
    */
   createProjectRow: (targetSectionId: string, titleColumnKey: string, text: string) => string | null
-  /** 대상 프로젝트 행의 존재·제목 조회. 없으면 null(soft link stale 판정). */
-  getProjectRow: (targetSectionId: string, projectRowId: string) => { title: string } | null
+  /**
+   * 대상 프로젝트 행의 존재·제목 조회. 없으면 null(soft link stale 판정).
+   *
+   * ⚠️ `titleColumnKey` 를 반드시 함께 받는다 — 제목을 `columns[0]` 에서 읽으면 안 된다.
+   * 쓰기(`createProjectRow`)는 `titleColumnKey` 컬럼에 넣으므로, 읽기가 첫 컬럼을 보면
+   * "제목 컬럼이 곧 첫 컬럼"이라는 우연에 기대게 된다. 동아리 ③ 은 첫 컬럼이 역할 칩이라
+   * 그 전제가 깨지고, 제목 자리에 역할 태그가 나온다(FRT-178).
+   */
+  getProjectRow: (
+    targetSectionId: string,
+    titleColumnKey: string,
+    projectRowId: string,
+  ) => { title: string } | null
   /** 프로젝트 행으로 스크롤(전역 유일 data-row-id 기준). */
   scrollToProjectRow: (projectRowId: string) => void
 }

@@ -5,6 +5,7 @@ import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Block, RepeatableCellBlockValue, BlockRow, BlockColumnDef } from "@/types/archive"
 import { cellFilled, createEmptyRow, uid } from "@/lib/utils/block-utils"
+import RoleChips from "./RoleChips"
 import { usePlaceholderRow } from "./usePlaceholderRow"
 
 interface RepeatableCellBlockProps {
@@ -343,6 +344,11 @@ function CellInput({
   }
 
   if (column.blockType === "checklist") {
+    // FRT-178: 역할 칩 컬럼은 옵션이 상수가 아니라 폼의 '역할 이력'에서 파생된다.
+    // 자유 태그 입력으로 폴백하면 등록되지 않은 역할이 생겨 동기화가 성립하지 않는다.
+    if (column.variant === "role-chip") {
+      return <RoleChips value={arrVal} onChange={onChange} />
+    }
     const options = column.options ?? []
     if (options.length === 0) {
       // Fallback: free-form checklist entries (treated as tags)

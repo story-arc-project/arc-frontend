@@ -12,6 +12,7 @@ import {
   createFileField,
   createRepeatableCell,
   createOutcomeList,
+  createRoleHistory,
 } from '@/lib/utils/block-utils'
 
 // ─── Experience Type Registry ───────────────────────────────────
@@ -64,6 +65,7 @@ export const TYPE_CATEGORIES = [
  * ⚠️ '경험명'·'한 줄 요약'은 헤더 소유라 절대 제외하지 않는다.
  */
 const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
+  club: ['핵심 성과'],
   education: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
   extracurricular: ['핵심 성과'],
 }
@@ -665,6 +667,29 @@ function academicSocietyExtensions(): TemplateSection[] {
   ]
 }
 
+/** 동아리 ② '활동 성격' 이모티콘 태그 — 확정본 12종 고정 프리셋(FRT-178, 아이덴티티 축).
+ *  대외활동(EXTRACURRICULAR_MOOD_TAGS)과 목록이 다르다 — 그쪽은 '활동이 어떤 성격이었나',
+ *  이쪽은 '이 단체가 어떤 단체인가'를 묻는다. 공유하면 둘 다 어긋난다. */
+const CLUB_MOOD_TAGS = [
+  '🎨 창작 / 예술',
+  '🎤 공연 / 발표',
+  '🏃 운동 / 체육',
+  '🎮 게임 / 취미',
+  '🎬 영상 / 사진',
+  '📝 학술 / 스터디',
+  '🌍 봉사 / 사회공헌',
+  '💼 창업 / 실무',
+  '⛪ 종교 / 신앙',
+  '🗣️ 언어 / 교류',
+  '🏛️ 자치 / 대표',
+  '🌐 연합 / 교류',
+]
+
+// 동아리 / 교내 단체 — 프로토타입 확정본(2026-07), FRT-178 에서 문서 4섹션에 1:1 정렬.
+// 대외활동(FRT-177)과 ②·③ 구조가 동형이고, 여기에만 있는 축이 '역할'이다:
+// ① '역할 이력'에 등록한 역할명이 ② 각 행과 ③ 첫 컬럼의 태그 선택지로 파생된다(RoleHistoryContext).
+// 구 정의(7필드·detail 섹션 없음)의 값은 안정키가 바뀌므로 orphanFieldsToBlocks 가 '기타' 카드로
+// 보존한다. ③ 표는 저장된 columns 가 우선이라(injectValue) 구 레코드의 5컬럼은 그대로 유지된다.
 function clubExtensions(): TemplateSection[] {
   return [
     {
@@ -672,25 +697,194 @@ function clubExtensions(): TemplateSection[] {
       category: 'basic',
       label: '동아리/단체 정보',
       blocks: [
-        createTextField('동아리/단체명', { required: true }),
-        createTextareaField('단체 소개'),
-        createPeriodField('기간', { required: true }),
-        createFileField('활동 인증서/수료 증빙'),
-        createTextField('직책/역할', { required: true }),
+        createTextField('동아리 / 단체명', {
+          required: true,
+          guide: '활동한 동아리 또는 교내 단체의 정확한 이름을 적어주세요.',
+          placeholder: '예: OO대학교 밴드 동아리 OO, 총학생회, 과학생회',
+        }),
+        createSelectField(
+          '단체 유형',
+          [
+            '학술 / 스터디',
+            '취미 / 문화',
+            '공연 / 예술 (밴드·연극·댄스 등)',
+            '체육 / 스포츠',
+            '봉사 / 사회공헌',
+            '자치회 / 학생회',
+            '종교',
+            '창업 / 실무 프로젝트',
+            '연합 동아리',
+            '기타',
+          ],
+          { required: true, guide: '이 단체의 성격을 선택해주세요.' },
+        ),
+        createTextField('소속 학교', {
+          guide:
+            '이 동아리가 소속된 학교를 적어주세요. 연합 동아리라면 비워두거나 여러 학교를 함께 적어도 좋아요.',
+          placeholder: '예: OO대학교',
+        }),
+        createTextField('학과 / 학부', {
+          guide: '과 동아리라면 소속 학과나 학부를 적어주세요.',
+          placeholder: '예: 경영학과',
+        }),
+        createSelectField(
+          '소속 단위',
+          ['중앙 동아리', '단과대 동아리', '학과 (과 동아리)', '연합 동아리', '학생회', '기타'],
+          { guide: '중앙 동아리인지, 학과·단과대 소속인지, 연합 동아리인지 알려주세요.' },
+        ),
+        createPeriodField('활동 기간', {
+          required: true,
+          guide:
+            '활동을 시작하고 종료한 시점을 선택해주세요. 여러 학기에 걸쳐 활동했다면 전체 기간을 적어주세요.',
+        }),
+        createTextField('역할 / 직책', {
+          guide:
+            '이 단체에서 맡은 역할을 적어주세요. 여러 학기에 걸쳐 역할이 바뀌었다면 아래에서 이력을 상세히 기록할 수 있어요.',
+          placeholder: '예: 회장, 부회장, 총무, 공연팀장, 일반 부원',
+        }),
+        // 바로 위 '역할 / 직책'에 딸린 확장 패널. 여기 등록한 역할명이 ②·③ 태그의 선택지가 된다.
+        createRoleHistory('역할 이력', {
+          guide:
+            '시간에 따라 역할이 어떻게 변화했는지 시기별로 기록해주세요. 성장 서사를 보여주기 좋아요.',
+        }),
+        createSelectField(
+          '활동 규모',
+          ['10명 미만', '10~30명', '30~50명', '50~100명', '100명 이상', '잘 모름'],
+          { guide: '이 단체의 전체 부원 규모를 알려주세요.' },
+        ),
+        createLinkField('공식 URL', {
+          guide: '동아리 홈페이지, SNS 계정 등을 남겨주세요.',
+        }),
+      ],
+    },
+    {
+      id: 'club-detail',
+      category: 'detail',
+      label: '활동 상세',
+      blocks: [
+        createTextareaField('가입 동기', {
+          guide: '이 동아리에 가입한 계기나 기대했던 점이 있다면 적어주세요.',
+          placeholder:
+            '예: 대학 생활 중에 밴드를 해보고 싶었고, 정기 공연을 통해 무대 경험을 쌓을 수 있는 점이 매력적이었습니다.',
+        }),
+        createTextareaField('동아리 소개', {
+          guide: '이 동아리가 어떤 단체인지 자유롭게 소개해주세요. 성격, 활동 주기, 문화 등 무엇이든 좋아요.',
+          placeholder:
+            '예: 30년 역사의 교내 중앙 밴드 동아리로, 매 학기 정기 공연을 개최하고 주 2회 정기 합주를 진행합니다. 세션별로 소그룹을 이루며, 신입 부원은 선배와 1:1 멘토링으로 기초를 다집니다.',
+        }),
+        // 문서 ②의 '+ 프로젝트로 기록' 버튼 = FRT-76 링크 기능. 행 텍스트가 ③ 표의 'name'
+        // 컬럼으로 복사되며 연결된다. 역할 태그(FRT-178)는 그 옆에 별도 칩으로 붙는다.
+        createOutcomeList('주요 활동 / 이벤트', {
+          itemLabel: '활동 / 이벤트',
+          guide:
+            "동아리에서 참여하거나 주도한 활동, 정기 이벤트를 리스트업해주세요. 각 항목 옆 '프로젝트로 기록' 버튼으로 아래에서 상세히 기록할 수 있어요.",
+          placeholder: '예: 2024 봄 정기 공연 / 신입 부원 모집 캠페인 기획',
+          link: { targetSectionId: 'club-activities', titleColumnKey: 'name', label: '프로젝트로 기록' },
+          roleTags: true,
+        }),
+        createOutcomeList('주요 성과', {
+          itemLabel: '성과',
+          guide: '이 활동에서 이룬 성과를 리스트업해주세요. 수상, 우수활동자 선정, 완주, 결과물 등 무엇이든 좋아요.',
+          placeholder: '예: 회장으로서 신입 부원 30명 모집 / 정기 공연 관객 500명 유치 / 교내 동아리 축제 대상',
+          roleTags: true,
+        }),
+        createMoodTagField('활동 성격', CLUB_MOOD_TAGS, {
+          guide:
+            '이 동아리의 정체성을 가장 잘 나타내는 성격을 태그로 선택해주세요. 여러 개 선택할 수 있어요.',
+        }),
       ],
     },
     {
       id: 'club-activities',
       category: 'repeat',
-      label: '활동 기록',
+      label: '활동 / 이벤트 기록',
       blocks: [
-        createRepeatableCell('활동 기록', [
-          { key: 'name', label: '활동명', blockType: 'text', required: true },
-          { key: 'period', label: '세부 기간', blockType: 'text' },
-          { key: 'role', label: '직책/역할', blockType: 'text' },
-          { key: 'detail', label: '활동내용 상세', blockType: 'textarea' },
-          { key: 'result', label: '행사/운영 성과', blockType: 'textarea' },
-        ]),
+        createRepeatableCell(
+          '활동 / 이벤트',
+          [
+            // 문서상 이 블록의 **첫** 필드가 역할이다(다른 유형의 반복 블록에는 없는 형태).
+            // 옵션은 ① '역할 이력'에서 파생되므로 여기에 options 를 두지 않는다.
+            {
+              key: 'role',
+              label: '이 활동 때의 역할',
+              blockType: 'checklist',
+              variant: 'role-chip',
+              guide:
+                "이 활동을 어떤 역할 시기에 수행했는지 태그해주세요. 위 '역할 이력'에 등록된 역할이 노출돼요.",
+            },
+            {
+              key: 'name',
+              label: '프로젝트명',
+              blockType: 'text',
+              required: true,
+              guide: '이 활동이나 이벤트의 이름을 적어주세요.',
+              placeholder: '예: 2024 봄 정기 공연, 신입생 환영회 기획',
+            },
+            {
+              key: 'type',
+              label: '유형',
+              blockType: 'single-select',
+              required: true,
+              guide: '활동/이벤트의 유형을 선택해주세요.',
+              options: [
+                '정기 공연 / 발표회',
+                '축제 부스 / 참여',
+                'MT / 워크숍',
+                '봉사활동',
+                '대회 / 공모전 출전',
+                '정기 모임 / 스터디',
+                '임원 활동 / 기획',
+                '신입 부원 모집',
+                '기타',
+              ],
+            },
+            {
+              // 구 정의의 '활동내용 상세'와 같은 key 를 유지한다 — 확정본 라벨은 '간단한 설명'이지만
+              // key 를 바꾸면 사용자가 열 관리로 살려둔 구 컬럼과 나란히 빈 칸이 하나 더 생긴다.
+              key: 'detail',
+              label: '간단한 설명',
+              blockType: 'textarea',
+              guide: '이 활동/이벤트가 무엇이었는지 한두 문장으로 설명해주세요.',
+              placeholder:
+                '예: 학기말 정기 공연으로, 부원 20명이 참여해 6개 팀이 무대에 올라 총 관객 500명을 유치했습니다.',
+            },
+            {
+              key: 'work',
+              label: '내가 한 일',
+              blockType: 'textarea',
+              guide: '이 활동에서 내가 맡은 역할과 구체적으로 한 일을 적어주세요.',
+              placeholder:
+                '예: 공연팀장으로서 전체 세트리스트 구성, 리허설 일정 관리, 무대 셋업을 총괄했습니다. 부원 20명과 주 2회 합주를 진행하며 완성도를 높였습니다.',
+            },
+            {
+              key: 'result',
+              label: '핵심 성과',
+              blockType: 'textarea',
+              guide: '이 활동에서 얻은 성과가 있나요? 반응, 수치, 결과 등 무엇이든 좋아요.',
+              placeholder:
+                '예: 관객 500명 유치 (전년 대비 40% 증가) / 교내 신문 인터뷰 기사 게재 / 신입 부원 지원율 상승',
+            },
+            {
+              key: 'difficulty',
+              label: '어려움 / 문제 해결',
+              blockType: 'textarea',
+              guide: '진행하면서 막혔던 순간이 있었나요? 어떻게 해결했는지 적어주세요.',
+              placeholder:
+                '예: 공연장 대관이 취소되어 3주 만에 대체 장소를 찾아야 했고, 학교 시설과 협의해 강당을 확보한 뒤 팀별 리허설 스케줄을 재편성했습니다.',
+            },
+            {
+              // 문서는 파일+URL+설명의 '반복' 입력이지만 반복 블록 안의 반복은 중첩 1겹 제한에
+              // 걸린다. 대외활동과 같이 링크 한 칸으로 근사하고 정식 구현은 FRT-143.
+              key: 'output',
+              label: '결과물',
+              blockType: 'link',
+              guide:
+                '이 활동/이벤트의 결과물을 첨부하거나 링크로 남겨주세요. 공연 영상, 포스터, 사진, 후기 등 무엇이든 좋아요.',
+            },
+          ],
+          // 블록 자체 guide 는 두지 않는다 — 문서 ③의 안내 문구는 섹션(카드) 몫이다
+          // (SECTION_DESCRIPTION_OVERRIDES). 여기 또 실으면 같은 문장이 두 줄 연달아 나온다.
+        ),
       ],
     },
   ]
