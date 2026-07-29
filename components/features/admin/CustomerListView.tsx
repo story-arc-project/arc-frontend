@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
+import { getCustomerStatusMeta } from "@/lib/admin/customer-status";
+import { formatAdminDate } from "@/lib/admin/format";
 import type { AdminCustomer } from "@/types/admin";
 
 interface CustomerListViewProps {
@@ -18,39 +20,14 @@ interface CustomerListViewProps {
   detailBasePath?: string;
 }
 
-// 백엔드 enum 확정 전 — 알려진 코드만 라벨/색을 주고, 미지 코드는 원문 그대로 표시한다.
-const STATUS_META: Record<
-  string,
-  { label: string; variant: "success" | "warning" | "error" | "default" }
-> = {
-  active: { label: "활성", variant: "success" },
-  dormant: { label: "휴면", variant: "warning" },
-  suspended: { label: "정지", variant: "error" },
-  withdrawn: { label: "탈퇴", variant: "default" },
-};
-
 const COLUMN_COUNT = 5;
-
-function formatDate(iso: string): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("ko-KR", {
-    // 타임존을 고정한다. 안 하면 서버(UTC)와 관리자 브라우저(KST)가 자정 근처 가입일을 서로 다른
-    // 날짜로 렌더해 하이드레이션 불일치가 나고, 화면의 날짜가 눈앞에서 바뀐다(Codex P2).
-    // 운영 기준시는 한국 시간이다.
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-}
 
 // 셀 공통 여백. 표 가장자리는 컨테이너와 붙지 않게 좌우를 더 준다.
 const CELL = "px-3 py-3 first:pl-4 last:pr-4";
 
+// 라벨·색 판단은 lib/admin/customer-status 가 단독으로 갖는다(상세 화면과 공유).
 function StatusCell({ status }: { status: string }) {
-  const meta = STATUS_META[status];
+  const meta = getCustomerStatusMeta(status);
   if (!meta) {
     return (
       <span className="text-body-sm text-text-secondary">{status || "—"}</span>
@@ -178,7 +155,7 @@ function CustomerRow({
         {c.onboarded ? "완료" : "—"}
       </td>
       <td className={`${CELL} text-body-sm text-text-tertiary`}>
-        {formatDate(c.createdAt)}
+        {formatAdminDate(c.createdAt)}
       </td>
     </tr>
   );

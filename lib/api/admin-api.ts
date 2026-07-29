@@ -13,8 +13,14 @@
 import { api } from "./client";
 import type { ApiSuccessResponse } from "@/types/api";
 import type {
+  AdminActivityKey,
+  AdminActivityStat,
   AdminCustomer,
+  AdminCustomerActivity,
+  AdminCustomerAccount,
+  AdminCustomerDetail,
   AdminCustomerListData,
+  AdminCustomerProfile,
   AdminCustomerQuery,
 } from "@/types/admin";
 
@@ -90,4 +96,128 @@ export async function getAdminCustomers(
   const count =
     typeof rawCount === "number" && Number.isFinite(rawCount) ? rawCount : null;
   return { count, contents };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FRT-17: 고객 상세 + 활동 요약 (GET /admin/customers/{id}, BAC-17 미배포)
+//
+// 계약을 선확정하고 이 계층이 그 계약에 맞춰 파싱한다(BAC-17 코멘트). 목록과 같은 원칙:
+// 형태 이상은 안전 분기하고, HTTP 실패는 그대로 throw 한다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 건수는 count 와 같은 원칙 — **모르면 null(미상)**. 0 으로 떨구면 "활동이 없는 고객"과
+// "집계에 실패한 응답"이 화면에서 구분되지 않는다. 음수·소수는 건수로 성립하지 않으므로
+// 그대로 믿지 않고 미상으로 본다.
+function asCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  return asArray(value).filter((v): v is string => typeof v === "string");
+}
+
+// asRecord 는 배열도 객체로 받아들인다(typeof [] === "object"). 활동 집계·프로필은 배열로 오면
+// 형태가 어긋난 것이므로 여기서는 배열을 명시적으로 배제한다(FRT-134 의 asRecord 배열 가드 교훈).
+function asPlainRecord(value: unknown): UnknownRecord | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : null;
+}
+
+// 상태별 건수: 숫자인 값만 남긴다. 상태 **키**는 검열하지 않는다 — 백엔드가 상태를 늘려도
+// 표시 계층이 판단하도록 그대로 올려보낸다(모르는 키를 여기서 버리면 화면이 존재를 모른다).
+function mapByStatus(raw: unknown): Record<string, number> | null {
+  const r = asPlainRecord(raw);
+  if (!r) return null;
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(r)) {
+    const n = asCount(value);
+    if (n !== null) out[key] = n;
+  }
+  return out;
+}
+
+function mapActivityStat(raw: unknown): AdminActivityStat | null {
+  const r = asPlainRecord(raw);
+  // 항목 자체가 없으면 null(미상) — 화면은 0 이 아니라 "—"로 그린다.
+  if (!r) return null;
+  return {
+    total: asCount(r.total),
+    lastAt: asNullableString(r.last_at ?? r.lastAt),
+    byStatus: mapByStatus(r.by_status ?? r.byStatus),
+  };
+}
+
+// 화면이 아는 활동 키 ↔ 계약(snake_case) 키. 여기 없는 키는 조용히 버린다 — 나중에 크레딧·결제
+// 섹션이 붙어도(계약 §확장 규약) 이 화면이 모르는 값을 아는 척 그리지 않게 한다.
+const ACTIVITY_KEYS: Record<AdminActivityKey, string> = {
+  experiences: "experiences",
+  individualAnalyses: "individual_analyses",
+  comprehensiveAnalyses: "comprehensive_analyses",
+  keywordAnalyses: "keyword_analyses",
+  resumes: "resumes",
+};
+
+function mapActivity(raw: unknown): AdminCustomerActivity {
+  const r = asPlainRecord(raw) ?? {};
+  const out = {} as AdminCustomerActivity;
+  for (const [camel, snake] of Object.entries(ACTIVITY_KEYS) as [
+    AdminActivityKey,
+    string,
+  ][]) {
+    out[camel] = mapActivityStat(r[snake] ?? r[camel]);
+  }
+  return out;
+}
+
+// 프로필은 **없음(null)** 과 **있으나 전부 미작성({})** 을 구분해 유지한다 — 전자는 온보딩 전이고
+// 후자는 온보딩 후 미입력이라 운영자에게 다른 사실이며 화면 안내도 다르다.
+// 계약에서 제외한 PII(phone·birth·worry·interest)는 서버가 보내더라도 여기서 흘려보내지 않는다.
+function mapProfile(raw: unknown): AdminCustomerProfile | null {
+  const r = asPlainRecord(raw);
+  if (!r) return null;
+  return {
+    school: asNullableString(r.school),
+    department: asNullableString(r.department),
+    affiliation: asNullableString(r.affiliation),
+    affiliationDetail: asNullableString(r.affiliation_detail ?? r.affiliationDetail),
+    company: asNullableString(r.company),
+    desiredRole: asNullableString(r.desired_role ?? r.desiredRole),
+  };
+}
+
+function mapAccount(raw: unknown): AdminCustomerAccount {
+  const r = asRecord(raw);
+  return {
+    ...mapCustomer(r),
+    // 탈퇴는 status 값이 아니라 별도 deleted_users 테이블이라 독립 필드다.
+    withdrawnAt: asNullableString(r.withdrawn_at ?? r.withdrawnAt),
+    authProviders: asStringArray(r.auth_providers ?? r.authProviders),
+  };
+}
+
+export async function getAdminCustomer(
+  id: string,
+): Promise<AdminCustomerDetail> {
+  // id 를 그대로 이어붙이면 슬래시·쿼리 문자가 든 값이 경로를 다른 엔드포인트로 붕괴시킨다.
+  const res = await api.get<ApiSuccessResponse<unknown>>(
+    `/admin/customers/${encodeURIComponent(id)}`,
+  );
+  // 목록과 동일한 봉투 변형 흡수 — data 가 없으면 최상위를 본문으로 본다.
+  const body = asRecord(res.data ?? res);
+  const customer = mapAccount(body.customer);
+
+  // 식별자가 통째로 비면 화면에 그릴 대상이 없다. 이걸 성공으로 통과시키면 운영자가 "정보가
+  // 비어 있는 고객"을 사실로 읽는다 — 형태 이상 중 유일하게 여기서만 실패로 올린다.
+  if (!customer.id && !customer.email) {
+    throw new Error("고객 정보를 확인할 수 없어요.");
+  }
+
+  return {
+    customer,
+    profile: mapProfile(body.profile),
+    activity: mapActivity(body.activity),
+  };
 }
