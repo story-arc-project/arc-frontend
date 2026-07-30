@@ -43,6 +43,21 @@ export const WithGuide: Story = {
 }
 
 /**
+ * 증빙 유형 드롭다운 (FRT-179 자격증). 템플릿이 선택지를 주면 자유 입력 대신 드롭다운이 된다 —
+ * 무엇이 증빙이 되는지는 경험 유형마다 다르므로 선택지는 템플릿이 정한다.
+ */
+export const WithEvidenceTypeOptions: Story = {
+  args: {
+    block: {
+      ...emptyFileBlock,
+      label: "증빙 자료",
+      options: ["합격증/자격증 사본", "성적표/점수 확인서", "발급 확인서", "기타"],
+    },
+    readOnly: false,
+  },
+}
+
+/**
  * ReadOnly view with an attached file shown by name.
  * The fixture has no `fileId`, so FileBlock's getFileUrl() effect early-returns
  * and no backend call is made — the story stays deterministic in Storybook.
