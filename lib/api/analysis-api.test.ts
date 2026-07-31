@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ApiSuccessResponse } from "@/types/api"
 import type {
+  AnalysisType,
   IndividualAnalysisResult,
   ComprehensiveAnalysisResult,
   KeywordAnalysisResult,
@@ -23,6 +24,7 @@ import { api } from "@/lib/api/client"
 import {
   createComprehensiveAnalysis,
   createKeywordAnalysis,
+  getAnalysisHistory,
   getBookmarks,
   getIndividualAnalysisList,
   getIndividualAnalysisResult,
@@ -1371,5 +1373,72 @@ describe("키워드 이중중첩 언랩 — 빈 껍질을 뚫는다 (FRT-134 cod
     const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
     expect(res.storylines).toHaveLength(1)
     expect(res.hasResultBody).toBe(true)
+  })
+})
+
+// FRT-170: `/analysis/history` 엔드포인트가 없어 세 목록을 병합한다. 그 중 일부만 실패하면
+// 살아남은 소스만으로 정렬된 목록이 "전체 기록"인 얼굴로 표시돼, 사용자는 특정 유형의 기록이
+// 삭제됐다고 오인한다. 회복력(한 소스가 죽어도 나머지는 보여준다)은 그대로 두고,
+// **무엇을 못 불러왔는지**를 반환값에 실어 화면이 말할 수 있게 한다.
+describe("getAnalysisHistory — 부분 실패 보고 (FRT-170)", () => {
+  /** 목록 3종을 URL 로 갈라, 지정한 유형만 reject 시킨다. */
+  function stubLists(failing: AnalysisType[]) {
+    const byUrl: Record<string, AnalysisType> = {
+      "/analysis/individual": "individual",
+      "/analysis/comprehensive": "comprehensive",
+      "/analysis/keyword": "keyword",
+    }
+    apiMock.get.mockImplementation((url: string) => {
+      const type = byUrl[url]
+      if (type === undefined) throw new Error(`unexpected url: ${url}`)
+      if (failing.includes(type)) return Promise.reject(new Error("boom"))
+      return Promise.resolve(
+        envelope([{ id: `${type}-1`, status: "success", created_at: "2026-07-27" }]),
+      ) as never
+    })
+  }
+
+  it("종합만 실패하면 나머지는 보여주되 실패한 유형을 함께 돌려준다", async () => {
+    stubLists(["comprehensive"])
+
+    const { items, failedTypes } = await getAnalysisHistory()
+
+    expect(failedTypes).toEqual(["comprehensive"])
+    expect(items.map((s) => s.id)).toEqual(["individual-1", "keyword-1"])
+  })
+
+  it("실패 유형의 순서는 선언 순서로 고정된다 — reject 순서에 흔들리지 않는다", async () => {
+    // push 순서로 모으면 어느 요청이 먼저 깨지느냐에 따라 안내 문구가 뒤바뀐다.
+    stubLists(["individual", "keyword"])
+
+    const { items, failedTypes } = await getAnalysisHistory()
+
+    expect(failedTypes).toEqual(["individual", "keyword"])
+    expect(items.map((s) => s.id)).toEqual(["comprehensive-1"])
+  })
+
+  it("전부 성공하면 실패 목록은 비어 있다", async () => {
+    stubLists([])
+
+    const { failedTypes } = await getAnalysisHistory()
+
+    expect(failedTypes).toEqual([])
+  })
+
+  it("전부 실패하면 기존대로 에러를 던진다 — 화면은 전체 실패로 전환된다", async () => {
+    stubLists(["individual", "comprehensive", "keyword"])
+
+    await expect(getAnalysisHistory()).rejects.toThrow("분석 기록을 불러올 수 없습니다.")
+  })
+
+  it("유형 필터가 걸려도 실패 보고는 그대로 실린다", async () => {
+    // 필터는 병합 뒤 적용된다 — 필터로 걸러진 결과가 비어도 그 원인이 실패인지
+    // 정말 없는 것인지 화면이 구분할 수 있어야 한다.
+    stubLists(["comprehensive"])
+
+    const { items, failedTypes } = await getAnalysisHistory({ type: "comprehensive" })
+
+    expect(failedTypes).toEqual(["comprehensive"])
+    expect(items).toEqual([])
   })
 })

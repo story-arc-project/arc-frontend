@@ -1414,13 +1414,26 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
   };
 }
 
+export interface AnalysisHistoryResult {
+  items: AnalysisSnapshot[];
+  /**
+   * 병합 소스 중 불러오지 못한 분석 유형. 전부 실패하면 throw 하므로 최대 2개다.
+   * 불리언이 아니라 유형 배열인 이유: "일부를 못 불러왔다"만으로는 *무엇이* 빠졌는지
+   * 말할 수 없어, 사용자가 그 유형의 기록이 삭제됐다고 오인하는 것을 막지 못한다(FRT-170).
+   */
+  failedTypes: AnalysisType[];
+}
+
 /**
  * `/analysis/history` 엔드포인트가 없으므로 세 목록을 병합해 반환한다.
+ *
+ * 일부 소스가 실패해도 나머지는 그대로 보여준다(회복력). 다만 그 회복이 무음이면 살아남은
+ * 목록이 "전체 기록"인 얼굴을 하므로, 실패한 유형을 함께 돌려 화면이 말할 수 있게 한다.
  */
 export async function getAnalysisHistory(params?: {
   type?: string;
   sort?: "newest" | "oldest";
-}): Promise<AnalysisSnapshot[]> {
+}): Promise<AnalysisHistoryResult> {
   if (shouldMock())
     return mock(async () => {
       const { mockHistory } = await mocks();
@@ -1428,27 +1441,35 @@ export async function getAnalysisHistory(params?: {
       if (params?.type && params.type !== "all")
         result = result.filter((s) => s.type === params.type);
       if (params?.sort === "oldest") result.reverse();
-      return result;
+      return { items: result, failedTypes: [] };
     });
 
-  let historyFailCount = 0;
-  const safeFetch = (p: Promise<AnalysisSnapshot[]>): Promise<AnalysisSnapshot[]> =>
-    p.catch(() => { historyFailCount++; return [] as AnalysisSnapshot[]; });
+  // 실패 유형은 이 **선언 순서**에서 파생한다 — catch 안에서 push 하면 어느 요청이 먼저
+  // 깨지느냐에 따라 순서가 바뀌어 안내 문구가 요청마다 뒤바뀐다.
+  const sources: { type: AnalysisType; load: () => Promise<AnalysisSnapshot[]> }[] = [
+    { type: "individual", load: () => getIndividualAnalysisList() },
+    { type: "comprehensive", load: () => getComprehensiveList() },
+    { type: "keyword", load: () => getKeywordList() },
+  ];
 
-  const [individual, comprehensive, keyword] = await Promise.all([
-    safeFetch(getIndividualAnalysisList()),
-    safeFetch(getComprehensiveList()),
-    safeFetch(getKeywordList()),
-  ]);
+  const settled = await Promise.all(
+    sources.map((s) =>
+      s.load().then(
+        (items) => ({ ok: true, items }),
+        () => ({ ok: false, items: [] as AnalysisSnapshot[] }),
+      ),
+    ),
+  );
+  const failedTypes = sources.filter((_, i) => !settled[i].ok).map((s) => s.type);
 
   // 모든 요청이 실패하면 에러를 전파한다
-  if (historyFailCount === 3) {
+  if (failedTypes.length === sources.length) {
     throw new Error("분석 기록을 불러올 수 없습니다.");
   }
 
-  let merged = [...individual, ...comprehensive, ...keyword].filter(
-    (s) => s.status === "completed",
-  );
+  let merged = settled
+    .flatMap((r) => r.items)
+    .filter((s) => s.status === "completed");
   if (params?.type && params.type !== "all") {
     merged = merged.filter((s) => s.type === params.type);
   }
@@ -1456,7 +1477,7 @@ export async function getAnalysisHistory(params?: {
     const cmp = (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
     return params?.sort === "oldest" ? -cmp : cmp;
   });
-  return merged;
+  return { items: merged, failedTypes };
 }
 
 // ─── Selectable Experiences ─────────────────────────────────
