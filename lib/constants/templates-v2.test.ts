@@ -319,6 +319,29 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     expect(results.linkConfig).toBeUndefined()
   })
 
+  it("FRT-145: 프로젝트 기록 블록만 행에 '항목 추가'를 연다", () => {
+    // 켠 곳 — 확정본이 '블록 안에서 항목 추가'를 말한 프로젝트/활동 기록 5종.
+    const enabled: [ExperienceTypeId, string][] = [
+      ["academic-society", "society-projects.프로젝트/연구활동"],
+      ["education", "edu-projects.프로젝트 / 과제 / 제작물"],
+      ["extracurricular", "extra-missions.미션 / 프로젝트"],
+      ["club", "club-activities.활동 / 이벤트"],
+      ["career", "career-tasks.프로젝트/담당 업무"],
+    ]
+    for (const [typeId, key] of enabled) {
+      const block = getTemplateForType(typeId).extensions.flatMap(s => s.blocks).find(b => b.key === key)
+      expect(block, `${typeId} 의 ${key} 블록이 있어야 한다`).toBeDefined()
+      expect(block!.allowRowExtras, `${key} 는 항목 추가를 켠다`).toBe(true)
+      // 열 잠금과 함께 켜진다 — 열은 계속 템플릿이 소유한다(FRT-104 유지).
+      expect(block!.lockColumns).toBe(true)
+    }
+    // 끈 곳 — 같은 유형 안의 다른 반복 블록에는 붙지 않는다(기본 off).
+    const importantContent = getTemplateForType("education")
+      .extensions.flatMap(s => s.blocks)
+      .find(b => b.label === "가장 중요했던 내용")
+    expect(importantContent?.allowRowExtras).toBeUndefined()
+  })
+
   it("동아리 '활동 성격'은 대외활동과 다른 12종 프리셋을 쓴다", () => {
     const mood = detailOf("club")!.blocks.find(b => b.label === "활동 성격")!
     expect(mood.type).toBe("checklist")

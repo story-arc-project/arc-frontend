@@ -140,18 +140,26 @@ export function createFileField(
  * 템플릿 정의용 표형 반복 입력. 템플릿 표는 컬럼이 고정이므로 `lockColumns` 가 기본 켜짐이다(FRT-104) —
  * 열 태그·'열 추가' UI 가 숨는다. 열을 자유롭게 추가하는 표가 필요하면 `{ lockColumns: false }`.
  * 사용자가 직접 만드는 커스텀 표는 이 팩토리가 아니라 `createBlock` 을 거치므로 잠기지 않는다.
+ *
+ * `allowRowExtras` 를 켜면 각 행에 '항목 추가' 가 붙는다(FRT-145). 열 잠금과 함께 켤 수 있다 —
+ * 열은 계속 템플릿이 소유하고, 그건 행 하나에만 붙는 항목이라 서로 간섭하지 않는다.
  */
 export function createRepeatableCell(
   label: string,
   columns: BlockColumnDef[],
-  opts?: { collapsed?: boolean; lockColumns?: boolean; guide?: string },
+  opts?: { collapsed?: boolean; lockColumns?: boolean; guide?: string; allowRowExtras?: boolean },
 ): Block {
   const base = createBlock('repeatable-cell', label, {
     columns,
     collapsed: opts?.collapsed,
     guide: opts?.guide,
   })
-  return { ...base, lockColumns: opts?.lockColumns ?? true }
+  return {
+    ...base,
+    lockColumns: opts?.lockColumns ?? true,
+    // 끈 블록에 키를 남기지 않는다 — 템플릿 스냅샷 비교(toEqual)에 잡음이 된다.
+    ...(opts?.allowRowExtras ? { allowRowExtras: true } : {}),
+  }
 }
 
 export function createTableField(label: string): Block {
@@ -327,6 +335,19 @@ export function cellFilled(cell: string | string[] | undefined): boolean {
   return Array.isArray(cell) ? cell.length > 0 : cell.trim() !== ""
 }
 
+/**
+ * 반복 입력 행 하나에 사용자가 남긴 내용이 있는지. 셀뿐 아니라 그 행에만 붙은 항목
+ * (`extraFields`, FRT-145)까지 본다 — 셀만 보면 추가 항목에만 값을 쓴 행이 '빈 행'으로
+ * 판정돼 상세뷰에서 통째로 사라진다(유령 행 필터가 사용자 값을 숨기는 형태).
+ * 빈 판정을 하는 세 곳(isBlockEmpty · RepeatableCellBlock readOnly · 진행도)이 이 함수를 공유한다.
+ */
+export function rowHasContent(row: BlockRow): boolean {
+  return (
+    Object.values(row.cells).some(cellFilled) ||
+    (row.extraFields ?? []).some(f => cellFilled(f.value))
+  )
+}
+
 export function isBlockEmpty(block: Block): boolean {
   const v = block.value
   switch (v.type) {
@@ -356,7 +377,7 @@ export function isBlockEmpty(block: Block): boolean {
       // 하거나 placeholder 에 한 글자 썼다 지운 실체화 행)를 non-empty 로 오판해 상세뷰·포트폴리오에
       // '—'만 있는 유령 섹션이 남던 문제를 판정 층위에서 고친다(value/rows 는 그대로 둔다 —
       // 행을 지우면 placeholder 리마운트로 포커스가 날아간다).
-      return v.rows.every(row => Object.values(row.cells).every(cell => !cellFilled(cell)))
+      return !v.rows.some(rowHasContent)
     case 'table':
       return v.rows.length === 0
     case 'group':

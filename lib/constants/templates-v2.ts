@@ -319,6 +319,8 @@ function educationExtensions(): TemplateSection[] {
           {
             guide:
               '이 강좌에서 수행한 과제, 팀 프로젝트, 개인 제작물 등을 단위별로 기록해주세요.',
+            // FRT-145: 각 프로젝트 행에 그 프로젝트에만 필요한 항목을 직접 추가할 수 있다.
+            allowRowExtras: true,
           },
         ),
       ],
@@ -519,6 +521,8 @@ function extracurricularExtensions(): TemplateSection[] {
           ],
           // 블록 자체 guide 는 두지 않는다 — 문서 ③의 안내 문구는 섹션(카드) 몫이고
           // (SECTION_DESCRIPTION_OVERRIDES), 여기 또 실으면 같은 문장이 두 줄 연달아 나온다.
+          // FRT-145: 각 프로젝트 행에 그 프로젝트에만 필요한 항목을 직접 추가할 수 있다.
+          { allowRowExtras: true },
         ),
       ],
     },
@@ -673,6 +677,8 @@ function academicSocietyExtensions(): TemplateSection[] {
           ],
           {
             guide: '학회 안에서 진행한 프로젝트나 연구활동을 단위별로 기록해주세요.',
+            // FRT-145: 각 프로젝트 행에 그 프로젝트에만 필요한 항목을 직접 추가할 수 있다.
+            allowRowExtras: true,
           },
         ),
       ],
@@ -897,6 +903,8 @@ function clubExtensions(): TemplateSection[] {
           ],
           // 블록 자체 guide 는 두지 않는다 — 문서 ③의 안내 문구는 섹션(카드) 몫이다
           // (SECTION_DESCRIPTION_OVERRIDES). 여기 또 실으면 같은 문장이 두 줄 연달아 나온다.
+          // FRT-145: 각 활동 행에 그 활동에만 필요한 항목을 직접 추가할 수 있다.
+          { allowRowExtras: true },
         ),
       ],
     },
@@ -1057,7 +1065,8 @@ function careerExtensions(): TemplateSection[] {
             guide:
               '이 프로젝트/업무를 하면서 만든 산출물을 첨부하거나 링크로 남겨주세요. 기획서, 보고서, 콘텐츠, 대시보드 등 무엇이든 괜찮아요.',
           },
-        ]),
+        // FRT-145: 각 프로젝트 행에 그 프로젝트에만 필요한 항목을 직접 추가할 수 있다.
+        ], { allowRowExtras: true }),
       ],
     },
   ]

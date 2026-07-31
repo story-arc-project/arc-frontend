@@ -35,8 +35,22 @@ export function usePlaceholderRow(rows: BlockRow[], columns: BlockColumnDef[]) {
 
   /** 값이 실제로 채워졌을 때만 커밋할 행을 준다. 빈 값(예: select 의 '선택')으로는 실체화하지 않는다. */
   function materialize(rowId: string, colKey: string, value: string | string[]): BlockRow | null {
-    if (!placeholder || !isPlaceholderRow(rowId) || !cellFilled(value)) return null
-    return { ...placeholder, cells: { ...placeholder.cells, [colKey]: value } }
+    if (!cellFilled(value)) return null
+    return materializeWith(rowId, row => ({ cells: { ...row.cells, [colKey]: value } }))
+  }
+
+  /**
+   * 셀이 아닌 경로(FRT-145 의 '항목 추가')로 표시용 행을 실체화한다.
+   * `patch` 는 **행 전체를 다시 짜지 않고** 덮어쓸 부분만 돌려준다 — `{ id, cells }` 로
+   * 재구성하면 그때 막 생긴 행 필드가 조용히 날아간다(FRT-178 에서 실제로 발생).
+   * "실제로 채워졌을 때만 커밋" 규칙은 호출부가 지킨다(빈 이름으로는 항목이 만들어지지 않는다).
+   */
+  function materializeWith(
+    rowId: string,
+    patch: (row: BlockRow) => Partial<BlockRow>,
+  ): BlockRow | null {
+    if (!placeholder || !isPlaceholderRow(rowId)) return null
+    return { ...placeholder, ...patch(placeholder) }
   }
 
   return {
@@ -49,6 +63,7 @@ export function usePlaceholderRow(rows: BlockRow[], columns: BlockColumnDef[]) {
     hasPlaceholder: placeholder !== null,
     isPlaceholderRow,
     materialize,
+    materializeWith,
     placeholder,
   }
 }

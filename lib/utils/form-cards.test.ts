@@ -285,6 +285,47 @@ describe("isCardComplete / computeFormProgress", () => {
     expect(isCardComplete(repeat)).toBe(true)
   })
 
+  it("FRT-145: 추가 항목만 채우면 필수 컬럼을 대신 충족하지 않는다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const repeat = r.cards.find(c => c.category === "repeat")!
+    const cell = repeat.blocks.find(b => b.value.type === "repeatable-cell")!
+    if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
+    expect(cell.value.columns.some(c => c.required)).toBe(true)
+    // 사용자가 추가한 항목만 채운 행 — 필수 컬럼(프로젝트명)은 여전히 비어 있다.
+    cell.value = {
+      ...cell.value,
+      rows: [{
+        id: "row-1",
+        cells: {},
+        extraFields: [{ key: "x1", label: "발표 여부", blockType: "text", value: "구두 발표" }],
+      }],
+    }
+    expect(isCardComplete(repeat)).toBe(false)
+  })
+
+  it("FRT-145: 필수 컬럼이 없는 반복 블록은 추가 항목만 채워도 완료로 본다", () => {
+    // 필수 컬럼이 없으면 판정은 '아무거나 채워졌는가'다 — 그 '아무거나'에 추가 항목도 포함된다
+    // (제외하면 사용자가 쓴 값이 진행도에 안 잡힌다).
+    const { core, sections } = sectionsFor("education")
+    const r = computeFormCards(core, sections)
+    const detail = r.cards.find(c => c.category === "detail")!
+    const cell = detail.blocks.find(
+      b => b.value.type === "repeatable-cell" && !b.value.columns.some(c => c.required),
+    )!
+    if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
+    expect(isCardComplete(detail)).toBe(false)
+    cell.value = {
+      ...cell.value,
+      rows: [{
+        id: "row-1",
+        cells: {},
+        extraFields: [{ key: "x1", label: "참고 자료", blockType: "text", value: "링크" }],
+      }],
+    }
+    expect(isCardComplete(detail)).toBe(true)
+  })
+
   it("computeFormProgress: done/total 카운트", () => {
     const { core, sections } = sectionsFor("academic-society")
     const r = computeFormCards(core, sections)

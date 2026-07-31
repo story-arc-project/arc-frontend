@@ -1,6 +1,6 @@
 import type { Block, SectionCategory } from "@/types/archive"
 import { SECTION_CATEGORIES } from "@/types/archive"
-import { cellFilled, isBlockEmpty } from "@/lib/utils/block-utils"
+import { cellFilled, isBlockEmpty, rowHasContent } from "@/lib/utils/block-utils"
 
 // 같은 그룹의 라벨은 같은 질문으로 간주 — core/type/extended 간 중복 필드를 숨긴다.
 const SEMANTIC_GROUPS: Record<string, string[]> = {
@@ -141,8 +141,10 @@ function isBlockFilledForProgress(block: Block): boolean {
     const requiredCols = v.columns.filter(c => c.required)
     return v.rows.some(row =>
       requiredCols.length > 0
-        ? requiredCols.every(c => cellFilled(row.cells[c.key]))
-        : Object.values(row.cells).some(cellFilled),
+        ? // 필수 컬럼이 있으면 그 컬럼으로만 판정한다 — 사용자가 추가한 항목(FRT-145)이
+          // 필수를 대신 충족하면 진행도가 완료로 오판된다.
+          requiredCols.every(c => cellFilled(row.cells[c.key]))
+        : rowHasContent(row),
     )
   }
   return !isBlockEmpty(block)
