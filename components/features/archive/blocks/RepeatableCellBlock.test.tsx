@@ -149,6 +149,49 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
     expect(latest?.rows[0].extraFields?.[0].value).toBe("우수상")
   })
 
+  it("이름을 비운 채 떠나면 직전 이름으로 되돌아간다 — 값은 그대로다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, extraFields: [{ key: "x1", label: "수상", blockType: "text", value: "우수상" }] }],
+          { allowRowExtras: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    const labelInput = screen.getByDisplayValue("수상")
+    await user.clear(labelInput)
+    // 타이핑 중 빈 칸을 거치는 건 막지 않는다.
+    expect(latest?.rows[0].extraFields?.[0].label).toBe("")
+
+    await user.tab()
+
+    expect(latest?.rows[0].extraFields?.[0].label).toBe("수상")
+    expect(latest?.rows[0].extraFields?.[0].value).toBe("우수상")
+  })
+
+  it("이름 앞뒤 공백은 떠날 때 정리된다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, extraFields: [{ key: "x1", label: "수상", blockType: "text", value: "" }] }],
+          { allowRowExtras: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.type(screen.getByDisplayValue("수상"), " 내역  ")
+    await user.tab()
+
+    expect(latest?.rows[0].extraFields?.[0].label).toBe("수상 내역")
+  })
+
   it("값이 빈 항목은 확인 없이 삭제된다", async () => {
     const user = userEvent.setup()
     let latest: RepeatableCellBlockValue | undefined

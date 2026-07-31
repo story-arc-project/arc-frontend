@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type {
@@ -369,6 +369,8 @@ function RowExtraFieldsEditor({
   const [draftType, setDraftType] = useState<RowExtraFieldType>("text")
   // 값이 있는 항목은 한 번 확인한 뒤에 지운다 — 되돌리는 경로가 없는 손실이라서다.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  // 이름 수정 직전의 값. 타이핑 중 빈 칸을 거치는 건 정상이라 막지 않고, 포커스가 떠날 때만 되돌린다.
+  const labelBeforeEdit = useRef<Record<string, string>>({})
 
   function add() {
     const trimmed = draftLabel.trim()
@@ -385,6 +387,17 @@ function RowExtraFieldsEditor({
     setDraftLabel("")
     setDraftType("text")
     setAdding(false)
+  }
+
+  /**
+   * 이름은 만들 때 비울 수 없다(`add` 가 막는다) — 고칠 때도 같은 규칙을 지킨다.
+   * 비운 채 떠나면 직전 이름으로 되돌린다. 저장된 라벨은 백엔드 분석이 그대로 읽으므로
+   * 이름 없는 항목이 남아선 안 되고, 그렇다고 값까지 딸려 지우면 손실이다(지우기는 삭제 버튼의 몫).
+   */
+  function commitLabel(field: RowExtraField) {
+    const next = field.label.trim() || labelBeforeEdit.current[field.key] || field.label
+    if (next === field.label) return
+    onChange(prev => prev.map(f => (f.key === field.key ? { ...f, label: next } : f)))
   }
 
   function remove(key: string) {
@@ -408,6 +421,11 @@ function RowExtraFieldsEditor({
               aria-label="항목 이름"
               className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-caption text-text-secondary hover:border-border focus:border-brand focus:outline-none"
               value={field.label}
+              onFocus={() => {
+                const current = field.label.trim()
+                if (current) labelBeforeEdit.current[field.key] = current
+              }}
+              onBlur={() => commitLabel(field)}
               onChange={e =>
                 onChange(prev =>
                   prev.map(f => (f.key === field.key ? { ...f, label: e.target.value } : f)),
