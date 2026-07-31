@@ -114,14 +114,16 @@ function resumeFixture(overrides: Partial<ResumeVersion> = {}): ResumeVersion {
  */
 async function renderLoaded() {
   const params = Promise.resolve({ versionId: "v1" });
+  let result!: ReturnType<typeof render>;
   await act(async () => {
-    render(
+    result = render(
       <Suspense fallback={null}>
         <ResumeDetailPage params={params} />
       </Suspense>,
     );
   });
   await screen.findByLabelText("이름");
+  return result;
 }
 
 function captured(name: string): unknown[][] {
@@ -208,8 +210,12 @@ describe("resume_edited — AI 초안에 손을 댔는가", () => {
 
     await user.type(screen.getByLabelText("이름"), "!");
     await waitFor(() => expect(captured("resume_edited").length).toBe(1));
+    // version_id — "버전당 1회"는 **한 화면 안에서만** 참이다. 새로고침·재방문·두 번째 탭은
+    // 각자 새 페이지라 같은 레쥬메가 다시 발화한다. 버전 식별자가 없으면 다운스트림이
+    // 그 중복을 접을 수도, 서로 다른 레쥬메의 편집과 가를 수도 없다(analysis_completed 전례).
     expect(captured("resume_edited")[0][1]).toEqual({
       section: "personal_info",
+      version_id: "v1",
     });
 
     // 계속 타이핑해도 다시 쏘지 않는다 — 키 입력마다 발화하면 이벤트가 폭증한다.
@@ -334,5 +340,133 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
         .disabled,
     ).toBe(true);
     expect(captured("resume_edit_saved")).toEqual([]);
+  });
+
+  // 저장을 누르지 않고 화면을 떠나는 경로. 사용자에게는 "임시 저장했어요"라고 **말하는데**
+  // 여기서 아무것도 안 쏘면, 안전하게 보관된 편집이 유실된 편집과 데이터상 구별되지 않는다.
+  describe("저장을 누르지 않고 나가는 경로", () => {
+    it("나가기로 임시 저장되면 outcome='exit_draft' 로 한 번 발화한다", async () => {
+      const user = userEvent.setup();
+      await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      await user.click(
+        screen.getByRole("button", { name: "익스포트로 돌아가기" }),
+      );
+
+      await waitFor(() => expect(mockPush).toHaveBeenCalled());
+      expect(captured("resume_edit_saved")).toEqual([
+        [
+          "resume_edit_saved",
+          {
+            outcome: "exit_draft",
+            persisted: true,
+            sections: ["personal_info"],
+            section_count: 1,
+          },
+        ],
+      ]);
+    });
+
+    // 임시 저장이 실패하면 페이지는 이동을 막고 "저장 후 나가주세요"를 띄운다 —
+    // 편집 유실 직전이라는 뜻인데, 지금까지 이 순간은 데이터에 전혀 남지 않았다.
+    it("임시 저장이 실패하면 persisted=false 로 남기고 이동하지 않는다", async () => {
+      const user = userEvent.setup();
+      await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      const setItem = vi
+        .spyOn(Storage.prototype, "setItem")
+        .mockImplementation(() => {
+          throw new Error("quota");
+        });
+      try {
+        await user.click(
+          screen.getByRole("button", { name: "익스포트로 돌아가기" }),
+        );
+      } finally {
+        setItem.mockRestore();
+      }
+
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(captured("resume_edit_saved")).toEqual([
+        [
+          "resume_edit_saved",
+          {
+            outcome: "exit_draft",
+            persisted: false,
+            sections: ["personal_info"],
+            section_count: 1,
+          },
+        ],
+      ]);
+    });
+
+    it("고친 게 없으면 나가도 발화하지 않는다", async () => {
+      const user = userEvent.setup();
+      await renderLoaded();
+
+      await user.click(
+        screen.getByRole("button", { name: "익스포트로 돌아가기" }),
+      );
+
+      await waitFor(() => expect(mockPush).toHaveBeenCalled());
+      expect(captured("resume_edit_saved")).toEqual([]);
+    });
+
+    // 상단 '나가기'만 출구가 아니다 — GNB 링크로 떠나도 페이지는 조용히 임시 저장한다.
+    it("다른 경로로 떠나도(언마운트) 같은 이벤트를 남긴다", async () => {
+      const user = userEvent.setup();
+      const { unmount } = await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      unmount();
+
+      expect(captured("resume_edit_saved")).toEqual([
+        [
+          "resume_edit_saved",
+          {
+            outcome: "exit_draft",
+            persisted: true,
+            sections: ["personal_info"],
+            section_count: 1,
+          },
+        ],
+      ]);
+    });
+
+    // '나가기'는 스스로 이동을 일으켜 곧바로 언마운트로 이어진다. 두 곳이 각각 쏘면
+    // 한 번의 이탈이 두 건으로 잡혀 이탈 지표가 그대로 두 배가 된다.
+    it("나가기로 이미 남겼으면 뒤따르는 언마운트는 중복 발화하지 않는다", async () => {
+      const user = userEvent.setup();
+      const { unmount } = await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      await user.click(
+        screen.getByRole("button", { name: "익스포트로 돌아가기" }),
+      );
+      await waitFor(() => expect(mockPush).toHaveBeenCalled());
+      unmount();
+
+      expect(captured("resume_edit_saved").length).toBe(1);
+    });
+
+    // 저장에 성공했으면 남길 편집이 없다 — 나가기가 또 쏘면 저장 1회가 2건이 된다.
+    it("저장에 성공한 뒤 나가면 발화하지 않는다", async () => {
+      const user = userEvent.setup();
+      mockUpdateResume.mockImplementation(async (_id, data) => data);
+      await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      await user.click(screen.getByRole("button", { name: "저장" }));
+      await waitFor(() => expect(captured("resume_edit_saved").length).toBe(1));
+
+      await user.click(
+        screen.getByRole("button", { name: "익스포트로 돌아가기" }),
+      );
+
+      await waitFor(() => expect(mockPush).toHaveBeenCalled());
+      expect(captured("resume_edit_saved").length).toBe(1);
+    });
   });
 });

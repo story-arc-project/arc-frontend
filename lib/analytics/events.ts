@@ -18,7 +18,14 @@ export type ResumeExportFormat = "pdf" | "docx" | "print";
 // FRT-114: 편집 저장이 실제로 어디까지 갔는가. 서버 저장(FRT-111)이 아직 계약 진행 중이라
 // 사용자에게는 "저장/임시 저장했어요"가 뜨는데 서버엔 아무것도 안 남는 경로가 실재한다.
 // 이걸 뭉치면 관리자가 보는 "저장 건수"가 거짓이 된다.
-export type ResumeSaveOutcome = "server" | "unsupported" | "failed";
+// exit_draft — 저장 버튼을 누르지 않고 화면을 떠나 페이지가 대신 임시 저장한 경우.
+// 사용자 의사로는 '저장'이 아니지만 편집이 어디까지 갔느냐는 같은 질문이라 같은 이벤트에
+// 싣고 outcome 으로만 가른다. 빼면 안전하게 보관된 편집이 유실된 편집과 구별되지 않는다.
+export type ResumeSaveOutcome =
+  | "server"
+  | "unsupported"
+  | "failed"
+  | "exit_draft";
 // FRT-113: 증빙 첨부 수단. 파일 업로드와 링크(URL) 두 갈래뿐이다.
 export type AttachmentType = "file" | "url";
 
@@ -116,7 +123,11 @@ export interface AnalyticsEventProps {
   resume_downloaded: { format: ResumeExportFormat; language: string };
   // AI 초안에 처음 손댄 시점. 버전 로드당 1회 — 키 입력마다 쏘면 이벤트가 폭증한다.
   // section 은 처음 손댄 섹션 슬러그(resume-diff.ts 의 순서 = 화면 아코디언 순서).
-  resume_edited: { section: string };
+  // version_id — "로드당 1회"는 한 화면 안에서만 참이다. 새로고침·재방문·두 번째 탭은
+  // 각자 새 페이지라 같은 레쥬메가 다시 발화한다(analysis_completed 의 analysis_id 와 같은
+  // 이유). 없으면 그 중복을 접을 수도, 서로 다른 레쥬메의 편집과 가를 수도 없다.
+  // 경로에 이미 드러나는 서버 식별자라 새 노출면이 아니다.
+  resume_edited: { section: string; version_id: string };
   // 편집 저장 시도의 결말. outcome 없이 뭉치면 export_completed 가 "접수"를 "완료"로
   // 보고하는 것과 같은 실수를 저장에서 반복한다.
   // persisted — 편집이 **어디든**(서버든 로컬 임시저장이든) 남았는가. false 는 서버도
