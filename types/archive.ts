@@ -112,7 +112,35 @@ export interface BlockRow {
    * 이름이 바뀌거나 지워질 때의 동기화는 RoleHistoryContext 가 편집 시점에 전파한다.
    */
   roleTags?: string[]
+  /**
+   * 이 행에만 사용자가 직접 붙인 항목 (FRT-145). 템플릿이 소유하는 `columns` 는 그대로 두므로
+   * FRT-104 의 열 잠금 정책과 충돌하지 않는다 — 열을 늘리면 **모든 행**에 칸이 생기지만
+   * 여기 붙는 항목은 그 행 하나에만 있다. `linkedProjectRowId`·`roleTags` 와 같은 행 필드
+   * 규약(additive·무마이그레이션, value(JSONB) 경로로 직렬화).
+   * 노출 여부는 블록 층위 `Block.allowRowExtras` 로 템플릿이 opt-in 한다.
+   */
+  extraFields?: RowExtraField[]
 }
+
+/**
+ * 사용자가 행 하나에 추가한 항목 (FRT-145).
+ *
+ * `label` 은 id 가 아니라 **이름**을 저장한다 — 저장된 JSONB 를 백엔드 분석이 그대로 읽어야
+ * 하므로(FRT-178 교훈). `key` 는 렌더 키·수정 대상 식별에만 쓰는 내부 값이다.
+ *
+ * `blockType` 은 `BlockColumnDef.blockType` 의 부분집합이다. 셀 렌더러(`CellInput`)가
+ * 실제로 분기하고 **선택지 없이도 성립하는** 5종만 연다 — `single-select` 는 options 가
+ * 없으면 빈 드롭다운이 되고, `checklist` 는 `tags` 와 동일한 자유입력으로 폴백한다.
+ * 옵션 편집 UI 와 `period`·`file` 은 FRT-213 이후에 다룬다.
+ */
+export interface RowExtraField {
+  key: string
+  label: string
+  blockType: RowExtraFieldType
+  value: string | string[]
+}
+
+export type RowExtraFieldType = 'text' | 'textarea' | 'date' | 'link' | 'tags'
 
 export interface RepeatableCellBlockValue {
   type: 'repeatable-cell'
@@ -216,6 +244,14 @@ export interface Block {
    * `variant` 와 동일하게 템플릿 정의에만 존재하며 직렬화되지 않는다(로드 시 레지스트리에서 재공급).
    */
   lockColumns?: boolean
+  /**
+   * 각 행에 사용자가 항목을 추가할 수 있게 한다 (FRT-145). 블록 인스턴스별로 opt-in 한다 —
+   * `roleTags`·`linkConfig` 와 같은 규약이다. `lockColumns` 와 충돌하지 않는다: 열은 계속
+   * 템플릿이 소유하고(모든 행에 적용), 여기서 열리는 건 **그 행에만 붙는 항목**이다.
+   * 실제 값은 `BlockRow.extraFields` 에 저장된다.
+   * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
+   */
+  allowRowExtras?: boolean
   value: BlockValue
 }
 

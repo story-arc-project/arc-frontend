@@ -3,8 +3,15 @@
 import { useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import type { Block, RepeatableCellBlockValue, BlockRow, BlockColumnDef } from "@/types/archive"
-import { cellFilled, createEmptyRow, uid } from "@/lib/utils/block-utils"
+import type {
+  Block,
+  RepeatableCellBlockValue,
+  BlockRow,
+  BlockColumnDef,
+  RowExtraField,
+  RowExtraFieldType,
+} from "@/types/archive"
+import { cellFilled, createEmptyRow, rowHasContent, uid } from "@/lib/utils/block-utils"
 import RoleChips from "./RoleChips"
 import { usePlaceholderRow } from "./usePlaceholderRow"
 
@@ -23,12 +30,14 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   // 풀어서 넘긴다. 여기서 val.columns 를 다시 보면 사용자가 열을 추가하는 순간 잠겨 갇힌다.
   const lockColumns = block.lockColumns === true
 
+  // FRT-145: 행마다 '항목 추가'. 열 잠금과 무관하다 — 열은 계속 템플릿이 소유하고(모든 행에 적용),
+  // 여기서 열리는 건 그 행 하나에만 붙는 항목이다.
+  const allowRowExtras = block.allowRowExtras === true
+
   // FRT-103: rows 가 비면 표시용 행 하나를 파생한다(value 에는 커밋되지 않음).
   // 항목 수·'행 추가' 노출은 계속 진짜 `val.rows` 를 본다.
-  const { displayRows, hasPlaceholder, isPlaceholderRow, materialize } = usePlaceholderRow(
-    val.rows,
-    val.columns,
-  )
+  const { displayRows, hasPlaceholder, isPlaceholderRow, materialize, materializeWith } =
+    usePlaceholderRow(val.rows, val.columns)
 
   function addRow() {
     const row = createEmptyRow(val.columns)
@@ -52,6 +61,25 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
       rows: val.rows.map(r =>
         r.id === rowId ? { ...r, cells: { ...r.cells, [colKey]: cellValue } } : r
       ),
+    })
+  }
+
+  /**
+   * FRT-145: 행에 붙은 사용자 항목만 갈아끼운다. 행을 `{ id, cells }` 로 다시 짜지 않는다 —
+   * 그러면 그때 존재하는 다른 행 필드(linkedProjectRowId·roleTags)가 조용히 날아간다(FRT-178).
+   */
+  function updateRowExtras(rowId: string, next: (fields: RowExtraField[]) => RowExtraField[]) {
+    const patch = (row: BlockRow) => ({ extraFields: next(row.extraFields ?? []) })
+    if (isPlaceholderRow(rowId)) {
+      // 표시용 행에서 항목을 추가하는 경로. 이름이 비면 애초에 항목이 만들어지지 않으므로
+      // "실제로 채워졌을 때만 커밋"은 그대로 성립한다.
+      const row = materializeWith(rowId, patch)
+      if (row) onChange({ ...val, rows: [row] })
+      return
+    }
+    onChange({
+      ...val,
+      rows: val.rows.map(r => (r.id === rowId ? { ...r, ...patch(r) } : r)),
     })
   }
 
@@ -87,7 +115,9 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
     // FRT-122: 셀이 전부 빈 행은 상세뷰에서 감춘다. 채운 행과 빈 행이 섞인 블록(행 하나 채우고
     // '행 추가'만 한 경우)에서 빈 행이 '—'만 있는 유령 행으로 남던 문제를 판정 층위에서 고친다.
     // value(rows)는 그대로 둔다 — 편집 모드로 돌아가면 빈 행이 다시 보인다.
-    const visibleRows = val.rows.filter(row => Object.values(row.cells).some(cellFilled))
+    // FRT-145: 판정은 셀만이 아니라 그 행에 추가된 항목까지 본다(rowHasContent) — 셀만 보면
+    // 추가 항목에만 값을 쓴 행이 유령으로 분류돼 사용자가 쓴 값이 조회 화면에서 사라진다.
+    const visibleRows = val.rows.filter(rowHasContent)
     return (
       <div className="flex flex-col gap-3 border-l-2 border-brand/30 pl-3.5">
         <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
@@ -117,6 +147,18 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
                       </div>
                     )
                   })}
+                  {/* FRT-145: 이 행에만 추가된 항목. 값이 빈 항목은 감춘다(빈 행 필터와 같은 철학 —
+                      value 는 그대로 두고 판정 층위에서 거른다). */}
+                  {(row.extraFields ?? [])
+                    .filter(f => cellFilled(f.value))
+                    .map(f => (
+                      <div key={f.key} className="flex flex-col gap-0.5">
+                        <span className="text-caption text-text-tertiary font-medium">{f.label}</span>
+                        <span className="text-body-sm text-text-primary whitespace-pre-wrap">
+                          {Array.isArray(f.value) ? f.value.join(", ") : f.value}
+                        </span>
+                      </div>
+                    ))}
                 </div>
               </div>
             ))}
@@ -202,7 +244,9 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
               index={idx}
               columns={val.columns}
               isPlaceholder={isPlaceholderRow(row.id)}
+              allowRowExtras={allowRowExtras}
               onCellChange={(colKey, cellVal) => updateCell(row.id, colKey, cellVal)}
+              onExtrasChange={next => updateRowExtras(row.id, next)}
               onRemove={() => removeRow(row.id)}
             />
           ))}
@@ -231,7 +275,9 @@ function RowEditor({
   index,
   columns,
   isPlaceholder,
+  allowRowExtras,
   onCellChange,
+  onExtrasChange,
   onRemove,
 }: {
   row: BlockRow
@@ -239,7 +285,10 @@ function RowEditor({
   columns: RepeatableCellBlockValue["columns"]
   /** FRT-103: 아직 value 에 커밋되지 않은 표시용 행. 지울 실체가 없어 삭제 버튼을 숨긴다. */
   isPlaceholder?: boolean
+  /** FRT-145: 이 행에 사용자가 항목을 추가할 수 있는가(블록 층위 opt-in). */
+  allowRowExtras?: boolean
   onCellChange: (colKey: string, value: string | string[]) => void
+  onExtrasChange: (next: (fields: RowExtraField[]) => RowExtraField[]) => void
   onRemove: () => void
 }) {
   return (
@@ -278,12 +327,181 @@ function RowEditor({
               <CellInput
                 column={col}
                 value={cellVal}
+                ariaLabel={col.label}
                 onChange={(v) => onCellChange(col.key, v)}
               />
             </div>
           )
         })}
       </div>
+      {allowRowExtras && (
+        <RowExtraFieldsEditor fields={row.extraFields ?? []} onChange={onExtrasChange} />
+      )}
+    </div>
+  )
+}
+
+/** FRT-145 '항목 추가'에서 고를 수 있는 유형. 선택지 없이도 성립하는 것만 연다 — `single-select`
+ *  는 options 가 없으면 빈 드롭다운이고 `checklist` 는 `tags` 와 같은 자유입력으로 폴백한다.
+ *  옵션 편집 UI 와 `period`·`file` 셀 렌더는 FRT-213 이후에 다룬다. */
+const EXTRA_FIELD_TYPES: { value: RowExtraFieldType; label: string }[] = [
+  { value: "text", label: "한 줄 텍스트" },
+  { value: "textarea", label: "여러 줄 텍스트" },
+  { value: "date", label: "날짜" },
+  { value: "link", label: "링크" },
+  { value: "tags", label: "태그" },
+]
+
+/**
+ * 행 하나에만 붙는 사용자 항목 편집기 (FRT-145).
+ * 값 입력은 새 컴포넌트를 만들지 않고 컬럼 셀과 같은 `CellInput` 을 재사용한다 —
+ * 같은 유형이 폼과 상세뷰에서 같은 모양으로 보여야 한다.
+ */
+function RowExtraFieldsEditor({
+  fields,
+  onChange,
+}: {
+  fields: RowExtraField[]
+  onChange: (next: (fields: RowExtraField[]) => RowExtraField[]) => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const [draftLabel, setDraftLabel] = useState("")
+  const [draftType, setDraftType] = useState<RowExtraFieldType>("text")
+  // 값이 있는 항목은 한 번 확인한 뒤에 지운다 — 되돌리는 경로가 없는 손실이라서다.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+
+  function add() {
+    const trimmed = draftLabel.trim()
+    if (!trimmed) return
+    onChange(prev => [
+      ...prev,
+      {
+        key: uid("extra"),
+        label: trimmed,
+        blockType: draftType,
+        value: draftType === "tags" ? [] : "",
+      },
+    ])
+    setDraftLabel("")
+    setDraftType("text")
+    setAdding(false)
+  }
+
+  function remove(key: string) {
+    onChange(prev => prev.filter(f => f.key !== key))
+    setPendingDelete(null)
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border flex flex-col gap-3">
+      {fields.length > 0 && (
+        <span className="text-caption text-text-tertiary font-medium">내가 추가한 항목</span>
+      )}
+
+      {fields.map(field => (
+        <div key={field.key} className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              aria-label="항목 이름"
+              className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-caption text-text-secondary hover:border-border focus:border-brand focus:outline-none"
+              value={field.label}
+              onChange={e =>
+                onChange(prev =>
+                  prev.map(f => (f.key === field.key ? { ...f, label: e.target.value } : f)),
+                )
+              }
+            />
+            {pendingDelete === field.key ? (
+              <span className="flex shrink-0 items-center gap-1.5 text-caption text-text-tertiary">
+                내용도 함께 지워집니다
+                <button
+                  type="button"
+                  onClick={() => remove(field.key)}
+                  className="rounded px-1.5 py-0.5 text-error hover:bg-surface-tertiary transition-colors"
+                >
+                  지우기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingDelete(null)}
+                  className="rounded px-1.5 py-0.5 text-text-secondary hover:bg-surface-tertiary transition-colors"
+                >
+                  취소
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                aria-label={`${field.label || "이름 없는 항목"} 항목 삭제`}
+                onClick={() =>
+                  cellFilled(field.value) ? setPendingDelete(field.key) : remove(field.key)
+                }
+                className="shrink-0 rounded p-1 text-text-tertiary hover:text-error transition-colors"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+          <CellInput
+            column={{ key: field.key, label: field.label, blockType: field.blockType }}
+            value={field.value}
+            ariaLabel={field.label}
+            onChange={v =>
+              onChange(prev => prev.map(f => (f.key === field.key ? { ...f, value: v } : f)))
+            }
+          />
+        </div>
+      ))}
+
+      {adding ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <select
+            aria-label="항목 유형"
+            className="h-8 rounded-md border border-border bg-surface px-2 text-caption text-text-primary focus:border-brand focus:outline-none"
+            value={draftType}
+            onChange={e => setDraftType(e.target.value as RowExtraFieldType)}
+          >
+            {EXTRA_FIELD_TYPES.map(t => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            aria-label="추가할 항목 이름"
+            className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 text-caption text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+            placeholder="항목 이름..."
+            value={draftLabel}
+            onChange={e => setDraftLabel(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add() } }}
+          />
+          <button
+            type="button"
+            onClick={add}
+            className="h-8 shrink-0 rounded-md border border-border bg-surface px-2.5 text-caption text-text-secondary hover:bg-surface-secondary transition-colors"
+          >
+            추가
+          </button>
+          <button
+            type="button"
+            onClick={() => { setAdding(false); setDraftLabel("") }}
+            className="h-8 shrink-0 rounded-md px-2 text-caption text-text-tertiary hover:bg-surface-tertiary transition-colors"
+          >
+            닫기
+          </button>
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setAdding(true)}
+          className="self-start"
+        >
+          <Plus size={14} className="mr-1" />
+          항목 추가
+        </Button>
+      )}
     </div>
   )
 }
@@ -291,10 +509,13 @@ function RowEditor({
 function CellInput({
   column,
   value,
+  ariaLabel,
   onChange,
 }: {
   column: BlockColumnDef
   value: string | string[] | undefined
+  /** 라벨이 `<label htmlFor>` 로 묶여 있지 않아 입력칸에 접근 가능한 이름이 없다 — 직접 준다. */
+  ariaLabel?: string
   onChange: (value: string | string[]) => void
 }) {
   // 열 타입이 변경되어 기존 값(string ↔ string[])이 불일치할 때 UI에서 값이 사라지지 않도록 정규화한다.
@@ -308,6 +529,7 @@ function CellInput({
   if (column.blockType === "textarea") {
     return (
       <textarea
+        aria-label={ariaLabel}
         className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none min-h-[64px]"
         placeholder={column.placeholder}
         value={strVal}
@@ -320,6 +542,7 @@ function CellInput({
     return (
       <input
         type="date"
+        aria-label={ariaLabel}
         className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
         value={strVal}
         onChange={e => onChange(e.target.value)}
@@ -331,6 +554,7 @@ function CellInput({
     return (
       <input
         type="url"
+        aria-label={ariaLabel}
         className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
         placeholder={column.placeholder ?? "https://..."}
         value={strVal}
@@ -340,7 +564,7 @@ function CellInput({
   }
 
   if (column.blockType === "tags") {
-    return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder} />
+    return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder} ariaLabel={ariaLabel} />
   }
 
   if (column.blockType === "checklist") {
@@ -352,7 +576,7 @@ function CellInput({
     const options = column.options ?? []
     if (options.length === 0) {
       // Fallback: free-form checklist entries (treated as tags)
-      return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder ?? "항목 입력 후 Enter"} />
+      return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder ?? "항목 입력 후 Enter"} ariaLabel={ariaLabel} />
     }
     return (
       <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -380,6 +604,7 @@ function CellInput({
     const options = column.options ?? []
     return (
       <select
+        aria-label={ariaLabel}
         className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
         value={strVal}
         onChange={e => onChange(e.target.value)}
@@ -396,6 +621,7 @@ function CellInput({
   return (
     <input
       type="text"
+      aria-label={ariaLabel}
       className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
       placeholder={column.placeholder}
       value={strVal}
@@ -408,10 +634,12 @@ function TagsCellInput({
   value,
   onChange,
   placeholder,
+  ariaLabel,
 }: {
   value: string[]
   onChange: (value: string[]) => void
   placeholder?: string
+  ariaLabel?: string
 }) {
   const [input, setInput] = useState("")
 
@@ -446,6 +674,7 @@ function TagsCellInput({
       )}
       <input
         type="text"
+        aria-label={ariaLabel}
         className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
         placeholder={placeholder ?? "입력 후 Enter"}
         value={input}

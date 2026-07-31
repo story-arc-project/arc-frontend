@@ -797,6 +797,52 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
       expect(reloadedBlock.value.rows[0].linkedProjectRowId).toBe("proj-1")
     }
   })
+
+  it("FRT-145: BlockRow.extraFields 가 왕복 보존된다(additive·무마이그레이션)", () => {
+    // 학회 ③ 프로젝트 표에 사용자가 추가한 항목을 심는다.
+    const key = "society-projects.프로젝트/연구활동"
+    const tmpl = getTemplateForType("academic-society")
+    const projectBlock = tmpl.extensions.flatMap(s => s.blocks).find(b => b.key === key)
+    expect(projectBlock).toBeDefined()
+    const withExtras: Block = {
+      ...projectBlock!,
+      value: {
+        type: "repeatable-cell",
+        columns: (projectBlock!.value as { columns: unknown[] }).columns as never,
+        rows: [
+          {
+            id: "r1",
+            cells: { name: "추천 시스템 연구" },
+            extraFields: [
+              { key: "extra-1", label: "학회 발표 여부", blockType: "text", value: "구두 발표" },
+              { key: "extra-2", label: "사용 도구", blockType: "tags", value: ["Python", "PyTorch"] },
+            ],
+          },
+        ],
+      },
+    }
+    const payload = toSavePayload(
+      makeExperienceV2({ typeId: "academic-society", extensionBlocks: [withExtras] }),
+    )
+    const fields = (payload.content as {
+      fields: Record<string, { rows: { extraFields?: { label: string; value: unknown }[] }[] }>
+    }).fields
+    // 저장: 라벨은 id 가 아니라 **이름**으로 실린다 — 백엔드 분석이 JSONB 를 그대로 읽는다.
+    expect(fields[key].rows[0].extraFields?.map(f => f.label)).toEqual([
+      "학회 발표 여부",
+      "사용 도구",
+    ])
+    // 복원: 로드 후에도 값이 살아있다.
+    const reloaded = toExperienceV2(
+      makeExperience({ type: "academic-society", content: payload.content, importance: payload.importance }),
+    )
+    const reloadedBlock = reloaded.extensionBlocks.find(b => b.key === key)
+    expect(reloadedBlock?.value.type).toBe("repeatable-cell")
+    if (reloadedBlock?.value.type === "repeatable-cell") {
+      expect(reloadedBlock.value.rows[0].extraFields?.[0].value).toBe("구두 발표")
+      expect(reloadedBlock.value.rows[0].extraFields?.[1].value).toEqual(["Python", "PyTorch"])
+    }
+  })
 })
 
 describe("section round-trip (FRT-78)", () => {
