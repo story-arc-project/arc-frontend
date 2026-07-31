@@ -332,6 +332,42 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     }
   });
 
+  // 요청이 도는 동안에도 편집기는 살아 있다. 임시 저장에는 **그 최신본**이 들어가는데
+  // 섹션 목록만 요청 시점 스냅샷을 가리키면, 보관된 편집 일부가 지표에서 사라진다.
+  it("저장 중에 이어서 고친 섹션도 임시 저장된 최신본 기준으로 싣는다", async () => {
+    const user = userEvent.setup();
+    let rejectSave!: (reason: unknown) => void;
+    mockUpdateResume.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectSave = reject;
+        }),
+    );
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await user.click(screen.getByRole("button", { name: /자기소개/ }));
+    await user.type(
+      screen.getByPlaceholderText("간단한 자기소개를 적어주세요."),
+      "x",
+    );
+
+    await act(async () => {
+      rejectSave(new ResumeMutationUnsupportedError(501));
+    });
+
+    await waitFor(() =>
+      expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
+        outcome: "unsupported",
+        persisted: true,
+        sections: ["personal_info", "summary"],
+        section_count: 2,
+      }),
+    );
+  });
+
   it("고친 게 없으면 저장 버튼이 잠겨 있어 발화하지 않는다", async () => {
     await renderLoaded();
 
@@ -449,6 +485,51 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       unmount();
 
       expect(captured("resume_edit_saved").length).toBe(1);
+    });
+
+    // 실패한 '나가기'는 이탈이 아니다 — 사용자는 화면에 그대로 남는다. 여기서 중복
+    // 방지 플래그를 세워버리면, 뒤이어 진짜로 떠날 때 보관된 편집이 통째로 안 남는다.
+    it("나가기가 임시 저장에 실패했다면 뒤이은 이탈은 다시 남긴다", async () => {
+      const user = userEvent.setup();
+      const { unmount } = await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      const setItem = vi
+        .spyOn(Storage.prototype, "setItem")
+        .mockImplementation(() => {
+          throw new Error("quota");
+        });
+      try {
+        await user.click(
+          screen.getByRole("button", { name: "익스포트로 돌아가기" }),
+        );
+      } finally {
+        setItem.mockRestore();
+      }
+      expect(mockPush).not.toHaveBeenCalled();
+
+      unmount();
+
+      expect(captured("resume_edit_saved")).toEqual([
+        [
+          "resume_edit_saved",
+          {
+            outcome: "exit_draft",
+            persisted: false,
+            sections: ["personal_info"],
+            section_count: 1,
+          },
+        ],
+        [
+          "resume_edit_saved",
+          {
+            outcome: "exit_draft",
+            persisted: true,
+            sections: ["personal_info"],
+            section_count: 1,
+          },
+        ],
+      ]);
     });
 
     // 저장에 성공했으면 남길 편집이 없다 — 나가기가 또 쏘면 저장 1회가 2건이 된다.

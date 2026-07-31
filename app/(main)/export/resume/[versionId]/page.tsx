@@ -183,7 +183,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
     if (!resume || !dirty || saving) return;
     setSaving(true);
     const snapshot = resume;
-    // 저장 성공 시 initial 이 서버 응답으로 갈리므로 **비교는 지금** 해둔다.
+    // 서버로 보내는 건 snapshot 이고, 성공 시 initial 이 서버 응답으로 갈린다 —
+    // **비교는 지금** 해둬야 한다. (실패 갈래는 서버가 아니라 로컬에 최신본을 남기므로
+    // 거기서 다시 잰다.)
     const sections = changedResumeSections(initial, snapshot);
     try {
       const updated = await updateResume(versionId, snapshot);
@@ -213,17 +215,24 @@ export default function ResumeDetailPage({ params }: PageProps) {
         }
         // 사용자에게는 "저장했어요"로 보이지만 서버엔 아무것도 안 남은 갈래다(FRT-111 대기).
         // server 와 뭉치면 관리자가 보는 '저장 건수'가 통째로 거짓이 된다.
-        captureEditSaved("unsupported", saved, sections);
+        // 섹션은 **실제로 보관된 값(latest)** 기준이다 — 요청이 도는 동안 이어서 고친
+        // 섹션이 draft 에는 들어갔는데 지표에서만 빠지면 보관된 편집을 과소 보고한다.
+        captureEditSaved(
+          "unsupported",
+          saved,
+          changedResumeSections(initial, latest),
+        );
       } else {
         // 서버 장애·오프라인도 편집을 잃을 이유는 아니다. 언마운트 핸들러에만 기대면
         // 탭을 그대로 닫았을 때(cleanup 미실행) 고친 내용이 통째로 사라진다.
         // dirty 는 그대로 두어 다음 저장/이탈 경로가 계속 살아 있게 한다.
-        const saved = writeDraft(versionId, resumeRef.current ?? snapshot);
+        const latest = resumeRef.current ?? snapshot;
+        const saved = writeDraft(versionId, latest);
         if (saved) {
           setPendingDraft(null);
         }
         toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
-        captureEditSaved("failed", saved, sections);
+        captureEditSaved("failed", saved, changedResumeSections(initial, latest));
       }
     } finally {
       setSaving(false);
@@ -323,7 +332,6 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // 저장 버튼을 누른 적은 없지만 사용자에게는 "임시 저장했어요"라고 **말한다**.
       // 여기서 안 쏘면 안전하게 보관된 편집이 유실된 편집과 데이터상 구별되지 않고,
       // 실패(=편집 유실 직전)한 순간은 아예 어디에도 남지 않는다(FRT-114).
-      exitDraftFiredRef.current = true;
       captureEditSaved(
         "exit_draft",
         saved,
@@ -331,8 +339,12 @@ export default function ResumeDetailPage({ params }: PageProps) {
       );
       if (!saved) {
         toast.error("임시 저장에 실패했어요. 저장 후 나가주세요.");
+        // 실패한 '나가기'는 이탈이 아니다 — 사용자는 화면에 그대로 남는다. 여기서
+        // 중복 방지 플래그를 세우면 뒤이어 **진짜로** 떠날 때 보관된 편집이 안 남는다.
         return;
       }
+      // 이동이 확정된 뒤에만 세운다 — 곧 이어질 언마운트가 같은 이탈을 또 세지 않도록.
+      exitDraftFiredRef.current = true;
       toast("변경사항을 임시 저장했어요", "info");
     }
     router.push(`${basePath}/export`);
