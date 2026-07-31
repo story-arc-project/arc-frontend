@@ -167,25 +167,25 @@ function LoginForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && pwInputRef.current?.focus()}
               />
-              <div className="relative">
-                <Input
-                  ref={pwInputRef}
-                  label="비밀번호"
-                  type={showPw ? "text" : "password"}
-                  placeholder="비밀번호 입력"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="pr-14"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPw((v) => !v)}
-                  className="absolute right-3 top-[38px] text-caption text-text-tertiary
-                             hover:text-text-secondary transition-colors cursor-pointer select-none"
-                >
-                  {showPw ? "숨기기" : "보기"}
-                </button>
-              </div>
+              <Input
+                ref={pwInputRef}
+                label="비밀번호"
+                type={showPw ? "text" : "password"}
+                placeholder="비밀번호 입력"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="pr-14"
+                rightAddon={
+                  <button
+                    type="button"
+                    onClick={() => setShowPw((v) => !v)}
+                    className="text-caption text-text-tertiary
+                               hover:text-text-secondary transition-colors cursor-pointer select-none"
+                  >
+                    {showPw ? "숨기기" : "보기"}
+                  </button>
+                }
+              />
               {PASSWORD_RESET_ENABLED && (
                 <div className="-mt-1 text-right">
                   <Link
