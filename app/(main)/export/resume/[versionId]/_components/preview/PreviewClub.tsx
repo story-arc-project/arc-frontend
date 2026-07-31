@@ -2,18 +2,20 @@
 
 import { isEmptySection, type Club } from "@/types/resume";
 import { PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
+import { visibleExperiences } from "@/lib/export/resume-visibility";
 
 interface Props {
+  title: string;
   data: Club[];
 }
 
-export function PreviewClub({ data }: Props) {
+export function PreviewClub({ data, title }: Props) {
   if (isEmptySection(data)) return null;
-  const items = data.filter((c) => !isEmptySection(c));
+  const items = visibleExperiences(data).filter((c) => !isEmptySection(c));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title="동아리 · 학회">
+    <PreviewSection title={title}>
       {items.map((c) => (
         <div key={c.id}>
           <PreviewRow

@@ -2,7 +2,25 @@
 // 미리보기 컴포넌트(`"use client"`)와 순수 문서 변환기 양쪽에서 import 하므로
 // 여기에는 렌더러 의존이 없어야 한다.
 
-import type { Education } from "@/types/resume";
+import type { Education, LanguageItem } from "@/types/resume";
+
+/**
+ * 어학 한 줄의 오른쪽 표기 — FRT-207 rev.5 가 `능통도`(원어민·능통·중급 자기평가)를 얹는다.
+ * 명세의 표기 예시는 "영어 — 능통 (TOEFL 115)" 이므로 능통도가 앞에 오고 시험 정보가 괄호로 붙는다.
+ * 능통도가 없으면(=현행 백엔드) 시험·점수만 남아 지금 화면과 똑같다.
+ */
+export function formatLanguageDetail(lang: LanguageItem): string {
+  const level = (lang.능통도 ?? "").trim();
+  // 능통도가 없으면 현행 표기 그대로여야 한다 — 라벨 도입이 지금 화면을 바꾸면 안 된다.
+  if (!level) return joinParts([lang.시험명, lang.점수등급]);
+  // 괄호 안은 "TOEFL 115" 처럼 붙여 읽는다(명세 표기 예시). 바깥 구분자(` · `)를
+  // 괄호 안에까지 끌고 들어오면 "능통 (TOEFL · 115)" 가 되어 한 줄에 구분자가 두 겹 생긴다.
+  const exam = [lang.시험명, lang.점수등급]
+    .filter((v) => v && v.trim())
+    .map((v) => (v as string).trim())
+    .join(" ");
+  return exam ? `${level} (${exam})` : level;
+}
 
 /** 기간 표기. 원문이 있으면 그대로 쓰고, 진행 중이면 종료 자리를 "현재"로 닫는다. */
 export function formatPeriod(

@@ -4,6 +4,7 @@ import { isEmptySection, type Skills } from "@/types/resume";
 import { PreviewSection } from "./PreviewSection";
 
 interface Props {
+  title: string;
   data: Skills;
 }
 
@@ -29,11 +30,11 @@ function Group({ label, items }: { label: string; items: string[] }) {
   );
 }
 
-export function PreviewSkills({ data }: Props) {
+export function PreviewSkills({ data, title }: Props) {
   if (isEmptySection(data)) return null;
 
   return (
-    <PreviewSection title="기술 및 역량">
+    <PreviewSection title={title}>
       <Group label="기술 스택" items={data.기술스택} />
       <Group label="툴" items={data.툴} />
       <Group label="소프트 스킬" items={data.소프트스킬} />

@@ -82,6 +82,12 @@ export async function createResume(
   const body: Record<string, unknown> = { language: params.language };
   if (params.title !== undefined) body.title = params.title;
   if (params.experienceIds !== undefined) body.experience_ids = params.experienceIds;
+  // FRT-207 — 기본 생성은 1쪽 제한(7/25 확정). "사용자가 직접 수정할 때는 1쪽 제안을 두지
+  // 않는다"가 같은 결정의 나머지 절반이라, 이건 **생성 시점에만** 걸리는 값이고 편집 저장
+  // (PATCH)에는 붙지 않는다. 사용자가 고를 일이 없으니 UI 없이 상수로 보낸다(입력 허들 최소화).
+  // experience_ids 와 마찬가지로 백엔드가 아직 안 받지만 extra="ignore" 라 조용히 무시된다.
+  body.max_pages = 1;
+  body.auto_fill = true;
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/export/resume",
     body,

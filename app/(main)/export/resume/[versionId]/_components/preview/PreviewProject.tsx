@@ -2,18 +2,20 @@
 
 import { isEmptySection, type Project } from "@/types/resume";
 import { formatPeriod, PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
+import { visibleExperiences } from "@/lib/export/resume-visibility";
 
 interface Props {
+  title: string;
   data: Project[];
 }
 
-export function PreviewProject({ data }: Props) {
+export function PreviewProject({ data, title }: Props) {
   if (isEmptySection(data)) return null;
-  const items = data.filter((p) => !isEmptySection(p));
+  const items = visibleExperiences(data).filter((p) => !isEmptySection(p));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title="프로젝트">
+    <PreviewSection title={title}>
       {items.map((p) => {
         const techLine = p.사용기술.filter((t) => t && t.trim()).join(", ");
         return (

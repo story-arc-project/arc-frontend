@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import { buildResumeDocument } from "@/lib/export/resume-document";
 import { seedResume } from "@/lib/demo/seed";
-import type { ResumeVersion } from "@/types/resume";
+import type { Career, ResumeVersion } from "@/types/resume";
 
 function emptyResume(overrides: Partial<ResumeVersion> = {}): ResumeVersion {
   return {
@@ -209,6 +209,103 @@ describe("buildResumeDocument — 섹션 선별", () => {
       "어학",
       "기술 및 역량",
     ]);
+  });
+
+  it("영문 레쥬메는 같은 순서를 영문 제목으로 낸다 (FRT-147)", () => {
+    const titles = sectionTitles(
+      emptyResume({
+        meta: {
+          language: "en",
+          format: "western_resume",
+          generated_at: "2026-07-31T00:00:00Z",
+          source_chars: 0,
+        },
+        경력: [
+          {
+            id: 1,
+            회사명: "BCG",
+            부서: null,
+            직위: "Analyst",
+            고용형태: "Internship",
+            입사년월: null,
+            퇴사년월: null,
+            재직중: false,
+            담당업무: [],
+            성과: [],
+          },
+        ],
+        논문: [
+          { id: 1, 제목: "Urban mobility", 게재처: "KGS", 발표년월: null, 내용: null },
+        ],
+        기타정보: { 병역: "Completed", 관심사: ["Drawing"] },
+      }),
+    );
+
+    expect(titles).toEqual([
+      "Work Experience",
+      "Publications",
+      "Additional Information",
+    ]);
+  });
+
+  it("표시=false 인 경험은 빼고 표시순위대로 싣는다 (FRT-207)", () => {
+    const career = (
+      id: number,
+      회사명: string,
+      표시: boolean,
+      표시순위: number | null,
+    ): Career => ({
+      id,
+      회사명,
+      부서: null,
+      직위: null,
+      고용형태: null,
+      입사년월: null,
+      퇴사년월: null,
+      재직중: false,
+      담당업무: [],
+      성과: [],
+      표시,
+      표시순위,
+    });
+
+    const doc = buildResumeDocument(
+      emptyResume({
+        경력: [
+          career(1, "셋째", true, 3),
+          career(2, "보류", false, null),
+          career(3, "첫째", true, 1),
+        ],
+      }),
+    );
+
+    expect(doc.sections[0].entries.map((e) => e.title)).toEqual(["첫째", "셋째"]);
+  });
+
+  it("내용 없이 표시 플래그만 달린 항목은 유령 행으로 실리지 않는다 (FRT-122 계열)", () => {
+    // `표시: true` 를 "값이 있다"로 세면 빈 항목이 비어 있지 않은 것이 되어 빈 행이 그려진다.
+    const titles = sectionTitles(
+      emptyResume({
+        경력: [
+          {
+            id: 1,
+            회사명: null,
+            부서: null,
+            직위: null,
+            고용형태: null,
+            입사년월: null,
+            퇴사년월: null,
+            재직중: false,
+            담당업무: [],
+            성과: [],
+            표시: true,
+            표시순위: 1,
+          },
+        ],
+      }),
+    );
+
+    expect(titles).toEqual([]);
   });
 
   it("연계성·파싱경고는 문서에 넣지 않는다", () => {

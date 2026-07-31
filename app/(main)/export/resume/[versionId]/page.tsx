@@ -29,6 +29,8 @@ import { ResumeDetailSkeleton } from "./_components/ResumeDetailSkeleton";
 import { ResumeDetailTopBar } from "./_components/ResumeDetailTopBar";
 import { ResumeEditorPanel } from "./_components/ResumeEditorPanel";
 import { ResumePreview } from "./_components/ResumePreview";
+import { EnglishReadOnlyNotice } from "./_components/EnglishReadOnlyNotice";
+import { RemainingExperiencesNotice } from "./_components/RemainingExperiencesNotice";
 import { reserveClientIds } from "./_components/editors/shared";
 import { changedResumeSections } from "./_components/resume-diff";
 import {
@@ -454,11 +456,15 @@ export default function ResumeDetailPage({ params }: PageProps) {
     );
   }
 
+  // FRT-147 — 영문 레쥬메는 읽기·내보내기 전용이다(매핑이 단방향이라 저장하면 영문 전용
+  // 값이 사라진다). 편집 패널을 아예 띄우지 않고 저장 버튼도 잠근다.
+  const readOnly = resume.meta?.language === "en";
+
   return (
     <div className="flex flex-col">
       <ResumeDetailTopBar
         versionLabel={versionLabel}
-        dirty={dirty}
+        dirty={dirty && !readOnly}
         saving={saving}
         regenerating={regenerating}
         onBack={handleBack}
@@ -467,8 +473,13 @@ export default function ResumeDetailPage({ params }: PageProps) {
         onExport={() => setExportOpen(true)}
       />
 
-      {/* Mobile tab switcher */}
-      <div className="no-print sticky top-[calc(var(--gnb-h)+3.5rem)] z-30 flex border-b border-border bg-surface md:hidden">
+      {/* Mobile tab switcher — 읽기 전용이면 고를 것이 없다(편집 패널이 없음). */}
+      <div
+        className={[
+          "no-print sticky top-[calc(var(--gnb-h)+3.5rem)] z-30 border-b border-border bg-surface md:hidden",
+          readOnly ? "hidden" : "flex",
+        ].join(" ")}
+      >
         {(
           [
             { key: "editor", label: "편집" },
@@ -495,7 +506,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
         <aside
           className={[
             "no-print flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto border-border bg-surface md:max-w-[40%] md:flex-none md:basis-2/5 md:border-r",
-            mobileTab === "editor" ? "" : "hidden md:flex",
+            // 읽기 전용이면 편집 패널 자체가 없다 — 빈 사이드바로 화면을 반 접지 않고
+            // 미리보기가 전폭을 쓰게 둔다.
+            readOnly ? "hidden md:hidden" : mobileTab === "editor" ? "" : "hidden md:flex",
           ].join(" ")}
         >
           <div className="p-5 sm:p-6 space-y-3">
@@ -514,10 +527,18 @@ export default function ResumeDetailPage({ params }: PageProps) {
         <main
           className={[
             "flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto bg-surface-secondary",
-            mobileTab === "preview" ? "" : "hidden md:flex",
+            readOnly || mobileTab === "preview" ? "" : "hidden md:flex",
           ].join(" ")}
         >
           <div className="p-5 sm:p-8">
+            {readOnly && (
+              <div className="mx-auto mb-4 max-w-[210mm]">
+                <EnglishReadOnlyNotice />
+              </div>
+            )}
+            <div className="mx-auto max-w-[210mm]">
+              <RemainingExperiencesNotice count={resume.meta?.보류된_경험수} />
+            </div>
             <ResumePreview resume={resume} />
           </div>
         </main>

@@ -1,5 +1,7 @@
 import type { PersonalInfo, PersonalInfoLink, ResumeVersion } from "@/types/resume";
 
+import { mapEnglishResume } from "./resume-en-mapping";
+
 /**
  * 백엔드 실값과 프런트 내부 shape 이 어긋나는 지점을 흡수한다.
  *
@@ -33,14 +35,19 @@ function emptyPersonalInfo(): PersonalInfo {
 }
 
 export function normalizeResumeVersion(resume: ResumeVersion): ResumeVersion {
-  const personal = resume.인적사항;
+  // FRT-147 — 영문 응답은 국문과 완전히 다른 키 한 벌로 온다. 여기서 한 번 옮겨 두면
+  // 프리뷰·편집기·문서 IR 세 벌을 언어별로 분기시키지 않아도 된다. 이미 옮겨진 본문
+  // (=draft 복원)은 영문 고유 키가 없어 그대로 통과한다 — 멱등이라 draft 왕복이 안전하다.
+  const source = mapEnglishResume(resume) ?? resume;
+
+  const personal = source.인적사항;
   // 인적사항 자체가 없는 본문도 unwrapResumeVersion 을 통과한다(그쪽은 meta 만 본다).
   // 그대로 두면 PersonalInfoEditor 가 undefined.이름 에서 던져 편집 화면이 통째로 죽는다 —
   // 링크만 챙기고 상위 부재를 흘려보내면 이 함수가 막으려던 실패가 한 겹 위에 남는다.
   if (personal === null || typeof personal !== "object") {
-    return { ...resume, 인적사항: emptyPersonalInfo() };
+    return { ...source, 인적사항: emptyPersonalInfo() };
   }
-  return { ...resume, 인적사항: { ...personal, 링크: normalizeLinks(personal.링크) } };
+  return { ...source, 인적사항: { ...personal, 링크: normalizeLinks(personal.링크) } };
 }
 
 function normalizeLinks(raw: unknown): PersonalInfoLink[] {

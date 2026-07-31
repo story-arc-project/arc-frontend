@@ -4,16 +4,17 @@ import { isEmptySection, type Certification } from "@/types/resume";
 import { PreviewRow, PreviewSection } from "./PreviewSection";
 
 interface Props {
+  title: string;
   data: Certification[];
 }
 
-export function PreviewCertification({ data }: Props) {
+export function PreviewCertification({ data, title }: Props) {
   if (isEmptySection(data)) return null;
   const items = data.filter((c) => !isEmptySection(c));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title="자격증">
+    <PreviewSection title={title}>
       {items.map((c) => (
         <PreviewRow
           key={c.id}

@@ -6,16 +6,17 @@ import { isEmptySection, type Education } from "@/types/resume";
 import { PreviewRow, PreviewSection } from "./PreviewSection";
 
 interface Props {
+  title: string;
   data: Education[];
 }
 
-export function PreviewEducation({ data }: Props) {
+export function PreviewEducation({ data, title }: Props) {
   if (isEmptySection(data)) return null;
   const items = data.filter((edu) => !isEmptySection(edu));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title="학력">
+    <PreviewSection title={title}>
       {items.map((edu) => {
         const subline = [
           edu.학과,

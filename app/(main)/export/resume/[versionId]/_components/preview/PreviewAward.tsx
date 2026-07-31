@@ -4,16 +4,17 @@ import { isEmptySection, type Award } from "@/types/resume";
 import { PreviewRow, PreviewSection } from "./PreviewSection";
 
 interface Props {
+  title: string;
   data: Award[];
 }
 
-export function PreviewAward({ data }: Props) {
+export function PreviewAward({ data, title }: Props) {
   if (isEmptySection(data)) return null;
   const items = data.filter((a) => !isEmptySection(a));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title="수상">
+    <PreviewSection title={title}>
       {items.map((a) => (
         <PreviewRow
           key={a.id}

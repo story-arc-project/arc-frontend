@@ -2,18 +2,20 @@
 
 import { isEmptySection, type Activity } from "@/types/resume";
 import { formatPeriod, PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
+import { visibleExperiences } from "@/lib/export/resume-visibility";
 
 interface Props {
+  title: string;
   data: Activity[];
 }
 
-export function PreviewActivity({ data }: Props) {
+export function PreviewActivity({ data, title }: Props) {
   if (isEmptySection(data)) return null;
-  const items = data.filter((a) => !isEmptySection(a));
+  const items = visibleExperiences(data).filter((a) => !isEmptySection(a));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title="대외활동">
+    <PreviewSection title={title}>
       {items.map((a) => (
         <div key={a.id}>
           <PreviewRow
