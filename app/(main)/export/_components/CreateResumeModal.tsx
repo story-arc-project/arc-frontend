@@ -66,12 +66,15 @@ export function CreateResumeModal({
   // (목록 로드 후 전체를 선택 상태로 세팅하는 effect 가 필요 없어진다).
   const [excludedIds, setExcludedIds] = useState<ReadonlySet<string>>(new Set());
 
-  const selected = useMemo(
+  const selectedExperiences = useMemo(
     () => experiences.filter((e) => !excludedIds.has(e.id)),
     [experiences, excludedIds],
   );
 
-  const selectedIds = useMemo(() => selected.map((e) => e.id), [selected]);
+  const selectedIds = useMemo(
+    () => selectedExperiences.map((e) => e.id),
+    [selectedExperiences],
+  );
 
   useEffect(() => {
     return () => {
@@ -120,7 +123,9 @@ export function CreateResumeModal({
       capture("resume_experience_selected", {
         count: selectedIds.length,
         // 경험 제목·id 는 PII 위험이라 싣지 않는다 — 유형만, 중복 없이.
-        experience_types: [...new Set(selected.map((e) => e.typeId))],
+        experience_types: [
+          ...new Set(selectedExperiences.map((e) => e.typeId)),
+        ],
       });
     }
 
