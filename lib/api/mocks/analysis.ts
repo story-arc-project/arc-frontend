@@ -12,6 +12,8 @@ import type {
 // analysisCompleted = 5(개인) + 2(종합) + 3(키워드) = 10
 
 export const mockAnalysisHomeSummary: AnalysisHomeSummary = {
+  failedTypes: [],
+  experiencesFailed: false,
   stats: {
     totalExperiences: 5,
     analysisCompleted: 10,
