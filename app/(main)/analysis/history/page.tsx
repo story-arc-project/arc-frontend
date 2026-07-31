@@ -180,7 +180,7 @@ export default function HistoryPage() {
             <button
               type="button"
               onClick={loadData}
-              className="shrink-0 text-label text-brand hover:text-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+              className="shrink-0 min-h-11 sm:min-h-0 flex items-center text-label text-brand hover:text-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
             >
               다시 시도
             </button>
