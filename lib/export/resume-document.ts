@@ -12,7 +12,10 @@ import {
   formatPeriod,
   joinParts,
 } from "@/lib/export/resume-format";
-import { resumeSectionLabels } from "@/lib/export/resume-labels";
+import {
+  resumeSectionLabels,
+  type ResumeSectionLabels,
+} from "@/lib/export/resume-labels";
 import { visibleExperiences } from "@/lib/export/resume-visibility";
 import {
   isEmptySection,
@@ -154,7 +157,7 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
               ),
             ),
           },
-          [bulletGroup(career.담당업무), bulletGroup(career.성과, "성과")],
+          [bulletGroup(career.담당업무), bulletGroup(career.성과, L.achievements)],
         ),
       ),
     ),
@@ -174,12 +177,12 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
               ),
             ),
           },
-          [bulletGroup(project.내용), bulletGroup(project.성과, "성과")],
+          [bulletGroup(project.내용), bulletGroup(project.성과, L.achievements)],
         );
 
         const tech = compactStrings(project.사용기술);
         return tech.length > 0
-          ? { ...entry, notes: [{ label: "사용 기술", text: tech.join(", ") }] }
+          ? { ...entry, notes: [{ label: L.techStack, text: tech.join(", ") }] }
           : entry;
       }),
     ),
@@ -200,7 +203,7 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
               ),
             ),
           },
-          [bulletGroup(activity.활동내용), bulletGroup(activity.성과, "성과")],
+          [bulletGroup(activity.활동내용), bulletGroup(activity.성과, L.achievements)],
         ),
       ),
     ),
@@ -258,11 +261,11 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
       })),
     ),
 
-    section(L.skills, buildSkillEntries(resume)),
+    section(L.skills, buildSkillEntries(resume, L)),
 
     // rev.5 — 어학 → 기술및역량 → 기타정보가 모든 템플릿 공통 하단 3종이다.
     // 어학이 기술및역량 위인 것은 이미 그러했고, 기타정보만 새로 최하단에 붙는다.
-    section(L.additionalInfo, buildAdditionalInfoEntries(resume)),
+    section(L.additionalInfo, buildAdditionalInfoEntries(resume, L)),
   ];
 
   return {
@@ -276,29 +279,35 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
  * rev.5 기타정보 — 어학을 뺀 나머지(병역·관심사). 어학은 최상위 `어학[]` 이 정본이라
  * 여기 다시 넣지 않는다("기타 정보에는 어학 외의 것만" — 7/27 확정).
  */
-function buildAdditionalInfoEntries(resume: ResumeVersion): DocEntry[] {
+function buildAdditionalInfoEntries(
+  resume: ResumeVersion,
+  L: ResumeSectionLabels,
+): DocEntry[] {
   const info = resume.기타정보;
   if (!info || isEmptySection(info)) return [];
 
   return (
     [
-      { label: "병역", value: text(info.병역) },
-      { label: "관심사", value: compactStrings(info.관심사).join(", ") },
+      { label: L.military, value: text(info.병역) },
+      { label: L.interests, value: compactStrings(info.관심사).join(", ") },
     ] as const
   )
     .filter((row) => row.value !== "")
     .map((row) => ({ title: row.label, text: row.value }));
 }
 
-function buildSkillEntries(resume: ResumeVersion): DocEntry[] {
+function buildSkillEntries(
+  resume: ResumeVersion,
+  L: ResumeSectionLabels,
+): DocEntry[] {
   const skills = resume.기술및역량;
   if (!skills || isEmptySection(skills)) return [];
 
   return (
     [
-      { title: "기술 스택", items: skills.기술스택 },
-      { title: "툴", items: skills.툴 },
-      { title: "소프트 스킬", items: skills.소프트스킬 },
+      { title: L.skillTech, items: skills.기술스택 },
+      { title: L.skillTools, items: skills.툴 },
+      { title: L.skillSoft, items: skills.소프트스킬 },
     ] as const
   )
     .map(({ title, items }) => ({ title, values: compactStrings(items) }))

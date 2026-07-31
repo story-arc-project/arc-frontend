@@ -1,21 +1,22 @@
 "use client";
 
 import { isEmptySection, type Club } from "@/types/resume";
+import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
 import { visibleExperiences } from "@/lib/export/resume-visibility";
 
 interface Props {
-  title: string;
+  labels: ResumeSectionLabels;
   data: Club[];
 }
 
-export function PreviewClub({ data, title }: Props) {
+export function PreviewClub({ data, labels }: Props) {
   if (isEmptySection(data)) return null;
   const items = visibleExperiences(data).filter((c) => !isEmptySection(c));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title={title}>
+    <PreviewSection title={labels.club}>
       {items.map((c) => (
         <div key={c.id}>
           <PreviewRow

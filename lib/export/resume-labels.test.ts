@@ -21,6 +21,13 @@ describe("resumeSectionLabels", () => {
       skills: "기술 및 역량",
       additionalInfo: "기타정보",
       publication: "논문",
+      achievements: "성과",
+      techStack: "사용 기술",
+      skillTech: "기술 스택",
+      skillTools: "툴",
+      skillSoft: "소프트 스킬",
+      military: "병역",
+      interests: "관심사",
     });
   });
 
@@ -32,6 +39,11 @@ describe("resumeSectionLabels", () => {
     expect(en.skills).toBe("Skills");
     expect(en.publication).toBe("Publications");
     expect(en.additionalInfo).toBe("Additional Information");
+    // 섹션 제목만 바꾸면 엔트리 안쪽에 "성과"·"기술 스택"이 한국어로 남는다.
+    expect(en.achievements).toBe("Achievements");
+    expect(en.techStack).toBe("Tech Stack");
+    expect(en.skillTech).toBe("Technical");
+    expect(en.military).toBe("Military Service");
   });
 
   it("언어를 모르면 국문으로 폴백한다", () => {

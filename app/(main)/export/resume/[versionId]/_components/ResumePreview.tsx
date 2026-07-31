@@ -21,25 +21,25 @@ interface ResumePreviewProps {
 }
 
 export function ResumePreview({ resume }: ResumePreviewProps) {
-  // 섹션 제목은 레쥬메 언어를 따른다(FRT-147). 하위 컴포넌트는 언어를 모르고 제목만 받는다 —
-  // 11 곳이 각자 언어를 판정하면 그때부터 규칙이 열한 벌로 갈라진다.
+  // 섹션 제목·엔트리 안쪽 라벨을 레쥬메 언어로 고른다(FRT-147). 하위 컴포넌트는 언어를
+  // 모르고 라벨 표만 받는다 — 12 곳이 각자 언어를 판정하면 규칙이 열두 벌로 갈라진다.
   const L = resumeSectionLabels(resume.meta?.language);
 
   return (
     <article className="resume-preview mx-auto max-w-[210mm] rounded-sm bg-surface p-10 shadow-sm">
       <PreviewPersonalInfo data={resume.인적사항} />
-      <PreviewSummary title={L.summary} data={resume.자기소개_요약} />
-      <PreviewEducation title={L.education} data={resume.학력} />
-      <PreviewCareer title={L.career} data={resume.경력} />
-      <PreviewProject title={L.project} data={resume.프로젝트} />
-      <PreviewActivity title={L.activity} data={resume.대외활동} />
-      <PreviewClub title={L.club} data={resume.동아리_학회} />
-      <PreviewAward title={L.award} data={resume.수상} />
-      <PreviewPublication title={L.publication} data={resume.논문} />
-      <PreviewCertification title={L.certification} data={resume.자격증} />
-      <PreviewLanguage title={L.language} data={resume.어학} />
-      <PreviewSkills title={L.skills} data={resume.기술및역량} />
-      <PreviewAdditionalInfo title={L.additionalInfo} data={resume.기타정보} />
+      <PreviewSummary labels={L} data={resume.자기소개_요약} />
+      <PreviewEducation labels={L} data={resume.학력} />
+      <PreviewCareer labels={L} data={resume.경력} />
+      <PreviewProject labels={L} data={resume.프로젝트} />
+      <PreviewActivity labels={L} data={resume.대외활동} />
+      <PreviewClub labels={L} data={resume.동아리_학회} />
+      <PreviewAward labels={L} data={resume.수상} />
+      <PreviewPublication labels={L} data={resume.논문} />
+      <PreviewCertification labels={L} data={resume.자격증} />
+      <PreviewLanguage labels={L} data={resume.어학} />
+      <PreviewSkills labels={L} data={resume.기술및역량} />
+      <PreviewAdditionalInfo labels={L} data={resume.기타정보} />
     </article>
   );
 }

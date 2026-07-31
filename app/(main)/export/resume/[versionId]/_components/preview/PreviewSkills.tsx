@@ -1,10 +1,11 @@
 "use client";
 
 import { isEmptySection, type Skills } from "@/types/resume";
+import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { PreviewSection } from "./PreviewSection";
 
 interface Props {
-  title: string;
+  labels: ResumeSectionLabels;
   data: Skills;
 }
 
@@ -30,14 +31,14 @@ function Group({ label, items }: { label: string; items: string[] }) {
   );
 }
 
-export function PreviewSkills({ data, title }: Props) {
+export function PreviewSkills({ data, labels }: Props) {
   if (isEmptySection(data)) return null;
 
   return (
-    <PreviewSection title={title}>
-      <Group label="기술 스택" items={data.기술스택} />
-      <Group label="툴" items={data.툴} />
-      <Group label="소프트 스킬" items={data.소프트스킬} />
+    <PreviewSection title={labels.skills}>
+      <Group label={labels.skillTech} items={data.기술스택} />
+      <Group label={labels.skillTools} items={data.툴} />
+      <Group label={labels.skillSoft} items={data.소프트스킬} />
     </PreviewSection>
   );
 }

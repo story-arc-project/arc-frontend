@@ -1,21 +1,22 @@
 "use client";
 
 import { isEmptySection, type Career } from "@/types/resume";
+import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { formatPeriod, PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
 import { visibleExperiences } from "@/lib/export/resume-visibility";
 
 interface Props {
-  title: string;
+  labels: ResumeSectionLabels;
   data: Career[];
 }
 
-export function PreviewCareer({ data, title }: Props) {
+export function PreviewCareer({ data, labels }: Props) {
   if (isEmptySection(data)) return null;
   const items = visibleExperiences(data).filter((c) => !isEmptySection(c));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title={title}>
+    <PreviewSection title={labels.career}>
       {items.map((c) => {
         const subline = [c.부서, c.직위, c.고용형태]
           .filter((v) => v && String(v).trim())
@@ -44,7 +45,7 @@ export function PreviewCareer({ data, title }: Props) {
             {c.성과.length > 0 && (
               <div className="mt-1.5">
                 <p className="text-caption text-text-tertiary font-medium">
-                  성과
+                  {labels.achievements}
                 </p>
                 <PreviewBullets items={c.성과} />
               </div>

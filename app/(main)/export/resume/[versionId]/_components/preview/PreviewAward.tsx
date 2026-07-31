@@ -1,20 +1,21 @@
 "use client";
 
 import { isEmptySection, type Award } from "@/types/resume";
+import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { PreviewRow, PreviewSection } from "./PreviewSection";
 
 interface Props {
-  title: string;
+  labels: ResumeSectionLabels;
   data: Award[];
 }
 
-export function PreviewAward({ data, title }: Props) {
+export function PreviewAward({ data, labels }: Props) {
   if (isEmptySection(data)) return null;
   const items = data.filter((a) => !isEmptySection(a));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title={title}>
+    <PreviewSection title={labels.award}>
       {items.map((a) => (
         <PreviewRow
           key={a.id}

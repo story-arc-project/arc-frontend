@@ -1,21 +1,22 @@
 "use client";
 
 import { isEmptySection, type Activity } from "@/types/resume";
+import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { formatPeriod, PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
 import { visibleExperiences } from "@/lib/export/resume-visibility";
 
 interface Props {
-  title: string;
+  labels: ResumeSectionLabels;
   data: Activity[];
 }
 
-export function PreviewActivity({ data, title }: Props) {
+export function PreviewActivity({ data, labels }: Props) {
   if (isEmptySection(data)) return null;
   const items = visibleExperiences(data).filter((a) => !isEmptySection(a));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title={title}>
+    <PreviewSection title={labels.activity}>
       {items.map((a) => (
         <div key={a.id}>
           <PreviewRow
@@ -38,7 +39,7 @@ export function PreviewActivity({ data, title }: Props) {
           <PreviewBullets items={a.활동내용} />
           {a.성과.length > 0 && (
             <div className="mt-1.5">
-              <p className="text-caption text-text-tertiary font-medium">성과</p>
+              <p className="text-caption text-text-tertiary font-medium">{labels.achievements}</p>
               <PreviewBullets items={a.성과} />
             </div>
           )}

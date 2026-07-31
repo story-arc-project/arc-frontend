@@ -23,6 +23,14 @@ export interface ResumeSectionLabels {
   skills: string;
   additionalInfo: string;
   publication: string;
+  /** 엔트리 안쪽 라벨 — 섹션 제목만 바꾸면 영문 CV 에 "성과"가 그대로 남는다. */
+  achievements: string;
+  techStack: string;
+  skillTech: string;
+  skillTools: string;
+  skillSoft: string;
+  military: string;
+  interests: string;
 }
 
 const KO: ResumeSectionLabels = {
@@ -39,6 +47,13 @@ const KO: ResumeSectionLabels = {
   skills: "기술 및 역량",
   additionalInfo: "기타정보",
   publication: "논문",
+  achievements: "성과",
+  techStack: "사용 기술",
+  skillTech: "기술 스택",
+  skillTools: "툴",
+  skillSoft: "소프트 스킬",
+  military: "병역",
+  interests: "관심사",
 };
 
 /**
@@ -59,6 +74,13 @@ const EN: ResumeSectionLabels = {
   skills: "Skills",
   additionalInfo: "Additional Information",
   publication: "Publications",
+  achievements: "Achievements",
+  techStack: "Tech Stack",
+  skillTech: "Technical",
+  skillTools: "Tools",
+  skillSoft: "Soft Skills",
+  military: "Military Service",
+  interests: "Interests",
 };
 
 /**
