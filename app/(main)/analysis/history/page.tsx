@@ -76,6 +76,7 @@ function InlineEdit({
 
 export default function HistoryPage() {
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
+  const [failedTypes, setFailedTypes] = useState<AnalysisType[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("newest");
   const [loading, setLoading] = useState(true);
@@ -90,8 +91,12 @@ export default function HistoryPage() {
     setError(false);
     try {
       const data = await getAnalysisHistory({ type: filter, sort });
-      setItems(data);
+      setItems(data.items);
+      setFailedTypes(data.failedTypes);
     } catch {
+      // 전멸(세 소스 모두 실패)만 여기로 온다 — 화면 전체가 에러로 바뀌므로
+      // 유형별 안내는 거둔다.
+      setFailedTypes([]);
       setError(true);
     } finally {
       setLoading(false);
@@ -131,6 +136,11 @@ export default function HistoryPage() {
     }
   }
 
+  // 보고 있는 화면과 상관있는 실패만 알린다. 종합 탭을 보는 사용자에게 키워드 실패를
+  // 알릴 이유가 없고(노이즈), 그 탭의 목록은 실제로 정확하다.
+  const relevantFailures =
+    filter === "all" ? failedTypes : failedTypes.filter((t) => t === filter);
+
   return (
     <main className="px-4 py-8 sm:px-8">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -161,6 +171,22 @@ export default function HistoryPage() {
           </div>
         )}
 
+        {!error && !loading && relevantFailures.length > 0 && (
+          <div role="alert" className="px-4 py-3 rounded-lg border border-border bg-surface text-body-sm text-text-secondary flex items-center justify-between gap-3">
+            <p>
+              {relevantFailures.map((t) => analysisTypeLabel[t]).join("·")} 기록을
+              불러오지 못했어요. 목록에 보이지 않을 뿐, 사라진 것은 아니에요.
+            </p>
+            <button
+              type="button"
+              onClick={loadData}
+              className="shrink-0 text-label text-brand hover:text-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+            >
+              다시 시도
+            </button>
+          </div>
+        )}
+
         {error ? (
           <div className="py-12 text-center" role="alert">
             <p className="text-body text-text-secondary mb-3">
@@ -188,6 +214,10 @@ export default function HistoryPage() {
               </div>
             ))}
           </div>
+        ) : items.length === 0 && relevantFailures.length > 0 ? (
+          // 목록이 빈 원인이 "없어서"가 아니라 "못 불러와서"인 경우다. 여기서 빈 상태
+          // 문구를 그대로 두면 화면이 거짓말을 한다 — 위 안내와 '다시 시도'가 그 자리를 대신한다.
+          null
         ) : items.length === 0 ? (
           <div className="py-12 text-center">
             <p className="text-body text-text-tertiary">
