@@ -66,9 +66,14 @@ export function CreateResumeModal({
   // (목록 로드 후 전체를 선택 상태로 세팅하는 effect 가 필요 없어진다).
   const [excludedIds, setExcludedIds] = useState<ReadonlySet<string>>(new Set());
 
-  const selectedIds = useMemo(
-    () => experiences.filter((e) => !excludedIds.has(e.id)).map((e) => e.id),
+  const selectedExperiences = useMemo(
+    () => experiences.filter((e) => !excludedIds.has(e.id)),
     [experiences, excludedIds],
+  );
+
+  const selectedIds = useMemo(
+    () => selectedExperiences.map((e) => e.id),
+    [selectedExperiences],
   );
 
   useEffect(() => {
@@ -108,6 +113,21 @@ export function CreateResumeModal({
     const timeoutId = window.setTimeout(() => {
       controller.abort();
     }, GENERATION_TIMEOUT_MS);
+
+    // 실행 직전 최종 선택 = "내 어떤 경험을 이력서에 낼 만하다고 판단했나"(FRT-114).
+    // 요청 **앞**에 둔다 — 뒤에 두면 생성이 실패한 사용자의 선택이 통째로 사라지고,
+    // export_completed 는 성공했을 때만 뜨므로 그 drop-off 를 볼 곳이 없어진다.
+    // 플래그가 꺼져 있으면 "고른다"는 개념 자체가 없으므로 쏘지 않는다(전체 자동 포함을
+    // 사용자의 선택으로 기록하면 유형 분포가 거짓이 된다).
+    if (experienceSelectionEnabled) {
+      capture("resume_experience_selected", {
+        count: selectedIds.length,
+        // 경험 제목·id 는 PII 위험이라 싣지 않는다 — 유형만, 중복 없이.
+        experience_types: [
+          ...new Set(selectedExperiences.map((e) => e.typeId)),
+        ],
+      });
+    }
 
     try {
       await createResume(

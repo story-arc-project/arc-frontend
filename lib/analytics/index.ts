@@ -11,4 +11,5 @@ export {
   type ExportType,
   type RecordStatus,
   type AttachmentType,
+  type ResumeSaveOutcome,
 } from "./events";
