@@ -400,7 +400,9 @@ function RowExtraFieldsEditor({
 
       {fields.map(field => (
         <div key={field.key} className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-1">
+          {/* 삭제 확인이 뜨면 모바일에서는 아래 줄로 내린다 — 한 줄에 두면 항목 이름이 몇 글자만
+              남을 만큼 눌린다(프리뷰에서 확인). */}
+          <div className="flex flex-wrap items-center gap-1">
             <input
               type="text"
               aria-label="항목 이름"
@@ -413,7 +415,7 @@ function RowExtraFieldsEditor({
               }
             />
             {pendingDelete === field.key ? (
-              <span className="flex shrink-0 items-center gap-1.5 text-caption text-text-tertiary">
+              <span className="flex w-full shrink-0 items-center gap-1.5 text-caption text-text-tertiary sm:w-auto">
                 내용도 함께 지워집니다
                 <button
                   type="button"
