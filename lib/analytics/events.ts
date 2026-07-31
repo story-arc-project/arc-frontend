@@ -11,6 +11,14 @@ export type SignupMethod = "email" | "google";
 export type AnalysisKind = "comprehensive" | "keyword";
 export type ExportType = "resume" | "cover_letter";
 export type RecordStatus = "complete" | "draft";
+// FRT-114: 레쥬메를 손에서 꺼내가는 수단. 인쇄는 파일이 떨어지지 않지만 "결과물을
+// 꺼내가는 행동"은 같아서 같은 이벤트에 싣고 여기서만 가른다 — 안 실으면 그 행동은
+// 영영 데이터에 남지 않는다(다운스트림에서 접는 건 언제든 가능).
+export type ResumeExportFormat = "pdf" | "docx" | "print";
+// FRT-114: 편집 저장이 실제로 어디까지 갔는가. 서버 저장(FRT-111)이 아직 계약 진행 중이라
+// 사용자에게는 "저장/임시 저장했어요"가 뜨는데 서버엔 아무것도 안 남는 경로가 실재한다.
+// 이걸 뭉치면 관리자가 보는 "저장 건수"가 거짓이 된다.
+export type ResumeSaveOutcome = "server" | "unsupported" | "failed";
 // FRT-113: 증빙 첨부 수단. 파일 업로드와 링크(URL) 두 갈래뿐이다.
 export type AttachmentType = "file" | "url";
 
@@ -23,6 +31,9 @@ export const ANALYTICS_EVENTS = {
   signupMethodSelected: "signup_method_selected",
   archiveTypeSelected: "archive_type_selected",
   analysisTargetSelected: "analysis_target_selected",
+  // FRT-114. 실행 직전 최종 선택만 센다(analysis_target_selected 와 같은 결) — 체크박스
+  // 토글마다 쏘면 이벤트가 폭증하고, 실행 직전 1회여야 "골랐지만 생성이 실패함"이 남는다.
+  resumeExperienceSelected: "resume_experience_selected",
   // ── 커스터마이징 실사용 (입력 허들 최소화 vs 자유도 검증) ────────────
   archiveAttachmentAdded: "archive_attachment_added",
   // ── 완료 등뼈 (퍼널 스파인) ────────────────────────────────────
@@ -32,6 +43,12 @@ export const ANALYTICS_EVENTS = {
   firstRecordCreated: "first_record_created",
   analysisCompleted: "analysis_completed",
   exportCompleted: "export_completed",
+  // ── 익스포트 이후 행동 (FRT-114) ───────────────────────────────────
+  // export_completed 까지만 보면 "만들어놓고 안 쓰는지"가 안 보인다. 결과물을 실제로
+  // 꺼내갔는지(다운로드), AI 초안을 얼마나 고쳐 쓰는지(편집·저장)를 여기서 잡는다.
+  resumeDownloaded: "resume_downloaded",
+  resumeEdited: "resume_edited",
+  resumeEditSaved: "resume_edit_saved",
   // ── 복구 행동 (실패에서 빠져나오는가) ────────────────────────────
   // 이벤트 정의서의 comprehensive_analysis_retried / keyword_analysis_retried 는
   // "동일 조합 재요청"으로 실패 재시도와 성공 후 재활용을 섞어 정의했다.
@@ -89,6 +106,27 @@ export interface AnalyticsEventProps {
         // 0 과 부재가 다른 뜻이라 optional 이 아니라 필수다.
         question_count: number;
       };
+  // FRT-114: 레쥬메에 넣을 경험을 고른 시점(생성 요청 직전). export_completed 의
+  // experience_count 와 겹쳐 보이지만 순증 가치가 둘 있다 — ① 어떤 **유형**을 "낼 만하다"고
+  // 판단하는지 ② 생성 요청이 실패해도 선택 사실이 남는다(export_completed 는 성공 시에만 뜬다).
+  // experience_types 는 유형 id 목록(중복 제거)이다. 경험 제목·id 는 PII 위험이라 싣지 않는다.
+  resume_experience_selected: { count: number; experience_types: string[] };
+  // 만든 레쥬메를 실제로 꺼내간 시점. language 는 export_completed 와 같은 결(국문/영문 중
+  // 무엇을 진짜로 받아가는가)이라 같은 이름·같은 타입으로 싣는다.
+  resume_downloaded: { format: ResumeExportFormat; language: string };
+  // AI 초안에 처음 손댄 시점. 버전 로드당 1회 — 키 입력마다 쏘면 이벤트가 폭증한다.
+  // section 은 처음 손댄 섹션 슬러그(resume-diff.ts 의 순서 = 화면 아코디언 순서).
+  resume_edited: { section: string };
+  // 편집 저장 시도의 결말. outcome 없이 뭉치면 export_completed 가 "접수"를 "완료"로
+  // 보고하는 것과 같은 실수를 저장에서 반복한다.
+  // persisted — 편집이 **어디든**(서버든 로컬 임시저장이든) 남았는가. false 는 서버도
+  // 로컬도 못 남긴 편집 유실이고, outcome 만으로는 그 최악의 경우가 보이지 않는다.
+  resume_edit_saved: {
+    outcome: ResumeSaveOutcome;
+    persisted: boolean;
+    sections: string[];
+    section_count: number;
+  };
   // 인앱 피드백 응답. PII 금지 — comment 원문·analysis_id 는 절대 싣지 않는다(서버에만 남긴다).
   // 리터럴 유니온을 인라인한다: lib/feedback/types.ts 가 이미 이 파일(AnalysisKind)을 import 하므로
   // 여기서 feedback 타입을 역참조하면 analytics ↔ feedback 순환이 된다. campaign_id 는 구조적으로

@@ -40,11 +40,16 @@ vi.mock("@/hooks/useExperiences", () => ({
 
 import { CreateResumeModal } from "./CreateResumeModal";
 
-function experience(id: string, title: string, updatedAt: string): Experience {
+function experience(
+  id: string,
+  title: string,
+  updatedAt: string,
+  type = "career",
+): Experience {
   return {
     id,
     user_id: "u1",
-    type: "career",
+    type,
     importance: null,
     content: {
       schema_version: 2,
@@ -68,9 +73,9 @@ beforeEach(() => {
   mockLoading = false;
   mockError = null;
   mockExperiences = [
-    experience("e1", "ARC 인턴", "2026-07-20T00:00:00.000Z"),
-    experience("e2", "학회 발표", "2026-07-21T00:00:00.000Z"),
-    experience("e3", "봉사활동", "2026-07-19T00:00:00.000Z"),
+    experience("e1", "ARC 인턴", "2026-07-20T00:00:00.000Z", "career"),
+    experience("e2", "학회 발표", "2026-07-21T00:00:00.000Z", "academic-society"),
+    experience("e3", "봉사활동", "2026-07-19T00:00:00.000Z", "volunteer"),
   ];
   mockCreateResume.mockResolvedValue({ id: null });
 });
@@ -176,6 +181,62 @@ describe("CreateResumeModal — 경험 선택 (플래그 on)", () => {
       experience_count: 2,
     });
   });
+
+  // FRT-114 — "사용자가 자신의 어떤 경험을 이력서에 낼 만하다고 판단하는가".
+  // export_completed 는 개수만 싣고 유형을 모르며, 생성이 실패하면 아예 뜨지 않는다.
+  it("선택한 경험의 개수와 유형을 계측한다 — 유형은 중복 없이", async () => {
+    const user = userEvent.setup();
+    renderModal(true);
+
+    // e1(career)·e3(volunteer) 만 남긴다 — e2(academic-society) 해제.
+    await user.click(screen.getByRole("checkbox", { name: /학회 발표/ }));
+    await user.click(screen.getByRole("button", { name: "만들기" }));
+
+    await waitFor(() =>
+      expect(mockCapture).toHaveBeenCalledWith("resume_experience_selected", {
+        count: 2,
+        experience_types: ["career", "volunteer"],
+      }),
+    );
+  });
+
+  it("같은 유형을 여러 개 골라도 유형은 한 번만 실린다", async () => {
+    const user = userEvent.setup();
+    mockExperiences = [
+      experience("e1", "A 인턴", "2026-07-20T00:00:00.000Z", "career"),
+      experience("e2", "B 인턴", "2026-07-21T00:00:00.000Z", "career"),
+    ];
+    renderModal(true);
+
+    await user.click(screen.getByRole("button", { name: "만들기" }));
+
+    await waitFor(() =>
+      expect(mockCapture).toHaveBeenCalledWith("resume_experience_selected", {
+        count: 2,
+        experience_types: ["career"],
+      }),
+    );
+  });
+
+  // 생성 요청 실패는 곧 drop-off 다. 선택을 요청 **직전**에 쏘지 않으면
+  // "골랐는데 만들어지지 않은" 사용자가 데이터에서 통째로 사라진다.
+  it("생성 요청이 실패해도 선택 사실은 남는다", async () => {
+    const user = userEvent.setup();
+    mockCreateResume.mockRejectedValue(new Error("boom"));
+    renderModal(true);
+
+    await user.click(screen.getByRole("button", { name: "만들기" }));
+
+    await waitFor(() =>
+      expect(mockCapture).toHaveBeenCalledWith(
+        "resume_experience_selected",
+        expect.objectContaining({ count: 3 }),
+      ),
+    );
+    expect(
+      mockCapture.mock.calls.some(([name]) => name === "export_completed"),
+    ).toBe(false);
+  });
 });
 
 describe("CreateResumeModal — 플래그 off (백엔드 미수용 봉인)", () => {
@@ -217,5 +278,21 @@ describe("CreateResumeModal — 플래그 off (백엔드 미수용 봉인)", () 
       export_type: "resume",
       language: "ko",
     });
+  });
+
+  // 플래그가 꺼져 있으면 "고른다"는 개념 자체가 없다. 전체가 자동으로 들어가는 걸
+  // 사용자의 선택으로 기록하면 유형 분포가 통째로 거짓이 된다(FRT-114).
+  it("resume_experience_selected 를 쏘지 않는다 — 고른 적이 없다", async () => {
+    const user = userEvent.setup();
+    renderModal(false);
+
+    await user.click(screen.getByRole("button", { name: "만들기" }));
+
+    await waitFor(() => expect(mockCreateResume).toHaveBeenCalled());
+    expect(
+      mockCapture.mock.calls.some(
+        ([name]) => name === "resume_experience_selected",
+      ),
+    ).toBe(false);
   });
 });
