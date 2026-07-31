@@ -4,6 +4,8 @@ import type {
   BlockValue,
   BlockRow,
   BlockColumnDef,
+  CellValue,
+  FileCellValue,
   ProjectLinkConfig,
 } from '@/types/archive'
 
@@ -223,8 +225,7 @@ export function roleNamesOf(block: Block): string[] {
   if (block.value.type !== 'repeatable-cell') return []
   const out: string[] = []
   for (const row of block.value.rows) {
-    const cell = row.cells['role']
-    const name = (Array.isArray(cell) ? cell.join(', ') : (cell ?? '')).trim()
+    const name = cellText(row.cells['role']).trim()
     if (name && !out.includes(name)) out.push(name)
   }
   return out
@@ -299,7 +300,7 @@ export function createGroupBlock(label: string): Block {
 // ─── Row helpers ────────────────────────────────────────────────
 
 export function createEmptyRow(columns: BlockColumnDef[]): BlockRow {
-  const cells: Record<string, string | string[]> = {}
+  const cells: Record<string, CellValue> = {}
   for (const col of columns) {
     if (col.blockType === 'checklist' || col.blockType === 'tags') {
       cells[col.key] = []
@@ -328,11 +329,35 @@ export function cloneBlocks(blocks: Block[]): Block[] {
 
 // ─── Validation ─────────────────────────────────────────────────
 
+/** 이 셀 값이 파일 셀인가 (FRT-213). `string[]` 도 typeof 'object' 라 배열을 먼저 걸러낸다. */
+export function isFileCellValue(cell: CellValue | undefined): cell is FileCellValue {
+  return typeof cell === 'object' && cell !== null && !Array.isArray(cell) && cell.type === 'file'
+}
+
 // 반복 입력 셀 하나가 실제로 채워졌는지. block-utils 는 types 만 import 하는 leaf 라
 // 순환 걱정 없이 여기서 export 하고 form-cards·usePlaceholderRow 가 재사용한다(단일 출처).
-export function cellFilled(cell: string | string[] | undefined): boolean {
+export function cellFilled(cell: CellValue | undefined): boolean {
   if (cell === undefined) return false
+  // 파일은 업로드가 끝나야(fileId 확보) 채워진 것이다 — 이름만 있는 건 실패한 첨부다.
+  if (isFileCellValue(cell)) return cell.fileId.trim() !== ''
   return Array.isArray(cell) ? cell.length > 0 : cell.trim() !== ""
+}
+
+/**
+ * 셀 값을 사람이 읽는 한 줄 텍스트로 접는다 (FRT-213).
+ *
+ * 셀 값을 텍스트로 펴는 로직이 6곳(포트폴리오 평탄화·역할이력·개조식 목록·역할명 수집·
+ * 프로젝트 연결·readOnly 렌더)에 흩어져 중복돼 있던 것을 단일 출처로 모은 것이다.
+ * 파일 셀은 구조화 객체라 이 함수가 없으면 `.trim()` 에서 런타임 오류가 난다.
+ *
+ * ⚠️ 반복 블록의 file 컬럼 렌더는 이 함수를 쓰지 않는다 — 다운로드까지 되는 카드를 그린다.
+ * 이 함수는 파일을 모르는 제네릭 소비처가 최소한 안전하게 텍스트로 접을 때 쓴다.
+ */
+export function cellText(cell: CellValue | undefined): string {
+  if (cell === undefined) return ""
+  // 파일명이 비면 첨부했다는 사실 자체가 화면에서 사라진다 — 대체 문구로 흔적을 남긴다.
+  if (isFileCellValue(cell)) return cell.fileName.trim() || "첨부파일"
+  return Array.isArray(cell) ? cell.join(", ") : cell
 }
 
 /**

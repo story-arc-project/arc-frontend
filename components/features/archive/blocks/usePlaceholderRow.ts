@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import type { BlockColumnDef, BlockRow } from "@/types/archive"
+import type { BlockColumnDef, BlockRow, CellValue } from "@/types/archive"
 import { cellFilled, createEmptyRow } from "@/lib/utils/block-utils"
 
 /**
@@ -34,7 +34,7 @@ export function usePlaceholderRow(rows: BlockRow[], columns: BlockColumnDef[]) {
   }
 
   /** 값이 실제로 채워졌을 때만 커밋할 행을 준다. 빈 값(예: select 의 '선택')으로는 실체화하지 않는다. */
-  function materialize(rowId: string, colKey: string, value: string | string[]): BlockRow | null {
+  function materialize(rowId: string, colKey: string, value: CellValue): BlockRow | null {
     if (!cellFilled(value)) return null
     return materializeWith(rowId, row => ({ cells: { ...row.cells, [colKey]: value } }))
   }

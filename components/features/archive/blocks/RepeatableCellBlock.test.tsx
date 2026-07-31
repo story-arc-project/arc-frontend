@@ -116,7 +116,7 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
     expect(screen.getByLabelText("발표일").getAttribute("type")).toBe("date")
   })
 
-  it("선택지 없이 성립하지 않는 유형(single-select·checklist)은 고를 수 없다", async () => {
+  it("선택지 없이 성립하지 않는 유형(single-select·checklist)과 file 은 고를 수 없다", async () => {
     const user = userEvent.setup()
     render(
       <Harness block={makeBlock([{ id: "r1", cells: { name: "A" } }], { allowRowExtras: true })} />,
@@ -126,7 +126,8 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
     const values = Array.from(
       screen.getByLabelText("항목 유형").querySelectorAll("option"),
     ).map(o => o.getAttribute("value"))
-    expect(values).toEqual(["text", "textarea", "date", "link", "tags"])
+    // FRT-213: 'period' 가 열렸다. 'file' 은 값이 구조화 객체라 RowExtraField 에 담기지 않아 계속 빠진다.
+    expect(values).toEqual(["text", "textarea", "date", "period", "link", "tags"])
   })
 
   it("항목 이름은 나중에 고칠 수 있다", async () => {
@@ -310,5 +311,131 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
       expect(screen.getByText("채운 항목")).toBeDefined()
       expect(screen.queryByText("빈 항목")).toBeNull()
     })
+  })
+})
+
+// ─── FRT-213: 기간·파일 셀, 무음 폴백 제거 ──────────────────────
+
+/** 임의의 컬럼 정의로 블록을 만든다(기간·파일·미지원 유형 검증용). */
+function makeBlockWithColumns(
+  columns: RepeatableCellBlockValue["columns"],
+  rows: BlockRow[],
+): Block {
+  return {
+    id: "b1",
+    type: "repeatable-cell",
+    label: "경험 상세 기록",
+    value: { type: "repeatable-cell", columns, rows },
+  }
+}
+
+describe("period 셀 (FRT-213)", () => {
+  const columns = [{ key: "period", label: "기간", blockType: "period" as const }]
+
+  it("텍스트칸이 아니라 월 입력 2개와 '현재' 체크박스가 나온다", () => {
+    render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { period: "" } }])} />)
+
+    expect(screen.getByLabelText("기간 시작")).toHaveAttribute("type", "month")
+    expect(screen.getByLabelText("기간 종료")).toHaveAttribute("type", "month")
+    expect(screen.getByRole("checkbox", { name: "현재" })).toBeInTheDocument()
+  })
+
+  it("시작만 고르면 점 구분 문자열 한 토큰으로 저장된다", async () => {
+    const user = userEvent.setup()
+    const seen: RepeatableCellBlockValue[] = []
+    render(
+      <Harness
+        block={makeBlockWithColumns(columns, [{ id: "r1", cells: { period: "" } }])}
+        onValue={v => seen.push(v)}
+      />,
+    )
+
+    await user.type(screen.getByLabelText("기간 시작"), "2023-03")
+
+    expect(seen.at(-1)?.rows[0].cells.period).toBe("2023.03")
+  })
+
+  it("'현재'를 켜면 종료 입력이 잠기고 값이 '현재'로 직렬화된다", async () => {
+    const user = userEvent.setup()
+    const seen: RepeatableCellBlockValue[] = []
+    render(
+      <Harness
+        block={makeBlockWithColumns(columns, [{ id: "r1", cells: { period: "2023.03 ~ 2024.01" } }])}
+        onValue={v => seen.push(v)}
+      />,
+    )
+
+    await user.click(screen.getByRole("checkbox", { name: "현재" }))
+
+    expect(seen.at(-1)?.rows[0].cells.period).toBe("2023.03 ~ 현재")
+    expect(screen.getByLabelText("기간 종료")).toBeDisabled()
+  })
+
+  it("저장된 점 문자열을 월 입력에 되돌려 읽는다 — 새로고침 후 값이 사라지지 않는다", () => {
+    render(
+      <Harness
+        block={makeBlockWithColumns(columns, [{ id: "r1", cells: { period: "2023.03 ~ 2024.01" } }])}
+      />,
+    )
+
+    expect(screen.getByLabelText("기간 시작")).toHaveValue("2023-03")
+    expect(screen.getByLabelText("기간 종료")).toHaveValue("2024-01")
+  })
+
+  it("조회 화면에는 저장된 문자열이 그대로 보인다", () => {
+    render(
+      <Harness
+        readOnly
+        block={makeBlockWithColumns(columns, [{ id: "r1", cells: { period: "2023.03 ~ 현재" } }])}
+      />,
+    )
+
+    expect(screen.getByText("2023.03 ~ 현재")).toBeInTheDocument()
+  })
+})
+
+describe("알 수 없는 컬럼 유형 (FRT-213)", () => {
+  // 저장된 값의 columns 가 템플릿보다 우선 채택되므로, 타입에 없는 문자열이 런타임에 들어올 수 있다.
+  const columns = [
+    { key: "mystery", label: "미래 유형", blockType: "signature" as never },
+  ] as RepeatableCellBlockValue["columns"]
+
+  it("조용히 텍스트칸이 되지 않고 화면에 알린다", () => {
+    render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { mystery: "값" } }])} />)
+
+    expect(screen.getByText(/아직 지원하지 않는 입력 유형/)).toBeInTheDocument()
+  })
+
+  it("값은 그대로 보존하고 계속 편집할 수 있다", async () => {
+    const user = userEvent.setup()
+    const seen: RepeatableCellBlockValue[] = []
+    render(
+      <Harness
+        block={makeBlockWithColumns(columns, [{ id: "r1", cells: { mystery: "기존 값" } }])}
+        onValue={v => seen.push(v)}
+      />,
+    )
+
+    const input = screen.getByLabelText("미래 유형")
+    expect(input).toHaveValue("기존 값")
+
+    await user.type(input, "!")
+    expect(seen.at(-1)?.rows[0].cells.mystery).toBe("기존 값!")
+  })
+})
+
+describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", () => {
+  it("tags 로 저장된 배열이 period 컬럼에서도 사라지지 않는다", () => {
+    // 열 유형 변경은 저장된 값의 자료형과 컬럼 정의를 어긋나게 만든다. 값을 빈 문자열로
+    // 덮으면 사용자가 쓴 내용이 조용히 증발한다 — 배열도 텍스트로 접어 보존해야 한다.
+    const columns = [{ key: "period", label: "기간", blockType: "period" as const }]
+    render(
+      <Harness
+        readOnly
+        block={makeBlockWithColumns(columns, [{ id: "r1", cells: { period: ["2023.03", "2024.01"] } }])}
+      />,
+    )
+
+    expect(screen.getByText("2023.03, 2024.01")).toBeInTheDocument()
   })
 })

@@ -207,3 +207,114 @@ export const ReadOnlyHidesBlankRows: Story = {
     await expect(canvas.getByText("학회 세미나 운영")).toBeInTheDocument()
   },
 }
+
+// ─── FRT-213: 기간·파일 셀 ──────────────────────────────────────
+
+/** 어학능력 확정본 ③ '경험 상세 기록' — 기간이 month~month 인 반복 블록. */
+const periodBlock: Block = {
+  id: "rc-period",
+  type: "repeatable-cell",
+  label: "경험 상세 기록",
+  value: {
+    type: "repeatable-cell",
+    columns: [
+      { key: "name", label: "경험명", blockType: "text", placeholder: "예: OO대학교 교환학생" },
+      { key: "period", label: "기간", blockType: "period", guide: "이 경험이 진행된 기간을 선택해주세요." },
+    ],
+    rows: [{ id: "r1", cells: { name: "OO대학교 교환학생", period: "2023.03 ~ 2023.12" } }],
+  },
+}
+
+/** 기간 셀이 텍스트칸이 아니라 월 입력 2개 + '현재' 로 뜬다(FRT-213 의 핵심 회귀 가드). */
+export const PeriodColumn: Story = {
+  render: () => <Interactive initial={periodBlock} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // 저장된 점 구분 문자열이 월 입력으로 되돌아 읽힌다.
+    await expect(canvas.getByLabelText("기간 시작")).toHaveValue("2023-03")
+    await expect(canvas.getByLabelText("기간 종료")).toHaveValue("2023-12")
+
+    // '현재'를 켜면 종료 입력이 잠긴다 — 진행 중인 경험을 표현할 수 있다.
+    await userEvent.click(canvas.getByRole("checkbox", { name: "현재" }))
+    await expect(canvas.getByLabelText("기간 종료")).toBeDisabled()
+  },
+}
+
+/** 조회 화면에서는 저장된 문자열이 그대로 보인다(블록 층위 기간 표기와 같은 문구). */
+export const PeriodColumnReadOnly: Story = {
+  args: { block: periodBlock, readOnly: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText("2023.03 ~ 2023.12")).toBeInTheDocument()
+  },
+}
+
+/** 학회·수업·대외활동·동아리 확정본의 '결과물' — 반복 기록 안의 파일 첨부. */
+const fileBlock: Block = {
+  id: "rc-file",
+  type: "repeatable-cell",
+  label: "프로젝트 / 연구활동",
+  value: {
+    type: "repeatable-cell",
+    columns: [
+      { key: "name", label: "활동명", blockType: "text" },
+      { key: "output", label: "결과물", blockType: "file" },
+    ],
+    rows: [
+      {
+        id: "r1",
+        cells: {
+          name: "학회 정기 세미나 발표",
+          output: { type: "file", fileId: "file-1", fileName: "발표자료.pdf", size: 248000 },
+        },
+      },
+    ],
+  },
+}
+
+/** 파일 셀은 빈 텍스트칸이 아니라 첨부 카드/선택 버튼으로 뜬다. */
+export const FileColumn: Story = {
+  args: { block: fileBlock },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText("발표자료.pdf")).toBeInTheDocument()
+    await expect(canvas.getByRole("button", { name: "첨부 삭제" })).toBeInTheDocument()
+  },
+}
+
+/** 조회 화면의 파일 셀 — 이름만 적으면 열 수 없으므로 카드로 보여주고 삭제는 감춘다. */
+export const FileColumnReadOnly: Story = {
+  args: { block: fileBlock, readOnly: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText("발표자료.pdf")).toBeInTheDocument()
+    await expect(canvas.queryByRole("button", { name: "첨부 삭제" })).not.toBeInTheDocument()
+  },
+}
+
+/**
+ * 저장된 값의 columns 가 템플릿보다 우선 채택되므로, 타입에 없는 유형이 런타임에 올 수 있다.
+ * 예전처럼 조용히 텍스트칸이 되지 않고 화면에 알리는지 가드한다(FRT-213 요구사항 3).
+ */
+export const UnknownColumnType: Story = {
+  args: {
+    block: {
+      id: "rc-unknown",
+      type: "repeatable-cell",
+      label: "미래 템플릿",
+      value: {
+        type: "repeatable-cell",
+        columns: [
+          { key: "mystery", label: "미래 유형", blockType: "signature" as never },
+        ] as RepeatableCellBlockValue["columns"],
+        rows: [{ id: "r1", cells: { mystery: "이미 입력된 값" } }],
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText(/아직 지원하지 않는 입력 유형/)).toBeInTheDocument()
+    // 값은 잃지 않는다.
+    await expect(canvas.getByLabelText("미래 유형")).toHaveValue("이미 입력된 값")
+  },
+}

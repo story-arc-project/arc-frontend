@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Plus } from "lucide-react"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
-import { createEmptyRow } from "@/lib/utils/block-utils"
+import { cellText, createEmptyRow } from "@/lib/utils/block-utils"
 import { useRoleHistory } from "@/contexts/RoleHistoryContext"
 import { usePlaceholderRow } from "./usePlaceholderRow"
 
@@ -13,13 +13,12 @@ interface RoleHistoryBlockProps {
   onChange: (value: RepeatableCellBlockValue) => void
 }
 
-function cellText(row: BlockRow, key: string): string {
-  const c = row.cells[key]
-  return Array.isArray(c) ? c.join(", ") : (c ?? "")
+function cellOf(row: BlockRow, key: string): string {
+  return cellText(row.cells[key])
 }
 
 function roleOf(row: BlockRow): string {
-  return cellText(row, "role").trim()
+  return cellOf(row, "role").trim()
 }
 
 /**
@@ -141,7 +140,7 @@ export default function RoleHistoryBlock({ block, readOnly, onChange }: RoleHist
         <span className="text-caption font-semibold tracking-wide text-text-tertiary">{block.label}</span>
         <ul className="flex flex-col gap-1">
           {filled.map(r => {
-            const period = [cellText(r, "start"), cellText(r, "end")].filter(Boolean).join(" – ")
+            const period = [cellOf(r, "start"), cellOf(r, "end")].filter(Boolean).join(" – ")
             return (
               <li key={r.id} className="text-body-sm text-text-primary">
                 {period && <span className="text-text-tertiary">{period} · </span>}
@@ -177,7 +176,7 @@ export default function RoleHistoryBlock({ block, readOnly, onChange }: RoleHist
           <div key={row.id} className="flex flex-wrap items-center gap-2">
             <input
               type="month"
-              value={cellText(row, "start")}
+              value={cellOf(row, "start")}
               onChange={e => updateCell(row.id, "start", e.target.value)}
               aria-label="역할 시작 시점"
               className="h-9 rounded-md border border-border bg-surface px-2 text-body-sm text-text-primary focus:border-brand focus:outline-none"
@@ -185,14 +184,14 @@ export default function RoleHistoryBlock({ block, readOnly, onChange }: RoleHist
             <span className="text-text-tertiary">–</span>
             <input
               type="month"
-              value={cellText(row, "end")}
+              value={cellOf(row, "end")}
               onChange={e => updateCell(row.id, "end", e.target.value)}
               aria-label="역할 종료 시점"
               className="h-9 rounded-md border border-border bg-surface px-2 text-body-sm text-text-primary focus:border-brand focus:outline-none"
             />
             <input
               type="text"
-              value={cellText(row, "role")}
+              value={cellOf(row, "role")}
               onChange={e => updateCell(row.id, "role", e.target.value)}
               onFocus={() => beginRoleEdit(row.id)}
               onBlur={() => endRoleEdit(row.id)}

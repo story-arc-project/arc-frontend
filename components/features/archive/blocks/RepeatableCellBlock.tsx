@@ -8,10 +8,20 @@ import type {
   RepeatableCellBlockValue,
   BlockRow,
   BlockColumnDef,
+  CellValue,
   RowExtraField,
   RowExtraFieldType,
 } from "@/types/archive"
-import { cellFilled, createEmptyRow, rowHasContent, uid } from "@/lib/utils/block-utils"
+import {
+  cellFilled,
+  cellText,
+  createEmptyRow,
+  isFileCellValue,
+  rowHasContent,
+  uid,
+} from "@/lib/utils/block-utils"
+import { formatPeriodString, parsePeriodString, truncateToMonth } from "@/lib/utils/period-format"
+import FileCellInput from "./file/FileCellInput"
 import RoleChips from "./RoleChips"
 import { usePlaceholderRow } from "./usePlaceholderRow"
 
@@ -48,7 +58,7 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
     onChange({ ...val, rows: val.rows.filter(r => r.id !== rowId) })
   }
 
-  function updateCell(rowId: string, colKey: string, cellValue: string | string[]) {
+  function updateCell(rowId: string, colKey: string, cellValue: CellValue) {
     if (isPlaceholderRow(rowId)) {
       // FRT-103: 값이 실제로 채워질 때만 실체화한다(빈 값 선택으로는 커밋하지 않는다).
       // 모든 컬럼 타입이 이 콜백 하나를 지나므로 타입별 분기가 필요 없다.
@@ -137,13 +147,18 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {val.columns.map(col => {
                     const cellVal = row.cells[col.key]
-                    const display = Array.isArray(cellVal) ? cellVal.join(", ") : cellVal
+                    const display = cellText(cellVal)
                     return (
                       <div key={col.key} className="flex flex-col gap-0.5">
                         <span className="text-caption text-text-tertiary font-medium">{col.label}</span>
-                        {display
-                          ? <span className="text-body-sm text-text-primary whitespace-pre-wrap">{display}</span>
-                          : <span className="text-body-sm text-text-disabled">—</span>}
+                        {/* 파일은 이름만 적으면 받은 사람이 열 수 없다 — 다운로드까지 되는 카드로 보여준다. */}
+                        {col.blockType === "file" ? (
+                          <FileCellInput value={isFileCellValue(cellVal) ? cellVal : undefined} readOnly onChange={() => {}} />
+                        ) : display ? (
+                          <span className="text-body-sm text-text-primary whitespace-pre-wrap">{display}</span>
+                        ) : (
+                          <span className="text-body-sm text-text-disabled">—</span>
+                        )}
                       </div>
                     )
                   })}
@@ -287,7 +302,7 @@ function RowEditor({
   isPlaceholder?: boolean
   /** FRT-145: 이 행에 사용자가 항목을 추가할 수 있는가(블록 층위 opt-in). */
   allowRowExtras?: boolean
-  onCellChange: (colKey: string, value: string | string[]) => void
+  onCellChange: (colKey: string, value: CellValue) => void
   onExtrasChange: (next: (fields: RowExtraField[]) => RowExtraField[]) => void
   onRemove: () => void
 }) {
@@ -313,7 +328,10 @@ function RowEditor({
           const isWide =
             col.blockType === "textarea" ||
             col.blockType === "tags" ||
-            col.blockType === "checklist"
+            col.blockType === "checklist" ||
+            // 기간은 월 입력 2개+체크박스, 파일은 카드라 반 칸에 눌리면 읽을 수 없다(FRT-213).
+            col.blockType === "period" ||
+            col.blockType === "file"
 
           return (
             <div key={col.key} className={`flex flex-col gap-1.5 ${isWide ? "sm:col-span-2" : ""}`}>
@@ -343,11 +361,13 @@ function RowEditor({
 
 /** FRT-145 '항목 추가'에서 고를 수 있는 유형. 선택지 없이도 성립하는 것만 연다 — `single-select`
  *  는 options 가 없으면 빈 드롭다운이고 `checklist` 는 `tags` 와 같은 자유입력으로 폴백한다.
- *  옵션 편집 UI 와 `period`·`file` 셀 렌더는 FRT-213 이후에 다룬다. */
+ *  `file` 은 값이 구조화 객체라 `RowExtraField.value` 에 담기지 않아 계속 빠진다(FRT-213).
+ *  옵션 편집 UI 도 아직 없다. */
 const EXTRA_FIELD_TYPES: { value: RowExtraFieldType; label: string }[] = [
   { value: "text", label: "한 줄 텍스트" },
   { value: "textarea", label: "여러 줄 텍스트" },
   { value: "date", label: "날짜" },
+  { value: "period", label: "기간" },
   { value: "link", label: "링크" },
   { value: "tags", label: "태그" },
 ]
@@ -467,9 +487,11 @@ function RowExtraFieldsEditor({
             column={{ key: field.key, label: field.label, blockType: field.blockType }}
             value={field.value}
             ariaLabel={field.label}
-            onChange={v =>
+            onChange={v => {
+              // `RowExtraFieldType` 에 'file' 이 없어 파일 셀 값은 여기로 오지 않는다(도달 불가).
+              if (isFileCellValue(v)) return
               onChange(prev => prev.map(f => (f.key === field.key ? { ...f, value: v } : f)))
-            }
+            }}
           />
         </div>
       ))}
@@ -533,120 +555,224 @@ function CellInput({
   onChange,
 }: {
   column: BlockColumnDef
-  value: string | string[] | undefined
+  value: CellValue | undefined
   /** 라벨이 `<label htmlFor>` 로 묶여 있지 않아 입력칸에 접근 가능한 이름이 없다 — 직접 준다. */
   ariaLabel?: string
-  onChange: (value: string | string[]) => void
+  onChange: (value: CellValue) => void
 }) {
   // 열 타입이 변경되어 기존 값(string ↔ string[])이 불일치할 때 UI에서 값이 사라지지 않도록 정규화한다.
-  const strVal = Array.isArray(value) ? value.join(", ") : (value ?? "")
+  // 파일 셀 값(객체)도 `cellText` 가 파일명으로 접어 주므로 어떤 조합에서도 값을 잃지 않는다.
+  const strVal = cellText(value)
   const arrVal = Array.isArray(value)
     ? value
     : typeof value === "string" && value.trim()
       ? value.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
       : []
 
-  if (column.blockType === "textarea") {
-    return (
-      <textarea
-        aria-label={ariaLabel}
-        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none min-h-[64px]"
-        placeholder={column.placeholder}
-        value={strVal}
-        onChange={e => onChange(e.target.value)}
-      />
-    )
-  }
+  switch (column.blockType) {
+    case "file":
+      // 값이 객체라 위 문자열 정규화를 쓰지 않는다. 타입이 어긋난 값(옛 텍스트 열)은 빈 첨부로 시작한다.
+      return (
+        <FileCellInput
+          value={isFileCellValue(value) ? value : undefined}
+          onChange={onChange}
+          ariaLabel={ariaLabel}
+        />
+      )
 
-  if (column.blockType === "date") {
-    return (
-      <input
-        type="date"
-        aria-label={ariaLabel}
-        className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-        value={strVal}
-        onChange={e => onChange(e.target.value)}
-      />
-    )
-  }
+    case "period":
+      return <PeriodCellInput value={strVal} onChange={onChange} ariaLabel={ariaLabel} />
 
-  if (column.blockType === "link") {
-    return (
-      <input
-        type="url"
-        aria-label={ariaLabel}
-        className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-        placeholder={column.placeholder ?? "https://..."}
-        value={strVal}
-        onChange={e => onChange(e.target.value)}
-      />
-    )
-  }
+    case "textarea":
+      return (
+        <textarea
+          aria-label={ariaLabel}
+          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none min-h-[64px]"
+          placeholder={column.placeholder}
+          value={strVal}
+          onChange={e => onChange(e.target.value)}
+        />
+      )
 
-  if (column.blockType === "tags") {
-    return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder} ariaLabel={ariaLabel} />
-  }
+    case "date":
+      return (
+        <input
+          type="date"
+          aria-label={ariaLabel}
+          className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+          value={strVal}
+          onChange={e => onChange(e.target.value)}
+        />
+      )
 
-  if (column.blockType === "checklist") {
-    // FRT-178: 역할 칩 컬럼은 옵션이 상수가 아니라 폼의 '역할 이력'에서 파생된다.
-    // 자유 태그 입력으로 폴백하면 등록되지 않은 역할이 생겨 동기화가 성립하지 않는다.
-    if (column.variant === "role-chip") {
-      return <RoleChips value={arrVal} onChange={onChange} />
+    case "link":
+      return (
+        <input
+          type="url"
+          aria-label={ariaLabel}
+          className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+          placeholder={column.placeholder ?? "https://..."}
+          value={strVal}
+          onChange={e => onChange(e.target.value)}
+        />
+      )
+
+    case "tags":
+      return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder} ariaLabel={ariaLabel} />
+
+    case "checklist": {
+      // FRT-178: 역할 칩 컬럼은 옵션이 상수가 아니라 폼의 '역할 이력'에서 파생된다.
+      // 자유 태그 입력으로 폴백하면 등록되지 않은 역할이 생겨 동기화가 성립하지 않는다.
+      if (column.variant === "role-chip") {
+        return <RoleChips value={arrVal} onChange={onChange} />
+      }
+      const options = column.options ?? []
+      if (options.length === 0) {
+        // Fallback: free-form checklist entries (treated as tags)
+        return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder ?? "항목 입력 후 Enter"} ariaLabel={ariaLabel} />
+      }
+      return (
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {options.map(opt => {
+            const checked = arrVal.includes(opt)
+            return (
+              <label key={opt} className="flex items-center gap-1.5 text-body-sm text-text-primary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() =>
+                    onChange(checked ? arrVal.filter(v => v !== opt) : [...arrVal, opt])
+                  }
+                  className="rounded border-border text-brand focus:ring-brand"
+                />
+                {opt}
+              </label>
+            )
+          })}
+        </div>
+      )
     }
-    const options = column.options ?? []
-    if (options.length === 0) {
-      // Fallback: free-form checklist entries (treated as tags)
-      return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder ?? "항목 입력 후 Enter"} ariaLabel={ariaLabel} />
+
+    case "single-select": {
+      const options = column.options ?? []
+      return (
+        <select
+          aria-label={ariaLabel}
+          className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
+          value={strVal}
+          onChange={e => onChange(e.target.value)}
+        >
+          <option value="">선택</option>
+          {options.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      )
     }
-    return (
-      <div className="flex flex-wrap gap-x-3 gap-y-1">
-        {options.map(opt => {
-          const checked = arrVal.includes(opt)
-          return (
-            <label key={opt} className="flex items-center gap-1.5 text-body-sm text-text-primary cursor-pointer">
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() =>
-                  onChange(checked ? arrVal.filter(v => v !== opt) : [...arrVal, opt])
-                }
-                className="rounded border-border text-brand focus:ring-brand"
-              />
-              {opt}
-            </label>
-          )
-        })}
-      </div>
+
+    case "text":
+      return (
+        <input
+          type="text"
+          aria-label={ariaLabel}
+          className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+          placeholder={column.placeholder}
+          value={strVal}
+          onChange={e => onChange(e.target.value)}
+        />
+      )
+
+    default: {
+      // 컴파일 가드 — `BlockColumnDef.blockType` 에 새 유형이 생기면 여기서 빌드가 깨진다.
+      // 예전처럼 조용히 텍스트칸이 되는 일이 없도록, 렌더러를 채우는 걸 잊을 수 없게 만든다.
+      const unknownType: never = column.blockType
+      // ⚠️ 컴파일 가드만으로는 부족하다. 저장된 값의 columns 가 템플릿보다 우선 채택되므로
+      // (types/archive.ts 의 injectValue 주석) 타입에 없는 문자열이 런타임에 들어올 수 있다.
+      // 값은 그대로 편집할 수 있게 두되, 무음으로 흡수하지 않고 화면에 드러낸다.
+      console.warn(`CellInput: 알 수 없는 컬럼 유형 "${String(unknownType)}" — 텍스트 입력으로 대체합니다.`)
+      return (
+        <div className="flex flex-col gap-1">
+          <p className="text-caption text-error">
+            아직 지원하지 않는 입력 유형이에요. 입력한 값은 그대로 보관돼요.
+          </p>
+          <input
+            type="text"
+            aria-label={ariaLabel}
+            className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
+            value={strVal}
+            onChange={e => onChange(e.target.value)}
+          />
+        </div>
+      )
+    }
+  }
+}
+
+/**
+ * 기간 셀 (FRT-213). 값은 블록 층위 `PeriodBlock` 과 같은 **점 구분 문자열** 하나다
+ * (`"2023.03 ~ 2024.01"` · `"2023.03 ~ 현재"`) — 셀은 `string | string[]` 만 담으므로
+ * 객체를 쓸 수 없고, 이 형태가 상세뷰에 그대로 표시되는 최종 문구이기도 하다.
+ *
+ * `PeriodPicker` 를 감싸지 않는다 — 내부 `DatePicker` 가 `h-12` 라 표의 다른 셀(`h-9`)과 높이가
+ * 어긋나고, 월/일 전환 라디오는 표 한 칸에 넣기엔 넓다. 셀은 원시 input 을 직접 쓰는 게
+ * 이 파일의 기존 방식이다(`date` 셀도 `DatePicker` 를 쓰지 않는다). 확정본이 요구하는
+ * month~month 만 다루고, 일 단위가 필요해지면 그때 granularity 를 연다.
+ */
+function PeriodCellInput({
+  value,
+  ariaLabel,
+  onChange,
+}: {
+  value: string
+  ariaLabel?: string
+  onChange: (value: string) => void
+}) {
+  const parsed = parsePeriodString(value)
+  // 일 단위로 저장된 값(다른 경로로 들어온 레거시)도 월 입력에 얹히도록 절삭한다.
+  const start = truncateToMonth(parsed.start)
+  const end = truncateToMonth(parsed.end)
+  const isCurrent = parsed.isCurrent
+
+  function commit(next: Partial<{ start: string; end: string; isCurrent: boolean }>) {
+    const nextCurrent = next.isCurrent ?? isCurrent
+    onChange(
+      formatPeriodString({
+        start: next.start ?? start,
+        // '현재'는 종료일과 공존할 수 없다 — 켜는 순간 종료 값을 비운다.
+        end: nextCurrent ? "" : (next.end ?? end),
+        isCurrent: nextCurrent,
+      }),
     )
   }
 
-  if (column.blockType === "single-select") {
-    const options = column.options ?? []
-    return (
-      <select
-        aria-label={ariaLabel}
-        className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
-        value={strVal}
-        onChange={e => onChange(e.target.value)}
-      >
-        <option value="">선택</option>
-        {options.map(opt => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
-      </select>
-    )
-  }
-
-  // Default: text input
   return (
-    <input
-      type="text"
-      aria-label={ariaLabel}
-      className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-      placeholder={column.placeholder}
-      value={strVal}
-      onChange={e => onChange(e.target.value)}
-    />
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        type="month"
+        aria-label={ariaLabel ? `${ariaLabel} 시작` : "시작"}
+        className="h-9 min-w-0 flex-1 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
+        value={start}
+        onChange={e => commit({ start: e.target.value })}
+      />
+      <span className="shrink-0 text-body-sm text-text-tertiary">~</span>
+      <input
+        type="month"
+        aria-label={ariaLabel ? `${ariaLabel} 종료` : "종료"}
+        className="h-9 min-w-0 flex-1 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none disabled:bg-surface-secondary disabled:text-text-disabled"
+        value={isCurrent ? "" : end}
+        disabled={isCurrent}
+        onChange={e => commit({ end: e.target.value })}
+      />
+      <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-caption text-text-secondary">
+        <input
+          type="checkbox"
+          checked={isCurrent}
+          onChange={e => commit({ isCurrent: e.target.checked })}
+          className="rounded border-border text-brand focus:ring-brand"
+        />
+        현재
+      </label>
+    </div>
   )
 }
 
