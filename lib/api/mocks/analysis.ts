@@ -382,6 +382,20 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
         url: "https://ausg.me",
         searchQuery: "AUSG AWS 유저 그룹",
         searchVerified: true,
+        urlNote: "",
+      },
+      {
+        name: "한양대 데이터사이언스 학회",
+        type: "교내학회",
+        schoolAffiliation: "한양대학교",
+        description: "교내 데이터 분석 스터디 및 학기별 프로젝트 발표",
+        reason: "학내 네트워크와 정기 발표 경험을 함께 얻을 수 있습니다.",
+        expectedEffect: "발표·협업 근거 확보",
+        url: null,
+        searchQuery: "",
+        searchVerified: false,
+        // v3.1: 링크 검증에 실패하면 안내 문구가 링크 자리를 채운다.
+        urlNote: "직접 확인하십시오: 한양대 데이터사이언스 학회 모집",
       },
     ],
     projectsAndContests: [
@@ -399,19 +413,160 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
   resumeStarFormat: [
     {
       title: "AI 기반 하이브리드 매매 전략 설계 및 백테스팅",
+      headline: "LLM 감성 점수와 기술 지표를 결합해 백테스팅 파이프라인을 처음부터 구축",
       situation: "뉴스 정보를 객관적으로 정량화하기 어려운 개인 투자 환경",
       task: "LLM 감성 점수와 SMA 기술 지표를 결합한 자동화 매매 알고리즘 구현",
       action: "Gemma-2-2b-it 감성 분석 → SMA 신호 결합 → 리스크 관리 포함 시뮬레이션",
       result: "전략 수익률 vs 시장 수익률 비교 백테스팅 완성 및 시각화",
+      learning: "지표를 늘리는 것보다 신호 간 상관을 먼저 확인해야 한다는 걸 배웠습니다.",
+      sourceQuotes: {
+        situation: "개인 투자자로서 뉴스의 영향을 감으로만 판단하는 게 답답했다",
+        task: "감성 점수를 기술 지표와 함께 쓰는 알고리즘을 만들어보기로 했다",
+        action: "Gemma-2-2b-it 으로 감성 점수를 뽑고 SMA 교차 신호와 결합했다",
+        result: "시장 수익률과 비교한 백테스팅 결과를 그래프로 정리했다",
+        learning: "지표를 늘려도 신호가 겹치면 의미가 없다는 걸 알게 됐다",
+      },
+      competencyEvidence: [
+        {
+          competency: "문제 해결",
+          why: "정량화가 어렵던 뉴스 정보를 감성 점수라는 측정 가능한 형태로 바꿨습니다.",
+        },
+        {
+          competency: "자기주도성",
+          why: "지시 없이 스스로 주제를 정하고 백테스팅까지 완주했습니다.",
+        },
+      ],
+      evidenceStatus: {
+        supportedSlots: ["S", "T", "A", "R", "L"],
+        unsupportedSlots: [],
+        restructuringOnly: false,
+        restructuringDetail: [],
+      },
+      qualityWarning: "",
+      quality: {
+        grade: "A",
+        score: "9/10",
+        verdict: "행동과 결과가 원문 근거로 잘 묶여 있어 그대로 써도 좋아요.",
+        criteria: [
+          {
+            key: "action_dominant",
+            label: "Action 비중",
+            passed: true,
+            detail: "Action 이 전체의 44% (권장 40~50%)",
+            coaching: "",
+          },
+          {
+            key: "result_quantified",
+            label: "결과 수치화",
+            passed: true,
+            detail: "수익률 비교 수치가 제시됨",
+            coaching: "",
+          },
+          {
+            key: "context_scale",
+            label: "Context 규모 명확성",
+            passed: false,
+            detail: "개인 프로젝트인지 팀 프로젝트인지 명시되지 않음",
+            coaching: "혼자 진행한 프로젝트라면 '개인 프로젝트'라고 한 마디 덧붙여보세요.",
+          },
+        ],
+        priorityFixes: ["혼자 진행한 프로젝트라면 '개인 프로젝트'라고 한 마디 덧붙여보세요."],
+        derivedFieldNotes: [],
+      },
     },
     {
       title: "한국어 혐오 표현 탐지 IAA 0.78 달성",
+      headline: "",
       situation: "레이블러 간 불일치(IAA 0.61)로 데이터 품질이 낮았던 연구 상황",
       task: "레이블링 가이드라인 보완으로 데이터 품질 향상",
       action: "모호한 경계 사례에 대한 예시 기반 가이드라인 작성 및 배포",
       result: "IAA 0.61 → 0.78로 개선, 실험 재현성 확보",
+      learning: "",
+      sourceQuotes: {
+        situation: "레이블러끼리 기준이 달라 IAA 가 0.61 밖에 안 나왔다",
+        task: "",
+        action: "경계 사례 예시를 모아 가이드라인을 다시 썼다",
+        result: "다시 측정하니 IAA 가 0.78 로 올랐다",
+        learning: "",
+      },
+      competencyEvidence: [
+        {
+          competency: "협업",
+          why: "여러 레이블러가 같은 기준으로 일할 수 있게 문서를 정비했습니다.",
+        },
+      ],
+      evidenceStatus: {
+        supportedSlots: ["S", "A", "R"],
+        unsupportedSlots: [
+          {
+            slot: "T",
+            label: "과제",
+            reason: "원문에서 '내가 맡은 과제'로 볼 문장을 찾지 못했습니다.",
+            claimedQuote: "",
+          },
+        ],
+        restructuringOnly: true,
+        restructuringDetail: ["S↔T (82% 중복)"],
+      },
+      qualityWarning:
+        "입력 문장을 슬롯별로 재배치한 수준이에요. 과제와 상황을 다른 문장으로 나눠 적으면 훨씬 또렷해집니다.",
+      quality: {
+        grade: "C",
+        score: "5/10",
+        verdict: "성과는 뚜렷한데, 무엇을 어떻게 했는지가 아직 얇아요.",
+        criteria: [
+          {
+            key: "result_quantified",
+            label: "결과 수치화",
+            passed: true,
+            detail: "IAA 0.61 → 0.78 수치 제시",
+            coaching: "",
+          },
+          {
+            key: "action_dominant",
+            label: "Action 비중",
+            passed: false,
+            detail: "Action 이 전체의 18% (권장 40~50%)",
+            coaching: "가이드라인을 어떤 순서로 어떻게 고쳤는지 두세 문장 더 적어보세요.",
+          },
+          {
+            key: "slots_distinct",
+            label: "슬롯 분리성",
+            passed: false,
+            detail: "상황과 과제 문장이 82% 겹침",
+            coaching: "'왜 문제였는지'와 '내가 맡은 일'을 다른 문장으로 나눠보세요.",
+          },
+        ],
+        priorityFixes: [
+          "가이드라인을 어떤 순서로 어떻게 고쳤는지 두세 문장 더 적어보세요.",
+          "'왜 문제였는지'와 '내가 맡은 일'을 다른 문장으로 나눠보세요.",
+        ],
+        derivedFieldNotes: ["배움(L) 삭제: 원문에 회고가 명시되지 않았습니다."],
+      },
     },
   ],
+  starAnalysisStatus: {
+    present: true,
+    generated: true,
+    reason: "",
+    experienceBlockCount: 3,
+    starEligibleBlockCount: 2,
+    coaching: [],
+    rejectedEntries: [
+      {
+        title: "교내 코딩 동아리 활동",
+        reason: "행동과 결과를 뒷받침할 원문 문장을 찾지 못했습니다.",
+        unsupportedSlots: ["A", "R"],
+        coaching: "무엇을 맡아 어떻게 했고 무엇이 달라졌는지 한 문장씩 적어보세요.",
+      },
+    ],
+    qualityReview: {
+      evaluated: 2,
+      gradeDistribution: { A: 1, C: 1 },
+      portfolioVerdict: "한 건은 그대로 써도 좋고, 한 건은 행동 서술을 채우면 크게 좋아져요.",
+      topFixes: ["Action 비중 — 2건 중 1건에서 미달", "슬롯 분리성 — 2건 중 1건에서 미달"],
+    },
+  },
   actionPlan: {
     shortTerm: "각 경험의 팀 기여도를 구체화하고, 실험 조건·한계를 명시",
     midTerm: "Kaggle Competition 또는 AI 해커톤으로 외부 검증 이력 1건 추가",
@@ -520,6 +675,9 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       whyMatch: "추천 모델 경험과 맞으나 마감이 지났습니다.",
       url: "https://example.com/jobs/line-ml",
     },
+  ],
+  recommendationNotices: [
+    "공모전은 마감일이 확인된 항목만 남겨 1건만 추천합니다.",
   ],
   missingInfoWarning:
     "기술 선택 근거, 팀 내 개인 기여 범위 등 일부 정보가 빠져 있어 채워주시면 분석 정확도가 더 올라갑니다.",
