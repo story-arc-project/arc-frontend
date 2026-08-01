@@ -182,6 +182,20 @@ export const filteredLibrary: Library = {
   filter: { statuses: ["complete"] },
 }
 
+/**
+ * 색을 지정하지 않은 라이브러리 (FRT-128 폴백 경로).
+ * `library-api` 가 `color: payload.color ?? ""` 로 매핑하므로 "색 미지정" 의 실제 런타임 모양은
+ * `undefined` 가 아니라 **빈 문자열**이다. 이 픽스처가 없으면 폴백 분기를 렌더하는 스토리가
+ * 하나도 없어, 폴백 색이 사라져도 아무도 눈치채지 못한다.
+ */
+export const uncoloredLibrary: Library = {
+  id: "lib-uncolored-01",
+  name: "색 미지정",
+  color: "",
+  isSystem: false,
+  experienceIds: [careerExperience.id],
+}
+
 export const sampleLibraries: Library[] = [
   systemLibrary,
   customLibrary,
