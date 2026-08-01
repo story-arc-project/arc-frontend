@@ -320,6 +320,43 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("일부만 만들어졌어도 빠진 경험의 사유를 알려준다", async () => {
+    // 일부 생성(generated: true) + 빠진 경험이 함께 오는 형태가 실제 응답이다(mock 기본값).
+    // "못 만들었을 때만" 안내를 그리면 카드는 보이는데 빠진 이유만 조용히 사라진다.
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    await screen.findByRole("heading", { name: "자소서용 STAR" });
+    expect(screen.getAllByText("교내 코딩 동아리 활동")).toHaveLength(1);
+    expect(
+      screen.getByText("무엇을 맡아 어떻게 했고 무엇이 달라졌는지 한 문장씩 적어보세요."),
+    ).toBeInTheDocument();
+  });
+
+  it("총평 문장이 없어도 우선 개선점은 보여준다", async () => {
+    // 총평만 게이트로 쓰면, 본문 판정(hasResultBody)은 개선점을 컨텐츠로 세는데
+    // 화면은 그 개선점을 통째로 감추는 모순이 생긴다.
+    getResult.mockResolvedValue(
+      result({
+        hasResultBody: true,
+        starAnalysisStatus: {
+          ...mockComprehensiveResult.starAnalysisStatus,
+          qualityReview: {
+            evaluated: 2,
+            gradeDistribution: { A: 1, C: 1 },
+            portfolioVerdict: "",
+            topFixes: ["Action 비중 — 2건 중 1건에서 미달"],
+          },
+        },
+      }),
+    );
+    render(<ComprehensiveDetailPage />);
+
+    expect(
+      await screen.findByText("Action 비중 — 2건 중 1건에서 미달"),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("종합 분석 상세 — v3.1 추천 사유 (FRT-208)", () => {

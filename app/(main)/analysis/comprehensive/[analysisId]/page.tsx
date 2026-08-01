@@ -518,17 +518,20 @@ function ResumeStarBlock({
 }) {
   // 배열이 비어도 v3.1 이 "왜 없는지"를 보냈다면 섹션을 남긴다 — 그 이유가 갈 자리가 여기뿐이다.
   // 반대로 status 가 아예 안 온 v2.0 응답에서는 예전처럼 조용히 건너뛴다(부재 ≠ 미생성).
-  const hasUnavailableNotice =
+  // generated 로 게이트하지 않는다: 일부만 만들어진 응답(generated: true + rejectedEntries)이
+  // 실제 형태라, "못 만들었을 때만" 그리면 빠진 이유가 그대로 사라진다.
+  const hasStatusNotice =
     status.present &&
-    !status.generated &&
     (status.reason !== "" || status.coaching.length > 0 || status.rejectedEntries.length > 0);
-  if (items.length === 0 && !hasUnavailableNotice) return null;
+  if (items.length === 0 && !hasStatusNotice) return null;
 
   const review = status.qualityReview;
+  // 카드가 있으면 안내는 카드 뒤(총평 앞)에 둔다 — 빠진 경험은 목록을 본 다음에 읽히는 말이다.
+  const statusNotice = hasStatusNotice ? <StarUnavailableNotice status={status} /> : null;
   return (
     <section className="space-y-3">
       <h2 className="text-title text-text-primary">자소서용 STAR</h2>
-      {hasUnavailableNotice && <StarUnavailableNotice status={status} />}
+      {items.length === 0 && statusNotice}
       <div className="space-y-4">
         {items.map((star, i) => {
           const fields = [
@@ -580,12 +583,17 @@ function ResumeStarBlock({
           );
         })}
       </div>
-      {review && review.portfolioVerdict && (
+      {items.length > 0 && statusNotice}
+      {/* 총평 문장이 없어도 개선점만 온 응답이 있다 — 총평으로 게이트하면 본문 판정은
+          개선점을 컨텐츠로 세는데 화면은 그걸 통째로 감추는 모순이 생긴다. */}
+      {review && (review.portfolioVerdict !== "" || review.topFixes.length > 0) && (
         <div className="bg-surface-secondary rounded-lg p-4 space-y-2">
           <p className="text-label text-text-tertiary font-medium">전체적으로 보면</p>
-          <p className="text-body-sm text-text-secondary leading-relaxed">
-            {review.portfolioVerdict}
-          </p>
+          {review.portfolioVerdict && (
+            <p className="text-body-sm text-text-secondary leading-relaxed">
+              {review.portfolioVerdict}
+            </p>
+          )}
           {review.topFixes.length > 0 && (
             <ul className="space-y-1 list-disc list-inside">
               {review.topFixes.map((fix, i) => (
