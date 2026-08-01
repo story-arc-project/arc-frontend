@@ -236,6 +236,38 @@ describe("isCardComplete / computeFormProgress", () => {
     expect(isCardComplete(basic)).toBe(true)
   })
 
+  // 기간 셀은 종료를 먼저 고르면 시작이 빈 채로 저장된다 — 사용자가 방금 고른 값을 잃지
+  // 않으려는 의도된 직렬화다. 다만 그 부분 입력이 필수 컬럼을 충족한 것으로 잡히면
+  // 진행도가 완료라고 거짓말한다(기간은 시작이 있어야 한 기간이다).
+  it("기간 필수 컬럼은 시작 없이 종료만 있으면 완료로 치지 않는다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const repeat = r.cards.find(c => c.category === "repeat")!
+    const cell = repeat.blocks.find(b => b.value.type === "repeatable-cell")!
+    if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
+
+    const withPeriodColumn = {
+      ...cell.value,
+      columns: [{ key: "period", label: "기간", blockType: "period" as const, required: true }],
+    }
+
+    cell.value = { ...withPeriodColumn, rows: [{ id: "row-1", cells: { period: " ~ 2024.01" } }] }
+    expect(isCardComplete(repeat)).toBe(false)
+
+    cell.value = { ...withPeriodColumn, rows: [{ id: "row-1", cells: { period: " ~ 현재" } }] }
+    expect(isCardComplete(repeat)).toBe(false)
+
+    // 시작이 들어오면 그때 완료다. 종료가 없는 한 토큰짜리 값도 온전한 기간이다.
+    cell.value = { ...withPeriodColumn, rows: [{ id: "row-1", cells: { period: "2023.03" } }] }
+    expect(isCardComplete(repeat)).toBe(true)
+
+    cell.value = {
+      ...withPeriodColumn,
+      rows: [{ id: "row-1", cells: { period: "2023.03 ~ 2024.01" } }],
+    }
+    expect(isCardComplete(repeat)).toBe(true)
+  })
+
   it("필수 없는 섹션(detail)은 하나라도 채우면 완료", () => {
     const { core, sections } = sectionsFor("academic-society")
     const r = computeFormCards(core, sections)
