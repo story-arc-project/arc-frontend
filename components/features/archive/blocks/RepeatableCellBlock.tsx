@@ -153,7 +153,20 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
                         <span className="text-caption text-text-tertiary font-medium">{col.label}</span>
                         {/* 파일은 이름만 적으면 받은 사람이 열 수 없다 — 다운로드까지 되는 카드로 보여준다. */}
                         {col.blockType === "file" ? (
-                          <FileCellInput value={isFileCellValue(cellVal) ? cellVal : undefined} readOnly onChange={() => {}} />
+                          <>
+                            <FileCellInput value={isFileCellValue(cellVal) ? cellVal : undefined} readOnly onChange={() => {}} />
+                            {/* 열 유형이 바뀌어 남은 옛 텍스트. 편집칸과 같은 이유로 감추지 않는다. */}
+                            {!isFileCellValue(cellVal) && display && <LegacyCellText text={display} />}
+                          </>
+                        ) : !isSupportedCellType(col.blockType) ? (
+                          // 조회 화면은 편집칸을 안 거쳐 경고 분기도 함께 비껴간다 — 보는 사람이
+                          // 잘려 보이는 값을 온전한 표시로 오해하지 않게 여기서도 알린다.
+                          <>
+                            <span className="text-body-sm text-text-primary whitespace-pre-wrap">{display || "—"}</span>
+                            <span className="text-caption text-text-tertiary">
+                              아직 지원하지 않는 입력 유형이에요 — 저장된 값을 그대로 보여줘요.
+                            </span>
+                          </>
                         ) : display ? (
                           <span className="text-body-sm text-text-primary whitespace-pre-wrap">{display}</span>
                         ) : (
@@ -548,6 +561,40 @@ function RowExtraFieldsEditor({
   )
 }
 
+/**
+ * `CellInput` 이 렌더러를 가진 컬럼 유형. Record 로 두면 `blockType` 에 새 유형이 생길 때
+ * 여기서도 빌드가 깨진다 — 편집칸만 만들고 조회 화면을 잊는 걸 막는다.
+ */
+const SUPPORTED_CELL_TYPES: Record<BlockColumnDef["blockType"], true> = {
+  text: true,
+  textarea: true,
+  date: true,
+  period: true,
+  file: true,
+  link: true,
+  tags: true,
+  checklist: true,
+  "single-select": true,
+}
+
+/** 저장된 columns 가 템플릿보다 우선 채택되므로 타입에 없는 문자열이 런타임에 들어올 수 있다. */
+function isSupportedCellType(blockType: string): blockType is BlockColumnDef["blockType"] {
+  return Object.prototype.hasOwnProperty.call(SUPPORTED_CELL_TYPES, blockType)
+}
+
+/**
+ * 열 유형이 바뀌어 남은 옛 값. 감추면 사용자는 그 값을 덮어쓰는 줄도 모른 채 잃는다.
+ * (파일 셀은 객체만 읽으므로 문자열 값이 화면에서 통째로 사라진다.)
+ */
+function LegacyCellText({ text, note }: { text: string; note?: string }) {
+  return (
+    <p className="text-caption text-text-tertiary">
+      이전 값: {text}
+      {note ? ` — ${note}` : ""}
+    </p>
+  )
+}
+
 function CellInput({
   column,
   value,
@@ -570,15 +617,21 @@ function CellInput({
       : []
 
   switch (column.blockType) {
-    case "file":
-      // 값이 객체라 위 문자열 정규화를 쓰지 않는다. 타입이 어긋난 값(옛 텍스트 열)은 빈 첨부로 시작한다.
+    case "file": {
+      // 값이 객체라 위 문자열 정규화를 쓰지 않는다. 타입이 어긋난 값(옛 텍스트 열)은 빈 첨부로
+      // 시작하되, 그 값을 감추지는 않는다 — 안 보이면 업로드로 덮어쓰는 줄도 모른다.
+      const legacy = isFileCellValue(value) ? "" : strVal
       return (
-        <FileCellInput
-          value={isFileCellValue(value) ? value : undefined}
-          onChange={onChange}
-          ariaLabel={ariaLabel}
-        />
+        <div className="flex flex-col gap-1">
+          <FileCellInput
+            value={isFileCellValue(value) ? value : undefined}
+            onChange={onChange}
+            ariaLabel={ariaLabel}
+          />
+          {legacy && <LegacyCellText text={legacy} note="파일을 올리면 이 값은 지워져요" />}
+        </div>
       )
+    }
 
     case "period":
       return <PeriodCellInput value={strVal} onChange={onChange} ariaLabel={ariaLabel} />
@@ -768,6 +821,9 @@ function PeriodCellInput({
           type="checkbox"
           checked={isCurrent}
           onChange={e => commit({ isCurrent: e.target.checked })}
+          // 감싼 <label> 만으로는 어느 기간의 '현재'인지 알 수 없다 — 기간 컬럼이 둘 이상이면
+          // 체크박스가 전부 똑같이 읽힌다. 시작·종료 입력과 같은 방식으로 컬럼 이름을 붙인다.
+          aria-label={ariaLabel ? `${ariaLabel} 현재` : "현재"}
           className="rounded border-border text-brand focus:ring-brand"
         />
         현재

@@ -235,7 +235,8 @@ export const PeriodColumn: Story = {
     await expect(canvas.getByLabelText("기간 종료")).toHaveValue("2023-12")
 
     // '현재'를 켜면 종료 입력이 잠긴다 — 진행 중인 경험을 표현할 수 있다.
-    await userEvent.click(canvas.getByRole("checkbox", { name: "현재" }))
+    // 체크박스도 컬럼 이름을 달고 읽힌다(기간 컬럼이 여럿일 때 구분되도록).
+    await userEvent.click(canvas.getByRole("checkbox", { name: "기간 현재" }))
     await expect(canvas.getByLabelText("기간 종료")).toBeDisabled()
   },
 }

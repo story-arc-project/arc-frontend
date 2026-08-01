@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, cleanup, waitFor } from "@testing-library/react"
+import { act, render, screen, cleanup, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import FileCellInput from "./FileCellInput"
@@ -129,6 +129,78 @@ describe("FileCellInput (FRT-213)", () => {
     render(<FileCellInput value={undefined} readOnly onChange={() => {}} />)
 
     expect(screen.getByText("—")).toBeInTheDocument()
+  })
+
+  // 업로드는 네트워크라 오래 걸린다. 그 사이 사용자가 다른 칸을 고치면 부모의 값이 바뀌는데,
+  // 업로드를 시작할 때 붙잡아 둔 콜백은 그 이전의 행 전체를 품고 있다 — 그걸로 커밋하면
+  // 그동안 친 글자와 다른 첨부가 통째로 되감긴다.
+  it("업로드가 끝나면 최신 onChange 로 커밋한다 — 그 사이의 수정을 되감지 않는다", async () => {
+    const user = userEvent.setup()
+    const stale = vi.fn()
+    const fresh = vi.fn()
+    let finish: (v: UploadedFile) => void = () => {}
+    start.mockImplementation(
+      () =>
+        new Promise<UploadedFile | null>(resolve => {
+          finish = resolve
+        }),
+    )
+
+    const { container, rerender } = render(<FileCellInput value={undefined} onChange={stale} />)
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    await user.upload(input, new File(["x"], "결과보고서.pdf", { type: "application/pdf" }))
+    await waitFor(() => expect(start).toHaveBeenCalled())
+
+    // 업로드가 도는 동안 부모가 다시 그려진다(다른 셀 수정 등).
+    rerender(<FileCellInput value={undefined} onChange={fresh} />)
+    finish(uploaded)
+
+    await waitFor(() => expect(fresh).toHaveBeenCalled())
+    expect(stale).not.toHaveBeenCalled()
+  })
+
+  // presigned URL 은 만료된다. 입력 폼은 오래 열어두는 화면이라, 한 번 받고 마는 동안
+  // 카드의 다운로드가 조용히 죽는다 — 링크 조회는 성공했으니 실패 안내도 뜨지 않는다.
+  // 가짜 타이머 아래에서는 `waitFor` 의 폴링도 함께 멈춘다 — 시간을 직접 밀어 대기를 대신한다.
+  it("만료 시각을 주면 그 전에 링크를 다시 받아온다", async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(getFileUrl)
+        .mockResolvedValueOnce({
+          url: "https://files.example/dl",
+          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+        })
+        // 두 번째 응답엔 만료 시각이 없어 더는 예약하지 않는다(호출 수를 못 박기 위해서다).
+        .mockResolvedValue({ url: "https://files.example/dl-2", expiresAt: undefined })
+
+      render(<FileCellInput value={filled} onChange={() => {}} />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(getFileUrl).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10 * 60_000)
+      })
+
+      expect(getFileUrl).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("만료 시각이 없으면 예전처럼 한 번만 받는다", async () => {
+    vi.useFakeTimers()
+    try {
+      render(<FileCellInput value={filled} onChange={() => {}} />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60 * 60_000)
+      })
+
+      expect(getFileUrl).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // 다운로드 링크는 만료되므로 표시 시점에 받아온다 — 그 호출이 실패하면 파일명만 남고

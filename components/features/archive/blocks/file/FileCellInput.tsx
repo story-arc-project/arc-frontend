@@ -20,6 +20,21 @@ interface FileCellInputProps {
 /** 빈 파일 셀. `createEmptyRow` 가 채우는 `''` 과 같은 뜻이지만 타입이 맞는 형태다. */
 const EMPTY_FILE_CELL: FileCellValue = { type: "file", fileId: "", fileName: "" }
 
+/** 만료 얼마 전에 링크를 다시 받을지. 내려받는 동안 만료되지 않을 만큼은 남겨둔다. */
+const URL_REFRESH_MARGIN_MS = 60_000
+/** 이미 만료가 임박한 링크로 재조회가 몰아치지 않게 두는 최소 간격. */
+const URL_REFRESH_MIN_MS = 30_000
+
+/**
+ * 다음 재조회까지 남은 시간. 서버가 만료 시각을 안 주면 `null` — 그때는 예전처럼 한 번만 받는다.
+ */
+function refreshDelayMs(expiresAt: string | undefined): number | null {
+  if (!expiresAt) return null
+  const at = Date.parse(expiresAt)
+  if (Number.isNaN(at)) return null
+  return Math.max(at - Date.now() - URL_REFRESH_MARGIN_MS, URL_REFRESH_MIN_MS)
+}
+
 /**
  * 반복 기록 표의 `file` 컬럼 셀 (FRT-213).
  *
@@ -36,6 +51,13 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
   // 링크 조회 재시도용 — 값(fileId)이 그대로라 이 값이 바뀌어야 effect 가 다시 돈다.
   const [urlAttempt, setUrlAttempt] = useState(0)
 
+  // 업로드는 네트워크라 그 사이 부모가 다시 그려진다. 시작 시점의 콜백은 그때의 행 전체를
+  // 붙잡고 있어서, 그걸로 커밋하면 그동안 고친 다른 칸이 통째로 되감긴다 — 항상 최신 것을 쓴다.
+  const onChangeRef = useRef(onChange)
+  useEffect(() => {
+    onChangeRef.current = onChange
+  })
+
   // 언마운트 뒤 완료된 업로드가 사라진 셀에 onChange 를 때리지 않게 한다(FileBlock 과 같은 이유).
   const mountedRef = useRef(true)
   useEffect(() => {
@@ -50,11 +72,16 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
     const id = val.fileId
     if (!id) return
     let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
     getFileUrl(id)
       .then(info => {
         if (cancelled) return
         setFetched({ id, url: info.url })
         setUrlFailed(false)
+        // 입력 폼은 오래 열어두는 화면이라 한 번 받고 말면 카드의 다운로드가 조용히 죽는다
+        // (조회 자체는 성공했으니 실패 안내도 안 뜬다). 만료 전에 스스로 다시 받는다.
+        const delay = refreshDelayMs(info.expiresAt)
+        if (delay !== null) timer = setTimeout(() => setUrlAttempt(n => n + 1), delay)
       })
       .catch(() => {
         // 파일명·크기는 셀 값에 있어 카드는 그대로 보이지만 다운로드 수단이 사라진다.
@@ -65,6 +92,7 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
       })
     return () => {
       cancelled = true
+      if (timer) clearTimeout(timer)
     }
   }, [val.fileId, urlAttempt])
 
@@ -77,7 +105,7 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
     if (!mountedRef.current) return
     // 업로드가 확정된 시점에만 첨부로 센다(FRT-113). 파일명·용량은 싣지 않는다(PII).
     capture("archive_attachment_added", { attachment_type: "file" })
-    onChange({
+    onChangeRef.current({
       type: "file",
       fileId: uploaded.id,
       fileName: uploaded.originalName || file.name,

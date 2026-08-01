@@ -337,7 +337,16 @@ describe("period 셀 (FRT-213)", () => {
 
     expect(screen.getByLabelText("기간 시작")).toHaveAttribute("type", "month")
     expect(screen.getByLabelText("기간 종료")).toHaveAttribute("type", "month")
-    expect(screen.getByRole("checkbox", { name: "현재" })).toBeInTheDocument()
+    expect(screen.getByRole("checkbox", { name: "기간 현재" })).toBeInTheDocument()
+  })
+
+  // 기간 컬럼이 여러 개거나 행이 여럿이면 체크박스가 전부 '현재'로만 읽혀
+  // 어느 기간을 바꾸는 건지 알 수 없다 — 시작·종료 입력만 컬럼 이름을 달고 있었다.
+  it("'현재' 체크박스에도 컬럼 이름이 붙는다", () => {
+    render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { period: "" } }])} />)
+
+    expect(screen.queryByRole("checkbox", { name: "현재" })).toBeNull()
+    expect(screen.getByRole("checkbox", { name: "기간 현재" })).toBeInTheDocument()
   })
 
   it("시작만 고르면 점 구분 문자열 한 토큰으로 저장된다", async () => {
@@ -365,7 +374,7 @@ describe("period 셀 (FRT-213)", () => {
       />,
     )
 
-    await user.click(screen.getByRole("checkbox", { name: "현재" }))
+    await user.click(screen.getByRole("checkbox", { name: "기간 현재" }))
 
     expect(seen.at(-1)?.rows[0].cells.period).toBe("2023.03 ~ 현재")
     expect(screen.getByLabelText("기간 종료")).toBeDisabled()
@@ -422,6 +431,15 @@ describe("알 수 없는 컬럼 유형 (FRT-213)", () => {
     await user.type(input, "!")
     expect(seen.at(-1)?.rows[0].cells.mystery).toBe("기존 값!")
   })
+
+  // 조회 화면은 편집칸을 안 거치므로 경고 분기도 함께 비껴간다 — 보는 사람은 잘려 보이는 값을
+  // 온전한 표시로 오해한다. 무음 폴백을 없애는 게 이 작업이니 조회 쪽도 같이 알려야 한다.
+  it("조회 화면에서도 알 수 없는 유형임을 알린다", () => {
+    render(<Harness readOnly block={makeBlockWithColumns(columns, [{ id: "r1", cells: { mystery: "값" } }])} />)
+
+    expect(screen.getByText(/아직 지원하지 않는 입력 유형/)).toBeInTheDocument()
+    expect(screen.getByText("값")).toBeInTheDocument()
+  })
 })
 
 describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", () => {
@@ -437,5 +455,28 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     )
 
     expect(screen.getByText("2023.03, 2024.01")).toBeInTheDocument()
+  })
+
+  // file 컬럼은 객체만 읽으므로 옛 문자열이 화면에서 통째로 사라진다. 값 자체는 남아 있지만
+  // 보이지 않으니, 사용자는 파일을 올려 그 값을 덮어쓰는 줄도 모른 채 잃는다.
+  it("텍스트로 저장된 값이 file 컬럼에서도 보인다", () => {
+    const columns = [{ key: "out", label: "결과물", blockType: "file" as const }]
+    render(
+      <Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { out: "발표자료 링크" } }])} />,
+    )
+
+    expect(screen.getByText(/발표자료 링크/)).toBeInTheDocument()
+  })
+
+  it("조회 화면에서도 file 컬럼의 옛 텍스트가 사라지지 않는다", () => {
+    const columns = [{ key: "out", label: "결과물", blockType: "file" as const }]
+    render(
+      <Harness
+        readOnly
+        block={makeBlockWithColumns(columns, [{ id: "r1", cells: { out: "발표자료 링크" } }])}
+      />,
+    )
+
+    expect(screen.getByText(/발표자료 링크/)).toBeInTheDocument()
   })
 })
