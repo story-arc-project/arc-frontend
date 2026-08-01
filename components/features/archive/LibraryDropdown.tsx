@@ -207,7 +207,11 @@ export default function LibraryDropdown({
                     {lib.isSystem ? (
                       <FolderOpen size={14} className="text-text-tertiary shrink-0" />
                     ) : lib.filter ? (
-                      <SlidersHorizontal size={14} className="shrink-0" style={{ color: lib.color || "#6B7280" }} />
+                      <SlidersHorizontal
+                        size={14}
+                        className={["shrink-0", lib.color ? "" : "text-text-secondary"].filter(Boolean).join(" ")}
+                        style={lib.color ? { color: lib.color } : undefined}
+                      />
                     ) : (
                       <button
                         type="button"
@@ -216,8 +220,10 @@ export default function LibraryDropdown({
                         aria-label="색상 변경"
                       >
                         <span
-                          className="block w-2.5 h-2.5 rounded-full"
-                          style={{ backgroundColor: lib.color || "#6B7280" }}
+                          className={["block w-2.5 h-2.5 rounded-full", lib.color ? "" : "bg-text-secondary"]
+                            .filter(Boolean)
+                            .join(" ")}
+                          style={lib.color ? { backgroundColor: lib.color } : undefined}
                         />
                       </button>
                     )}

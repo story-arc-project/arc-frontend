@@ -16,6 +16,31 @@ describe("formatDate / formatDateTime", () => {
   })
 })
 
+describe("formatDate / formatDateTime — 빈 값·파싱 실패 폴백 (FRT-128)", () => {
+  // 폴백 관례는 lib/admin/format.ts 의 formatAdminDate 와 같다:
+  // 값 없음 → "—", 파싱 불가 → 원문 그대로(무슨 값이 왔는지 화면에서 볼 수 있게).
+  it.each([
+    ["빈 문자열", ""],
+    ["null", null],
+    ["undefined", undefined],
+  ])("%s 이면 'Invalid Date' 대신 '—' 를 반환한다", (_label, input) => {
+    expect(formatDate(input)).toBe("—")
+    expect(formatDateTime(input)).toBe("—")
+  })
+
+  // new Date(null) 은 Invalid Date 가 아니라 epoch(1970-01-01)를 만든다.
+  // 가드가 없으면 "그럴듯하지만 틀린 날짜"가 조용히 렌더된다.
+  it("null 을 1970년으로 렌더하지 않는다", () => {
+    expect(formatDate(null)).not.toContain("1970")
+    expect(formatDateTime(null)).not.toContain("1970")
+  })
+
+  it("파싱 불가 문자열은 원문 그대로 반환한다", () => {
+    expect(formatDate("garbage")).toBe("garbage")
+    expect(formatDateTime("garbage")).toBe("garbage")
+  })
+})
+
 describe("formatRelativeTime", () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -42,7 +67,23 @@ describe("formatRelativeTime", () => {
     expect(formatRelativeTime("2024-05-30T12:00:00Z")).toBe("2일 전")
   })
 
-  // 알 수 없는 입력("garbage")은 현재 "NaN일 전" 을 만든다. 버그를 정답으로 박지 않고
-  // 폴백 처리는 별도 후속으로 남긴다.
-  it.todo("유효하지 않은 ISO 입력은 NaN 대신 폴백 문자열을 반환해야 한다")
+  // FRT-128: 위 it.todo 를 채운다. 상대시각 자리에는 원문("garbage")을 그대로 두는 것이
+  // 의미가 없으므로, formatDate 와 달리 파싱 불가도 "—" 로 떨어뜨린다.
+  it("유효하지 않은 ISO 입력은 NaN 대신 폴백 문자열을 반환한다", () => {
+    expect(formatRelativeTime("garbage")).toBe("—")
+    expect(formatRelativeTime("2024-13-45T99:99:99Z")).toBe("—")
+  })
+
+  it.each([
+    ["빈 문자열", ""],
+    ["null", null],
+    ["undefined", undefined],
+  ])("%s 이면 'NaN일 전' 대신 '—' 를 반환한다", (_label, input) => {
+    expect(formatRelativeTime(input)).toBe("—")
+  })
+
+  // new Date(null) → epoch 이므로 가드가 없으면 "20000일 전" 류의 값이 나온다.
+  it("null 을 epoch 기준 상대시각으로 렌더하지 않는다", () => {
+    expect(formatRelativeTime(null)).not.toContain("일 전")
+  })
 })
