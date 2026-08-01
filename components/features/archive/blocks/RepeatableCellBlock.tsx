@@ -586,8 +586,26 @@ function isSupportedCellType(blockType: string): blockType is BlockColumnDef["bl
  * 열 유형이 바뀌어 남은 옛 값. 감추면 사용자는 그 값을 덮어쓰는 줄도 모른 채 잃는다.
  * (파일 셀은 객체만 읽으므로 문자열 값이 화면에서 통째로 사라진다.)
  */
-const MONTH_TOKEN = /^\d{4}-\d{2}$/
-const DAY_TOKEN = /^\d{4}-\d{2}-\d{2}$/
+/**
+ * 브라우저의 month/date 입력은 **달력에 실재하는** 값만 받는다 — 자릿수만 맞는
+ * `"2023-13"`·`"2023-02-30"` 도 무효로 보고 빈 칸을 그리므로, 형식 검사만으로는
+ * 안내가 가장 필요한 자리에서 빠진다(코드리뷰 발견).
+ */
+function isRealMonth(token: string): boolean {
+  const parts = /^(\d{4})-(\d{2})$/.exec(token)
+  if (!parts) return false
+  const month = Number(parts[2])
+  return month >= 1 && month <= 12
+}
+
+function isRealDay(token: string): boolean {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(token)
+  if (!parts) return false
+  const [year, month, day] = [Number(parts[1]), Number(parts[2]), Number(parts[3])]
+  // 넘치는 값은 다음 달·해로 굴러가므로, 되읽어 그대로면 실재하는 날짜다.
+  const at = new Date(Date.UTC(year, month - 1, day))
+  return at.getUTCFullYear() === year && at.getUTCMonth() === month - 1 && at.getUTCDate() === day
+}
 
 /**
  * 컨트롤이 **화면에 못 그리는** 값을 돌려준다(그릴 수 있으면 빈 문자열).
@@ -602,11 +620,12 @@ function undisplayableText(column: BlockColumnDef, text: string): string {
   switch (column.blockType) {
     case "period": {
       const parsed = parsePeriodString(text)
-      const readable = (token: string) => token === "" || MONTH_TOKEN.test(truncateToMonth(token))
+      // 셀은 월 입력 2개로 그리므로 일 단위 값은 절삭돼 보인다 — 월까지만 따진다.
+      const readable = (token: string) => token === "" || isRealMonth(truncateToMonth(token))
       return readable(parsed.start) && readable(parsed.end) ? "" : text
     }
     case "date":
-      return DAY_TOKEN.test(text) ? "" : text
+      return isRealDay(text) ? "" : text
     case "single-select":
       return (column.options ?? []).includes(text) ? "" : text
     default:

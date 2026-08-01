@@ -543,12 +543,29 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     expect(screen.getByText(/설계, 개발/)).toBeInTheDocument()
   })
 
+  // 자릿수만 맞고 달력에 없는 값도 브라우저는 똑같이 버린다 — 형식 검사만 하면
+  // 안내가 가장 필요한 자리에서 조용히 빠진다(코드리뷰 발견).
+  it.each([
+    ["date" as const, "2023-02-30"],
+    ["date" as const, "2023-13-01"],
+    ["period" as const, "2023.13 ~ 현재"],
+    ["period" as const, "2023.03 ~ 2024.00"],
+  ])("%s 컬럼의 달력에 없는 값도 화면에 남는다", (blockType, stored) => {
+    const columns = [{ key: "c", label: "칸", blockType }]
+    render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: stored } }])} />)
+
+    expect(screen.getByText(new RegExp(stored.replace(/[.]/g, "\\.")))).toBeInTheDocument()
+  })
+
   // 위양성 가드 — 정상적으로 읽히는 값에까지 안내가 붙으면 표가 경고로 뒤덮인다.
   it.each([
     ["period" as const, "2023.03 ~ 2024.01"],
     ["period" as const, "2023.03 ~ 현재"],
     ["period" as const, "2023.03"],
+    ["period" as const, "2023.12 ~ 2024.01"],
     ["date" as const, "2023-03-15"],
+    ["date" as const, "2024-02-29"],
+    ["date" as const, "2023-12-31"],
   ])("%s 컬럼이 읽을 수 있는 값에는 안내를 붙이지 않는다", (blockType, stored) => {
     const columns = [{ key: "c", label: "칸", blockType }]
     render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: stored } }])} />)
