@@ -1,7 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
+
+// presigned URL 조회는 네트워크라 막는다 — 조회 화면의 첨부 카드를 검증하는 데만 쓴다.
+vi.mock("@/lib/api/files-api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api/files-api")>("@/lib/api/files-api")
+  return { ...actual, getFileUrl: vi.fn(async () => ({ url: "https://files.example/dl", expiresAt: undefined })) }
+})
 
 import RepeatableCellBlock from "./RepeatableCellBlock"
 import { isBlockEmpty } from "@/lib/utils/block-utils"
@@ -573,6 +579,19 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     expect(screen.queryByText(/이전 값/)).toBeNull()
   })
 
+  // 파서는 `~` 앞뒤 두 토큰만 읽는다 — 뒤에 남은 말은 컨트롤에 실리지 않아 다음 편집에
+  // 직렬화되지 않는다. 앞부분이 멀쩡한 월이라 "읽을 수 있음"으로 새면 안내가 빠진다.
+  it.each([
+    ["2023.01 ~ 2024.02 ~ 메모"],
+    ["2023.01 ~ 현재까지"],
+    ["2023.01 ~ 2024.02 (예정)"],
+  ])("기간 컬럼이 일부만 읽는 값(%s)도 화면에 남는다", stored => {
+    const columns = [{ key: "c", label: "칸", blockType: "period" as const }]
+    render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: stored } }])} />)
+
+    expect(screen.getByText(new RegExp(stored.replace(/[.()]/g, "\\$&")))).toBeInTheDocument()
+  })
+
   // 기간 셀은 월 입력 2개뿐이라 일 단위 값은 절삭돼 보인다 — 값 자체는 그려지므로
   // 안내 없이 두면 다음 편집이 날짜(일)를 조용히 지운다(코드리뷰 발견).
   it.each([
@@ -586,6 +605,27 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
 
     expect(screen.getByText(/날짜\(일\)는 지워져요/)).toBeInTheDocument()
     expect(screen.getByText(new RegExp(stored.trim().replace(/[.]/g, "\\.")))).toBeInTheDocument()
+  })
+
+  // 편집칸은 첨부가 남은 비-file 열에 안내를 띄우는데, 조회 화면은 `cellText` 로 접어
+  // 파일명만 글자로 보여 준다 — 보는 사람은 첨부가 있는 줄도, 여는 법도 알 수 없다.
+  it("조회 화면에서도 첨부가 남은 텍스트 열은 내려받을 수 있다", async () => {
+    const columns = [{ key: "c", label: "칸", blockType: "text" as const }]
+    render(
+      <Harness
+        readOnly
+        block={makeBlockWithColumns(columns, [
+          { id: "r1", cells: { c: { type: "file", fileId: "f1", fileName: "보고서.pdf" } } },
+        ])}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /보고서\.pdf/ })).toHaveAttribute(
+        "href",
+        "https://files.example/dl",
+      ),
+    )
   })
 
   it("조회 화면에서도 file 컬럼의 옛 텍스트가 사라지지 않는다", () => {

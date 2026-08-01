@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Plus } from "lucide-react"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
-import { cellText, createEmptyRow } from "@/lib/utils/block-utils"
+import { cellText, createEmptyRow, isFileCellValue } from "@/lib/utils/block-utils"
 import { useRoleHistory } from "@/contexts/RoleHistoryContext"
 import { usePlaceholderRow } from "./usePlaceholderRow"
 
@@ -26,11 +26,30 @@ function roleOf(row: BlockRow): string {
  * 패널이 이름을 하나도 만들어내지 못한다(입력해도 사라지는 칸이 된다) — 그때는 표형으로 폴백한다.
  * BlockRenderer 의 폴백 판정과 여기 렌더가 같은 계산을 쓰게 하려고 export 한다(FRT-177 교훈).
  */
+/**
+ * 이 UI 가 실제로 그릴 수 있는 열 유형. 입력이 **하드코딩**돼 있어(시작·종료=월 입력,
+ * 역할명=한 줄 텍스트) `blockType` 을 보지 않는다 — 여기 없는 유형이 오면 그 입력을
+ * 만들 길이 없다(FRT-213).
+ */
+const ROLE_HISTORY_TYPES: Record<string, ReadonlySet<string>> = {
+  start: new Set(["period"]),
+  end: new Set(["period"]),
+  role: new Set(["text", "textarea"]),
+}
+
 export function hasRoleHistoryShape(block: Block): boolean {
-  return (
-    block.value.type === "repeatable-cell" &&
-    block.value.columns.some(c => c.key === "role")
-  )
+  if (block.value.type !== "repeatable-cell") return false
+  const { columns, rows } = block.value
+  if (!columns.some(c => c.key === "role")) return false
+  // 열 유형을 기간·파일로 바꾸면 이 패널은 옛 하드코딩 입력을 그대로 그린다 —
+  // FRT-213 이 없애려던 무음 폴백이 이 갈래에만 남으므로 표형(RepeatableCellBlock)이 받는다.
+  for (const col of columns) {
+    const allowed = ROLE_HISTORY_TYPES[col.key]
+    if (allowed && !allowed.has(col.blockType)) return false
+  }
+  // 첨부가 남은 셀은 `cellText` 가 파일명으로 접고 다음 타이핑이 통째로 덮어쓴다.
+  // 표형은 그 값을 안내로 남겨 준다(OutcomeList 라우팅과 같은 판정).
+  return !rows.some(row => Object.values(row.cells).some(isFileCellValue))
 }
 
 /**

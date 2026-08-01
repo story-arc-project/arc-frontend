@@ -158,8 +158,10 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
                     return (
                       <div key={col.key} className="flex flex-col gap-0.5">
                         <span className="text-caption text-text-tertiary font-medium">{col.label}</span>
-                        {/* 파일은 이름만 적으면 받은 사람이 열 수 없다 — 다운로드까지 되는 카드로 보여준다. */}
-                        {col.blockType === "file" ? (
+                        {/* 파일은 이름만 적으면 받은 사람이 열 수 없다 — 다운로드까지 되는 카드로 보여준다.
+                            열 유형이 텍스트로 바뀌어도 값이 첨부면 마찬가지다. 편집칸은 안내를 띄우는데
+                            조회만 파일명 글자로 접으면, 보는 사람은 첨부가 있는 줄도 모른다(대칭). */}
+                        {col.blockType === "file" || isFileCellValue(cellVal) ? (
                           <>
                             <FileCellInput value={isFileCellValue(cellVal) ? cellVal : undefined} readOnly onChange={() => {}} />
                             {/* 열 유형이 바뀌어 남은 옛 텍스트. 편집칸과 같은 이유로 감추지 않는다. */}
@@ -618,6 +620,12 @@ function hiddenCellValue(column: BlockColumnDef, text: string): HiddenCellValue 
       // 셀은 월 입력 2개로 그리므로 일 단위 값은 절삭돼 보인다 — 월까지만 따진다.
       const readable = (token: string) => token === "" || isRealMonth(truncateToMonth(token))
       if (!readable(parsed.start) || !readable(parsed.end)) return { text, note: DROPS_ALL }
+      // 파서는 `~` 앞뒤 두 토큰만 읽고 `현재` 는 어디에 있든 '현재'로 본다 — 뒤에 남은 말
+      // ("… ~ 2024.02 ~ 메모" · "… ~ 현재까지")은 컨트롤에 실리지 않아 다음 편집에 사라진다.
+      // 되짚어 원문과 같아야 온전히 읽은 것이다(공백은 직렬화가 정하므로 빼고 견준다).
+      const compact = (s: string) => s.replace(/\s/g, "")
+      const roundTrip = formatPeriodString(parsed)
+      if (compact(roundTrip) !== compact(text)) return { text, note: DROPS_ALL }
       // 절삭된 채로 저장되는 건 다음 편집 때다. 그 전에 무엇이 사라질지 말해 준다.
       return hasDayPrecision(parsed.start) || hasDayPrecision(parsed.end)
         ? { text, note: DROPS_DAY }
