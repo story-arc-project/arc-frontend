@@ -15,6 +15,7 @@ import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Badge, Button, Dialog } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import FilterBar from "@/components/features/analysis/common/FilterBar";
+import PartialFailureNotice from "@/components/features/analysis/common/PartialFailureNotice";
 
 type FilterKey = "all" | AnalysisType;
 type SortKey = "newest" | "oldest";
@@ -172,19 +173,10 @@ export default function HistoryPage() {
         )}
 
         {!error && !loading && relevantFailures.length > 0 && (
-          <div role="alert" className="px-4 py-3 rounded-lg border border-border bg-surface text-body-sm text-text-secondary flex items-center justify-between gap-3">
-            <p>
-              {relevantFailures.map((t) => analysisTypeLabel[t]).join("·")} 기록을
-              불러오지 못했어요. 목록에 보이지 않을 뿐, 사라진 것은 아니에요.
-            </p>
-            <button
-              type="button"
-              onClick={loadData}
-              className="shrink-0 min-h-11 sm:min-h-0 flex items-center text-label text-brand hover:text-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
-            >
-              다시 시도
-            </button>
-          </div>
+          <PartialFailureNotice
+            message={`${relevantFailures.map((t) => analysisTypeLabel[t]).join("·")} 기록을 불러오지 못했어요. 목록에 보이지 않을 뿐, 사라진 것은 아니에요.`}
+            onRetry={loadData}
+          />
         )}
 
         {error ? (

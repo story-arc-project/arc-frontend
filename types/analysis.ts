@@ -552,6 +552,18 @@ export interface AnalysisHomeSummary {
     experienceGroups: { experienceIds: string[]; reason: string }[];
     suggestedKeywords: KeywordSuggestion[];
   };
+  /**
+   * 병합 소스 중 불러오지 못한 분석 유형. 넷(분석 3종 + 경험 목록)이 전부 실패하면
+   * throw 하므로 최대 3개다. 불리언이 아니라 유형 배열인 이유는 [[FRT-170]]과 같다 —
+   * *무엇이* 빠졌는지 말하지 못하면 그 유형이 삭제됐다는 오인을 끊을 수 없다.
+   */
+  failedTypes: AnalysisType[];
+  /**
+   * 경험 목록 실패 여부. AnalysisType 유니온에 넣지 않고 별도 플래그로 두는 이유:
+   * totalExperiences 는 탭과 무관한 상단 통계라, failedTypes 에 섞으면 화면의 탭 교집합
+   * 로직에 "경험 탭"이라는 존재하지 않는 개념이 생긴다.
+   */
+  experiencesFailed: boolean;
 }
 
 // ─── Bookmark Extension ─────────────────────────────────────

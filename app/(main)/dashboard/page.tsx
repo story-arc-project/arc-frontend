@@ -30,6 +30,9 @@ import type { AnalysisHomeSummary, AnalysisSnapshot } from "@/types/analysis";
 import type { Experience } from "@/types/experience";
 import type { ExperienceTypeId } from "@/types/archive";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
+import PartialFailureNotice, {
+  describePartialFailure,
+} from "@/components/features/analysis/common/PartialFailureNotice";
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -209,16 +212,31 @@ export default function DashboardPage() {
     [typeDistribution],
   );
 
+  // 못 불러온 분석 유형이 있으면 이 숫자는 실제보다 작다. 전멸(summaryError)이 "—"인 것과
+  // 같은 이유로 부분 실패도 "—"다 — 사용자에겐 이 숫자를 검증할 방법이 없다.
+  const analysisStatsUnreliable = (summary?.failedTypes.length ?? 0) > 0;
   const analysisCompletedLabel = summary
-    ? `${summary.stats.analysisCompleted}회`
+    ? analysisStatsUnreliable
+      ? "—"
+      : `${summary.stats.analysisCompleted}회`
     : summaryError
       ? "—"
       : "…";
 
+  const partialFailureMessage = summary
+    ? describePartialFailure(summary.failedTypes, summary.experiencesFailed)
+    : null;
+
   // 경험이 없어도(예: 마지막 경험 삭제) 완료된 분석이 남아 있으면
   // 최근 분석 섹션을 유지한다 — Stats Row의 '분석 완료' 카운트와 일관.
+  // 실패했을 때도 유지한다: 이 게이트가 닫히면 섹션 안의 안내(부분 실패 배너·전체 에러)까지
+  // 함께 사라져 "못 불러왔다"고 말할 자리조차 없어진다. 카운트 0이 "없음"인지 "못 불러옴"인지
+  // 구분되지 않는 게 이 버그의 본체다(FRT-169).
   const showAnalysisSections =
-    experiences.length > 0 || (summary?.stats.analysisCompleted ?? 0) > 0;
+    experiences.length > 0 ||
+    (summary?.stats.analysisCompleted ?? 0) > 0 ||
+    analysisStatsUnreliable ||
+    summaryError;
 
   const statItems = useMemo(() => [
     { label: "총 경험", value: `${experiences.length}개`, icon: FileText, iconColor: "text-brand" },
@@ -500,6 +518,15 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {partialFailureMessage && (
+            <div className="mb-4">
+              <PartialFailureNotice
+                message={partialFailureMessage}
+                onRetry={retrySummary}
+              />
+            </div>
+          )}
+
           {!summaryError && !recentMap && (
             <div className="space-y-3" aria-busy="true">
               {Array.from({ length: 2 }).map((_, i) => (
@@ -515,7 +542,19 @@ export default function DashboardPage() {
               id={`dash-panel-${tab}`}
               aria-labelledby={`dash-tab-${tab}`}
             >
-              {recentMap[tab].length === 0 ? (
+              {recentMap[tab].length === 0 &&
+              (summary?.failedTypes.includes(tab) ?? false) ? (
+                // 빈 원인이 "없어서"가 아니라 "못 불러와서"인 경우다. 빈 상태 문구를 그대로
+                // 두면 화면이 사실과 다른 말을 한다.
+                <div className="py-12 text-center">
+                  <p className="text-body text-text-tertiary">
+                    이 유형의 분석 기록을 불러오지 못했어요.
+                  </p>
+                  <p className="text-body-sm text-text-tertiary mt-1">
+                    목록에 보이지 않을 뿐, 사라진 것은 아니에요.
+                  </p>
+                </div>
+              ) : recentMap[tab].length === 0 ? (
                 <div className="py-12 text-center">
                   <p className="text-body text-text-tertiary">
                     아직 분석 결과가 없습니다.

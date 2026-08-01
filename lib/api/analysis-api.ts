@@ -1362,27 +1362,51 @@ export async function deleteAnalysis(
 // ─── Aggregated views (client-side) ─────────────────────────
 
 /**
- * `/analysis/home/summary` 엔드포인트가 없으므로 세 목록을 병렬 fetch 후 집계한다.
+ * `/analysis/home/summary` 엔드포인트가 없으므로 세 목록 + 경험 목록을 병렬 fetch 후 집계한다.
+ *
+ * 일부 소스가 실패해도 나머지는 그대로 보여준다(회복력). 다만 그 회복이 무음이면 살아남은
+ * 소스만으로 계산된 통계가 "전체"인 얼굴을 하므로, 무엇을 못 불러왔는지 함께 돌려
+ * 화면이 숫자를 믿을지 말지 말할 수 있게 한다(FRT-169).
  */
 export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
   if (shouldMock())
     return mock(async () => (await mocks()).mockAnalysisHomeSummary);
 
-  let failCount = 0;
-  const safe = <T,>(fallback: T) => (p: Promise<T>): Promise<T> =>
-    p.catch(() => { failCount++; return fallback; });
+  // 실패 유형은 이 **선언 순서**에서 파생한다 — catch 안에서 push 하면 어느 요청이 먼저
+  // 깨지느냐에 따라 순서가 바뀌어 안내 문구가 요청마다 뒤바뀐다.
+  const sources: { type: AnalysisType; load: () => Promise<AnalysisSnapshot[]> }[] = [
+    { type: "individual", load: () => getIndividualAnalysisList() },
+    { type: "comprehensive", load: () => getComprehensiveList() },
+    { type: "keyword", load: () => getKeywordList() },
+  ];
 
-  const [individual, comprehensive, keyword, experiencesData] = await Promise.all([
-    safe<AnalysisSnapshot[]>([])(getIndividualAnalysisList()),
-    safe<AnalysisSnapshot[]>([])(getComprehensiveList()),
-    safe<AnalysisSnapshot[]>([])(getKeywordList()),
-    safe({ count: 0, contents: [] as Awaited<ReturnType<typeof getExperiences>>["contents"] })(getExperiences()),
+  type ExperienceListData = Awaited<ReturnType<typeof getExperiences>>;
+  const [settled, experiencesSettled] = await Promise.all([
+    Promise.all(
+      sources.map((s) =>
+        s.load().then(
+          (items) => ({ ok: true, items }),
+          () => ({ ok: false, items: [] as AnalysisSnapshot[] }),
+        ),
+      ),
+    ),
+    getExperiences().then(
+      (data) => ({ ok: true, data }),
+      () => ({ ok: false, data: { count: 0, contents: [] } as ExperienceListData }),
+    ),
   ]);
 
-  // 모든 요청이 실패하면 에러를 전파한다
-  if (failCount === 4) {
+  const failedTypes = sources.filter((_, i) => !settled[i].ok).map((s) => s.type);
+  const experiencesFailed = !experiencesSettled.ok;
+
+  // 넷 다 실패했을 때만 에러를 전파한다 — 분석 3종만 실패하고 경험이 살아 있으면
+  // 기존에도 던지지 않았고, 그 경계는 그대로 보존한다.
+  if (failedTypes.length === sources.length && experiencesFailed) {
     throw new Error("분석 데이터를 불러올 수 없습니다.");
   }
+
+  const [individual, comprehensive, keyword] = settled.map((r) => r.items);
+  const experiencesData = experiencesSettled.data;
 
   const all = [...individual, ...comprehensive, ...keyword];
   const completed = all.filter((s) => s.status === "completed");
@@ -1411,6 +1435,8 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
       experienceGroups: [],
       suggestedKeywords: [],
     },
+    failedTypes,
+    experiencesFailed,
   };
 }
 
