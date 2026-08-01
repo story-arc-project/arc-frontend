@@ -33,7 +33,12 @@ export function PreviewActivity({ data, labels }: Props) {
                 )}
               </div>
             }
-            right={formatPeriod(a.기간_시작, a.기간_종료, a.기간_원문, a.진행중)}
+            right={formatPeriod(
+              a.기간_시작,
+              a.기간_종료,
+              a.기간_원문,
+              a.진행중 ? labels.present : null,
+            )}
           />
           <PreviewBullets items={a.활동내용} />
           {a.성과.length > 0 && (

@@ -118,6 +118,47 @@ describe("ResumePreview — 섹션 라벨 (FRT-147)", () => {
     expect(screen.queryByText("경력")).not.toBeInTheDocument();
   });
 
+  it("진행 중인 기간의 종료 자리도 언어를 따른다", () => {
+    // 제목만 영문화하면 기간 오른쪽에 "2020-06 – 현재" 가 남아 영문 CV 에 한국어가 박힌다.
+    const ongoing = {
+      경력: [career(1, "BCG", { 퇴사년월: null, 재직중: true })],
+      대외활동: [
+        {
+          id: 1,
+          활동명: "Teach for Korea",
+          기관: null,
+          기간_시작: "2021-03",
+          기간_종료: null,
+          기간_원문: null,
+          진행중: true,
+          역할: null,
+          활동내용: ["Mentoring"],
+          성과: [],
+        },
+      ],
+    };
+
+    render(<ResumePreview resume={base(ongoing)} />);
+    expect(screen.getAllByText(/– 현재$/)).toHaveLength(2);
+    cleanup();
+
+    render(
+      <ResumePreview
+        resume={base({
+          ...ongoing,
+          meta: {
+            language: "en",
+            format: "western_resume",
+            generated_at: "2026-07-31",
+            source_chars: 100,
+          },
+        })}
+      />,
+    );
+    expect(screen.getAllByText(/– Present$/)).toHaveLength(2);
+    expect(screen.queryByText(/현재/)).not.toBeInTheDocument();
+  });
+
   it("논문·기타정보는 값이 없으면 아예 그리지 않는다", () => {
     render(<ResumePreview resume={base()} />);
     expect(screen.queryByText("논문")).not.toBeInTheDocument();

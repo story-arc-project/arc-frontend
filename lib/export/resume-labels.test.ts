@@ -28,6 +28,7 @@ describe("resumeSectionLabels", () => {
       skillSoft: "소프트 스킬",
       military: "병역",
       interests: "관심사",
+      present: "현재",
     });
   });
 
@@ -44,6 +45,8 @@ describe("resumeSectionLabels", () => {
     expect(en.techStack).toBe("Tech Stack");
     expect(en.skillTech).toBe("Technical");
     expect(en.military).toBe("Military Service");
+    // 기간의 종료 자리도 라벨이다 — 여기가 비면 영문 CV 에 "2024-01 – 현재" 가 남는다.
+    expect(en.present).toBe("Present");
   });
 
   it("언어를 모르면 국문으로 폴백한다", () => {

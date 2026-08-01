@@ -363,6 +363,24 @@ describe("buildResumeDocument — 경력", () => {
 
     expect(entry.meta).toBe("2025-09 – 현재");
   });
+
+  it("영문 레쥬메는 진행 중인 기간을 'Present' 로 닫는다 (FRT-147)", () => {
+    // 섹션 제목만 영문화하면 기간 오른쪽에 "2025-09 – 현재" 가 남아, 영문 CV 한복판에
+    // 한국어가 한 단어 박힌다. 종료 라벨도 라벨 표를 따라야 한다.
+    const [entry] = buildResumeDocument(
+      emptyResume({
+        meta: {
+          language: "en",
+          format: "western_resume",
+          generated_at: "2026-07-31T00:00:00Z",
+          source_chars: 0,
+        },
+        경력: [{ ...career, 퇴사년월: null, 재직중: true }],
+      }),
+    ).sections[0].entries;
+
+    expect(entry.meta).toBe("2025-09 – Present");
+  });
 });
 
 describe("buildResumeDocument — 학력", () => {

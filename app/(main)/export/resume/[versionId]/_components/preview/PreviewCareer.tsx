@@ -38,7 +38,12 @@ export function PreviewCareer({ data, labels }: Props) {
                   )}
                 </div>
               }
-              right={formatPeriod(c.입사년월, c.퇴사년월, null, c.재직중)}
+              right={formatPeriod(
+                c.입사년월,
+                c.퇴사년월,
+                null,
+                c.재직중 ? labels.present : null,
+              )}
             />
             <PreviewBullets items={c.담당업무} />
             {c.성과.length > 0 && (

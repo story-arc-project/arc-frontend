@@ -551,3 +551,55 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     });
   });
 });
+
+/**
+ * FRT-147 — 영문 레쥬메는 편집 사이드바를 통째로 감춘다. 파싱 경고 배너가 그 사이드바
+ * 안에만 있으면 "어떤 경험을 못 읽었는지"를 영문 사용자만 영영 못 보게 된다.
+ */
+describe("영문 읽기 전용 — 보완 안내", () => {
+  function enResume(파싱경고: string[]): ResumeVersion {
+    return resumeFixture({
+      meta: {
+        language: "en",
+        format: "western_resume",
+        generated_at: "2026-07-31T00:00:00Z",
+        source_chars: 100,
+      },
+      파싱경고,
+    });
+  }
+
+  // 읽기 전용에는 편집기가 없으므로 `renderLoaded` 의 "이름" 입력칸을 기다릴 수 없다.
+  async function renderReadOnly() {
+    const params = Promise.resolve({ versionId: "v1" });
+    await act(async () => {
+      render(
+        <Suspense fallback={null}>
+          <ResumeDetailPage params={params} />
+        </Suspense>,
+      );
+    });
+    await screen.findByText("영문 레쥬메는 아직 편집할 수 없어요");
+  }
+
+  it("편집기가 없어도 파싱 경고를 미리보기 쪽에 보여준다", async () => {
+    mockGetResume.mockResolvedValue(enResume(["경력 기간을 해석하지 못했어요"]));
+    await renderReadOnly();
+
+    // 편집기는 CSS 로 감추는 게 아니라 아예 안 그린다 — 감추기만 하면 사이드바 안의
+    // 배너가 DOM 에 남아 같은 경고가 두 벌 마운트된다(그래서 개수까지 못 박는다).
+    expect(screen.queryByLabelText("이름")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText("경력 기간을 해석하지 못했어요"),
+    ).toHaveLength(1);
+  });
+
+  it("경고가 없으면 배너를 그리지 않는다", async () => {
+    mockGetResume.mockResolvedValue(enResume([]));
+    await renderReadOnly();
+
+    expect(
+      screen.queryByText("이 정보를 보완하면 더 좋은 레쥬메를 만들 수 있어요"),
+    ).not.toBeInTheDocument();
+  });
+});

@@ -22,16 +22,23 @@ export function formatLanguageDetail(lang: LanguageItem): string {
   return exam ? `${level} (${exam})` : level;
 }
 
-/** 기간 표기. 원문이 있으면 그대로 쓰고, 진행 중이면 종료 자리를 "현재"로 닫는다. */
+/**
+ * 기간 표기. 원문이 있으면 그대로 쓰고, 진행 중이면 종료 자리를 `ongoingLabel` 로 닫는다.
+ *
+ * 진행 여부를 boolean 으로 받으면 종료 라벨("현재")이 이 함수 안에 갇혀 **영문 CV 가
+ * "2024-01 – 현재" 로 찍힌다.** 그래서 플래그가 아니라 **라벨 자체를 받는다** —
+ * 진행 중이라고 말하려면 어느 말로 닫을지 함께 줘야 하므로, 새 호출부가 언어를 잊으면
+ * 타입이 막는다(`labels.present` 가 유일한 출처).
+ */
 export function formatPeriod(
   start: string | null,
   end: string | null,
   raw?: string | null,
-  ongoing?: boolean,
+  ongoingLabel?: string | null,
 ): string {
   if (raw && raw.trim()) return raw;
   const s = (start ?? "").trim();
-  const e = ongoing ? "현재" : (end ?? "").trim();
+  const e = (ongoingLabel ?? "").trim() || (end ?? "").trim();
   if (!s && !e) return "";
   if (!s) return e;
   if (!e) return s;

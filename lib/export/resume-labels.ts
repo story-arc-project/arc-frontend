@@ -31,6 +31,8 @@ export interface ResumeSectionLabels {
   skillSoft: string;
   military: string;
   interests: string;
+  /** 진행 중인 기간의 종료 자리 — 이게 라벨 표 밖에 있으면 영문 CV 에 "2024-01 – 현재" 가 찍힌다. */
+  present: string;
 }
 
 const KO: ResumeSectionLabels = {
@@ -54,6 +56,7 @@ const KO: ResumeSectionLabels = {
   skillSoft: "소프트 스킬",
   military: "병역",
   interests: "관심사",
+  present: "현재",
 };
 
 /**
@@ -81,6 +84,7 @@ const EN: ResumeSectionLabels = {
   skillSoft: "Soft Skills",
   military: "Military Service",
   interests: "Interests",
+  present: "Present",
 };
 
 /**
