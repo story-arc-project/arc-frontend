@@ -519,6 +519,17 @@ describe("buildResumeDocument — 나머지 섹션", () => {
       { title: "소프트 스킬", text: "협업" },
     ]);
   });
+
+  it("기타정보의 빈 병역은 제목만 남기지 않는다", () => {
+    // 관심사는 join 결과라 빈 값이 `""`, 병역은 text() 라 `undefined` 다. 빈 값 판정을
+    // `!== ""` 로만 하면 병역만 살아남아 PDF·Word 에 내용 없는 '병역' 제목이 찍힌다
+    // (화면의 PreviewAdditionalInfo 는 제대로 숨겨서 둘이 어긋난다).
+    const doc = buildResumeDocument(
+      emptyResume({ 기타정보: { 병역: null, 관심사: ["등산"] } }),
+    );
+
+    expect(doc.sections[0].entries).toEqual([{ title: "관심사", text: "등산" }]);
+  });
 });
 
 describe("buildResumeDocument — 실제 데이터", () => {

@@ -1,4 +1,4 @@
-import type { DisplayControl } from "@/types/resume";
+import { isEmptySection, type DisplayControl } from "@/types/resume";
 
 /**
  * FRT-207 rev.5 — 경험형 섹션에서 **1쪽에 실릴 항목만** 골라 표시순위대로 돌려준다.
@@ -28,6 +28,20 @@ export function visibleExperiences<T extends DisplayControl>(
     .map((item, index) => ({ item, index }))
     .sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index)
     .map(({ item }) => item);
+}
+
+/**
+ * 화면에 실제로 그릴 경험 항목 — `표시` 필터와 빈 항목 제거를 **한 자리에서** 묶는다.
+ *
+ * 이 둘은 늘 같이 다닌다(표시=true 인데 내용이 빈 항목은 유령 행이 된다 — FRT-122 계열).
+ * 프리뷰 네 곳이 각자 같은 순서를 적어 두면 규칙이 바뀔 때 한 곳을 빠뜨리기 쉽고,
+ * 빠뜨린 섹션에서만 조용히 옛 동작이 남는다.
+ */
+export function visibleUsableExperiences<T extends DisplayControl>(
+  items: T[] | null | undefined,
+): T[] {
+  if (!items || isEmptySection(items)) return [];
+  return visibleExperiences(items).filter((item) => !isEmptySection(item));
 }
 
 /**

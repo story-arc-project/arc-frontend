@@ -292,7 +292,10 @@ function buildAdditionalInfoEntries(
       { label: L.interests, value: compactStrings(info.관심사).join(", ") },
     ] as const
   )
-    .filter((row) => row.value !== "")
+    // 두 행의 빈 값 모양이 다르다 — 관심사는 join 결과라 `""`, 병역은 `text()` 라 `undefined`.
+    // `!== ""` 로만 거르면 병역만 살아남아 내보내기 파일에 내용 없는 제목이 찍힌다
+    // (화면의 PreviewAdditionalInfo 는 항상 문자열이라 제대로 숨겨서 둘이 어긋난다).
+    .filter((row) => Boolean(row.value))
     .map((row) => ({ title: row.label, text: row.value }));
 }
 

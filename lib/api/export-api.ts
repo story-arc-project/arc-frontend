@@ -87,7 +87,11 @@ export async function createResume(
   // (PATCH)에는 붙지 않는다. 사용자가 고를 일이 없으니 UI 없이 상수로 보낸다(입력 허들 최소화).
   // experience_ids 와 마찬가지로 백엔드가 아직 안 받지만 extra="ignore" 라 조용히 무시된다.
   body.max_pages = 1;
-  body.auto_fill = true;
+  // auto_fill 은 명세상 `true = 선택 경험 외 남는 공간을 관련도순 경험으로 자동 채움`,
+  // `false = 선택 경험만 표시` 다. 그래서 사용자가 경험을 **직접 골랐다면 false** 여야 한다 —
+  // true 로 보내면 사용자가 일부러 뺀 경험이 1쪽 여백을 메우려고 되돌아온다. 선택이 없을
+  // 때(=전체 경험)만 자동 채움이 사용자 의도와 어긋나지 않는다.
+  body.auto_fill = params.experienceIds === undefined;
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/export/resume",
     body,

@@ -67,7 +67,11 @@ function ensureFonts(): void {
 }
 
 /**
- * FRT-207 — 1쪽 판정에 쓸 줄 수 예산(캘리브레이션 결과).
+ * FRT-207 — 1쪽 판정에 쓸 줄 수 예산(캘리브레이션 결과): **약 32줄**.
+ *
+ * 이 값을 쓰는 쪽은 프론트가 아니라 **생성기(백엔드 `_PAGE_LINE_BUDGET`)** 다 — 어떤 경험을
+ * 1쪽에 실을지는 백엔드가 정해 `표시`/`표시순위`로 내려주고, 프론트는 그걸 읽어 거를 뿐이다.
+ * 그래서 상수로 두지 않고 측정 기록으로 남긴다(FRT-207 코멘트로 회신 완료).
  *
  * AI TF 명세의 `_PAGE_LINE_BUDGET = 46` 은 **A4·상하 20mm 여백·11pt·행간 1.45** 가정에서
  * 나온 값이다(841.89 − 113.4) ÷ (11 × 1.45) = 45.7. 여백·용지 가정은 이 렌더러와 정확히
@@ -83,10 +87,9 @@ function ensureFonts(): void {
  * 측정 방법: 불릿 수를 1부터 늘리며 렌더해 페이지가 2쪽이 되는 임계값을 찾는다
  * (`pdf(<ResumePdfDocument/>).toBuffer()` 의 `/Type /Page` 개수).
  *
- * ⚠️ 아래 `styles.page` 의 fontSize·lineHeight·padding 이 바뀌면 이 값도 다시 재야 한다.
+ * ⚠️ 아래 `styles.page` 의 fontSize·lineHeight·padding 이 바뀌면 이 값도 다시 재고
+ * 백엔드에 다시 알려야 한다.
  */
-export const PAGE_LINE_BUDGET = 32;
-
 const styles = StyleSheet.create({
   page: {
     fontFamily: "Pretendard",

@@ -112,10 +112,17 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const resumeRef = useRef<ResumeVersion | null>(null);
   const initialRef = useRef<ResumeVersion | null>(null);
 
+  // FRT-147 — 영문 레쥬메는 읽기·내보내기 전용이다(매핑이 단방향이라 저장하면 영문 전용
+  // 값이 사라진다). 편집 UI 를 숨기는 것만으로 막으면 그 바깥에서 setResume 을 부르는
+  // 경로가 하나만 생겨도 저장이 다시 열린다.
+  const readOnly = resume?.meta?.language === "en";
+
+  // 저장·임시저장(나가기/언마운트)·Ctrl+S·이탈 경고가 **전부 dirty 를 보고** 움직이므로,
+  // 읽기 전용을 여기 한 곳에서 막으면 그 경로들이 한꺼번에 닫힌다.
   const dirty = useMemo(() => {
-    if (!resume || !initial) return false;
+    if (!resume || !initial || readOnly) return false;
     return JSON.stringify(resume) !== JSON.stringify(initial);
-  }, [resume, initial]);
+  }, [resume, initial, readOnly]);
 
   // Sync refs during render so the unmount handler sees the latest values
   // even when client navigation fires before passive effects flush.
@@ -150,7 +157,12 @@ export default function ResumeDetailPage({ params }: PageProps) {
       isEmptySection(resume.수상) &&
       isEmptySection(resume.자격증) &&
       isEmptySection(resume.어학) &&
-      isEmptySection(resume.기술및역량)
+      isEmptySection(resume.기술및역량) &&
+      // 논문·기타정보도 화면에 그리는 내용이다. 여기서 빠뜨리면 이 둘에만 값이 있는
+      // 레쥬메(영문 CV 는 publications 만 남는 경우가 실제로 있다)가 "비어 있음"으로
+      // 판정돼, 그리면 되는 내용을 두고 EmptyResumeState 가 뜬다.
+      isEmptySection(resume.논문) &&
+      isEmptySection(resume.기타정보)
     );
   }, [resume]);
 
@@ -456,15 +468,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
     );
   }
 
-  // FRT-147 — 영문 레쥬메는 읽기·내보내기 전용이다(매핑이 단방향이라 저장하면 영문 전용
-  // 값이 사라진다). 편집 패널을 아예 띄우지 않고 저장 버튼도 잠근다.
-  const readOnly = resume.meta?.language === "en";
-
   return (
     <div className="flex flex-col">
       <ResumeDetailTopBar
         versionLabel={versionLabel}
-        dirty={dirty && !readOnly}
+        dirty={dirty}
         saving={saving}
         regenerating={regenerating}
         onBack={handleBack}

@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 
-import { visibleExperiences } from "@/lib/export/resume-visibility";
+import {
+  visibleExperiences,
+  visibleUsableExperiences,
+} from "@/lib/export/resume-visibility";
 
 interface Item {
   id: number;
@@ -75,5 +78,42 @@ describe("visibleExperiences", () => {
     expect(visibleExperiences([])).toEqual([]);
     expect(visibleExperiences(undefined)).toEqual([]);
     expect(visibleExperiences(null)).toEqual([]);
+  });
+});
+
+/** 내용이 있는 항목 — 빈 항목 제거까지 함께 보려면 제어 필드만으로는 부족하다. */
+interface Row extends Item {
+  회사명: string | null;
+}
+
+describe("visibleUsableExperiences", () => {
+  it("표시 필터와 빈 항목 제거를 함께 적용한다", () => {
+    // 프리뷰 네 곳이 각자 적던 순서를 한 자리로 모은 것 — 규칙이 바뀔 때 한 곳만 고치면 된다.
+    const items: Row[] = [
+      { id: 1, 회사명: "나중", 표시: true, 표시순위: 2 },
+      { id: 2, 회사명: "보류", 표시: false, 표시순위: null },
+      { id: 3, 회사명: "먼저", 표시: true, 표시순위: 1 },
+    ];
+    expect(at(visibleUsableExperiences(items))).toEqual([3, 1]);
+  });
+
+  it("표시만 달리고 내용이 없는 항목은 유령 행으로 새지 않는다", () => {
+    // 표시 제어 필드는 '내용'이 아니다(isEmptySection 이 id 와 함께 제외한다).
+    const items: Row[] = [{ id: 1, 회사명: null, 표시: true, 표시순위: 1 }];
+    expect(visibleUsableExperiences(items)).toEqual([]);
+  });
+
+  it("표시 필드가 없으면 빈 항목만 걸러 현행 동작을 지킨다", () => {
+    const items: Row[] = [
+      { id: 1, 회사명: "BCG" },
+      { id: 2, 회사명: null },
+    ];
+    expect(at(visibleUsableExperiences(items))).toEqual([1]);
+  });
+
+  it("빈 배열과 부재를 견딘다", () => {
+    expect(visibleUsableExperiences<Row>([])).toEqual([]);
+    expect(visibleUsableExperiences<Row>(undefined)).toEqual([]);
+    expect(visibleUsableExperiences<Row>(null)).toEqual([]);
   });
 });

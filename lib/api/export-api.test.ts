@@ -161,7 +161,9 @@ describe("createResume — experience_ids (FRT-109 / BAC-45 계약)", () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       "/export/resume",
-      { language: "ko", experience_ids: ["exp-1", "exp-2"], max_pages: 1, auto_fill: true },
+      // 사용자가 경험을 직접 골랐으면 자동 채움을 끈다 — 켜두면 일부러 뺀 경험이
+      // 1쪽 여백을 메우려고 되돌아온다.
+      { language: "ko", experience_ids: ["exp-1", "exp-2"], max_pages: 1, auto_fill: false },
       undefined,
     );
   });
