@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import { buildResumeDocument } from "@/lib/export/resume-document";
 import { seedResume } from "@/lib/demo/seed";
-import type { ResumeVersion } from "@/types/resume";
+import type { Career, ResumeVersion } from "@/types/resume";
 
 function emptyResume(overrides: Partial<ResumeVersion> = {}): ResumeVersion {
   return {
@@ -211,6 +211,103 @@ describe("buildResumeDocument — 섹션 선별", () => {
     ]);
   });
 
+  it("영문 레쥬메는 같은 순서를 영문 제목으로 낸다 (FRT-147)", () => {
+    const titles = sectionTitles(
+      emptyResume({
+        meta: {
+          language: "en",
+          format: "western_resume",
+          generated_at: "2026-07-31T00:00:00Z",
+          source_chars: 0,
+        },
+        경력: [
+          {
+            id: 1,
+            회사명: "BCG",
+            부서: null,
+            직위: "Analyst",
+            고용형태: "Internship",
+            입사년월: null,
+            퇴사년월: null,
+            재직중: false,
+            담당업무: [],
+            성과: [],
+          },
+        ],
+        논문: [
+          { id: 1, 제목: "Urban mobility", 게재처: "KGS", 발표년월: null, 내용: null },
+        ],
+        기타정보: { 병역: "Completed", 관심사: ["Drawing"] },
+      }),
+    );
+
+    expect(titles).toEqual([
+      "Work Experience",
+      "Publications",
+      "Additional Information",
+    ]);
+  });
+
+  it("표시=false 인 경험은 빼고 표시순위대로 싣는다 (FRT-207)", () => {
+    const career = (
+      id: number,
+      회사명: string,
+      표시: boolean,
+      표시순위: number | null,
+    ): Career => ({
+      id,
+      회사명,
+      부서: null,
+      직위: null,
+      고용형태: null,
+      입사년월: null,
+      퇴사년월: null,
+      재직중: false,
+      담당업무: [],
+      성과: [],
+      표시,
+      표시순위,
+    });
+
+    const doc = buildResumeDocument(
+      emptyResume({
+        경력: [
+          career(1, "셋째", true, 3),
+          career(2, "보류", false, null),
+          career(3, "첫째", true, 1),
+        ],
+      }),
+    );
+
+    expect(doc.sections[0].entries.map((e) => e.title)).toEqual(["첫째", "셋째"]);
+  });
+
+  it("내용 없이 표시 플래그만 달린 항목은 유령 행으로 실리지 않는다 (FRT-122 계열)", () => {
+    // `표시: true` 를 "값이 있다"로 세면 빈 항목이 비어 있지 않은 것이 되어 빈 행이 그려진다.
+    const titles = sectionTitles(
+      emptyResume({
+        경력: [
+          {
+            id: 1,
+            회사명: null,
+            부서: null,
+            직위: null,
+            고용형태: null,
+            입사년월: null,
+            퇴사년월: null,
+            재직중: false,
+            담당업무: [],
+            성과: [],
+            표시: true,
+            표시순위: 1,
+          },
+        ],
+      }),
+    );
+
+    expect(titles).toEqual([]);
+  });
+
   it("연계성·파싱경고는 문서에 넣지 않는다", () => {
     const doc = buildResumeDocument(
       emptyResume({
@@ -265,6 +362,24 @@ describe("buildResumeDocument — 경력", () => {
     ).sections[0].entries;
 
     expect(entry.meta).toBe("2025-09 – 현재");
+  });
+
+  it("영문 레쥬메는 진행 중인 기간을 'Present' 로 닫는다 (FRT-147)", () => {
+    // 섹션 제목만 영문화하면 기간 오른쪽에 "2025-09 – 현재" 가 남아, 영문 CV 한복판에
+    // 한국어가 한 단어 박힌다. 종료 라벨도 라벨 표를 따라야 한다.
+    const [entry] = buildResumeDocument(
+      emptyResume({
+        meta: {
+          language: "en",
+          format: "western_resume",
+          generated_at: "2026-07-31T00:00:00Z",
+          source_chars: 0,
+        },
+        경력: [{ ...career, 퇴사년월: null, 재직중: true }],
+      }),
+    ).sections[0].entries;
+
+    expect(entry.meta).toBe("2025-09 – Present");
   });
 });
 
@@ -421,6 +536,17 @@ describe("buildResumeDocument — 나머지 섹션", () => {
       { title: "기술 스택", text: "Python, TypeScript" },
       { title: "소프트 스킬", text: "협업" },
     ]);
+  });
+
+  it("기타정보의 빈 병역은 제목만 남기지 않는다", () => {
+    // 관심사는 join 결과라 빈 값이 `""`, 병역은 text() 라 `undefined` 다. 빈 값 판정을
+    // `!== ""` 로만 하면 병역만 살아남아 PDF·Word 에 내용 없는 '병역' 제목이 찍힌다
+    // (화면의 PreviewAdditionalInfo 는 제대로 숨겨서 둘이 어긋난다).
+    const doc = buildResumeDocument(
+      emptyResume({ 기타정보: { 병역: null, 관심사: ["등산"] } }),
+    );
+
+    expect(doc.sections[0].entries).toEqual([{ title: "관심사", text: "등산" }]);
   });
 });
 

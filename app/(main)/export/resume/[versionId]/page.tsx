@@ -29,6 +29,8 @@ import { ResumeDetailSkeleton } from "./_components/ResumeDetailSkeleton";
 import { ResumeDetailTopBar } from "./_components/ResumeDetailTopBar";
 import { ResumeEditorPanel } from "./_components/ResumeEditorPanel";
 import { ResumePreview } from "./_components/ResumePreview";
+import { EnglishReadOnlyNotice } from "./_components/EnglishReadOnlyNotice";
+import { RemainingExperiencesNotice } from "./_components/RemainingExperiencesNotice";
 import { reserveClientIds } from "./_components/editors/shared";
 import { changedResumeSections } from "./_components/resume-diff";
 import {
@@ -110,10 +112,17 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const resumeRef = useRef<ResumeVersion | null>(null);
   const initialRef = useRef<ResumeVersion | null>(null);
 
+  // FRT-147 — 영문 레쥬메는 읽기·내보내기 전용이다(매핑이 단방향이라 저장하면 영문 전용
+  // 값이 사라진다). 편집 UI 를 숨기는 것만으로 막으면 그 바깥에서 setResume 을 부르는
+  // 경로가 하나만 생겨도 저장이 다시 열린다.
+  const readOnly = resume?.meta?.language === "en";
+
+  // 저장·임시저장(나가기/언마운트)·Ctrl+S·이탈 경고가 **전부 dirty 를 보고** 움직이므로,
+  // 읽기 전용을 여기 한 곳에서 막으면 그 경로들이 한꺼번에 닫힌다.
   const dirty = useMemo(() => {
-    if (!resume || !initial) return false;
+    if (!resume || !initial || readOnly) return false;
     return JSON.stringify(resume) !== JSON.stringify(initial);
-  }, [resume, initial]);
+  }, [resume, initial, readOnly]);
 
   // Sync refs during render so the unmount handler sees the latest values
   // even when client navigation fires before passive effects flush.
@@ -148,7 +157,12 @@ export default function ResumeDetailPage({ params }: PageProps) {
       isEmptySection(resume.수상) &&
       isEmptySection(resume.자격증) &&
       isEmptySection(resume.어학) &&
-      isEmptySection(resume.기술및역량)
+      isEmptySection(resume.기술및역량) &&
+      // 논문·기타정보도 화면에 그리는 내용이다. 여기서 빠뜨리면 이 둘에만 값이 있는
+      // 레쥬메(영문 CV 는 publications 만 남는 경우가 실제로 있다)가 "비어 있음"으로
+      // 판정돼, 그리면 되는 내용을 두고 EmptyResumeState 가 뜬다.
+      isEmptySection(resume.논문) &&
+      isEmptySection(resume.기타정보)
     );
   }, [resume]);
 
@@ -422,7 +436,24 @@ export default function ResumeDetailPage({ params }: PageProps) {
   if (loading) return <ResumeDetailSkeleton />;
 
   if (resume && isFullyEmpty && !continueAnyway && !pendingDraft) {
-    return <EmptyResumeState onContinueAnyway={() => setContinueAnyway(true)} />;
+    return (
+      <>
+        {/* 이 화면은 "경험이 없다"고 말하지만, 실제로는 경험이 **있었는데 못 읽은** 것일
+            수 있고 그 사실은 이 배너에만 있다. 여기서 감추면 사용자는 화면 말을 믿고
+            다시 만들어도 같은 결과를 받는다. */}
+        {resume.파싱경고.length > 0 && (
+          <div className="mx-auto w-full max-w-xl px-6 pt-6">
+            <ParsingWarningsBanner warnings={resume.파싱경고} />
+          </div>
+        )}
+        {/* 읽기 전용에서는 '빈 레쥬메 편집하기'가 할 수 없는 일을 약속한다(편집기가 없다). */}
+        <EmptyResumeState
+          onContinueAnyway={
+            readOnly ? undefined : () => setContinueAnyway(true)
+          }
+        />
+      </>
+    );
   }
 
   if (error || !resume) {
@@ -467,8 +498,13 @@ export default function ResumeDetailPage({ params }: PageProps) {
         onExport={() => setExportOpen(true)}
       />
 
-      {/* Mobile tab switcher */}
-      <div className="no-print sticky top-[calc(var(--gnb-h)+3.5rem)] z-30 flex border-b border-border bg-surface md:hidden">
+      {/* Mobile tab switcher — 읽기 전용이면 고를 것이 없다(편집 패널이 없음). */}
+      <div
+        className={[
+          "no-print sticky top-[calc(var(--gnb-h)+3.5rem)] z-30 border-b border-border bg-surface md:hidden",
+          readOnly ? "hidden" : "flex",
+        ].join(" ")}
+      >
         {(
           [
             { key: "editor", label: "편집" },
@@ -492,32 +528,50 @@ export default function ResumeDetailPage({ params }: PageProps) {
       </div>
 
       <div className="flex h-[calc(100dvh-var(--gnb-h)-3.5rem)] md:h-[calc(100dvh-var(--gnb-h))] flex-col md:flex-row">
-        <aside
-          className={[
-            "no-print flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto border-border bg-surface md:max-w-[40%] md:flex-none md:basis-2/5 md:border-r",
-            mobileTab === "editor" ? "" : "hidden md:flex",
-          ].join(" ")}
-        >
-          <div className="p-5 sm:p-6 space-y-3">
-            {pendingDraft && (
-              <DraftRestoreBanner
-                updatedAt={pendingDraft.updated_at}
-                onRestore={handleRestoreDraft}
-                onDiscard={handleDiscardDraft}
-              />
-            )}
-            <ParsingWarningsBanner warnings={resume.파싱경고} />
-            <ResumeEditorPanel resume={resume} onChange={handleEditorChange} />
-          </div>
-        </aside>
+        {/* 읽기 전용이면 편집 패널을 **아예 그리지 않는다** — 빈 사이드바로 화면을 반 접지
+            않고 미리보기가 전폭을 쓰게 둔다. CSS 로만 감추면 편집기와 파싱 경고 배너가
+            DOM 에 그대로 남아, 아래 미리보기 쪽 배너와 같은 경고가 두 벌 마운트된다.
+            ⚠️ 이건 화면 배치일 뿐 **저장을 막는 장치가 아니다** — 봉인은 dirty=false 다. */}
+        {!readOnly && (
+          <aside
+            className={[
+              "no-print flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto border-border bg-surface md:max-w-[40%] md:flex-none md:basis-2/5 md:border-r",
+              mobileTab === "editor" ? "" : "hidden md:flex",
+            ].join(" ")}
+          >
+            <div className="p-5 sm:p-6 space-y-3">
+              {pendingDraft && (
+                <DraftRestoreBanner
+                  updatedAt={pendingDraft.updated_at}
+                  onRestore={handleRestoreDraft}
+                  onDiscard={handleDiscardDraft}
+                />
+              )}
+              <ParsingWarningsBanner warnings={resume.파싱경고} />
+              <ResumeEditorPanel resume={resume} onChange={handleEditorChange} />
+            </div>
+          </aside>
+        )}
 
         <main
           className={[
             "flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto bg-surface-secondary",
-            mobileTab === "preview" ? "" : "hidden md:flex",
+            readOnly || mobileTab === "preview" ? "" : "hidden md:flex",
           ].join(" ")}
         >
           <div className="p-5 sm:p-8">
+            {readOnly && (
+              <div className="mx-auto mb-4 max-w-[210mm] space-y-3">
+                <EnglishReadOnlyNotice />
+                {/* 파싱 경고 배너는 편집 사이드바 안에 있는데 읽기 전용은 그 사이드바를
+                    통째로 감춘다 — 여기서 다시 그리지 않으면 "어떤 경험이 빠졌는지"를
+                    영문 사용자만 영영 못 본다. 편집은 못 해도 보완할 곳은 알아야 한다. */}
+                <ParsingWarningsBanner warnings={resume.파싱경고} />
+              </div>
+            )}
+            <div className="mx-auto max-w-[210mm]">
+              <RemainingExperiencesNotice count={resume.meta?.보류된_경험수} />
+            </div>
             <ResumePreview resume={resume} />
           </div>
         </main>

@@ -1,19 +1,21 @@
 "use client";
 
 import { isEmptySection, type Certification } from "@/types/resume";
+import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { PreviewRow, PreviewSection } from "./PreviewSection";
 
 interface Props {
+  labels: ResumeSectionLabels;
   data: Certification[];
 }
 
-export function PreviewCertification({ data }: Props) {
+export function PreviewCertification({ data, labels }: Props) {
   if (isEmptySection(data)) return null;
   const items = data.filter((c) => !isEmptySection(c));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title="자격증">
+    <PreviewSection title={labels.certification}>
       {items.map((c) => (
         <PreviewRow
           key={c.id}

@@ -3,19 +3,21 @@
 // 기간·학점 표기는 파일 내보내기(PDF·DOCX)와 같은 규칙을 써야 한다 — 단일 출처는 lib/export/resume-format.
 import { formatEducationPeriod, formatGpa } from "@/lib/export/resume-format";
 import { isEmptySection, type Education } from "@/types/resume";
+import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { PreviewRow, PreviewSection } from "./PreviewSection";
 
 interface Props {
+  labels: ResumeSectionLabels;
   data: Education[];
 }
 
-export function PreviewEducation({ data }: Props) {
+export function PreviewEducation({ data, labels }: Props) {
   if (isEmptySection(data)) return null;
   const items = data.filter((edu) => !isEmptySection(edu));
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title="학력">
+    <PreviewSection title={labels.education}>
       {items.map((edu) => {
         const subline = [
           edu.학과,
