@@ -24,6 +24,16 @@ export function CoverLetterGenerationOverlay({
   open,
 }: CoverLetterGenerationOverlayProps) {
   const [index, setIndex] = useState(0);
+  const [wasOpen, setWasOpen] = useState(open);
+
+  // 이 오버레이는 부모에 상주한 채 open 만 토글된다(cover-letter/new). 생성이 실패해 닫혔다가
+  // '다시 시도'로 다시 열리면 index 가 직전에 멈춘 값이라 마지막 메시지부터 이어져, 방금 시작한
+  // 작업이 곧 끝날 것처럼 보였다. effect 로 되돌리면 첫 페인트에 옛 메시지가 한 번 그려지고
+  // key 가 바뀌며 전환 애니메이션까지 돌아 눈에 띈다 — 렌더 단계에서 페인트 전에 되돌린다.
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setIndex(0);
+  }
 
   useEffect(() => {
     if (!open) return;
