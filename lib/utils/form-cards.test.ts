@@ -268,6 +268,33 @@ describe("isCardComplete / computeFormProgress", () => {
     expect(isCardComplete(repeat)).toBe(true)
   })
 
+  // 텍스트 열을 기간으로 바꾸면 옛 값이 그대로 남는다. 셀은 그 값을 못 그려 빈 칸 + 안내를
+  // 띄우는데, 진행도만 "채워짐"이라고 하면 화면과 어긋난다 — 두 판정이 같은 기준을 써야 한다.
+  it("기간 필수 컬럼은 달력에 없는 옛 값을 완료로 치지 않는다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const repeat = r.cards.find(c => c.category === "repeat")!
+    const cell = repeat.blocks.find(b => b.value.type === "repeatable-cell")!
+    if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
+
+    const withPeriodColumn = {
+      ...cell.value,
+      columns: [{ key: "period", label: "기간", blockType: "period" as const, required: true }],
+    }
+
+    for (const legacy of ["자유 형식 메모", "2023.13", "2023.13 ~ 2024.01", "작년 봄쯤"]) {
+      cell.value = { ...withPeriodColumn, rows: [{ id: "row-1", cells: { period: legacy } }] }
+      expect(isCardComplete(repeat), legacy).toBe(false)
+    }
+
+    // 일 단위 값은 절삭돼도 시작 월이 실재하므로 기간으로 성립한다.
+    cell.value = {
+      ...withPeriodColumn,
+      rows: [{ id: "row-1", cells: { period: "2023.03.15 ~ 2024.01.20" } }],
+    }
+    expect(isCardComplete(repeat)).toBe(true)
+  })
+
   // 블록 층위 기간도 같은 부분 입력을 만든다 — `PeriodBlock` 이 `formatPeriodString` 을 거치므로
   // 종료만 고르면 start 가 빈 값으로 저장되고, `isBlockEmpty` 는 둘 중 하나만 있어도 '안 비었다'다.
   it("블록 층위 기간도 시작 없이 종료만 있으면 완료로 치지 않는다", () => {

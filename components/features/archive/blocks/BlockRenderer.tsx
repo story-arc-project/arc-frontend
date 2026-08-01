@@ -1,6 +1,7 @@
 "use client"
 
 import type { Block, BlockValue, RepeatableCellBlockValue } from "@/types/archive"
+import { isFileCellValue } from "@/lib/utils/block-utils"
 import TextBlock from "./TextBlock"
 import TextareaBlock from "./TextareaBlock"
 import DateBlock from "./DateBlock"
@@ -67,10 +68,16 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
         // FRT-213: 컬럼 개수만으로는 부족하다. `OutcomeList` 는 셀을 무조건 textarea 로 그리고
         // `blockType` 을 보지 않으므로, 열 유형을 기간·파일로 바꾸면 그 입력을 만들 길이 없고
         // 구조화된 첨부 값이 있으면 타이핑이 문자열로 덮어쓴다. 텍스트 모양일 때만 태운다.
-        const outcomeColumns = (block.value as RepeatableCellBlockValue).columns
+        //
+        // 열 유형만 보면 부족하다 — 파일로 바꿔 첨부를 올린 뒤 다시 텍스트로 되돌린 셀은
+        // 유형이 `text` 인데 값은 첨부 객체다. 그대로 태우면 `OutcomeList` 가 파일명 문자열로
+        // 접어 그리고 다음 타이핑이 첨부를 통째로 덮어쓴다. 저장된 값 모양까지 본다.
+        const outcomeValue = block.value as RepeatableCellBlockValue
+        const outcomeColumns = outcomeValue.columns
         const outcomeShape =
           outcomeColumns.length <= 1 &&
-          (outcomeColumns[0] === undefined || OUTCOME_LIST_TYPES.has(outcomeColumns[0].blockType))
+          (outcomeColumns[0] === undefined || OUTCOME_LIST_TYPES.has(outcomeColumns[0].blockType)) &&
+          !outcomeValue.rows.some(row => Object.values(row.cells).some(isFileCellValue))
         return block.variant === "outcome-list" && outcomeShape
           ? <OutcomeList block={block} readOnly={readOnly} onChange={handleChange} />
           : <RepeatableCellBlock block={block} readOnly={readOnly} onChange={handleChange} />

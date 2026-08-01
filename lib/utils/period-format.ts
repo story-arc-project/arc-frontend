@@ -66,6 +66,35 @@ export function truncateToMonth(dashValue: string): string {
   return dashValue.split("-").slice(0, 2).join("-")
 }
 
+/** 토큰이 일(日)까지 가진 값인가. "2023-03-15" → true, "2023-03" → false. */
+export function hasDayPrecision(dashToken: string): boolean {
+  return dashToken.split("-").length >= 3
+}
+
+/**
+ * 브라우저의 month/date 입력은 **달력에 실재하는** 값만 받는다 — 자릿수만 맞는
+ * `"2023-13"`·`"2023-02-30"` 은 무효로 보고 빈 칸을 그린다. 형식 검사만 하면
+ * 안내가 가장 필요한 자리에서 빠지므로 실재 여부까지 따진다.
+ *
+ * 이 값을 보는 곳이 둘 이상이다(셀 렌더러의 안내 · 진행도 판정) — 기준이 갈리면
+ * 화면은 빈 칸인데 진행도는 완료라고 말한다. 한 곳에서만 정의한다.
+ */
+export function isRealMonth(dashToken: string): boolean {
+  const parts = /^(\d{4})-(\d{2})$/.exec(dashToken)
+  if (!parts) return false
+  const month = Number(parts[2])
+  return month >= 1 && month <= 12
+}
+
+export function isRealDay(dashToken: string): boolean {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dashToken)
+  if (!parts) return false
+  const [year, month, day] = [Number(parts[1]), Number(parts[2]), Number(parts[3])]
+  // 넘치는 값은 다음 달·해로 굴러가므로, 되읽어 그대로면 실재하는 날짜다.
+  const at = new Date(Date.UTC(year, month - 1, day))
+  return at.getUTCFullYear() === year && at.getUTCMonth() === month - 1 && at.getUTCDate() === day
+}
+
 /**
  * 월 단위 입력값을 일 단위로 보정(1일로 채움). "2023-03" → "2023-03-01".
  * 빈 값·이미 일 단위 값은 그대로 둔다. month → day 전환 시 type=date 입력이

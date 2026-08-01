@@ -573,6 +573,21 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     expect(screen.queryByText(/이전 값/)).toBeNull()
   })
 
+  // 기간 셀은 월 입력 2개뿐이라 일 단위 값은 절삭돼 보인다 — 값 자체는 그려지므로
+  // 안내 없이 두면 다음 편집이 날짜(일)를 조용히 지운다(코드리뷰 발견).
+  it.each([
+    ["2023.03.15 ~ 2024.01.20"],
+    ["2023.03.15 ~ 현재"],
+    ["2023.03.15"],
+    [" ~ 2024.01.20"],
+  ])("기간 컬럼의 일 단위 값(%s)은 무엇이 지워지는지 알린다", stored => {
+    const columns = [{ key: "c", label: "칸", blockType: "period" as const }]
+    render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: stored } }])} />)
+
+    expect(screen.getByText(/날짜\(일\)는 지워져요/)).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(stored.trim().replace(/[.]/g, "\\.")))).toBeInTheDocument()
+  })
+
   it("조회 화면에서도 file 컬럼의 옛 텍스트가 사라지지 않는다", () => {
     const columns = [{ key: "out", label: "결과물", blockType: "file" as const }]
     render(

@@ -20,7 +20,14 @@ import {
   rowHasContent,
   uid,
 } from "@/lib/utils/block-utils"
-import { formatPeriodString, parsePeriodString, truncateToMonth } from "@/lib/utils/period-format"
+import {
+  formatPeriodString,
+  hasDayPrecision,
+  isRealDay,
+  isRealMonth,
+  parsePeriodString,
+  truncateToMonth,
+} from "@/lib/utils/period-format"
 import FileCellInput from "./file/FileCellInput"
 import RoleChips from "./RoleChips"
 import { usePlaceholderRow } from "./usePlaceholderRow"
@@ -586,50 +593,42 @@ function isSupportedCellType(blockType: string): blockType is BlockColumnDef["bl
  * 열 유형이 바뀌어 남은 옛 값. 감추면 사용자는 그 값을 덮어쓰는 줄도 모른 채 잃는다.
  * (파일 셀은 객체만 읽으므로 문자열 값이 화면에서 통째로 사라진다.)
  */
-/**
- * 브라우저의 month/date 입력은 **달력에 실재하는** 값만 받는다 — 자릿수만 맞는
- * `"2023-13"`·`"2023-02-30"` 도 무효로 보고 빈 칸을 그리므로, 형식 검사만으로는
- * 안내가 가장 필요한 자리에서 빠진다(코드리뷰 발견).
- */
-function isRealMonth(token: string): boolean {
-  const parts = /^(\d{4})-(\d{2})$/.exec(token)
-  if (!parts) return false
-  const month = Number(parts[2])
-  return month >= 1 && month <= 12
-}
+/** 컨트롤이 온전히 못 그리는 값과, 그대로 두면 무엇을 잃는지. 온전히 그리면 null. */
+type HiddenCellValue = { text: string; note: string }
 
-function isRealDay(token: string): boolean {
-  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(token)
-  if (!parts) return false
-  const [year, month, day] = [Number(parts[1]), Number(parts[2]), Number(parts[3])]
-  // 넘치는 값은 다음 달·해로 굴러가므로, 되읽어 그대로면 실재하는 날짜다.
-  const at = new Date(Date.UTC(year, month - 1, day))
-  return at.getUTCFullYear() === year && at.getUTCMonth() === month - 1 && at.getUTCDate() === day
-}
+const DROPS_ALL = "값을 입력하면 이 값은 지워져요"
+const DROPS_DAY = "값을 입력하면 날짜(일)는 지워져요"
 
 /**
- * 컨트롤이 **화면에 못 그리는** 값을 돌려준다(그릴 수 있으면 빈 문자열).
+ * 컨트롤이 **화면에 그대로 못 그리는** 값을 돌려준다(온전히 그리면 null).
  *
  * 스칼라 입력은 자기 형식에 안 맞는 값을 조용히 버린다 — `type="month"`/`type="date"` 는
  * 브라우저가 값을 무효로 보고 빈 칸을 그리고, `select` 는 옵션에 없는 값을 고르지 못한다.
  * 셀에는 값이 그대로 남아 있는데 화면에는 없으니, 사용자는 그 위에 입력해 덮어쓰는 줄도 모른다.
  * 열 유형을 바꾸면(text·tags → period 등) 어느 방향으로든 생기는 상태다.
+ *
+ * 값이 아예 안 보이는 경우만 있는 게 아니다 — 기간 셀은 월 입력 2개뿐이라 일 단위 값을
+ * 절삭해 **일부만** 그린다. 그 상태로 편집하면 날짜(일)가 조용히 사라지므로 같이 알린다.
  */
-function undisplayableText(column: BlockColumnDef, text: string): string {
-  if (!text.trim()) return ""
+function hiddenCellValue(column: BlockColumnDef, text: string): HiddenCellValue | null {
+  if (!text.trim()) return null
   switch (column.blockType) {
     case "period": {
       const parsed = parsePeriodString(text)
       // 셀은 월 입력 2개로 그리므로 일 단위 값은 절삭돼 보인다 — 월까지만 따진다.
       const readable = (token: string) => token === "" || isRealMonth(truncateToMonth(token))
-      return readable(parsed.start) && readable(parsed.end) ? "" : text
+      if (!readable(parsed.start) || !readable(parsed.end)) return { text, note: DROPS_ALL }
+      // 절삭된 채로 저장되는 건 다음 편집 때다. 그 전에 무엇이 사라질지 말해 준다.
+      return hasDayPrecision(parsed.start) || hasDayPrecision(parsed.end)
+        ? { text, note: DROPS_DAY }
+        : null
     }
     case "date":
-      return isRealDay(text) ? "" : text
+      return isRealDay(text) ? null : { text, note: DROPS_ALL }
     case "single-select":
-      return (column.options ?? []).includes(text) ? "" : text
+      return (column.options ?? []).includes(text) ? null : { text, note: DROPS_ALL }
     default:
-      return ""
+      return null
   }
 }
 
@@ -668,14 +667,15 @@ function CellInput({
   //  (2) 스칼라로 바뀐 경우: month/date 입력은 형식이 어긋난 값을, select 는 옵션에 없는 값을 버린다.
   // 어느 쪽이든 **값은 남았는데 화면에 없어** 그 위에 입력하면 조용히 덮어쓰인다.
   // 갈래마다 챙기면 하나씩 빠지므로 스위치 전체를 한 번에 감싼다.
-  const droppedFile = column.blockType !== "file" && isFileCellValue(value) ? cellText(value) : ""
-  const hiddenText = droppedFile || undisplayableText(column, strVal)
-  const hiddenNote = droppedFile ? "값을 입력하면 이 첨부는 지워져요" : "값을 입력하면 이 값은 지워져요"
+  const hidden: HiddenCellValue | null =
+    column.blockType !== "file" && isFileCellValue(value)
+      ? { text: cellText(value), note: "값을 입력하면 이 첨부는 지워져요" }
+      : hiddenCellValue(column, strVal)
   const withHiddenValue = (node: ReactNode) =>
-    hiddenText ? (
+    hidden ? (
       <div className="flex flex-col gap-1">
         {node}
-        <LegacyCellText text={hiddenText} note={hiddenNote} />
+        <LegacyCellText text={hidden.text} note={hidden.note} />
       </div>
     ) : (
       <>{node}</>

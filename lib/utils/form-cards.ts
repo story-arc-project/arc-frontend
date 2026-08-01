@@ -1,7 +1,7 @@
 import type { Block, BlockColumnDef, CellValue, SectionCategory } from "@/types/archive"
 import { SECTION_CATEGORIES } from "@/types/archive"
 import { cellFilled, cellText, isBlockEmpty, rowHasContent } from "@/lib/utils/block-utils"
-import { parsePeriodString } from "@/lib/utils/period-format"
+import { isRealMonth, parsePeriodString, truncateToMonth } from "@/lib/utils/period-format"
 
 // 같은 그룹의 라벨은 같은 질문으로 간주 — core/type/extended 간 중복 필드를 숨긴다.
 const SEMANTIC_GROUPS: Record<string, string[]> = {
@@ -141,10 +141,16 @@ export function computeFormCards(
  * 기간 셀은 종료를 먼저 고르면 시작이 빈 채로(`" ~ 2024.01"`) 저장된다. 사용자가 방금 고른
  * 값을 잃지 않으려는 의도된 직렬화지만, 그 부분 입력이 필수 컬럼을 충족한 것으로 잡히면
  * 진행도가 완료라고 거짓말한다 — 기간은 시작이 있어야 한 기간이다.
+ *
+ * 텍스트 열을 기간으로 바꾼 셀에는 달력에 없는 옛 값(`"자유 형식 메모"`·`"2023.13"`)이 남는데,
+ * 셀은 그걸 못 그려 **빈 칸 + 안내**를 띄운다. 여기서 "있으면 채워짐"으로 세면 화면은 비었는데
+ * 진행도만 완료가 된다 — 셀 렌더러와 같은 기준(`isRealMonth`)을 쓴다.
  */
 function cellFilledForColumn(column: BlockColumnDef, cell: CellValue | undefined): boolean {
   if (!cellFilled(cell)) return false
-  if (column.blockType === "period") return parsePeriodString(cellText(cell)).start !== ""
+  if (column.blockType === "period") {
+    return isRealMonth(truncateToMonth(parsePeriodString(cellText(cell)).start))
+  }
   return true
 }
 
