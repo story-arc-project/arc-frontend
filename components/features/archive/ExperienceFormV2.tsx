@@ -33,6 +33,7 @@ import {
 } from "@/lib/utils/block-utils"
 import { capture } from "@/lib/analytics"
 import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
+import { resolveHiddenBlocks } from "@/lib/utils/hidden-fields"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
 import { RoleHistoryProvider, type RoleHistoryContextValue } from "@/contexts/RoleHistoryContext"
 
@@ -106,6 +107,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   )
   const [typeError, setTypeError] = useState(false)
   const [titleError, setTitleError] = useState(false)
+  /** 사용자가 숨긴 선택 필드의 안정키 (FRT-190). 저장 시 매퍼가 정리한다. */
+  const [hiddenKeys, setHiddenKeys] = useState<string[]>(initialExperience?.hiddenKeys ?? [])
 
   // Load template when type changes
   useEffect(() => {
@@ -115,6 +118,10 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
 
     if (mode === "new" || !initialExperience) {
       setCoreBlocks(cloneBlocks(tmpl.commonCore.blocks))
+      // 유형을 바꾸면 숨김도 리셋한다 — 안정키(`${sectionId}.${label}`)는 유형 간에 겹치므로
+      // (`basic.기간` 등) 그대로 두면 새 유형에서 사용자가 숨긴 적 없는 필드가 사라진다.
+      // 블록을 템플릿으로 되돌리는 이 자리에 함께 둬야 둘이 어긋나지 않는다.
+      setHiddenKeys([])
       setExtensionSections(
         tmpl.extensions.map(ext => ({
           id: ext.id,
@@ -185,6 +192,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         hasBlockData(extensionBlocks) ||
         customBlocks.length > 0 ||
         tags.length > 0 ||
+        hiddenKeys.length > 0 ||
         importanceChanged
       onUnsavedChange?.(hasData)
       return
@@ -201,6 +209,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       custom: customBlocks,
       tags,
       importance: importance ?? null,
+      // 숨김만 바꾸고 나가도 미저장 경고가 떠야 한다 — 빠뜨리면 숨김이 조용히 사라진다.
+      hidden: hiddenKeys,
     })
     if (dirtyBaselineRef.current === null) {
       dirtyBaselineRef.current = snapshot
@@ -208,7 +218,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       return
     }
     onUnsavedChange?.(snapshot !== dirtyBaselineRef.current)
-  }, [coreBlocks, extensionSections, customBlocks, tags, importance, mode, template, initialExperience, onUnsavedChange])
+  }, [coreBlocks, extensionSections, customBlocks, tags, importance, hiddenKeys, mode, template, initialExperience, onUnsavedChange])
 
   const handleTypeSelect = useCallback((id: ExperienceTypeId) => {
     setTypeId(id)
@@ -229,6 +239,20 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     if (!hasData) return true
     return window.confirm("경험 유형을 바꾸면 입력한 내용이 초기화될 수 있어요. 계속할까요?")
   }, [coreBlocks, extensionSections, customBlocks, tags])
+
+  // ── 선택 필드 숨김 (FRT-190) ──────────────────────────────────────
+  // 안정키만 담는다 — 블록 인스턴스를 담으면 값이 바뀔 때마다 stale 참조가 된다.
+  const handleHideBlock = useCallback((block: Block) => {
+    const key = block.key
+    if (!key) return
+    setHiddenKeys(prev => (prev.includes(key) ? prev : [...prev, key]))
+  }, [])
+
+  const handleUnhideBlock = useCallback((block: Block) => {
+    const key = block.key
+    if (!key) return
+    setHiddenKeys(prev => prev.filter(k => k !== key))
+  }, [])
 
   // ── Computed form cards ──────────────────────────────────────────
   const formCards = useMemo(
@@ -427,6 +451,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       coreBlocks,
       extensionBlocks: allExtensionBlocks,
       customBlocks,
+      hiddenKeys,
       createdAt: initialExperience?.createdAt ?? now,
       updatedAt: now,
     }
@@ -564,19 +589,27 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         <ProjectLinkProvider value={projectLink}>
         <RoleHistoryProvider value={roleHistory}>
         <div className="flex flex-col gap-5 archive-input-14">
-          {formCards.cards.map(card => (
-            <FormSection
-              key={card.category}
-              variant="card"
-              sectionId={card.category}
-              label={card.label}
-              blocks={card.blocks}
-              optional={card.optional}
-              showOptionalBadge={card.showOptionalBadge}
-              description={sectionDescription(typeId, card.category)}
-              onChange={writeBackBlocks}
-            />
-          ))}
+          {formCards.cards.map(card => {
+            // 숨김은 카드 모델이 아니라 이 렌더 층에서 가른다 — 카드 자체와 하단 되살리기
+            // 토글은 남겨야 마지막 필드를 숨겨도 되돌릴 길이 사라지지 않는다.
+            const { visible, hidden } = resolveHiddenBlocks(card.blocks, hiddenKeys)
+            return (
+              <FormSection
+                key={card.category}
+                variant="card"
+                sectionId={card.category}
+                label={card.label}
+                blocks={visible}
+                hiddenBlocks={hidden}
+                onHide={handleHideBlock}
+                onUnhide={handleUnhideBlock}
+                optional={card.optional}
+                showOptionalBadge={card.showOptionalBadge}
+                description={sectionDescription(typeId, card.category)}
+                onChange={writeBackBlocks}
+              />
+            )
+          })}
 
           {/* 사용자 섹션 (FRT-78) — 최상위 블록, 고정 카드와 동일 시각. 헤더 위/아래로 카드 정렬. */}
           {userSections.map((section, i) => (

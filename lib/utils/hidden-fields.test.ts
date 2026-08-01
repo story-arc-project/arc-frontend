@@ -1,0 +1,130 @@
+import { describe, it, expect } from "vitest"
+import { canHideBlock, resolveHiddenBlocks, normalizeHiddenKeys } from "@/lib/utils/hidden-fields"
+import type { Block } from "@/types/archive"
+
+function block(key: string | undefined, opts: { required?: boolean; text?: string } = {}): Block {
+  return {
+    id: `id-${key ?? "nokey"}`,
+    key,
+    type: "text",
+    label: key ?? "사용자 블록",
+    required: opts.required,
+    value: { type: "text", text: opts.text ?? "" },
+  }
+}
+
+/** 빈 행 하나만 있는 repeatable-cell — isBlockEmpty 는 이걸 empty 로 본다(FRT-122). */
+function emptyTableBlock(key: string): Block {
+  return {
+    id: `id-${key}`,
+    key,
+    type: "repeatable-cell",
+    label: key,
+    value: {
+      type: "repeatable-cell",
+      columns: [{ key: "c1", label: "항목", blockType: "text" }],
+      rows: [{ id: "r1", cells: { c1: "" } }],
+    },
+  }
+}
+
+describe("canHideBlock", () => {
+  it("빈 + 선택 + 안정키 있는 블록만 숨길 수 있다", () => {
+    expect(canHideBlock(block("detail.배운 점"))).toBe(true)
+  })
+
+  it("값이 있으면 숨길 수 없다 — 화면에 없는 값은 손실과 구분되지 않는다", () => {
+    expect(canHideBlock(block("detail.배운 점", { text: "많이 배웠다" }))).toBe(false)
+  })
+
+  it("필수 필드는 숨길 수 없다", () => {
+    expect(canHideBlock(block("basic.경험명", { required: true }))).toBe(false)
+  })
+
+  it("안정키 없는 사용자 블록은 대상이 아니다 — 이미 삭제 버튼이 있다", () => {
+    expect(canHideBlock(block(undefined))).toBe(false)
+  })
+
+  it("빈 행 하나뿐인 표도 비어 있으므로 숨길 수 있다", () => {
+    expect(canHideBlock(emptyTableBlock("repeat.프로젝트 기록"))).toBe(true)
+  })
+})
+
+describe("resolveHiddenBlocks", () => {
+  it("hidden 키의 빈 선택 블록을 hidden 으로 가른다", () => {
+    const blocks = [block("a"), block("b"), block("c")]
+    const r = resolveHiddenBlocks(blocks, ["b"])
+    expect(r.visible.map(b => b.key)).toEqual(["a", "c"])
+    expect(r.hidden.map(b => b.key)).toEqual(["b"])
+  })
+
+  it("원래 순서를 보존한다", () => {
+    const blocks = [block("a"), block("b"), block("c"), block("d")]
+    const r = resolveHiddenBlocks(blocks, ["c", "a"])
+    expect(r.visible.map(b => b.key)).toEqual(["b", "d"])
+    expect(r.hidden.map(b => b.key)).toEqual(["a", "c"])
+  })
+
+  it("hidden 키인데 값이 생겼으면 자동으로 다시 보인다", () => {
+    const blocks = [block("a", { text: "다른 기기에서 입력됨" })]
+    const r = resolveHiddenBlocks(blocks, ["a"])
+    expect(r.visible.map(b => b.key)).toEqual(["a"])
+    expect(r.hidden).toEqual([])
+  })
+
+  it("hidden 키인데 필수가 됐으면 강제로 다시 보인다", () => {
+    const blocks = [block("a", { required: true })]
+    const r = resolveHiddenBlocks(blocks, ["a"])
+    expect(r.visible.map(b => b.key)).toEqual(["a"])
+    expect(r.hidden).toEqual([])
+  })
+
+  it("템플릿에 없는 orphan 키는 아무 블록도 숨기지 않는다", () => {
+    const blocks = [block("a"), block("b")]
+    const r = resolveHiddenBlocks(blocks, ["없는키", "b"])
+    expect(r.visible.map(b => b.key)).toEqual(["a"])
+    expect(r.hidden.map(b => b.key)).toEqual(["b"])
+  })
+
+  it("hiddenKeys 가 비면 전부 보인다", () => {
+    const blocks = [block("a"), block("b")]
+    expect(resolveHiddenBlocks(blocks, []).visible).toHaveLength(2)
+    expect(resolveHiddenBlocks(blocks, []).hidden).toEqual([])
+  })
+
+  it("안정키 없는 블록은 숨겨지지 않는다", () => {
+    const blocks = [block(undefined), block("a")]
+    const r = resolveHiddenBlocks(blocks, ["a"])
+    expect(r.visible.map(b => b.label)).toEqual(["사용자 블록"])
+    expect(r.hidden.map(b => b.key)).toEqual(["a"])
+  })
+})
+
+describe("normalizeHiddenKeys", () => {
+  it("값이 생긴 키를 뺀다 — 자동 복귀를 저장에도 반영해야 다음 로드에 또 숨지 않는다", () => {
+    const blocks = [block("a", { text: "값" }), block("b")]
+    expect(normalizeHiddenKeys(blocks, ["a", "b"])).toEqual(["b"])
+  })
+
+  it("필수가 된 키를 뺀다", () => {
+    const blocks = [block("a", { required: true }), block("b")]
+    expect(normalizeHiddenKeys(blocks, ["a", "b"])).toEqual(["b"])
+  })
+
+  it("모르는 키는 건드리지 않는다 — dedup 으로 카드에서 빠진 블록의 숨김을 잃지 않는다", () => {
+    const blocks = [block("a")]
+    expect(normalizeHiddenKeys(blocks, ["a", "다른유형키"])).toEqual(["a", "다른유형키"])
+  })
+
+  it("중복 키를 한 번만 남긴다", () => {
+    const blocks = [block("a")]
+    expect(normalizeHiddenKeys(blocks, ["a", "a"])).toEqual(["a"])
+  })
+
+  it("입력 배열을 변형하지 않는다", () => {
+    const blocks = [block("a", { text: "값" })]
+    const keys = ["a", "b"]
+    normalizeHiddenKeys(blocks, keys)
+    expect(keys).toEqual(["a", "b"])
+  })
+})

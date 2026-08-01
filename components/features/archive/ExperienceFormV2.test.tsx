@@ -82,6 +82,7 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
       coreBlocks: [],
       extensionBlocks: [],
       customBlocks: [],
+      hiddenKeys: [],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -162,6 +163,7 @@ describe("FRT-52 편집 진입 직후 dirty 위양성 방지", () => {
       coreBlocks: [],
       extensionBlocks: [],
       customBlocks: [],
+      hiddenKeys: [],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -269,6 +271,7 @@ describe("FRT-78 사용자 섹션 정렬·loose 편집 (Codex P2)", () => {
           customBlocks: [
             { id: "loose-1", type: "text", label: "메모", value: { type: "text", text: "내용" } },
           ],
+          hiddenKeys: [],
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
         }}
@@ -420,5 +423,71 @@ describe("FRT-178 동아리 역할 태그 동기화", () => {
 
     await user.click(screen.getByRole("button", { name: "회장 삭제" }))
     expect(screen.queryByRole("button", { name: "회장 역할 태그 해제" })).toBeNull()
+  })
+})
+
+/**
+ * FRT-190 — 선택 필드 숨김.
+ *
+ * ⚠️ 이 통합 테스트가 중요한 이유: 숨김 대상 판정이 `block.key` 를 요구하는데, 키는 템플릿
+ * 조립 단계에서만 부여된다(`createBlock` 은 안 붙인다). 픽스처를 손으로 만든 테스트만 있으면
+ * "실제 폼에서는 × 가 하나도 안 뜨는" 상태를 통과시킬 수 있다 — 실제 템플릿으로 도달을 확인한다.
+ */
+describe("FRT-190 선택 필드 숨김", () => {
+  /** 대외활동 템플릿의 빈 선택 필드 하나를 고른다(라벨은 확정본 기준). */
+  const HIDABLE_LABEL = "지원 동기"
+
+  it("실제 폼의 빈 선택 필드에 × 가 뜬다 — 필수 필드에는 안 뜬다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectType(user)
+
+    expect(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`)).toBeInTheDocument()
+    expect(screen.queryByLabelText("경험명 숨기기")).not.toBeInTheDocument()
+  })
+
+  it("× 를 누르면 필드가 사라지고, 되살리기 토글로 되돌릴 수 있다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    expect(screen.queryByLabelText(`${HIDABLE_LABEL} 숨기기`)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: /숨긴 항목 1개/ }))
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 다시 보기`))
+
+    expect(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`)).toBeInTheDocument()
+    expect(screen.queryByText(/숨긴 항목/)).not.toBeInTheDocument()
+  })
+
+  it("숨긴 채 저장하면 hiddenKeys 에 안정키가 실린다", async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    await user.type(screen.getByLabelText(/경험명/), "교내 동아리")
+    await user.click(screen.getByRole("button", { name: "완료" }))
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    const saved = onSave.mock.calls[0][0] as ExperienceV2
+    expect(saved.hiddenKeys).toHaveLength(1)
+    expect(saved.hiddenKeys[0]).toContain(HIDABLE_LABEL)
+  })
+
+  it("유형을 바꾸면 숨김이 초기화된다 — 안정키가 유형 간에 겹치기 때문", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    expect(screen.getByRole("button", { name: /숨긴 항목 1개/ })).toBeInTheDocument()
+
+    // 유형 선택 후엔 '변경'을 눌러야 유형 그리드가 다시 열린다.
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+    await user.click(screen.getAllByRole("button", { name: "동아리/교내 단체" })[0])
+
+    expect(screen.queryByText(/숨긴 항목/)).not.toBeInTheDocument()
   })
 })

@@ -437,6 +437,11 @@ export interface ExperienceV2 {
   coreBlocks: Block[]
   extensionBlocks: Block[]
   customBlocks: Block[]
+  /**
+   * 사용자가 숨긴 선택 필드의 안정키 (FRT-190). 빈 선택 필드만 들어간다 —
+   * 판정·정리는 `lib/utils/hidden-fields.ts` 한 곳에서 한다.
+   */
+  hiddenKeys: string[]
   createdAt: string
   updatedAt: string
 }
@@ -467,6 +472,11 @@ export interface ExperienceContentV2 {
   tags: string[]
   fields: Record<string, BlockValue>
   custom: CustomEntry[]
+  /**
+   * 사용자가 숨긴 선택 필드의 안정키 목록 (FRT-190). 옛 레코드엔 없으므로 optional 이며,
+   * 로드 시 `parseHiddenKeys` 가 배열·문자열 원소만 통과시킨다.
+   */
+  hidden?: string[]
 }
 
 // ─── Library (replaces Folder) ──────────────────────────────────

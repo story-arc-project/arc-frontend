@@ -27,6 +27,7 @@ function makeExperienceV2(overrides: Partial<ExperienceV2> = {}): ExperienceV2 {
     coreBlocks: [],
     extensionBlocks: [],
     customBlocks: [],
+    hiddenKeys: [],
     createdAt: "2024-01-01T00:00:00Z",
     updatedAt: "2024-01-02T00:00:00Z",
     ...overrides,

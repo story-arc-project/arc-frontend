@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { Plus, GripVertical, Trash2, Copy, Pencil } from "lucide-react"
+import { Plus, GripVertical, Trash2, Copy, Pencil, X } from "lucide-react"
 import {
   DndContext,
   closestCenter,
@@ -18,6 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import type { Block, BlockType, BlockValue } from "@/types/archive"
 import { createBlock, cloneBlock } from "@/lib/utils/block-utils"
+import { canHideBlock } from "@/lib/utils/hidden-fields"
 import BlockRenderer from "./BlockRenderer"
 import BlockTypePicker from "./BlockTypePicker"
 import BlockEditModal, { type BlockEditConfig } from "./BlockEditModal"
@@ -35,6 +36,11 @@ interface BlockListProps {
    * 추가는 막되 편집은 허용하는 경우(레거시 loose 폴백)에 단독으로 켠다.
    */
   allowEdit?: boolean
+  /**
+   * 선택 필드 숨김 (FRT-190). 넘기면 `canHideBlock` 이 통과한 블록에만 × 가 붙는다.
+   * `allowDelete`(사용자 섹션의 영구 삭제)와는 별개다 — 이쪽은 되돌릴 수 있는 숨김이다.
+   */
+  onHide?: (block: Block) => void
 }
 
 export default function BlockList({
@@ -46,6 +52,7 @@ export default function BlockList({
   allowReorder = false,
   allowDelete = false,
   allowEdit,
+  onHide,
 }: BlockListProps) {
   const editEnabled = allowEdit ?? allowAdd
   const [showPicker, setShowPicker] = useState(false)
@@ -200,6 +207,7 @@ export default function BlockList({
       allowEdit={editEnabled}
       showOptionalBadge={showOptionalBadge}
       onChange={handleBlockChange}
+      onHide={onHide && canHideBlock(block) ? () => onHide(block) : undefined}
       onDelete={() => handleDeleteBlock(block.id)}
       onDuplicate={() => handleDuplicateBlock(block.id)}
       onEdit={() => handleEditBlock(block)}
@@ -255,6 +263,7 @@ function SortableBlockItem({
   allowEdit,
   showOptionalBadge,
   onChange,
+  onHide,
   onDelete,
   onDuplicate,
   onEdit,
@@ -265,6 +274,7 @@ function SortableBlockItem({
   allowEdit: boolean
   showOptionalBadge?: boolean
   onChange: (blockId: string, value: BlockValue) => void
+  onHide?: () => void
   onDelete: () => void
   onDuplicate: () => void
   onEdit: () => void
@@ -300,6 +310,22 @@ function SortableBlockItem({
       <div className="flex-1 min-w-0">
         <BlockRenderer block={block} showOptionalBadge={showOptionalBadge} onChange={onChange} />
       </div>
+      {/*
+        숨김 × 는 블록 **바깥** 우측에 둔다 — 블록 안 우상단은 '선택' 뱃지가 이미
+        `absolute -top-2 right-0` 로 차지하고 있어(BlockRenderer) 경험 상세 카드에서 겹친다.
+      */}
+      {onHide && (
+        <div className="flex flex-col gap-1 mt-1 shrink-0">
+          <button
+            type="button"
+            onClick={onHide}
+            className="text-text-tertiary hover:text-text-secondary transition-colors p-1 rounded"
+            aria-label={`${block.label} 숨기기`}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
       {allowDelete && (
         <div className="flex flex-col gap-1 mt-1 transition-opacity shrink-0">
           {allowEdit && (
