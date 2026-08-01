@@ -819,11 +819,19 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
       // 컨텐츠로 치므로(Number.isFinite(0) === true) experience_block_count:0 하나 때문에
       // 본문이 텅 빈 결과가 "본문 있음"이 되어 상태 안내(FRT-134)가 영영 뜨지 않는다.
       // 그릴 말이 실제로 있는 필드만 남긴다 — 카운트·present·generated 는 뺀다.
+      // qualityReview 도 마찬가지다: evaluated(number)·gradeDistribution 은 화면에 그리지
+      // 않는데 그대로 넘기면 evaluated:0 하나로 같은 오판이 재현된다 — 화면이 실제로
+      // 그리는 portfolioVerdict·topFixes 만 남긴다.
       starAnalysisStatus: {
         reason: detail.starAnalysisStatus.reason,
         coaching: detail.starAnalysisStatus.coaching,
         rejectedEntries: detail.starAnalysisStatus.rejectedEntries,
-        qualityReview: detail.starAnalysisStatus.qualityReview,
+        qualityReview: detail.starAnalysisStatus.qualityReview
+          ? {
+              portfolioVerdict: detail.starAnalysisStatus.qualityReview.portfolioVerdict,
+              topFixes: detail.starAnalysisStatus.qualityReview.topFixes,
+            }
+          : null,
       },
     }),
   };

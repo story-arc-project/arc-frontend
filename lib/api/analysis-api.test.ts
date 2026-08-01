@@ -1224,6 +1224,41 @@ describe("종합 분석 v3.1 매퍼 (comprehensive/3.1, FRT-208)", () => {
     expect(res.hasResultBody).toBe(true)
   })
 
+  it("quality_review 도 화면이 그리는 필드만 본문 판정에 넣는다", async () => {
+    // evaluated(number)·grade_distribution 은 화면에 그리지 않는데 판정에 넘기면
+    // evaluated:0 하나로 카운트와 똑같은 오판이 재현된다(/code-review medium).
+    apiMock.get.mockResolvedValue(
+      comp31({
+        star_analysis_status: {
+          generated: false,
+          quality_review: {
+            evaluated: 0,
+            grade_distribution: { A: 0, B: 0, C: 0, D: 0 },
+            portfolio_verdict: "",
+            top_fixes: [],
+          },
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.hasResultBody).toBe(false)
+    // 대조군: 그릴 말이 실제로 있으면 본문으로 친다.
+    expect(res.starAnalysisStatus.qualityReview?.evaluated).toBe(0)
+  })
+
+  it("총평이 있으면 quality_review 만으로도 본문으로 친다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({
+        star_analysis_status: {
+          generated: false,
+          quality_review: { evaluated: 0, portfolio_verdict: "조금만 더 다듬으면 좋아요" },
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.hasResultBody).toBe(true)
+  })
+
   it("guard_version 은 매핑하지 않는다 (본문 판정 오염 금지)", async () => {
     // v3.1 은 guard_version:"v3.1" 을 항상 채운다. 매핑하면 문자열 하나 때문에
     // 본문이 텅 빈 결과가 "본문 있음"이 된다.
