@@ -94,9 +94,39 @@ export interface BlockColumnDef {
   variant?: 'role-chip'
 }
 
+/**
+ * 반복 입력(`repeatable-cell`)의 `file` 컬럼 셀 값 (FRT-213).
+ *
+ * 블록 층위 `FileBlockValue` 와 달리 `description`·`evidenceType` 을 담지 않는다 —
+ * 셀은 표의 한 칸이고, 설명이 필요하면 템플릿이 별도 텍스트 컬럼을 두는 게 표 관행이다
+ * (역할 이력의 start/end/role 3컬럼과 같은 결).
+ *
+ * ⚠️ `fileName` 을 **함께 저장하는 것이 핵심이다.** `GET /files/{id}/download` 는
+ * `{url, expiresAt}` 만 주고 파일명·mime·크기를 돌려주지 않아(`lib/api/files-api.ts`),
+ * `fileId` 만 저장하면 새로고침 후 표에 무슨 파일인지 표시할 방법이 사라진다.
+ * `url` 은 저장하지 않는다 — presigned URL 은 만료되므로 표시 시점에 새로 받는다.
+ */
+export interface FileCellValue {
+  type: 'file'
+  fileId: string
+  fileName: string
+  mimeType?: string
+  size?: number
+}
+
+/**
+ * 반복 입력 셀 하나가 담을 수 있는 값 (FRT-213).
+ *
+ * 대부분의 컬럼은 값의 알맹이만 담는다 — `link` 는 url 문자열만, `checklist` 는 checked
+ * 배열만 담고 블록 층위의 래퍼 객체(`LinkBlockValue` 등)를 그대로 싣지 않는다.
+ * `file` 만 예외로 구조화 객체를 담는데, 파일은 사람이 읽는 문자열 하나로 접히지 않기 때문이다.
+ * `period` 는 예외가 아니다 — 점 구분 문자열(`"2023.03 ~ 현재"`) 하나로 접힌다.
+ */
+export type CellValue = string | string[] | FileCellValue
+
 export interface BlockRow {
   id: string
-  cells: Record<string, string | string[]>
+  cells: Record<string, CellValue>
   /**
    * intra-experience 블록 간 링크 (FRT-76). OutcomeList 활동 행이 '프로젝트로 연결'로
    * 만든 프로젝트 행(다른 섹션 repeatable-cell 의 BlockRow)의 id 를 가리킨다.
@@ -129,9 +159,12 @@ export interface BlockRow {
  * 하므로(FRT-178 교훈). `key` 는 렌더 키·수정 대상 식별에만 쓰는 내부 값이다.
  *
  * `blockType` 은 `BlockColumnDef.blockType` 의 부분집합이다. 셀 렌더러(`CellInput`)가
- * 실제로 분기하고 **선택지 없이도 성립하는** 5종만 연다 — `single-select` 는 options 가
+ * 실제로 분기하고 **선택지 없이도 성립하는** 6종만 연다 — `single-select` 는 options 가
  * 없으면 빈 드롭다운이 되고, `checklist` 는 `tags` 와 동일한 자유입력으로 폴백한다.
- * 옵션 편집 UI 와 `period`·`file` 은 FRT-213 이후에 다룬다.
+ *
+ * `file` 은 계속 미지원이다(FRT-213). 옵션 편집 UI 도 아직 없다.
+ * 파일 셀 값은 구조화 객체(`FileCellValue`)라 아래 `value: string | string[]` 로는 담을 수
+ * 없다 — 열려면 값 타입부터 넓혀야 하므로 별도 논의가 필요하다.
  */
 export interface RowExtraField {
   key: string
@@ -140,7 +173,7 @@ export interface RowExtraField {
   value: string | string[]
 }
 
-export type RowExtraFieldType = 'text' | 'textarea' | 'date' | 'link' | 'tags'
+export type RowExtraFieldType = 'text' | 'textarea' | 'date' | 'period' | 'link' | 'tags'
 
 export interface RepeatableCellBlockValue {
   type: 'repeatable-cell'

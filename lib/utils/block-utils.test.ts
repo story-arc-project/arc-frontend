@@ -19,9 +19,14 @@ import {
   createSelectField,
   createTagsField,
   createTextField,
+  cellFilled,
+  cellText,
+  isFileCellValue,
+  rowHasContent,
   isBlockEmpty,
   validateRequiredBlocks,
 } from "@/lib/utils/block-utils"
+import type { FileCellValue } from "@/types/archive"
 
 describe("isBlockEmpty", () => {
   it("새로 만든 빈 블록은 모든 타입에서 empty 다", () => {
@@ -369,5 +374,81 @@ describe("mapRoleTags", () => {
     const child = next.children![0]
     if (child.value.type !== "repeatable-cell") throw new Error("unreachable")
     expect(child.value.rows[0].roleTags).toEqual(["회장단"])
+  })
+})
+
+// ─── FRT-213: 파일 셀 값 헬퍼 ────────────────────────────────────
+
+const fileCell: FileCellValue = {
+  type: "file",
+  fileId: "file-abc",
+  fileName: "성적표.pdf",
+  mimeType: "application/pdf",
+  size: 12345,
+}
+
+describe("isFileCellValue (FRT-213)", () => {
+  it("파일 셀 값을 알아본다", () => {
+    expect(isFileCellValue(fileCell)).toBe(true)
+  })
+
+  it("문자열·배열·undefined 는 파일 셀이 아니다", () => {
+    expect(isFileCellValue("2023.03 ~ 현재")).toBe(false)
+    expect(isFileCellValue(["a", "b"])).toBe(false)
+    expect(isFileCellValue(undefined)).toBe(false)
+  })
+})
+
+describe("cellFilled — 파일 셀 (FRT-213)", () => {
+  it("fileId 가 있으면 채워진 것으로 본다", () => {
+    expect(cellFilled(fileCell)).toBe(true)
+  })
+
+  it("fileId 가 비면 채워지지 않은 것으로 본다 — 업로드 전 빈 껍데기", () => {
+    expect(cellFilled({ type: "file", fileId: "", fileName: "" })).toBe(false)
+  })
+
+  it("기존 문자열·배열 판정은 그대로다", () => {
+    expect(cellFilled("값")).toBe(true)
+    expect(cellFilled("   ")).toBe(false)
+    expect(cellFilled(["태그"])).toBe(true)
+    expect(cellFilled([])).toBe(false)
+    expect(cellFilled(undefined)).toBe(false)
+  })
+})
+
+describe("cellText (FRT-213)", () => {
+  it("파일 셀은 파일명으로 접힌다", () => {
+    expect(cellText(fileCell)).toBe("성적표.pdf")
+  })
+
+  it("파일명이 비면 대체 문구로 접힌다 — 빈 문자열이면 첨부 사실이 사라진다", () => {
+    expect(cellText({ type: "file", fileId: "file-x", fileName: "" })).toBe("첨부파일")
+  })
+
+  // 첨부를 지우면 `handleDelete` 가 `{fileId:"", fileName:""}` 를 남긴다. 이걸 '첨부파일'로
+  // 접으면 없는 첨부가 화면에 남고, 열 유형이 텍스트로 바뀌면 그 문구가 값으로 굳는다.
+  // `cellFilled` 는 같은 값을 '비었다'로 보므로 두 판정이 어긋나서도 안 된다.
+  it("지워진 첨부는 빈 문자열로 접힌다 — 유령 첨부를 만들지 않는다", () => {
+    expect(cellText({ type: "file", fileId: "", fileName: "" })).toBe("")
+    expect(cellText({ type: "file", fileId: "", fileName: "성적표.pdf" })).toBe("")
+  })
+
+  it("배열은 쉼표로 잇고 문자열은 그대로 둔다 — 기존 6곳의 중복 로직과 동일하다", () => {
+    expect(cellText(["a", "b"])).toBe("a, b")
+    expect(cellText("2023.03 ~ 현재")).toBe("2023.03 ~ 현재")
+    expect(cellText(undefined)).toBe("")
+  })
+})
+
+describe("rowHasContent — 파일 셀만 채운 행 (FRT-213)", () => {
+  it("파일만 첨부한 행은 빈 행이 아니다", () => {
+    expect(rowHasContent({ id: "r1", cells: { 결과물: fileCell } })).toBe(true)
+  })
+
+  it("빈 파일 셀만 있는 행은 빈 행이다", () => {
+    expect(
+      rowHasContent({ id: "r1", cells: { 결과물: { type: "file", fileId: "", fileName: "" } } }),
+    ).toBe(false)
   })
 })

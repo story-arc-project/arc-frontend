@@ -10,7 +10,7 @@ import {
 } from "react"
 import { ArrowUpRight, Link2, Plus } from "lucide-react"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
-import { createEmptyRow } from "@/lib/utils/block-utils"
+import { cellText, createEmptyRow } from "@/lib/utils/block-utils"
 import { useProjectLink } from "@/contexts/ProjectLinkContext"
 import RoleChips from "./RoleChips"
 import { usePlaceholderRow } from "./usePlaceholderRow"
@@ -101,8 +101,7 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
   }, [rows])
 
   function textOf(row: BlockRow): string {
-    const c = row.cells[colKey]
-    return Array.isArray(c) ? c.join(", ") : (c ?? "")
+    return cellText(row.cells[colKey])
   }
 
   function commit(nextRows: BlockRow[], focus?: string) {

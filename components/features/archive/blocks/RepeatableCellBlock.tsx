@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useRef, useState, type ReactNode } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type {
@@ -8,10 +8,27 @@ import type {
   RepeatableCellBlockValue,
   BlockRow,
   BlockColumnDef,
+  CellValue,
   RowExtraField,
   RowExtraFieldType,
 } from "@/types/archive"
-import { cellFilled, createEmptyRow, rowHasContent, uid } from "@/lib/utils/block-utils"
+import {
+  cellFilled,
+  cellText,
+  createEmptyRow,
+  isFileCellValue,
+  rowHasContent,
+  uid,
+} from "@/lib/utils/block-utils"
+import {
+  formatPeriodString,
+  hasDayPrecision,
+  isRealDay,
+  isRealMonth,
+  parsePeriodString,
+  truncateToMonth,
+} from "@/lib/utils/period-format"
+import FileCellInput from "./file/FileCellInput"
 import RoleChips from "./RoleChips"
 import { usePlaceholderRow } from "./usePlaceholderRow"
 
@@ -48,7 +65,7 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
     onChange({ ...val, rows: val.rows.filter(r => r.id !== rowId) })
   }
 
-  function updateCell(rowId: string, colKey: string, cellValue: string | string[]) {
+  function updateCell(rowId: string, colKey: string, cellValue: CellValue) {
     if (isPlaceholderRow(rowId)) {
       // FRT-103: 값이 실제로 채워질 때만 실체화한다(빈 값 선택으로는 커밋하지 않는다).
       // 모든 컬럼 타입이 이 콜백 하나를 지나므로 타입별 분기가 필요 없다.
@@ -137,13 +154,33 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {val.columns.map(col => {
                     const cellVal = row.cells[col.key]
-                    const display = Array.isArray(cellVal) ? cellVal.join(", ") : cellVal
+                    const display = cellText(cellVal)
                     return (
                       <div key={col.key} className="flex flex-col gap-0.5">
                         <span className="text-caption text-text-tertiary font-medium">{col.label}</span>
-                        {display
-                          ? <span className="text-body-sm text-text-primary whitespace-pre-wrap">{display}</span>
-                          : <span className="text-body-sm text-text-disabled">—</span>}
+                        {/* 파일은 이름만 적으면 받은 사람이 열 수 없다 — 다운로드까지 되는 카드로 보여준다.
+                            열 유형이 텍스트로 바뀌어도 값이 첨부면 마찬가지다. 편집칸은 안내를 띄우는데
+                            조회만 파일명 글자로 접으면, 보는 사람은 첨부가 있는 줄도 모른다(대칭). */}
+                        {col.blockType === "file" || isFileCellValue(cellVal) ? (
+                          <>
+                            <FileCellInput value={isFileCellValue(cellVal) ? cellVal : undefined} readOnly onChange={() => {}} />
+                            {/* 열 유형이 바뀌어 남은 옛 텍스트. 편집칸과 같은 이유로 감추지 않는다. */}
+                            {!isFileCellValue(cellVal) && display && <LegacyCellText text={display} />}
+                          </>
+                        ) : !isSupportedCellType(col.blockType) ? (
+                          // 조회 화면은 편집칸을 안 거쳐 경고 분기도 함께 비껴간다 — 보는 사람이
+                          // 잘려 보이는 값을 온전한 표시로 오해하지 않게 여기서도 알린다.
+                          <>
+                            <span className="text-body-sm text-text-primary whitespace-pre-wrap">{display || "—"}</span>
+                            <span className="text-caption text-text-tertiary">
+                              아직 지원하지 않는 입력 유형이에요 — 저장된 값을 그대로 보여줘요.
+                            </span>
+                          </>
+                        ) : display ? (
+                          <span className="text-body-sm text-text-primary whitespace-pre-wrap">{display}</span>
+                        ) : (
+                          <span className="text-body-sm text-text-disabled">—</span>
+                        )}
                       </div>
                     )
                   })}
@@ -287,7 +324,7 @@ function RowEditor({
   isPlaceholder?: boolean
   /** FRT-145: 이 행에 사용자가 항목을 추가할 수 있는가(블록 층위 opt-in). */
   allowRowExtras?: boolean
-  onCellChange: (colKey: string, value: string | string[]) => void
+  onCellChange: (colKey: string, value: CellValue) => void
   onExtrasChange: (next: (fields: RowExtraField[]) => RowExtraField[]) => void
   onRemove: () => void
 }) {
@@ -313,7 +350,10 @@ function RowEditor({
           const isWide =
             col.blockType === "textarea" ||
             col.blockType === "tags" ||
-            col.blockType === "checklist"
+            col.blockType === "checklist" ||
+            // 기간은 월 입력 2개+체크박스, 파일은 카드라 반 칸에 눌리면 읽을 수 없다(FRT-213).
+            col.blockType === "period" ||
+            col.blockType === "file"
 
           return (
             <div key={col.key} className={`flex flex-col gap-1.5 ${isWide ? "sm:col-span-2" : ""}`}>
@@ -343,11 +383,13 @@ function RowEditor({
 
 /** FRT-145 '항목 추가'에서 고를 수 있는 유형. 선택지 없이도 성립하는 것만 연다 — `single-select`
  *  는 options 가 없으면 빈 드롭다운이고 `checklist` 는 `tags` 와 같은 자유입력으로 폴백한다.
- *  옵션 편집 UI 와 `period`·`file` 셀 렌더는 FRT-213 이후에 다룬다. */
+ *  `file` 은 값이 구조화 객체라 `RowExtraField.value` 에 담기지 않아 계속 빠진다(FRT-213).
+ *  옵션 편집 UI 도 아직 없다. */
 const EXTRA_FIELD_TYPES: { value: RowExtraFieldType; label: string }[] = [
   { value: "text", label: "한 줄 텍스트" },
   { value: "textarea", label: "여러 줄 텍스트" },
   { value: "date", label: "날짜" },
+  { value: "period", label: "기간" },
   { value: "link", label: "링크" },
   { value: "tags", label: "태그" },
 ]
@@ -467,9 +509,11 @@ function RowExtraFieldsEditor({
             column={{ key: field.key, label: field.label, blockType: field.blockType }}
             value={field.value}
             ariaLabel={field.label}
-            onChange={v =>
+            onChange={v => {
+              // `RowExtraFieldType` 에 'file' 이 없어 파일 셀 값은 여기로 오지 않는다(도달 불가).
+              if (isFileCellValue(v)) return
               onChange(prev => prev.map(f => (f.key === field.key ? { ...f, value: v } : f)))
-            }
+            }}
           />
         </div>
       ))}
@@ -526,6 +570,85 @@ function RowExtraFieldsEditor({
   )
 }
 
+/**
+ * `CellInput` 이 렌더러를 가진 컬럼 유형. Record 로 두면 `blockType` 에 새 유형이 생길 때
+ * 여기서도 빌드가 깨진다 — 편집칸만 만들고 조회 화면을 잊는 걸 막는다.
+ */
+const SUPPORTED_CELL_TYPES: Record<BlockColumnDef["blockType"], true> = {
+  text: true,
+  textarea: true,
+  date: true,
+  period: true,
+  file: true,
+  link: true,
+  tags: true,
+  checklist: true,
+  "single-select": true,
+}
+
+/** 저장된 columns 가 템플릿보다 우선 채택되므로 타입에 없는 문자열이 런타임에 들어올 수 있다. */
+function isSupportedCellType(blockType: string): blockType is BlockColumnDef["blockType"] {
+  return Object.prototype.hasOwnProperty.call(SUPPORTED_CELL_TYPES, blockType)
+}
+
+/**
+ * 열 유형이 바뀌어 남은 옛 값. 감추면 사용자는 그 값을 덮어쓰는 줄도 모른 채 잃는다.
+ * (파일 셀은 객체만 읽으므로 문자열 값이 화면에서 통째로 사라진다.)
+ */
+/** 컨트롤이 온전히 못 그리는 값과, 그대로 두면 무엇을 잃는지. 온전히 그리면 null. */
+type HiddenCellValue = { text: string; note: string }
+
+const DROPS_ALL = "값을 입력하면 이 값은 지워져요"
+const DROPS_DAY = "값을 입력하면 날짜(일)는 지워져요"
+
+/**
+ * 컨트롤이 **화면에 그대로 못 그리는** 값을 돌려준다(온전히 그리면 null).
+ *
+ * 스칼라 입력은 자기 형식에 안 맞는 값을 조용히 버린다 — `type="month"`/`type="date"` 는
+ * 브라우저가 값을 무효로 보고 빈 칸을 그리고, `select` 는 옵션에 없는 값을 고르지 못한다.
+ * 셀에는 값이 그대로 남아 있는데 화면에는 없으니, 사용자는 그 위에 입력해 덮어쓰는 줄도 모른다.
+ * 열 유형을 바꾸면(text·tags → period 등) 어느 방향으로든 생기는 상태다.
+ *
+ * 값이 아예 안 보이는 경우만 있는 게 아니다 — 기간 셀은 월 입력 2개뿐이라 일 단위 값을
+ * 절삭해 **일부만** 그린다. 그 상태로 편집하면 날짜(일)가 조용히 사라지므로 같이 알린다.
+ */
+function hiddenCellValue(column: BlockColumnDef, text: string): HiddenCellValue | null {
+  if (!text.trim()) return null
+  switch (column.blockType) {
+    case "period": {
+      const parsed = parsePeriodString(text)
+      // 셀은 월 입력 2개로 그리므로 일 단위 값은 절삭돼 보인다 — 월까지만 따진다.
+      const readable = (token: string) => token === "" || isRealMonth(truncateToMonth(token))
+      if (!readable(parsed.start) || !readable(parsed.end)) return { text, note: DROPS_ALL }
+      // 파서는 `~` 앞뒤 두 토큰만 읽고 `현재` 는 어디에 있든 '현재'로 본다 — 뒤에 남은 말
+      // ("… ~ 2024.02 ~ 메모" · "… ~ 현재까지")은 컨트롤에 실리지 않아 다음 편집에 사라진다.
+      // 되짚어 원문과 같아야 온전히 읽은 것이다(공백은 직렬화가 정하므로 빼고 견준다).
+      const compact = (s: string) => s.replace(/\s/g, "")
+      const roundTrip = formatPeriodString(parsed)
+      if (compact(roundTrip) !== compact(text)) return { text, note: DROPS_ALL }
+      // 절삭된 채로 저장되는 건 다음 편집 때다. 그 전에 무엇이 사라질지 말해 준다.
+      return hasDayPrecision(parsed.start) || hasDayPrecision(parsed.end)
+        ? { text, note: DROPS_DAY }
+        : null
+    }
+    case "date":
+      return isRealDay(text) ? null : { text, note: DROPS_ALL }
+    case "single-select":
+      return (column.options ?? []).includes(text) ? null : { text, note: DROPS_ALL }
+    default:
+      return null
+  }
+}
+
+function LegacyCellText({ text, note }: { text: string; note?: string }) {
+  return (
+    <p className="text-caption text-text-tertiary">
+      이전 값: {text}
+      {note ? ` — ${note}` : ""}
+    </p>
+  )
+}
+
 function CellInput({
   column,
   value,
@@ -533,120 +656,257 @@ function CellInput({
   onChange,
 }: {
   column: BlockColumnDef
-  value: string | string[] | undefined
+  value: CellValue | undefined
   /** 라벨이 `<label htmlFor>` 로 묶여 있지 않아 입력칸에 접근 가능한 이름이 없다 — 직접 준다. */
   ariaLabel?: string
-  onChange: (value: string | string[]) => void
+  onChange: (value: CellValue) => void
 }) {
   // 열 타입이 변경되어 기존 값(string ↔ string[])이 불일치할 때 UI에서 값이 사라지지 않도록 정규화한다.
-  const strVal = Array.isArray(value) ? value.join(", ") : (value ?? "")
+  // 파일 셀 값(객체)도 `cellText` 가 파일명으로 접어 주므로 어떤 조합에서도 값을 잃지 않는다.
+  const strVal = cellText(value)
   const arrVal = Array.isArray(value)
     ? value
     : typeof value === "string" && value.trim()
       ? value.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
       : []
 
-  if (column.blockType === "textarea") {
-    return (
-      <textarea
-        aria-label={ariaLabel}
-        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none min-h-[64px]"
-        placeholder={column.placeholder}
-        value={strVal}
-        onChange={e => onChange(e.target.value)}
-      />
-    )
-  }
-
-  if (column.blockType === "date") {
-    return (
-      <input
-        type="date"
-        aria-label={ariaLabel}
-        className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-        value={strVal}
-        onChange={e => onChange(e.target.value)}
-      />
-    )
-  }
-
-  if (column.blockType === "link") {
-    return (
-      <input
-        type="url"
-        aria-label={ariaLabel}
-        className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-        placeholder={column.placeholder ?? "https://..."}
-        value={strVal}
-        onChange={e => onChange(e.target.value)}
-      />
-    )
-  }
-
-  if (column.blockType === "tags") {
-    return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder} ariaLabel={ariaLabel} />
-  }
-
-  if (column.blockType === "checklist") {
-    // FRT-178: 역할 칩 컬럼은 옵션이 상수가 아니라 폼의 '역할 이력'에서 파생된다.
-    // 자유 태그 입력으로 폴백하면 등록되지 않은 역할이 생겨 동기화가 성립하지 않는다.
-    if (column.variant === "role-chip") {
-      return <RoleChips value={arrVal} onChange={onChange} />
-    }
-    const options = column.options ?? []
-    if (options.length === 0) {
-      // Fallback: free-form checklist entries (treated as tags)
-      return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder ?? "항목 입력 후 Enter"} ariaLabel={ariaLabel} />
-    }
-    return (
-      <div className="flex flex-wrap gap-x-3 gap-y-1">
-        {options.map(opt => {
-          const checked = arrVal.includes(opt)
-          return (
-            <label key={opt} className="flex items-center gap-1.5 text-body-sm text-text-primary cursor-pointer">
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() =>
-                  onChange(checked ? arrVal.filter(v => v !== opt) : [...arrVal, opt])
-                }
-                className="rounded border-border text-brand focus:ring-brand"
-              />
-              {opt}
-            </label>
-          )
-        })}
+  // 열 유형을 바꾸면 컨트롤이 못 읽는 값이 셀에 남는다. 두 갈래가 있다 —
+  //  (1) file 에서 바뀐 경우: 배열 갈래는 첨부 객체를 빈 배열로, 스칼라 갈래는 빈 칸으로 접는다.
+  //  (2) 스칼라로 바뀐 경우: month/date 입력은 형식이 어긋난 값을, select 는 옵션에 없는 값을 버린다.
+  // 어느 쪽이든 **값은 남았는데 화면에 없어** 그 위에 입력하면 조용히 덮어쓰인다.
+  // 갈래마다 챙기면 하나씩 빠지므로 스위치 전체를 한 번에 감싼다.
+  const hidden: HiddenCellValue | null =
+    column.blockType !== "file" && isFileCellValue(value)
+      ? { text: cellText(value), note: "값을 입력하면 이 첨부는 지워져요" }
+      : hiddenCellValue(column, strVal)
+  const withHiddenValue = (node: ReactNode) =>
+    hidden ? (
+      <div className="flex flex-col gap-1">
+        {node}
+        <LegacyCellText text={hidden.text} note={hidden.note} />
       </div>
+    ) : (
+      <>{node}</>
+    )
+
+  return withHiddenValue(renderControl())
+
+  function renderControl() {
+
+  switch (column.blockType) {
+    case "file": {
+      // 값이 객체라 위 문자열 정규화를 쓰지 않는다. 타입이 어긋난 값(옛 텍스트 열)은 빈 첨부로
+      // 시작하되, 그 값을 감추지는 않는다 — 안 보이면 업로드로 덮어쓰는 줄도 모른다.
+      const legacy = isFileCellValue(value) ? "" : strVal
+      return (
+        <div className="flex flex-col gap-1">
+          <FileCellInput
+            value={isFileCellValue(value) ? value : undefined}
+            onChange={onChange}
+            ariaLabel={ariaLabel}
+          />
+          {legacy && <LegacyCellText text={legacy} note="파일을 올리면 이 값은 지워져요" />}
+        </div>
+      )
+    }
+
+    case "period":
+      return <PeriodCellInput value={strVal} onChange={onChange} ariaLabel={ariaLabel} />
+
+    case "textarea":
+      return (
+        <textarea
+          aria-label={ariaLabel}
+          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none min-h-[64px]"
+          placeholder={column.placeholder}
+          value={strVal}
+          onChange={e => onChange(e.target.value)}
+        />
+      )
+
+    case "date":
+      return (
+        <input
+          type="date"
+          aria-label={ariaLabel}
+          className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+          value={strVal}
+          onChange={e => onChange(e.target.value)}
+        />
+      )
+
+    case "link":
+      return (
+        <input
+          type="url"
+          aria-label={ariaLabel}
+          className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+          placeholder={column.placeholder ?? "https://..."}
+          value={strVal}
+          onChange={e => onChange(e.target.value)}
+        />
+      )
+
+    case "tags":
+      return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder} ariaLabel={ariaLabel} />
+
+    case "checklist": {
+      // FRT-178: 역할 칩 컬럼은 옵션이 상수가 아니라 폼의 '역할 이력'에서 파생된다.
+      // 자유 태그 입력으로 폴백하면 등록되지 않은 역할이 생겨 동기화가 성립하지 않는다.
+      if (column.variant === "role-chip") {
+        return <RoleChips value={arrVal} onChange={onChange} />
+      }
+      const options = column.options ?? []
+      if (options.length === 0) {
+        // Fallback: free-form checklist entries (treated as tags)
+        return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder ?? "항목 입력 후 Enter"} ariaLabel={ariaLabel} />
+      }
+      return (
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {options.map(opt => {
+            const checked = arrVal.includes(opt)
+            return (
+              <label key={opt} className="flex items-center gap-1.5 text-body-sm text-text-primary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() =>
+                    onChange(checked ? arrVal.filter(v => v !== opt) : [...arrVal, opt])
+                  }
+                  className="rounded border-border text-brand focus:ring-brand"
+                />
+                {opt}
+              </label>
+            )
+          })}
+        </div>
+      )
+    }
+
+    case "single-select": {
+      const options = column.options ?? []
+      return (
+        <select
+          aria-label={ariaLabel}
+          className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
+          value={strVal}
+          onChange={e => onChange(e.target.value)}
+        >
+          <option value="">선택</option>
+          {options.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      )
+    }
+
+    case "text":
+      return (
+        <input
+          type="text"
+          aria-label={ariaLabel}
+          className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+          placeholder={column.placeholder}
+          value={strVal}
+          onChange={e => onChange(e.target.value)}
+        />
+      )
+
+    default: {
+      // 컴파일 가드 — `BlockColumnDef.blockType` 에 새 유형이 생기면 여기서 빌드가 깨진다.
+      // 예전처럼 조용히 텍스트칸이 되는 일이 없도록, 렌더러를 채우는 걸 잊을 수 없게 만든다.
+      const unknownType: never = column.blockType
+      // ⚠️ 컴파일 가드만으로는 부족하다. 저장된 값의 columns 가 템플릿보다 우선 채택되므로
+      // (types/archive.ts 의 injectValue 주석) 타입에 없는 문자열이 런타임에 들어올 수 있다.
+      // 값은 그대로 편집할 수 있게 두되, 무음으로 흡수하지 않고 화면에 드러낸다.
+      console.warn(`CellInput: 알 수 없는 컬럼 유형 "${String(unknownType)}" — 텍스트 입력으로 대체합니다.`)
+      return (
+        <div className="flex flex-col gap-1">
+          <p className="text-caption text-error">
+            아직 지원하지 않는 입력 유형이에요. 입력한 값은 그대로 보관돼요.
+          </p>
+          <input
+            type="text"
+            aria-label={ariaLabel}
+            className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
+            value={strVal}
+            onChange={e => onChange(e.target.value)}
+          />
+        </div>
+      )
+    }
+    }
+  }
+}
+
+/**
+ * 기간 셀 (FRT-213). 값은 블록 층위 `PeriodBlock` 과 같은 **점 구분 문자열** 하나다
+ * (`"2023.03 ~ 2024.01"` · `"2023.03 ~ 현재"`) — 셀은 `string | string[]` 만 담으므로
+ * 객체를 쓸 수 없고, 이 형태가 상세뷰에 그대로 표시되는 최종 문구이기도 하다.
+ *
+ * `PeriodPicker` 를 감싸지 않는다 — 내부 `DatePicker` 가 `h-12` 라 표의 다른 셀(`h-9`)과 높이가
+ * 어긋나고, 월/일 전환 라디오는 표 한 칸에 넣기엔 넓다. 셀은 원시 input 을 직접 쓰는 게
+ * 이 파일의 기존 방식이다(`date` 셀도 `DatePicker` 를 쓰지 않는다). 확정본이 요구하는
+ * month~month 만 다루고, 일 단위가 필요해지면 그때 granularity 를 연다.
+ */
+function PeriodCellInput({
+  value,
+  ariaLabel,
+  onChange,
+}: {
+  value: string
+  ariaLabel?: string
+  onChange: (value: string) => void
+}) {
+  const parsed = parsePeriodString(value)
+  // 일 단위로 저장된 값(다른 경로로 들어온 레거시)도 월 입력에 얹히도록 절삭한다.
+  const start = truncateToMonth(parsed.start)
+  const end = truncateToMonth(parsed.end)
+  const isCurrent = parsed.isCurrent
+
+  function commit(next: Partial<{ start: string; end: string; isCurrent: boolean }>) {
+    const nextCurrent = next.isCurrent ?? isCurrent
+    onChange(
+      formatPeriodString({
+        start: next.start ?? start,
+        // '현재'는 종료일과 공존할 수 없다 — 켜는 순간 종료 값을 비운다.
+        end: nextCurrent ? "" : (next.end ?? end),
+        isCurrent: nextCurrent,
+      }),
     )
   }
 
-  if (column.blockType === "single-select") {
-    const options = column.options ?? []
-    return (
-      <select
-        aria-label={ariaLabel}
-        className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
-        value={strVal}
-        onChange={e => onChange(e.target.value)}
-      >
-        <option value="">선택</option>
-        {options.map(opt => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
-      </select>
-    )
-  }
-
-  // Default: text input
   return (
-    <input
-      type="text"
-      aria-label={ariaLabel}
-      className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-      placeholder={column.placeholder}
-      value={strVal}
-      onChange={e => onChange(e.target.value)}
-    />
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        type="month"
+        aria-label={ariaLabel ? `${ariaLabel} 시작` : "시작"}
+        className="h-9 min-w-0 flex-1 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none"
+        value={start}
+        onChange={e => commit({ start: e.target.value })}
+      />
+      <span className="shrink-0 text-body-sm text-text-tertiary">~</span>
+      <input
+        type="month"
+        aria-label={ariaLabel ? `${ariaLabel} 종료` : "종료"}
+        className="h-9 min-w-0 flex-1 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary focus:border-brand focus:outline-none disabled:bg-surface-secondary disabled:text-text-disabled"
+        value={isCurrent ? "" : end}
+        disabled={isCurrent}
+        onChange={e => commit({ end: e.target.value })}
+      />
+      <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-caption text-text-secondary">
+        <input
+          type="checkbox"
+          checked={isCurrent}
+          onChange={e => commit({ isCurrent: e.target.checked })}
+          // 감싼 <label> 만으로는 어느 기간의 '현재'인지 알 수 없다 — 기간 컬럼이 둘 이상이면
+          // 체크박스가 전부 똑같이 읽힌다. 시작·종료 입력과 같은 방식으로 컬럼 이름을 붙인다.
+          aria-label={ariaLabel ? `${ariaLabel} 현재` : "현재"}
+          className="rounded border-border text-brand focus:ring-brand"
+        />
+        현재
+      </label>
+    </div>
   )
 }
 

@@ -23,6 +23,7 @@ import {
   cloneBlocks,
   createEmptyRow,
   createGroupBlock,
+  cellText,
   isBlockEmpty,
   mapRoleTags,
   removeRoleTag,
@@ -305,8 +306,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       const row = found?.value.rows.find(r => r.id === projectRowId)
       if (!row) return null
       // 쓰기와 같은 컬럼에서 읽는다(첫 컬럼이 아니라) — createProjectRow 와 대칭.
-      const cell = row.cells[titleColumnKey]
-      const title = Array.isArray(cell) ? cell.join(", ") : (cell ?? "")
+      const title = cellText(row.cells[titleColumnKey])
       return { title }
     },
     scrollToProjectRow(projectRowId) {

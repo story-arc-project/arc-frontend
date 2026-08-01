@@ -38,5 +38,18 @@ export const analysisRetryHandlers = [
   ),
 ];
 
+// 첨부를 가진 파일 UI(`FileBlock`·`FileCellInput`)는 마운트 즉시 presigned URL을 조회한다.
+// 핸들러가 없으면 미처리 요청이 console.error로 표면화돼 `--failOnConsole` 게이트에 걸리므로,
+// 지금까지 스토리가 `fileId` 없는 상태만 보여줄 수 있었다. 여기서 막아 첨부된 상태도 찍는다.
+// 실계약(`pickUrl`)대로 `data`가 presigned URL 문자열 그 자체다.
+export const fileHandlers = [
+  http.get("*/files/:id/download", ({ params }) =>
+    HttpResponse.json({
+      status: "success",
+      data: `https://files.example.com/${params.id}`,
+    }),
+  ),
+];
+
 /** preview에 등록되는 전역 기본 핸들러. 새 API 호출 컴포넌트는 여기에 핸들러를 추가하면 된다. */
-export const defaultHandlers = [...bookmarkHandlers, ...analysisRetryHandlers];
+export const defaultHandlers = [...bookmarkHandlers, ...analysisRetryHandlers, ...fileHandlers];

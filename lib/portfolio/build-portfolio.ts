@@ -3,7 +3,7 @@ import type { Experience } from "@/types/experience";
 import type { Portfolio, PortfolioPost, PortfolioProfile } from "@/types/portfolio";
 import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2";
 import { toExperienceV2 } from "@/lib/utils/experience-mapper";
-import { isBlockEmpty } from "@/lib/utils/block-utils";
+import { cellText, isBlockEmpty } from "@/lib/utils/block-utils";
 import { equivalentLabels } from "@/lib/utils/form-cards";
 
 function findBlock(blocks: Block[] | undefined, label: string): Block | undefined {
@@ -32,7 +32,7 @@ function flattenRepeatable(value: BlockValue): string {
     .map((row) =>
       value.columns
         .map((c) => row.cells[c.key])
-        .map((v) => (Array.isArray(v) ? v.join(", ") : (v ?? "")).trim())
+        .map((v) => cellText(v).trim())
         .filter(Boolean)
         .join(" · "),
     )

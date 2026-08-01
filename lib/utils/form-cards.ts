@@ -1,6 +1,7 @@
-import type { Block, SectionCategory } from "@/types/archive"
+import type { Block, BlockColumnDef, CellValue, SectionCategory } from "@/types/archive"
 import { SECTION_CATEGORIES } from "@/types/archive"
-import { cellFilled, isBlockEmpty, rowHasContent } from "@/lib/utils/block-utils"
+import { cellFilled, cellText, isBlockEmpty, rowHasContent } from "@/lib/utils/block-utils"
+import { isRealMonth, parsePeriodString, truncateToMonth } from "@/lib/utils/period-format"
 
 // 같은 그룹의 라벨은 같은 질문으로 간주 — core/type/extended 간 중복 필드를 숨긴다.
 const SEMANTIC_GROUPS: Record<string, string[]> = {
@@ -134,6 +135,25 @@ export function computeFormCards(
  * 빈 행(방금 추가한 blank row)을 완료로 오판하지 않도록 필수 컬럼(없으면 아무 셀)이
  * 실제로 채워진 행이 하나라도 있는지까지 본다.
  */
+/**
+ * 진행도 판정용 셀 "채워짐" — `cellFilled` 과 달리 열 유형까지 본다.
+ *
+ * 기간 셀은 종료를 먼저 고르면 시작이 빈 채로(`" ~ 2024.01"`) 저장된다. 사용자가 방금 고른
+ * 값을 잃지 않으려는 의도된 직렬화지만, 그 부분 입력이 필수 컬럼을 충족한 것으로 잡히면
+ * 진행도가 완료라고 거짓말한다 — 기간은 시작이 있어야 한 기간이다.
+ *
+ * 텍스트 열을 기간으로 바꾼 셀에는 달력에 없는 옛 값(`"자유 형식 메모"`·`"2023.13"`)이 남는데,
+ * 셀은 그걸 못 그려 **빈 칸 + 안내**를 띄운다. 여기서 "있으면 채워짐"으로 세면 화면은 비었는데
+ * 진행도만 완료가 된다 — 셀 렌더러와 같은 기준(`isRealMonth`)을 쓴다.
+ */
+function cellFilledForColumn(column: BlockColumnDef, cell: CellValue | undefined): boolean {
+  if (!cellFilled(cell)) return false
+  if (column.blockType === "period") {
+    return isRealMonth(truncateToMonth(parsePeriodString(cellText(cell)).start))
+  }
+  return true
+}
+
 function isBlockFilledForProgress(block: Block): boolean {
   const v = block.value
   if (v.type === "repeatable-cell") {
@@ -143,10 +163,14 @@ function isBlockFilledForProgress(block: Block): boolean {
       requiredCols.length > 0
         ? // 필수 컬럼이 있으면 그 컬럼으로만 판정한다 — 사용자가 추가한 항목(FRT-145)이
           // 필수를 대신 충족하면 진행도가 완료로 오판된다.
-          requiredCols.every(c => cellFilled(row.cells[c.key]))
+          requiredCols.every(c => cellFilledForColumn(c, row.cells[c.key]))
         : rowHasContent(row),
     )
   }
+  // 블록 층위 기간도 셀과 같은 부분 입력을 만든다 — `PeriodBlock` 이 `formatPeriodString` 을
+  // 거치므로 종료를 먼저 고르면 start 가 빈 채로 저장되는데, `isBlockEmpty` 는 start·end 중
+  // 하나만 있어도 '안 비었다'라서 그대로 완료가 된다. 여기서도 시작을 요구한다.
+  if (v.type === "period") return v.start.trim() !== ""
   return !isBlockEmpty(block)
 }
 
