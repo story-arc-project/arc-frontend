@@ -602,4 +602,71 @@ describe("영문 읽기 전용 — 보완 안내", () => {
       screen.queryByText("이 정보를 보완하면 더 좋은 레쥬메를 만들 수 있어요"),
     ).not.toBeInTheDocument();
   });
+
+  // 전부 빈 레쥬메는 상세 화면보다 먼저 EmptyResumeState 로 빠진다 — 그 갈래도 경고를
+  // 지나쳐 간다면 화면이 "경험이 없다"고만 말하고, 실은 못 읽은 것이라는 사실이 사라진다.
+  it("전부 비어도 파싱 경고는 빈 상태 위에 남는다", async () => {
+    mockGetResume.mockResolvedValue({
+      ...enResume(["경력 기간을 해석하지 못했어요"]),
+      인적사항: {
+        이름: null,
+        영문명: null,
+        생년월일: null,
+        이메일: null,
+        전화번호: null,
+        주소: null,
+        링크: [],
+      },
+      자기소개_요약: null,
+    });
+
+    const params = Promise.resolve({ versionId: "v1" });
+    await act(async () => {
+      render(
+        <Suspense fallback={null}>
+          <ResumeDetailPage params={params} />
+        </Suspense>,
+      );
+    });
+
+    await screen.findByText("기록된 경험이 아직 없어요");
+    expect(
+      screen.getByText("경력 기간을 해석하지 못했어요"),
+    ).toBeInTheDocument();
+    // 읽기 전용에는 편집기가 없다 — 편집을 약속하는 버튼을 두면 안 된다.
+    expect(
+      screen.queryByRole("button", { name: "빈 레쥬메 편집하기" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("국문은 빈 레쥬메라도 편집으로 들어갈 수 있다", async () => {
+    // 위 갈래를 막느라 국문의 탈출구까지 닫으면 안 된다.
+    mockGetResume.mockResolvedValue({
+      ...resumeFixture(),
+      인적사항: {
+        이름: null,
+        영문명: null,
+        생년월일: null,
+        이메일: null,
+        전화번호: null,
+        주소: null,
+        링크: [],
+      },
+      자기소개_요약: null,
+    });
+
+    const params = Promise.resolve({ versionId: "v1" });
+    await act(async () => {
+      render(
+        <Suspense fallback={null}>
+          <ResumeDetailPage params={params} />
+        </Suspense>,
+      );
+    });
+
+    await screen.findByText("기록된 경험이 아직 없어요");
+    expect(
+      screen.getByRole("button", { name: "빈 레쥬메 편집하기" }),
+    ).toBeInTheDocument();
+  });
 });

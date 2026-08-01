@@ -278,8 +278,12 @@ function displayControl(raw: Record<string, unknown>): {
   표시?: boolean;
   표시순위?: number | null;
 } {
-  if (raw.display === undefined) return {};
-  return { 표시: bool(raw.display), 표시순위: num(raw.display_rank) };
+  // ⚠️ `undefined` 만 걸러서는 부족하다 — optional 을 `null` 로 직렬화하는 건 흔한 모양이고,
+  // `bool(null)` 은 false 다. 그러면 태그되지 않은 경험이 **명시적으로 뺀 경험**으로 둔갑해
+  // 미리보기·PDF·Word 에서 통째로 사라진다. `visibleExperiences` 의 하위호환 규칙은
+  // "명시적 false 만 숨긴다" 이므로, 값이 **진짜 boolean 일 때만** 태그로 인정한다.
+  if (typeof raw.display !== "boolean") return {};
+  return { 표시: raw.display, 표시순위: num(raw.display_rank) };
 }
 
 // ─── 방어 파싱 ───────────────────────────────────────────────────────

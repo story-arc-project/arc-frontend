@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { mapEnglishResume } from "@/lib/export/resume-en-mapping";
+import { visibleExperiences } from "@/lib/export/resume-visibility";
 
 /** arc-backend `ai_analyst/src/ai/resume.py` 의 `_SYS_EN` 스키마 그대로. */
 function enPayload(overrides: Record<string, unknown> = {}) {
@@ -189,6 +190,22 @@ describe("mapEnglishResume", () => {
     expect(mapped?.경력[0].표시).toBe(false);
     expect(mapped?.프로젝트[0].표시).toBe(true);
     expect(mapped?.프로젝트[0].표시순위).toBe(2);
+  });
+
+  it("display 가 null 이면 태그되지 않은 것으로 둔다 — false 로 바꾸면 경험이 사라진다", () => {
+    // optional 을 null 로 직렬화하는 건 흔한 모양이다. 이걸 false 로 읽으면 "명시적으로
+    // 뺀 경험"이 되어 미리보기·PDF·Word 에서 통째로 없어진다(표시 규칙은 명시적 false 만
+    // 숨긴다). 태그가 없어야 `visibleExperiences` 의 하위호환 분기를 타 전부 그려진다.
+    const payload = enPayload();
+    const mapped = mapEnglishResume({
+      ...payload,
+      work_experience: [
+        { ...payload.work_experience[0], display: null, display_rank: null },
+      ],
+    });
+
+    expect(mapped?.경력[0]).not.toHaveProperty("표시");
+    expect(visibleExperiences(mapped?.경력)).toHaveLength(1);
   });
 
   it("동아리_학회는 빈 배열이다 — 영문은 activities 로 흡수된다", () => {

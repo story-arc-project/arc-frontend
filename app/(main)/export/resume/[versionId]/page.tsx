@@ -436,7 +436,24 @@ export default function ResumeDetailPage({ params }: PageProps) {
   if (loading) return <ResumeDetailSkeleton />;
 
   if (resume && isFullyEmpty && !continueAnyway && !pendingDraft) {
-    return <EmptyResumeState onContinueAnyway={() => setContinueAnyway(true)} />;
+    return (
+      <>
+        {/* 이 화면은 "경험이 없다"고 말하지만, 실제로는 경험이 **있었는데 못 읽은** 것일
+            수 있고 그 사실은 이 배너에만 있다. 여기서 감추면 사용자는 화면 말을 믿고
+            다시 만들어도 같은 결과를 받는다. */}
+        {resume.파싱경고.length > 0 && (
+          <div className="mx-auto w-full max-w-xl px-6 pt-6">
+            <ParsingWarningsBanner warnings={resume.파싱경고} />
+          </div>
+        )}
+        {/* 읽기 전용에서는 '빈 레쥬메 편집하기'가 할 수 없는 일을 약속한다(편집기가 없다). */}
+        <EmptyResumeState
+          onContinueAnyway={
+            readOnly ? undefined : () => setContinueAnyway(true)
+          }
+        />
+      </>
+    );
   }
 
   if (error || !resume) {
