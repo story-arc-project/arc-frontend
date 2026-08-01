@@ -53,9 +53,12 @@ export function formatPeriodString(opts: {
   isCurrent: boolean
 }): string {
   const start = dashToDot(opts.start)
-  if (!start) return ""
   const end = opts.isCurrent ? CURRENT : dashToDot(opts.end)
-  return opts.isCurrent || opts.end ? `${start}${SEP}${end}` : start
+  // start 가 비어도 end(또는 '현재')가 있으면 버리지 않는다 — 종료를 먼저 고르거나
+  // 시작을 지우는 순서에서 방금 입력한 값이 조용히 사라지는 걸 막는다(FRT-213 리뷰 발견).
+  if (!start && !end) return ""
+  if (!opts.isCurrent && !opts.end) return start
+  return `${start}${SEP}${end}`
 }
 
 /** 일 단위 입력값을 월 단위로 절삭. "2023-03-15" → "2023-03". */
