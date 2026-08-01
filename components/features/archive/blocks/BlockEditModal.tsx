@@ -195,6 +195,9 @@ export default function BlockEditModal({
                     <option value="text">짧은 텍스트</option>
                     <option value="textarea">긴 텍스트</option>
                     <option value="date">날짜</option>
+                    {/* 기간·파일은 셀 렌더러가 생기면서 열렸다(FRT-213). 선택지에 없으면 앱에서 만들 길이 없다. */}
+                    <option value="period">기간</option>
+                    <option value="file">파일</option>
                     <option value="link">링크</option>
                     <option value="tags">태그</option>
                   </select>

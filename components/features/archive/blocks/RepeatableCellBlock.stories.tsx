@@ -272,13 +272,20 @@ const fileBlock: Block = {
   },
 }
 
-/** 파일 셀은 빈 텍스트칸이 아니라 첨부 카드/선택 버튼으로 뜬다. */
+/**
+ * 파일 셀은 빈 텍스트칸이 아니라 첨부 카드/선택 버튼으로 뜬다.
+ *
+ * 다운로드 링크까지 단언하는 건 첨부 셀이 마운트 즉시 부르는 `GET /files/{id}/download` 가
+ * 실제로 모킹됐는지를 결정적으로 잡기 위해서다 — 미처리 요청은 `console.error` 경합에만
+ * 걸려 조용히 통과할 수 있다(`lib/mocks/handlers.ts` 의 `fileHandlers`).
+ */
 export const FileColumn: Story = {
   args: { block: fileBlock },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText("발표자료.pdf")).toBeInTheDocument()
     await expect(canvas.getByRole("button", { name: "첨부 삭제" })).toBeInTheDocument()
+    await expect(await canvas.findByRole("link", { name: /다운로드/ })).toBeInTheDocument()
   },
 }
 
@@ -289,6 +296,7 @@ export const FileColumnReadOnly: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText("발표자료.pdf")).toBeInTheDocument()
     await expect(canvas.queryByRole("button", { name: "첨부 삭제" })).not.toBeInTheDocument()
+    await expect(await canvas.findByRole("link", { name: /다운로드/ })).toBeInTheDocument()
   },
 }
 

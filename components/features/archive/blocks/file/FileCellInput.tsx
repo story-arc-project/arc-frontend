@@ -32,6 +32,9 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
   const { state, progress, error, start, reset } = useFileUpload()
   const inputRef = useRef<HTMLInputElement>(null)
   const [fetched, setFetched] = useState<{ id: string; url: string } | null>(null)
+  const [urlFailed, setUrlFailed] = useState(false)
+  // 링크 조회 재시도용 — 값(fileId)이 그대로라 이 값이 바뀌어야 effect 가 다시 돈다.
+  const [urlAttempt, setUrlAttempt] = useState(0)
 
   // 언마운트 뒤 완료된 업로드가 사라진 셀에 onChange 를 때리지 않게 한다(FileBlock 과 같은 이유).
   const mountedRef = useRef(true)
@@ -49,16 +52,21 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
     let cancelled = false
     getFileUrl(id)
       .then(info => {
-        if (!cancelled) setFetched({ id, url: info.url })
+        if (cancelled) return
+        setFetched({ id, url: info.url })
+        setUrlFailed(false)
       })
       .catch(() => {
-        // 다운로드 링크만 못 붙는다 — 파일명·크기는 셀 값에 있으므로 카드 자체는 그대로 보인다.
-        if (!cancelled) setFetched(null)
+        // 파일명·크기는 셀 값에 있어 카드는 그대로 보이지만 다운로드 수단이 사라진다.
+        // 조용히 삼키면 화면을 다시 열기 전엔 손쓸 방법이 없으므로 알리고 재시도를 연다.
+        if (cancelled) return
+        setFetched(null)
+        setUrlFailed(true)
       })
     return () => {
       cancelled = true
     }
-  }, [val.fileId])
+  }, [val.fileId, urlAttempt])
 
   const resolvedUrl = fetched && fetched.id === val.fileId ? fetched.url : undefined
   const hasUploaded = Boolean(val.fileId)
@@ -77,32 +85,57 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
       size: uploaded.size,
     })
     setFetched(uploaded.url && uploaded.id ? { id: uploaded.id, url: uploaded.url } : null)
+    setUrlFailed(false)
   }
 
   function handleDelete() {
     // 원격 삭제는 하지 않는다 — 폼을 취소했을 때 원본이 먼저 사라지면 복구할 수 없다.
     onChange(EMPTY_FILE_CELL)
     setFetched(null)
+    setUrlFailed(false)
     reset()
   }
 
+  const urlFailNotice = urlFailed ? (
+    <p className="text-caption text-error">
+      다운로드 링크를 못 받았어요.{" "}
+      <button
+        type="button"
+        onClick={() => setUrlAttempt(n => n + 1)}
+        aria-label="다운로드 링크 다시 시도"
+        className="underline"
+      >
+        다시 시도
+      </button>
+    </p>
+  ) : null
+
   if (readOnly) {
     if (!hasUploaded) return <span className="text-body-sm text-text-disabled">—</span>
-    return <GenericFileCard name={val.fileName} size={val.size} url={resolvedUrl} />
+    return (
+      <div className="flex flex-col gap-1">
+        <GenericFileCard name={val.fileName} size={val.size} url={resolvedUrl} />
+        {urlFailNotice}
+      </div>
+    )
   }
 
   if (hasUploaded) {
     return (
-      <GenericFileCard
-        name={val.fileName}
-        size={val.size}
-        url={resolvedUrl}
-        onDelete={handleDelete}
-      />
+      <div className="flex flex-col gap-1">
+        <GenericFileCard
+          name={val.fileName}
+          size={val.size}
+          url={resolvedUrl}
+          onDelete={handleDelete}
+        />
+        {urlFailNotice}
+      </div>
     )
   }
 
   const maxMb = Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))
+  const buttonLabel = state === "uploading" ? `업로드 중 ${progress}%` : `파일 선택 (최대 ${maxMb}MB)`
 
   return (
     <div className="flex flex-col gap-1">
@@ -118,14 +151,19 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
           if (file) void handleSelect(file)
         }}
       />
+      {/*
+        접근성 이름은 보이는 버튼에 붙인다 — 숨긴 input 은 접근성 트리에 없어서
+        파일 컬럼이 여러 개면 전부 '파일 선택'으로만 읽히고 어느 칸인지 알 수 없다.
+      */}
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={state === "uploading"}
+        aria-label={ariaLabel ? `${ariaLabel} ${buttonLabel}` : undefined}
         className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-surface px-3 text-body-sm text-text-secondary transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
       >
         <Paperclip size={14} />
-        {state === "uploading" ? `업로드 중 ${progress}%` : `파일 선택 (최대 ${maxMb}MB)`}
+        {buttonLabel}
       </button>
       {error && (
         <p role="alert" className="text-caption text-error">
