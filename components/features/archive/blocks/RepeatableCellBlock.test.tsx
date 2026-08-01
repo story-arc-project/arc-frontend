@@ -518,6 +518,44 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     expect(screen.getByText(/발표자료\.pdf/)).toBeInTheDocument()
   })
 
+  // 스칼라 컨트롤은 자기가 못 읽는 값을 **빈 칸으로** 그린다(month/date 입력은 형식이
+  // 어긋난 값을 브라우저가 버리고, select 는 옵션에 없는 값을 고르지 못한다).
+  // 값은 셀에 남아 있는데 화면에 없으니, 그 위에 입력하면 조용히 덮어쓰인다.
+  it.each([
+    ["period" as const, "자유 형식 메모", undefined],
+    ["date" as const, "작년 봄쯤", undefined],
+    ["single-select" as const, "없는 값", ["A", "B"]],
+  ])("%s 컬럼이 못 읽는 옛 값도 화면에 남는다", (blockType, stored, options) => {
+    const columns = [{ key: "c", label: "칸", blockType, ...(options ? { options } : {}) }]
+    render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: stored } }])} />)
+
+    expect(screen.getByText(new RegExp(stored))).toBeInTheDocument()
+  })
+
+  it("tags 로 저장된 배열이 period 컬럼에 남아도 화면에서 사라지지 않는다", () => {
+    const columns = [{ key: "period", label: "기간", blockType: "period" as const }]
+    render(
+      <Harness
+        block={makeBlockWithColumns(columns, [{ id: "r1", cells: { period: ["설계", "개발"] } }])}
+      />,
+    )
+
+    expect(screen.getByText(/설계, 개발/)).toBeInTheDocument()
+  })
+
+  // 위양성 가드 — 정상적으로 읽히는 값에까지 안내가 붙으면 표가 경고로 뒤덮인다.
+  it.each([
+    ["period" as const, "2023.03 ~ 2024.01"],
+    ["period" as const, "2023.03 ~ 현재"],
+    ["period" as const, "2023.03"],
+    ["date" as const, "2023-03-15"],
+  ])("%s 컬럼이 읽을 수 있는 값에는 안내를 붙이지 않는다", (blockType, stored) => {
+    const columns = [{ key: "c", label: "칸", blockType }]
+    render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: stored } }])} />)
+
+    expect(screen.queryByText(/이전 값/)).toBeNull()
+  })
+
   it("조회 화면에서도 file 컬럼의 옛 텍스트가 사라지지 않는다", () => {
     const columns = [{ key: "out", label: "결과물", blockType: "file" as const }]
     render(

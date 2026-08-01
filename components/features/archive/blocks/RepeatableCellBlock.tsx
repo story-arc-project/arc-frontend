@@ -586,6 +586,34 @@ function isSupportedCellType(blockType: string): blockType is BlockColumnDef["bl
  * 열 유형이 바뀌어 남은 옛 값. 감추면 사용자는 그 값을 덮어쓰는 줄도 모른 채 잃는다.
  * (파일 셀은 객체만 읽으므로 문자열 값이 화면에서 통째로 사라진다.)
  */
+const MONTH_TOKEN = /^\d{4}-\d{2}$/
+const DAY_TOKEN = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * 컨트롤이 **화면에 못 그리는** 값을 돌려준다(그릴 수 있으면 빈 문자열).
+ *
+ * 스칼라 입력은 자기 형식에 안 맞는 값을 조용히 버린다 — `type="month"`/`type="date"` 는
+ * 브라우저가 값을 무효로 보고 빈 칸을 그리고, `select` 는 옵션에 없는 값을 고르지 못한다.
+ * 셀에는 값이 그대로 남아 있는데 화면에는 없으니, 사용자는 그 위에 입력해 덮어쓰는 줄도 모른다.
+ * 열 유형을 바꾸면(text·tags → period 등) 어느 방향으로든 생기는 상태다.
+ */
+function undisplayableText(column: BlockColumnDef, text: string): string {
+  if (!text.trim()) return ""
+  switch (column.blockType) {
+    case "period": {
+      const parsed = parsePeriodString(text)
+      const readable = (token: string) => token === "" || MONTH_TOKEN.test(truncateToMonth(token))
+      return readable(parsed.start) && readable(parsed.end) ? "" : text
+    }
+    case "date":
+      return DAY_TOKEN.test(text) ? "" : text
+    case "single-select":
+      return (column.options ?? []).includes(text) ? "" : text
+    default:
+      return ""
+  }
+}
+
 function LegacyCellText({ text, note }: { text: string; note?: string }) {
   return (
     <p className="text-caption text-text-tertiary">
@@ -616,21 +644,25 @@ function CellInput({
       ? value.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
       : []
 
-  // 열 유형이 file 에서 바뀌면 어느 갈래든 첨부 객체를 못 담는다 — 배열 갈래는 빈 배열로,
-  // date·period·single-select 는 읽지 못해 빈 칸으로 접히고, 그 위에 값을 넣는 순간 조용히
-  // 대체된다. 갈래마다 챙기면 하나씩 빠지므로 스위치 전체를 한 번에 감싼다.
+  // 열 유형을 바꾸면 컨트롤이 못 읽는 값이 셀에 남는다. 두 갈래가 있다 —
+  //  (1) file 에서 바뀐 경우: 배열 갈래는 첨부 객체를 빈 배열로, 스칼라 갈래는 빈 칸으로 접는다.
+  //  (2) 스칼라로 바뀐 경우: month/date 입력은 형식이 어긋난 값을, select 는 옵션에 없는 값을 버린다.
+  // 어느 쪽이든 **값은 남았는데 화면에 없어** 그 위에 입력하면 조용히 덮어쓰인다.
+  // 갈래마다 챙기면 하나씩 빠지므로 스위치 전체를 한 번에 감싼다.
   const droppedFile = column.blockType !== "file" && isFileCellValue(value) ? cellText(value) : ""
-  const withDroppedFile = (node: ReactNode) =>
-    droppedFile ? (
+  const hiddenText = droppedFile || undisplayableText(column, strVal)
+  const hiddenNote = droppedFile ? "값을 입력하면 이 첨부는 지워져요" : "값을 입력하면 이 값은 지워져요"
+  const withHiddenValue = (node: ReactNode) =>
+    hiddenText ? (
       <div className="flex flex-col gap-1">
         {node}
-        <LegacyCellText text={droppedFile} note="값을 입력하면 이 첨부는 지워져요" />
+        <LegacyCellText text={hiddenText} note={hiddenNote} />
       </div>
     ) : (
       <>{node}</>
     )
 
-  return withDroppedFile(renderControl())
+  return withHiddenValue(renderControl())
 
   function renderControl() {
 
