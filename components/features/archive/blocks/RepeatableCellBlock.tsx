@@ -616,9 +616,10 @@ function CellInput({
       ? value.split(/[,\n]/).map(s => s.trim()).filter(Boolean)
       : []
 
-  // 배열 정규화는 파일 객체를 빈 배열로 접는다 — 첨부가 남은 채 열이 tags·checklist 로 바뀌면
-  // 화면에서 통째로 사라지고, 항목을 하나 넣는 순간 조용히 덮어써진다. 파일명을 함께 남긴다.
-  const droppedFile = isFileCellValue(value) ? cellText(value) : ""
+  // 열 유형이 file 에서 바뀌면 어느 갈래든 첨부 객체를 못 담는다 — 배열 갈래는 빈 배열로,
+  // date·period·single-select 는 읽지 못해 빈 칸으로 접히고, 그 위에 값을 넣는 순간 조용히
+  // 대체된다. 갈래마다 챙기면 하나씩 빠지므로 스위치 전체를 한 번에 감싼다.
+  const droppedFile = column.blockType !== "file" && isFileCellValue(value) ? cellText(value) : ""
   const withDroppedFile = (node: ReactNode) =>
     droppedFile ? (
       <div className="flex flex-col gap-1">
@@ -628,6 +629,10 @@ function CellInput({
     ) : (
       <>{node}</>
     )
+
+  return withDroppedFile(renderControl())
+
+  function renderControl() {
 
   switch (column.blockType) {
     case "file": {
@@ -684,24 +689,20 @@ function CellInput({
       )
 
     case "tags":
-      return withDroppedFile(
-        <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder} ariaLabel={ariaLabel} />,
-      )
+      return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder} ariaLabel={ariaLabel} />
 
     case "checklist": {
       // FRT-178: 역할 칩 컬럼은 옵션이 상수가 아니라 폼의 '역할 이력'에서 파생된다.
       // 자유 태그 입력으로 폴백하면 등록되지 않은 역할이 생겨 동기화가 성립하지 않는다.
       if (column.variant === "role-chip") {
-        return withDroppedFile(<RoleChips value={arrVal} onChange={onChange} />)
+        return <RoleChips value={arrVal} onChange={onChange} />
       }
       const options = column.options ?? []
       if (options.length === 0) {
         // Fallback: free-form checklist entries (treated as tags)
-        return withDroppedFile(
-          <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder ?? "항목 입력 후 Enter"} ariaLabel={ariaLabel} />,
-        )
+        return <TagsCellInput value={arrVal} onChange={onChange} placeholder={column.placeholder ?? "항목 입력 후 Enter"} ariaLabel={ariaLabel} />
       }
-      return withDroppedFile(
+      return (
         <div className="flex flex-wrap gap-x-3 gap-y-1">
           {options.map(opt => {
             const checked = arrVal.includes(opt)
@@ -719,7 +720,7 @@ function CellInput({
               </label>
             )
           })}
-        </div>,
+        </div>
       )
     }
 
@@ -774,6 +775,7 @@ function CellInput({
           />
         </div>
       )
+    }
     }
   }
 }

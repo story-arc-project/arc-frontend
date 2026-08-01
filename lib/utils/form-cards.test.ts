@@ -268,6 +268,26 @@ describe("isCardComplete / computeFormProgress", () => {
     expect(isCardComplete(repeat)).toBe(true)
   })
 
+  // 블록 층위 기간도 같은 부분 입력을 만든다 — `PeriodBlock` 이 `formatPeriodString` 을 거치므로
+  // 종료만 고르면 start 가 빈 값으로 저장되고, `isBlockEmpty` 는 둘 중 하나만 있어도 '안 비었다'다.
+  it("블록 층위 기간도 시작 없이 종료만 있으면 완료로 치지 않는다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const basic = r.cards.find(c => c.category === "basic")!
+    fillBlock(basic, "학회명", "한국인공지능학회")
+    fillBlock(basic, "역할/직책", "부회장")
+    const period = basic.blocks.find(b => b.label === "기간")!
+
+    period.value = { type: "period", start: "", end: "2024-12", isCurrent: false }
+    expect(isCardComplete(basic)).toBe(false)
+
+    period.value = { type: "period", start: "", end: "", isCurrent: true }
+    expect(isCardComplete(basic)).toBe(false)
+
+    period.value = { type: "period", start: "2024-03", end: "", isCurrent: true }
+    expect(isCardComplete(basic)).toBe(true)
+  })
+
   it("필수 없는 섹션(detail)은 하나라도 채우면 완료", () => {
     const { core, sections } = sectionsFor("academic-society")
     const r = computeFormCards(core, sections)

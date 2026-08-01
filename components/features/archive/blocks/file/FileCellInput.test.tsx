@@ -11,13 +11,16 @@ vi.mock("@/lib/analytics", () => ({ capture: vi.fn() }))
 const { capture } = await import("@/lib/analytics")
 
 const start = vi.fn<(file: File) => Promise<UploadedFile | null>>()
+const cancel = vi.fn()
+// 업로드 진행 중 화면을 검증하려면 훅 상태를 테스트가 정해야 한다.
+let uploadState: "idle" | "uploading" | "error" = "idle"
 vi.mock("@/hooks/useFileUpload", () => ({
   useFileUpload: () => ({
-    state: "idle" as const,
-    progress: 0,
+    state: uploadState,
+    progress: 42,
     error: null,
     start,
-    cancel: vi.fn(),
+    cancel,
     reset: vi.fn(),
   }),
 }))
@@ -35,6 +38,8 @@ beforeEach(() => {
   vi.mocked(getFileUrl).mockClear()
   vi.mocked(getFileUrl).mockResolvedValue({ url: "https://files.example/dl", expiresAt: undefined })
   start.mockReset()
+  cancel.mockReset()
+  uploadState = "idle"
 })
 
 const uploaded: UploadedFile = {
@@ -114,7 +119,7 @@ describe("FileCellInput (FRT-213)", () => {
 
     expect(screen.getByText("결과보고서.pdf")).toBeInTheDocument()
 
-    await user.click(screen.getByRole("button", { name: "첨부 삭제" }))
+    await user.click(screen.getByRole("button", { name: "결과보고서.pdf 첨부 삭제" }))
     expect(onChange).toHaveBeenCalledWith({ type: "file", fileId: "", fileName: "" })
   })
 
@@ -122,7 +127,7 @@ describe("FileCellInput (FRT-213)", () => {
     render(<FileCellInput value={filled} readOnly onChange={() => {}} />)
 
     expect(screen.getByText("결과보고서.pdf")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "첨부 삭제" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /첨부 삭제/ })).toBeNull()
   })
 
   it("조회 화면에서 첨부가 없으면 빈 자리를 표시한다", () => {
@@ -208,6 +213,27 @@ describe("FileCellInput (FRT-213)", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // 표에 첨부가 여러 개면 카드마다 '다운로드'·'첨부 삭제'로만 읽혀 어느 파일에 대한
+  // 동작인지 알 수 없다. 파일명은 옆의 별개 텍스트라 동작과 연결되지 않는다.
+  it("첨부 동작의 접근성 이름에 파일명이 들어간다", async () => {
+    render(<FileCellInput value={filled} onChange={() => {}} />)
+
+    expect(await screen.findByRole("link", { name: "결과보고서.pdf 다운로드" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "결과보고서.pdf 첨부 삭제" })).toBeInTheDocument()
+  })
+
+  // 업로드가 멈추면 셀의 유일한 버튼이 잠긴 채 손쓸 방법이 없다 — XHR 에 타임아웃도 없다.
+  // 훅은 이미 cancel 을 내주고 블록 층위 FileBlock 에는 취소 버튼이 있다.
+  it("업로드 중에는 취소할 수 있다", async () => {
+    const user = userEvent.setup()
+    uploadState = "uploading"
+    render(<FileCellInput value={undefined} onChange={() => {}} />)
+
+    await user.click(screen.getByRole("button", { name: "업로드 취소" }))
+
+    expect(cancel).toHaveBeenCalledTimes(1)
   })
 
   it("첨부가 없으면 갱신도 걸지 않는다 — 빈 셀이 네트워크를 두드리지 않는다", async () => {

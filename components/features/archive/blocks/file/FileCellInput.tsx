@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Paperclip } from "lucide-react"
+import { Paperclip, X } from "lucide-react"
 
 import { capture } from "@/lib/analytics"
 import { getFileUrl, MAX_FILE_SIZE_BYTES } from "@/lib/api/files-api"
@@ -51,7 +51,7 @@ function refreshDelayMs(expiresAt: string | undefined): number {
  */
 export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: FileCellInputProps) {
   const val = value ?? EMPTY_FILE_CELL
-  const { state, progress, error, start, reset } = useFileUpload()
+  const { state, progress, error, start, cancel, reset } = useFileUpload()
   const inputRef = useRef<HTMLInputElement>(null)
   const [fetched, setFetched] = useState<{ id: string; url: string } | null>(null)
   const [urlFailed, setUrlFailed] = useState(false)
@@ -189,16 +189,32 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
         접근성 이름은 보이는 버튼에 붙인다 — 숨긴 input 은 접근성 트리에 없어서
         파일 컬럼이 여러 개면 전부 '파일 선택'으로만 읽히고 어느 칸인지 알 수 없다.
       */}
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={state === "uploading"}
-        aria-label={ariaLabel ? `${ariaLabel} ${buttonLabel}` : undefined}
-        className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-surface px-3 text-body-sm text-text-secondary transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        <Paperclip size={14} />
-        {buttonLabel}
-      </button>
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={state === "uploading"}
+          aria-label={ariaLabel ? `${ariaLabel} ${buttonLabel}` : undefined}
+          className="inline-flex h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-md border border-dashed border-border bg-surface px-3 text-body-sm text-text-secondary transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Paperclip size={14} />
+          {buttonLabel}
+        </button>
+        {/*
+          업로드가 멈추면 위 버튼이 잠긴 채 손쓸 방법이 없다(XHR 에 타임아웃도 없다).
+          블록 층위 `FileBlock` 과 같은 취소를 셀에도 둔다.
+        */}
+        {state === "uploading" && (
+          <button
+            type="button"
+            onClick={cancel}
+            aria-label="업로드 취소"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm text-text-tertiary transition-colors hover:bg-surface-tertiary hover:text-text-primary"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
       {error && (
         <p role="alert" className="text-caption text-error">
           {error}

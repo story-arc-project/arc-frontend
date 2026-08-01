@@ -285,7 +285,7 @@ export const FileColumn: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText("발표자료.pdf")).toBeInTheDocument()
-    await expect(canvas.getByRole("button", { name: "첨부 삭제" })).toBeInTheDocument()
+    await expect(canvas.getByRole("button", { name: "발표자료.pdf 첨부 삭제" })).toBeInTheDocument()
     await expect(await canvas.findByRole("link", { name: /다운로드/ })).toBeInTheDocument()
   },
 }
@@ -296,7 +296,7 @@ export const FileColumnReadOnly: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText("발표자료.pdf")).toBeInTheDocument()
-    await expect(canvas.queryByRole("button", { name: "첨부 삭제" })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole("button", { name: /첨부 삭제/ })).not.toBeInTheDocument()
     await expect(await canvas.findByRole("link", { name: /다운로드/ })).toBeInTheDocument()
   },
 }

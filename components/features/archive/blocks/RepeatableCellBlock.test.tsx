@@ -498,6 +498,26 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     expect(screen.getByText(/발표자료\.pdf/)).toBeInTheDocument()
   })
 
+  // 스칼라 갈래도 마찬가지다 — date·period·single-select 는 파일명을 값으로 못 읽어
+  // 입력칸이 비어 보이고, 그 위에 값을 넣으면 첨부가 조용히 대체된다.
+  it.each([
+    ["date" as const],
+    ["period" as const],
+    ["single-select" as const],
+    ["text" as const],
+  ])("첨부가 남은 채 %s 로 바뀌어도 파일명이 보인다", blockType => {
+    const columns = [{ key: "out", label: "결과물", blockType }]
+    render(
+      <Harness
+        block={makeBlockWithColumns(columns, [
+          { id: "r1", cells: { out: { type: "file", fileId: "f1", fileName: "발표자료.pdf" } } },
+        ])}
+      />,
+    )
+
+    expect(screen.getByText(/발표자료\.pdf/)).toBeInTheDocument()
+  })
+
   it("조회 화면에서도 file 컬럼의 옛 텍스트가 사라지지 않는다", () => {
     const columns = [{ key: "out", label: "결과물", blockType: "file" as const }]
     render(
