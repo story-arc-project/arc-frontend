@@ -24,14 +24,21 @@ const EMPTY_FILE_CELL: FileCellValue = { type: "file", fileId: "", fileName: "" 
 const URL_REFRESH_MARGIN_MS = 60_000
 /** 이미 만료가 임박한 링크로 재조회가 몰아치지 않게 두는 최소 간격. */
 const URL_REFRESH_MIN_MS = 30_000
-
 /**
- * 다음 재조회까지 남은 시간. 서버가 만료 시각을 안 주면 `null` — 그때는 예전처럼 한 번만 받는다.
+ * 만료 시각을 못 받았을 때 쓰는 기본 주기.
+ *
+ * 이쪽이 **주경로**다 — 실계약(`pickUrl` 주석)상 `GET /files/{id}/download` 의 `data` 는
+ * presigned URL 문자열 그 자체라 만료 시각이 딸려오지 않는다. 만료 시각이 있을 때만
+ * 갱신하면 프로덕션에서는 한 번도 갱신되지 않고, 오래 열어둔 화면의 다운로드가 죽는다.
+ * 서버 TTL 을 모르므로 흔한 최소값(5~15분)보다 짧게 잡는다.
  */
-function refreshDelayMs(expiresAt: string | undefined): number | null {
-  if (!expiresAt) return null
+const URL_REFRESH_FALLBACK_MS = 5 * 60_000
+
+/** 다음 재조회까지 남은 시간. 서버가 만료 시각을 주면 그에 맞추고, 아니면 기본 주기를 쓴다. */
+function refreshDelayMs(expiresAt: string | undefined): number {
+  if (!expiresAt) return URL_REFRESH_FALLBACK_MS
   const at = Date.parse(expiresAt)
-  if (Number.isNaN(at)) return null
+  if (Number.isNaN(at)) return URL_REFRESH_FALLBACK_MS
   return Math.max(at - Date.now() - URL_REFRESH_MARGIN_MS, URL_REFRESH_MIN_MS)
 }
 
@@ -80,8 +87,7 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
         setUrlFailed(false)
         // 입력 폼은 오래 열어두는 화면이라 한 번 받고 말면 카드의 다운로드가 조용히 죽는다
         // (조회 자체는 성공했으니 실패 안내도 안 뜬다). 만료 전에 스스로 다시 받는다.
-        const delay = refreshDelayMs(info.expiresAt)
-        if (delay !== null) timer = setTimeout(() => setUrlAttempt(n => n + 1), delay)
+        timer = setTimeout(() => setUrlAttempt(n => n + 1), refreshDelayMs(info.expiresAt))
       })
       .catch(() => {
         // 파일명·크기는 셀 값에 있어 카드는 그대로 보이지만 다운로드 수단이 사라진다.

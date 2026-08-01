@@ -468,6 +468,36 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     expect(screen.getByText(/발표자료 링크/)).toBeInTheDocument()
   })
 
+  // 반대 방향도 같다 — file 로 올린 첨부가 남은 채 열을 tags/checklist 로 바꾸면
+  // 배열 정규화가 객체를 빈 배열로 접어버려 첨부가 화면에서 사라진다(태그를 하나 넣으면 덮어쓴다).
+  it("첨부가 남은 채 tags 로 바뀌어도 파일명이 보인다", () => {
+    const columns = [{ key: "out", label: "결과물", blockType: "tags" as const }]
+    render(
+      <Harness
+        block={makeBlockWithColumns(columns, [
+          { id: "r1", cells: { out: { type: "file", fileId: "f1", fileName: "발표자료.pdf" } } },
+        ])}
+      />,
+    )
+
+    expect(screen.getByText(/발표자료\.pdf/)).toBeInTheDocument()
+  })
+
+  it("첨부가 남은 채 checklist 로 바뀌어도 파일명이 보인다", () => {
+    const columns = [
+      { key: "out", label: "결과물", blockType: "checklist" as const, options: ["A", "B"] },
+    ]
+    render(
+      <Harness
+        block={makeBlockWithColumns(columns, [
+          { id: "r1", cells: { out: { type: "file", fileId: "f1", fileName: "발표자료.pdf" } } },
+        ])}
+      />,
+    )
+
+    expect(screen.getByText(/발표자료\.pdf/)).toBeInTheDocument()
+  })
+
   it("조회 화면에서도 file 컬럼의 옛 텍스트가 사라지지 않는다", () => {
     const columns = [{ key: "out", label: "결과물", blockType: "file" as const }]
     render(

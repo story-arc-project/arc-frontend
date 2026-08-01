@@ -189,15 +189,36 @@ describe("FileCellInput (FRT-213)", () => {
     }
   })
 
-  it("만료 시각이 없으면 예전처럼 한 번만 받는다", async () => {
+  // 실계약(`pickUrl`)은 `data` 가 presigned URL 문자열 그 자체라 **만료 시각을 주지 않는다**.
+  // 만료 시각이 있을 때만 갱신하면 프로덕션에서는 한 번도 갱신되지 않는다.
+  it("만료 시각을 안 줘도 주기적으로 다시 받아온다", async () => {
     vi.useFakeTimers()
     try {
       render(<FileCellInput value={filled} onChange={() => {}} />)
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(60 * 60_000)
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(getFileUrl).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5 * 60_000)
       })
 
-      expect(getFileUrl).toHaveBeenCalledTimes(1)
+      expect(getFileUrl).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("첨부가 없으면 갱신도 걸지 않는다 — 빈 셀이 네트워크를 두드리지 않는다", async () => {
+    vi.useFakeTimers()
+    try {
+      render(<FileCellInput value={undefined} onChange={() => {}} />)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30 * 60_000)
+      })
+
+      expect(getFileUrl).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
     }
