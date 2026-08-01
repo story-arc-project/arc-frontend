@@ -16,6 +16,9 @@ import RoleHistoryBlock, { hasRoleHistoryShape } from "./RoleHistoryBlock"
 import OutcomeList from "./OutcomeList"
 import TableBlock from "./TableBlock"
 
+/** `OutcomeList` 가 그릴 수 있는 열 유형 — 셀을 textarea 하나로만 렌더한다. */
+const OUTCOME_LIST_TYPES = new Set<string>(["text", "textarea"])
+
 interface BlockRendererProps {
   block: Block
   readOnly?: boolean
@@ -60,8 +63,15 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
         }
         // outcome-list 는 개조식 불릿-행 UI(단일컬럼 전용). 사용자가 '열 추가'로 컬럼을
         // 늘린 레거시 값이면 데이터가 숨지 않도록 표형 RepeatableCellBlock 으로 폴백한다(FRT-97).
-        const columnCount = (block.value as RepeatableCellBlockValue).columns.length
-        return block.variant === "outcome-list" && columnCount <= 1
+        //
+        // FRT-213: 컬럼 개수만으로는 부족하다. `OutcomeList` 는 셀을 무조건 textarea 로 그리고
+        // `blockType` 을 보지 않으므로, 열 유형을 기간·파일로 바꾸면 그 입력을 만들 길이 없고
+        // 구조화된 첨부 값이 있으면 타이핑이 문자열로 덮어쓴다. 텍스트 모양일 때만 태운다.
+        const outcomeColumns = (block.value as RepeatableCellBlockValue).columns
+        const outcomeShape =
+          outcomeColumns.length <= 1 &&
+          (outcomeColumns[0] === undefined || OUTCOME_LIST_TYPES.has(outcomeColumns[0].blockType))
+        return block.variant === "outcome-list" && outcomeShape
           ? <OutcomeList block={block} readOnly={readOnly} onChange={handleChange} />
           : <RepeatableCellBlock block={block} readOnly={readOnly} onChange={handleChange} />
       }

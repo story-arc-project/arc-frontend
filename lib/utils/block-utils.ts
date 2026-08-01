@@ -355,8 +355,14 @@ export function cellFilled(cell: CellValue | undefined): boolean {
  */
 export function cellText(cell: CellValue | undefined): string {
   if (cell === undefined) return ""
-  // 파일명이 비면 첨부했다는 사실 자체가 화면에서 사라진다 — 대체 문구로 흔적을 남긴다.
-  if (isFileCellValue(cell)) return cell.fileName.trim() || "첨부파일"
+  if (isFileCellValue(cell)) {
+    // 첨부를 지우면 `{fileId:"", fileName:""}` 이 남는다 — 이걸 대체 문구로 접으면 없는 첨부가
+    // 화면에 남고, 열 유형이 텍스트로 바뀌면 그 문구가 값으로 굳는다. `cellFilled` 과 같은
+    // 기준(fileId)으로 판정해 두 함수가 어긋나지 않게 한다.
+    if (!cell.fileId.trim()) return ""
+    // 파일명이 비면 첨부했다는 사실 자체가 화면에서 사라진다 — 대체 문구로 흔적을 남긴다.
+    return cell.fileName.trim() || "첨부파일"
+  }
   return Array.isArray(cell) ? cell.join(", ") : cell
 }
 

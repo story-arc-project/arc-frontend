@@ -426,6 +426,14 @@ describe("cellText (FRT-213)", () => {
     expect(cellText({ type: "file", fileId: "file-x", fileName: "" })).toBe("첨부파일")
   })
 
+  // 첨부를 지우면 `handleDelete` 가 `{fileId:"", fileName:""}` 를 남긴다. 이걸 '첨부파일'로
+  // 접으면 없는 첨부가 화면에 남고, 열 유형이 텍스트로 바뀌면 그 문구가 값으로 굳는다.
+  // `cellFilled` 는 같은 값을 '비었다'로 보므로 두 판정이 어긋나서도 안 된다.
+  it("지워진 첨부는 빈 문자열로 접힌다 — 유령 첨부를 만들지 않는다", () => {
+    expect(cellText({ type: "file", fileId: "", fileName: "" })).toBe("")
+    expect(cellText({ type: "file", fileId: "", fileName: "성적표.pdf" })).toBe("")
+  })
+
   it("배열은 쉼표로 잇고 문자열은 그대로 둔다 — 기존 6곳의 중복 로직과 동일하다", () => {
     expect(cellText(["a", "b"])).toBe("a, b")
     expect(cellText("2023.03 ~ 현재")).toBe("2023.03 ~ 현재")
