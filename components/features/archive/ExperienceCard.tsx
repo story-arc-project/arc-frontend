@@ -263,8 +263,10 @@ export default function ExperienceCard({
               className="flex items-center gap-1 bg-surface-secondary rounded-full px-2 py-0.5"
             >
               <span
-                className="w-1.5 h-1.5 rounded-full shrink-0"
-                style={{ backgroundColor: lib.color || "#6B7280" }}
+                className={["w-1.5 h-1.5 rounded-full shrink-0", lib.color ? "" : "bg-text-secondary"]
+                  .filter(Boolean)
+                  .join(" ")}
+                style={lib.color ? { backgroundColor: lib.color } : undefined}
               />
               <span className="text-caption text-text-tertiary truncate max-w-[80px]">{lib.name}</span>
             </span>

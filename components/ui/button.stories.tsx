@@ -49,6 +49,30 @@ export const Destructive: Story = {
   args: { variant: "destructive" },
 };
 
+/**
+ * FRT-128 — disabled 배경은 `surface-tertiary` 토큰에서 온다.
+ * 이전에는 `gray-100`(#e5e8eb)을 썼는데, 이 시스템에서 그 값은 `--color-border` 이기도 하다 —
+ * 테두리 색을 채움으로 쓰고 있었다는 뜻이다.
+ */
+export const Disabled: Story = {
+  render: (args) => (
+    <div className="flex items-center gap-3">
+      <Button {...args} variant="primary" disabled>
+        Primary
+      </Button>
+      <Button {...args} variant="secondary" disabled>
+        Secondary
+      </Button>
+      <Button {...args} variant="ghost" disabled>
+        Ghost
+      </Button>
+      <Button {...args} variant="destructive" disabled>
+        Destructive
+      </Button>
+    </div>
+  ),
+};
+
 export const Sizes: Story = {
   render: (args) => (
     <div className="flex items-center gap-3">
