@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   cloneBlock,
+  roleNamesOf,
+  renameRoleTag,
+  removeRoleTag,
+  mapRoleTags,
+  createRoleHistory,
   cloneBlocks,
   createChecklistField,
   createDateField,
@@ -14,9 +19,14 @@ import {
   createSelectField,
   createTagsField,
   createTextField,
+  cellFilled,
+  cellText,
+  isFileCellValue,
+  rowHasContent,
   isBlockEmpty,
   validateRequiredBlocks,
 } from "@/lib/utils/block-utils"
+import type { FileCellValue } from "@/types/archive"
 
 describe("isBlockEmpty", () => {
   it("새로 만든 빈 블록은 모든 타입에서 empty 다", () => {
@@ -270,5 +280,175 @@ describe("createOutcomeList (FRT-97/FRT-76)", () => {
     if (b.value.type === "repeatable-cell") {
       expect(b.value.columns).toHaveLength(1)
     }
+  })
+})
+
+// ── FRT-178: 역할 태그 파생·전파 ────────────────────────────────
+
+describe("roleNamesOf", () => {
+  it("등록된 역할명을 입력 순서대로, 공백·중복 없이 뽑는다", () => {
+    const block = createRoleHistory("역할 이력")
+    if (block.value.type !== "repeatable-cell") throw new Error("unreachable")
+    block.value.rows = [
+      { id: "r1", cells: { start: "2024-03", end: "", role: " 회장 " } },
+      { id: "r2", cells: { start: "", end: "", role: "" } },
+      { id: "r3", cells: { start: "", end: "", role: "회장" } },
+      { id: "r4", cells: { start: "", end: "", role: "공연팀장" } },
+    ]
+    expect(roleNamesOf(block)).toEqual(["회장", "공연팀장"])
+  })
+
+  it("repeatable-cell 이 아니면 빈 목록", () => {
+    expect(roleNamesOf(createTextField("역할 / 직책"))).toEqual([])
+  })
+})
+
+describe("mapRoleTags", () => {
+  function outcomeWithTags(tags: string[]) {
+    const b = createOutcomeList("주요 활동 / 이벤트", { roleTags: true })
+    if (b.value.type !== "repeatable-cell") throw new Error("unreachable")
+    b.value.rows = [{ id: "r1", cells: { item: "정기 공연" }, roleTags: tags }]
+    return b
+  }
+
+  function tableWithRoleColumn(tags: string[]) {
+    const b = createRepeatableCell("활동 / 이벤트", [
+      { key: "role", label: "이 활동 때의 역할", blockType: "checklist", variant: "role-chip" },
+      { key: "name", label: "프로젝트명", blockType: "text" },
+    ])
+    if (b.value.type !== "repeatable-cell") throw new Error("unreachable")
+    b.value.rows = [{ id: "r1", cells: { role: tags, name: "봄 공연" } }]
+    return b
+  }
+
+  it("개조식 행의 roleTags 를 치환한다", () => {
+    const next = mapRoleTags(outcomeWithTags(["회장"]), renameRoleTag("회장", "회장단"))
+    if (next.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(next.value.rows[0].roleTags).toEqual(["회장단"])
+  })
+
+  it("role-chip 컬럼의 셀을 치환한다", () => {
+    const next = mapRoleTags(tableWithRoleColumn(["회장"]), renameRoleTag("회장", "회장단"))
+    if (next.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(next.value.rows[0].cells.role).toEqual(["회장단"])
+    expect(next.value.rows[0].cells.name).toBe("봄 공연")
+  })
+
+  it("role-chip 이 아닌 컬럼은 이름이 같아도 건드리지 않는다", () => {
+    // '역할 이력' 블록 자신의 role 컬럼(자유 텍스트)이 여기 걸리면 사용자가 입력 중인
+    // 이름이 자기 자신의 전파로 덮인다.
+    const history = createRoleHistory("역할 이력")
+    if (history.value.type !== "repeatable-cell") throw new Error("unreachable")
+    history.value.rows = [{ id: "r1", cells: { start: "", end: "", role: "회장" } }]
+    const next = mapRoleTags(history, renameRoleTag("회장", "회장단"))
+    expect(next).toBe(history)
+  })
+
+  it("삭제는 태그에서 그 이름만 뺀다", () => {
+    const next = mapRoleTags(outcomeWithTags(["회장", "총무"]), removeRoleTag("회장"))
+    if (next.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(next.value.rows[0].roleTags).toEqual(["총무"])
+  })
+
+  it("이름을 빈 값으로 고치면 제거로 동작한다", () => {
+    const next = mapRoleTags(outcomeWithTags(["회장"]), renameRoleTag("회장", "  "))
+    if (next.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(next.value.rows[0].roleTags).toEqual([])
+  })
+
+  it("치환 결과가 이미 붙어 있던 이름과 겹치면 중복을 만들지 않는다", () => {
+    const next = mapRoleTags(outcomeWithTags(["회장", "총무"]), renameRoleTag("회장", "총무"))
+    if (next.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(next.value.rows[0].roleTags).toEqual(["총무"])
+  })
+
+  it("바뀐 게 없으면 같은 참조를 돌려준다(불필요한 리렌더 방지)", () => {
+    const block = outcomeWithTags(["회장"])
+    expect(mapRoleTags(block, renameRoleTag("총무", "총무2"))).toBe(block)
+  })
+
+  it("group 블록의 자식까지 훑는다", () => {
+    const group = createGroupBlock("사용자 섹션")
+    group.children = [outcomeWithTags(["회장"])]
+    const next = mapRoleTags(group, renameRoleTag("회장", "회장단"))
+    const child = next.children![0]
+    if (child.value.type !== "repeatable-cell") throw new Error("unreachable")
+    expect(child.value.rows[0].roleTags).toEqual(["회장단"])
+  })
+})
+
+// ─── FRT-213: 파일 셀 값 헬퍼 ────────────────────────────────────
+
+const fileCell: FileCellValue = {
+  type: "file",
+  fileId: "file-abc",
+  fileName: "성적표.pdf",
+  mimeType: "application/pdf",
+  size: 12345,
+}
+
+describe("isFileCellValue (FRT-213)", () => {
+  it("파일 셀 값을 알아본다", () => {
+    expect(isFileCellValue(fileCell)).toBe(true)
+  })
+
+  it("문자열·배열·undefined 는 파일 셀이 아니다", () => {
+    expect(isFileCellValue("2023.03 ~ 현재")).toBe(false)
+    expect(isFileCellValue(["a", "b"])).toBe(false)
+    expect(isFileCellValue(undefined)).toBe(false)
+  })
+})
+
+describe("cellFilled — 파일 셀 (FRT-213)", () => {
+  it("fileId 가 있으면 채워진 것으로 본다", () => {
+    expect(cellFilled(fileCell)).toBe(true)
+  })
+
+  it("fileId 가 비면 채워지지 않은 것으로 본다 — 업로드 전 빈 껍데기", () => {
+    expect(cellFilled({ type: "file", fileId: "", fileName: "" })).toBe(false)
+  })
+
+  it("기존 문자열·배열 판정은 그대로다", () => {
+    expect(cellFilled("값")).toBe(true)
+    expect(cellFilled("   ")).toBe(false)
+    expect(cellFilled(["태그"])).toBe(true)
+    expect(cellFilled([])).toBe(false)
+    expect(cellFilled(undefined)).toBe(false)
+  })
+})
+
+describe("cellText (FRT-213)", () => {
+  it("파일 셀은 파일명으로 접힌다", () => {
+    expect(cellText(fileCell)).toBe("성적표.pdf")
+  })
+
+  it("파일명이 비면 대체 문구로 접힌다 — 빈 문자열이면 첨부 사실이 사라진다", () => {
+    expect(cellText({ type: "file", fileId: "file-x", fileName: "" })).toBe("첨부파일")
+  })
+
+  // 첨부를 지우면 `handleDelete` 가 `{fileId:"", fileName:""}` 를 남긴다. 이걸 '첨부파일'로
+  // 접으면 없는 첨부가 화면에 남고, 열 유형이 텍스트로 바뀌면 그 문구가 값으로 굳는다.
+  // `cellFilled` 는 같은 값을 '비었다'로 보므로 두 판정이 어긋나서도 안 된다.
+  it("지워진 첨부는 빈 문자열로 접힌다 — 유령 첨부를 만들지 않는다", () => {
+    expect(cellText({ type: "file", fileId: "", fileName: "" })).toBe("")
+    expect(cellText({ type: "file", fileId: "", fileName: "성적표.pdf" })).toBe("")
+  })
+
+  it("배열은 쉼표로 잇고 문자열은 그대로 둔다 — 기존 6곳의 중복 로직과 동일하다", () => {
+    expect(cellText(["a", "b"])).toBe("a, b")
+    expect(cellText("2023.03 ~ 현재")).toBe("2023.03 ~ 현재")
+    expect(cellText(undefined)).toBe("")
+  })
+})
+
+describe("rowHasContent — 파일 셀만 채운 행 (FRT-213)", () => {
+  it("파일만 첨부한 행은 빈 행이 아니다", () => {
+    expect(rowHasContent({ id: "r1", cells: { 결과물: fileCell } })).toBe(true)
+  })
+
+  it("빈 파일 셀만 있는 행은 빈 행이다", () => {
+    expect(
+      rowHasContent({ id: "r1", cells: { 결과물: { type: "file", fileId: "", fileName: "" } } }),
+    ).toBe(false)
   })
 })

@@ -1,19 +1,21 @@
 "use client";
 
-import { isEmptySection, type Activity } from "@/types/resume";
+import type { Activity } from "@/types/resume";
+import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { formatPeriod, PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
+import { visibleUsableExperiences } from "@/lib/export/resume-visibility";
 
 interface Props {
+  labels: ResumeSectionLabels;
   data: Activity[];
 }
 
-export function PreviewActivity({ data }: Props) {
-  if (isEmptySection(data)) return null;
-  const items = data.filter((a) => !isEmptySection(a));
+export function PreviewActivity({ data, labels }: Props) {
+  const items = visibleUsableExperiences(data);
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title="대외활동">
+    <PreviewSection title={labels.activity}>
       {items.map((a) => (
         <div key={a.id}>
           <PreviewRow
@@ -31,12 +33,17 @@ export function PreviewActivity({ data }: Props) {
                 )}
               </div>
             }
-            right={formatPeriod(a.기간_시작, a.기간_종료, a.기간_원문, a.진행중)}
+            right={formatPeriod(
+              a.기간_시작,
+              a.기간_종료,
+              a.기간_원문,
+              a.진행중 ? labels.present : null,
+            )}
           />
           <PreviewBullets items={a.활동내용} />
           {a.성과.length > 0 && (
             <div className="mt-1.5">
-              <p className="text-caption text-text-tertiary font-medium">성과</p>
+              <p className="text-caption text-text-tertiary font-medium">{labels.achievements}</p>
               <PreviewBullets items={a.성과} />
             </div>
           )}

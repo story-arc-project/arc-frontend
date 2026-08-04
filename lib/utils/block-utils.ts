@@ -4,6 +4,8 @@ import type {
   BlockValue,
   BlockRow,
   BlockColumnDef,
+  CellValue,
+  FileCellValue,
   ProjectLinkConfig,
 } from '@/types/archive'
 
@@ -101,6 +103,20 @@ export function createChecklistField(
   return createBlock('checklist', label, { ...opts, options })
 }
 
+/**
+ * 이모티콘 알약 태그 입력(FRT-177). 저장은 `checklist {options, checked}` 그대로 두고
+ * `variant: 'mood-tag'` 마커로 MoodTagBlock UI 를 지정한다(무마이그레이션, OutcomeList 와 같은 패턴).
+ * 옵션은 기획 확정본이 정한 고정 프리셋이라 체크리스트의 옵션 추가·삭제 UI 를 노출하지 않는다 —
+ * 사용자가 프리셋 태그를 지워버리면 되돌릴 방법이 없기 때문이다.
+ */
+export function createMoodTagField(
+  label: string,
+  options: string[],
+  opts?: { required?: boolean; guide?: string },
+): Block {
+  return { ...createChecklistField(label, options, opts), variant: 'mood-tag' }
+}
+
 export function createTagsField(label: string, opts?: { required?: boolean; guide?: string }): Block {
   return createBlock('tags', label, opts)
 }
@@ -109,7 +125,16 @@ export function createLinkField(label: string, opts?: { required?: boolean; plac
   return createBlock('link', label, opts)
 }
 
-export function createFileField(label: string, opts?: { required?: boolean; guide?: string }): Block {
+/**
+ * 증빙 파일 첨부. FileBlockValue 는 파일 자체 외에 설명·증빙 유형을 함께 담으므로
+ * '파일 설명'·'증빙 유형'을 별도 블록으로 만들면 같은 입력칸이 두 벌 생긴다.
+ * `options` 를 주면 증빙 유형이 자유 입력 대신 드롭다운이 된다(FRT-179 자격증) — 유형마다
+ * 고를 수 있는 증빙이 다르므로 템플릿이 정한다. 안 주면 기존대로 자유 입력이다.
+ */
+export function createFileField(
+  label: string,
+  opts?: { required?: boolean; guide?: string; options?: string[] },
+): Block {
   return createBlock('file', label, opts)
 }
 
@@ -117,18 +142,26 @@ export function createFileField(label: string, opts?: { required?: boolean; guid
  * 템플릿 정의용 표형 반복 입력. 템플릿 표는 컬럼이 고정이므로 `lockColumns` 가 기본 켜짐이다(FRT-104) —
  * 열 태그·'열 추가' UI 가 숨는다. 열을 자유롭게 추가하는 표가 필요하면 `{ lockColumns: false }`.
  * 사용자가 직접 만드는 커스텀 표는 이 팩토리가 아니라 `createBlock` 을 거치므로 잠기지 않는다.
+ *
+ * `allowRowExtras` 를 켜면 각 행에 '항목 추가' 가 붙는다(FRT-145). 열 잠금과 함께 켤 수 있다 —
+ * 열은 계속 템플릿이 소유하고, 그건 행 하나에만 붙는 항목이라 서로 간섭하지 않는다.
  */
 export function createRepeatableCell(
   label: string,
   columns: BlockColumnDef[],
-  opts?: { collapsed?: boolean; lockColumns?: boolean; guide?: string },
+  opts?: { collapsed?: boolean; lockColumns?: boolean; guide?: string; allowRowExtras?: boolean },
 ): Block {
   const base = createBlock('repeatable-cell', label, {
     columns,
     collapsed: opts?.collapsed,
     guide: opts?.guide,
   })
-  return { ...base, lockColumns: opts?.lockColumns ?? true }
+  return {
+    ...base,
+    lockColumns: opts?.lockColumns ?? true,
+    // 끈 블록에 키를 남기지 않는다 — 템플릿 스냅샷 비교(toEqual)에 잡음이 된다.
+    ...(opts?.allowRowExtras ? { allowRowExtras: true } : {}),
+  }
 }
 
 export function createTableField(label: string): Block {
@@ -151,6 +184,8 @@ export function createOutcomeList(
     guide?: string
     itemLabel?: string
     link?: ProjectLinkConfig
+    /** 각 행에 역할 태그 칩을 붙인다(FRT-178). `link` 와 같은 인스턴스별 opt-in. */
+    roleTags?: boolean
   },
 ): Block {
   const base = createRepeatableCell(label, [
@@ -161,7 +196,94 @@ export function createOutcomeList(
     variant: 'outcome-list',
     guide: opts?.guide,
     ...(opts?.link ? { linkConfig: opts.link } : {}),
+    ...(opts?.roleTags ? { roleTags: true } : {}),
   }
+}
+
+/**
+ * 역할 이력 입력(FRT-178). 저장은 3컬럼 `repeatable-cell`(`start`/`end`/`role`) 그대로 두고
+ * `variant: 'role-history'` 마커로 접이식 패널 UI 를 지정한다(무마이그레이션, OutcomeList 와 같은 패턴).
+ * 이 블록의 `role` 값들이 폼 안 모든 역할 칩의 선택지가 된다 — 선택지가 상수가 아니라
+ * 형제 블록의 값에서 파생되는 유일한 경우라, 파생·전파는 RoleHistoryContext 가 맡는다.
+ * 컬럼은 잠근다(lockColumns) — 이력 표에 사용자가 열을 더하면 파생 규칙이 성립하지 않는다.
+ */
+export function createRoleHistory(label: string, opts?: { guide?: string }): Block {
+  const base = createRepeatableCell(
+    label,
+    [
+      { key: 'start', label: '시작', blockType: 'period', placeholder: 'YYYY-MM' },
+      { key: 'end', label: '종료', blockType: 'period', placeholder: 'YYYY-MM' },
+      { key: 'role', label: '역할명', blockType: 'text', placeholder: '역할명 (예: 공연팀장)' },
+    ],
+    { guide: opts?.guide },
+  )
+  return { ...base, variant: 'role-history' }
+}
+
+/** `createRoleHistory` 블록에서 등록된 역할명을 순서대로 뽑는다(공백 제거·중복 제거). */
+export function roleNamesOf(block: Block): string[] {
+  if (block.value.type !== 'repeatable-cell') return []
+  const out: string[] = []
+  for (const row of block.value.rows) {
+    const name = cellText(row.cells['role']).trim()
+    if (name && !out.includes(name)) out.push(name)
+  }
+  return out
+}
+
+/**
+ * 이 블록에 붙어 있는 역할 태그를 모두 `fn` 으로 바꾼 사본을 돌려준다 (FRT-178).
+ * 대상은 두 곳뿐이다 — OutcomeList 행의 `roleTags`, `variant: 'role-chip'` 컬럼의 셀.
+ * '역할 이력' 블록 자신의 `role` 컬럼은 variant 가 없어 건드리지 않는다(이미 편집된 원본이다).
+ * 바뀐 게 없으면 **같은 참조**를 돌려준다 — 이름 하나 고칠 때마다 폼 전체가 리렌더되지 않도록.
+ */
+export function mapRoleTags(block: Block, fn: (tags: string[]) => string[]): Block {
+  if (block.type === 'group') {
+    const children = block.children?.map(c => mapRoleTags(c, fn))
+    const changed = children?.some((c, i) => c !== block.children?.[i])
+    return changed ? { ...block, children } : block
+  }
+  if (block.value.type !== 'repeatable-cell') return block
+
+  const roleCols = block.value.columns.filter(c => c.variant === 'role-chip').map(c => c.key)
+  let touched = false
+  const rows = block.value.rows.map(row => {
+    let next = row
+    if (Array.isArray(row.roleTags)) {
+      const mapped = fn(row.roleTags)
+      if (mapped.length !== row.roleTags.length || mapped.some((t, i) => t !== row.roleTags?.[i])) {
+        next = { ...next, roleTags: mapped }
+      }
+    }
+    for (const key of roleCols) {
+      const cell = row.cells[key]
+      const tags = Array.isArray(cell) ? cell : []
+      const mapped = fn(tags)
+      if (mapped.length !== tags.length || mapped.some((t, i) => t !== tags[i])) {
+        next = { ...next, cells: { ...next.cells, [key]: mapped } }
+      }
+    }
+    if (next !== row) touched = true
+    return next
+  })
+
+  return touched ? { ...block, value: { ...block.value, rows } } : block
+}
+
+/** 역할명 치환기. `to` 가 비면 제거로 동작한다(이름을 지워 빈 칸이 된 경우). */
+export function renameRoleTag(from: string, to: string): (tags: string[]) => string[] {
+  const next = to.trim()
+  return tags => {
+    if (!tags.includes(from)) return tags
+    const replaced = next ? tags.map(t => (t === from ? next : t)) : tags.filter(t => t !== from)
+    // 이미 같은 이름이 붙어 있던 행에서 중복이 생기지 않게 한다.
+    return replaced.filter((t, i) => replaced.indexOf(t) === i)
+  }
+}
+
+/** 역할명 제거기. */
+export function removeRoleTag(name: string): (tags: string[]) => string[] {
+  return tags => (tags.includes(name) ? tags.filter(t => t !== name) : tags)
 }
 
 export function createGroupBlock(label: string): Block {
@@ -178,7 +300,7 @@ export function createGroupBlock(label: string): Block {
 // ─── Row helpers ────────────────────────────────────────────────
 
 export function createEmptyRow(columns: BlockColumnDef[]): BlockRow {
-  const cells: Record<string, string | string[]> = {}
+  const cells: Record<string, CellValue> = {}
   for (const col of columns) {
     if (col.blockType === 'checklist' || col.blockType === 'tags') {
       cells[col.key] = []
@@ -207,11 +329,54 @@ export function cloneBlocks(blocks: Block[]): Block[] {
 
 // ─── Validation ─────────────────────────────────────────────────
 
+/** 이 셀 값이 파일 셀인가 (FRT-213). `string[]` 도 typeof 'object' 라 배열을 먼저 걸러낸다. */
+export function isFileCellValue(cell: CellValue | undefined): cell is FileCellValue {
+  return typeof cell === 'object' && cell !== null && !Array.isArray(cell) && cell.type === 'file'
+}
+
 // 반복 입력 셀 하나가 실제로 채워졌는지. block-utils 는 types 만 import 하는 leaf 라
 // 순환 걱정 없이 여기서 export 하고 form-cards·usePlaceholderRow 가 재사용한다(단일 출처).
-export function cellFilled(cell: string | string[] | undefined): boolean {
+export function cellFilled(cell: CellValue | undefined): boolean {
   if (cell === undefined) return false
+  // 파일은 업로드가 끝나야(fileId 확보) 채워진 것이다 — 이름만 있는 건 실패한 첨부다.
+  if (isFileCellValue(cell)) return cell.fileId.trim() !== ''
   return Array.isArray(cell) ? cell.length > 0 : cell.trim() !== ""
+}
+
+/**
+ * 셀 값을 사람이 읽는 한 줄 텍스트로 접는다 (FRT-213).
+ *
+ * 셀 값을 텍스트로 펴는 로직이 6곳(포트폴리오 평탄화·역할이력·개조식 목록·역할명 수집·
+ * 프로젝트 연결·readOnly 렌더)에 흩어져 중복돼 있던 것을 단일 출처로 모은 것이다.
+ * 파일 셀은 구조화 객체라 이 함수가 없으면 `.trim()` 에서 런타임 오류가 난다.
+ *
+ * ⚠️ 반복 블록의 file 컬럼 렌더는 이 함수를 쓰지 않는다 — 다운로드까지 되는 카드를 그린다.
+ * 이 함수는 파일을 모르는 제네릭 소비처가 최소한 안전하게 텍스트로 접을 때 쓴다.
+ */
+export function cellText(cell: CellValue | undefined): string {
+  if (cell === undefined) return ""
+  if (isFileCellValue(cell)) {
+    // 첨부를 지우면 `{fileId:"", fileName:""}` 이 남는다 — 이걸 대체 문구로 접으면 없는 첨부가
+    // 화면에 남고, 열 유형이 텍스트로 바뀌면 그 문구가 값으로 굳는다. `cellFilled` 과 같은
+    // 기준(fileId)으로 판정해 두 함수가 어긋나지 않게 한다.
+    if (!cell.fileId.trim()) return ""
+    // 파일명이 비면 첨부했다는 사실 자체가 화면에서 사라진다 — 대체 문구로 흔적을 남긴다.
+    return cell.fileName.trim() || "첨부파일"
+  }
+  return Array.isArray(cell) ? cell.join(", ") : cell
+}
+
+/**
+ * 반복 입력 행 하나에 사용자가 남긴 내용이 있는지. 셀뿐 아니라 그 행에만 붙은 항목
+ * (`extraFields`, FRT-145)까지 본다 — 셀만 보면 추가 항목에만 값을 쓴 행이 '빈 행'으로
+ * 판정돼 상세뷰에서 통째로 사라진다(유령 행 필터가 사용자 값을 숨기는 형태).
+ * 빈 판정을 하는 세 곳(isBlockEmpty · RepeatableCellBlock readOnly · 진행도)이 이 함수를 공유한다.
+ */
+export function rowHasContent(row: BlockRow): boolean {
+  return (
+    Object.values(row.cells).some(cellFilled) ||
+    (row.extraFields ?? []).some(f => cellFilled(f.value))
+  )
 }
 
 export function isBlockEmpty(block: Block): boolean {
@@ -243,7 +408,7 @@ export function isBlockEmpty(block: Block): boolean {
       // 하거나 placeholder 에 한 글자 썼다 지운 실체화 행)를 non-empty 로 오판해 상세뷰·포트폴리오에
       // '—'만 있는 유령 섹션이 남던 문제를 판정 층위에서 고친다(value/rows 는 그대로 둔다 —
       // 행을 지우면 placeholder 리마운트로 포커스가 날아간다).
-      return v.rows.every(row => Object.values(row.cells).every(cell => !cellFilled(cell)))
+      return !v.rows.some(rowHasContent)
     case 'table':
       return v.rows.length === 0
     case 'group':

@@ -355,24 +355,24 @@ function ForgotPasswordForm() {
                 <p className="text-body text-text-secondary mb-8">안전한 새 비밀번호로 바꿔요</p>
 
                 <div className="flex flex-col gap-3">
-                  <div className="relative">
-                    <Input
-                      label="새 비밀번호"
-                      type={showPw ? "text" : "password"}
-                      placeholder="영문+숫자 8자 이상"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pr-14"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPw((v) => !v)}
-                      className="absolute right-3 top-[38px] text-caption text-text-tertiary
-                                 hover:text-text-secondary transition-colors cursor-pointer select-none"
-                    >
-                      {showPw ? "숨기기" : "보기"}
-                    </button>
-                  </div>
+                  <Input
+                    label="새 비밀번호"
+                    type={showPw ? "text" : "password"}
+                    placeholder="영문+숫자 8자 이상"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pr-14"
+                    rightAddon={
+                      <button
+                        type="button"
+                        onClick={() => setShowPw((v) => !v)}
+                        className="text-caption text-text-tertiary
+                                   hover:text-text-secondary transition-colors cursor-pointer select-none"
+                      >
+                        {showPw ? "숨기기" : "보기"}
+                      </button>
+                    }
+                  />
                   {password.length > 0 && (
                     <div className="flex gap-3">
                       {pwChecks.map((c) => (
@@ -395,25 +395,25 @@ function ForgotPasswordForm() {
                       ))}
                     </div>
                   )}
-                  <div className="relative">
-                    <Input
-                      label="새 비밀번호 확인"
-                      type={showConfirmPw ? "text" : "password"}
-                      placeholder="비밀번호를 다시 입력해주세요"
-                      value={confirmPw}
-                      onChange={(e) => setConfirmPw(e.target.value)}
-                      error={confirmPw.length > 0 && !pwMatch ? "비밀번호가 일치하지 않아요" : undefined}
-                      className="pr-14"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPw((v) => !v)}
-                      className="absolute right-3 top-[38px] text-caption text-text-tertiary
-                                 hover:text-text-secondary transition-colors cursor-pointer select-none"
-                    >
-                      {showConfirmPw ? "숨기기" : "보기"}
-                    </button>
-                  </div>
+                  <Input
+                    label="새 비밀번호 확인"
+                    type={showConfirmPw ? "text" : "password"}
+                    placeholder="비밀번호를 다시 입력해주세요"
+                    value={confirmPw}
+                    onChange={(e) => setConfirmPw(e.target.value)}
+                    error={confirmPw.length > 0 && !pwMatch ? "비밀번호가 일치하지 않아요" : undefined}
+                    className="pr-14"
+                    rightAddon={
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPw((v) => !v)}
+                        className="text-caption text-text-tertiary
+                                   hover:text-text-secondary transition-colors cursor-pointer select-none"
+                      >
+                        {showConfirmPw ? "숨기기" : "보기"}
+                      </button>
+                    }
+                  />
                   {pwError && <p className="text-body-sm text-error">{pwError}</p>}
                   <Button onClick={handleReset} disabled={!pwValid || isLoading}>
                     {isLoading ? "변경 중..." : "비밀번호 변경하기"}

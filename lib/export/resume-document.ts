@@ -8,9 +8,15 @@ import {
   compactStrings,
   formatEducationPeriod,
   formatGpa,
+  formatLanguageDetail,
   formatPeriod,
   joinParts,
 } from "@/lib/export/resume-format";
+import {
+  resumeSectionLabels,
+  type ResumeSectionLabels,
+} from "@/lib/export/resume-labels";
+import { visibleExperiences } from "@/lib/export/resume-visibility";
 import {
   isEmptySection,
   type ResumeLanguage,
@@ -97,6 +103,8 @@ function usableItems<T>(items: T[] | null | undefined): T[] {
 // ─── build ─────────────────────────────────────────────────────────
 
 export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
+  // 섹션 제목은 언어를 따른다(FRT-147) — 국문 값은 기존 문자열 그대로라 국문 출력은 무변화다.
+  const L = resumeSectionLabels(resume.meta?.language);
   const 인적사항 = resume.인적사항;
   const 요약 = text(resume.자기소개_요약);
 
@@ -119,10 +127,10 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
   };
 
   const sections: (DocSection | null)[] = [
-    section("자기소개", 요약 ? [{ text: 요약 }] : []),
+    section(L.summary, 요약 ? [{ text: 요약 }] : []),
 
     section(
-      "학력",
+      L.education,
       usableItems(resume.학력).map((edu) => ({
         title: text(edu.학교명),
         subtitle: text(joinParts([edu.학과, edu.전공구분, edu.학위, edu.졸업구분])),
@@ -134,8 +142,8 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
     ),
 
     section(
-      "경력",
-      usableItems(resume.경력).map((career) =>
+      L.career,
+      usableItems(visibleExperiences(resume.경력)).map((career) =>
         withGroups(
           {
             title: text(career.회사명),
@@ -145,18 +153,18 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
                 career.입사년월,
                 career.퇴사년월,
                 null,
-                career.재직중,
+                career.재직중 ? L.present : null,
               ),
             ),
           },
-          [bulletGroup(career.담당업무), bulletGroup(career.성과, "성과")],
+          [bulletGroup(career.담당업무), bulletGroup(career.성과, L.achievements)],
         ),
       ),
     ),
 
     section(
-      "프로젝트",
-      usableItems(resume.프로젝트).map((project) => {
+      L.project,
+      usableItems(visibleExperiences(resume.프로젝트)).map((project) => {
         const entry = withGroups(
           {
             title: text(project.프로젝트명),
@@ -169,19 +177,19 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
               ),
             ),
           },
-          [bulletGroup(project.내용), bulletGroup(project.성과, "성과")],
+          [bulletGroup(project.내용), bulletGroup(project.성과, L.achievements)],
         );
 
         const tech = compactStrings(project.사용기술);
         return tech.length > 0
-          ? { ...entry, notes: [{ label: "사용 기술", text: tech.join(", ") }] }
+          ? { ...entry, notes: [{ label: L.techStack, text: tech.join(", ") }] }
           : entry;
       }),
     ),
 
     section(
-      "대외활동",
-      usableItems(resume.대외활동).map((activity) =>
+      L.activity,
+      usableItems(visibleExperiences(resume.대외활동)).map((activity) =>
         withGroups(
           {
             title: text(activity.활동명),
@@ -191,18 +199,18 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
                 activity.기간_시작,
                 activity.기간_종료,
                 activity.기간_원문,
-                activity.진행중,
+                activity.진행중 ? L.present : null,
               ),
             ),
           },
-          [bulletGroup(activity.활동내용), bulletGroup(activity.성과, "성과")],
+          [bulletGroup(activity.활동내용), bulletGroup(activity.성과, L.achievements)],
         ),
       ),
     ),
 
     section(
-      "동아리 · 학회",
-      usableItems(resume.동아리_학회).map((club) =>
+      L.club,
+      usableItems(visibleExperiences(resume.동아리_학회)).map((club) =>
         withGroups(
           {
             title: text(club.단체명),
@@ -215,7 +223,7 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
     ),
 
     section(
-      "수상",
+      L.award,
       usableItems(resume.수상).map((award) => ({
         title: text(award.수상명),
         subtitle: text(award.수여기관),
@@ -224,8 +232,19 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
       })),
     ),
 
+    // 영문 전용 섹션 — 국문 레쥬메에는 `논문` 자체가 없어 빈 배열 → 섹션이 만들어지지 않는다.
     section(
-      "자격증",
+      L.publication,
+      usableItems(resume.논문).map((pub) => ({
+        title: text(pub.제목),
+        subtitle: text(pub.게재처),
+        text: text(pub.내용),
+        meta: text(pub.발표년월),
+      })),
+    ),
+
+    section(
+      L.certification,
       usableItems(resume.자격증).map((cert) => ({
         title: text(cert.자격증명),
         subtitle: text(joinParts([cert.발급기관, cert.자격구분])),
@@ -234,15 +253,19 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
     ),
 
     section(
-      "어학",
+      L.language,
       usableItems(resume.어학).map((lang) => ({
         title: text(lang.언어),
-        subtitle: text(joinParts([lang.시험명, lang.점수등급])),
+        subtitle: text(formatLanguageDetail(lang)),
         meta: text(lang.취득년월),
       })),
     ),
 
-    section("기술 및 역량", buildSkillEntries(resume)),
+    section(L.skills, buildSkillEntries(resume, L)),
+
+    // rev.5 — 어학 → 기술및역량 → 기타정보가 모든 템플릿 공통 하단 3종이다.
+    // 어학이 기술및역량 위인 것은 이미 그러했고, 기타정보만 새로 최하단에 붙는다.
+    section(L.additionalInfo, buildAdditionalInfoEntries(resume, L)),
   ];
 
   return {
@@ -252,15 +275,42 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
   };
 }
 
-function buildSkillEntries(resume: ResumeVersion): DocEntry[] {
+/**
+ * rev.5 기타정보 — 어학을 뺀 나머지(병역·관심사). 어학은 최상위 `어학[]` 이 정본이라
+ * 여기 다시 넣지 않는다("기타 정보에는 어학 외의 것만" — 7/27 확정).
+ */
+function buildAdditionalInfoEntries(
+  resume: ResumeVersion,
+  L: ResumeSectionLabels,
+): DocEntry[] {
+  const info = resume.기타정보;
+  if (!info || isEmptySection(info)) return [];
+
+  return (
+    [
+      { label: L.military, value: text(info.병역) },
+      { label: L.interests, value: compactStrings(info.관심사).join(", ") },
+    ] as const
+  )
+    // 두 행의 빈 값 모양이 다르다 — 관심사는 join 결과라 `""`, 병역은 `text()` 라 `undefined`.
+    // `!== ""` 로만 거르면 병역만 살아남아 내보내기 파일에 내용 없는 제목이 찍힌다
+    // (화면의 PreviewAdditionalInfo 는 항상 문자열이라 제대로 숨겨서 둘이 어긋난다).
+    .filter((row) => Boolean(row.value))
+    .map((row) => ({ title: row.label, text: row.value }));
+}
+
+function buildSkillEntries(
+  resume: ResumeVersion,
+  L: ResumeSectionLabels,
+): DocEntry[] {
   const skills = resume.기술및역량;
   if (!skills || isEmptySection(skills)) return [];
 
   return (
     [
-      { title: "기술 스택", items: skills.기술스택 },
-      { title: "툴", items: skills.툴 },
-      { title: "소프트 스킬", items: skills.소프트스킬 },
+      { title: L.skillTech, items: skills.기술스택 },
+      { title: L.skillTools, items: skills.툴 },
+      { title: L.skillSoft, items: skills.소프트스킬 },
     ] as const
   )
     .map(({ title, items }) => ({ title, values: compactStrings(items) }))

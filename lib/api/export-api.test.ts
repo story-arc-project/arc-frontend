@@ -123,7 +123,8 @@ describe("createResume — id 이중경로 (FRT-123 계약 §2.4)", () => {
     await expect(createResume({ language: "ko" })).resolves.toEqual({ id: null });
     expect(mockPost).toHaveBeenCalledWith(
       "/export/resume",
-      { language: "ko" },
+      // FRT-207 — 기본 생성은 1쪽 제한이라 두 상수가 항상 함께 나간다.
+      { language: "ko", max_pages: 1, auto_fill: true },
       undefined,
     );
   });
@@ -146,7 +147,7 @@ describe("createResume — id 이중경로 (FRT-123 계약 §2.4)", () => {
     await createResume({ language: "ko", title: "내 이력서" });
     expect(mockPost).toHaveBeenCalledWith(
       "/export/resume",
-      { language: "ko", title: "내 이력서" },
+      { language: "ko", title: "내 이력서", max_pages: 1, auto_fill: true },
       undefined,
     );
   });
@@ -160,7 +161,9 @@ describe("createResume — experience_ids (FRT-109 / BAC-45 계약)", () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       "/export/resume",
-      { language: "ko", experience_ids: ["exp-1", "exp-2"] },
+      // 사용자가 경험을 직접 골랐으면 자동 채움을 끈다 — 켜두면 일부러 뺀 경험이
+      // 1쪽 여백을 메우려고 되돌아온다.
+      { language: "ko", experience_ids: ["exp-1", "exp-2"], max_pages: 1, auto_fill: false },
       undefined,
     );
   });
@@ -282,6 +285,58 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
 // 백엔드(ai_analyst/src/ai/resume.py `_SYS_KO`)는 인적사항.링크를 문자열 배열로 낸다.
 // 프런트 내부 shape 은 { label, url } 이라, 정규화가 없으면 PreviewPersonalInfo 의
 // `l?.url?.trim()` 필터에 전부 걸려 링크가 화면에서 조용히 사라진다.
+describe("getResume — 영문 스키마 매핑 (FRT-147)", () => {
+  it("영문 응답이 빈 껍데기가 아니라 채워진 본문으로 온다", async () => {
+    // 이 경계가 없으면 EN 응답의 최상위 키가 전부 국문 키와 달라 상세 화면이
+    // EmptyResumeState("기록된 경험이 아직 없어요")로 빠진다 — 사용자는 크레딧만 쓴다.
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: {
+        id: "res-en",
+        result: {
+          meta: { language: "en", format: "western_resume", generated_at: "2026-07-31", source_chars: 12 },
+          contact: { name: "HyunJu Kim", email: "k@example.com", other_links: ["https://hyunju.dev"] },
+          summary: "Analyst.",
+          work_experience: [{ id: 1, company: "BCG", title: "Analyst", employment_type: "Internship" }],
+          skills: { technical: ["Python"], languages: ["English (TOEFL 115)"] },
+          publications: [{ id: 1, title: "Urban mobility", venue: "KGS" }],
+        },
+      },
+    });
+
+    const resume = await getResume("res-en");
+    expect(resume.인적사항.이름).toBe("HyunJu Kim");
+    expect(resume.자기소개_요약).toBe("Analyst.");
+    expect(resume.경력[0].회사명).toBe("BCG");
+    // 영문 원문을 국문 enum 으로 번역하지 않는다.
+    expect(resume.경력[0].고용형태).toBe("Internship");
+    expect(resume.어학[0].언어).toBe("English (TOEFL 115)");
+    expect(resume.논문?.[0].제목).toBe("Urban mobility");
+    // 링크 정규화(기존 경계)도 매핑 뒤에 그대로 걸린다.
+    expect(resume.인적사항.링크).toEqual([{ label: null, url: "https://hyunju.dev" }]);
+  });
+
+  it("국문 응답은 매핑을 타지 않는다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: {
+        id: "res-ko",
+        result: {
+          meta: { language: "ko", format: "korean_resume" },
+          인적사항: { 이름: "김상협", 링크: [] },
+          경력: [{ id: 1, 회사명: "ARC", 고용형태: "정규직" }],
+        },
+      },
+    });
+
+    const resume = await getResume("res-ko");
+    expect(resume.인적사항.이름).toBe("김상협");
+    expect(resume.경력[0].고용형태).toBe("정규직");
+  });
+});
+
 describe("getResume — 인적사항.링크 정규화 (FRT-109, 백엔드 실값 대조)", () => {
   const base = { meta: { language: "ko", format: "korean_resume" }, 학력: [], 경력: [] };
 

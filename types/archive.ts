@@ -81,11 +81,52 @@ export interface BlockColumnDef {
   options?: string[]
   /** 입력 가이드라인(컬럼 라벨과 입력칸 사이 안내문). 반복 입력의 첫 행에만 렌더된다. */
   guide?: string
+  /**
+   * 셀 렌더 모드 힌트 (FRT-178). 블록의 `variant` 와 같은 역할을 컬럼 층위에서 한다.
+   * `'role-chip'` 은 옵션 없는 `checklist` 컬럼을 자유 태그 입력이 아니라 역할 칩으로 렌더한다 —
+   * 선택지가 상수가 아니라 같은 폼의 '역할 이력' 값에서 파생되기 때문이다(RoleHistoryContext).
+   *
+   * ⚠️ 블록 층위의 `variant` 와 달리 이건 `RepeatableCellBlockValue.columns` 안에 있어
+   * **value(JSONB)에 함께 저장된다** — 저장된 레코드를 다시 열면 템플릿이 아니라 저장값의
+   * columns 가 채택되므로(`injectValue`), 값을 읽는 쪽은 columns 에 `variant` 키가 실릴 수
+   * 있음을 전제해야 한다. 렌더 힌트일 뿐이라 무시해도 무해하다.
+   */
+  variant?: 'role-chip'
 }
+
+/**
+ * 반복 입력(`repeatable-cell`)의 `file` 컬럼 셀 값 (FRT-213).
+ *
+ * 블록 층위 `FileBlockValue` 와 달리 `description`·`evidenceType` 을 담지 않는다 —
+ * 셀은 표의 한 칸이고, 설명이 필요하면 템플릿이 별도 텍스트 컬럼을 두는 게 표 관행이다
+ * (역할 이력의 start/end/role 3컬럼과 같은 결).
+ *
+ * ⚠️ `fileName` 을 **함께 저장하는 것이 핵심이다.** `GET /files/{id}/download` 는
+ * `{url, expiresAt}` 만 주고 파일명·mime·크기를 돌려주지 않아(`lib/api/files-api.ts`),
+ * `fileId` 만 저장하면 새로고침 후 표에 무슨 파일인지 표시할 방법이 사라진다.
+ * `url` 은 저장하지 않는다 — presigned URL 은 만료되므로 표시 시점에 새로 받는다.
+ */
+export interface FileCellValue {
+  type: 'file'
+  fileId: string
+  fileName: string
+  mimeType?: string
+  size?: number
+}
+
+/**
+ * 반복 입력 셀 하나가 담을 수 있는 값 (FRT-213).
+ *
+ * 대부분의 컬럼은 값의 알맹이만 담는다 — `link` 는 url 문자열만, `checklist` 는 checked
+ * 배열만 담고 블록 층위의 래퍼 객체(`LinkBlockValue` 등)를 그대로 싣지 않는다.
+ * `file` 만 예외로 구조화 객체를 담는데, 파일은 사람이 읽는 문자열 하나로 접히지 않기 때문이다.
+ * `period` 는 예외가 아니다 — 점 구분 문자열(`"2023.03 ~ 현재"`) 하나로 접힌다.
+ */
+export type CellValue = string | string[] | FileCellValue
 
 export interface BlockRow {
   id: string
-  cells: Record<string, string | string[]>
+  cells: Record<string, CellValue>
   /**
    * intra-experience 블록 간 링크 (FRT-76). OutcomeList 활동 행이 '프로젝트로 연결'로
    * 만든 프로젝트 행(다른 섹션 repeatable-cell 의 BlockRow)의 id 를 가리킨다.
@@ -93,7 +134,46 @@ export interface BlockRow {
    * OutcomeList 단일컬럼 가드에 영향 없음). soft link — 대상 행이 사라지면 미연결로 복귀한다.
    */
   linkedProjectRowId?: string
+  /**
+   * 이 행에 붙은 역할 태그 (FRT-178). '역할 이력'에 등록된 역할명을 값으로 갖는다.
+   * `linkedProjectRowId` 와 같은 이유로 컬럼이 아니라 **행 필드**다 — OutcomeList 는
+   * 단일컬럼 전제 위에서 동작하므로 둘째 컬럼을 만들면 그 전제가 깨진다. additive·무마이그레이션.
+   * 행 id 가 아니라 **이름**을 저장한다 — 저장된 JSONB 를 백엔드 분석이 그대로 읽어야 하므로.
+   * 이름이 바뀌거나 지워질 때의 동기화는 RoleHistoryContext 가 편집 시점에 전파한다.
+   */
+  roleTags?: string[]
+  /**
+   * 이 행에만 사용자가 직접 붙인 항목 (FRT-145). 템플릿이 소유하는 `columns` 는 그대로 두므로
+   * FRT-104 의 열 잠금 정책과 충돌하지 않는다 — 열을 늘리면 **모든 행**에 칸이 생기지만
+   * 여기 붙는 항목은 그 행 하나에만 있다. `linkedProjectRowId`·`roleTags` 와 같은 행 필드
+   * 규약(additive·무마이그레이션, value(JSONB) 경로로 직렬화).
+   * 노출 여부는 블록 층위 `Block.allowRowExtras` 로 템플릿이 opt-in 한다.
+   */
+  extraFields?: RowExtraField[]
 }
+
+/**
+ * 사용자가 행 하나에 추가한 항목 (FRT-145).
+ *
+ * `label` 은 id 가 아니라 **이름**을 저장한다 — 저장된 JSONB 를 백엔드 분석이 그대로 읽어야
+ * 하므로(FRT-178 교훈). `key` 는 렌더 키·수정 대상 식별에만 쓰는 내부 값이다.
+ *
+ * `blockType` 은 `BlockColumnDef.blockType` 의 부분집합이다. 셀 렌더러(`CellInput`)가
+ * 실제로 분기하고 **선택지 없이도 성립하는** 6종만 연다 — `single-select` 는 options 가
+ * 없으면 빈 드롭다운이 되고, `checklist` 는 `tags` 와 동일한 자유입력으로 폴백한다.
+ *
+ * `file` 은 계속 미지원이다(FRT-213). 옵션 편집 UI 도 아직 없다.
+ * 파일 셀 값은 구조화 객체(`FileCellValue`)라 아래 `value: string | string[]` 로는 담을 수
+ * 없다 — 열려면 값 타입부터 넓혀야 하므로 별도 논의가 필요하다.
+ */
+export interface RowExtraField {
+  key: string
+  label: string
+  blockType: RowExtraFieldType
+  value: string | string[]
+}
+
+export type RowExtraFieldType = 'text' | 'textarea' | 'date' | 'period' | 'link' | 'tags'
 
 export interface RepeatableCellBlockValue {
   type: 'repeatable-cell'
@@ -168,9 +248,13 @@ export interface Block {
   /**
    * 렌더 모드 힌트 (FRT-97). type 을 바꾸지 않고 같은 블록을 다른 UI 로 그릴 때 쓴다.
    * `'outcome-list'` 는 단일컬럼 `repeatable-cell` 을 개조식 불릿-행(OutcomeList)으로 렌더한다.
+   * `'mood-tag'` 는 `checklist` 를 이모티콘 알약 태그(MoodTagBlock)로 렌더한다 — 옵션이 고정
+   * 프리셋이라 체크리스트의 옵션 추가·삭제 UI 를 숨긴다(FRT-177).
+   * `'role-history'` 는 `repeatable-cell` 을 접이식 역할 이력 패널(RoleHistoryBlock)로 렌더한다.
+   * 이 블록의 역할명이 폼 안의 모든 역할 칩 선택지가 된다(FRT-178).
    * 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다 — 로드 시 레지스트리에서 재공급된다.
    */
-  variant?: 'outcome-list'
+  variant?: 'outcome-list' | 'mood-tag' | 'role-history'
   /**
    * '프로젝트로 연결' 링크 설정 (FRT-76). OutcomeList 인스턴스별로 opt-in 한다 —
    * 있으면 각 활동 행에 링크 버튼이 노출되고, 없으면 미노출(설정 가능한 on/off).
@@ -179,12 +263,28 @@ export interface Block {
    */
   linkConfig?: ProjectLinkConfig
   /**
+   * 각 행에 역할 태그를 붙일 수 있게 한다 (FRT-178). OutcomeList 인스턴스별로 opt-in 한다 —
+   * `linkConfig` 와 같은 규약이다. 켜지 않은 블록에는 칩 UI 가 아예 노출되지 않으므로,
+   * 역할 개념이 없는 유형(대외활동 등)의 개조식 목록은 영향을 받지 않는다.
+   * 실제 선택값은 `BlockRow.roleTags` 에 저장된다.
+   * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
+   */
+  roleTags?: boolean
+  /**
    * 컬럼 고정 (FRT-104). `repeatable-cell` 에서 켜면 열 태그 줄(컬럼 pill·삭제·'열 추가' 입력)을
    * 숨겨 정해진 컬럼만 입력하게 한다. 기본 템플릿의 표는 컬럼이 고정이라 이 관리 UI 가 산만하다 —
    * 사용자가 직접 만드는 커스텀 표(createBlock 경로)는 잠기지 않는다. 표시 전용으로 value(JSONB)는 무변경.
    * `variant` 와 동일하게 템플릿 정의에만 존재하며 직렬화되지 않는다(로드 시 레지스트리에서 재공급).
    */
   lockColumns?: boolean
+  /**
+   * 각 행에 사용자가 항목을 추가할 수 있게 한다 (FRT-145). 블록 인스턴스별로 opt-in 한다 —
+   * `roleTags`·`linkConfig` 와 같은 규약이다. `lockColumns` 와 충돌하지 않는다: 열은 계속
+   * 템플릿이 소유하고(모든 행에 적용), 여기서 열리는 건 **그 행에만 붙는 항목**이다.
+   * 실제 값은 `BlockRow.extraFields` 에 저장된다.
+   * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
+   */
+  allowRowExtras?: boolean
   value: BlockValue
 }
 
@@ -239,8 +339,43 @@ export const SECTION_LABEL_OVERRIDES: Partial<
 > = {
   'academic-society': { repeat: '프로젝트 기록' },
   'career': { repeat: '프로젝트 / 담당 업무 기록' },
+  'certification': { detail: '취득 배경', evidence: '자격증 증빙' },
+  'club': { detail: '활동 상세', repeat: '활동 / 이벤트 기록' },
   'education': { detail: '수업 상세', repeat: '프로젝트 / 과제 / 제작물 기록' },
   'extracurricular': { detail: '활동 상세', repeat: '미션 / 프로젝트 기록' },
+}
+
+/**
+ * 유형별 섹션(카드) 안내 문구 오버라이드 (FRT-177). 카드 제목 아래 회색 설명 문단으로 렌더된다.
+ * 미지정 유형·카테고리는 폼의 기본 문구(detail 카드의 "선택 입력이에요…")로 폴백한다.
+ * 라벨 오버라이드와 마찬가지로 표시 전용이라 안정키·저장 shape 와 무관하다.
+ */
+export const SECTION_DESCRIPTION_OVERRIDES: Partial<
+  Record<ExperienceTypeId, Partial<Record<SectionCategory, string>>>
+> = {
+  'certification': {
+    detail:
+      '전부 선택 항목이지만, 이 중 하나만 채워도 이후 AI 분석과 자기소개서·이력서 문장 추천의 품질이 크게 달라져요.',
+    evidence: '자격증 사본이나 취득 증명 자료를 첨부해주세요.',
+  },
+  'club': {
+    detail:
+      "이 동아리에서의 활동을 정리해주세요. 개별 이벤트나 프로젝트의 세부 내용은 아래 '활동 / 이벤트 기록'에서 따로 기록할 수 있어요.",
+    repeat:
+      "동아리에서 진행한 정기 이벤트, 공연, 프로젝트 등을 단위별로 기록해주세요. 위 '주요 활동 / 이벤트' 항목에서 프로젝트로 바로 연결할 수 있어요.",
+    evidence:
+      '임명장, 활동 확인서, 수상 내역, 공연 사진 등 이 동아리 활동을 증명할 수 있는 자료를 첨부해주세요.',
+  },
+  'extracurricular': {
+    detail:
+      "이 활동에서의 경험을 정리해주세요. 개별 미션이나 프로젝트의 세부 내용은 아래 '미션 / 프로젝트 기록'에서 따로 기록할 수 있어요.",
+    // 문서 원문은 "위 '가장 중요했던 내용'에서"로 옛 필드명을 가리킨다 — 실제 필드명(주요 미션 /
+    // 프로젝트)으로 맞췄다. 안내가 화면에 없는 필드를 가리키면 그게 더 큰 혼선이다.
+    repeat:
+      "이 활동에서 수행한 미션, 프로젝트, 제작물 등을 단위별로 기록해주세요. 위 '주요 미션 / 프로젝트'에서 관련 항목을 프로젝트로 바로 연결할 수 있어요.",
+    evidence:
+      '수료증, 위촉장, 활동 확인서 등 이 활동을 공식적으로 증명할 수 있는 자료를 첨부해주세요.',
+  },
 }
 
 // ─── Templates ──────────────────────────────────────────────────
@@ -369,54 +504,6 @@ export interface Preset {
 }
 
 // ─── Legacy types (kept for migration reference, will be removed) ──
-
-/** @deprecated Use Block with type 'text' instead */
-export interface RawTextField {
-  key: string
-  label: string
-  value: string
-}
-
-/** @deprecated Use TemplateV2 instead */
-export interface TemplateField {
-  key: string
-  label: string
-  type: 'text' | 'textarea' | 'period' | 'select'
-  required?: boolean
-  options?: string[]
-  placeholder?: string
-}
-
-/** @deprecated Use TemplateV2 instead */
-export interface Template {
-  id: string
-  user_id: string
-  label: string
-  field_schema: TemplateField[]
-  is_system?: boolean
-}
-
-/** @deprecated Use ExperienceV2 instead */
-export interface Experience {
-  id: string
-  user_id: string
-  templates_id: string
-  raw_text: RawTextField[]
-  created_at: string
-  updated_at: string
-}
-
-/** @deprecated Use ExperienceV2 instead */
-export interface ExperienceWithFolder extends Experience {
-  folderId: string
-}
-
-/** @deprecated Use Library instead */
-export interface Folder {
-  id: string
-  name: string
-  isSystem: boolean
-}
 
 /** @deprecated Use Block system instead */
 export type CustomFieldType = 'text' | 'textarea' | 'date' | 'file'

@@ -1,19 +1,21 @@
 "use client";
 
-import { isEmptySection, type Project } from "@/types/resume";
+import type { Project } from "@/types/resume";
+import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { formatPeriod, PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
+import { visibleUsableExperiences } from "@/lib/export/resume-visibility";
 
 interface Props {
+  labels: ResumeSectionLabels;
   data: Project[];
 }
 
-export function PreviewProject({ data }: Props) {
-  if (isEmptySection(data)) return null;
-  const items = data.filter((p) => !isEmptySection(p));
+export function PreviewProject({ data, labels }: Props) {
+  const items = visibleUsableExperiences(data);
   if (items.length === 0) return null;
 
   return (
-    <PreviewSection title="프로젝트">
+    <PreviewSection title={labels.project}>
       {items.map((p) => {
         const techLine = p.사용기술.filter((t) => t && t.trim()).join(", ");
         return (
@@ -39,14 +41,14 @@ export function PreviewProject({ data }: Props) {
             {p.성과.length > 0 && (
               <div className="mt-1.5">
                 <p className="text-caption text-text-tertiary font-medium">
-                  성과
+                  {labels.achievements}
                 </p>
                 <PreviewBullets items={p.성과} />
               </div>
             )}
             {techLine && (
               <p className="mt-1 text-caption text-text-tertiary">
-                <span className="font-medium">사용 기술:</span> {techLine}
+                <span className="font-medium">{labels.techStack}:</span> {techLine}
               </p>
             )}
           </div>

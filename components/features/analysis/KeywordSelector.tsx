@@ -152,7 +152,7 @@ export default function KeywordSelector({
             onClick={addCustom}
             disabled={!customLabel.trim() || selected.length >= maxCount}
             aria-label="키워드 추가"
-            className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md bg-brand text-white hover:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+            className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md bg-brand text-text-on-brand hover:bg-brand-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
           >
             <Plus size={18} />
           </button>

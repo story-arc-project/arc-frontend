@@ -61,6 +61,9 @@ export default function GenericFileCard({
           target="_blank"
           rel="noreferrer noopener"
           download={name || undefined}
+          // 첨부가 여러 개면 '다운로드'로만 읽혀 어느 파일인지 알 수 없다. 파일명은 옆의
+          // 별개 텍스트라 동작과 연결되지 않으므로, 동작의 이름 자체에 넣는다.
+          aria-label={name ? `${name} ${downloadLabel}` : undefined}
           className="flex h-9 shrink-0 items-center gap-1.5 rounded-sm px-3 text-body-sm text-text-secondary hover:bg-surface-tertiary"
         >
           <Download size={14} />
@@ -71,7 +74,7 @@ export default function GenericFileCard({
         <button
           type="button"
           onClick={onDelete}
-          aria-label="첨부 삭제"
+          aria-label={name ? `${name} 첨부 삭제` : "첨부 삭제"}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-text-tertiary hover:bg-surface-tertiary hover:text-text-primary"
         >
           <X size={14} />

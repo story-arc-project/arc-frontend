@@ -105,7 +105,7 @@ function InteractiveWithLink({ initial }: { initial: string[] }) {
       force((n) => n + 1)
       return id
     },
-    getProjectRow: (_section, id) => {
+    getProjectRow: (_section, _col, id) => {
       const title = projectsRef.current.get(id)
       return title === undefined ? null : { title }
     },

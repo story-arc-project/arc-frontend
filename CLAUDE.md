@@ -58,7 +58,8 @@ docs/         # 프로젝트 문서
 
 코드 변경 작업(기능·버그·리팩토링)은 **`arc-dev-workflow` 스킬**을 따른다.
 요약: Triage 기본값 Standard → Brainstorm/Plan → dev에서 분기(worktree) → SDD/TDD 구현 →
-`validate` 4게이트 → UI 변경 시 `ui-preview`로 사용자 확인 채널 발행 → Codex 리뷰(최종 권위) → PR(base=dev).
+`validate` 4게이트 → UI 변경 시 `ui-preview`로 사용자 확인 채널 발행 →
+리뷰 `/code-review medium --fix`(사용자 트리거) → **draft PR**(base=dev, ready 전환·머지는 사용자 몫).
 
 경로별 세부 규칙은 `.claude/rules/`(archive · api · testing)가 해당 파일 작업 시 자동 로드된다.
 

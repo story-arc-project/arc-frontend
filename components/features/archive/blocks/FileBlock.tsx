@@ -153,6 +153,14 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
 
   const hasUploaded = Boolean(val.fileId)
   const maxMb = Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024))
+  // 템플릿이 옵션을 정한 뒤에도 그 전에 자유 입력으로 저장된 값(레거시 데이터)이 있을 수 있다 —
+  // 목록에 없다고 빼면 드롭다운이 비어 보여 값이 사라진 것처럼 보인다. 현재 값을 목록에 얹어 보존한다.
+  const evidenceOptions =
+    block.options?.length
+      ? val.evidenceType && !block.options.includes(val.evidenceType)
+        ? [...block.options, val.evidenceType]
+        : block.options
+      : undefined
 
   if (readOnly) {
     return (
@@ -247,11 +255,32 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
           value={val.description}
           onChange={(e) => update("description", e.target.value)}
         />
-        <Input
-          placeholder="증빙 유형 (성적표/상장 등)"
-          value={val.evidenceType}
-          onChange={(e) => update("evidenceType", e.target.value)}
-        />
+        {/* 템플릿이 증빙 유형 선택지를 정한 유형은 드롭다운으로 좁힌다(FRT-179).
+            선택지가 없으면 무엇이 증빙인지 유형마다 달라 자유 입력을 유지한다. */}
+        {evidenceOptions ? (
+          <select
+            aria-label="증빙 유형"
+            value={val.evidenceType}
+            onChange={(e) => update("evidenceType", e.target.value)}
+            className={[
+              "h-12 w-full rounded-md border border-border bg-surface px-4",
+              "text-body text-text-primary",
+              "focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand",
+              "transition-colors",
+            ].join(" ")}
+          >
+            <option value="">증빙 유형 선택</option>
+            {evidenceOptions.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        ) : (
+          <Input
+            placeholder="증빙 유형 (성적표/상장 등)"
+            value={val.evidenceType}
+            onChange={(e) => update("evidenceType", e.target.value)}
+          />
+        )}
       </div>
     </fieldset>
   )

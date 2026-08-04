@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import type { KeywordSuggestion, KeywordCategory } from "@/types/analysis";
@@ -12,11 +12,9 @@ import {
   createKeywordAnalysis,
 } from "@/lib/api/analysis-api";
 import { capture } from "@/lib/analytics";
-import useAnalysisPolling from "@/hooks/useAnalysisPolling";
-import { useFeedbackTriggers } from "@/contexts/FeedbackTriggerContext";
 import KeywordSelector from "@/components/features/analysis/KeywordSelector";
 
-type Phase = "select" | "loading" | "error";
+type Phase = "select" | "error";
 
 export default function KeywordNewPage() {
   const router = useRouter();
@@ -27,25 +25,7 @@ export default function KeywordNewPage() {
   const [target, setTarget] = useState("");
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
-  const [analysisId, setAnalysisId] = useState<string | null>(null);
-
-  const feedbackTriggers = useFeedbackTriggers();
-
-  const { start: startPolling } = useAnalysisPolling({
-    analysisId,
-    type: "keyword",
-    redirectPath: "/analysis/keyword",
-    // 완료 사실만 레이아웃의 FeedbackHost 로 넘긴다 — 모달은 이동한 결과 화면 위에서 뜬다.
-    onCompleted: (context) => feedbackTriggers?.reportAnalysisCompleted(context),
-    onFailed: (msg) => {
-      setPhase("error");
-      setErrorMsg(msg);
-    },
-    onTimeout: (msg) => {
-      setPhase("error");
-      setErrorMsg(msg);
-    },
-  });
+  const [submitting, setSubmitting] = useState(false);
 
   const fetchSuggestions = useCallback(() => {
     getKeywordSuggestions()
@@ -60,14 +40,26 @@ export default function KeywordNewPage() {
     fetchSuggestions();
   }, [fetchSuggestions]);
 
+  // 생성 요청이 도는 동안 사용자는 '목록으로'나 전역 내비게이션으로 떠날 수 있다. 그때 뒤늦게
+  // 도착한 응답이 router.push 를 부르면 보고 있던 화면을 빼앗아 목록으로 끌고 온다.
+  // 시작했다는 사실은 토스트로 알리되, **화면을 옮기는 건 이 화면에 남아 있을 때만** 한다.
+  // (초기값이 아니라 effect 본문에서 true 로 세운다 — StrictMode 이중 마운트에서 첫 정리가
+  //  false 로 내려놓은 뒤 다시 켜주는 곳이 없으면 영영 false 로 남는다.)
+  const mountedRef = useRef(true);
   useEffect(() => {
-    if (analysisId && phase === "loading") {
-      startPolling();
-    }
-  }, [analysisId, phase, startPolling]);
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
+  // FRT-176: 분석을 걸면 기다리게 하지 않고 목록으로 보낸다.
+  //
+  // 예전에는 여기서 대기 화면을 띄우고 60초 예산으로 폴링하다가, 예산이 끝나면 "시간 초과"
+  // 오류를 보여줬다. 분석은 실패한 적이 없었고(백엔드는 계속 돌아 결국 완료된다) 화면만
+  // 거짓말을 했다. 소요시간은 예측할 수 없으므로 예산을 키워봐야 같은 버그가 재발한다.
   const startAnalysis = useCallback(async () => {
-    setPhase("loading");
+    setSubmitting(true);
     // 실행 직전 최종 선택 = "어떤 키워드로 적합도를 확인하려 하나"(FRT-19). category 는 4분류.
     const keywordCategories = Array.from(new Set(selectedKeywords.map((k) => k.category)));
     capture("analysis_target_selected", {
@@ -78,41 +70,21 @@ export default function KeywordNewPage() {
     try {
       const labels = selectedKeywords.map((k) => k.label);
       const { analysisId: id } = await createKeywordAnalysis(labels, target.trim());
-      if (id) {
-        setAnalysisId(id);
-        return;
-      }
-      // 백엔드가 아직 분석 id 를 반환하지 않는다(FRT-38). 폴링 대상을 특정할 수 없으므로
-      // 가짜 오류 화면 대신 목록으로 보내 진행 상황을 보게 한다.
       toast("분석을 시작했어요. 목록에서 진행 상황을 확인하세요.", "success");
-      router.push("/analysis/keyword");
+      if (!mountedRef.current) return;
+      // 방금 만든 분석 id 를 목록에 알려준다 — 빨리 끝나는 분석(knn 경로)은 목록의 첫 조회
+      // 시점에 이미 완료라 '진행 중 → 완료' 전이가 없고, 그러면 완료 계측·피드백 트리거를
+      // 놓친다. id 를 못 받는 레거시 응답(FRT-38)이면 추적 대상을 특정할 수 없어 그냥 간다.
+      router.push(
+        id ? `/analysis/keyword?started=${encodeURIComponent(id)}` : "/analysis/keyword",
+      );
     } catch {
+      if (!mountedRef.current) return;
+      setSubmitting(false);
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
   }, [selectedKeywords, target, router]);
-
-  if (phase === "loading") {
-    return (
-      <main>
-        <div className="flex flex-col items-center justify-center py-24 px-4" role="status" aria-live="polite">
-          <Loader2 size={32} className="text-brand animate-spin mb-4" aria-hidden="true" />
-          <h2 className="text-title text-text-primary mb-1">분석 중입니다...</h2>
-          <p className="text-body-sm text-text-secondary">
-            선택한 키워드를 기준으로 경험을 분석하고 있어요.
-          </p>
-          <div className="mt-6 w-full max-w-md space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div
-                key={i}
-                className={`h-12 bg-surface-secondary rounded-lg animate-pulse [animation-delay:${i * 150}ms]`}
-              />
-            ))}
-          </div>
-        </div>
-      </main>
-    );
-  }
 
   if (phase === "error") {
     return (
@@ -177,10 +149,10 @@ export default function KeywordNewPage() {
         <div className="pt-4">
           <Button
             fullWidth
-            disabled={selectedKeywords.length === 0}
+            disabled={selectedKeywords.length === 0 || submitting}
             onClick={startAnalysis}
           >
-            분석 시작
+            {submitting ? "분석을 시작하는 중..." : "분석 시작"}
           </Button>
         </div>
       </div>

@@ -97,7 +97,9 @@ function GoogleCallbackHandler() {
   }, [router, searchParams]);
 
   return (
-    <div className="flex items-center justify-center min-h-screen">
+    // 세로 위치는 (auth) 레이아웃이 잡는다. 여기서 min-h-screen 을 겹치면
+    // 화면 한 개 분량이 더 밀려 로딩 문구가 아래로 내려간다.
+    <div className="flex items-center justify-center">
       <p className="text-body text-text-tertiary">로그인 처리 중...</p>
     </div>
   );

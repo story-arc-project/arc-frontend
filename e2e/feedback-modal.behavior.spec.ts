@@ -21,8 +21,9 @@ import { DEFAULT_PAGE_ORIGIN, STUB_API_URL, corsHeaders, stubApi } from "./fixtu
  * 이 스펙만 2겹을 다 열고, 나머지 스펙은 2번이 닫혀 404 → 훅 fail-closed 로 모달이 뜨지 않는다.
  *
  * ⚠️ 시나리오 "분석 완료"는 시드 픽스처 `comp-1` 이 `status: "completed"` 인 데 의존한다
- *    (api-data.ts `snapshot()` 기본값). 이게 `processing` 으로 바뀌면 폴링이 3초 × 20회를
- *    돌아 타임아웃난다.
+ *    (api-data.ts `snapshot()` 기본값). 목록이 `?started=` 로 받은 그 id 가 첫 조회부터 완료라
+ *    곧바로 트리거가 걸린다(FRT-176). 이게 `processing` 으로 바뀌면 5초 폴링이 완료로 전이할
+ *    때까지 기다려야 하므로 이 스펙의 타이밍 전제가 무너진다.
  */
 
 const EXPERIENCE_QUESTION = "ARC에 기록해 보니 어떠셨나요?";
@@ -130,7 +131,7 @@ test.describe("FRT-96 피드백 모달 노출", () => {
     });
   });
 
-  test("분석이 완료되면 이동한 결과 화면 위에서 모달이 뜬다", async ({ page }) => {
+  test("분석 완료 신호는 목록에서 보류됐다가 결과 화면에서 뜬다", async ({ page }) => {
     const stub = await stubApi(page, { authed: true, scenario: "data", feedback: true });
     // 경험은 2개 = 임계(3) 미만. 경험 게이트를 닫아 두어야 이 테스트가 **분석 게이트만** 본다.
     await stubExperienceCount(page, 2);
@@ -141,12 +142,21 @@ test.describe("FRT-96 피드백 모달 노출", () => {
     await page.getByText("피드백 e2e 경험 2").click();
     await page.getByRole("button", { name: "분석 시작" }).click();
 
-    // 폴링이 comp-1(completed)을 즉시 찾아 결과 상세로 이동한다.
+    // 기다리게 하지 않고 목록으로 보낸다(FRT-176). 방금 만든 id 는 `?started=` 로 넘어가고,
+    // 목록이 그 완료를 관측해 트리거를 낸다 — 스텁의 comp-1 은 첫 조회부터 completed 다.
+    // 관측을 마치면 목록이 그 쿼리를 지우므로(새로고침마다 재발화 방지) 최종 URL 은 깨끗하다.
+    await expect(page).toHaveURL(/\/analysis\/comprehensive$/);
+
+    // 목록은 억제 경로다 — 결과를 아직 못 본 사용자에게 "방금 이 분석, 도움이 됐나요?"를
+    // 물으면 단 한 번뿐인 노출 기회를 헛되이 쓴다. 신호는 버려지지 않고 **보류**된다.
+    await expect(page.getByRole("dialog", { name: ANALYSIS_QUESTION })).toBeHidden();
+    expect(promptShownCalls(stub.mutations)).toHaveLength(0);
+
+    // 완료 카드를 눌러 결과로 들어가면 그 화면 위에서 뜬다(대기 화면이 있던 시절과 같은 자리).
+    await page.getByRole("link", { name: /전체 경험 종합 분석/ }).click();
     await expect(page).toHaveURL(/\/analysis\/comprehensive\/comp-1$/);
     await expectPromptDecided(stub);
 
-    // 생성 화면(`/analysis/*/new`)은 억제 경로다 — 신호는 거기서 **보류**됐다가 상세로
-    // 이동한 뒤에야 지연을 세고 뜬다. 유닛이 pathname 을 흉내내던 부분이 여기서 실제로 확인된다.
     await expect(page.getByRole("dialog", { name: ANALYSIS_QUESTION })).toBeVisible();
     expect(promptShownCalls(stub.mutations)).toHaveLength(1);
     expect(promptShownCalls(stub.mutations)[0]).toMatchObject({

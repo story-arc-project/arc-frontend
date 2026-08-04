@@ -36,6 +36,19 @@ export default defineConfig({
       // 자기소개서(FRT-140)도 봉인 상태다 — BAC-62(백엔드 파이프라인)가 없어 기본 off.
       // 프리뷰에서는 켜서 실물을 확인한다(데모 시드가 본문·근거 경고를 공급한다).
       NEXT_PUBLIC_COVER_LETTER_ENABLED: "true",
+      // admin 화면(FRT-16/17)은 **서버사이드** 가드(requireAdmin)라 클라이언트 스텁만으로는
+      // 뚫리지 않는다. E2E 인증 주입으로 seedDemoUser 를 서버에 태우고, 그 이메일을
+      // allowlist 에 넣어야 렌더까지 간다.
+      //
+      // PREVIEW_ADMIN=true 일 때만 켠다 — NEXT_PUBLIC_E2E_AUTH 를 상시로 두면 공개 화면
+      // (/landing 등)이 인증 상태로 렌더돼 깨진다(.claude/rules/testing.md).
+      ...(process.env.PREVIEW_ADMIN === "true"
+        ? {
+            NEXT_PUBLIC_E2E_AUTH: "true",
+            ADMIN_EMAILS: "demo@story-arc.org",
+            NEXT_PUBLIC_ADMIN_CUSTOMERS_ENABLED: "true",
+          }
+        : {}),
     },
   },
 });

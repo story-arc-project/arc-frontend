@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ApiSuccessResponse } from "@/types/api"
 import type {
+  AnalysisType,
   IndividualAnalysisResult,
   ComprehensiveAnalysisResult,
   KeywordAnalysisResult,
@@ -23,6 +24,8 @@ import { api } from "@/lib/api/client"
 import {
   createComprehensiveAnalysis,
   createKeywordAnalysis,
+  getAnalysisHistory,
+  getAnalysisHomeSummary,
   getBookmarks,
   getIndividualAnalysisList,
   getIndividualAnalysisResult,
@@ -1371,5 +1374,162 @@ describe("키워드 이중중첩 언랩 — 빈 껍질을 뚫는다 (FRT-134 cod
     const res: KeywordAnalysisResult = await getKeywordResult("kw-1")
     expect(res.storylines).toHaveLength(1)
     expect(res.hasResultBody).toBe(true)
+  })
+})
+
+// FRT-170: `/analysis/history` 엔드포인트가 없어 세 목록을 병합한다. 그 중 일부만 실패하면
+// 살아남은 소스만으로 정렬된 목록이 "전체 기록"인 얼굴로 표시돼, 사용자는 특정 유형의 기록이
+// 삭제됐다고 오인한다. 회복력(한 소스가 죽어도 나머지는 보여준다)은 그대로 두고,
+// **무엇을 못 불러왔는지**를 반환값에 실어 화면이 말할 수 있게 한다.
+describe("getAnalysisHistory — 부분 실패 보고 (FRT-170)", () => {
+  /** 목록 3종을 URL 로 갈라, 지정한 유형만 reject 시킨다. */
+  function stubLists(failing: AnalysisType[]) {
+    const byUrl: Record<string, AnalysisType> = {
+      "/analysis/individual": "individual",
+      "/analysis/comprehensive": "comprehensive",
+      "/analysis/keyword": "keyword",
+    }
+    apiMock.get.mockImplementation((url: string) => {
+      const type = byUrl[url]
+      if (type === undefined) throw new Error(`unexpected url: ${url}`)
+      if (failing.includes(type)) return Promise.reject(new Error("boom"))
+      return Promise.resolve(
+        envelope([{ id: `${type}-1`, status: "success", created_at: "2026-07-27" }]),
+      ) as never
+    })
+  }
+
+  it("종합만 실패하면 나머지는 보여주되 실패한 유형을 함께 돌려준다", async () => {
+    stubLists(["comprehensive"])
+
+    const { items, failedTypes } = await getAnalysisHistory()
+
+    expect(failedTypes).toEqual(["comprehensive"])
+    expect(items.map((s) => s.id)).toEqual(["individual-1", "keyword-1"])
+  })
+
+  it("실패 유형의 순서는 선언 순서로 고정된다 — reject 순서에 흔들리지 않는다", async () => {
+    // push 순서로 모으면 어느 요청이 먼저 깨지느냐에 따라 안내 문구가 뒤바뀐다.
+    stubLists(["individual", "keyword"])
+
+    const { items, failedTypes } = await getAnalysisHistory()
+
+    expect(failedTypes).toEqual(["individual", "keyword"])
+    expect(items.map((s) => s.id)).toEqual(["comprehensive-1"])
+  })
+
+  it("전부 성공하면 실패 목록은 비어 있다", async () => {
+    stubLists([])
+
+    const { failedTypes } = await getAnalysisHistory()
+
+    expect(failedTypes).toEqual([])
+  })
+
+  it("전부 실패하면 기존대로 에러를 던진다 — 화면은 전체 실패로 전환된다", async () => {
+    stubLists(["individual", "comprehensive", "keyword"])
+
+    await expect(getAnalysisHistory()).rejects.toThrow("분석 기록을 불러올 수 없습니다.")
+  })
+
+  it("유형 필터가 걸려도 실패 보고는 그대로 실린다", async () => {
+    // 필터는 병합 뒤 적용된다 — 필터로 걸러진 결과가 비어도 그 원인이 실패인지
+    // 정말 없는 것인지 화면이 구분할 수 있어야 한다.
+    stubLists(["comprehensive"])
+
+    const { items, failedTypes } = await getAnalysisHistory({ type: "comprehensive" })
+
+    expect(failedTypes).toEqual(["comprehensive"])
+    expect(items).toEqual([])
+  })
+})
+
+// FRT-169: 분석 홈 요약도 같은 병합 구조다. 다만 여기엔 **경험 목록**이라는 네 번째 소스와
+// 그 넷에서 파생되는 통계(분석 완료 수·최근 분석 시각·전체 경험 수)가 있다. 부분 실패를
+// 무음으로 흡수하면 목록이 비는 데 그치지 않고 **숫자가 과소집계된 값을 확신 있게** 말한다.
+describe("getAnalysisHomeSummary — 부분 실패 보고 (FRT-169)", () => {
+  const EXPERIENCES_URL = "/experiences/"
+
+  /** 분석 3종 + 경험 목록을 URL 로 갈라, 지정한 것만 reject 시킨다. */
+  function stubSummary(failing: (AnalysisType | "experiences")[]) {
+    const byUrl: Record<string, AnalysisType | "experiences"> = {
+      "/analysis/individual": "individual",
+      "/analysis/comprehensive": "comprehensive",
+      "/analysis/keyword": "keyword",
+      [EXPERIENCES_URL]: "experiences",
+    }
+    apiMock.get.mockImplementation((url: string) => {
+      const source = byUrl[url]
+      if (source === undefined) throw new Error(`unexpected url: ${url}`)
+      if (failing.includes(source)) return Promise.reject(new Error("boom"))
+      if (source === "experiences")
+        return Promise.resolve(envelope({ count: 7, contents: [] })) as never
+      return Promise.resolve(
+        envelope([{ id: `${source}-1`, status: "success", created_at: "2026-07-27" }]),
+      ) as never
+    })
+  }
+
+  it("키워드만 실패하면 나머지는 살아남고 실패한 유형만 실린다", async () => {
+    stubSummary(["keyword"])
+
+    const summary = await getAnalysisHomeSummary()
+
+    expect(summary.failedTypes).toEqual(["keyword"])
+    expect(summary.experiencesFailed).toBe(false)
+    expect(summary.recentIndividual.map((s) => s.id)).toEqual(["individual-1"])
+    expect(summary.recentKeyword).toEqual([])
+  })
+
+  it("경험 목록만 실패하면 분석 유형은 멀쩡하고 경험 실패만 따로 보고된다", async () => {
+    // 경험 목록은 AnalysisType 이 아니다 — failedTypes 에 섞으면 없는 "경험 탭"이 생긴다.
+    stubSummary(["experiences"])
+
+    const summary = await getAnalysisHomeSummary()
+
+    expect(summary.failedTypes).toEqual([])
+    expect(summary.experiencesFailed).toBe(true)
+    expect(summary.stats.totalExperiences).toBe(0)
+    expect(summary.stats.analysisCompleted).toBe(3)
+  })
+
+  it("실패 유형의 순서는 선언 순서로 고정된다 — reject 순서에 흔들리지 않는다", async () => {
+    stubSummary(["keyword", "individual"])
+
+    const summary = await getAnalysisHomeSummary()
+
+    expect(summary.failedTypes).toEqual(["individual", "keyword"])
+  })
+
+  it("분석 3종이 전부 실패해도 경험 목록이 살아 있으면 던지지 않는다 — 기존 경계 보존", async () => {
+    // 기존 코드의 throw 조건은 `failCount === 4`(경험까지 포함한 전멸)였다.
+    // 셋만 실패하는 경우를 새로 던지게 만들면 그건 버그 수정이 아니라 동작 변경이다.
+    stubSummary(["individual", "comprehensive", "keyword"])
+
+    const summary = await getAnalysisHomeSummary()
+
+    expect(summary.failedTypes).toEqual(["individual", "comprehensive", "keyword"])
+    expect(summary.experiencesFailed).toBe(false)
+    expect(summary.stats.totalExperiences).toBe(7)
+    expect(summary.stats.analysisCompleted).toBe(0)
+  })
+
+  it("경험 목록까지 전부 실패하면 기존대로 에러를 던진다", async () => {
+    stubSummary(["individual", "comprehensive", "keyword", "experiences"])
+
+    await expect(getAnalysisHomeSummary()).rejects.toThrow(
+      "분석 데이터를 불러올 수 없습니다.",
+    )
+  })
+
+  it("전부 성공하면 실패 보고는 비어 있다", async () => {
+    stubSummary([])
+
+    const summary = await getAnalysisHomeSummary()
+
+    expect(summary.failedTypes).toEqual([])
+    expect(summary.experiencesFailed).toBe(false)
+    expect(summary.stats.analysisCompleted).toBe(3)
+    expect(summary.stats.totalExperiences).toBe(7)
   })
 })

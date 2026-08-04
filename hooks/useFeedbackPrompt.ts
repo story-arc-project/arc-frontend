@@ -52,7 +52,7 @@ interface UseFeedbackPromptOptions {
   experienceCount: number | null
   /**
    * 분석이 방금 완료됐으면 그 메타, 아니면 `null`. 값이 실리는 순간이 곧 트리거다
-   * (호출부가 useAnalysisPolling 의 성공 신호에서 세운다).
+   * (호출부가 분석 목록의 완료 관측(useAnalysisProgressWatch)에서 세운다).
    */
   analysisCompleted: FeedbackContext | null
 }

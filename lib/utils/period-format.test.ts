@@ -132,11 +132,29 @@ describe("formatPeriodString", () => {
       "2023.03.15 ~ 현재",
     )
   })
-  it("빈 시작은 빈 문자열", () => {
+  it("시작도 끝도 없으면 빈 문자열", () => {
     expect(formatPeriodString({ start: "", end: "", isCurrent: false })).toBe("")
   })
   it("시작만 있고 끝 없음 (틸드 없음)", () => {
     expect(formatPeriodString({ start: "2023-03", end: "", isCurrent: false })).toBe("2023.03")
+  })
+
+  // 입력 순서를 강제하지 않는다 — 종료를 먼저 고르거나 시작을 지워도 값을 버리지 않는다.
+  // 버리면 컨트롤드 input 이 방금 넣은 값을 되감아 아무 안내 없이 사라진다(FRT-213 리뷰 발견).
+  it("시작 없이 끝만 있어도 값을 버리지 않는다", () => {
+    expect(formatPeriodString({ start: "", end: "2024-01", isCurrent: false })).toBe(" ~ 2024.01")
+  })
+  it("시작 없이 '현재'만 체크해도 값을 버리지 않는다", () => {
+    expect(formatPeriodString({ start: "", end: "", isCurrent: true })).toBe(" ~ 현재")
+  })
+  it("시작 없는 값도 파싱으로 왕복한다", () => {
+    for (const opts of [
+      { start: "", end: "2024-01", isCurrent: false },
+      { start: "", end: "", isCurrent: true },
+    ]) {
+      const parsed = parsePeriodString(formatPeriodString(opts))
+      expect({ start: parsed.start, end: parsed.end, isCurrent: parsed.isCurrent }).toEqual(opts)
+    }
   })
 })
 

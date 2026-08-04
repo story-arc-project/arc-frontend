@@ -22,6 +22,9 @@ import { useBasePath } from "@/lib/utils/use-base-path";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { Badge } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
+import PartialFailureNotice, {
+  describePartialFailure,
+} from "@/components/features/analysis/common/PartialFailureNotice";
 
 const STAT_ICONS = [FileText, CheckCircle, Clock, AlertTriangle] as const;
 
@@ -107,10 +110,18 @@ export default function AnalysisHomePage() {
     );
   }
 
+  // 못 불러온 소스가 있으면 그 소스에서 파생된 숫자는 실제보다 작다. 틀린 숫자를 확신 있게
+  // 보여주느니 모른다고 말한다 — 사용자에겐 이 숫자를 검증할 방법이 없다.
+  const analysisStatsUnreliable = data.failedTypes.length > 0;
+  const partialFailureMessage = describePartialFailure(
+    data.failedTypes,
+    data.experiencesFailed,
+  );
+
   const statItems = [
-    { label: "전체 경험", value: data.stats.totalExperiences, color: "text-brand" },
-    { label: "분석 완료", value: data.stats.analysisCompleted, color: "text-success" },
-    { label: "최근 분석", value: data.stats.lastAnalysisAt ? formatRelativeTime(data.stats.lastAnalysisAt) : "-", color: "text-text-secondary" },
+    { label: "전체 경험", value: data.experiencesFailed ? "—" : data.stats.totalExperiences, color: "text-brand" },
+    { label: "분석 완료", value: analysisStatsUnreliable ? "—" : data.stats.analysisCompleted, color: "text-success" },
+    { label: "최근 분석", value: analysisStatsUnreliable ? "—" : (data.stats.lastAnalysisAt ? formatRelativeTime(data.stats.lastAnalysisAt) : "-"), color: "text-text-secondary" },
   ];
 
   const recentMap: Record<TabKey, typeof data.recentIndividual> = {
@@ -129,6 +140,14 @@ export default function AnalysisHomePage() {
             기록된 경험에서 패턴과 역량을 발견해요.
           </p>
         </div>
+
+        {/* 부분 실패 안내 — 아래 통계의 '—'가 왜 떴는지 먼저 읽히도록 Stats 위에 둔다. */}
+        {partialFailureMessage && (
+          <PartialFailureNotice
+            message={partialFailureMessage}
+            onRetry={() => setRetryKey((k) => k + 1)}
+          />
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
@@ -209,7 +228,18 @@ export default function AnalysisHomePage() {
           </div>
 
           <div className="space-y-3" role="tabpanel" id={`recent-panel-${tab}`} aria-labelledby={`recent-tab-${tab}`}>
-            {recentMap[tab].length === 0 ? (
+            {recentMap[tab].length === 0 && data.failedTypes.includes(tab) ? (
+              // 목록이 빈 원인이 "없어서"가 아니라 "못 불러와서"다. 빈 상태 문구를 그대로 두면
+              // 화면이 거짓말을 한다 — 위 안내가 스크롤 밖으로 밀렸을 수 있어 여기서도 말한다.
+              <div className="py-12 text-center">
+                <p className="text-body text-text-tertiary">
+                  이 유형의 분석 기록을 불러오지 못했어요.
+                </p>
+                <p className="text-body-sm text-text-tertiary mt-1">
+                  목록에 보이지 않을 뿐, 사라진 것은 아니에요.
+                </p>
+              </div>
+            ) : recentMap[tab].length === 0 ? (
               <div className="py-12 text-center">
                 <p className="text-body text-text-tertiary">
                   아직 분석 결과가 없습니다.
@@ -282,8 +312,9 @@ export default function AnalysisHomePage() {
           </div>
         </section>
 
-        {/* Placeholders — 분석 데이터가 있을 때만 노출 (빈 상태 공허함 방지) */}
-        {data.stats.analysisCompleted > 0 && (
+        {/* Placeholders — 분석 데이터가 있을 때만 노출 (빈 상태 공허함 방지).
+            과소집계로 0이 된 경우까지 숨기면 못 불러온 것이 "없는 것"으로 굳는다. */}
+        {(data.stats.analysisCompleted > 0 || analysisStatsUnreliable) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="bg-surface-secondary border border-border rounded-lg p-6 flex flex-col items-center justify-center text-center">
             <BarChart3 size={24} className="text-text-tertiary mb-2" aria-hidden="true" />

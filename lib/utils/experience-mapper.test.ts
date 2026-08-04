@@ -336,6 +336,148 @@ describe("toExperienceV2", () => {
     }
   })
 
+  it("v2: FRT-177 로 폐기된 대외활동 '가장 중요했던 경험'(표 값)도 custom 으로 보존된다", () => {
+    // 확정본 정렬로 ② 가 개조식 2종 + 태그로 바뀌며 이 반복 블록이 사라졌다. 값이 있는
+    // 구 레코드는 표 값 통째로 '기타' 카드에 남아야 한다(무음 손실 금지).
+    const oldCell = {
+      type: "repeatable-cell" as const,
+      columns: [
+        { key: "title", label: "소제목", blockType: "text" as const },
+        { key: "detail", label: "설명", blockType: "textarea" as const },
+      ],
+      rows: [{ id: "row-1", cells: { title: "8월 캠페인", detail: "릴스 3편 제작" } }],
+    }
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "extracurricular",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "OO 서포터즈",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: { "extra-detail.가장 중요했던 경험": oldCell },
+          custom: [],
+        },
+      }),
+    )
+    const preserved = v2.customBlocks.find(b => b.key === "extra-detail.가장 중요했던 경험")
+    expect(preserved?.label).toBe("가장 중요했던 경험")
+    expect(preserved?.value).toEqual(oldCell)
+  })
+
+  it("v2: 구 레코드도 새로 추가된 템플릿 필드를 받는다 (템플릿 전량 재구성)", () => {
+    // FRT-177 로 ② 에 '주요 미션 / 프로젝트'·'주요 성과'·'활동 성격'이 추가됐다. v2 는 저장된
+    // 블록 배열이 아니라 레지스트리에서 블록을 다시 만들고 fields 값만 주입하므로, 그 필드가
+    // 없던 레코드에도 빈 칸으로 나타나야 한다(구 레코드가 새 질문을 영영 못 보는 일 방지).
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "extracurricular",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "OO 서포터즈",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: { "extra-detail.지원 동기": textarea("옛 지원 동기") },
+          custom: [],
+        },
+      }),
+    )
+    const labels = v2.extensionBlocks.map(b => b.label)
+    expect(labels).toContain("주요 미션 / 프로젝트")
+    expect(labels).toContain("주요 성과")
+    expect(labels).toContain("활동 성격")
+    // 기존 값은 그대로 살아있다.
+    expect(v2.extensionBlocks.find(b => b.label === "지원 동기")?.value).toEqual(
+      textarea("옛 지원 동기"),
+    )
+  })
+
+  it("v2: FRT-178 로 라벨이 바뀐 구 동아리 필드도 custom 으로 보존된다", () => {
+    // 확정본 정렬로 '단체 소개'→'동아리 소개'(②로 이동)·'기간'→'활동 기간'이 되며 안정키가
+    // 바뀐다. 구 레코드의 값은 '기타' 카드에 그대로 남아야 한다(무음 손실 금지).
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "club",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "OO 밴드",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: {
+            "club-info.단체 소개": textarea("30년 역사의 중앙 밴드 동아리"),
+            "club-info.직책/역할": text("공연팀장"),
+          },
+          custom: [],
+        },
+      }),
+    )
+    expect(v2.customBlocks.find(b => b.key === "club-info.단체 소개")?.value).toEqual(
+      textarea("30년 역사의 중앙 밴드 동아리"),
+    )
+    expect(v2.customBlocks.find(b => b.key === "club-info.직책/역할")?.value).toEqual(
+      text("공연팀장"),
+    )
+  })
+
+  it("v2: 구 동아리 표(5컬럼)는 저장된 컬럼을 그대로 유지하고 잠금이 풀린다", () => {
+    // ③ 컬럼이 5→8 로 바뀌었지만 injectValue 는 저장값을 통째로 채택한다 — 구 레코드의
+    // '세부 기간' 같은 폐기 컬럼 값이 화면에서 사라지면 안 된다. 대신 컬럼이 템플릿과
+    // 달라졌으므로 열 관리 UI 를 돌려준다(FRT-104).
+    const oldTable = {
+      type: "repeatable-cell" as const,
+      columns: [
+        { key: "name", label: "활동명", blockType: "text" as const },
+        { key: "period", label: "세부 기간", blockType: "text" as const },
+        { key: "role", label: "직책/역할", blockType: "text" as const },
+        { key: "detail", label: "활동내용 상세", blockType: "textarea" as const },
+        { key: "result", label: "행사/운영 성과", blockType: "textarea" as const },
+      ],
+      rows: [
+        {
+          id: "row-1",
+          cells: {
+            name: "봄 정기 공연",
+            period: "2024-03",
+            role: "공연팀장",
+            detail: "6개 팀 무대",
+            result: "관객 500명",
+          },
+        },
+      ],
+    }
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "club",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "OO 밴드",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: { "club-activities.활동 기록": oldTable },
+          custom: [],
+        },
+      }),
+    )
+    // 블록 라벨이 '활동 / 이벤트'로 바뀌어 안정키가 달라졌으므로 '기타' 카드로 보존된다.
+    const preserved = v2.customBlocks.find(b => b.key === "club-activities.활동 기록")
+    expect(preserved?.value).toEqual(oldTable)
+    // 새 템플릿의 8컬럼 표는 빈 채로 함께 나타난다(구 레코드도 새 질문을 볼 수 있게).
+    const fresh = v2.extensionBlocks.find(b => b.label === "활동 / 이벤트")
+    if (fresh?.value.type === "repeatable-cell") {
+      expect(fresh.value.columns.map(c => c.key)).toEqual([
+        "role", "name", "type", "detail", "work", "result", "difficulty", "output",
+      ])
+    }
+  })
+
   it("v2: 라운드트립에서 orphan 값이 custom[] 으로 재저장돼 소실되지 않는다", () => {
     const original = makeExperience({
       type: "academic-society",
@@ -655,6 +797,52 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
       expect(reloadedBlock.value.rows[0].linkedProjectRowId).toBe("proj-1")
     }
   })
+
+  it("FRT-145: BlockRow.extraFields 가 왕복 보존된다(additive·무마이그레이션)", () => {
+    // 학회 ③ 프로젝트 표에 사용자가 추가한 항목을 심는다.
+    const key = "society-projects.프로젝트/연구활동"
+    const tmpl = getTemplateForType("academic-society")
+    const projectBlock = tmpl.extensions.flatMap(s => s.blocks).find(b => b.key === key)
+    expect(projectBlock).toBeDefined()
+    const withExtras: Block = {
+      ...projectBlock!,
+      value: {
+        type: "repeatable-cell",
+        columns: (projectBlock!.value as { columns: unknown[] }).columns as never,
+        rows: [
+          {
+            id: "r1",
+            cells: { name: "추천 시스템 연구" },
+            extraFields: [
+              { key: "extra-1", label: "학회 발표 여부", blockType: "text", value: "구두 발표" },
+              { key: "extra-2", label: "사용 도구", blockType: "tags", value: ["Python", "PyTorch"] },
+            ],
+          },
+        ],
+      },
+    }
+    const payload = toSavePayload(
+      makeExperienceV2({ typeId: "academic-society", extensionBlocks: [withExtras] }),
+    )
+    const fields = (payload.content as {
+      fields: Record<string, { rows: { extraFields?: { label: string; value: unknown }[] }[] }>
+    }).fields
+    // 저장: 라벨은 id 가 아니라 **이름**으로 실린다 — 백엔드 분석이 JSONB 를 그대로 읽는다.
+    expect(fields[key].rows[0].extraFields?.map(f => f.label)).toEqual([
+      "학회 발표 여부",
+      "사용 도구",
+    ])
+    // 복원: 로드 후에도 값이 살아있다.
+    const reloaded = toExperienceV2(
+      makeExperience({ type: "academic-society", content: payload.content, importance: payload.importance }),
+    )
+    const reloadedBlock = reloaded.extensionBlocks.find(b => b.key === key)
+    expect(reloadedBlock?.value.type).toBe("repeatable-cell")
+    if (reloadedBlock?.value.type === "repeatable-cell") {
+      expect(reloadedBlock.value.rows[0].extraFields?.[0].value).toBe("구두 발표")
+      expect(reloadedBlock.value.rows[0].extraFields?.[1].value).toEqual(["Python", "PyTorch"])
+    }
+  })
 })
 
 describe("section round-trip (FRT-78)", () => {
@@ -812,5 +1000,90 @@ describe("빈 사용자 섹션 prune (FRT-78)", () => {
     const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
     expect(custom).toHaveLength(1)
     expect(custom[0].entryType === "section" && custom[0].label).toBe("빈 섹션")
+  })
+})
+
+/**
+ * FRT-179 는 자격증에서 섹션을 통째로 없앤다(구 'cert-applied' 반복 기록). 필드를 추가·개명하는
+ * 다른 확정본 정렬과 달리, 표(repeatable-cell)와 파일 첨부가 통째로 템플릿에서 사라지는 형태라
+ * orphan 안전망이 실제로 그 값을 지키는지 여기서 못 박는다.
+ */
+describe("폐기 섹션 값 보존 (FRT-179 자격증)", () => {
+  const RETIRED_TABLE_KEY = "cert-applied.실무 적용 사례"
+  const RETIRED_FILE_KEY = "cert-applied.자격증 증빙"
+  const RETIRED_FIELD_KEY = "cert-info.자격 번호"
+
+  function retiredCertContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "정보처리기사",
+      summary: "",
+      status: "complete",
+      tags: [],
+      fields: {
+        "cert-info.자격증명": text("정보처리기사"),
+        [RETIRED_FIELD_KEY]: text("24201234567A"),
+        [RETIRED_TABLE_KEY]: {
+          type: "repeatable-cell",
+          columns: [
+            { key: "situation", label: "적용 상황/프로젝트명", blockType: "text", required: true },
+            { key: "work", label: "내가 한 일", blockType: "textarea" },
+          ],
+          rows: [{ id: "r1", cells: { situation: "사내 배치 자동화", work: "쿼리 튜닝" } }],
+        },
+        [RETIRED_FILE_KEY]: {
+          type: "file",
+          fileName: "cert.pdf",
+          description: "합격증",
+          evidenceType: "합격증",
+        },
+        // 빈 폐기 필드 — '기타' 카드에 빈 레거시 필드가 쌓이면 안 된다.
+        "cert-info.학습 방식": { type: "single-select", selected: "" },
+      },
+      custom: [],
+    }
+  }
+
+  it("템플릿에서 사라진 표·파일·필드 값이 customBlocks 로 보존된다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({ type: "certification", content: retiredCertContent() }),
+    )
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    const table = byKey(RETIRED_TABLE_KEY)
+    expect(table?.type).toBe("repeatable-cell")
+    expect(table?.value.type === "repeatable-cell" && table.value.rows[0].cells.situation).toBe(
+      "사내 배치 자동화",
+    )
+
+    const file = byKey(RETIRED_FILE_KEY)
+    expect(file?.type).toBe("file")
+    expect(file?.value.type === "file" && file.value.fileName).toBe("cert.pdf")
+
+    expect(byKey(RETIRED_FIELD_KEY)?.value).toEqual(text("24201234567A"))
+    // 현행 템플릿이 소비하는 키는 orphan 으로 중복되지 않는다.
+    expect(byKey("cert-info.자격증명")).toBeUndefined()
+    // 빈 폐기 필드는 승격하지 않는다.
+    expect(byKey("cert-info.학습 방식")).toBeUndefined()
+  })
+
+  it("보존된 값이 재저장 왕복에도 살아남는다 (무음 손실 없음)", () => {
+    const first = toExperienceV2(
+      makeExperience({ type: "certification", content: retiredCertContent() }),
+    )
+    const payload = toSavePayload(first)
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom.map(e => e.key)).toEqual(
+      expect.arrayContaining([RETIRED_TABLE_KEY, RETIRED_FILE_KEY, RETIRED_FIELD_KEY]),
+    )
+
+    const reloaded = toExperienceV2(
+      makeExperience({ type: "certification", content: payload.content }),
+    )
+    const table = reloaded.customBlocks.find(b => b.key === RETIRED_TABLE_KEY)
+    expect(table?.value.type === "repeatable-cell" && table.value.rows[0].cells.work).toBe(
+      "쿼리 튜닝",
+    )
   })
 })
