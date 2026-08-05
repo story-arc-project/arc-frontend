@@ -283,6 +283,10 @@ function SortableBlockItem({
     isDragging,
   } = useSortable({ id: block.id })
 
+  // 첨부 업로드가 도는 동안에는 × 를 감춘다 — 그때 숨기면 블록이 언마운트되며 업로드가 abort 돼
+  // 사용자가 방금 고른 파일이 사라진다. 값만 보는 `canHideBlock` 은 이 상태를 알 수 없다(FRT-190).
+  const [uploading, setUploading] = useState(false)
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -314,8 +318,13 @@ function SortableBlockItem({
         라벨 옆으로 옮겨서 비워 둔 것이다 — 되돌리면 그 둘과 겹친다.
       */}
       <div className="relative flex-1 min-w-0">
-        <BlockRenderer block={block} onChange={onChange} />
-        {onHide && (
+        <BlockRenderer
+          block={block}
+          onChange={onChange}
+          hideSlot={!!onHide}
+          onBusyChange={setUploading}
+        />
+        {onHide && !uploading && (
           <button
             type="button"
             onClick={onHide}

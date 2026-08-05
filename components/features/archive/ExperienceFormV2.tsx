@@ -33,7 +33,7 @@ import {
 } from "@/lib/utils/block-utils"
 import { capture } from "@/lib/analytics"
 import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
-import { resolveHiddenBlocks } from "@/lib/utils/hidden-fields"
+import { normalizeHiddenKeys, resolveHiddenBlocks } from "@/lib/utils/hidden-fields"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
 import { RoleHistoryProvider, type RoleHistoryContextValue } from "@/contexts/RoleHistoryContext"
 
@@ -107,8 +107,26 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   )
   const [typeError, setTypeError] = useState(false)
   const [titleError, setTitleError] = useState(false)
-  /** 사용자가 숨긴 선택 필드의 안정키 (FRT-190). 저장 시 매퍼가 정리한다. */
+  /** 사용자가 숨긴 선택 필드의 안정키 (FRT-190). */
   const [hiddenKeys, setHiddenKeys] = useState<string[]>(initialExperience?.hiddenKeys ?? [])
+
+  /**
+   * 실제로 숨김이 적용되는 키 — **이 값 하나만 쓴다**(렌더·진행도·저장·미저장 경고 전부).
+   *
+   * `hiddenKeys` 를 그대로 쓰면 안 된다. `resolveHiddenBlocks` 는 숨김 키라도 값이 생겼거나
+   * 필수가 된 블록을 **되돌려 보여주는데**(다른 기기 편집·템플릿 개편), state 에는 그 키가 남는다.
+   * 그 상태로 진행도에 넘기면 화면에 보이는 필드를 없는 셈 치고, 저장하면 다음 로드에서
+   * (값이 다시 비는 순간) 조용히 사라진다. `normalizeHiddenKeys` 가 `canHideBlock` 이라는
+   * 같은 잣대로 걸러 주므로, 소비처마다 판정 사본을 두지 않고 여기서 한 번만 맞춘다.
+   */
+  const effectiveHiddenKeys = useMemo(
+    () =>
+      normalizeHiddenKeys(
+        [...coreBlocks, ...extensionSections.flatMap(s => s.blocks)],
+        hiddenKeys
+      ),
+    [coreBlocks, extensionSections, hiddenKeys]
+  )
 
   // Load template when type changes
   useEffect(() => {
@@ -192,7 +210,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         hasBlockData(extensionBlocks) ||
         customBlocks.length > 0 ||
         tags.length > 0 ||
-        hiddenKeys.length > 0 ||
+        effectiveHiddenKeys.length > 0 ||
         importanceChanged
       onUnsavedChange?.(hasData)
       return
@@ -210,7 +228,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       tags,
       importance: importance ?? null,
       // 숨김만 바꾸고 나가도 미저장 경고가 떠야 한다 — 빠뜨리면 숨김이 조용히 사라진다.
-      hidden: hiddenKeys,
+      // 저장 payload 와 같은 값(정규화된 키)을 봐야 "저장했는데 계속 dirty" 가 안 생긴다.
+      hidden: effectiveHiddenKeys,
     })
     if (dirtyBaselineRef.current === null) {
       dirtyBaselineRef.current = snapshot
@@ -218,7 +237,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       return
     }
     onUnsavedChange?.(snapshot !== dirtyBaselineRef.current)
-  }, [coreBlocks, extensionSections, customBlocks, tags, importance, hiddenKeys, mode, template, initialExperience, onUnsavedChange])
+  }, [coreBlocks, extensionSections, customBlocks, tags, importance, effectiveHiddenKeys, mode, template, initialExperience, onUnsavedChange])
 
   const handleTypeSelect = useCallback((id: ExperienceTypeId) => {
     setTypeId(id)
@@ -238,11 +257,11 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       tags.length > 0 ||
       // 숨김도 사용자가 한 작업이다 — 유형을 바꾸면 초기화되므로(안정키가 유형 간에 겹쳐
       // 그대로 두면 숨긴 적 없는 필드가 사라진다) 확인 없이 버리면 안 된다. 미저장 판정
-      // (`hiddenKeys.length > 0`)과 기준이 갈리면 "경고는 뜨는데 확인은 안 뜨는" 상태가 된다.
-      hiddenKeys.length > 0
+      // (`effectiveHiddenKeys.length > 0`)과 기준이 갈리면 "경고는 뜨는데 확인은 안 뜨는" 상태가 된다.
+      effectiveHiddenKeys.length > 0
     if (!hasData) return true
     return window.confirm("경험 유형을 바꾸면 입력한 내용이 초기화될 수 있어요. 계속할까요?")
-  }, [coreBlocks, extensionSections, customBlocks, tags, hiddenKeys])
+  }, [coreBlocks, extensionSections, customBlocks, tags, effectiveHiddenKeys])
 
   // ── 선택 필드 숨김 (FRT-190) ──────────────────────────────────────
   // 안정키만 담는다 — 블록 인스턴스를 담으면 값이 바뀔 때마다 stale 참조가 된다.
@@ -455,7 +474,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       coreBlocks,
       extensionBlocks: allExtensionBlocks,
       customBlocks,
-      hiddenKeys,
+      hiddenKeys: effectiveHiddenKeys,
       createdAt: initialExperience?.createdAt ?? now,
       updatedAt: now,
     }
@@ -495,8 +514,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   // 숨긴 항목은 진행도에서도 빠져야 한다 — 안 빼면 "해당 없음"으로 치울수록 바가 안 차고,
   // 되돌려서 자기와 무관한 항목을 채워야만 100% 가 되는 모순이 난다(FRT-190).
   const progress = useMemo(
-    () => computeFormProgress(formCards?.cards ?? [], hiddenKeys),
-    [formCards, hiddenKeys]
+    () => computeFormProgress(formCards?.cards ?? [], effectiveHiddenKeys),
+    [formCards, effectiveHiddenKeys]
   )
   const onProgressChangeRef = useRef(onProgressChange)
   useEffect(() => {
@@ -598,7 +617,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
           {formCards.cards.map(card => {
             // 숨김은 카드 모델이 아니라 이 렌더 층에서 가른다 — 카드 자체와 하단 되살리기
             // 토글은 남겨야 마지막 필드를 숨겨도 되돌릴 길이 사라지지 않는다.
-            const { visible, hidden } = resolveHiddenBlocks(card.blocks, hiddenKeys)
+            const { visible, hidden } = resolveHiddenBlocks(card.blocks, effectiveHiddenKeys)
             return (
               <FormSection
                 key={card.category}

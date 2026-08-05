@@ -20,6 +20,14 @@ interface PeriodPickerProps {
   value: string;
   /** 필수 표시(주황 점)만 담당한다 — 시작/종료가 두 컨트롤이라 native required 는 걸지 않는다. */
   required?: boolean;
+  /**
+   * 라벨 행 오른쪽 끝에 버튼 하나 자리를 비워 둔다.
+   *
+   * 월/일 단위 토글은 라벨 행 우상단을 차지하는데, 그 자리는 숨김 × (FRT-190) 가 앉는 곳이기도
+   * 하다. 겹치면 × 가 나중에 그려져 위를 덮으므로 **'일 단위'를 누르려던 클릭이 필드를 숨긴다**.
+   * 여백은 라벨 행 안에서만 생기므로 아래 입력칸 폭은 그대로다.
+   */
+  reserveTrailingSlot?: boolean;
   onChange: (v: string) => void;
 }
 
@@ -28,7 +36,14 @@ const GRANULARITIES: { key: PeriodGranularity; label: string }[] = [
   { key: "day", label: "일 단위" },
 ];
 
-export function PeriodPicker({ label, hint, value, required, onChange }: PeriodPickerProps) {
+export function PeriodPicker({
+  label,
+  hint,
+  value,
+  required,
+  reserveTrailingSlot,
+  onChange,
+}: PeriodPickerProps) {
   const [start, setStart] = useState(() => parsePeriodString(value).start);
   const [end, setEnd] = useState(() => parsePeriodString(value).end);
   const [isCurrent, setIsCurrent] = useState(() => parsePeriodString(value).isCurrent);
@@ -53,7 +68,7 @@ export function PeriodPicker({ label, hint, value, required, onChange }: PeriodP
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-2">
+      <div className={`flex items-center justify-between gap-2${reserveTrailingSlot ? " pr-6" : ""}`}>
         {label ? (
           <label className="text-field-label text-text-primary">
             {label}

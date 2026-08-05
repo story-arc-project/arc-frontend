@@ -71,15 +71,24 @@ describe("canHideBlock", () => {
   })
 
   /**
-   * 첨부 블록은 **값이 비어 보이는 순간에도 사용자가 이미 한 일이 있을 수 있다** — 파일을 고른 뒤
-   * 업로드가 끝나기 전까지 블록 값은 그대로 비어 있는데, 이때 숨기면 FileBlock 이 언마운트되며
-   * `useFileUpload` 가 요청을 abort 하고 결과도 버려 **고른 파일이 조용히 사라진다**.
-   * "비었다"는 판정을 첨부 블록에서는 신뢰할 수 없으므로 통째로 제외한다.
+   * 증빙 카드는 `증빙 자료` 파일 블록 하나뿐이고 필수가 없어 `some(채워짐)` 기준이다. 이 블록을
+   * 숨김에서 빼면 증빙이 없는 사용자는 **치울 수도 채울 수도 없어** 진행도가 100% 에 닿지 못한다.
+   *
+   * 업로드 중 언마운트로 파일이 유실되는 위험은 실재하지만, 그건 **업로드가 도는 동안에만**이다.
+   * 그 순간의 억제는 업로드 상태를 아는 `BlockList` 가 맡고, 값만 보는 이 판정은 관여하지 않는다.
    */
-  it("파일 블록은 비어 있어도 숨길 수 없다 — 업로드 중 언마운트가 파일을 삼킨다", () => {
+  it("빈 파일 블록은 숨길 수 있다 — 증빙이 없는 사용자도 카드를 끝낼 수 있어야 한다", () => {
     const block: Block = {
       id: "id-file", key: "evidence.증빙 자료", type: "file", label: "증빙 자료",
       value: { type: "file", fileName: "", description: "", evidenceType: "" },
+    }
+    expect(canHideBlock(block)).toBe(true)
+  })
+
+  it("설명이나 증빙 유형을 적어 둔 파일 블록은 숨길 수 없다 — 무음 잔존이 된다", () => {
+    const block: Block = {
+      id: "id-file", key: "evidence.증빙 자료", type: "file", label: "증빙 자료",
+      value: { type: "file", fileName: "", description: "학회 발표 사진", evidenceType: "" },
     }
     expect(canHideBlock(block)).toBe(false)
   })
@@ -105,8 +114,8 @@ describe("canHideBlock", () => {
       value: { type: "file", fileName: "" },
     } as unknown as Block
     expect(() => canHideBlock(block)).not.toThrow()
-    // 첨부는 어차피 통째로 제외 — 크래시만 막으면 판정 결과는 그대로다.
-    expect(canHideBlock(block)).toBe(false)
+    // 부속 필드가 없으니 남길 것도 없다 — 빈 파일 블록과 같은 판정이어야 한다.
+    expect(canHideBlock(block)).toBe(true)
   })
 
   it("파일 열을 가진 표도 제외한다 — 사용자가 열 유형을 파일로 바꾼 경우", () => {

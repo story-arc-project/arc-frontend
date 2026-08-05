@@ -543,4 +543,65 @@ describe("FRT-190 선택 필드 숨김", () => {
 
     expect(confirmSpy).not.toHaveBeenCalled()
   })
+
+  /**
+   * 값이 생긴 숨김 키는 화면에 되돌려 보여주면서(`resolveHiddenBlocks`) state 에는 남아 있었다.
+   * 그러면 **보이는 필드를 진행도가 없는 셈 치고**, 저장하면 다음 로드에서 (값이 다시 비는 순간)
+   * 조용히 사라진다. 폼이 `normalizeHiddenKeys` 를 거친 값 하나만 쓰는지 저장 payload 로 본다.
+   *
+   * 이 상태는 UI 조작으로 만들 수 없다 — 숨긴 필드는 화면에 없어 값을 넣을 방법이 없고,
+   * 다른 기기 편집·템플릿 개편으로 **서버가 그렇게 준 레코드**로만 도달한다. 그래서 edit 모드다.
+   */
+  describe("복귀한 숨김 키", () => {
+    const FILLED_KEY = "core.복귀 필드"
+    const EMPTY_KEY = "core.빈 필드"
+
+    function recordWith(hiddenKeys: string[]): ExperienceV2 {
+      return {
+        id: "exp-restore", userId: "u1", typeId: "extracurricular",
+        title: "교내 동아리", summary: "", status: "complete",
+        tags: [], importance: 3,
+        coreBlocks: [
+          {
+            id: "b-filled", key: FILLED_KEY, type: "text", label: "복귀 필드",
+            value: { type: "text", text: "다른 기기에서 채워진 값" },
+          },
+          {
+            id: "b-empty", key: EMPTY_KEY, type: "text", label: "빈 필드",
+            value: { type: "text", text: "" },
+          },
+        ],
+        extensionBlocks: [], customBlocks: [], hiddenKeys,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }
+    }
+
+    async function saveAndGet(hiddenKeys: string[]): Promise<ExperienceV2> {
+      const user = userEvent.setup()
+      const onSave = vi.fn()
+      render(
+        <ExperienceFormV2
+          mode="edit"
+          initialExperience={recordWith(hiddenKeys)}
+          onSave={onSave}
+          onCancel={() => {}}
+        />,
+      )
+      await user.click(screen.getByRole("button", { name: "완료" }))
+      expect(onSave).toHaveBeenCalledTimes(1)
+      return onSave.mock.calls[0][0] as ExperienceV2
+    }
+
+    it("값이 생긴 키는 저장에서 빠진다 — 안 빼면 값이 다시 비는 순간 사라진다", async () => {
+      const saved = await saveAndGet([FILLED_KEY])
+      expect(saved.hiddenKeys).not.toContain(FILLED_KEY)
+    })
+
+    /** 대조군: 여전히 비어 있는 키까지 같이 지워 버리면 숨김이 통째로 풀린다. */
+    it("여전히 빈 키는 그대로 남는다", async () => {
+      const saved = await saveAndGet([EMPTY_KEY])
+      expect(saved.hiddenKeys).toContain(EMPTY_KEY)
+    })
+  })
 })

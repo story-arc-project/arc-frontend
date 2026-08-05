@@ -139,6 +139,17 @@ function keyedField(label: string, opts: { required?: boolean; text?: string } =
   }
 }
 
+/** 기간 필드는 라벨 행 우상단에 월/일 토글을 둔다 — × 와 자리를 다투는 유일한 렌더러다. */
+function keyedPeriodField(label: string): Block {
+  return {
+    id: `story-${label}`,
+    key: `detail.${label}`,
+    type: "period",
+    label,
+    value: { type: "period", start: "", end: "", isCurrent: false },
+  }
+}
+
 function HideHarness({
   initialVisible,
   initialHidden = [],
@@ -266,6 +277,33 @@ export const HideButtonCostsNoWidth: Story = {
     // ③ × 는 블록 안(입력칸 오른쪽 끝 안쪽)에 머문다 — 카드 여백으로 밀어내지 않는다.
     const hideBtn = canvas.getByLabelText("배운 점 숨기기").getBoundingClientRect()
     expect(hideBtn.right).toBeLessThanOrEqual(hidable.right + 1)
+  },
+}
+
+/**
+ * × 는 기간 필드의 월/일 토글을 덮지 않는다.
+ *
+ * 둘 다 라벨 행 우상단을 노리는데 × 가 나중에 그려져 위에 얹히므로, 겹치면 '일 단위'를 누르려던
+ * 클릭이 **필드를 숨긴다** — 되돌릴 수는 있어도 사용자가 의도한 적 없는 결과다.
+ */
+export const HideButtonClearsPeriodToggle: Story = {
+  render: () => <HideHarness initialVisible={[keyedPeriodField("학습 기간")]} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const hideBtn = canvas.getByLabelText("학습 기간 숨기기").getBoundingClientRect()
+    const toggle = canvas.getByRole("radiogroup", { name: "기간 단위" }).getBoundingClientRect()
+
+    // 사각형이 한 점이라도 겹치면 위에 있는 × 가 클릭을 가져간다.
+    const overlaps =
+      hideBtn.left < toggle.right &&
+      toggle.left < hideBtn.right &&
+      hideBtn.top < toggle.bottom &&
+      toggle.top < hideBtn.bottom
+    expect(overlaps).toBe(false)
+
+    // 대조군: 토글이 실제로 우상단에 있고 × 도 붙은 상태여야 이 단언이 의미가 있다.
+    expect(toggle.width).toBeGreaterThan(0)
+    expect(hideBtn.width).toBeGreaterThan(0)
   },
 }
 
