@@ -220,12 +220,15 @@ export const AllHidden: Story = {
 }
 
 /**
- * 회귀: × 가 생겨도 **어떤 입력칸도 폭을 잃지 않는다**.
+ * 회귀: × 가 생겨도 **어떤 입력칸도 폭을 잃지 않고**, × 자신은 **블록 안에 머문다**.
  *
- * 대조군이 두 겹이라야 한다. ①한 카드 안에서 × 유무로 폭이 갈리지 않을 것, ②그리고 그 폭이
+ * 폭 대조군이 두 겹이라야 한다. ①한 카드 안에서 × 유무로 폭이 갈리지 않을 것, ②그리고 그 폭이
  * **숨김 기능을 끈 카드와 같을 것**. ②가 없으면 "× 자리를 모든 블록에 예약해서 전부 똑같이
  * 좁아진" 상태가 ①만으로 통과한다 — 정렬은 맞지만 폼 전체가 전보다 좁아진 회귀다.
- * 폭은 클래스 단언으로 안 잡히므로 좌표로 실측한다.
+ *
+ * ③은 방향이 반대인 회귀를 막는다. 폭만 지키려고 × 를 카드 여백 밖(`-right-5`)으로 밀면
+ * ①②는 통과하는데 버튼이 **카드 테두리에 몰려 보인다**. × 는 입력칸 오른쪽 끝 안쪽에 있어야 한다.
+ * 폭·위치는 클래스 단언으로 안 잡히므로 좌표로 실측한다.
  */
 export const HideButtonCostsNoWidth: Story = {
   render: () => (
@@ -259,6 +262,10 @@ export const HideButtonCostsNoWidth: Story = {
     expect(Math.abs(required.right - hidable.right)).toBeLessThan(1)
     // 핵심: 숨김을 켠 카드의 입력칸이 안 켠 카드와 **같은 폭**이어야 한다.
     expect(Math.abs(hidable.width - baseline.width)).toBeLessThan(1)
+
+    // ③ × 는 블록 안(입력칸 오른쪽 끝 안쪽)에 머문다 — 카드 여백으로 밀어내지 않는다.
+    const hideBtn = canvas.getByLabelText("배운 점 숨기기").getBoundingClientRect()
+    expect(hideBtn.right).toBeLessThanOrEqual(hidable.right + 1)
   },
 }
 

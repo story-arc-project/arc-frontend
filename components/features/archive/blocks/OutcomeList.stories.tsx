@@ -73,6 +73,18 @@ export const Empty: Story = {
   },
 }
 
+/** 회귀: `N개 항목` 은 라벨 바로 옆 — 블록 우상단은 숨김 × 자리다(FRT-190). */
+export const CountSitsBesideLabel: Story = {
+  render: () => <Interactive initial={[]} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const label = canvas.getByText("단체 활동 / 성과").getBoundingClientRect()
+    const count = canvas.getByText("0개 항목").getBoundingClientRect()
+    expect(count.left).toBeGreaterThanOrEqual(label.right)
+    expect(count.left - label.right).toBeLessThan(24)
+  },
+}
+
 /** 값이 있는 상태 — 각 행이 `• 텍스트 + ×`. */
 export const WithItems: Story = {
   render: () => <Interactive initial={["전국 케이스 경진대회 은상 수상", "학회 저널 2호 공동 발간"]} />,

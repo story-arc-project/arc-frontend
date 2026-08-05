@@ -302,31 +302,30 @@ function SortableBlockItem({
           <GripVertical size={16} />
         </button>
       )}
-      <div className="flex-1 min-w-0">
-        <BlockRenderer block={block} onChange={onChange} />
-      </div>
       {/*
-        숨김 × 는 **레이아웃 흐름 밖**에 둔다 — 카드(`px-5`) 의 오른쪽 여백에 얹는다.
+        숨김 × 는 **레이아웃 흐름 밖**에 둔다(`absolute`) — 흐름 안에 칸을 만들면 그만큼
+        입력칸이 좁아진다. 숨길 수 있는 블록에만 만들면 그 블록만 좁아져 오른쪽 끝이 어긋나고,
+        모든 블록에 예약하면 어긋남은 사라지지만 **필수 필드까지 같이 좁아져 폼 전체가 전보다
+        좁아진다**. 어느 쪽도 "이전 폭 그대로"가 아니다.
 
-        ⚠️ 흐름 안에 칸을 만들면 그만큼 입력칸이 좁아진다. 숨길 수 있는 블록에만 만들면 그 블록만
-        좁아져 오른쪽 끝이 어긋나고, 모든 블록에 예약하면 어긋남은 사라지지만 **필수 필드까지
-        같이 좁아져 폼 전체가 전보다 좁아진다**. 어느 쪽도 "이전 폭 그대로"가 아니다.
-        absolute 로 빼면 어떤 블록도 폭을 잃지 않는다 — 정렬과 폭을 동시에 지키는 유일한 자리다.
-
-        `-right-5` 는 카드 좌우 패딩(20px)과 같은 값이라, 버튼이 입력칸을 침범하지 않으면서
-        카드 테두리도 넘지 않는다(아이콘은 `p-1` 만큼 더 안쪽에 그려진다).
-        블록 안 우상단은 쓸 수 없다 — 반복 기록의 `N개 항목` 이 그 자리에 있다.
+        자리는 **블록 안 우상단**(라벨 행의 오른쪽 끝)이다. 기준 박스가 블록 내용이라
+        `right-0` 이 곧 입력칸의 오른쪽 끝이고, 카드 여백(`px-5`)까지 밀려나 테두리에
+        몰려 보이지 않는다. 이 자리는 `N개 항목`(RepeatableCellBlock·OutcomeList) 을
+        라벨 옆으로 옮겨서 비워 둔 것이다 — 되돌리면 그 둘과 겹친다.
       */}
-      {onHide && (
-        <button
-          type="button"
-          onClick={onHide}
-          className="absolute -right-5 top-1 text-text-tertiary hover:text-text-secondary transition-colors p-1 rounded"
-          aria-label={`${block.label} 숨기기`}
-        >
-          <X size={14} />
-        </button>
-      )}
+      <div className="relative flex-1 min-w-0">
+        <BlockRenderer block={block} onChange={onChange} />
+        {onHide && (
+          <button
+            type="button"
+            onClick={onHide}
+            className="absolute right-0 top-0 text-text-tertiary hover:text-text-secondary transition-colors p-1 rounded"
+            aria-label={`${block.label} 숨기기`}
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
       {allowDelete && (
         <div className="flex flex-col gap-1 mt-1 transition-opacity shrink-0">
           {allowEdit && (

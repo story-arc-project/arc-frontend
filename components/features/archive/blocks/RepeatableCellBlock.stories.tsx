@@ -148,6 +148,23 @@ export const EmptyStatePlaceholder: Story = {
   },
 }
 
+/**
+ * 회귀: `N개 항목` 은 **라벨 바로 옆**에 붙는다(FRT-190).
+ * 오른쪽 끝으로 밀면 블록 우상단을 차지해 숨김 × 자리가 없어지고, × 를 카드 여백까지
+ * 밀어내면 테두리에 몰려 보인다. 클래스 단언으로는 안 잡히므로 좌표로 실측한다.
+ */
+export const CountSitsBesideLabel: Story = {
+  render: () => <Interactive initial={emptyTableBlock} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const label = canvas.getByText("프로젝트/연구활동").getBoundingClientRect()
+    const count = canvas.getByText("0개 항목").getBoundingClientRect()
+    // 라벨 오른쪽에, gap 하나(8px) 남짓 안에 붙어 있어야 한다.
+    expect(count.left).toBeGreaterThanOrEqual(label.right)
+    expect(count.left - label.right).toBeLessThan(24)
+  },
+}
+
 /** tags 컬럼에서 첫 태그를 확정해도 실체화된다(텍스트 셀이 아닌 경로). */
 export const PlaceholderMaterializesFromTags: Story = {
   render: () => <Interactive initial={emptyTableBlock} />,
