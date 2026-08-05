@@ -14,6 +14,7 @@ import {
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { formatDateTime, formatRelativeTime } from "@/lib/utils/date-utils";
 import type { CoverLetterListItem } from "@/types/cover-letter";
+import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 
 interface RecentCoverLetterListProps {
   onCreateClick: () => void;
@@ -43,6 +44,7 @@ export function RecentCoverLetterList({
   const [error, setError] = useState<Error | null>(null);
   const [deleteSupported, setDeleteSupported] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pollExhausted, setPollExhausted] = useState(false);
 
   const load = useCallback(async () => {
@@ -103,7 +105,6 @@ export function RecentCoverLetterList({
   }, [hasPending, pollExhausted, load]);
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm("이 자기소개서를 삭제할까요?")) return;
     setDeletingId(id);
     try {
       await deleteCoverLetter(id);
@@ -121,6 +122,8 @@ export function RecentCoverLetterList({
       }
     } finally {
       setDeletingId(null);
+      // 성공·실패·삭제 미지원(버튼 자체가 사라지는 경로) 어디로 빠져도 다이얼로그를 닫는다.
+      setPendingDeleteId(null);
     }
   };
 
@@ -198,8 +201,10 @@ export function RecentCoverLetterList({
                 </span>
               )}
             </div>
+            {/* 서버가 제목을 주지 않는 자소서는 라벨이 길어 truncate 로 잘린다 —
+                만든 시각을 숨기면 모바일에서 어느 것이 방금 만든 건지 알 수 없다(FRT-126). */}
             {item.created_at && (
-              <span className="hidden shrink-0 text-caption text-text-tertiary sm:inline">
+              <span className="shrink-0 text-caption text-text-tertiary">
                 {formatRelativeTime(item.created_at)}
               </span>
             )}
@@ -230,7 +235,7 @@ export function RecentCoverLetterList({
               {deleteSupported && (
                 <button
                   type="button"
-                  onClick={() => handleDelete(item.id)}
+                  onClick={() => setPendingDeleteId(item.id)}
                   disabled={deletingId === item.id}
                   className="rounded-md p-1.5 text-text-tertiary transition-colors hover:text-error disabled:opacity-40"
                   aria-label="자기소개서 삭제"
@@ -243,6 +248,16 @@ export function RecentCoverLetterList({
         );
       })}
       </ul>
+      <DeleteConfirmDialog
+        open={pendingDeleteId !== null}
+        title="이 자기소개서를 삭제할까요?"
+        description="삭제하면 되돌릴 수 없어요."
+        deleting={deletingId !== null}
+        onClose={() => setPendingDeleteId(null)}
+        onConfirm={() => {
+          if (pendingDeleteId) handleDelete(pendingDeleteId);
+        }}
+      />
     </>
   );
 }
