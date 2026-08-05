@@ -220,17 +220,28 @@ export const AllHidden: Story = {
 }
 
 /**
- * 회귀: × 가 붙는 블록과 안 붙는 블록의 **입력칸 폭이 같아야** 한다.
+ * 회귀: × 가 생겨도 **어떤 입력칸도 폭을 잃지 않는다**.
  *
- * × 자리를 숨길 수 있는 블록에만 만들면 그 블록만 좁아져, 한 카드 안에서 필드 오른쪽 끝이
- * 두 줄로 어긋난다. 폭은 클래스 단언으로 잡히지 않으므로 좌표로 실측한다 —
- * 대조군(× 없는 필수 필드)을 같이 걸지 않으면 "둘 다 좁아진" 회귀가 그대로 통과한다.
+ * 대조군이 두 겹이라야 한다. ①한 카드 안에서 × 유무로 폭이 갈리지 않을 것, ②그리고 그 폭이
+ * **숨김 기능을 끈 카드와 같을 것**. ②가 없으면 "× 자리를 모든 블록에 예약해서 전부 똑같이
+ * 좁아진" 상태가 ①만으로 통과한다 — 정렬은 맞지만 폼 전체가 전보다 좁아진 회귀다.
+ * 폭은 클래스 단언으로 안 잡히므로 좌표로 실측한다.
  */
-export const HidableAndRequiredShareWidth: Story = {
+export const HideButtonCostsNoWidth: Story = {
   render: () => (
-    <HideHarness
-      initialVisible={[keyedField("경험명", { required: true }), keyedField("배운 점")]}
-    />
+    <div className="flex flex-col gap-4">
+      <HideHarness
+        initialVisible={[keyedField("경험명", { required: true }), keyedField("배운 점")]}
+      />
+      {/* 대조군: 숨김을 아예 안 켠 같은 카드 = "이전 폭" */}
+      <FormSection
+        variant="card"
+        sectionId="detail"
+        label="숨김 없는 카드"
+        blocks={[keyedField("협업 방식")]}
+        onChange={() => {}}
+      />
+    </div>
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -242,8 +253,12 @@ export const HidableAndRequiredShareWidth: Story = {
     // 입력칸만 재려면 role 로 좁힌다.
     const required = canvas.getByRole("textbox", { name: /경험명/ }).getBoundingClientRect()
     const hidable = canvas.getByRole("textbox", { name: /배운 점/ }).getBoundingClientRect()
+    const baseline = canvas.getByRole("textbox", { name: /협업 방식/ }).getBoundingClientRect()
+
     expect(Math.abs(required.width - hidable.width)).toBeLessThan(1)
     expect(Math.abs(required.right - hidable.right)).toBeLessThan(1)
+    // 핵심: 숨김을 켠 카드의 입력칸이 안 켠 카드와 **같은 폭**이어야 한다.
+    expect(Math.abs(hidable.width - baseline.width)).toBeLessThan(1)
   },
 }
 

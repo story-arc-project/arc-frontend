@@ -204,7 +204,6 @@ export default function BlockList({
       allowDelete={allowDelete}
       allowEdit={editEnabled}
       onChange={handleBlockChange}
-      hideSlot={!!onHide}
       onHide={onHide && canHideBlock(block) ? () => onHide(block) : undefined}
       onDelete={() => handleDeleteBlock(block.id)}
       onDuplicate={() => handleDuplicateBlock(block.id)}
@@ -260,7 +259,6 @@ function SortableBlockItem({
   allowDelete,
   allowEdit,
   onChange,
-  hideSlot,
   onHide,
   onDelete,
   onDuplicate,
@@ -271,8 +269,6 @@ function SortableBlockItem({
   allowDelete: boolean
   allowEdit: boolean
   onChange: (blockId: string, value: BlockValue) => void
-  /** 숨김 기능이 켜진 목록인지. 켜져 있으면 × 자리를 **모든 블록에** 예약한다. */
-  hideSlot?: boolean
   onHide?: () => void
   onDelete: () => void
   onDuplicate: () => void
@@ -294,7 +290,7 @@ function SortableBlockItem({
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="group flex gap-2">
+    <div ref={setNodeRef} style={style} className="group relative flex gap-2">
       {allowReorder && (
         <button
           type="button"
@@ -310,25 +306,26 @@ function SortableBlockItem({
         <BlockRenderer block={block} onChange={onChange} />
       </div>
       {/*
-        숨김 × 는 블록 **바깥** 우측에 둔다.
+        숨김 × 는 **레이아웃 흐름 밖**에 둔다 — 카드(`px-5`) 의 오른쪽 여백에 얹는다.
 
-        ⚠️ 자리는 `onHide` 유무가 아니라 `hideSlot`(목록 전체) 로 예약한다. 숨길 수 있는 블록에만
-        칸을 만들면 그 블록만 폭이 좁아져 **필수 필드와 입력칸 오른쪽 끝이 어긋난다** — 한 카드
-        안에서 필드 폭이 두 종류가 되는 형태다. 버튼만 조건부로 그리고 칸은 항상 차지한다.
+        ⚠️ 흐름 안에 칸을 만들면 그만큼 입력칸이 좁아진다. 숨길 수 있는 블록에만 만들면 그 블록만
+        좁아져 오른쪽 끝이 어긋나고, 모든 블록에 예약하면 어긋남은 사라지지만 **필수 필드까지
+        같이 좁아져 폼 전체가 전보다 좁아진다**. 어느 쪽도 "이전 폭 그대로"가 아니다.
+        absolute 로 빼면 어떤 블록도 폭을 잃지 않는다 — 정렬과 폭을 동시에 지키는 유일한 자리다.
+
+        `-right-5` 는 카드 좌우 패딩(20px)과 같은 값이라, 버튼이 입력칸을 침범하지 않으면서
+        카드 테두리도 넘지 않는다(아이콘은 `p-1` 만큼 더 안쪽에 그려진다).
+        블록 안 우상단은 쓸 수 없다 — 반복 기록의 `N개 항목` 이 그 자리에 있다.
       */}
-      {hideSlot && (
-        <div className="flex w-6 flex-col gap-1 mt-1 shrink-0">
-          {onHide && (
-            <button
-              type="button"
-              onClick={onHide}
-              className="text-text-tertiary hover:text-text-secondary transition-colors p-1 rounded"
-              aria-label={`${block.label} 숨기기`}
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
+      {onHide && (
+        <button
+          type="button"
+          onClick={onHide}
+          className="absolute -right-5 top-1 text-text-tertiary hover:text-text-secondary transition-colors p-1 rounded"
+          aria-label={`${block.label} 숨기기`}
+        >
+          <X size={14} />
+        </button>
       )}
       {allowDelete && (
         <div className="flex flex-col gap-1 mt-1 transition-opacity shrink-0">
