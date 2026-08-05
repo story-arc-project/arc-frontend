@@ -50,6 +50,53 @@ describe("canHideBlock", () => {
   })
 
   /**
+   * `isBlockEmpty` 는 링크를 `url` 로만 판정한다 — 상세뷰에서 URL 없는 링크를 안 그리려는 기준이라
+   * 그 자체로는 옳다. 하지만 LinkBlock 은 URL 없이도 제목·유형·설명을 칠 수 있게 해서, 그 상태로
+   * 숨기면 **화면엔 없는데 저장 payload 엔 남는다** — 이 기능이 막으려던 무음 잔존 그대로다.
+   */
+  it("URL 없이 제목만 친 링크는 숨길 수 없다 — 값이 조용히 남는다", () => {
+    const block: Block = {
+      id: "id-link", key: "detail.공식 URL", type: "link", label: "공식 URL",
+      value: { type: "link", url: "", title: "우리 팀 노션", description: "", linkType: "" },
+    }
+    expect(canHideBlock(block)).toBe(false)
+  })
+
+  it("아무것도 안 친 링크는 숨길 수 있다", () => {
+    const block: Block = {
+      id: "id-link", key: "detail.공식 URL", type: "link", label: "공식 URL",
+      value: { type: "link", url: "", title: "", description: "", linkType: "" },
+    }
+    expect(canHideBlock(block)).toBe(true)
+  })
+
+  /**
+   * 첨부 블록은 **값이 비어 보이는 순간에도 사용자가 이미 한 일이 있을 수 있다** — 파일을 고른 뒤
+   * 업로드가 끝나기 전까지 블록 값은 그대로 비어 있는데, 이때 숨기면 FileBlock 이 언마운트되며
+   * `useFileUpload` 가 요청을 abort 하고 결과도 버려 **고른 파일이 조용히 사라진다**.
+   * "비었다"는 판정을 첨부 블록에서는 신뢰할 수 없으므로 통째로 제외한다.
+   */
+  it("파일 블록은 비어 있어도 숨길 수 없다 — 업로드 중 언마운트가 파일을 삼킨다", () => {
+    const block: Block = {
+      id: "id-file", key: "evidence.증빙 자료", type: "file", label: "증빙 자료",
+      value: { type: "file", fileName: "", description: "", evidenceType: "" },
+    }
+    expect(canHideBlock(block)).toBe(false)
+  })
+
+  it("파일 열을 가진 표도 제외한다 — 사용자가 열 유형을 파일로 바꾼 경우", () => {
+    const block: Block = {
+      id: "id-t", key: "repeat.결과물", type: "repeatable-cell", label: "결과물",
+      value: {
+        type: "repeatable-cell",
+        columns: [{ key: "c1", label: "파일", blockType: "file" }],
+        rows: [{ id: "r1", cells: { c1: "" } }],
+      },
+    }
+    expect(canHideBlock(block)).toBe(false)
+  })
+
+  /**
    * 표의 필수는 블록이 아니라 **컬럼**에 붙는다(설계/결정·작업 기록·세부 계획 등 18유형 중 13개).
    * `block.required` 만 보면 진행도 바가 필수로 세는 표를 사용자가 치울 수 있게 되어,
    * "필수인데 화면에 없는" 상태가 만들어진다. 판정은 `isRequiredBlock` 한 곳으로 모은다.

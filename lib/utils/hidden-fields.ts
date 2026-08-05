@@ -15,13 +15,52 @@ import { isBlockEmpty, isRequiredBlock } from "@/lib/utils/block-utils"
  */
 
 /**
+ * `isBlockEmpty` 가 안 세는 부속 값이 남아 있는지.
+ *
+ * `isBlockEmpty` 는 링크를 `url`, 파일을 업로드 신원으로만 판정한다 — "상세뷰에 그릴 게 있는가"를
+ * 묻는 기준이라 그 자체로는 옳다. 그런데 두 블록 모두 **주 값 없이 부속 값을 먼저 칠 수 있어서**
+ * (LinkBlock 의 제목·유형·설명, FileBlock 의 설명·증빙 유형), 그 상태로 숨기면 화면엔 없는데
+ * 저장 payload 엔 남는다 — 이 기능이 막으려던 무음 잔존 그대로다. 숨김만 더 엄격하게 본다.
+ */
+function hasResidualValue(block: Block): boolean {
+  const v = block.value
+  if (v.type === "link") return [v.title, v.description, v.linkType].some(s => s.trim() !== "")
+  if (v.type === "file") return [v.description, v.evidenceType].some(s => s.trim() !== "")
+  return false
+}
+
+/**
+ * 첨부를 담을 수 있는 블록인지 — 숨김 대상에서 통째로 뺀다.
+ *
+ * 첨부는 **값이 비어 보이는 순간에도 사용자가 이미 한 일이 있다**. 파일을 고른 뒤 업로드가 끝나기
+ * 전까지 블록 값은 그대로 비어 있는데, 이때 숨기면 `FileBlock` 이 언마운트되며 `useFileUpload` 가
+ * 요청을 abort 하고 늦게 온 결과도 `mountedRef` 가드에서 버려져 **고른 파일이 조용히 사라진다**.
+ * 업로드 상태는 블록 값에 없어서 여기서 알 길이 없으므로, "비었다"는 판정 자체를 신뢰하지 않는다.
+ *
+ * 비용: 증빙 자료 블록은 치울 수 없다. 표 쪽은 현재 템플릿에 파일 열이 0개라 비용이 없고,
+ * 사용자가 열 유형을 파일로 바꾼 경우(FRT-213)만 방어한다.
+ */
+function hostsAttachment(block: Block): boolean {
+  const v = block.value
+  if (v.type === "file") return true
+  if (v.type === "repeatable-cell") return v.columns.some(c => c.blockType === "file")
+  return false
+}
+
+/**
  * 숨김 대상 판정 — 필수 필드와 안정키 없는 사용자 블록은 제외한다(후자는 이미 삭제 버튼이 있다).
  *
  * 필수 판정은 `isRequiredBlock` 을 쓴다 — 표의 필수는 `block.required` 가 아니라 **컬럼**에
  * 붙어 있고(18유형 중 13개), 블록 층위만 보면 진행도 바가 필수로 세는 표를 사용자가 치울 수 있다.
  */
 export function canHideBlock(block: Block): boolean {
-  return !isRequiredBlock(block) && !!block.key && isBlockEmpty(block)
+  return (
+    !isRequiredBlock(block) &&
+    !!block.key &&
+    isBlockEmpty(block) &&
+    !hasResidualValue(block) &&
+    !hostsAttachment(block)
+  )
 }
 
 /**
