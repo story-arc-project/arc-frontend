@@ -37,13 +37,11 @@ describe("computeFormCards", () => {
     expect(evidence.blocks.some(b => b.label === "증빙 자료")).toBe(true)
   })
 
-  it("detail 카드만 optional + showOptionalBadge", () => {
+  it("detail 카드만 optional", () => {
     const { core, sections } = sectionsFor("career")
     const r = computeFormCards(core, sections)
     for (const c of r.cards) {
-      const expected = c.category === "detail"
-      expect(!!c.optional).toBe(expected)
-      expect(!!c.showOptionalBadge).toBe(expected)
+      expect(!!c.optional).toBe(c.category === "detail")
     }
   })
 

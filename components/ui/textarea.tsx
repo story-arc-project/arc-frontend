@@ -2,6 +2,8 @@
 
 import { TextareaHTMLAttributes, forwardRef, useCallback, useEffect, useRef } from "react";
 
+import { RequiredDot } from "./required-dot";
+
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
   hint?: string;
@@ -16,7 +18,7 @@ function autoResize(el: HTMLTextAreaElement) {
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ label, hint, error, hintPosition = "bottom", className = "", id, onChange, value, ...props }, ref) => {
+  ({ label, hint, error, hintPosition = "bottom", className = "", id, onChange, value, required, ...props }, ref) => {
     const innerRef = useRef<HTMLTextAreaElement>(null);
     const textareaId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
     const hintId = textareaId ? `${textareaId}-hint` : undefined;
@@ -51,6 +53,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         {label && (
           <label htmlFor={textareaId} className="text-field-label text-text-primary">
             {label}
+            {required && <RequiredDot />}
           </label>
         )}
         {hintPosition === "top" && hintNode}
@@ -59,6 +62,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           id={textareaId}
           value={value}
           rows={3}
+          required={required}
           aria-invalid={!!error}
           aria-describedby={describedBy}
           onChange={(e) => {

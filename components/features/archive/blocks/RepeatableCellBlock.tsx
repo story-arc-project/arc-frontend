@@ -3,6 +3,7 @@
 import { useRef, useState, type ReactNode } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { RequiredDot } from "@/components/ui/required-dot"
 import type {
   Block,
   RepeatableCellBlockValue,
@@ -359,7 +360,7 @@ function RowEditor({
             <div key={col.key} className={`flex flex-col gap-1.5 ${isWide ? "sm:col-span-2" : ""}`}>
               <label className="text-caption text-text-secondary">
                 {col.label}
-                {col.required && <span className="text-error ml-0.5">*</span>}
+                {col.required && <RequiredDot />}
               </label>
               {col.guide && index === 0 && (
                 <p className="text-caption text-text-tertiary">{col.guide}</p>

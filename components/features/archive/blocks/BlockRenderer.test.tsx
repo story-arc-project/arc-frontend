@@ -126,20 +126,24 @@ describe("role-history 라우팅 (FRT-213)", () => {
   })
 })
 
-describe("BlockRenderer 선택 뱃지", () => {
-  it("showOptionalBadge + 선택 필드면 '선택' 뱃지를 렌더", () => {
-    const block = createTextField("협업/팀")
-    render(<BlockRenderer block={block} showOptionalBadge onChange={() => {}} />)
-    expect(screen.getByText("선택")).toBeTruthy()
-  })
-
-  it("필수 필드면 뱃지를 렌더하지 않는다", () => {
+/**
+ * FRT-190: 표시를 '선택'에서 '필수'로 뒤집었다. 선택 필드에 붙던 '선택' 뱃지는 없애고,
+ * 필수 필드의 라벨 옆에만 주황 점(`RequiredDot`)을 그린다.
+ */
+describe("BlockRenderer 필수 표시", () => {
+  it("필수 필드면 라벨 옆에 필수 표시가 붙는다", () => {
     const block = createTextField("회사명", { required: true })
-    render(<BlockRenderer block={block} showOptionalBadge onChange={() => {}} />)
-    expect(screen.queryByText("선택")).toBeNull()
+    render(<BlockRenderer block={block} onChange={() => {}} />)
+    expect(screen.getByText("필수")).toBeTruthy()
   })
 
-  it("showOptionalBadge 없으면 뱃지 없음", () => {
+  it("선택 필드에는 아무 표시도 붙지 않는다", () => {
+    const block = createTextField("협업/팀")
+    render(<BlockRenderer block={block} onChange={() => {}} />)
+    expect(screen.queryByText("필수")).toBeNull()
+  })
+
+  it("'선택' 뱃지는 더 이상 렌더하지 않는다 — N개 항목과 겹치던 오버레이", () => {
     const block = createTextField("협업/팀")
     render(<BlockRenderer block={block} onChange={() => {}} />)
     expect(screen.queryByText("선택")).toBeNull()

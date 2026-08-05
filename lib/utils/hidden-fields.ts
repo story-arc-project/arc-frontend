@@ -1,5 +1,5 @@
 import type { Block } from "@/types/archive"
-import { isBlockEmpty } from "@/lib/utils/block-utils"
+import { isBlockEmpty, isRequiredBlock } from "@/lib/utils/block-utils"
 
 /**
  * 선택 필드 숨김 (FRT-190) — 확정본 §7 "'선택' 뱃지가 붙은 필드에 한해 × 버튼으로 숨김".
@@ -14,9 +14,14 @@ import { isBlockEmpty } from "@/lib/utils/block-utils"
  * 빈 블록을 이미 세지 않으므로 소비처를 하나도 건드리지 않는다.
  */
 
-/** 숨김 대상 판정 — 필수 필드와 안정키 없는 사용자 블록은 제외한다(후자는 이미 삭제 버튼이 있다). */
+/**
+ * 숨김 대상 판정 — 필수 필드와 안정키 없는 사용자 블록은 제외한다(후자는 이미 삭제 버튼이 있다).
+ *
+ * 필수 판정은 `isRequiredBlock` 을 쓴다 — 표의 필수는 `block.required` 가 아니라 **컬럼**에
+ * 붙어 있고(18유형 중 13개), 블록 층위만 보면 진행도 바가 필수로 세는 표를 사용자가 치울 수 있다.
+ */
 export function canHideBlock(block: Block): boolean {
-  return !block.required && !!block.key && isBlockEmpty(block)
+  return !isRequiredBlock(block) && !!block.key && isBlockEmpty(block)
 }
 
 /**

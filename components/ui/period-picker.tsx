@@ -10,6 +10,7 @@ import {
   type PeriodGranularity,
 } from "@/lib/utils/period-format";
 import { DatePicker } from "./date-picker";
+import { RequiredDot } from "./required-dot";
 
 interface PeriodPickerProps {
   label?: string;
@@ -17,6 +18,8 @@ interface PeriodPickerProps {
   hint?: string;
   /** Stored format: "2023.03 ~ 2024.01" (월) · "2023.03.15 ~ 현재" (일) */
   value: string;
+  /** 필수 표시(주황 점)만 담당한다 — 시작/종료가 두 컨트롤이라 native required 는 걸지 않는다. */
+  required?: boolean;
   onChange: (v: string) => void;
 }
 
@@ -25,7 +28,7 @@ const GRANULARITIES: { key: PeriodGranularity; label: string }[] = [
   { key: "day", label: "일 단위" },
 ];
 
-export function PeriodPicker({ label, hint, value, onChange }: PeriodPickerProps) {
+export function PeriodPicker({ label, hint, value, required, onChange }: PeriodPickerProps) {
   const [start, setStart] = useState(() => parsePeriodString(value).start);
   const [end, setEnd] = useState(() => parsePeriodString(value).end);
   const [isCurrent, setIsCurrent] = useState(() => parsePeriodString(value).isCurrent);
@@ -52,7 +55,10 @@ export function PeriodPicker({ label, hint, value, onChange }: PeriodPickerProps
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-2">
         {label ? (
-          <label className="text-field-label text-text-primary">{label}</label>
+          <label className="text-field-label text-text-primary">
+            {label}
+            {required && <RequiredDot />}
+          </label>
         ) : (
           <span />
         )}

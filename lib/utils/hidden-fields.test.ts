@@ -14,7 +14,7 @@ function block(key: string | undefined, opts: { required?: boolean; text?: strin
 }
 
 /** 빈 행 하나만 있는 repeatable-cell — isBlockEmpty 는 이걸 empty 로 본다(FRT-122). */
-function emptyTableBlock(key: string): Block {
+function emptyTableBlock(key: string, opts: { requiredColumn?: boolean } = {}): Block {
   return {
     id: `id-${key}`,
     key,
@@ -22,7 +22,7 @@ function emptyTableBlock(key: string): Block {
     label: key,
     value: {
       type: "repeatable-cell",
-      columns: [{ key: "c1", label: "항목", blockType: "text" }],
+      columns: [{ key: "c1", label: "항목", blockType: "text", required: opts.requiredColumn }],
       rows: [{ id: "r1", cells: { c1: "" } }],
     },
   }
@@ -47,6 +47,15 @@ describe("canHideBlock", () => {
 
   it("빈 행 하나뿐인 표도 비어 있으므로 숨길 수 있다", () => {
     expect(canHideBlock(emptyTableBlock("repeat.프로젝트 기록"))).toBe(true)
+  })
+
+  /**
+   * 표의 필수는 블록이 아니라 **컬럼**에 붙는다(설계/결정·작업 기록·세부 계획 등 18유형 중 13개).
+   * `block.required` 만 보면 진행도 바가 필수로 세는 표를 사용자가 치울 수 있게 되어,
+   * "필수인데 화면에 없는" 상태가 만들어진다. 판정은 `isRequiredBlock` 한 곳으로 모은다.
+   */
+  it("필수 컬럼을 가진 표는 블록이 optional 이어도 숨길 수 없다", () => {
+    expect(canHideBlock(emptyTableBlock("repeat.설계/결정", { requiredColumn: true }))).toBe(false)
   })
 })
 
@@ -76,6 +85,13 @@ describe("resolveHiddenBlocks", () => {
     const blocks = [block("a", { required: true })]
     const r = resolveHiddenBlocks(blocks, ["a"])
     expect(r.visible.map(b => b.key)).toEqual(["a"])
+    expect(r.hidden).toEqual([])
+  })
+
+  it("hidden 키인데 컬럼이 필수가 됐으면 강제로 다시 보인다 — 템플릿 개편 대비", () => {
+    const blocks = [emptyTableBlock("repeat.기록", { requiredColumn: true })]
+    const r = resolveHiddenBlocks(blocks, ["repeat.기록"])
+    expect(r.visible.map(b => b.key)).toEqual(["repeat.기록"])
     expect(r.hidden).toEqual([])
   })
 
@@ -109,6 +125,11 @@ describe("normalizeHiddenKeys", () => {
   it("필수가 된 키를 뺀다", () => {
     const blocks = [block("a", { required: true }), block("b")]
     expect(normalizeHiddenKeys(blocks, ["a", "b"])).toEqual(["b"])
+  })
+
+  it("필수 컬럼이 생긴 표의 키를 뺀다", () => {
+    const blocks = [emptyTableBlock("repeat.기록", { requiredColumn: true }), block("b")]
+    expect(normalizeHiddenKeys(blocks, ["repeat.기록", "b"])).toEqual(["b"])
   })
 
   it("모르는 키는 건드리지 않는다 — dedup 으로 카드에서 빠진 블록의 숨김을 잃지 않는다", () => {

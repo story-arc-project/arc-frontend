@@ -604,7 +604,6 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
                 onHide={handleHideBlock}
                 onUnhide={handleUnhideBlock}
                 optional={card.optional}
-                showOptionalBadge={card.showOptionalBadge}
                 description={sectionDescription(typeId, card.category)}
                 onChange={writeBackBlocks}
               />

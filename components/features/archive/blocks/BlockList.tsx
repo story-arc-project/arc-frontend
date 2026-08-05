@@ -26,7 +26,6 @@ import BlockEditModal, { type BlockEditConfig } from "./BlockEditModal"
 interface BlockListProps {
   blocks: Block[]
   readOnly?: boolean
-  showOptionalBadge?: boolean
   onChange: (blocks: Block[]) => void
   allowAdd?: boolean
   allowReorder?: boolean
@@ -46,7 +45,6 @@ interface BlockListProps {
 export default function BlockList({
   blocks,
   readOnly,
-  showOptionalBadge,
   onChange,
   allowAdd = false,
   allowReorder = false,
@@ -192,7 +190,7 @@ export default function BlockList({
     return (
       <div className="flex flex-col gap-5">
         {blocks.map(block => (
-          <BlockRenderer key={block.id} block={block} readOnly showOptionalBadge={showOptionalBadge} onChange={handleBlockChange} />
+          <BlockRenderer key={block.id} block={block} readOnly onChange={handleBlockChange} />
         ))}
       </div>
     )
@@ -205,8 +203,8 @@ export default function BlockList({
       allowReorder={allowReorder}
       allowDelete={allowDelete}
       allowEdit={editEnabled}
-      showOptionalBadge={showOptionalBadge}
       onChange={handleBlockChange}
+      hideSlot={!!onHide}
       onHide={onHide && canHideBlock(block) ? () => onHide(block) : undefined}
       onDelete={() => handleDeleteBlock(block.id)}
       onDuplicate={() => handleDuplicateBlock(block.id)}
@@ -261,8 +259,8 @@ function SortableBlockItem({
   allowReorder,
   allowDelete,
   allowEdit,
-  showOptionalBadge,
   onChange,
+  hideSlot,
   onHide,
   onDelete,
   onDuplicate,
@@ -272,8 +270,9 @@ function SortableBlockItem({
   allowReorder: boolean
   allowDelete: boolean
   allowEdit: boolean
-  showOptionalBadge?: boolean
   onChange: (blockId: string, value: BlockValue) => void
+  /** 숨김 기능이 켜진 목록인지. 켜져 있으면 × 자리를 **모든 블록에** 예약한다. */
+  hideSlot?: boolean
   onHide?: () => void
   onDelete: () => void
   onDuplicate: () => void
@@ -308,22 +307,27 @@ function SortableBlockItem({
         </button>
       )}
       <div className="flex-1 min-w-0">
-        <BlockRenderer block={block} showOptionalBadge={showOptionalBadge} onChange={onChange} />
+        <BlockRenderer block={block} onChange={onChange} />
       </div>
       {/*
-        숨김 × 는 블록 **바깥** 우측에 둔다 — 블록 안 우상단은 '선택' 뱃지가 이미
-        `absolute -top-2 right-0` 로 차지하고 있어(BlockRenderer) 경험 상세 카드에서 겹친다.
+        숨김 × 는 블록 **바깥** 우측에 둔다.
+
+        ⚠️ 자리는 `onHide` 유무가 아니라 `hideSlot`(목록 전체) 로 예약한다. 숨길 수 있는 블록에만
+        칸을 만들면 그 블록만 폭이 좁아져 **필수 필드와 입력칸 오른쪽 끝이 어긋난다** — 한 카드
+        안에서 필드 폭이 두 종류가 되는 형태다. 버튼만 조건부로 그리고 칸은 항상 차지한다.
       */}
-      {onHide && (
-        <div className="flex flex-col gap-1 mt-1 shrink-0">
-          <button
-            type="button"
-            onClick={onHide}
-            className="text-text-tertiary hover:text-text-secondary transition-colors p-1 rounded"
-            aria-label={`${block.label} 숨기기`}
-          >
-            <X size={14} />
-          </button>
+      {hideSlot && (
+        <div className="flex w-6 flex-col gap-1 mt-1 shrink-0">
+          {onHide && (
+            <button
+              type="button"
+              onClick={onHide}
+              className="text-text-tertiary hover:text-text-secondary transition-colors p-1 rounded"
+              aria-label={`${block.label} 숨기기`}
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
       )}
       {allowDelete && (

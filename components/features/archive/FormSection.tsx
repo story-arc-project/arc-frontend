@@ -12,7 +12,6 @@ interface FormSectionProps {
   description?: string
   optional?: boolean
   sectionId?: string
-  showOptionalBadge?: boolean
   defaultCollapsed?: boolean
   readOnly?: boolean
   allowAdd?: boolean
@@ -47,7 +46,6 @@ export default function FormSection({
   description,
   optional,
   sectionId,
-  showOptionalBadge,
   defaultCollapsed = false,
   readOnly,
   allowAdd,
@@ -144,7 +142,6 @@ export default function FormSection({
           allowReorder={allowReorder}
           allowDelete={allowDelete}
           allowEdit={allowEdit}
-          showOptionalBadge={showOptionalBadge}
           onHide={readOnly ? undefined : onHide}
         />
         {!readOnly && hiddenBlocks && hiddenBlocks.length > 0 && (

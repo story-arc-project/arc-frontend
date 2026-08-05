@@ -1,6 +1,6 @@
 import type { Block, BlockColumnDef, CellValue, SectionCategory } from "@/types/archive"
 import { SECTION_CATEGORIES } from "@/types/archive"
-import { cellFilled, cellText, isBlockEmpty, rowHasContent } from "@/lib/utils/block-utils"
+import { cellFilled, cellText, isBlockEmpty, isRequiredBlock, rowHasContent } from "@/lib/utils/block-utils"
 import { isRealMonth, parsePeriodString, truncateToMonth } from "@/lib/utils/period-format"
 
 // 같은 그룹의 라벨은 같은 질문으로 간주 — core/type/extended 간 중복 필드를 숨긴다.
@@ -53,7 +53,6 @@ export interface FormCardModel {
   label: string
   blocks: Block[]
   optional?: boolean
-  showOptionalBadge?: boolean
 }
 export interface FormCardsResult {
   titleBlock?: Block
@@ -118,7 +117,6 @@ export function computeFormCards(
       label: labelOverrides?.[id] ?? label,
       blocks,
       optional: id === "detail" || undefined,
-      showOptionalBadge: id === "detail" || undefined,
     })
   }
 
@@ -172,19 +170,6 @@ function isBlockFilledForProgress(block: Block): boolean {
   // 하나만 있어도 '안 비었다'라서 그대로 완료가 된다. 여기서도 시작을 요구한다.
   if (v.type === "period") return v.start.trim() !== ""
   return !isBlockEmpty(block)
-}
-
-/**
- * 진행도 판정용 "필수 블록". block.required 뿐 아니라, 블록 자체는 optional 이어도
- * 필수 컬럼을 가진 repeatable-cell(예: 학회 프로젝트 기록·수업 기록)도 필수로 본다.
- * 이렇게 하지 않으면 optional 형제 필드만 채워도 카드가 완료로 오판된다.
- */
-function isRequiredBlock(block: Block): boolean {
-  if (block.required) return true
-  if (block.value.type === "repeatable-cell") {
-    return block.value.columns.some(c => c.required)
-  }
-  return false
 }
 
 /**

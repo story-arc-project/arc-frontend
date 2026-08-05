@@ -38,7 +38,6 @@ export const CardOptional: Story = {
     sectionId: "detail",
     optional: true,
     description: "채울수록 분석이 정확해져요",
-    showOptionalBadge: true,
     blocks: sampleBlocks,
   },
 }
@@ -143,13 +142,10 @@ function keyedField(label: string, opts: { required?: boolean; text?: string } =
 function HideHarness({
   initialVisible,
   initialHidden = [],
-  showOptionalBadge,
   optional = true,
 }: {
   initialVisible: Block[]
   initialHidden?: Block[]
-  showOptionalBadge?: boolean
-  /** 카드 헤더의 '선택' 알약. 블록 뱃지와 문구가 같아 겹침 실측 시에는 끈다. */
   optional?: boolean
 }) {
   const [visible, setVisible] = useState<Block[]>(initialVisible)
@@ -162,7 +158,6 @@ function HideHarness({
       blocks={visible}
       hiddenBlocks={hidden}
       optional={optional}
-      showOptionalBadge={showOptionalBadge}
       onHide={b => {
         setVisible(v => v.filter(x => x.id !== b.id))
         setHidden(h => [...h, b])
@@ -225,23 +220,47 @@ export const AllHidden: Story = {
 }
 
 /**
- * 회귀: × 와 '선택' 뱃지가 겹치지 않는다 — 뱃지는 블록 안 `absolute -top-2 right-0`,
- * × 는 블록 **바깥** 우측 컬럼이라야 한다. 좌표로 실측한다(클래스 단언으로는 못 잡는다).
+ * 회귀: × 가 붙는 블록과 안 붙는 블록의 **입력칸 폭이 같아야** 한다.
+ *
+ * × 자리를 숨길 수 있는 블록에만 만들면 그 블록만 좁아져, 한 카드 안에서 필드 오른쪽 끝이
+ * 두 줄로 어긋난다. 폭은 클래스 단언으로 잡히지 않으므로 좌표로 실측한다 —
+ * 대조군(× 없는 필수 필드)을 같이 걸지 않으면 "둘 다 좁아진" 회귀가 그대로 통과한다.
  */
-export const HideButtonDoesNotOverlapBadge: Story = {
+export const HidableAndRequiredShareWidth: Story = {
   render: () => (
-    <HideHarness initialVisible={[keyedField("배운 점")]} showOptionalBadge optional={false} />
+    <HideHarness
+      initialVisible={[keyedField("경험명", { required: true }), keyedField("배운 점")]}
+    />
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const badge = canvas.getByText("선택")
-    const hideBtn = canvas.getByLabelText("배운 점 숨기기")
+    // × 가 실제로 한쪽에만 붙은 상태인지부터 확인한다(안 붙었으면 폭 비교가 무의미).
+    expect(canvas.getByLabelText("배운 점 숨기기")).toBeInTheDocument()
+    expect(canvas.queryByLabelText("경험명 숨기기")).toBeNull()
 
-    const b = badge.getBoundingClientRect()
-    const h = hideBtn.getBoundingClientRect()
-    const overlaps = b.left < h.right && h.left < b.right && b.top < h.bottom && h.top < b.bottom
-    expect(overlaps).toBe(false)
-    // × 는 뱃지(=블록 안)보다 오른쪽에 있어야 한다.
-    expect(h.left).toBeGreaterThanOrEqual(b.right)
+    // ⚠️ `getByLabelText(/배운 점/)` 은 × 버튼의 aria-label("배운 점 숨기기")까지 잡는다.
+    // 입력칸만 재려면 role 로 좁힌다.
+    const required = canvas.getByRole("textbox", { name: /경험명/ }).getBoundingClientRect()
+    const hidable = canvas.getByRole("textbox", { name: /배운 점/ }).getBoundingClientRect()
+    expect(Math.abs(required.width - hidable.width)).toBeLessThan(1)
+    expect(Math.abs(required.right - hidable.right)).toBeLessThan(1)
+  },
+}
+
+/**
+ * 필수 필드에만 표시가 붙는다 — 선택 필드의 '선택' 뱃지는 없앴다(FRT-190).
+ * 카드 헤더의 '선택' 알약은 카드 층위 표시라 남으므로, 헤더를 끄고 블록만 본다.
+ */
+export const RequiredMarkerOnly: Story = {
+  render: () => (
+    <HideHarness
+      optional={false}
+      initialVisible={[keyedField("경험명", { required: true }), keyedField("배운 점")]}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    expect(canvas.getAllByText("필수")).toHaveLength(1)
+    expect(canvas.queryByText("선택")).toBeNull()
   },
 }

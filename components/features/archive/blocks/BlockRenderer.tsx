@@ -23,11 +23,10 @@ const OUTCOME_LIST_TYPES = new Set<string>(["text", "textarea"])
 interface BlockRendererProps {
   block: Block
   readOnly?: boolean
-  showOptionalBadge?: boolean
   onChange: (blockId: string, value: BlockValue) => void
 }
 
-export default function BlockRenderer({ block, readOnly, showOptionalBadge, onChange }: BlockRendererProps) {
+export default function BlockRenderer({ block, readOnly, onChange }: BlockRendererProps) {
   const handleChange = (value: BlockValue) => onChange(block.id, value)
 
   const rendered = (() => {
@@ -87,15 +86,8 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
     }
   })()
 
-  if (showOptionalBadge && !block.required && !readOnly) {
-    return (
-      <div className="relative">
-        <span className="absolute -top-2 right-0 z-10 text-caption text-text-tertiary bg-surface border border-border rounded-full px-2 py-0.5">
-          선택
-        </span>
-        {rendered}
-      </div>
-    )
-  }
+  // FRT-190: '선택' 뱃지는 없앴다. 표시를 다수(선택)가 아니라 소수(필수)에 붙이는 쪽으로 뒤집어
+  // 라벨 옆 주황 점(`RequiredDot`)으로 그린다 — 뱃지는 `absolute` 오버레이라 블록 우상단의
+  // `N개 항목`(RepeatableCellBlock) 과 겹쳤고, 경험 상세 카드에만 붙어 신호도 일관되지 않았다.
   return rendered ?? null
 }
