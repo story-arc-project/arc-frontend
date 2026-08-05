@@ -15,13 +15,20 @@ import type {
   JobRecommendation,
   KeywordClustering,
   ProjectContest,
+  ComprehensiveStarFormat,
+  StarAnalysisStatus,
+  StarQualityGrade,
   Strength,
   StrengthDiagnosis,
   StrengthLevel,
   SynergyCombination,
   WeaknessSeverity,
 } from "@/types/analysis";
-import { strengthLevelLabel, weaknessSeverityLabel } from "@/types/analysis";
+import {
+  starQualityGradeLabel,
+  strengthLevelLabel,
+  weaknessSeverityLabel,
+} from "@/types/analysis";
 import { getComprehensiveResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
 import { isSafeHttpUrl } from "@/lib/utils/url-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
@@ -165,9 +172,15 @@ export default function ComprehensiveDetailPage() {
 
         <SynergyCombinationsBlock combinations={data.synergyCombinations} />
 
-        <ResumeStarBlock items={data.resumeStarFormat} />
+        <ResumeStarBlock
+          items={data.resumeStarFormat}
+          status={data.starAnalysisStatus}
+        />
 
-        <AdditionalRecommendationsBlock additional={data.additionalRecommendations} />
+        <AdditionalRecommendationsBlock
+          additional={data.additionalRecommendations}
+          notices={data.recommendationNotices}
+        />
 
         <StrengthDiagnosisBlock diagnosis={data.strengthDiagnosis} />
 
@@ -321,15 +334,204 @@ function SynergyCombinationsBlock({ combinations }: { combinations: SynergyCombi
   );
 }
 
+// 등급 배지 색 — severityVariant/strengthLevelVariant 와 같은 축이다.
+const starGradeVariant: Record<StarQualityGrade, "success" | "brand" | "warning" | "error"> = {
+  A: "success",
+  B: "brand",
+  C: "warning",
+  D: "error",
+};
+
+/**
+ * STAR 를 만들지 못했을 때의 안내. v3.1 은 배열을 비우고 이유를 star_analysis_status 로 보낸다 —
+ * 배열이 비었다고 섹션째 감추면 이 이유가 화면에 도달할 길이 없다(FRT-169 와 같은 형태).
+ */
+function StarUnavailableNotice({ status }: { status: StarAnalysisStatus }) {
+  return (
+    <div className="bg-surface-secondary rounded-lg p-4 space-y-3">
+      {status.reason && (
+        <p className="text-body-sm text-text-secondary leading-relaxed">{status.reason}</p>
+      )}
+      {status.coaching.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-label text-text-tertiary font-medium">이렇게 적으면 만들 수 있어요</p>
+          <ul className="space-y-1 list-disc list-inside">
+            {status.coaching.map((c, i) => (
+              <li key={`${c}-${i}`} className="text-body-sm text-text-secondary leading-relaxed">
+                {c}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {status.rejectedEntries.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-label text-text-tertiary font-medium">
+            근거를 찾지 못해 빠진 경험
+          </p>
+          <ul className="space-y-2">
+            {status.rejectedEntries.map((entry, i) => (
+              <li
+                key={`${entry.title}-${i}`}
+                className="bg-surface border border-border rounded-lg p-3 space-y-1"
+              >
+                <p className="text-body-sm font-medium text-text-primary">{entry.title}</p>
+                {entry.reason && (
+                  <p className="text-caption text-text-tertiary leading-relaxed">{entry.reason}</p>
+                )}
+                {entry.coaching && (
+                  <p className="text-body-sm text-text-secondary leading-relaxed">
+                    {entry.coaching}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 품질 채점(v3.1). 등급·점수는 배지로, 총평과 우선 개선점은 문장으로 보여준다. */
+function StarQualityBlock({ quality }: { quality: ComprehensiveStarFormat["quality"] }) {
+  const hasBadge = quality.grade !== null || quality.score !== "";
+  if (!hasBadge && !quality.verdict && quality.priorityFixes.length === 0) return null;
+  return (
+    <div className="space-y-2 pt-3 border-t border-border">
+      {hasBadge && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {quality.grade && (
+            <Badge variant={starGradeVariant[quality.grade]}>
+              {quality.grade} · {starQualityGradeLabel[quality.grade]}
+            </Badge>
+          )}
+          {quality.score && <span className="text-caption text-text-tertiary">{quality.score}</span>}
+        </div>
+      )}
+      {quality.verdict && (
+        <p className="text-body-sm text-text-secondary leading-relaxed">{quality.verdict}</p>
+      )}
+      {quality.priorityFixes.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-caption text-text-tertiary font-medium">먼저 고치면 좋은 것</p>
+          <ul className="space-y-1 list-disc list-inside">
+            {quality.priorityFixes.map((fix, i) => (
+              <li
+                key={`${fix}-${i}`}
+                className="text-body-sm text-text-secondary leading-relaxed"
+              >
+                {fix}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 원문 근거는 접어서 둔다 — 슬롯 5개 × 인용문이라 펼쳐두면 카드가 몇 배로 길어진다.
+ * 근거가 하나도 없는 v2.0 항목에서는 아예 렌더하지 않는다.
+ */
+function StarEvidenceDetails({ star }: { star: ComprehensiveStarFormat }) {
+  const quotes = [
+    { label: "S · 상황", value: star.sourceQuotes.situation },
+    { label: "T · 과제", value: star.sourceQuotes.task },
+    { label: "A · 행동", value: star.sourceQuotes.action },
+    { label: "R · 결과", value: star.sourceQuotes.result },
+    { label: "L · 배움", value: star.sourceQuotes.learning },
+  ].filter((q) => q.value);
+  const { unsupportedSlots } = star.evidenceStatus;
+  const { competencyEvidence } = star;
+  if (
+    quotes.length === 0 &&
+    unsupportedSlots.length === 0 &&
+    competencyEvidence.length === 0
+  ) {
+    return null;
+  }
+  return (
+    <details className="group">
+      <summary className="text-caption text-text-tertiary font-medium cursor-pointer hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm">
+        이 문장의 근거
+      </summary>
+      <div className="mt-2 space-y-3">
+        {quotes.length > 0 && (
+          <div className="space-y-2">
+            {quotes.map((q) => (
+              <div key={q.label}>
+                <p className="text-caption text-text-tertiary font-medium mb-0.5">{q.label}</p>
+                <blockquote className="text-body-sm text-text-secondary leading-relaxed border-l-2 border-border pl-3 whitespace-pre-line">
+                  {q.value}
+                </blockquote>
+              </div>
+            ))}
+          </div>
+        )}
+        {unsupportedSlots.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-caption text-text-tertiary font-medium">근거를 못 찾은 항목</p>
+            <ul className="space-y-1">
+              {unsupportedSlots.map((slot, i) => (
+                <li
+                  key={`${slot.slot}-${i}`}
+                  className="text-body-sm text-text-secondary leading-relaxed"
+                >
+                  {slot.label && (
+                    <span className="text-text-tertiary">{slot.label} · </span>
+                  )}
+                  {slot.reason}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {competencyEvidence.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-caption text-text-tertiary font-medium">이 경험이 보여주는 역량</p>
+            <ul className="space-y-1">
+              {competencyEvidence.map((ev, i) => (
+                <li
+                  key={`${ev.competency}-${i}`}
+                  className="text-body-sm text-text-secondary leading-relaxed"
+                >
+                  <span className="text-text-primary font-medium">{ev.competency}</span>
+                  {ev.why && ` — ${ev.why}`}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function ResumeStarBlock({
   items,
+  status,
 }: {
   items: ComprehensiveAnalysisResult["resumeStarFormat"];
+  status: StarAnalysisStatus;
 }) {
-  if (items.length === 0) return null;
+  // 배열이 비어도 v3.1 이 "왜 없는지"를 보냈다면 섹션을 남긴다 — 그 이유가 갈 자리가 여기뿐이다.
+  // 반대로 status 가 아예 안 온 v2.0 응답에서는 예전처럼 조용히 건너뛴다(부재 ≠ 미생성).
+  // generated 로 게이트하지 않는다: 일부만 만들어진 응답(generated: true + rejectedEntries)이
+  // 실제 형태라, "못 만들었을 때만" 그리면 빠진 이유가 그대로 사라진다.
+  const hasStatusNotice =
+    status.present &&
+    (status.reason !== "" || status.coaching.length > 0 || status.rejectedEntries.length > 0);
+  if (items.length === 0 && !hasStatusNotice) return null;
+
+  const review = status.qualityReview;
+  // 카드가 있으면 안내는 카드 뒤(총평 앞)에 둔다 — 빠진 경험은 목록을 본 다음에 읽히는 말이다.
+  const statusNotice = hasStatusNotice ? <StarUnavailableNotice status={status} /> : null;
   return (
     <section className="space-y-3">
       <h2 className="text-title text-text-primary">자소서용 STAR</h2>
+      {items.length === 0 && statusNotice}
       <div className="space-y-4">
         {items.map((star, i) => {
           const fields = [
@@ -337,6 +539,8 @@ function ResumeStarBlock({
             { label: "T · 과제", value: star.task },
             { label: "A · 행동", value: star.action },
             { label: "R · 결과", value: star.result },
+            // L 은 원문에 배움이 명시된 경우에만 온다 — 없으면 칸 자체를 만들지 않는다.
+            ...(star.learning ? [{ label: "L · 배움", value: star.learning }] : []),
           ];
           return (
             <article
@@ -345,6 +549,19 @@ function ResumeStarBlock({
             >
               {star.title && (
                 <h3 className="text-body-sm font-medium text-text-primary">{star.title}</h3>
+              )}
+              {star.headline && (
+                <p className="text-body-sm text-brand font-medium leading-relaxed">
+                  {star.headline}
+                </p>
+              )}
+              {star.qualityWarning && (
+                <p
+                  role="status"
+                  className="text-body-sm text-warning leading-relaxed bg-surface-warning rounded-lg p-3"
+                >
+                  {star.qualityWarning}
+                </p>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {fields.map((f) => (
@@ -360,10 +577,37 @@ function ResumeStarBlock({
                   </div>
                 ))}
               </div>
+              <StarEvidenceDetails star={star} />
+              <StarQualityBlock quality={star.quality} />
             </article>
           );
         })}
       </div>
+      {items.length > 0 && statusNotice}
+      {/* 총평 문장이 없어도 개선점만 온 응답이 있다 — 총평으로 게이트하면 본문 판정은
+          개선점을 컨텐츠로 세는데 화면은 그걸 통째로 감추는 모순이 생긴다. */}
+      {review && (review.portfolioVerdict !== "" || review.topFixes.length > 0) && (
+        <div className="bg-surface-secondary rounded-lg p-4 space-y-2">
+          <p className="text-label text-text-tertiary font-medium">전체적으로 보면</p>
+          {review.portfolioVerdict && (
+            <p className="text-body-sm text-text-secondary leading-relaxed">
+              {review.portfolioVerdict}
+            </p>
+          )}
+          {review.topFixes.length > 0 && (
+            <ul className="space-y-1 list-disc list-inside">
+              {review.topFixes.map((fix, i) => (
+                <li
+                  key={`${fix}-${i}`}
+                  className="text-body-sm text-text-secondary leading-relaxed"
+                >
+                  {fix}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -390,6 +634,7 @@ function RecommendationCard({
   reason,
   expectedEffect,
   url,
+  urlNote,
 }: {
   title: string;
   metas?: string[];
@@ -398,6 +643,8 @@ function RecommendationCard({
   reason: string;
   expectedEffect: string;
   url: string | null;
+  /** v3.1: 링크 검증 실패 시의 안내. 링크가 없을 때만 그 자리를 채운다. */
+  urlNote?: string;
 }) {
   const shownMetas = (metas ?? []).filter(Boolean);
   return (
@@ -414,24 +661,45 @@ function RecommendationCard({
       {reason && <Field label="추천 이유" value={reason} />}
       {expectedEffect && <Field label="기대 효과" value={expectedEffect} />}
       <RecommendationLink url={url} />
+      {/* 링크가 검증을 통과하지 못하면 지금은 아무것도 안 남는다 — 찾아갈 방법을 알려준다. */}
+      {!(url && isSafeHttpUrl(url)) && urlNote && (
+        <p className="text-caption text-text-tertiary leading-relaxed">{urlNote}</p>
+      )}
     </li>
   );
 }
 
 function AdditionalRecommendationsBlock({
   additional,
+  notices,
 }: {
   additional: ComprehensiveAnalysisResult["additionalRecommendations"];
+  /** v3.1: 추천이 비거나 줄어든 이유. 지금은 빈 카테고리가 조용히 사라져 이유가 갈 곳이 없다. */
+  notices: string[];
 }) {
   const { certifications, clubsAndSocieties, projectsAndContests } = additional;
   const empty =
     certifications.length === 0 &&
     clubsAndSocieties.length === 0 &&
     projectsAndContests.length === 0;
-  if (empty) return null;
+  // 추천이 하나도 없어도 사유가 있으면 섹션을 남긴다 — 침묵보다 이유가 낫다.
+  if (empty && notices.length === 0) return null;
   return (
     <section className="space-y-4">
       <h2 className="text-title text-text-primary">추가 활동 추천</h2>
+
+      {notices.length > 0 && (
+        <div className="bg-surface-secondary rounded-lg p-4 space-y-1">
+          {notices.map((notice, i) => (
+            <p
+              key={`${notice}-${i}`}
+              className="text-body-sm text-text-secondary leading-relaxed"
+            >
+              {notice}
+            </p>
+          ))}
+        </div>
+      )}
 
       {certifications.length > 0 && (
         <RecommendationGroup label="추천 자격증">
@@ -459,6 +727,7 @@ function AdditionalRecommendationsBlock({
               reason={c.reason}
               expectedEffect={c.expectedEffect}
               url={c.url}
+              urlNote={c.urlNote}
             />
           ))}
         </RecommendationGroup>

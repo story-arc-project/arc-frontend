@@ -1069,6 +1069,408 @@ describe("종합 분석 v2.0 매퍼 (comprehensive/2.0)", () => {
   })
 })
 
+describe("종합 분석 v3.1 매퍼 (comprehensive/3.1, FRT-208)", () => {
+  function comp31(result: Record<string, unknown>) {
+    return envelope({
+      id: "comp-1",
+      status: "completed",
+      result: { schema_version: "comprehensive/3.1", ...result },
+    })
+  }
+
+  /** 이중호환 회귀용 — v3.1 필드가 하나도 없는 현행 백엔드 응답. */
+  function comp2v20(result: Record<string, unknown>) {
+    return envelope({
+      id: "comp-1",
+      status: "completed",
+      result: { schema_version: "comprehensive/2.0", ...result },
+    })
+  }
+
+  it("comprehensive/3.1 은 아는 버전이라 안내 대신 정상 렌더한다", async () => {
+    // v3.1 명세엔 schema_version 키 자체가 없지만, 백엔드가 관례대로 붙일 수 있다.
+    // 화이트리스트에 없으면 상세가 통째로 "표시할 수 없습니다"로 빠진다(PR #196 이 2.0 에서 겪은 실패).
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed", result: { schema_version: "comprehensive/3.1" } }),
+    )
+    await expect(getComprehensiveResult("comp-1")).resolves.toMatchObject({ id: "comp-1" })
+  })
+
+  it("comprehensive/3.0 도 미리 허용한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "comp-1", status: "completed", result: { schema_version: "comprehensive/3.0" } }),
+    )
+    await expect(getComprehensiveResult("comp-1")).resolves.toMatchObject({ id: "comp-1" })
+  })
+
+  // ── star_analysis_status: 부재 ≠ 미생성 ──────────────────
+  it("star_analysis_status 가 없는 v2.0 응답은 present:false 다 (없는 안내를 만들지 않는다)", async () => {
+    // generated 는 방어 파싱 기본값 false 로 떨어진다. 그걸 "만들지 못했다"로 읽으면
+    // v2.0 사용자에게 이유가 빈 안내가 뜬다 — 부재와 미생성을 반드시 구분해야 한다.
+    apiMock.get.mockResolvedValue(comp2v20({ resume_star_format: [] }))
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.starAnalysisStatus.present).toBe(false)
+    expect(res.starAnalysisStatus.generated).toBe(false)
+  })
+
+  it("star_analysis_status 가 오면 present:true 로 보존한다", async () => {
+    apiMock.get.mockResolvedValue(comp31({ star_analysis_status: { generated: true } }))
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.starAnalysisStatus.present).toBe(true)
+    expect(res.starAnalysisStatus.generated).toBe(true)
+  })
+
+  it("star_analysis_status 가 배열로 와도 present:false 로 막는다 (배열은 레코드가 아니다)", async () => {
+    apiMock.get.mockResolvedValue(comp31({ star_analysis_status: [] }))
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.starAnalysisStatus.present).toBe(false)
+  })
+
+  it("미생성 사유·코칭·폐기 항목을 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({
+        resume_star_format: [],
+        star_analysis_status: {
+          generated: false,
+          reason: "STAR 기준 충족 0건",
+          experience_block_count: 3,
+          star_eligible_block_count: 0,
+          coaching: ["행동을 1인칭으로 적어보세요"],
+          rejected_entries: [
+            {
+              title: "학회 프로젝트",
+              reason: "A·R 근거 없음",
+              unsupported_slots: ["A", "R"],
+              coaching: "무엇을 어떻게 했는지 적어보세요",
+            },
+          ],
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    const s = res.starAnalysisStatus
+    expect(s).toMatchObject({
+      present: true,
+      generated: false,
+      reason: "STAR 기준 충족 0건",
+      experienceBlockCount: 3,
+      starEligibleBlockCount: 0,
+      coaching: ["행동을 1인칭으로 적어보세요"],
+    })
+    expect(s.rejectedEntries[0]).toMatchObject({
+      title: "학회 프로젝트",
+      reason: "A·R 근거 없음",
+      unsupportedSlots: ["A", "R"],
+      coaching: "무엇을 어떻게 했는지 적어보세요",
+    })
+  })
+
+  it("quality_review 는 부재 시 null 이다 (빈 객체로 뭉개지 않는다)", async () => {
+    apiMock.get.mockResolvedValue(comp31({ star_analysis_status: { generated: false } }))
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.starAnalysisStatus.qualityReview).toBeNull()
+  })
+
+  it("quality_review 를 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({
+        star_analysis_status: {
+          generated: true,
+          quality_review: {
+            evaluated: 2,
+            grade_distribution: { A: 1, D: 1 },
+            portfolio_verdict: "일부 항목 보완 필요",
+            top_fixes: ["Action 비중 — 1/2건에서 미달"],
+          },
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.starAnalysisStatus.qualityReview).toEqual({
+      evaluated: 2,
+      gradeDistribution: { A: 1, D: 1 },
+      portfolioVerdict: "일부 항목 보완 필요",
+      topFixes: ["Action 비중 — 1/2건에서 미달"],
+    })
+  })
+
+  // ── hasResultBody: 카운트 0 이 상태 안내를 죽이지 않는다 ──
+  it("카운트만 있는 star_analysis_status 는 본문으로 치지 않는다 (FRT-134 안내 보존)", async () => {
+    // hasAnyContent 는 숫자를 컨텐츠로 친다(Number.isFinite(0) === true). 마스킹하지 않으면
+    // experience_block_count:0 하나 때문에 본문이 텅 빈 결과가 "본문 있음"이 되어
+    // AnalysisResultUnavailable 상태 안내가 영영 뜨지 않는다.
+    apiMock.get.mockResolvedValue(
+      comp31({
+        star_analysis_status: {
+          generated: false,
+          experience_block_count: 0,
+          star_eligible_block_count: 0,
+          coaching: [],
+          rejected_entries: [],
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.hasResultBody).toBe(false)
+  })
+
+  it("미생성 사유가 있으면 본문으로 친다 (화면이 이유를 말할 수 있다)", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({
+        star_analysis_status: { generated: false, reason: "경험 기록이 아직 짧아요" },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.hasResultBody).toBe(true)
+  })
+
+  it("quality_review 도 화면이 그리는 필드만 본문 판정에 넣는다", async () => {
+    // evaluated(number)·grade_distribution 은 화면에 그리지 않는데 판정에 넘기면
+    // evaluated:0 하나로 카운트와 똑같은 오판이 재현된다(/code-review medium).
+    apiMock.get.mockResolvedValue(
+      comp31({
+        star_analysis_status: {
+          generated: false,
+          quality_review: {
+            evaluated: 0,
+            grade_distribution: { A: 0, B: 0, C: 0, D: 0 },
+            portfolio_verdict: "",
+            top_fixes: [],
+          },
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.hasResultBody).toBe(false)
+    // 대조군: 그릴 말이 실제로 있으면 본문으로 친다.
+    expect(res.starAnalysisStatus.qualityReview?.evaluated).toBe(0)
+  })
+
+  it("총평이 있으면 quality_review 만으로도 본문으로 친다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({
+        star_analysis_status: {
+          generated: false,
+          quality_review: { evaluated: 0, portfolio_verdict: "조금만 더 다듬으면 좋아요" },
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.hasResultBody).toBe(true)
+  })
+
+  it("guard_version 은 매핑하지 않는다 (본문 판정 오염 금지)", async () => {
+    // v3.1 은 guard_version:"v3.1" 을 항상 채운다. 매핑하면 문자열 하나 때문에
+    // 본문이 텅 빈 결과가 "본문 있음"이 된다.
+    apiMock.get.mockResolvedValue(comp31({ guard_version: "v3.1" }))
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.hasResultBody).toBe(false)
+    expect(res).not.toHaveProperty("guardVersion")
+  })
+
+  // ── STAR 항목 확장 ────────────────────────────────────────
+  it("STAR 항목의 headline·L·원문 근거·역량 근거를 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({
+        resume_star_format: [
+          {
+            title: "데이터 파이프라인 구축",
+            headline: "수집 자동화로 처리 시간 60% 단축",
+            S: "상황",
+            S_source_quote: "매주 수작업으로 모았다",
+            T: "과제",
+            T_source_quote: "자동화가 필요했다",
+            A: "행동",
+            A_source_quote: "Airflow 로 DAG 를 짰다",
+            R: "결과",
+            R_source_quote: "4시간이 1.5시간으로 줄었다",
+            L: "배움",
+            L_source_quote: "관측 가능성이 중요하다는 걸 배웠다",
+            competency_evidence: [{ competency: "문제 해결", why: "병목을 직접 찾아 고쳤다" }],
+          },
+        ],
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    const star = res.resumeStarFormat[0]
+    expect(star).toMatchObject({
+      title: "데이터 파이프라인 구축",
+      headline: "수집 자동화로 처리 시간 60% 단축",
+      situation: "상황",
+      task: "과제",
+      action: "행동",
+      result: "결과",
+      learning: "배움",
+    })
+    expect(star.sourceQuotes).toEqual({
+      situation: "매주 수작업으로 모았다",
+      task: "자동화가 필요했다",
+      action: "Airflow 로 DAG 를 짰다",
+      result: "4시간이 1.5시간으로 줄었다",
+      learning: "관측 가능성이 중요하다는 걸 배웠다",
+    })
+    expect(star.competencyEvidence).toEqual([
+      { competency: "문제 해결", why: "병목을 직접 찾아 고쳤다" },
+    ])
+  })
+
+  it("근거가 없어 null 로 온 슬롯을 빈 값으로 안전 처리한다", async () => {
+    // v3.1 은 근거 없는 슬롯을 null 로 비운다. 화면은 이미 빈 값을 "보완 필요"로 그린다.
+    apiMock.get.mockResolvedValue(
+      comp31({
+        resume_star_format: [
+          { title: "t", headline: null, S: null, S_source_quote: null, A: "행동", R: "결과", L: null },
+        ],
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    const star = res.resumeStarFormat[0]
+    expect(star.headline).toBe("")
+    expect(star.situation).toBe("")
+    expect(star.learning).toBe("")
+    expect(star.sourceQuotes.situation).toBe("")
+  })
+
+  it("evidence_status(미충족 슬롯·재배치 판정)를 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({
+        resume_star_format: [
+          {
+            title: "t",
+            evidence_status: {
+              supported_slots: ["S", "A", "R"],
+              unsupported_slots: [
+                { slot: "T", label: "과제", reason: "원문에 없음", claimed_quote: "" },
+              ],
+              restructuring_only: true,
+              restructuring_detail: ["S↔T (82% 중복)"],
+            },
+            quality_warning: "입력 문장을 슬롯별로 재배치한 수준입니다",
+          },
+        ],
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    const star = res.resumeStarFormat[0]
+    expect(star.evidenceStatus).toEqual({
+      supportedSlots: ["S", "A", "R"],
+      unsupportedSlots: [{ slot: "T", label: "과제", reason: "원문에 없음", claimedQuote: "" }],
+      restructuringOnly: true,
+      restructuringDetail: ["S↔T (82% 중복)"],
+    })
+    expect(star.qualityWarning).toBe("입력 문장을 슬롯별로 재배치한 수준입니다")
+  })
+
+  it("quality(등급·점수·총평·루브릭·우선 개선점)를 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({
+        resume_star_format: [
+          {
+            title: "t",
+            quality: {
+              grade: "B",
+              score: "7/10",
+              verdict: "골격은 좋습니다",
+              criteria: [
+                {
+                  key: "action_dominant",
+                  label: "Action 비중",
+                  passed: false,
+                  detail: "Action 이 전체의 12%",
+                  coaching: "행동 서술을 늘려보세요",
+                },
+              ],
+              priority_fixes: ["행동 서술을 늘려보세요"],
+              derived_field_notes: ["headline 삭제: 원문에 없는 수치"],
+            },
+          },
+        ],
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    const q = res.resumeStarFormat[0].quality
+    expect(q).toMatchObject({
+      grade: "B",
+      score: "7/10",
+      verdict: "골격은 좋습니다",
+      priorityFixes: ["행동 서술을 늘려보세요"],
+      derivedFieldNotes: ["headline 삭제: 원문에 없는 수치"],
+    })
+    expect(q.criteria[0]).toEqual({
+      key: "action_dominant",
+      label: "Action 비중",
+      passed: false,
+      detail: "Action 이 전체의 12%",
+      coaching: "행동 서술을 늘려보세요",
+    })
+  })
+
+  it("모르는 grade 는 null 이다 (임의로 낮게 잡지 않는다)", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({ resume_star_format: [{ title: "t", quality: { grade: "F", score: "1/10" } }] }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.resumeStarFormat[0].quality.grade).toBeNull()
+  })
+
+  it("quality 가 아예 없는 v2.0 항목도 등급 null 로 안전 처리한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp2v20({ resume_star_format: [{ title: "t", S: "s", T: "t", A: "a", R: "r" }] }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    const star = res.resumeStarFormat[0]
+    // v2.0 필드는 그대로 살아 있고, v3.1 필드만 빈 값이다 — 화면이 v2.0 과 동일하게 그려진다.
+    expect(star).toMatchObject({ title: "t", situation: "s", task: "t", action: "a", result: "r" })
+    expect(star.quality.grade).toBeNull()
+    expect(star.headline).toBe("")
+    expect(star.competencyEvidence).toEqual([])
+    expect(star.evidenceStatus.supportedSlots).toEqual([])
+  })
+
+  // ── 그 밖의 v3.1 신규 필드 ────────────────────────────────
+  it("clubs_and_societies 의 url_note 를 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({
+        additional_recommendations: {
+          clubs_and_societies: [
+            { name: "AUSG", url: null, url_note: "직접 확인하십시오: AUSG 연합동아리" },
+          ],
+        },
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.additionalRecommendations.clubsAndSocieties[0].urlNote).toBe(
+      "직접 확인하십시오: AUSG 연합동아리",
+    )
+  })
+
+  it("recommendation_notices 를 매핑한다", async () => {
+    apiMock.get.mockResolvedValue(
+      comp31({ recommendation_notices: ["확실한 자격증을 찾지 못해 추천하지 않았습니다"] }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.recommendationNotices).toEqual([
+      "확실한 자격증을 찾지 못해 추천하지 않았습니다",
+    ])
+  })
+
+  it("recommendation_notices 부재 시 빈 배열이다", async () => {
+    apiMock.get.mockResolvedValue(comp2v20({}))
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.recommendationNotices).toEqual([])
+  })
+
+  it("v3.1 이 삭제한 v2.0 필드(expired_jobs)는 계속 읽는다 (백엔드 미배포 하위호환)", async () => {
+    apiMock.get.mockResolvedValue(
+      comp2v20({
+        expired_jobs: [{ company: "라인", role: "ML", deadline: "2026-06-30", url: "https://y" }],
+      }),
+    )
+    const res = await getComprehensiveResult("comp-1")
+    expect(res.expiredJobs).toHaveLength(1)
+  })
+})
+
 describe("updateAnalysisMeta — 타입별 PATCH 경로 (FRT-123 계약 §2)", () => {
   it("comprehensive → PATCH /analysis/comprehensive/{id}", async () => {
     apiMock.patch.mockResolvedValue(undefined)

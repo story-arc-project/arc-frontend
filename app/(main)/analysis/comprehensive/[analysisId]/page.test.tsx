@@ -164,3 +164,247 @@ describe("종합 분석 상세 — v2.0 섹션 렌더", () => {
     expect(screen.getByText("마감된 공고")).toBeInTheDocument();
   });
 });
+
+describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
+  /** v2.0 백엔드 응답의 star_analysis_status — 섹션 자체가 없다. */
+  const absentStatus: ComprehensiveAnalysisResult["starAnalysisStatus"] = {
+    present: false,
+    generated: false,
+    reason: "",
+    experienceBlockCount: 0,
+    starEligibleBlockCount: 0,
+    coaching: [],
+    rejectedEntries: [],
+    qualityReview: null,
+  };
+
+  it("STAR 를 못 만들었으면 이유와 쓰는 법을 알려준다 (섹션이 사라지지 않는다)", async () => {
+    // 회귀의 핵심: v3.1 은 못 만든 이유를 star_analysis_status 로 보내는데, 배열이 비었다고
+    // 섹션째 null 을 반환하면 그 이유가 화면에 도달할 길이 없다(FRT-169 와 같은 형태).
+    getResult.mockResolvedValue(
+      result({
+        hasResultBody: true,
+        resumeStarFormat: [],
+        starAnalysisStatus: {
+          ...absentStatus,
+          present: true,
+          generated: false,
+          reason: "STAR 로 쓸 만큼 자세한 경험 기록이 아직 없어요.",
+          experienceBlockCount: 3,
+          starEligibleBlockCount: 0,
+          coaching: ["내가 맡은 역할을 한 문장으로 적어보세요."],
+        },
+      }),
+    );
+    render(<ComprehensiveDetailPage />);
+
+    expect(
+      await screen.findByText("STAR 로 쓸 만큼 자세한 경험 기록이 아직 없어요."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("내가 맡은 역할을 한 문장으로 적어보세요."),
+    ).toBeInTheDocument();
+  });
+
+  it("근거가 없어 빠진 경험은 무엇이 빠졌는지 알려준다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        hasResultBody: true,
+        resumeStarFormat: [],
+        starAnalysisStatus: {
+          ...absentStatus,
+          present: true,
+          generated: false,
+          reason: "근거를 찾지 못했어요.",
+          rejectedEntries: [
+            {
+              title: "교내 코딩 동아리 활동",
+              reason: "행동과 결과를 뒷받침할 문장을 찾지 못했습니다.",
+              unsupportedSlots: ["A", "R"],
+              coaching: "무엇을 맡아 어떻게 했는지 적어보세요.",
+            },
+          ],
+        },
+      }),
+    );
+    render(<ComprehensiveDetailPage />);
+
+    expect(await screen.findByText("교내 코딩 동아리 활동")).toBeInTheDocument();
+    expect(screen.getByText("무엇을 맡아 어떻게 했는지 적어보세요.")).toBeInTheDocument();
+  });
+
+  it("v2.0 응답(status 부재)에서 STAR 가 0건이면 섹션을 그리지 않는다", async () => {
+    // 부재를 "만들지 못했다"로 읽으면 v2.0 사용자에게 이유가 빈 안내가 뜬다.
+    getResult.mockResolvedValue(
+      result({ hasResultBody: true, resumeStarFormat: [], starAnalysisStatus: absentStatus }),
+    );
+    render(<ComprehensiveDetailPage />);
+
+    await screen.findByRole("heading", { name: "종합 분석 결과" });
+    expect(screen.queryByRole("heading", { name: "자소서용 STAR" })).not.toBeInTheDocument();
+  });
+
+  it("한 줄 성취문(headline)과 배움(L)을 보여준다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    expect(
+      await screen.findByText(
+        "LLM 감성 점수와 기술 지표를 결합해 백테스팅 파이프라인을 처음부터 구축",
+      ),
+    ).toBeInTheDocument();
+    // 배움(L)은 원문에 명시된 경우에만 오므로, 값이 있을 때만 칸이 생긴다.
+    // 라벨은 근거 인용 쪽에도 쓰이므로 값으로 확인한다.
+    expect(
+      screen.getByText("지표를 늘리는 것보다 신호 간 상관을 먼저 확인해야 한다는 걸 배웠습니다."),
+    ).toBeInTheDocument();
+  });
+
+  it("등급·점수·총평·우선 개선점을 함께 표기한다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    expect(await screen.findByText("9/10")).toBeInTheDocument();
+    expect(
+      screen.getByText("행동과 결과가 원문 근거로 잘 묶여 있어 그대로 써도 좋아요."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("혼자 진행한 프로젝트라면 '개인 프로젝트'라고 한 마디 덧붙여보세요."),
+    ).toBeInTheDocument();
+    // 등급 문자는 배지로 보인다.
+    expect(screen.getByText(/충분해요/)).toBeInTheDocument();
+  });
+
+  it("입력을 재배치한 수준이면 그 사실을 알려준다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    expect(
+      await screen.findByText(
+        "입력 문장을 슬롯별로 재배치한 수준이에요. 과제와 상황을 다른 문장으로 나눠 적으면 훨씬 또렷해집니다.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("원문 근거는 접어서 보여준다 (기본은 닫힘)", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    const summaries = await screen.findAllByText("이 문장의 근거");
+    expect(summaries.length).toBeGreaterThan(0);
+    const details = summaries[0].closest("details");
+    expect(details).not.toBeNull();
+    expect(details).not.toHaveAttribute("open");
+    // 인용문 자체는 접힌 상태로도 DOM 에 있다.
+    expect(
+      screen.getByText("개인 투자자로서 뉴스의 영향을 감으로만 판단하는 게 답답했다"),
+    ).toBeInTheDocument();
+  });
+
+  it("근거를 못 찾은 슬롯은 그 사유를 알려준다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    expect(
+      await screen.findByText("원문에서 '내가 맡은 과제'로 볼 문장을 찾지 못했습니다."),
+    ).toBeInTheDocument();
+  });
+
+  it("포트폴리오 전체 총평을 한 번 보여준다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    expect(
+      await screen.findByText(
+        "한 건은 그대로 써도 좋고, 한 건은 행동 서술을 채우면 크게 좋아져요.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("일부만 만들어졌어도 빠진 경험의 사유를 알려준다", async () => {
+    // 일부 생성(generated: true) + 빠진 경험이 함께 오는 형태가 실제 응답이다(mock 기본값).
+    // "못 만들었을 때만" 안내를 그리면 카드는 보이는데 빠진 이유만 조용히 사라진다.
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    await screen.findByRole("heading", { name: "자소서용 STAR" });
+    expect(screen.getAllByText("교내 코딩 동아리 활동")).toHaveLength(1);
+    expect(
+      screen.getByText("무엇을 맡아 어떻게 했고 무엇이 달라졌는지 한 문장씩 적어보세요."),
+    ).toBeInTheDocument();
+  });
+
+  it("총평 문장이 없어도 우선 개선점은 보여준다", async () => {
+    // 총평만 게이트로 쓰면, 본문 판정(hasResultBody)은 개선점을 컨텐츠로 세는데
+    // 화면은 그 개선점을 통째로 감추는 모순이 생긴다.
+    getResult.mockResolvedValue(
+      result({
+        hasResultBody: true,
+        starAnalysisStatus: {
+          ...mockComprehensiveResult.starAnalysisStatus,
+          qualityReview: {
+            evaluated: 2,
+            gradeDistribution: { A: 1, C: 1 },
+            portfolioVerdict: "",
+            topFixes: ["Action 비중 — 2건 중 1건에서 미달"],
+          },
+        },
+      }),
+    );
+    render(<ComprehensiveDetailPage />);
+
+    expect(
+      await screen.findByText("Action 비중 — 2건 중 1건에서 미달"),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("종합 분석 상세 — v3.1 추천 사유 (FRT-208)", () => {
+  it("추천이 하나도 없어도 사유가 있으면 이유를 알려준다", async () => {
+    // 지금은 3종이 모두 비면 섹션째 사라져 "왜 없는지"가 갈 곳이 없다.
+    getResult.mockResolvedValue(
+      result({
+        hasResultBody: true,
+        additionalRecommendations: {
+          certifications: [],
+          clubsAndSocieties: [],
+          projectsAndContests: [],
+        },
+        recommendationNotices: ["확실한 자격증을 찾지 못해 이번엔 추천하지 않았어요."],
+      }),
+    );
+    render(<ComprehensiveDetailPage />);
+
+    expect(
+      await screen.findByText("확실한 자격증을 찾지 못해 이번엔 추천하지 않았어요."),
+    ).toBeInTheDocument();
+  });
+
+  it("추천도 사유도 없으면 섹션을 그리지 않는다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        hasResultBody: true,
+        additionalRecommendations: {
+          certifications: [],
+          clubsAndSocieties: [],
+          projectsAndContests: [],
+        },
+        recommendationNotices: [],
+      }),
+    );
+    render(<ComprehensiveDetailPage />);
+
+    await screen.findByRole("heading", { name: "종합 분석 결과" });
+    expect(screen.queryByRole("heading", { name: "추가 활동 추천" })).not.toBeInTheDocument();
+  });
+
+  it("링크 검증에 실패한 추천은 직접 확인 안내를 보여준다", async () => {
+    getResult.mockResolvedValue(result({ hasResultBody: true }));
+    render(<ComprehensiveDetailPage />);
+
+    // 지금은 url 이 null 이면 링크가 조용히 사라질 뿐이라 사용자가 찾아갈 방법이 없다.
+    expect(
+      await screen.findByText("직접 확인하십시오: 한양대 데이터사이언스 학회 모집"),
+    ).toBeInTheDocument();
+  });
+});
