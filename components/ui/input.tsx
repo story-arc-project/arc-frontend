@@ -1,5 +1,7 @@
 import { InputHTMLAttributes, ReactNode, forwardRef } from "react";
 
+import { RequiredDot } from "./required-dot";
+
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   hint?: string;
@@ -13,7 +15,7 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, hint, error, hintPosition = "bottom", rightAddon, className = "", id, ...props }, ref) => {
+  ({ label, hint, error, hintPosition = "bottom", rightAddon, className = "", id, required, ...props }, ref) => {
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
     const hintId = inputId ? `${inputId}-hint` : undefined;
     const errorId = inputId ? `${inputId}-error` : undefined;
@@ -26,6 +28,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       <input
         ref={ref}
         id={inputId}
+        required={required}
         aria-invalid={!!error}
         aria-describedby={describedBy}
         className={[
@@ -49,6 +52,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label htmlFor={inputId} className="text-field-label text-text-primary">
             {label}
+            {required && <RequiredDot />}
           </label>
         )}
         {hintPosition === "top" && hintNode}

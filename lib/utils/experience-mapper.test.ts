@@ -56,6 +56,7 @@ function makeExperienceV2(overrides: Partial<ExperienceV2> = {}): ExperienceV2 {
     coreBlocks: [],
     extensionBlocks: [],
     customBlocks: [],
+    hiddenKeys: [],
     createdAt: "2024-01-01T00:00:00Z",
     updatedAt: "2024-01-02T00:00:00Z",
     ...overrides,
@@ -1085,5 +1086,67 @@ describe("폐기 섹션 값 보존 (FRT-179 자격증)", () => {
     expect(table?.value.type === "repeatable-cell" && table.value.rows[0].cells.work).toBe(
       "쿼리 튜닝",
     )
+  })
+})
+
+describe("선택 필드 숨김 키 (FRT-190)", () => {
+  const HIDDEN_KEY = "extended.배운 점"
+
+  function v2Content(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "타이틀",
+      summary: "요약",
+      status: "draft",
+      tags: [],
+      fields: {},
+      custom: [],
+      ...overrides,
+    }
+  }
+
+  it("content.hidden 을 hiddenKeys 로 읽는다", () => {
+    const exp = toExperienceV2(makeExperience({ content: v2Content({ hidden: [HIDDEN_KEY] }) }))
+    expect(exp.hiddenKeys).toEqual([HIDDEN_KEY])
+  })
+
+  it("hidden 이 없는 v2 레코드는 빈 배열", () => {
+    const exp = toExperienceV2(makeExperience({ content: v2Content() }))
+    expect(exp.hiddenKeys).toEqual([])
+  })
+
+  it("v1 레거시 레코드는 빈 배열", () => {
+    const exp = toExperienceV2(makeExperience({ content: { coreBlocks: [], extensionBlocks: [] } }))
+    expect(exp.hiddenKeys).toEqual([])
+  })
+
+  it("배열이 아닌 hidden 은 버린다 — null·문자열·객체", () => {
+    for (const bad of [null, "extended.배운 점", { key: true }, 3]) {
+      const exp = toExperienceV2(makeExperience({ content: v2Content({ hidden: bad }) }))
+      expect(exp.hiddenKeys).toEqual([])
+    }
+  })
+
+  it("문자열이 아닌 원소만 골라 버린다 — 섞여 있어도 나머지는 산다", () => {
+    const exp = toExperienceV2(
+      makeExperience({ content: v2Content({ hidden: [HIDDEN_KEY, null, 7, "", "extended.느낀 점"] }) }),
+    )
+    expect(exp.hiddenKeys).toEqual([HIDDEN_KEY, "extended.느낀 점"])
+  })
+
+  it("toSavePayload 가 hidden 을 기록한다", () => {
+    const payload = toSavePayload(makeExperienceV2({ hiddenKeys: [HIDDEN_KEY] }))
+    expect((payload.content as unknown as { hidden: string[] }).hidden).toEqual([HIDDEN_KEY])
+  })
+
+  it("숨김 키가 로드→저장 왕복에 멱등하게 보존된다", () => {
+    const first = toExperienceV2(makeExperience({ content: v2Content({ hidden: [HIDDEN_KEY] }) }))
+    const payload = toSavePayload(first)
+    const second = toExperienceV2(makeExperience({ content: payload.content }))
+    expect(second.hiddenKeys).toEqual([HIDDEN_KEY])
+    expect((toSavePayload(second).content as unknown as { hidden: string[] }).hidden).toEqual([
+      HIDDEN_KEY,
+    ])
   })
 })

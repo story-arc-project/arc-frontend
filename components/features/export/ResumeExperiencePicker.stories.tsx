@@ -24,6 +24,7 @@ function exp(i: number, title: string, typeId: ExperienceTypeId): ExperienceV2 {
     coreBlocks: [],
     extensionBlocks: [],
     customBlocks: [],
+    hiddenKeys: [],
     createdAt: `2026-06-${day}T00:00:00.000Z`,
     updatedAt: `2026-07-${day}T00:00:00.000Z`,
   };

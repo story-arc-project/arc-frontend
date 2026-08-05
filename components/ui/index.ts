@@ -21,3 +21,5 @@ export { Dialog } from "./dialog";
 export { toast, ToastContainer } from "./toast";
 
 export { FullPageMessage } from "./FullPageMessage";
+
+export { RequiredDot } from "./required-dot";

@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react"
 import { Plus, Trash2, Pencil, Check, X } from "lucide-react"
+import { RequiredDot } from "@/components/ui/required-dot"
 import type { Block, SingleSelectBlockValue } from "@/types/archive"
 
 interface SingleSelectBlockProps {
@@ -71,7 +72,10 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={selectId} className="text-field-label text-text-primary">{block.label}</label>
+      <label htmlFor={selectId} className="text-field-label text-text-primary">
+        {block.label}
+        {block.required && <RequiredDot />}
+      </label>
       {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
       <select
         id={selectId}

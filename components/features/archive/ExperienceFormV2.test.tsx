@@ -33,6 +33,9 @@ async function selectType(user: ReturnType<typeof userEvent.setup>) {
 
 // vitest globals:false → testing-library 자동 cleanup 미등록이므로 수동 정리.
 afterEach(cleanup)
+// ⚠️ spy 해제를 테스트 본문 끝에 두면 **단언이 실패한 순간 실행되지 않아** 다음 테스트의
+// spy 가 그 위에 쌓인다(호출 수가 누적돼 무관한 테스트가 같이 무너진다). afterEach 로 뺀다.
+afterEach(() => vi.restoreAllMocks())
 
 describe("FRT-54 경험명 빈 값 저장 차단", () => {
   it("'완료' 클릭 시 title 이 비어 있으면 저장이 차단되고 에러가 표시된다", async () => {
@@ -82,6 +85,7 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
       coreBlocks: [],
       extensionBlocks: [],
       customBlocks: [],
+      hiddenKeys: [],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -162,6 +166,7 @@ describe("FRT-52 편집 진입 직후 dirty 위양성 방지", () => {
       coreBlocks: [],
       extensionBlocks: [],
       customBlocks: [],
+      hiddenKeys: [],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -269,6 +274,7 @@ describe("FRT-78 사용자 섹션 정렬·loose 편집 (Codex P2)", () => {
           customBlocks: [
             { id: "loose-1", type: "text", label: "메모", value: { type: "text", text: "내용" } },
           ],
+          hiddenKeys: [],
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
         }}
@@ -420,5 +426,182 @@ describe("FRT-178 동아리 역할 태그 동기화", () => {
 
     await user.click(screen.getByRole("button", { name: "회장 삭제" }))
     expect(screen.queryByRole("button", { name: "회장 역할 태그 해제" })).toBeNull()
+  })
+})
+
+/**
+ * FRT-190 — 선택 필드 숨김.
+ *
+ * ⚠️ 이 통합 테스트가 중요한 이유: 숨김 대상 판정이 `block.key` 를 요구하는데, 키는 템플릿
+ * 조립 단계에서만 부여된다(`createBlock` 은 안 붙인다). 픽스처를 손으로 만든 테스트만 있으면
+ * "실제 폼에서는 × 가 하나도 안 뜨는" 상태를 통과시킬 수 있다 — 실제 템플릿으로 도달을 확인한다.
+ */
+describe("FRT-190 선택 필드 숨김", () => {
+  /** 대외활동 템플릿의 빈 선택 필드 하나를 고른다(라벨은 확정본 기준). */
+  const HIDABLE_LABEL = "지원 동기"
+
+  it("실제 폼의 빈 선택 필드에 × 가 뜬다 — 필수 필드에는 안 뜬다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectType(user)
+
+    expect(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`)).toBeInTheDocument()
+    expect(screen.queryByLabelText("경험명 숨기기")).not.toBeInTheDocument()
+  })
+
+  it("× 를 누르면 필드가 사라지고, 되살리기 토글로 되돌릴 수 있다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    expect(screen.queryByLabelText(`${HIDABLE_LABEL} 숨기기`)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: /숨긴 항목 1개/ }))
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 다시 보기`))
+
+    expect(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`)).toBeInTheDocument()
+    expect(screen.queryByText(/숨긴 항목/)).not.toBeInTheDocument()
+  })
+
+  it("숨긴 채 저장하면 hiddenKeys 에 안정키가 실린다", async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    await user.type(screen.getByLabelText(/경험명/), "교내 동아리")
+    await user.click(screen.getByRole("button", { name: "완료" }))
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    const saved = onSave.mock.calls[0][0] as ExperienceV2
+    expect(saved.hiddenKeys).toHaveLength(1)
+    expect(saved.hiddenKeys[0]).toContain(HIDABLE_LABEL)
+  })
+
+  /** 유형 그리드를 다시 열고 다른 유형을 고른다(유형 선택 후엔 '변경'을 눌러야 열린다). */
+  async function changeType(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+    await user.click(screen.getAllByRole("button", { name: "동아리/교내 단체" })[0])
+  }
+
+  it("유형을 바꾸면 숨김이 초기화된다 — 안정키가 유형 간에 겹치기 때문", async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, "confirm").mockReturnValue(true)
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    expect(screen.getByRole("button", { name: /숨긴 항목 1개/ })).toBeInTheDocument()
+
+    await changeType(user)
+
+    expect(screen.queryByText(/숨긴 항목/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * 숨김도 사용자가 한 작업이다. 유형 변경은 그걸 초기화하므로 확인 없이 버리면 안 된다.
+   * ⚠️ 미저장 경고(`onUnsavedChange`)는 `hiddenKeys.length > 0` 를 이미 보고 있어서,
+   * 여기서 안 보면 **"나가면 경고는 뜨는데 유형은 말없이 갈아엎는"** 어긋난 상태가 된다.
+   *
+   * 호출 **횟수**는 단언하지 않는다 — `onRequestChange` 는 '변경' 버튼과 유형 버튼 양쪽에서
+   * 불리므로 UI 구조가 바뀌면 같이 깨진다. 물어봤는가 / 안 물어봤는가만 본다.
+   */
+  it("숨김만 했어도 유형 변경 전에 확인을 묻는다", async () => {
+    const user = userEvent.setup()
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true)
+    renderForm()
+    await selectType(user)
+
+    // 값은 하나도 안 넣는다 — 숨김만으로 확인이 떠야 한다.
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+
+    expect(confirmSpy).toHaveBeenCalled()
+  })
+
+  it("확인을 취소하면 숨김이 그대로 남는다", async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, "confirm").mockReturnValue(false)
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+
+    expect(screen.getByRole("button", { name: /숨긴 항목 1개/ })).toBeInTheDocument()
+  })
+
+  /** 대조군: 아무것도 안 건드렸으면 확인은 안 뜬다(모든 변경에 confirm 을 걸어버린 게 아님). */
+  it("아무 작업도 없으면 유형 변경에 확인이 안 뜬다", async () => {
+    const user = userEvent.setup()
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true)
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+  })
+
+  /**
+   * 값이 생긴 숨김 키는 화면에 되돌려 보여주면서(`resolveHiddenBlocks`) state 에는 남아 있었다.
+   * 그러면 **보이는 필드를 진행도가 없는 셈 치고**, 저장하면 다음 로드에서 (값이 다시 비는 순간)
+   * 조용히 사라진다. 폼이 `normalizeHiddenKeys` 를 거친 값 하나만 쓰는지 저장 payload 로 본다.
+   *
+   * 이 상태는 UI 조작으로 만들 수 없다 — 숨긴 필드는 화면에 없어 값을 넣을 방법이 없고,
+   * 다른 기기 편집·템플릿 개편으로 **서버가 그렇게 준 레코드**로만 도달한다. 그래서 edit 모드다.
+   */
+  describe("복귀한 숨김 키", () => {
+    const FILLED_KEY = "core.복귀 필드"
+    const EMPTY_KEY = "core.빈 필드"
+
+    function recordWith(hiddenKeys: string[]): ExperienceV2 {
+      return {
+        id: "exp-restore", userId: "u1", typeId: "extracurricular",
+        title: "교내 동아리", summary: "", status: "complete",
+        tags: [], importance: 3,
+        coreBlocks: [
+          {
+            id: "b-filled", key: FILLED_KEY, type: "text", label: "복귀 필드",
+            value: { type: "text", text: "다른 기기에서 채워진 값" },
+          },
+          {
+            id: "b-empty", key: EMPTY_KEY, type: "text", label: "빈 필드",
+            value: { type: "text", text: "" },
+          },
+        ],
+        extensionBlocks: [], customBlocks: [], hiddenKeys,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }
+    }
+
+    async function saveAndGet(hiddenKeys: string[]): Promise<ExperienceV2> {
+      const user = userEvent.setup()
+      const onSave = vi.fn()
+      render(
+        <ExperienceFormV2
+          mode="edit"
+          initialExperience={recordWith(hiddenKeys)}
+          onSave={onSave}
+          onCancel={() => {}}
+        />,
+      )
+      await user.click(screen.getByRole("button", { name: "완료" }))
+      expect(onSave).toHaveBeenCalledTimes(1)
+      return onSave.mock.calls[0][0] as ExperienceV2
+    }
+
+    it("값이 생긴 키는 저장에서 빠진다 — 안 빼면 값이 다시 비는 순간 사라진다", async () => {
+      const saved = await saveAndGet([FILLED_KEY])
+      expect(saved.hiddenKeys).not.toContain(FILLED_KEY)
+    })
+
+    /** 대조군: 여전히 비어 있는 키까지 같이 지워 버리면 숨김이 통째로 풀린다. */
+    it("여전히 빈 키는 그대로 남는다", async () => {
+      const saved = await saveAndGet([EMPTY_KEY])
+      expect(saved.hiddenKeys).toContain(EMPTY_KEY)
+    })
   })
 })

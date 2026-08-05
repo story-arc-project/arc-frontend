@@ -270,7 +270,8 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
+      {/* `N개 항목` 은 라벨 옆 — 블록 우상단은 숨김 × 자리다(RepeatableCellBlock 과 동일). */}
+      <div className="flex items-center gap-2">
         <span className="text-field-label text-text-primary">{block.label}</span>
         <span className="text-caption text-text-tertiary">{rows.length}개 항목</span>
       </div>

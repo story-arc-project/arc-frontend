@@ -18,6 +18,7 @@ import {
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
 import { uid, createGroupBlock, isBlockEmpty } from "@/lib/utils/block-utils"
+import { normalizeHiddenKeys, parseHiddenKeys } from "@/lib/utils/hidden-fields"
 
 /**
  * Experience ↔ ExperienceV2 매퍼.
@@ -207,6 +208,7 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     tags?: string[]
     fields?: Record<string, BlockValue>
     custom?: CustomEntry[]
+    hidden?: unknown
     coreBlocks?: Block[]
     extensionBlocks?: Block[]
     customBlocks?: Block[]
@@ -224,6 +226,8 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     summary,
     status: content.status ?? ("draft" as ExperienceStatus),
     tags: content.tags ?? [],
+    // 숨김 키는 v2 에서만 쓰지만, v1 레거시도 같은 모양(빈 배열)으로 내려 소비처가 분기하지 않게 한다.
+    hiddenKeys: parseHiddenKeys(content.hidden),
     importance: isImportanceLevel(exp.importance) ? exp.importance : undefined,
     createdAt: exp.created_at,
     updatedAt: exp.updated_at,
@@ -331,6 +335,8 @@ export function toSavePayload(exp: ExperienceV2): ExperienceSavePayload {
     tags: exp.tags,
     fields,
     custom,
+    // 값이 생겼거나 필수가 된 키는 여기서 떨궈진다 — 폼이 정리를 빠뜨려도 저장은 항상 정합적이다.
+    hidden: normalizeHiddenKeys([...exp.coreBlocks, ...exp.extensionBlocks], exp.hiddenKeys),
   }
 
   return {

@@ -3,6 +3,7 @@
 import { useRef, useState, type ReactNode } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { RequiredDot } from "@/components/ui/required-dot"
 import type {
   Block,
   RepeatableCellBlockValue,
@@ -207,7 +208,12 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
+      {/*
+        `N개 항목` 은 **라벨 바로 옆**에 둔다 — 오른쪽 끝으로 밀면 블록 우상단을 차지해
+        숨김 × 가 들어갈 자리가 없어지고, × 를 카드 여백까지 밀어내면 테두리에 몰려 보인다.
+        라벨과 붙여 읽는 편이 "이 블록에 몇 개 있는지" 로도 자연스럽다.
+      */}
+      <div className="flex items-center gap-2">
         <span className="text-field-label text-text-primary">{block.label}</span>
         <span className="text-caption text-text-tertiary">{val.rows.length}개 항목</span>
       </div>
@@ -359,7 +365,7 @@ function RowEditor({
             <div key={col.key} className={`flex flex-col gap-1.5 ${isWide ? "sm:col-span-2" : ""}`}>
               <label className="text-caption text-text-secondary">
                 {col.label}
-                {col.required && <span className="text-error ml-0.5">*</span>}
+                {col.required && <RequiredDot />}
               </label>
               {col.guide && index === 0 && (
                 <p className="text-caption text-text-tertiary">{col.guide}</p>

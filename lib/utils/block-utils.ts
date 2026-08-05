@@ -416,6 +416,20 @@ export function isBlockEmpty(block: Block): boolean {
   }
 }
 
+/**
+ * 블록이 "필수"인지 — `block.required` 뿐 아니라 **필수 컬럼을 가진 표**도 필수로 본다.
+ * 표의 필수는 블록이 아니라 컬럼에 붙는 경우가 많고(18유형 중 13개), 블록 층위만 보면
+ * 진행도 바는 필수로 세는데 숨김 UI 는 선택으로 보는 식으로 기준이 갈린다.
+ * 진행도(`isCardComplete`)와 숨김(`canHideBlock`)이 이 판정을 공유한다.
+ */
+export function isRequiredBlock(block: Block): boolean {
+  if (block.required) return true
+  if (block.value.type === 'repeatable-cell') {
+    return block.value.columns.some(c => c.required)
+  }
+  return false
+}
+
 export function validateRequiredBlocks(blocks: Block[]): string[] {
   const errors: string[] = []
   for (const block of blocks) {

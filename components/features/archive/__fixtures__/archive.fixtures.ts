@@ -123,6 +123,7 @@ export const careerExperience: ExperienceV2 = {
     },
   ],
   customBlocks: [tableBlock],
+  hiddenKeys: [],
   createdAt: "2025-01-10T09:00:00.000Z",
   updatedAt: "2025-06-01T14:30:00.000Z",
 }
@@ -152,6 +153,7 @@ export const draftExperience: ExperienceV2 = {
   ],
   extensionBlocks: [],
   customBlocks: [],
+  hiddenKeys: [],
   createdAt: "2025-05-20T10:00:00.000Z",
   updatedAt: "2025-05-22T11:00:00.000Z",
 }
