@@ -87,6 +87,12 @@ describe("분석 홈 — 부분 실패 안내 (FRT-169)", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("종합 분석");
     // 회복력은 그대로 — 기본 탭(개별)의 살아남은 기록은 계속 보인다.
     expect(screen.getByText("분석 i1")).toBeInTheDocument();
+    // 목록 항목 제목은 리스트 항목 제목 토큰이어야 한다. font-medium(500)이 남으면
+    // .text-title 의 600 을 덮어써 절반만 고친 상태가 된다. min-w-0 은 truncate 가 실제로
+    // 발동하기 위한 짝 — flex item 의 기본 min-width:auto 를 풀어준다 (FRT-127).
+    expect(screen.getByText("분석 i1")).toHaveClass("text-title");
+    expect(screen.getByText("분석 i1")).not.toHaveClass("font-medium");
+    expect(screen.getByText("분석 i1")).toHaveClass("min-w-0");
   });
 
   it("경험 목록 실패도 이름을 댄다 — 전체 경험이 0으로 보이는 이유다", async () => {

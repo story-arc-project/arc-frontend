@@ -53,7 +53,7 @@ function InlineEdit({
           if (e.key === "Escape") onCancel();
         }}
         aria-label="분석 제목 변경"
-        className="text-body-sm text-text-primary font-medium border-b border-brand bg-transparent outline-none px-0 py-0.5 max-w-full focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+        className="text-title text-text-primary border-b border-brand bg-transparent outline-none px-0 py-0.5 max-w-full focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
       />
       <button
         type="button"
@@ -246,12 +246,12 @@ export default function HistoryPage() {
                       ) : isNavigable ? (
                         <Link
                           href={`${ANALYSIS_DETAIL_PATH[item.type]}/${item.id}`}
-                          className="text-body-sm text-text-primary font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
+                          className="text-title text-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
                         >
                           {getDisplayTitle(item.title)}
                         </Link>
                       ) : (
-                        <span className="text-body-sm text-text-primary font-medium opacity-60 cursor-not-allowed">
+                        <span className="text-title text-text-primary opacity-60 cursor-not-allowed">
                           {getDisplayTitle(item.title)}
                         </span>
                       )}

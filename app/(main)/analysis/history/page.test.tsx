@@ -56,6 +56,26 @@ async function click(element: HTMLElement) {
   });
 }
 
+// FRT-127: 이 목록의 제목은 표시 상태와 편집 상태가 같은 자리에서 교체 렌더된다.
+// 두 쪽이 다른 타이포 토큰을 쓰면 제목을 고치려고 누른 순간 글자 크기가 튄다.
+describe("분석 기록 목록 — 제목 타이포 (FRT-127)", () => {
+  it("제목을 편집해도 글자 크기가 그대로다 — 입력칸이 표시와 같은 토큰을 쓴다", async () => {
+    // 개별 분석은 이름 변경이 막혀 있다(버튼 disabled) — 편집 가능한 유형으로 픽스처를 잡는다.
+    getHistory.mockResolvedValue({ items: [snap("c1", "comprehensive")], failedTypes: [] });
+
+    render(<HistoryPage />);
+    await flush();
+
+    await click(screen.getByRole("button", { name: "이름 변경" }));
+
+    const input = screen.getByLabelText("분석 제목 변경");
+    expect(input).toHaveClass("text-title");
+    // font-medium(500)이 남으면 .text-title 의 600 을 덮어써 절반만 고친 상태가 된다.
+    expect(input).not.toHaveClass("text-body-sm");
+    expect(input).not.toHaveClass("font-medium");
+  });
+});
+
 describe("분석 기록 목록 — 부분 실패 안내 (FRT-170)", () => {
   it("못 불러온 유형의 이름을 대고, 살아남은 기록은 그대로 보여준다", async () => {
     getHistory.mockResolvedValue({

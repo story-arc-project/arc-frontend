@@ -60,7 +60,14 @@ const components: Components = {
   ),
 };
 
-export function LegalDocument({ markdown }: { markdown: string }) {
+export function LegalDocument({
+  markdown,
+  crossLink,
+}: {
+  markdown: string;
+  /** 다 읽고 난 뒤 넘어갈 다른 법적 문서. 어느 문서인지는 호출부(app/terms·app/privacy)가 안다. */
+  crossLink: { href: string; label: string };
+}) {
   return (
     <main className="min-h-dvh bg-surface">
       <div className="mx-auto max-w-3xl px-5 py-12 sm:px-8">
@@ -72,6 +79,14 @@ export function LegalDocument({ markdown }: { markdown: string }) {
             {markdown}
           </ReactMarkdown>
         </article>
+        <div className="mt-10 border-t border-border pt-6">
+          <Link
+            href={crossLink.href}
+            className="text-body-sm text-text-tertiary hover:text-text-primary"
+          >
+            {crossLink.label} →
+          </Link>
+        </div>
       </div>
     </main>
   );

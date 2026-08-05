@@ -219,7 +219,7 @@ export default function ComprehensiveAnalysisPage() {
                     <div className="flex-1 min-w-0">
                       {!isNavigable ? (
                         <div>
-                          <span className="text-body-sm text-text-primary font-medium">
+                          <span className="text-title text-text-primary">
                             {getDisplayTitle(item.title)}
                           </span>
                           <p className="text-body-sm text-text-tertiary mt-1">
@@ -250,7 +250,7 @@ export default function ComprehensiveAnalysisPage() {
                       ) : (
                         <Link href={`/analysis/comprehensive/${item.id}`} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className="text-body-sm text-text-primary font-medium">
+                            <span className="text-title text-text-primary">
                               {getDisplayTitle(item.title)}
                             </span>
                           </div>

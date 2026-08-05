@@ -102,7 +102,7 @@ export default function BookmarksPage() {
                       <Badge variant="outline">
                         {analysisTypeLabel[item.type]}
                       </Badge>
-                      <span className="text-body-sm text-text-primary font-medium">
+                      <span className="text-title text-text-primary">
                         {getDisplayTitle(item.title)}
                       </span>
                     </div>

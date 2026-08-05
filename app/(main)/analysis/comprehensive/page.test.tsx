@@ -121,6 +121,11 @@ describe("종합 분석 목록 — 재시도 폴링과 로컬 변경 (FRT-108)",
     render(<ComprehensiveAnalysisPage />);
     await flush();
     expect(screen.getByText("분석 b")).toBeInTheDocument();
+    // 목록 항목 제목은 리스트 항목 제목 토큰이어야 한다. font-medium(500)이 남으면
+    // .text-title 의 600 을 덮어써 절반만 고친 상태가 되므로 함께 단언한다 (FRT-127).
+    expect(screen.getByText("분석 b")).toHaveClass("text-title");
+    expect(screen.getByText("분석 b")).not.toHaveClass("text-body-sm");
+    expect(screen.getByText("분석 b")).not.toHaveClass("font-medium");
 
     // 재시도를 눌러 폴링을 켠다.
     await click(screen.getByRole("button", { name: "다시 시도" }));
