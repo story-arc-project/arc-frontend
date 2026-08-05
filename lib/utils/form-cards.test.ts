@@ -411,4 +411,41 @@ describe("isCardComplete / computeFormProgress", () => {
     fillBlock(detail, detail.blocks[0].label, "채움")
     expect(computeFormProgress(r.cards).done).toBe(1)
   })
+
+  /**
+   * FRT-190 — 숨김은 진행도에도 반영돼야 한다.
+   *
+   * 필수 없는 카드(경험 상세·증빙)는 `blocks.some(채워짐)` 이라 **하나라도** 채워야 완료다.
+   * 사용자가 그 카드의 빈 선택 항목을 "해당 없음"으로 전부 치우면 채울 것이 하나도 안 남는데,
+   * 판정이 숨긴 블록을 계속 세면 그 카드는 **영원히 미완료**로 남아 진행도가 100% 에 못 간다.
+   * 되돌려서 자기에게 해당 없는 항목을 채워야만 바가 차는 셈이라, 숨김 기능과 정면으로 어긋난다.
+   */
+  it("선택 카드의 빈 항목을 전부 숨기면 그 카드는 완료로 센다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const detail = r.cards.find(c => c.category === "detail")!
+    const before = computeFormProgress(r.cards).done
+
+    const allKeys = detail.blocks.map(b => b.key).filter((k): k is string => !!k)
+    expect(allKeys.length).toBeGreaterThan(0) // 픽스처가 분기를 실제로 거치는지
+    expect(computeFormProgress(r.cards, allKeys).done).toBe(before + 1)
+  })
+
+  it("일부만 숨기면 여전히 미완료다 — 남은 칸은 채울 것이 있다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const detail = r.cards.find(c => c.category === "detail")!
+    const oneKey = detail.blocks.map(b => b.key).filter((k): k is string => !!k)[0]
+    expect(detail.blocks.length).toBeGreaterThan(1)
+    expect(computeFormProgress(r.cards, [oneKey]).done).toBe(0)
+  })
+
+  /** 필수가 남아 있으면 숨김과 무관하게 필수 기준 그대로다(필수는 애초에 숨길 수 없다). */
+  it("필수가 있는 카드는 숨김 목록이 있어도 필수를 채워야 완료다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const basic = r.cards.find(c => c.category === "basic")!
+    const someKey = basic.blocks.map(b => b.key).filter((k): k is string => !!k)[0]
+    expect(computeFormProgress(r.cards, [someKey]).done).toBe(0)
+  })
 })

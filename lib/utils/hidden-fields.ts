@@ -21,11 +21,20 @@ import { isBlockEmpty, isRequiredBlock } from "@/lib/utils/block-utils"
  * 묻는 기준이라 그 자체로는 옳다. 그런데 두 블록 모두 **주 값 없이 부속 값을 먼저 칠 수 있어서**
  * (LinkBlock 의 제목·유형·설명, FileBlock 의 설명·증빙 유형), 그 상태로 숨기면 화면엔 없는데
  * 저장 payload 엔 남는다 — 이 기능이 막으려던 무음 잔존 그대로다. 숨김만 더 엄격하게 본다.
+ *
+ * ⚠️ **저장된 값은 타입이 약속한 모양대로 오지 않는다.** `injectValue`(experience-mapper) 는
+ * `content.fields[key]` 를 `{...block, value}` 로 통째로 싣는데 `content` 는 서버 JSONB 라,
+ * 부속 필드가 빠진 채 저장된 구 레코드가 그대로 블록 값이 된다. 이 판정은 숨김 버튼을 그리며
+ * **모든 블록에 대해** 도므로, 여기서 `undefined.trim()` 이 나면 편집 화면이 통째로 터진다.
  */
+function isFilledText(s: unknown): boolean {
+  return typeof s === "string" && s.trim() !== ""
+}
+
 function hasResidualValue(block: Block): boolean {
   const v = block.value
-  if (v.type === "link") return [v.title, v.description, v.linkType].some(s => s.trim() !== "")
-  if (v.type === "file") return [v.description, v.evidenceType].some(s => s.trim() !== "")
+  if (v.type === "link") return [v.title, v.description, v.linkType].some(isFilledText)
+  if (v.type === "file") return [v.description, v.evidenceType].some(isFilledText)
   return false
 }
 

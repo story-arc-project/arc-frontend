@@ -33,6 +33,9 @@ async function selectType(user: ReturnType<typeof userEvent.setup>) {
 
 // vitest globals:false → testing-library 자동 cleanup 미등록이므로 수동 정리.
 afterEach(cleanup)
+// ⚠️ spy 해제를 테스트 본문 끝에 두면 **단언이 실패한 순간 실행되지 않아** 다음 테스트의
+// spy 가 그 위에 쌓인다(호출 수가 누적돼 무관한 테스트가 같이 무너진다). afterEach 로 뺀다.
+afterEach(() => vi.restoreAllMocks())
 
 describe("FRT-54 경험명 빈 값 저장 차단", () => {
   it("'완료' 클릭 시 title 이 비어 있으면 저장이 차단되고 에러가 표시된다", async () => {
@@ -476,18 +479,68 @@ describe("FRT-190 선택 필드 숨김", () => {
     expect(saved.hiddenKeys[0]).toContain(HIDABLE_LABEL)
   })
 
+  /** 유형 그리드를 다시 열고 다른 유형을 고른다(유형 선택 후엔 '변경'을 눌러야 열린다). */
+  async function changeType(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+    await user.click(screen.getAllByRole("button", { name: "동아리/교내 단체" })[0])
+  }
+
   it("유형을 바꾸면 숨김이 초기화된다 — 안정키가 유형 간에 겹치기 때문", async () => {
     const user = userEvent.setup()
+    vi.spyOn(window, "confirm").mockReturnValue(true)
     renderForm()
     await selectType(user)
 
     await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
     expect(screen.getByRole("button", { name: /숨긴 항목 1개/ })).toBeInTheDocument()
 
-    // 유형 선택 후엔 '변경'을 눌러야 유형 그리드가 다시 열린다.
-    await user.click(screen.getByRole("button", { name: /변경/ }))
-    await user.click(screen.getAllByRole("button", { name: "동아리/교내 단체" })[0])
+    await changeType(user)
 
     expect(screen.queryByText(/숨긴 항목/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * 숨김도 사용자가 한 작업이다. 유형 변경은 그걸 초기화하므로 확인 없이 버리면 안 된다.
+   * ⚠️ 미저장 경고(`onUnsavedChange`)는 `hiddenKeys.length > 0` 를 이미 보고 있어서,
+   * 여기서 안 보면 **"나가면 경고는 뜨는데 유형은 말없이 갈아엎는"** 어긋난 상태가 된다.
+   *
+   * 호출 **횟수**는 단언하지 않는다 — `onRequestChange` 는 '변경' 버튼과 유형 버튼 양쪽에서
+   * 불리므로 UI 구조가 바뀌면 같이 깨진다. 물어봤는가 / 안 물어봤는가만 본다.
+   */
+  it("숨김만 했어도 유형 변경 전에 확인을 묻는다", async () => {
+    const user = userEvent.setup()
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true)
+    renderForm()
+    await selectType(user)
+
+    // 값은 하나도 안 넣는다 — 숨김만으로 확인이 떠야 한다.
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+
+    expect(confirmSpy).toHaveBeenCalled()
+  })
+
+  it("확인을 취소하면 숨김이 그대로 남는다", async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, "confirm").mockReturnValue(false)
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+
+    expect(screen.getByRole("button", { name: /숨긴 항목 1개/ })).toBeInTheDocument()
+  })
+
+  /** 대조군: 아무것도 안 건드렸으면 확인은 안 뜬다(모든 변경에 confirm 을 걸어버린 게 아님). */
+  it("아무 작업도 없으면 유형 변경에 확인이 안 뜬다", async () => {
+    const user = userEvent.setup()
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true)
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+
+    expect(confirmSpy).not.toHaveBeenCalled()
   })
 })

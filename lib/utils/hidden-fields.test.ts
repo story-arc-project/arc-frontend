@@ -84,6 +84,31 @@ describe("canHideBlock", () => {
     expect(canHideBlock(block)).toBe(false)
   })
 
+  /**
+   * ⚠️ 저장된 값은 **타입이 보장하는 모양대로 오지 않는다.** `injectValue`(experience-mapper)
+   * 는 `content.fields[key]` 를 `{...block, value}` 로 통째로 싣고, `content` 는 서버 JSONB 라
+   * 부속 필드가 빠진 채 저장된 구 레코드가 그대로 블록 값이 된다. 판정이 그 위에서 `.trim()`
+   * 을 부르면 **편집 화면이 렌더 도중 터진다** — 숨김 버튼은 모든 블록에 대해 이 판정을 돈다.
+   */
+  it("부속 필드가 빠진 링크 값에도 안 터진다 — 구 레코드는 모양이 다르다", () => {
+    const block = {
+      id: "id-link", key: "detail.공식 URL", type: "link", label: "공식 URL",
+      value: { type: "link", url: "" },
+    } as unknown as Block
+    expect(() => canHideBlock(block)).not.toThrow()
+    expect(canHideBlock(block)).toBe(true)
+  })
+
+  it("부속 필드가 빠진 파일 값에도 안 터진다", () => {
+    const block = {
+      id: "id-file", key: "evidence.증빙 자료", type: "file", label: "증빙 자료",
+      value: { type: "file", fileName: "" },
+    } as unknown as Block
+    expect(() => canHideBlock(block)).not.toThrow()
+    // 첨부는 어차피 통째로 제외 — 크래시만 막으면 판정 결과는 그대로다.
+    expect(canHideBlock(block)).toBe(false)
+  })
+
   it("파일 열을 가진 표도 제외한다 — 사용자가 열 유형을 파일로 바꾼 경우", () => {
     const block: Block = {
       id: "id-t", key: "repeat.결과물", type: "repeatable-cell", label: "결과물",

@@ -176,15 +176,26 @@ function isBlockFilledForProgress(block: Block): boolean {
  * 카드(섹션) 하나가 "채워졌는지" 판정한다 — 진행도 바 카운트 기준.
  * 필수 항목이 있으면 그 필수를 모두 채워야 완료, 필수가 없는 섹션(예: 경험 상세·증빙)은
  * 하나라도 채우면 완료로 본다. (선택 입력이 많아 "모든 항목"을 기준으로 하면 바가 거의 안 오름.)
+ *
+ * `hiddenKeys` 를 주면 사용자가 "해당 없음"으로 치운 항목(FRT-190)을 빼고 센다. 안 빼면 필수
+ * 없는 카드에서 **치울수록 완료가 멀어지는** 모순이 난다 — `some(채워짐)` 기준이라 빈 선택 항목을
+ * 전부 숨긴 카드는 채울 것이 하나도 안 남는데 영원히 미완료로 남는다.
+ * (필수 항목은 애초에 숨길 수 없으므로 필수 기준 카드는 이 인자에 영향받지 않는다.)
  */
-export function isCardComplete(card: FormCardModel): boolean {
-  const required = card.blocks.filter(isRequiredBlock)
-  return required.length > 0
-    ? required.every(isBlockFilledForProgress)
-    : card.blocks.some(isBlockFilledForProgress)
+export function isCardComplete(card: FormCardModel, hiddenKeys: string[] = []): boolean {
+  const hidden = new Set(hiddenKeys)
+  const blocks = hidden.size === 0 ? card.blocks : card.blocks.filter(b => !b.key || !hidden.has(b.key))
+  const required = blocks.filter(isRequiredBlock)
+  if (required.length > 0) return required.every(isBlockFilledForProgress)
+  // 치울 것을 다 치워 남은 칸이 없으면 이 카드에서 할 일은 끝났다.
+  if (blocks.length === 0) return true
+  return blocks.some(isBlockFilledForProgress)
 }
 
 /** 표시된 고정 카드들의 진행도(완료 카드 수 / 전체 카드 수). 사용자 추가 섹션은 제외. */
-export function computeFormProgress(cards: FormCardModel[]): { done: number; total: number } {
-  return { total: cards.length, done: cards.filter(isCardComplete).length }
+export function computeFormProgress(
+  cards: FormCardModel[],
+  hiddenKeys: string[] = []
+): { done: number; total: number } {
+  return { total: cards.length, done: cards.filter(c => isCardComplete(c, hiddenKeys)).length }
 }

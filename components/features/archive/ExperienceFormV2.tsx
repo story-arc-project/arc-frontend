@@ -235,10 +235,14 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       hasBlockData(coreBlocks) ||
       hasBlockData(extensionBlocks) ||
       customBlocks.length > 0 ||
-      tags.length > 0
+      tags.length > 0 ||
+      // 숨김도 사용자가 한 작업이다 — 유형을 바꾸면 초기화되므로(안정키가 유형 간에 겹쳐
+      // 그대로 두면 숨긴 적 없는 필드가 사라진다) 확인 없이 버리면 안 된다. 미저장 판정
+      // (`hiddenKeys.length > 0`)과 기준이 갈리면 "경고는 뜨는데 확인은 안 뜨는" 상태가 된다.
+      hiddenKeys.length > 0
     if (!hasData) return true
     return window.confirm("경험 유형을 바꾸면 입력한 내용이 초기화될 수 있어요. 계속할까요?")
-  }, [coreBlocks, extensionSections, customBlocks, tags])
+  }, [coreBlocks, extensionSections, customBlocks, tags, hiddenKeys])
 
   // ── 선택 필드 숨김 (FRT-190) ──────────────────────────────────────
   // 안정키만 담는다 — 블록 인스턴스를 담으면 값이 바뀔 때마다 stale 참조가 된다.
@@ -488,9 +492,11 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   // ── Progress callback (고정 카드 완료 수/전체) ──────────────────────────────────────
   // onVisibleSectionsChange 는 구조(섹션 목록)만 emit 하므로, 값 입력마다 갱신되는
   // 진행도는 별도 채널로 흘린다. formCards 는 블록 값 변화에 따라 재계산된다.
+  // 숨긴 항목은 진행도에서도 빠져야 한다 — 안 빼면 "해당 없음"으로 치울수록 바가 안 차고,
+  // 되돌려서 자기와 무관한 항목을 채워야만 100% 가 되는 모순이 난다(FRT-190).
   const progress = useMemo(
-    () => computeFormProgress(formCards?.cards ?? []),
-    [formCards]
+    () => computeFormProgress(formCards?.cards ?? [], hiddenKeys),
+    [formCards, hiddenKeys]
   )
   const onProgressChangeRef = useRef(onProgressChange)
   useEffect(() => {
