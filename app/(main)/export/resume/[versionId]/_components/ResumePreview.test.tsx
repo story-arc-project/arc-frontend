@@ -223,3 +223,101 @@ describe("ResumePreview — 어학 능통도 (FRT-207)", () => {
     expect(screen.getByText(/능통 \(TOEFL 115\)/)).toBeInTheDocument();
   });
 });
+
+/**
+ * FRT-157 — 백엔드가 항목형 배열을 빠뜨리면 미리보기가 통째로 죽던 문제.
+ *
+ * 정규화(`normalizeResumeVersion`)가 실사용 경로를 막지만, 화면도 스스로 버텨야 한다 —
+ * 정규화를 거치지 않은 값이 흘러들 자리가 생겨도 사용자가 백지를 보면 안 된다.
+ * 그래서 여기서는 **정규화를 일부러 우회해** 원시 결측치를 그대로 꽂는다.
+ */
+describe("ResumePreview — 배열 필드 결측 방어 (FRT-157)", () => {
+  const 결측 = undefined as never;
+
+  it("성과가 없어도 나머지를 그대로 그린다 — 화면이 백지가 되지 않는다", () => {
+    render(
+      <ResumePreview
+        resume={base({
+          대외활동: [
+            {
+              id: 1,
+              활동명: "부스트캠프",
+              기관: null,
+              기간_시작: null,
+              기간_종료: null,
+              기간_원문: null,
+              진행중: false,
+              역할: null,
+              활동내용: ["데이터 라벨링 가이드 작성"],
+              성과: 결측,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("부스트캠프")).toBeInTheDocument();
+    expect(screen.getByText("데이터 라벨링 가이드 작성")).toBeInTheDocument();
+    // 성과가 없으면 라벨도 남지 않는다 — 파일 내보내기와 같은 규칙.
+    expect(screen.queryByText("성과")).not.toBeInTheDocument();
+  });
+
+  it("불릿 배열 자체가 없어도 죽지 않는다 — 공통 헬퍼가 막는다", () => {
+    render(
+      <ResumePreview
+        resume={base({
+          경력: [career(1, "BCG", { 담당업무: 결측, 성과: 결측 })],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("BCG")).toBeInTheDocument();
+  });
+
+  it("기술및역량의 한 갈래만 없어도 나머지 갈래를 그린다", () => {
+    render(
+      <ResumePreview
+        resume={base({ 기술및역량: { 기술스택: ["Python"], 툴: 결측, 소프트스킬: 결측 } })}
+      />,
+    );
+
+    expect(screen.getByText("Python")).toBeInTheDocument();
+  });
+
+  it("프로젝트의 사용기술이 없어도 프로젝트명은 보인다", () => {
+    render(
+      <ResumePreview
+        resume={base({
+          프로젝트: [
+            {
+              id: 1,
+              프로젝트명: "ARC",
+              소속기관: null,
+              기간_시작: null,
+              기간_종료: null,
+              기간_원문: null,
+              역할: null,
+              사용기술: 결측,
+              내용: 결측,
+              성과: 결측,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("ARC")).toBeInTheDocument();
+  });
+
+  // 대조군 — 값이 있으면 예전처럼 그대로 그린다.
+  it("성과가 있으면 라벨과 함께 그린다", () => {
+    render(
+      <ResumePreview
+        resume={base({ 경력: [career(1, "BCG", { 성과: ["IAA 0.61 → 0.78"] })] })}
+      />,
+    );
+
+    expect(screen.getByText("성과")).toBeInTheDocument();
+    expect(screen.getByText("IAA 0.61 → 0.78")).toBeInTheDocument();
+  });
+});

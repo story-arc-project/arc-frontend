@@ -3,6 +3,7 @@
 import type { Career } from "@/types/resume";
 import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { formatPeriod, PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
+import { compactStrings } from "@/lib/export/resume-format";
 import { visibleUsableExperiences } from "@/lib/export/resume-visibility";
 
 interface Props {
@@ -20,6 +21,8 @@ export function PreviewCareer({ data, labels }: Props) {
         const subline = [c.부서, c.직위, c.고용형태]
           .filter((v) => v && String(v).trim())
           .join(" · ");
+        // 라벨은 실제로 그릴 성과가 남았을 때만 (FRT-157) — 파일 내보내기와 같은 판정.
+        const 성과 = compactStrings(c.성과);
 
         return (
           <div key={c.id}>
@@ -46,12 +49,12 @@ export function PreviewCareer({ data, labels }: Props) {
               )}
             />
             <PreviewBullets items={c.담당업무} />
-            {c.성과.length > 0 && (
+            {성과.length > 0 && (
               <div className="mt-1.5">
                 <p className="text-caption text-text-tertiary font-medium">
                   {labels.achievements}
                 </p>
-                <PreviewBullets items={c.성과} />
+                <PreviewBullets items={성과} />
               </div>
             )}
           </div>

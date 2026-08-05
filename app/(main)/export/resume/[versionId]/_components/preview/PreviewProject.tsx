@@ -3,6 +3,7 @@
 import type { Project } from "@/types/resume";
 import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { formatPeriod, PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
+import { compactStrings } from "@/lib/export/resume-format";
 import { visibleUsableExperiences } from "@/lib/export/resume-visibility";
 
 interface Props {
@@ -17,7 +18,9 @@ export function PreviewProject({ data, labels }: Props) {
   return (
     <PreviewSection title={labels.project}>
       {items.map((p) => {
-        const techLine = p.사용기술.filter((t) => t && t.trim()).join(", ");
+        // 배열 부재를 스스로 견딘다 (FRT-157) — 파일 내보내기의 resume-document 와 같은 형태.
+        const techLine = compactStrings(p.사용기술).join(", ");
+        const 성과 = compactStrings(p.성과);
         return (
           <div key={p.id}>
             <PreviewRow
@@ -38,12 +41,12 @@ export function PreviewProject({ data, labels }: Props) {
               right={formatPeriod(p.기간_시작, p.기간_종료, p.기간_원문)}
             />
             <PreviewBullets items={p.내용} />
-            {p.성과.length > 0 && (
+            {성과.length > 0 && (
               <div className="mt-1.5">
                 <p className="text-caption text-text-tertiary font-medium">
                   {labels.achievements}
                 </p>
-                <PreviewBullets items={p.성과} />
+                <PreviewBullets items={성과} />
               </div>
             )}
             {techLine && (
