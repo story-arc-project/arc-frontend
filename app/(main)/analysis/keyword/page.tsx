@@ -222,7 +222,7 @@ export default function KeywordAnalysisPage() {
                     {!isNavigable ? (
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <span className="text-body-sm text-text-primary font-medium">
+                          <span className="text-title text-text-primary">
                             {getDisplayTitle(item.title)}
                           </span>
                         </div>
@@ -267,7 +267,7 @@ export default function KeywordAnalysisPage() {
                         className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
                       >
                         <div className="flex items-center gap-2 flex-wrap mb-1">
-                          <span className="text-body-sm text-text-primary font-medium">
+                          <span className="text-title text-text-primary">
                             {getDisplayTitle(item.title)}
                           </span>
                         </div>

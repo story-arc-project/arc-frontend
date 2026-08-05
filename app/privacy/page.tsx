@@ -13,5 +13,7 @@ export default async function PrivacyPage() {
     join(process.cwd(), "docs/legal/privacy-policy.draft.md"),
     "utf8",
   );
-  return <LegalDocument markdown={markdown} />;
+  return (
+    <LegalDocument markdown={markdown} crossLink={{ href: "/terms", label: "이용약관" }} />
+  );
 }

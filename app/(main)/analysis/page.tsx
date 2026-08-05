@@ -269,7 +269,7 @@ export default function AnalysisHomePage() {
                             <Badge variant="outline">
                               {analysisTypeLabel[snapshot.type]}
                             </Badge>
-                            <span className="text-body-sm text-text-primary font-medium truncate">
+                            <span className="text-title text-text-primary truncate min-w-0">
                               {getDisplayTitle(snapshot.title)}
                             </span>
                           </div>
@@ -285,7 +285,7 @@ export default function AnalysisHomePage() {
                             <Badge variant="outline">
                               {analysisTypeLabel[snapshot.type]}
                             </Badge>
-                            <span className="text-body-sm text-text-primary font-medium truncate">
+                            <span className="text-title text-text-primary truncate min-w-0">
                               {getDisplayTitle(snapshot.title)}
                             </span>
                           </div>
