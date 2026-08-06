@@ -4,6 +4,7 @@ import type { Block } from "@/types/archive";
 import { SCHEMA_VERSION_V2 } from "@/types/archive";
 import type { PortfolioProfile } from "@/types/portfolio";
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper";
+import { getTemplateForType } from "@/lib/constants/templates-v2";
 import { buildPortfolio, experienceToPost, isPublishableExperience } from "./build-portfolio";
 
 function blk(id: string, type: Block["type"], label: string, value: Block["value"]): Block {
@@ -480,5 +481,23 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
       } as unknown as Experience["content"],
     });
     expect(experienceToPost(exp).period).toBe("2025.11");
+  });
+
+  /**
+   * 드리프트 가드 — 발행 매퍼의 날짜 폴백은 템플릿 안정키를 **문자열로 베껴 적은 것**이라
+   * (`withSectionKeys` 가 `${sectionId}.${label}` 로 만든다), 라벨을 바꾸면 조용히 깨진다.
+   * 위 테스트들은 같은 문자열을 하드코딩하므로 양쪽이 함께 어긋나도 초록이다 —
+   * 여기서만 픽스처 키를 **실제 템플릿에서 뽑아** 쓴다. 라벨이 바뀌면 매퍼가 그 키를 못 찾아
+   * 기간이 비고 이 테스트가 먼저 빨개진다. `visibleWhen.key` 일치 가드와 같은 성격이다.
+   */
+  it.each([
+    ["award" as const, "수상일", "2026-05-20", "2026.05"],
+    ["certification" as const, "취득일", "2025-11-03", "2025.11"],
+  ])("%s 의 날짜 폴백 키가 실제 템플릿 안정키와 일치한다", (type, label, date, expected) => {
+    const key = getTemplateForType(type)
+      .extensions.flatMap(s => s.blocks)
+      .find(b => b.label === label)?.key;
+    expect(key).toBeTruthy();
+    expect(experienceToPost(dateOnlyExp(type, key as string, date)).period).toBe(expected);
   });
 });
