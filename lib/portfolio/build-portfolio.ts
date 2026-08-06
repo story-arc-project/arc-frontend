@@ -166,7 +166,11 @@ export function experienceToPost(exp: Experience): PortfolioPost {
   return {
     id: exp.id,
     title: ev2.title || textOf(findBlock(core, "경험명")?.value),
-    period: periodOf(pickValue(blocks, "기간")) || datePeriodOf(exp.type as ExperienceTypeId, blocks),
+    // 확정본이 시점을 단일 날짜로 정한 유형은 **그 날짜가 먼저**다. 개편 전 레코드는 폐기된
+    // `core.기간` 이 orphan 으로 custom 에 남아 있어(experience-mapper 안전망) 범용 조회가
+    // 먼저 걸리면, 화면에서 볼 수도 고칠 수도 없는 옛 범위가 계속 발행되고 새로 채운 수상일이
+    // 반영되지 않는다. 날짜가 비어 있을 때만 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다.
+    period: datePeriodOf(exp.type as ExperienceTypeId, blocks) || periodOf(pickValue(blocks, "기간")),
     category: label,
     summary: ev2.summary || pickSummary(blocks),
     contribution: textOf(pickValue(blocks, "내 역할/기여도")),

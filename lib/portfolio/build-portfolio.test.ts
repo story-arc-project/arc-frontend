@@ -422,6 +422,47 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
     expect(experienceToPost(exp).period).toBe("");
   });
 
+  /**
+   * 개편 전에 만든 v2 수상 기록은 폐기된 `core.기간` 이 orphan 으로 custom 에 남는다.
+   * 그 값이 `수상일` 을 이기면, 사용자가 화면에서 볼 수도 고칠 수도 없는 옛 범위가 계속
+   * 발행되고 **새로 채운 수상일이 반영되지 않는다.** 확정본이 시점으로 정한 쪽이 이겨야 한다.
+   */
+  it("폐기된 '기간'이 남아 있어도 '수상일'을 먼저 쓴다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 창업 경진대회 대상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.기간": { type: "period", start: "2025-01-01", end: "2025-03-31", isCurrent: false },
+          "award-info.수상일": { type: "date", date: "2026-05-20" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("2026.05");
+  });
+
+  /** 다만 수상일이 아직 비어 있으면 옛 기간이라도 보여준다 — 있는 정보를 지우지 않는다. */
+  it("'수상일'이 비어 있으면 폐기된 '기간'으로 폴백한다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 창업 경진대회 대상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.기간": { type: "period", start: "2025-01-01", end: "2025-03-31", isCurrent: false },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("2025.01 – 2025.03");
+  });
+
   /** 자격증에 '수상일'까지 섞여 있어도 자기 유형의 키('취득일')를 쓴다. */
   it("자격증은 '수상일'이 섞여 있어도 '취득일'을 쓴다", () => {
     const exp = makeExp({
