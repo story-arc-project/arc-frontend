@@ -13,6 +13,15 @@ function selectBlock(key: string, selected: string, options = ["개인 수상", 
   return { ...b, value: { type: "single-select", options, selected } }
 }
 
+/**
+ * 사용자가 선택지를 편집한 상태 — 편집은 value.options 에만 쓰이고(SingleSelectBlock),
+ * block.options 에는 템플릿 프리셋이 그대로 남는다.
+ */
+function userEditedSelect(key: string, selected: string, userOptions: string[]): Block {
+  const b = selectBlock(key, "")
+  return { ...b, value: { type: "single-select", options: userOptions, selected } }
+}
+
 function textBlock(label: string, text: string, visibleWhen?: Block["visibleWhen"]): Block {
   const b = createTextField(label)
   return { ...b, visibleWhen, value: { type: "text", text } }
@@ -54,10 +63,39 @@ describe("isConditionMet", () => {
     expect(isConditionMet(target, [trigger, target])).toBe(false)
   })
 
+  // 두 값 모두 **템플릿 선택지 안**이어야 판정이 성립한다 — 선택지 밖의 값은 사용자가 만든
+  // 것으로 보고 판정하지 않는다(아래 "사용자가 바꾼 선택지" 참고).
   it("equals 는 정확히 일치하는 값만 충족으로 본다", () => {
+    const options = ["기타", "기타 항목"]
     const target = textBlock("자유 입력", "", { key: TRIGGER_KEY, equals: ["기타"] })
-    expect(isConditionMet(target, [selectBlock(TRIGGER_KEY, "기타"), target])).toBe(true)
-    expect(isConditionMet(target, [selectBlock(TRIGGER_KEY, "기타 항목"), target])).toBe(false)
+    expect(isConditionMet(target, [selectBlock(TRIGGER_KEY, "기타", options), target])).toBe(true)
+    expect(isConditionMet(target, [selectBlock(TRIGGER_KEY, "기타 항목", options), target])).toBe(false)
+  })
+
+  /**
+   * 선택지는 사용자가 폼에서 이름을 바꾸거나 새로 추가할 수 있다(SingleSelectBlock 의 편집 UI).
+   * `팀 수상 (2~5명)` 을 `팀 (10명)` 으로 바꾸면 접두어 판정이 깨져 **역할 칸에 영원히 도달할 수
+   * 없다** — 조건이 미충족이라 칸이 안 나오고, 값이 없으니 되살릴 길도 없다.
+   * 템플릿이 아는 선택지가 아니면 판정하지 않고 노출한다: 빈 칸이 하나 더 보이는 쪽이
+   * 필요한 칸이 사라지는 쪽보다 낫다.
+   */
+  it("사용자가 바꾼 선택지 값은 판정하지 않고 노출한다", () => {
+    const trigger = userEditedSelect(TRIGGER_KEY, "팀 (10명)", ["개인 수상", "팀 (10명)"])
+    const target = textBlock("팀에서 내가 맡은 역할", "", { key: TRIGGER_KEY, startsWith: ["팀 수상"] })
+    expect(isConditionMet(target, [trigger, target])).toBe(true)
+  })
+
+  it("템플릿 선택지 안의 값은 그대로 판정한다 — 미충족이면 여전히 숨긴다", () => {
+    const trigger = userEditedSelect(TRIGGER_KEY, "개인 수상", ["개인 수상", "팀 (10명)"])
+    const target = textBlock("팀에서 내가 맡은 역할", "", { key: TRIGGER_KEY, startsWith: ["팀 수상"] })
+    expect(isConditionMet(target, [trigger, target])).toBe(false)
+  })
+
+  // 선택지 목록이 없는 트리거(자유 텍스트)는 판정할 프리셋이 없다 — 종전대로 값 그대로 본다.
+  it("선택지가 없는 트리거는 값이 달라도 미충족 그대로다", () => {
+    const trigger = keyed(textBlock("수상 훈격", "최우수상"), "award-info.수상 훈격")
+    const target = textBlock("부상 상세", "", { key: "award-info.수상 훈격", equals: ["대상"] })
+    expect(isConditionMet(target, [trigger, target])).toBe(false)
   })
 
   it("텍스트 블록도 트리거가 될 수 있다", () => {

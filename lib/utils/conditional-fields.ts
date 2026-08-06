@@ -46,13 +46,26 @@ export function isConditionMet(block: Block, allBlocks: Block[]): boolean {
   const condition = block.visibleWhen
   if (!condition) return true
 
-  const value = triggerText(allBlocks.find(b => b.key === condition.key))
+  const trigger = allBlocks.find(b => b.key === condition.key)
+  const value = triggerText(trigger)
   if (!value) return false
 
-  if (condition.equals) return condition.equals.includes(value)
-  if (condition.startsWith) return condition.startsWith.some(prefix => value.startsWith(prefix))
+  if (condition.equals?.includes(value)) return true
+  if (condition.startsWith?.some(prefix => value.startsWith(prefix))) return true
   // 조건이 키만 지정했으면 "트리거에 값이 있으면 노출".
-  return true
+  if (!condition.equals && !condition.startsWith) return true
+
+  // 여기까지 왔으면 값이 조건과 어긋난다. 다만 **템플릿이 아는 선택지일 때만** 그것을 판정으로
+  // 받아들인다 — 드롭다운 선택지는 사용자가 폼에서 이름을 바꾸거나 새로 추가할 수 있고
+  // (SingleSelectBlock 의 편집 UI), 편집분은 value.options 에만 쓰여 block.options 에는 템플릿
+  // 프리셋이 남는다. '팀 수상 (2~5명)' 을 '팀 (10명)' 으로 바꾼 사용자는 접두어 판정이 깨져
+  // **역할 칸에 영원히 도달할 수 없다**(조건 미충족이라 안 나오고, 값이 없으니 되살릴 길도 없다).
+  // 판정할 수 없는 값이면 숨기지 않는다 — 빈 칸이 하나 더 보이는 쪽이 필요한 칸이 사라지는
+  // 쪽보다 낫다. 프리셋이 없는 트리거(자유 텍스트)는 판정할 기준 자체가 없으므로 종전대로 둔다.
+  const presets = trigger?.options
+  if (presets && presets.length > 0 && !presets.includes(value)) return true
+
+  return false
 }
 
 /**
