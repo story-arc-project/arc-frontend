@@ -28,6 +28,8 @@ let experiences: Experience[] = clone(seedExperiences);
 let libraries: LibraryDTO[] = clone(seedLibraries);
 const libraryMembership: Record<string, string[]> = clone(seedLibraryMembership);
 const resume: ResumeVersion = clone(seedResume);
+/** 데모에서 저장한 편집 — version_id 별로 시드 위에 덮인다(저장이 성공했다고 말했으면 남아야 한다). */
+const resumeEdits = new Map<string, ResumeVersion>();
 let resumeList: ResumeListItem[] = [clone(seedResumeListItem)];
 const coverLetter: CoverLetterResult = clone(seedCoverLetter);
 /** 데모에서 저장한 편집 — id 별로 시드 위에 덮인다(저장이 성공했다고 말했으면 남아야 한다). */
@@ -236,10 +238,14 @@ export const presetStore = {
 // ─── Resume ─────────────────────────────────────────────────
 
 export const resumeStore = {
-  get(): ResumeVersion {
-    return clone(resume);
+  get(versionId?: string): ResumeVersion {
+    // 저장한 편집이 있으면 그것을 돌려준다 — 시드로 되돌리면 "저장됐어요" 라고 말한 편집이
+    // 다시 열 때 사라져, 데모가 실제 동작과 반대되는 인상을 준다(FRT-151).
+    const edited = versionId ? resumeEdits.get(versionId) : undefined;
+    return clone(edited ?? resume);
   },
-  // 목록은 최신순. 실제 API 와 달리 결과 내용은 시드 하나를 공유한다.
+  // 목록은 최신순. 실제 API 와 달리 결과 내용은 시드 하나를 공유한다 — 저장한 편집만
+  // version_id 별로 그 위에 덮인다.
   list(): ResumeListItem[] {
     return clone(resumeList);
   },
@@ -248,6 +254,14 @@ export const resumeStore = {
     const now = nowIso();
     resumeList = [{ version_id: newId, created_at: now, updated_at: now }, ...resumeList];
     return newId;
+  },
+  update(versionId: string, data: ResumeVersion): ResumeVersion {
+    resumeEdits.set(versionId, clone(data));
+    return clone(data);
+  },
+  remove(versionId: string): void {
+    resumeList = resumeList.filter((r) => r.version_id !== versionId);
+    resumeEdits.delete(versionId);
   },
 };
 
