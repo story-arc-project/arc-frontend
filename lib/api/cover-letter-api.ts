@@ -14,15 +14,17 @@ import * as demo from "@/lib/demo/handlers";
 //
 // 정본은 「AI 자기소개서 Generator — 입력·출력 필드 명세」(BAC-62 의 원본).
 //
-// ⚠️ **백엔드가 아직 없다** — arc-backend dev 트리에 `cover_letter` 매치 0건(BAC-62 Todo).
-// 게다가 명세는 파이썬 `main()/generate_application()` 시그니처 기준이라 **HTTP 경로도 요청
-// body 필드명도 규정하지 않는다.** 그래서 경로는 레쥬메(`/export/resume`) 대칭으로 잡고,
-// body 는 명세의 필드명을 그대로 snake_case 로 보낸다. 착수 시 AI팀과 재확인이 필요하다.
+// 백엔드는 배포돼 있다(POST·GET `/export/cover_letter`, GET `/export/cover_letter/{id}`).
 //
-// 오추정이 사용자에게 새지 않도록 **노출은 플래그(lib/export/flags.ts)가 막는다.** 이 모듈은
-// flag-agnostic 이다 — 게이팅은 호출부(익스포트 페이지)가 한다(FRT-108 교훈: 컴포넌트/클라이언트
-// 안에서 NEXT_PUBLIC_* 를 읽으면 빌드타임 인라인 탓에 Storybook 에서 영영 false 다).
-const BASE_PATH = "/export/cover-letter";
+// ⚠️ **경로는 언더스코어다.** 화면 URL(`/export/cover-letter/[id]`)이 하이픈이라 API 경로도
+// 하이픈으로 잡아 뒀었는데, 서버에는 그 경로가 없어 전 호출이 404 였다(FastAPI 는 하이픈↔
+// 언더스코어를 동일시하지 않는다). 라우트 URL 과 API 경로는 별개이며 **서버 표기를 따른다** —
+// 되돌리면 자소서 기능 전체가 조용히 죽으므로 아래 테스트가 이 경로를 고정한다.
+//
+// 노출은 플래그(lib/export/flags.ts)가 막는다. 이 모듈은 flag-agnostic 이다 — 게이팅은
+// 호출부(익스포트 페이지)가 한다(FRT-108 교훈: 컴포넌트/클라이언트 안에서 NEXT_PUBLIC_* 를
+// 읽으면 빌드타임 인라인 탓에 Storybook 에서 영영 false 다).
+const BASE_PATH = "/export/cover_letter";
 
 // ─── Defensive parsing helpers ─────────────────────────────────────
 // export-api.ts 와 같은 태도의 로컬 헬퍼다(파일별 방어 헬퍼 반복이 이 코드베이스의 관례).
