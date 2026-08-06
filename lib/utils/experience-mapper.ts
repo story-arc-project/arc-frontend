@@ -186,6 +186,42 @@ function isHeaderBlock(b: Block): boolean {
 }
 
 /**
+ * 순수 개명된 안정키의 별칭 — `구 키 → 새 키`.
+ *
+ * 안정키는 `${sectionId}.${label}` 파생이라 라벨을 바꾸면 키가 통째로 바뀌고, 저장된 값이 새
+ * 필드에 붙지 못한다. `orphanFieldsToBlocks` 안전망 덕에 값이 사라지지는 않지만 '기타' 카드로
+ * 밀려나, 사용자는 라벨이 바뀌었다는 이유만으로 **같은 정보를 다시 타이핑**해야 한다(FRT-211).
+ *
+ * ⚠️ **질문이 같은 개명만 넣는다.** 의미가 바뀐 대체는 넣지 않는다 — 수상경력의 '수상명'(상의
+ * 이름)·'수상 구분'(드롭다운)을 '수상 훈격'(상의 등급)으로 옮기면 **옛 답이 새 질문의 답으로
+ * 둔갑한다**(대회명이 훈격 칸에 들어간다). 그런 값은 '기타' 로 보존해 사용자가 직접 판단하게 둔다.
+ */
+const RENAMED_FIELD_KEYS: Record<string, string> = {
+  'award-info.대회/프로그램명': 'award-info.대회 / 프로그램명',
+  'award-info.주최/기관': 'award-info.주최 기관',
+}
+
+/**
+ * 구 키의 값을 새 키 자리로 옮긴 fields 사본을 돌려준다(원본 불변).
+ * 새 키에 이미 값이 있으면 **그쪽이 이긴다** — 개편 후 사용자가 채운 값을 옛 값이 덮으면 안 된다.
+ * 옮긴 구 키는 지워 orphan 안전망이 '기타' 에 중복으로 되살리지 않게 한다.
+ */
+function applyRenamedKeys(fields: Record<string, BlockValue>): Record<string, BlockValue> {
+  let out = fields
+  for (const [oldKey, newKey] of Object.entries(RENAMED_FIELD_KEYS)) {
+    const legacy = out[oldKey]
+    if (!legacy) continue
+    if (out === fields) out = { ...fields }
+    delete out[oldKey]
+    const current = out[newKey]
+    const currentFilled =
+      current && !isBlockEmpty({ id: '', type: current.type, label: '', value: current })
+    if (!currentFilled) out[newKey] = legacy
+  }
+  return out
+}
+
+/**
  * 현재 템플릿이 소비하지 않는 fields 항목(구 템플릿에서 이동·삭제·개편된 필드의 값)을
  * custom 필드 블록으로 보존한다. 이 안전망이 없으면 orphan 값이 로드 시 안 보이고
  * toSavePayload 재직렬화 때 영구 삭제된다(템플릿 개편 시 무음 데이터 손실 방지).
@@ -251,7 +287,9 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
 
   // ── v2: 레지스트리 순서로 블록 재구성 + fields 값 주입 ──
   if (content.schema_version === SCHEMA_VERSION_V2 && hasTemplate(exp.type)) {
-    const fields = content.fields ?? {}
+    // 개명된 구 키는 새 키 자리로 옮겨 놓고 시작한다 — 라벨이 바뀌었다는 이유로 사용자가 같은
+    // 정보를 다시 타이핑하게 만들지 않는다(RENAMED_FIELD_KEYS).
+    const fields = applyRenamedKeys(content.fields ?? {})
     const tmpl = getTemplateForType(typeId)
     const coreBlocks = tmpl.commonCore.blocks.map(b => {
       if (b.key === TITLE_KEY) return { ...b, value: { type: "text", text: title } as BlockValue }

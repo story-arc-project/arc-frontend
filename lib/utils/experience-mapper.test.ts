@@ -1098,8 +1098,6 @@ describe("수상경력 필드 재편 값 보존 (FRT-211)", () => {
   /** 확정본에서 사라지거나 라벨이 바뀐 구 키 — 전부 '기타' 카드로 가야 한다. */
   const RETIRED_KEYS = [
     "award-info.수상명",
-    "award-info.주최/기관",
-    "award-info.대회/프로그램명",
     "award-info.참가 형태",
     "award-info.팀명/팀원",
     "award-info.평가 기준/요구사항",
@@ -1162,6 +1160,40 @@ describe("수상경력 필드 재편 값 보존 (FRT-211)", () => {
 
     // 현행 템플릿이 소비하는 키는 orphan 으로 중복되지 않는다.
     expect(byKey("award-info.수상일")).toBeUndefined()
+  })
+
+  /**
+   * 순수 개명 — 질문은 그대로고 라벨만 바뀐 필드는 값을 **새 필드로 이관**한다. 안정키가
+   * `${sectionId}.${label}` 파생이라 라벨을 바꾸면 키가 통째로 바뀌고, 값은 '기타' 로 보존되지만
+   * 사용자는 같은 정보를 다시 타이핑해야 한다(Codex P2).
+   *
+   * ⚠️ **의미가 바뀐 대체는 이관하지 않는다.** '수상명'(상의 이름)·'수상 구분'(드롭다운)을
+   * '수상 훈격' 으로 옮기면 옛 답이 새 질문의 답으로 둔갑한다 — 대회명이 훈격 칸에 들어간다.
+   */
+  it("순수 개명된 구 키의 값이 새 필드에 실린다", () => {
+    const v2 = toExperienceV2(makeExperience({ type: "award", content: retiredAwardContent() }))
+    const ext = (label: string) => v2.extensionBlocks.find(b => b.label === label)
+
+    expect(ext("대회 / 프로그램명")?.value).toEqual(text("전국 대학생 창업 경진대회"))
+    expect(ext("주최 기관")?.value).toEqual(text("중소벤처기업부"))
+    // 이관된 구 키는 '기타' 카드에 중복으로 남지 않는다.
+    expect(v2.customBlocks.find(b => b.key === "award-info.대회/프로그램명")).toBeUndefined()
+    expect(v2.customBlocks.find(b => b.key === "award-info.주최/기관")).toBeUndefined()
+  })
+
+  it("의미가 바뀐 대체는 이관하지 않는다 — '수상 훈격'은 비어서 시작한다", () => {
+    const v2 = toExperienceV2(makeExperience({ type: "award", content: retiredAwardContent() }))
+    expect(v2.extensionBlocks.find(b => b.label === "수상 훈격")?.value).toEqual(text(""))
+    expect(v2.customBlocks.find(b => b.key === "award-info.수상명")?.value).toEqual(text("대상"))
+  })
+
+  it("새 키에 이미 값이 있으면 구 키가 덮어쓰지 않는다", () => {
+    const content = retiredAwardContent()
+    ;(content.fields as Record<string, unknown>)["award-info.주최 기관"] = text("이미 채운 새 값")
+    const v2 = toExperienceV2(makeExperience({ type: "award", content }))
+    expect(v2.extensionBlocks.find(b => b.label === "주최 기관")?.value).toEqual(
+      text("이미 채운 새 값"),
+    )
   })
 
   it("보존된 값이 재저장 왕복에도 살아남는다 (무음 손실 없음)", () => {
