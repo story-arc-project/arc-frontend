@@ -10,6 +10,7 @@ import type {
   Block,
   BlockValue,
   CustomEntry,
+  TemplateV2,
 } from "@/types/archive"
 import { isImportanceLevel, SCHEMA_VERSION_V2 } from "@/types/archive"
 import {
@@ -222,6 +223,25 @@ function applyRenamedKeys(fields: Record<string, BlockValue>): Record<string, Bl
 }
 
 /**
+ * v1 레거시용 — 개명된 구 **라벨** → 새 안정키. v1 레코드는 `fields` 맵이 없고 저장된 블록의
+ * 라벨로 매칭하므로 키 별칭(`applyRenamedKeys`)이 닿지 않는다.
+ *
+ * 현재 유형의 템플릿이 실제로 그 새 키를 가질 때만 별칭을 만든다 — 다른 유형에 우연히 같은
+ * 라벨의 블록이 있어도 엉뚱한 키가 붙지 않게 하는 유형 게이트다.
+ */
+function renamedLabelKeyMap(tmpl: TemplateV2): Record<string, string> {
+  const templateKeys = new Set<string>()
+  for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) templateKeys.add(b.key)
+
+  const out: Record<string, string> = {}
+  for (const [oldKey, newKey] of Object.entries(RENAMED_FIELD_KEYS)) {
+    if (!templateKeys.has(newKey)) continue
+    out[oldKey.slice(oldKey.indexOf('.') + 1)] = newKey
+  }
+  return out
+}
+
+/**
  * 현재 템플릿이 소비하지 않는 fields 항목(구 템플릿에서 이동·삭제·개편된 필드의 값)을
  * custom 필드 블록으로 보존한다. 이 안전망이 없으면 orphan 값이 로드 시 안 보이고
  * toSavePayload 재직렬화 때 영구 삭제된다(템플릿 개편 시 무음 데이터 손실 방지).
@@ -333,7 +353,24 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   // buildSettingsSection 전환 후의 배경/목표·결과/성과·지원 동기 등)을 extensionBlocks 로 두면
   // 폼 로드 시 그 필터에서 탈락→저장 왕복에 유실되므로 custom 으로 보존한다.
   // v2 orphanFieldsToBlocks 안전망의 v1(schema_version 미기재) 대응.
-  const keyedExt = savedExt.map(b => (b.key ? b : { ...b, key: extKeyByLabel[b.label] }))
+  // 개명 별칭은 v1 에도 적용한다 — v1 은 fields 맵이 없어 키 별칭(applyRenamedKeys)이 닿지 않는데,
+  // 같은 순수 개명인데 v2 만 값이 이어지고 v1 은 '기타' 로 밀려나면 반쪽 수정이다.
+  const renamedExtKeys = renamedLabelKeyMap(tmpl)
+  // 새 라벨 블록이 이미 있으면 별칭을 붙이지 않는다 — 한 키에 두 블록이 겹치면 어느 쪽 값이
+  // 살아남는지 배열 순서에 좌우된다.
+  const claimedKeys = new Set(
+    savedExt.map(b => b.key ?? extKeyByLabel[b.label]).filter((k): k is string => !!k),
+  )
+  const keyedExt = savedExt.map(b => {
+    if (b.key) {
+      const renamed = RENAMED_FIELD_KEYS[b.key]
+      return renamed && !claimedKeys.has(renamed) ? { ...b, key: renamed } : b
+    }
+    const current = extKeyByLabel[b.label]
+    if (current) return { ...b, key: current }
+    const alias = renamedExtKeys[b.label]
+    return { ...b, key: alias && !claimedKeys.has(alias) ? alias : undefined }
+  })
   const extTemplateKeys = new Set<string>()
   const extTemplateLabels = new Set<string>()
   for (const s of tmpl.extensions) for (const b of s.blocks) {

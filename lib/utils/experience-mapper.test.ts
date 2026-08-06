@@ -1196,6 +1196,38 @@ describe("수상경력 필드 재편 값 보존 (FRT-211)", () => {
     )
   })
 
+  /**
+   * v1 레거시(`schema_version` 없음)는 `fields` 맵이 아니라 **저장된 블록 배열 + 라벨 매칭**으로
+   * 재구성되므로 키 별칭이 닿지 않는다. 같은 순수 개명인데 v2 만 이어지고 v1 은 '기타' 로
+   * 밀려나면 반쪽 수정이다(Codex P2 5라운드). 라벨 별칭도 함께 둔다.
+   */
+  it("v1 레거시에서도 순수 개명된 라벨이 새 안정키를 받는다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "award",
+        content: {
+          title: "전국 대학생 창업 경진대회 대상",
+          summary: "",
+          status: "complete",
+          tags: [],
+          coreBlocks: [],
+          extensionBlocks: [
+            { id: "b1", type: "text", label: "대회/프로그램명", value: text("전국 대학생 창업 경진대회") },
+            { id: "b2", type: "text", label: "주최/기관", value: text("중소벤처기업부") },
+            // 의미가 바뀐 대체는 v1 에서도 이관하지 않는다 — '기타' 로 보존된다.
+            { id: "b3", type: "text", label: "수상명", value: text("대상") },
+          ],
+          customBlocks: [],
+        },
+      }),
+    )
+
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+    expect(byKey("award-info.대회 / 프로그램명")?.value).toEqual(text("전국 대학생 창업 경진대회"))
+    expect(byKey("award-info.주최 기관")?.value).toEqual(text("중소벤처기업부"))
+    expect(v2.customBlocks.find(b => b.label === "수상명")?.value).toEqual(text("대상"))
+  })
+
   it("보존된 값이 재저장 왕복에도 살아남는다 (무음 손실 없음)", () => {
     const first = toExperienceV2(
       makeExperience({ type: "award", content: retiredAwardContent() }),
