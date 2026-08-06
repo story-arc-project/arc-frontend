@@ -402,4 +402,42 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
   it("'기간'을 쓰는 유형의 표기는 그대로다", () => {
     expect(experienceToPost(makeExp()).period).toBe("2026.02 – 2026.05");
   });
+
+  /**
+   * 폴백은 **유형별 안정키**로만 찾는다. 라벨로 훑으면 다른 유형의 커스텀/레거시 블록에
+   * 우연히 같은 이름이 있을 때 무관한 날짜가 발행 기간으로 나간다.
+   */
+  it("다른 유형에 같은 라벨의 느슨한 블록이 있어도 기간으로 쓰지 않는다", () => {
+    const exp = makeExp({
+      content: {
+        title: "주가 예측 프로젝트",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        coreBlocks: [blk("c1", "text", "경험명", { type: "text", text: "주가 예측 프로젝트" })],
+        extensionBlocks: [],
+        customBlocks: [blk("x1", "date", "수상일", { type: "date", date: "2026-05-20" })],
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("");
+  });
+
+  /** 자격증에 '수상일'까지 섞여 있어도 자기 유형의 키('취득일')를 쓴다. */
+  it("자격증은 '수상일'이 섞여 있어도 '취득일'을 쓴다", () => {
+    const exp = makeExp({
+      type: "certification",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "정보처리기사",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "cert-info.취득일": { type: "date", date: "2025-11-03" },
+          "award-info.수상일": { type: "date", date: "2026-05-20" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("2025.11");
+  });
 });

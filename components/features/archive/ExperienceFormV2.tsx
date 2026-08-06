@@ -19,6 +19,7 @@ import type {
 } from "@/types/archive"
 import { SECTION_DESCRIPTION_OVERRIDES, SECTION_LABEL_OVERRIDES } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
+import { mergeSavedIntoTemplate } from "@/lib/utils/experience-mapper"
 import {
   cloneBlocks,
   createEmptyRow,
@@ -186,7 +187,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         // 살아남은 라벨만 들어 있어 교체하면 **나머지 새 필드가 화면에서 통째로 사라진다**.
         // 수상경력은 확정본 개편으로 구 라벨 중 '수상일' 하나만 살아남아, 그 한 칸 때문에
         // 필수 5개를 채울 방법이 없어져 완료 저장이 영구 차단됐다.
-        // 값 보존을 위해 매칭된 블록은 **그대로** 쓴다(템플릿 정의로 덮으면 값이 날아간다).
+        // 매칭된 블록은 **정의는 템플릿, 값은 저장분**으로 병합한다(mergeSavedIntoTemplate).
+        // 통째로 쓰면 구 템플릿의 required·guide 가 따라와 필수 표시가 사라진다(Codex P2).
         const savedByKey = new Map<string, Block>()
         const savedByLabel = new Map<string, Block>()
         for (const b of savedBlocks) {
@@ -201,7 +203,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             collapsed: ext.collapsed,
             blocks: ext.blocks.map(tb => {
               const saved = (tb.key ? savedByKey.get(tb.key) : undefined) ?? savedByLabel.get(tb.label)
-              return saved ?? cloneBlocks([tb])[0]
+              const [tplBlock] = cloneBlocks([tb])
+              return saved ? mergeSavedIntoTemplate(tplBlock, saved) : tplBlock
             }),
           }))
         )

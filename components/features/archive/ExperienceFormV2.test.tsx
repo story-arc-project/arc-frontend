@@ -677,4 +677,24 @@ describe("FRT-211 구 레코드 편집 시 새 템플릿 필드 병합", () => {
     const dateInput = screen.getByLabelText(/^수상일/) as HTMLInputElement
     expect(dateInput.value).toBe("2026-05-20")
   })
+
+  /**
+   * 구 award 템플릿의 '수상일'은 optional 이었다(`createDateField('수상일')`). 저장 블록을
+   * 통째로 쓰면 그 낡은 메타데이터가 따라와 필수 표시가 사라지고, `isRequiredBlock` 기준
+   * 완료 판정이 **날짜가 비어도 카드를 완료로 본다**. 값만 현재 템플릿 정의에 실어야 한다.
+   */
+  it("값은 저장분을, 정의는 현재 템플릿을 쓴다", () => {
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={legacyAward()}
+        onSave={vi.fn()}
+        onCancel={() => {}}
+      />,
+    )
+
+    const dateInput = screen.getByLabelText(/^수상일/) as HTMLInputElement
+    expect(dateInput.required).toBe(true)
+    expect(dateInput.value).toBe("2026-05-20")
+  })
 })

@@ -87,6 +87,22 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
 }
 
 /**
+ * 편집 모드 병합용 — **정의는 현재 템플릿, 값만 저장분**에서 싣는다.
+ *
+ * v1 레거시 블록은 구 템플릿의 메타데이터를 통째로 들고 있어 그대로 쓰면 required·guide·
+ * placeholder 가 옛 정의로 되돌아간다. 수상경력의 `수상일`은 구 템플릿에서 optional 이라,
+ * 저장 블록을 그대로 쓰면 필수 표시가 사라지고 `isRequiredBlock` 기준 완료 판정이 날짜가
+ * 비어도 카드를 완료로 본다(FRT-211, Codex P2).
+ *
+ * 타입 비호환으로 `injectValue` 가 주입을 생략하면(인자를 그대로 반환) 템플릿 블록엔 값이
+ * 없어 화면에서 저장값이 사라지므로, 그때는 저장 블록을 그대로 돌려준다 — 값 보존 우선.
+ */
+export function mergeSavedIntoTemplate(templateBlock: Block, saved: Block): Block {
+  const merged = injectValue(templateBlock, saved.value)
+  return merged === templateBlock ? saved : merged
+}
+
+/**
  * label → 안정키 맵 (v1 레거시 폴백용).
  * ⚠️ 레지스트리 내에서 라벨이 **유일한** 경우에만 매핑한다. 같은 라벨이 둘 이상 섹션에
  * 존재하면(예: `extended.결과/성과` textarea vs `extra-detail.결과/성과` repeatable-cell)
