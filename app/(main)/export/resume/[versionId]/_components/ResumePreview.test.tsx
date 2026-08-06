@@ -321,3 +321,72 @@ describe("ResumePreview — 배열 필드 결측 방어 (FRT-157)", () => {
     expect(screen.getByText("IAA 0.61 → 0.78")).toBeInTheDocument();
   });
 });
+
+/**
+ * FRT-163 — 배열이 있긴 한데 공백뿐인 경우.
+ *
+ * 결측(FRT-157)과 달리 `["", "  "]` 는 length 가 0 이 아니라서, 길이만 세는 조건은
+ * 통과하지만 `compactStrings` 를 쓰는 렌더러는 아무것도 안 그린다 — 라벨만 덩그러니
+ * 남는 빈 섹션이 된다. 항목 단위 필터(`visibleUsableExperiences`)도 회사명 같은 다른
+ * 필드가 채워져 있으면 걸러주지 않으므로, 방어선은 라벨 조건 그 자체뿐이다.
+ *
+ * `ResumePreview` 는 정규화를 거치지 않고 prop 을 그대로 하위에 넘기므로, 여기서는
+ * 정규화를 지나지 않은 값이 흘러든 상황을 그대로 재현한다.
+ *
+ * '성과' 라벨은 경력·대외활동·프로젝트가 함께 쓰는 문자열이라 queryAllByText 로 센다.
+ */
+describe("ResumePreview — 공백뿐인 배열 (FRT-163)", () => {
+  const 공백뿐 = ["", "  "];
+
+  it("경력의 성과가 공백뿐이면 '성과' 라벨도 남지 않는다", () => {
+    render(
+      <ResumePreview
+        resume={base({ 경력: [career(1, "BCG", { 성과: 공백뿐 })] })}
+      />,
+    );
+
+    // 다른 필드가 채워져 있어 항목 자체는 걸러지지 않는다 — 그래서 라벨 조건이 유일한 방어선.
+    expect(screen.getByText("BCG")).toBeInTheDocument();
+    expect(screen.queryAllByText("성과")).toHaveLength(0);
+  });
+
+  it("대외활동의 성과가 공백뿐일 때도 같은 규칙을 쓴다", () => {
+    render(
+      <ResumePreview
+        resume={base({
+          대외활동: [
+            {
+              id: 1,
+              활동명: "부스트캠프",
+              기관: null,
+              기간_시작: null,
+              기간_종료: null,
+              기간_원문: null,
+              진행중: false,
+              역할: null,
+              활동내용: ["데이터 라벨링 가이드 작성"],
+              성과: 공백뿐,
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("부스트캠프")).toBeInTheDocument();
+    expect(screen.queryAllByText("성과")).toHaveLength(0);
+  });
+
+  it("담당업무가 공백뿐이면 빈 불릿 목록을 그리지 않는다", () => {
+    const { container } = render(
+      <ResumePreview
+        resume={base({
+          경력: [career(1, "BCG", { 담당업무: 공백뿐, 성과: 공백뿐 })],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("BCG")).toBeInTheDocument();
+    // 빈 <li> 가 남으면 미리보기에 정체불명의 불릿 점이 찍힌다.
+    expect(container.querySelectorAll("li")).toHaveLength(0);
+  });
+});
