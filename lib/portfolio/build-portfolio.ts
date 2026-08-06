@@ -86,6 +86,21 @@ function periodOf(value: BlockValue | undefined): string {
 // SEMANTIC_GROUPS 에 넣지 않는다 — 폼 dedup 동작(아카이브 입력)을 바꾸지 않기 위해 로컬 처리.
 const SUMMARY_LABELS = ["한 줄 요약", "한 줄 설명", "한 줄 소개"];
 
+// 확정본 정렬로 코어 '기간'을 뺀 유형(CORE_EXCLUDE)은 단일 날짜 하나로 시점을 받는다.
+// period 의미그룹에도 없고 periodOf 는 date 값을 포맷하지 못해, 폴백이 없으면 새로 만든
+// 수상/자격증이 발행 시 날짜 없이 나간다. SUMMARY_LABELS 와 같은 이유로 SEMANTIC_GROUPS 가
+// 아니라 로컬 상수다 — 여기에 넣으면 아카이브 입력 폼의 dedup 동작까지 바뀐다.
+const DATE_PERIOD_LABELS = ["수상일", "취득일"];
+
+/** 코어 '기간'이 없는 유형의 시점 폴백. 값이 없으면 빈 문자열 — 없는 날짜를 지어내지 않는다. */
+function datePeriodOf(blocks: Block[]): string {
+  for (const label of DATE_PERIOD_LABELS) {
+    const block = blocks.find((b) => b.label === label && !isBlockEmpty(b));
+    if (block?.value.type === "date") return ym(block.value.date);
+  }
+  return "";
+}
+
 // 성과 라벨 그룹(SEMANTIC_GROUPS.achievement)엔 성격이 다른 둘이 섞여 있다:
 //  - 동의어(핵심 성과·결과/성과·성과 등): 같은 질문의 **대안**. 하나만 고른다(core 우선).
 //  - 상호보완(학회 `단체 활동 / 성과`·`개인 활동 / 성과`): 동시에 채우는 별개 항목. 모두 합친다.
@@ -145,7 +160,7 @@ export function experienceToPost(exp: Experience): PortfolioPost {
   return {
     id: exp.id,
     title: ev2.title || textOf(findBlock(core, "경험명")?.value),
-    period: periodOf(pickValue(blocks, "기간")),
+    period: periodOf(pickValue(blocks, "기간")) || datePeriodOf(blocks),
     category: label,
     summary: ev2.summary || pickSummary(blocks),
     contribution: textOf(pickValue(blocks, "내 역할/기여도")),

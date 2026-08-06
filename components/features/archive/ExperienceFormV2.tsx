@@ -178,27 +178,32 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       if (extensionSections.length === 0) {
         const savedBlocks = initialExperience.extensionBlocks
         // Distribute saved extension blocks across template sections.
-        // schema v2: 안정키로 매칭(라벨 충돌 무관) → 화면순서=저장순서 보장.
-        // 키 없는 레거시 블록만 라벨 폴백.
+        // schema v2: 안정키로 매칭(라벨 충돌 무관). 키 없는 레거시 블록만 라벨 폴백.
+        //
+        // ⚠️ 매칭분으로 섹션을 **교체하지 않고 템플릿에 병합**한다(FRT-211, Codex P1).
+        // v2 레코드는 toExperienceV2 가 현재 템플릿 전체를 재구성해 내려주므로 교체든 병합이든
+        // 결과가 같지만, v1 레거시 레코드(저장된 블록 배열 그대로 — 데모 시드가 이 모양)는
+        // 살아남은 라벨만 들어 있어 교체하면 **나머지 새 필드가 화면에서 통째로 사라진다**.
+        // 수상경력은 확정본 개편으로 구 라벨 중 '수상일' 하나만 살아남아, 그 한 칸 때문에
+        // 필수 5개를 채울 방법이 없어져 완료 저장이 영구 차단됐다.
+        // 값 보존을 위해 매칭된 블록은 **그대로** 쓴다(템플릿 정의로 덮으면 값이 날아간다).
+        const savedByKey = new Map<string, Block>()
+        const savedByLabel = new Map<string, Block>()
+        for (const b of savedBlocks) {
+          if (b.key) savedByKey.set(b.key, b)
+          else if (!savedByLabel.has(b.label)) savedByLabel.set(b.label, b)
+        }
         setExtensionSections(
-          tmpl.extensions.map(ext => {
-            const templateKeys = new Set(
-              ext.blocks.map(b => b.key).filter((k): k is string => !!k)
-            )
-            const templateLabels = new Set(ext.blocks.map(b => b.label))
-            const matchedBlocks = savedBlocks.filter(b =>
-              b.key ? templateKeys.has(b.key) : templateLabels.has(b.label)
-            )
-            return {
-              id: ext.id,
-              label: ext.label,
-              category: ext.category,
-              collapsed: ext.collapsed,
-              blocks: matchedBlocks.length > 0
-                ? matchedBlocks
-                : cloneBlocks(ext.blocks),
-            }
-          })
+          tmpl.extensions.map(ext => ({
+            id: ext.id,
+            label: ext.label,
+            category: ext.category,
+            collapsed: ext.collapsed,
+            blocks: ext.blocks.map(tb => {
+              const saved = (tb.key ? savedByKey.get(tb.key) : undefined) ?? savedByLabel.get(tb.label)
+              return saved ?? cloneBlocks([tb])[0]
+            }),
+          }))
         )
       }
     }

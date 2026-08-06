@@ -358,3 +358,48 @@ describe("isPublishableExperience (명시적 옵트인)", () => {
     expect(isPublishableExperience(withVisibility("x", selected))).toBe(false);
   });
 });
+
+/**
+ * FRT-211 회귀(Codex P1) — 단일 날짜로 시점을 받는 유형의 발행 기간.
+ *
+ * 확정본 정렬로 수상경력·자격증은 코어 '기간'을 빼고(CORE_EXCLUDE) 각각 '수상일'·'취득일'
+ * 하나로 시점을 받는다. 그런데 발행 매퍼는 period 의미그룹(기간·활동 기간…)만 조회하고
+ * periodOf 는 date 값을 포맷하지 못해, **새로 만든 수상/자격증은 발행 시 날짜가 통째로 빈다**.
+ * (구 레코드는 폐기된 '기간'이 orphan 으로 custom 에 남아 있어 여전히 채워진다 — 신규만 해당.)
+ */
+describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
+  function dateOnlyExp(type: string, key: string, date: string): Experience {
+    return makeExp({
+      type,
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 창업 경진대회 대상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: { [key]: { type: "date", date } },
+      } as unknown as Experience["content"],
+    });
+  }
+
+  it("수상경력은 '수상일'을 발행 기간으로 쓴다", () => {
+    expect(experienceToPost(dateOnlyExp("award", "award-info.수상일", "2026-05-20")).period).toBe(
+      "2026.05",
+    );
+  });
+
+  it("자격증은 '취득일'을 발행 기간으로 쓴다", () => {
+    expect(
+      experienceToPost(dateOnlyExp("certification", "cert-info.취득일", "2025-11-03")).period,
+    ).toBe("2025.11");
+  });
+
+  it("날짜가 비어 있으면 기간도 빈다 — 없는 값을 지어내지 않는다", () => {
+    expect(experienceToPost(dateOnlyExp("award", "award-info.수상일", "")).period).toBe("");
+  });
+
+  /** 대조군: 코어 '기간'을 쓰는 유형은 날짜 폴백이 끼어들지 않는다. */
+  it("'기간'을 쓰는 유형의 표기는 그대로다", () => {
+    expect(experienceToPost(makeExp()).period).toBe("2026.02 – 2026.05");
+  });
+});
