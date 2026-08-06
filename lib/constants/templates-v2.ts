@@ -71,6 +71,9 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   // 자격증 확정본은 취득일 하나로 시점을 받는다 — required 인 '기간'을 함께 두면 시작·종료를
   // 억지로 묻게 된다. 역할·성과도 확정본에 없다(② 취득 배경이 대신 묻는다).
   certification: ['기간', '내 역할/기여도', '핵심 성과'],
+  // 수상경력도 같은 이유로 '수상일' 하나로 시점을 받는다. 역할·성과도 확정본에 없다 —
+  // ① '수상 내용 / 배경'·'지원 동기'가 흡수했고, 팀에서의 역할은 조건부 필드가 따로 받는다.
+  award: ['기간', '내 역할/기여도', '핵심 성과'],
 }
 
 /**
@@ -80,6 +83,7 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
  */
 const CORE_EVIDENCE_OPTIONS: Partial<Record<ExperienceTypeId, string[]>> = {
   certification: ['합격증/자격증 사본', '성적표/점수 확인서', '발급 확인서', '기타'],
+  award: ['상장 원본/사본', '트로피·상패 사진', '관련 기사', '공식 발표 페이지 캡처', '기타'],
 }
 
 function buildCommonCore(typeId?: ExperienceTypeId): TemplateSection {
@@ -1072,6 +1076,35 @@ function careerExtensions(): TemplateSection[] {
   ]
 }
 
+/** 수상경력 ① '대회 유형' 6종 — 확정본 표기 그대로(FRT-211). */
+const AWARD_TYPE_OPTIONS = [
+  '공모전/경진대회',
+  '학술상/논문상',
+  '장학상',
+  '성적 우수상(학기별 우수 등)',
+  '대외 활동 시상',
+  '기타',
+] as const
+
+/** 수상경력 ① '개인 / 팀' 3종. '팀 수상' 접두어가 조건부 노출의 트리거다. */
+const AWARD_PARTICIPATION_OPTIONS = ['개인 수상', '팀 수상 (2~5명)', '팀 수상 (6명 이상)'] as const
+
+/** '팀에서 내가 맡은 역할'의 트리거 안정키 — `withSectionKeys` 가 만들 키를 미리 적은 것이다. */
+const AWARD_PARTICIPATION_KEY = 'award-info.개인 / 팀'
+
+// 수상경력 확정본(2026-08) — ① 수상 정보 · ② 수상 과정과 배움 · ③ 상장 / 증빙 (FRT-211).
+// 자격증(FRT-179)과 같은 이유로 '수상일' 하나로 시점을 받는다(CORE_EXCLUDE.award) — 시작·종료를
+// 억지로 묻지 않는다. core '내 역할/기여도'·'핵심 성과'도 확정본에 없다: ① '수상 내용 / 배경'과
+// '지원 동기'가 그 질문을 흡수했고, 팀에서의 역할은 아래 조건부 필드가 따로 받는다.
+//
+// ⚠️ 구 '수상명'(required)은 core '경험명'이 대신한다 — 확정본 ①은 대회명으로 시작하고 상의
+// 이름은 '수상 훈격'이 받는다. 구 '수상 구분'(드롭다운)→'수상 훈격'(자유 텍스트)은 타입까지 바뀌어
+// injectValue 의 타입 가드에 걸리므로 값이 자동 이관되지 않는다. 사라진 키의 값은 모두
+// orphanFieldsToBlocks 가 '기타' 카드로 보존한다(자격증과 동일 경로).
+//
+// ③ 은 '관련 링크'만 블록이다 — 파일·파일 설명·증빙 유형은 core '증빙 자료' FileBlock 하나가
+// 이미 함께 담는다(FileBlockValue.description/evidenceType). 블록 3개로 쪼개면 입력칸이 두 벌
+// 생긴다(FRT-179 최대 교훈). 선택지는 CORE_EVIDENCE_OPTIONS.award 가 공급한다.
 function awardExtensions(): TemplateSection[] {
   return [
     {
@@ -1079,19 +1112,87 @@ function awardExtensions(): TemplateSection[] {
       category: 'basic',
       label: '수상 정보',
       blocks: [
-        createTextField('수상명', { required: true }),
-        createTextField('주최/기관', { required: true }),
-        createDateField('수상일'),
-        createTextField('대회/프로그램명'),
-        createSelectField('수상 구분', ['대상', '최우수', '우수', '장려', '기타']),
-        createSelectField('참가 형태', ['개인', '팀']),
-        createTextField('팀명/팀원'),
-        createTextareaField('평가 기준/요구사항'),
-        createTextareaField('내 역할/기여', { required: true }),
-        createFileField('제출물/발표 자료'),
-        createFileField('수상 증빙'),
-        createTextareaField('핵심 성과'),
-        createTagsField('이 수상이 의미하는 역량'),
+        createTextField('대회 / 프로그램명', {
+          required: true,
+          guide: '이 상을 받은 대회나 프로그램의 이름을 적어주세요.',
+          placeholder: '예: 2024 전국 대학생 창업 경진대회',
+        }),
+        createSelectField('대회 유형', [...AWARD_TYPE_OPTIONS], {
+          required: true,
+          guide: '이 상의 성격을 선택해주세요.',
+        }),
+        createTextField('수상 훈격', {
+          required: true,
+          guide: '받은 상의 등급이나 이름을 적어주세요.',
+          placeholder: '예: 대상, 우수상, 최우수 논문상',
+        }),
+        createTextField('주최 기관', {
+          required: true,
+          guide: '이 상을 수여한 기관이나 단체를 적어주세요.',
+          placeholder: '예: OO부, OO협회, OO대학교',
+        }),
+        createDateField('수상일', {
+          required: true,
+          guide: '수상한 날짜를 선택해주세요.',
+        }),
+        createTextField('참가 규모 / 경쟁률', {
+          guide:
+            '총 참가자 수, 본선 진출 팀 수, 내가 받은 등수까지 함께 적으면 상의 무게가 명확히 전달돼요.',
+          placeholder: '예: 총 300팀 참가 중 1위, 경쟁률 30:1',
+        }),
+        createSelectField('개인 / 팀', [...AWARD_PARTICIPATION_OPTIONS], {
+          guide: '개인 수상인지 팀 수상인지 선택해주세요.',
+        }),
+        {
+          ...createTextField('팀에서 내가 맡은 역할', {
+            guide: '팀에서 내가 맡은 역할을 짧게 적어주세요.',
+            placeholder: '예: 팀장, 기획·발표 담당, 데이터 분석 담당',
+          }),
+          // 확정본 §7 — 값이 '팀 수상'으로 시작할 때만 노출. 선택지가 인원수로 갈리므로 접두어 판정이다.
+          visibleWhen: { key: AWARD_PARTICIPATION_KEY, startsWith: ['팀 수상'] },
+        },
+        createTextareaField('지원 동기', {
+          guide: '이 대회나 프로그램에 지원한 이유가 있었나요?',
+          placeholder:
+            '예: 창업 아이디어를 실제로 검증받아보고 싶었고, 심사위원 피드백을 통해 사업 모델을 다듬을 기회로 삼고자 지원했습니다.',
+        }),
+        createTextareaField('수상 내용 / 배경', {
+          guide: '어떤 프로젝트나 활동으로 수상했는지, 무엇이 인정받았는지 적어주세요.',
+          placeholder:
+            '예: 지역 소상공인 대상 AI 챗봇 서비스 아이디어로 수상. 심사위원으로부터 실용화 가능성과 시장 이해도에 대한 긍정 피드백을 받았습니다.',
+        }),
+        createTextField('상금 / 부상', {
+          guide: '상금이나 부상이 있었다면 적어주세요.',
+          placeholder: '예: 상금 500만원, 해외 연수 기회',
+        }),
+      ],
+    },
+    {
+      // 확정본이 "회고 서술 부담 최소화를 위해 필드 2개만 배치"라고 설계 의도를 명시했다 — 늘리지 말 것.
+      id: 'award-process',
+      category: 'detail',
+      label: '수상 과정과 배움',
+      blocks: [
+        createTextareaField('준비 과정', {
+          guide: '얼마나, 어떻게 준비했는지 짧게 적어주세요.',
+          placeholder: '예: 3개월간 팀원 4명과 매주 화요일 저녁 회의로 아이디어를 다듬었어요.',
+        }),
+        createTextareaField('기억에 남는 순간 / 배운 점', {
+          guide: '고비의 순간이든 뿌듯했던 순간이든, 이 경험에서 남은 게 있다면 짧게 적어주세요.',
+          placeholder:
+            '예: 본선 발표 이틀 전 데이터 수치 오류를 발견해 밤새 수정했어요. 위기 대응 감각이 확 늘었어요.',
+        }),
+      ],
+    },
+    {
+      id: 'award-evidence',
+      category: 'evidence',
+      label: '상장 / 증빙',
+      blocks: [
+        createLinkField('관련 링크', {
+          guide: '상장 원본이 없다면 이 수상과 관련된 기사나 공식 발표 페이지 링크를 남겨주세요.',
+          placeholder: '관련 링크 (기사, 공식 발표 페이지 등)',
+        }),
       ],
     },
   ]

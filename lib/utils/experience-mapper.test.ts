@@ -1089,6 +1089,131 @@ describe("폐기 섹션 값 보존 (FRT-179 자격증)", () => {
   })
 })
 
+/**
+ * FRT-211 은 수상경력 13필드 중 10개를 없애거나 개명한다 — 확정본 정렬 중 **가장 큰 폭의 재편**이다.
+ * 특히 '수상 구분'(single-select) → '수상 훈격'(text) 은 타입까지 바뀌어 `injectValue` 의 타입
+ * 가드에 걸리므로 자동 이관이 원천 차단된다. 값이 조용히 사라지지 않고 orphan 으로 남는지 못 박는다.
+ */
+describe("수상경력 필드 재편 값 보존 (FRT-211)", () => {
+  /** 확정본에서 사라지거나 라벨이 바뀐 구 키 — 전부 '기타' 카드로 가야 한다. */
+  const RETIRED_KEYS = [
+    "award-info.수상명",
+    "award-info.주최/기관",
+    "award-info.대회/프로그램명",
+    "award-info.참가 형태",
+    "award-info.팀명/팀원",
+    "award-info.평가 기준/요구사항",
+    "award-info.내 역할/기여",
+    "award-info.핵심 성과",
+    "core.핵심 성과",
+  ]
+  const RETIRED_SELECT_KEY = "award-info.수상 구분"
+  const RETIRED_FILE_KEY = "award-info.수상 증빙"
+
+  function retiredAwardContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "전국 대학생 창업 경진대회 대상",
+      summary: "",
+      status: "complete",
+      tags: [],
+      fields: {
+        "award-info.수상명": text("대상"),
+        "award-info.주최/기관": text("중소벤처기업부"),
+        "award-info.대회/프로그램명": text("전국 대학생 창업 경진대회"),
+        // 타입이 바뀌는 대체 — text 로 자동 주입되지 않고 orphan 으로 남아야 한다.
+        [RETIRED_SELECT_KEY]: { type: "single-select", options: ["대상", "기타"], selected: "대상" },
+        "award-info.참가 형태": { type: "single-select", options: ["개인", "팀"], selected: "팀" },
+        "award-info.팀명/팀원": text("팀 아크 4명"),
+        "award-info.평가 기준/요구사항": textarea("시장성 40%, 기술성 30%"),
+        "award-info.내 역할/기여": textarea("기획·발표 담당"),
+        "award-info.핵심 성과": textarea("최종 1위"),
+        "core.핵심 성과": textarea("코어에 남아 있던 성과"),
+        [RETIRED_FILE_KEY]: {
+          type: "file",
+          fileName: "award.pdf",
+          description: "상장 사본",
+          evidenceType: "상장",
+        },
+        // 현행 템플릿이 그대로 쓰는 키 — orphan 으로 중복되면 안 된다.
+        "award-info.수상일": { type: "date", date: "2024-05-01" },
+      },
+      custom: [],
+    }
+  }
+
+  it("확정본에서 사라진 구 필드 값이 customBlocks 로 보존된다", () => {
+    const v2 = toExperienceV2(makeExperience({ type: "award", content: retiredAwardContent() }))
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    for (const key of RETIRED_KEYS) {
+      expect(byKey(key), key).toBeDefined()
+    }
+    expect(byKey("award-info.수상명")?.value).toEqual(text("대상"))
+
+    // 타입이 바뀐 대체 — select 값이 그대로 남는다(text 로 강제 변환되지 않는다).
+    const select = byKey(RETIRED_SELECT_KEY)
+    expect(select?.value.type).toBe("single-select")
+    expect(select?.value.type === "single-select" && select.value.selected).toBe("대상")
+
+    const file = byKey(RETIRED_FILE_KEY)
+    expect(file?.value.type === "file" && file.value.fileName).toBe("award.pdf")
+
+    // 현행 템플릿이 소비하는 키는 orphan 으로 중복되지 않는다.
+    expect(byKey("award-info.수상일")).toBeUndefined()
+  })
+
+  it("보존된 값이 재저장 왕복에도 살아남는다 (무음 손실 없음)", () => {
+    const first = toExperienceV2(
+      makeExperience({ type: "award", content: retiredAwardContent() }),
+    )
+    const payload = toSavePayload(first)
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom.map(e => e.key)).toEqual(
+      expect.arrayContaining([...RETIRED_KEYS, RETIRED_SELECT_KEY, RETIRED_FILE_KEY]),
+    )
+
+    const reloaded = toExperienceV2(makeExperience({ type: "award", content: payload.content }))
+    expect(reloaded.customBlocks.find(b => b.key === "award-info.팀명/팀원")?.value).toEqual(
+      text("팀 아크 4명"),
+    )
+  })
+
+  /**
+   * 조건부 필드(FRT-211)의 값은 저장 경로를 그대로 탄다 — 조건 미충족이어도 값을 비우지 않는다.
+   * 화면에서 감추는 것은 **빈 필드뿐**이므로(conditional-fields.ts) 무음 잔존이 생길 여지가 없고,
+   * 저장 시 값을 지우는 방식이었다면 트리거를 잘못 눌러 저장한 한 번에 데이터가 사라졌을 것이다.
+   */
+  it("조건부 필드의 값은 저장에서 지워지지 않는다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "award",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "수상",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: {
+            "award-info.개인 / 팀": {
+              type: "single-select",
+              options: ["개인 수상", "팀 수상 (2~5명)", "팀 수상 (6명 이상)"],
+              selected: "개인 수상",
+            },
+            "award-info.팀에서 내가 맡은 역할": text("팀장"),
+          },
+          custom: [],
+        },
+      }),
+    )
+    const payload = toSavePayload(v2)
+    const fields = (payload.content as unknown as { fields: Record<string, BlockValue> }).fields
+    expect(fields["award-info.팀에서 내가 맡은 역할"]).toEqual(text("팀장"))
+  })
+})
+
 describe("선택 필드 숨김 키 (FRT-190)", () => {
   const HIDDEN_KEY = "extended.배운 점"
 

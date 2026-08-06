@@ -12,13 +12,16 @@ describe("templates-v2 category tagging", () => {
     }
   })
 
-  it("첫 type-specific(info) 섹션은 basic, 나머지는 repeat 또는 유형 전용 detail 이다", () => {
+  it("첫 type-specific(info) 섹션은 basic, 나머지는 repeat·detail·evidence 다", () => {
     // 유형이 자기 '경험 상세'(detail) 섹션을 소유하면 범용 확장 섹션 대신 그 섹션을 쓴다(FRT-90 3차).
+    // evidence 는 수상경력(FRT-211)이 처음 소유한다 — core '증빙 자료' 파일 블록 옆에 유형 고유의
+    // 증빙 입력('관련 링크')을 더해야 하는 첫 사례다. core 증빙이 evidence 버킷에 먼저 들어가므로
+    // (form-cards.ts) 카드 순서는 [증빙 자료, 관련 링크] 로 확정본 ③ 순서와 맞는다.
     for (const t of SYSTEM_TEMPLATES_V2) {
       const typeSections = t.extensions.filter(s => s.id !== "extended")
       expect(typeSections[0].category, `${t.typeId} info`).toBe("basic")
       for (const s of typeSections.slice(1)) {
-        expect(["repeat", "detail"], `${t.typeId}/${s.id}`).toContain(s.category)
+        expect(["repeat", "detail", "evidence"], `${t.typeId}/${s.id}`).toContain(s.category)
       }
     }
   })
@@ -576,6 +579,139 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
       "준비 기간",
       "성적/등급",
       "유효기간/갱신 필요 여부",
+    ]) {
+      expect(labels, gone).not.toContain(gone)
+    }
+  })
+
+  // ── 수상경력 확정본 (FRT-211) ──────────────────────────────────
+  // Notion 「완성된 입력항목 및 가이드라인 기획 내용」 → 수상경력_final 과 1:1 대조.
+
+  it("수상경력 ① 은 문서 11필드 순서 그대로다", () => {
+    expect(labelsIn(sectionsOf("award")[0].blocks)).toEqual([
+      "대회 / 프로그램명",
+      "대회 유형",
+      "수상 훈격",
+      "주최 기관",
+      "수상일",
+      "참가 규모 / 경쟁률",
+      "개인 / 팀",
+      "팀에서 내가 맡은 역할",
+      "지원 동기",
+      "수상 내용 / 배경",
+      "상금 / 부상",
+    ])
+  })
+
+  it("수상경력 ① 의 필수는 문서가 '선택'을 표기하지 않은 5필드뿐이다", () => {
+    const required = sectionsOf("award")[0]
+      .blocks.filter(b => b.required)
+      .map(b => b.label)
+    expect(required).toEqual(["대회 / 프로그램명", "대회 유형", "수상 훈격", "주최 기관", "수상일"])
+  })
+
+  it("수상경력 '대회 유형' 선택지는 문서 6종 표기를 그대로 쓴다", () => {
+    const block = sectionsOf("award")[0].blocks.find(b => b.label === "대회 유형")!
+    expect(block.options).toEqual([
+      "공모전/경진대회",
+      "학술상/논문상",
+      "장학상",
+      "성적 우수상(학기별 우수 등)",
+      "대외 활동 시상",
+      "기타",
+    ])
+  })
+
+  it("수상경력 '개인 / 팀' 선택지는 문서 3종이다", () => {
+    const block = sectionsOf("award")[0].blocks.find(b => b.label === "개인 / 팀")!
+    expect(block.options).toEqual(["개인 수상", "팀 수상 (2~5명)", "팀 수상 (6명 이상)"])
+  })
+
+  it("'팀에서 내가 맡은 역할'은 '팀 수상'으로 시작할 때만 보이는 조건부 필드다", () => {
+    const role = sectionsOf("award")[0].blocks.find(b => b.label === "팀에서 내가 맡은 역할")!
+    expect(role.visibleWhen?.startsWith).toEqual(["팀 수상"])
+  })
+
+  /**
+   * 안정키는 `withSectionKeys` 가 `${sectionId}.${label}` 로 만든다 — 즉 **라벨을 바꾸면 트리거 키도
+   * 바뀐다**. `visibleWhen.key` 는 문자열 상수라 자동으로 따라가지 않으므로, 갱신을 잊으면 조건이
+   * 영원히 미충족이 되어 필드가 아예 안 보인다(화면에서 조용히 사라진다). 이 테스트가 유일한 방어선.
+   */
+  it("조건부 필드의 트리거 키는 '개인 / 팀'의 실제 안정키와 일치한다", () => {
+    const blocks = sectionsOf("award")[0].blocks
+    const role = blocks.find(b => b.label === "팀에서 내가 맡은 역할")!
+    const trigger = blocks.find(b => b.label === "개인 / 팀")!
+    expect(role.visibleWhen?.key).toBe(trigger.key)
+  })
+
+  it("수상경력 ② 는 문서 2필드이고 둘 다 여러 줄 입력이다", () => {
+    const detail = detailOf("award")!
+    expect(labelsIn(detail.blocks)).toEqual(["준비 과정", "기억에 남는 순간 / 배운 점"])
+    expect(detail.blocks.every(b => b.type === "textarea")).toBe(true)
+  })
+
+  it("수상경력에는 반복 기록 섹션이 없다", () => {
+    expect(repeatOf("award")).toBeUndefined()
+  })
+
+  /**
+   * ③ 은 '관련 링크'만 블록이다 — 파일·파일 설명·증빙 유형은 core '증빙 자료' FileBlock 하나가
+   * 함께 담는다. 블록으로 쪼개면 입력칸이 두 벌 생긴다(FRT-179 최대 교훈).
+   */
+  it("수상경력 ③ 은 관련 링크 한 필드뿐 — 파일·설명·증빙 유형은 core 증빙 자료가 담는다", () => {
+    const evidence = sectionsOf("award").find(s => s.category === "evidence")!
+    expect(labelsIn(evidence.blocks)).toEqual(["관련 링크"])
+
+    const core = getTemplateForType("award").commonCore.blocks
+    const file = core.find(b => b.label === "증빙 자료")!
+    expect(file.type).toBe("file")
+    expect(file.options).toEqual([
+      "상장 원본/사본",
+      "트로피·상패 사진",
+      "관련 기사",
+      "공식 발표 페이지 캡처",
+      "기타",
+    ])
+  })
+
+  it("수상경력은 core 기간·내 역할/기여도·핵심 성과를 노출하지 않는다", () => {
+    const core = getTemplateForType("award").commonCore.blocks.map(b => b.label)
+    expect(core).not.toContain("기간")
+    expect(core).not.toContain("내 역할/기여도")
+    expect(core).not.toContain("핵심 성과")
+    expect(core).toContain("경험명")
+    expect(core).toContain("증빙 자료")
+  })
+
+  it("수상경력은 유형 전용 detail 섹션을 소유한다 (extended 는 공개 설정만)", () => {
+    expect(detailOf("award")).toBeDefined()
+    const ext = getTemplateForType("award").extensions.find(s => s.id === "extended")!
+    expect(ext.blocks.map(b => b.label)).toEqual(["공개 설정"])
+  })
+
+  it("수상경력 모든 입력 필드에 가이드라인이 붙어 있다", () => {
+    for (const s of sectionsOf("award")) {
+      for (const b of s.blocks) {
+        expect(b.guide, `${s.id}/${b.label}`).toBeTruthy()
+      }
+    }
+  })
+
+  it("확정본에 없는 구 필드는 템플릿에서 사라진다 (값은 매퍼가 orphan 으로 보존)", () => {
+    const labels = sectionsOf("award").flatMap(s => labelsIn(s.blocks))
+    for (const gone of [
+      "수상명",
+      "주최/기관",
+      "대회/프로그램명",
+      "수상 구분",
+      "참가 형태",
+      "팀명/팀원",
+      "평가 기준/요구사항",
+      "내 역할/기여",
+      "제출물/발표 자료",
+      "수상 증빙",
+      "핵심 성과",
+      "이 수상이 의미하는 역량",
     ]) {
       expect(labels, gone).not.toContain(gone)
     }
