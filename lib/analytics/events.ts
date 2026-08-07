@@ -15,17 +15,16 @@ export type RecordStatus = "complete" | "draft";
 // 꺼내가는 행동"은 같아서 같은 이벤트에 싣고 여기서만 가른다 — 안 실으면 그 행동은
 // 영영 데이터에 남지 않는다(다운스트림에서 접는 건 언제든 가능).
 export type ResumeExportFormat = "pdf" | "docx" | "print";
-// FRT-114: 편집 저장이 실제로 어디까지 갔는가. 서버 저장(FRT-111)이 아직 계약 진행 중이라
-// 사용자에게는 "저장/임시 저장했어요"가 뜨는데 서버엔 아무것도 안 남는 경로가 실재한다.
-// 이걸 뭉치면 관리자가 보는 "저장 건수"가 거짓이 된다.
+// FRT-114: 편집 저장이 실제로 어디까지 갔는가. 서버에 남았는지(server) 못 남았는지(failed)를
+// 뭉치면 관리자가 보는 "저장 건수"가 거짓이 된다. 못 남은 경우에도 편집은 임시 저장으로
+// 붙들리므로, 유실 직전인지 아닌지는 같은 이벤트의 `draft_saved` 가 가른다.
 // exit_draft — 저장 버튼을 누르지 않고 화면을 떠나 페이지가 대신 임시 저장한 경우.
 // 사용자 의사로는 '저장'이 아니지만 편집이 어디까지 갔느냐는 같은 질문이라 같은 이벤트에
 // 싣고 outcome 으로만 가른다. 빼면 안전하게 보관된 편집이 유실된 편집과 구별되지 않는다.
-export type ResumeSaveOutcome =
-  | "server"
-  | "unsupported"
-  | "failed"
-  | "exit_draft";
+//
+// `unsupported` 는 FRT-111 에서 제거했다 — 서버에 PATCH·DELETE 가 배포되면서 "기능이 아직
+// 없어서 못 저장했다"는 상태 자체가 사라졌다. 롤백으로 405/501 이 오더라도 그건 failed 다.
+export type ResumeSaveOutcome = "server" | "failed" | "exit_draft";
 // FRT-113: 증빙 첨부 수단. 파일 업로드와 링크(URL) 두 갈래뿐이다.
 export type AttachmentType = "file" | "url";
 

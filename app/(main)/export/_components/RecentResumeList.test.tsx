@@ -18,7 +18,6 @@ const mockDeleteResume = vi.fn();
 vi.mock("@/lib/api/export-api", () => ({
   getResumeList: () => mockGetResumeList(),
   deleteResume: (id: string) => mockDeleteResume(id),
-  ResumeMutationUnsupportedError: class ResumeMutationUnsupportedError extends Error {},
 }));
 
 // vi.mock 은 파일 최상단으로 끌어올려지므로 factory 밖 변수를 참조할 수 없다 —
@@ -29,6 +28,7 @@ vi.mock("@/components/ui/toast", () => ({
 vi.mock("@/lib/utils/use-base-path", () => ({ useBasePath: () => "" }));
 
 import { toast } from "@/components/ui/toast";
+import { ApiError } from "@/lib/api/client";
 import { RecentResumeList } from "./RecentResumeList";
 
 function item(overrides: Partial<ResumeListItem> = {}): ResumeListItem {
@@ -116,6 +116,27 @@ describe("RecentResumeList — 삭제 확인", () => {
     // 실패했으니 행은 남아 있어야 한다.
     expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
   });
+
+  // 서버에 DELETE 가 실재하므로(FRT-111) 405/501 은 배포 상태에서 나올 수 없다. 그런데도
+  // 한 번의 실패를 "이 기능은 없다"로 단정해 **버튼을 숨기면** 사용자는 다시 시도할
+  // 방법조차 잃는다 — 되돌릴 길이 없는 UI 는 실패보다 나쁘다.
+  it.each([405, 501, 500])(
+    "삭제가 %i 로 실패해도 버튼은 그대로 남아 다시 시도할 수 있다",
+    async (status) => {
+      const user = userEvent.setup();
+      mockDeleteResume.mockRejectedValue(new ApiError(status, "unsupported"));
+      await renderList();
+
+      await user.click(screen.getByLabelText("레쥬메 삭제"));
+      await user.click(screen.getByRole("button", { name: "삭제하기" }));
+
+      await waitFor(() =>
+        expect(vi.mocked(toast.error)).toHaveBeenCalledWith("삭제에 실패했어요"),
+      );
+      // 버튼이 사라지면 사용자는 재시도 자체를 못 한다.
+      expect(screen.getByLabelText("레쥬메 삭제")).toBeTruthy();
+    },
+  );
 });
 
 describe("RecentResumeList — 만든 시각", () => {
