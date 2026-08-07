@@ -482,6 +482,35 @@ describe("getResumeList — title/language/status 파싱 (FRT-123 계약 §2.4)"
   });
 });
 
+// ─── 저장 요청 본문 계약 ─────────────────────────────────────────────
+//
+// 서버(BAC-56)의 `ResumePatchRequest` 는 `{title?, result?}` 이고 pydantic 기본이
+// extra="ignore" 다. 맨 ResumeVersion 을 보내면 **거절당하지 않는다** — 두 필드 모두
+// 미지정으로 처리돼 아무것도 안 바뀐 채 200 과 **옛 본문**이 돌아오고, 언랩이 멀쩡히
+// 성공해 호출부는 옛 본문을 확정하고 draft 까지 지운 뒤 "저장됐어요"를 띄운다.
+// 실패가 아니라 **성공으로 위장된 유실**이라 상태코드 그물에는 안 걸린다 — 본문 모양을 박는다.
+describe("updateResume 요청 본문", () => {
+  const mockPatch = vi.mocked(api.patch);
+
+  it("본문을 result 로 감싸 보낸다", async () => {
+    mockPatch.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-b1", result: { meta: { language: "ko" } } },
+    });
+
+    const body = {
+      meta: { language: "ko" },
+      자기소개_요약: "고친 내용",
+    } as unknown as Parameters<typeof updateResume>[1];
+    await updateResume("res-b1", body);
+
+    expect(mockPatch).toHaveBeenCalledWith("/export/resume/res-b1", {
+      result: body,
+    });
+  });
+});
+
 // ─── 저장·삭제 실패 매핑 ─────────────────────────────────────────────
 //
 // 폴백은 "서버에 저장 경로가 없다"(405/501)일 때만이다. 저장·삭제 어느 쪽도 422 를

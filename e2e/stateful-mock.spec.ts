@@ -230,13 +230,24 @@ test.describe("FRT-42 Stateful E2E mock", () => {
     );
     expect(version.version_id).toBe(newId);
 
-    // update(PATCH): res.data 가 갱신된 ResumeVersion — export-api.updateResume.
+    // update(PATCH): 본문은 `{result}` 로 감싼다(BAC-56) — res.data 가 갱신된 ResumeVersion.
     const updatedVersion: ResumeVersion = { ...version, 자기소개_요약: "갱신된 요약" };
-    const patched = await apiFetch(page, "PATCH", `/export/resume/${newId}`, updatedVersion);
+    const patched = await apiFetch(page, "PATCH", `/export/resume/${newId}`, {
+      result: updatedVersion,
+    });
     expect(patched.ok).toBe(true);
     expect(data<ResumeVersion>(patched).자기소개_요약).toBe("갱신된 요약");
     const detail = data<ResumeVersion>(await apiFetch(page, "GET", `/export/resume/${newId}`));
     expect(detail.자기소개_요약).toBe("갱신된 요약");
+
+    // `result` 없이 보내면 서버는 거절하지 않고 **아무것도 안 바꾼 채** 성공을 돌려준다
+    // (pydantic 기본 extra="ignore"). 스텁이 이 관대함을 그대로 흉내 내야, 계약을 어긴
+    // 요청이 e2e 에서 초록으로 통과하는 일이 없다.
+    const ignored = await apiFetch(page, "PATCH", `/export/resume/${newId}`, {
+      자기소개_요약: "래퍼 없이 보낸 요약",
+    });
+    expect(ignored.ok).toBe(true);
+    expect(data<ResumeVersion>(ignored).자기소개_요약).toBe("갱신된 요약");
 
     // delete: 목록에서 사라지고 상세는 404.
     const deleted = await apiFetch(page, "DELETE", "/export/resume/resume-e2e-1");

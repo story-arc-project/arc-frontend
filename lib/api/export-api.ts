@@ -213,9 +213,14 @@ export async function updateResume(
   if (isDemoMode()) return demo.updateResume(versionId, data);
   let res: ApiSuccessResponse<unknown>;
   try {
+    // ⚠️ 본문은 **`result` 로 감싸서** 보낸다(BAC-56 `ResumePatchRequest{title?, result?}`).
+    // 맨 ResumeVersion 을 보내면 두 필드 모두 미지정이 되는데, pydantic 기본이 extra="ignore"
+    // 라 서버는 거절하지 않는다 — 아무것도 안 바꾼 채 200 과 **옛 본문**을 돌려준다.
+    // 그러면 아래 언랩이 멀쩡히 성공해 호출부가 옛 본문을 initial 로 확정하고 draft 까지
+    // 지운 뒤 "저장됐어요"를 띄운다. 조용한 편집 유실이 성공으로 위장되는 경로다.
     res = await api.patch<ApiSuccessResponse<unknown>>(
       `/export/resume/${versionId}`,
-      data,
+      { result: data },
     );
   } catch (err) {
     // 422 는 여기서 삼키지 않는다. BAC-56(`result` 를 받는 PATCH)이 배포된 뒤로 422 는

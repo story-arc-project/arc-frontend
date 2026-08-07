@@ -70,6 +70,8 @@ vi.mock("@/lib/export/resume-docx", () => ({
   renderResumeDocx: (...args: unknown[]) => mockRenderDocx(...args),
 }));
 
+import { toast } from "@/components/ui/toast";
+import { ApiError } from "@/lib/api/client";
 import { ResumeMutationUnsupportedError } from "@/lib/api/export-api";
 import ResumeDetailPage from "./page";
 
@@ -299,6 +301,41 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       expect(mockCapture).toHaveBeenCalledWith(
         "resume_edit_saved",
         expect.objectContaining({ outcome: "failed" }),
+      ),
+    );
+  });
+
+  // 4xx 는 다시 시도해도 같은 결과다. BAC-56 이 PATCH 를 배포한 뒤로 422 는 "저장 경로가
+  // 없다"가 아니라 **입력이 규칙을 어겼다**는 뜻인데, "잠시 후 다시 시도해주세요"로 뭉개면
+  // 사용자는 자기가 고칠 수 있는 것을 못 고친 채 재시도만 반복한다.
+  it("4xx 는 서버가 준 사유를 그대로 안내한다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockRejectedValue(
+      new ApiError(422, "제목은 100자를 넘을 수 없어요."),
+    );
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("제목은 100자를 넘을 수 없어요."),
+    );
+  });
+
+  // 반대쪽도 지켜야 한다 — 5xx·네트워크 장애는 실제로 잠시 후면 된다. 사유("오류가
+  // 발생했어요")를 앞세우면 사용자는 재시도라는 **유효한 다음 행동**을 잃는다.
+  it("5xx 는 재시도 안내를 유지한다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockRejectedValue(new ApiError(503, "오류가 발생했어요."));
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "저장에 실패했어요. 잠시 후 다시 시도해주세요.",
       ),
     );
   });
