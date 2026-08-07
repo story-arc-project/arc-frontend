@@ -1338,6 +1338,33 @@ describe("선택 필드 숨김 키 (FRT-190)", () => {
       HIDDEN_KEY,
     ])
   })
+
+  /**
+   * 개명은 값만 옮기는 것이 아니다. 숨김 상태를 구 키에 두고 오면 사용자가 감춰 둔 칸이 템플릿
+   * 개편 후 혼자 다시 나타나고, `normalizeHiddenKeys` 는 모르는 키를 버리지 않아 옛 키가 저장분에
+   * 영원히 남는다(FRT-210, Codex P2).
+   */
+  it("개명된 안정키는 숨김 목록에서도 새 키로 따라간다", () => {
+    const exp = toExperienceV2(
+      makeExperience({
+        type: "language",
+        content: v2Content({ hidden: ["lang-info.점수/등급"] }),
+      }),
+    )
+    expect(exp.hiddenKeys).toEqual(["lang-certificate.점수 / 등급"])
+  })
+
+  it("구 키와 새 키가 함께 숨겨져 있어도 중복으로 쌓이지 않는다", () => {
+    const exp = toExperienceV2(
+      makeExperience({
+        type: "language",
+        content: v2Content({
+          hidden: ["lang-certificate.점수 / 등급", "lang-info.점수/등급"],
+        }),
+      }),
+    )
+    expect(exp.hiddenKeys).toEqual(["lang-certificate.점수 / 등급"])
+  })
 })
 
 /**
@@ -1444,5 +1471,66 @@ describe("확정본 전면 교체 값 보존 (FRT-210 어학능력)", () => {
     ).toEqual(text("TOEIC"))
     expect(second.customBlocks.find(b => b.key === "lang-info.언어")?.value).toEqual(text("영어"))
     expect(second.customBlocks.find(b => b.key === OLD_TABLE_KEY)?.type).toBe("repeatable-cell")
+  })
+
+  /**
+   * ⚠️ **섹션 id 교체는 v1 레거시를 지켜주지 못한다.** v1 은 `fields` 맵이 없어 저장 블록의
+   * **라벨**로 안정키를 붙이므로(labelKeyMap), 섹션 id 가 무엇이든 라벨이 그대로면 새 키가 붙는다.
+   * '언어'(text→single-select)·'유효기간'(text→date)이 정확히 그 경우다.
+   *
+   * 그러면 폼은 mergeSavedIntoTemplate 로 저장 블록(text)을 살려 화면엔 값이 보이지만, 저장하는
+   * 순간 select 키 자리에 text 값이 들어가고 → 다음 로드에서 injectValue 가 거부 + consumedKeys 가
+   * orphan 을 막아 값이 사라진다. 한 번 더 저장하면 영구 삭제다(Codex P1).
+   */
+  describe("v1 레거시는 라벨로 매칭한다 (섹션 id 교체가 닿지 않는 경로)", () => {
+    function legacyV1Content(): Record<string, unknown> {
+      return {
+        title: "영어",
+        summary: "",
+        status: "complete",
+        tags: [],
+        coreBlocks: [],
+        extensionBlocks: [
+          // 라벨은 그대로인데 확정본에서 타입이 바뀐 둘.
+          { id: "b1", type: "text", label: "언어", value: text("영어") },
+          { id: "b2", type: "text", label: "유효기간", value: text("2026-03-10") },
+          // 라벨이 개명됐고 타입은 그대로 — 이관 대상(renamedLabelKeyMap).
+          { id: "b3", type: "text", label: "시험/인증명", value: text("TOEIC") },
+        ],
+        customBlocks: [],
+      }
+    }
+
+    const loadV1 = () =>
+      toExperienceV2(makeExperience({ type: "language", content: legacyV1Content() }))
+
+    it("타입이 바뀐 라벨에는 새 안정키를 붙이지 않고 '기타' 로 보낸다", () => {
+      const v1 = loadV1()
+
+      expect(v1.extensionBlocks.find(b => b.key === "lang-overview.언어")).toBeUndefined()
+      expect(v1.extensionBlocks.find(b => b.key === "lang-certificate.유효기간")).toBeUndefined()
+      expect(v1.customBlocks.find(b => b.label === "언어")?.value).toEqual(text("영어"))
+      expect(v1.customBlocks.find(b => b.label === "유효기간")?.value).toEqual(text("2026-03-10"))
+    })
+
+    it("타입이 호환되는 라벨은 그대로 이관된다 (과잉 차단이 아니다)", () => {
+      const v1 = loadV1()
+
+      expect(v1.extensionBlocks.find(b => b.key === "lang-certificate.시험 / 자격증명")?.value).toEqual(
+        text("TOEIC"),
+      )
+    })
+
+    it("v1 → 저장 → 재로드 왕복에서 값이 사라지지 않는다", () => {
+      const payload = toSavePayload(loadV1())
+      const second = toExperienceV2(makeExperience({ type: "language", content: payload.content }))
+
+      const survived = (label: string) =>
+        [...second.extensionBlocks, ...second.customBlocks].find(
+          b => b.label === label && b.value.type === "text",
+        )?.value
+      expect(survived("언어")).toEqual(text("영어"))
+      expect(survived("유효기간")).toEqual(text("2026-03-10"))
+    })
   })
 })
