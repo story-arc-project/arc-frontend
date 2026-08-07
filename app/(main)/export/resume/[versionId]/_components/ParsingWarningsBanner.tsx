@@ -4,11 +4,16 @@ import Link from "next/link";
 import { useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 
+import { useBasePath } from "@/lib/utils/use-base-path";
+
 interface Props {
   warnings: string[];
 }
 
 export function ParsingWarningsBanner({ warnings }: Props) {
+  // 이 배너를 그리는 페이지는 데모 라우트가 그대로 재노출한다 — basePath 없이 링크하면
+  // 데모 사용자가 실제 서비스로 튕겨 로그인 벽에 막힌다.
+  const basePath = useBasePath();
   const [dismissed, setDismissed] = useState(false);
 
   if (dismissed || warnings.length === 0) return null;
@@ -31,7 +36,7 @@ export function ParsingWarningsBanner({ warnings }: Props) {
             ))}
           </ul>
           <Link
-            href="/archive"
+            href={`${basePath}/archive`}
             className="mt-3 inline-flex items-center gap-1 rounded-md bg-brand px-3 py-1.5 text-caption font-medium text-text-on-brand hover:bg-brand-dark transition-colors"
           >
             경험 보완하러 가기 →
