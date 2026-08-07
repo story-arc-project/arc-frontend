@@ -205,11 +205,11 @@ test.describe("FRT-148 저장 실패와 복원 배너", () => {
     );
   }
 
-  test("501 폴백이 임시 저장을 갱신하면 낡은 복원 배너가 사라진다", async ({
+  test("서버가 저장을 거절해도(501) 임시 저장이 갱신되며 낡은 복원 배너가 사라진다", async ({
     page,
   }) => {
     await stubApi(page, { authed: true, scenario: "data" });
-    // 서버에 저장 경로 자체가 없는 상태를 재현한다.
+    // 구 백엔드로 롤백된 상태를 재현한다 — 배포된 서버에는 PATCH 가 실재한다(FRT-111).
     await failPatchWith(page, 501, "Not Implemented");
     await seedStaleDraft(page);
 
@@ -218,9 +218,31 @@ test.describe("FRT-148 저장 실패와 복원 배너", () => {
 
     await editAndSave(page);
 
+    // 더는 "곧 제공될 예정"으로 안내하지 않는다 — 기능은 있고, 이건 그냥 저장 실패다.
     await expect(
       page.getByText("편집 저장 기능은 곧 제공될 예정이에요", { exact: false }),
+    ).toHaveCount(0);
+    await expect(page.getByText("저장에 실패했어요", { exact: false })).toBeVisible();
+    // 안내가 무엇이든 편집은 붙들어야 한다 — 여기가 이 테스트의 본론이다.
+    await expectEditKept(page);
+  });
+
+  // 생성이 아직 안 끝난 레쥬메를 저장하면 서버가 400 과 **영문** 메시지를 준다.
+  // 사유를 그대로 보여주는 관용구가 여기서는 읽히지 않는 문장을 띄운다.
+  test("400 은 서버 영문 메시지 대신 생성 중이라는 한글 안내를 보여준다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    await failPatchWith(page, 400, "Resume is not completed yet.");
+    await seedStaleDraft(page);
+
+    await page.goto("/export/resume/resume-e2e-1");
+    await editAndSave(page);
+
+    await expect(
+      page.getByText("아직 레쥬메를 만드는 중이에요", { exact: false }),
     ).toBeVisible();
+    await expect(page.getByText("Resume is not completed yet.")).toHaveCount(0);
     await expectEditKept(page);
   });
 

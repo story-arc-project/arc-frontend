@@ -6,11 +6,7 @@ import { FileText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
-import {
-  deleteResume,
-  getResumeList,
-  ResumeMutationUnsupportedError,
-} from "@/lib/api/export-api";
+import { deleteResume, getResumeList } from "@/lib/api/export-api";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { formatDateTime, formatRelativeTime } from "@/lib/utils/date-utils";
 import type { ResumeListItem } from "@/types/resume";
@@ -36,7 +32,6 @@ export function RecentResumeList({
   const basePath = useBasePath();
   const [items, setItems] = useState<ResumeListItem[] | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const [deleteSupported, setDeleteSupported] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
@@ -62,10 +57,7 @@ export function RecentResumeList({
       setItems((prev) => (prev ?? []).filter((r) => r.version_id !== versionId));
       toast.success("레쥬메를 삭제했어요");
     } catch (err) {
-      if (err instanceof ResumeMutationUnsupportedError) {
-        setDeleteSupported(false);
-        toast("삭제 기능은 곧 제공될 예정이에요", "info");
-      } else if (err instanceof ApiError && err.status === 404) {
+      if (err instanceof ApiError && err.status === 404) {
         setItems((prev) => (prev ?? []).filter((r) => r.version_id !== versionId));
       } else {
         toast.error("삭제에 실패했어요");
@@ -185,17 +177,15 @@ export function RecentResumeList({
                 {rowContent}
               </div>
             )}
-            {deleteSupported && (
-              <button
-                type="button"
-                onClick={() => setPendingDeleteId(item.version_id)}
-                disabled={deletingId === item.version_id}
-                className="text-text-tertiary hover:text-error transition-colors p-1.5 rounded-md disabled:opacity-40"
-                aria-label="레쥬메 삭제"
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setPendingDeleteId(item.version_id)}
+              disabled={deletingId === item.version_id}
+              className="text-text-tertiary hover:text-error transition-colors p-1.5 rounded-md disabled:opacity-40"
+              aria-label="레쥬메 삭제"
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         </li>
         );

@@ -1,4 +1,4 @@
-import { api, ApiError } from "./client";
+import { api } from "./client";
 import type { ApiSuccessResponse } from "@/types/api";
 import type { AnalysisStatus } from "@/types/analysis";
 import type {
@@ -189,73 +189,37 @@ function toListItem(raw: unknown): ResumeListItem | null {
   };
 }
 
-// Server-side PATCH / DELETE are pending. Callers can catch this error and
-// fall back to localStorage draft flow.
-export class ResumeMutationUnsupportedError extends Error {
-  constructor(readonly status: number) {
-    super("resume mutation not supported yet");
-    this.name = "ResumeMutationUnsupportedError";
-  }
-}
-
-function hasStatus(err: unknown, codes: readonly number[]): err is ApiError {
-  return err instanceof ApiError && codes.includes(err.status);
-}
-
-function isUnsupportedStatus(err: unknown): err is ApiError {
-  return hasStatus(err, [501, 405]);
-}
-
 export async function updateResume(
   versionId: string,
   data: ResumeVersion,
 ): Promise<ResumeVersion> {
   if (isDemoMode()) return demo.updateResume(versionId, data);
-  let res: ApiSuccessResponse<unknown>;
-  try {
-    // ⚠️ 본문은 **`result` 로 감싸서** 보낸다(BAC-56 `ResumePatchRequest{title?, result?}`).
-    // 맨 ResumeVersion 을 보내면 두 필드 모두 미지정이 되는데, pydantic 기본이 extra="ignore"
-    // 라 서버는 거절하지 않는다 — 아무것도 안 바꾼 채 200 과 **옛 본문**을 돌려준다.
-    // 그러면 아래 언랩이 멀쩡히 성공해 호출부가 옛 본문을 initial 로 확정하고 draft 까지
-    // 지운 뒤 "저장됐어요"를 띄운다. 조용한 편집 유실이 성공으로 위장되는 경로다.
-    res = await api.patch<ApiSuccessResponse<unknown>>(
-      `/export/resume/${versionId}`,
-      { result: data },
-    );
-  } catch (err) {
-    // 422 는 여기서 삼키지 않는다. BAC-56(`result` 를 받는 PATCH)이 배포된 뒤로 422 는
-    // "서버에 저장 경로가 없다"가 아니라 **제목 100자 초과 같은 진짜 검증 실패**를 뜻한다.
-    // 그것까지 "곧 제공될 예정이에요" 안내로 뭉개면 사용자는 무엇이 잘못됐는지 영영 모른 채
-    // 로컬 draft 만 쌓는다 — 저장이 안 되는 이유를 화면이 말할 수 있어야 고칠 수 있다.
-    if (isUnsupportedStatus(err)) {
-      throw new ResumeMutationUnsupportedError(err.status);
-    }
-    throw err;
-  }
+  // ⚠️ 본문은 **`result` 로 감싸서** 보낸다(BAC-56 `ResumePatchRequest{title?, result?}`).
+  // 맨 ResumeVersion 을 보내면 두 필드 모두 미지정이 되는데, pydantic 기본이 extra="ignore"
+  // 라 서버는 거절하지 않는다 — 아무것도 안 바꾼 채 200 과 **옛 본문**을 돌려준다.
+  // 그러면 아래 언랩이 멀쩡히 성공해 호출부가 옛 본문을 initial 로 확정하고 draft 까지
+  // 지운 뒤 "저장됐어요"를 띄운다. 조용한 편집 유실이 성공으로 위장되는 경로다.
+  //
+  // 실패는 **어느 것도 삼키지 않는다.** 서버에 PATCH 가 실재하므로(FRT-111) 상태코드는
+  // 모두 진짜 사유다 — 422 는 검증 실패, 400 은 생성 미완료. 골라 삼킬수록 화면이
+  // "왜 안 되는지"를 말하지 못하고 사용자는 고칠 수 있는 것을 못 고친 채 재시도만 한다.
+  const res = await api.patch<ApiSuccessResponse<unknown>>(
+    `/export/resume/${versionId}`,
+    { result: data },
+  );
 
-  // PATCH 도 GET 과 같은 래퍼({id, title, language, status, …, result})를 돌려준다.
+  // PATCH 도 GET 과 같은 래퍼({id, title, language, status, …, result})를 돌려준다
+  // (`patch_resume` 이 `get_resume` 과 같은 `ResumeResponse` 를 반환한다).
   // 그대로 반환하면 호출부가 본문 대신 래퍼를 상태에 넣어 resume.meta.language 에서
   // 크래시한다. GET 과 같은 경계 처리를 태워 본문만, 정규화된 채로 돌려준다.
-  try {
-    return normalizeResumeVersion(unwrapResumeVersion(res.data));
-  } catch {
-    // 2xx 인데 본문(result·meta)이 없다 = 현행 서버의 `UUIDDataWithTitle{id, title}`.
-    // 요청은 받아줬지만 **레쥬메 본문은 저장되지 않았다**(title 만 반영). 422 와 결과가
-    // 같으므로 판정도 같아야 한다 — 이 언랩 실패를 일반 에러로 흘리면 폴백을 못 타서
-    // 임시 저장이 남지 않고, 이 PR 이 막으려던 손실이 상태코드만 바꿔 재현된다.
-    // BAC-56 계약 §4(응답을 GET 과 같은 ResumeData 로 통일)가 이행되면 여기 안 온다.
-    throw new ResumeMutationUnsupportedError(200);
-  }
+  //
+  // 언랩이 실패하면 그대로 던진다 — 여기서 요청 본문을 되돌려주며 성공인 척하면
+  // "저장됐어요"가 뜨고 임시 저장까지 지워진 채 서버엔 아무것도 안 남는다.
+  // 실패로 흘려보내야 호출부가 편집을 임시 저장으로 붙든다.
+  return normalizeResumeVersion(unwrapResumeVersion(res.data));
 }
 
 export async function deleteResume(versionId: string): Promise<void> {
   if (isDemoMode()) return demo.deleteResume(versionId);
-  try {
-    await api.delete<void>(`/export/resume/${versionId}`);
-  } catch (err) {
-    if (isUnsupportedStatus(err)) {
-      throw new ResumeMutationUnsupportedError(err.status);
-    }
-    throw err;
-  }
+  await api.delete<void>(`/export/resume/${versionId}`);
 }

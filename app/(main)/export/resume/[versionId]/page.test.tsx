@@ -45,8 +45,6 @@ vi.mock("@/components/ui/toast", () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 
-// ResumeMutationUnsupportedError 는 **실물**이어야 한다 — 페이지가 instanceof 로 갈래를
-// 가르므로 가짜 클래스를 끼우면 저장 실패가 전부 "그 외 오류"로 흘러 테스트가 거짓이 된다.
 vi.mock("@/lib/api/export-api", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/lib/api/export-api")>();
@@ -72,7 +70,6 @@ vi.mock("@/lib/export/resume-docx", () => ({
 
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
-import { ResumeMutationUnsupportedError } from "@/lib/api/export-api";
 import ResumeDetailPage from "./page";
 
 function resumeFixture(overrides: Partial<ResumeVersion> = {}): ResumeVersion {
@@ -268,26 +265,29 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     );
   });
 
-  // 이 갈래가 지금 실제로 도는 경로다(FRT-111 계약 진행 중). 사용자에게는
-  // "곧 제공될 예정이에요"가 뜨고 서버엔 아무것도 안 남는다 — outcome 없이 뭉치면
-  // 관리자가 보는 '저장 건수'가 통째로 거짓이 된다.
-  it("백엔드가 아직 저장을 못 받으면 outcome='unsupported'", async () => {
-    const user = userEvent.setup();
-    mockUpdateResume.mockRejectedValue(new ResumeMutationUnsupportedError(501));
-    await renderLoaded();
+  // 서버에 PATCH 가 실재하므로(FRT-111) 405/501 은 배포 상태에서 나올 수 없다. 그래도
+  // 온다면(구 백엔드 롤백) 그건 **저장 실패**일 뿐 별도 갈래가 아니다 — 편집은 임시
+  // 저장으로 붙들고, 지표에는 서버에 안 남았다는 사실이 failed 로 정직하게 남는다.
+  it.each([405, 501])(
+    "%i 도 outcome='failed' 로 남고 편집은 임시 저장된다",
+    async (status) => {
+      const user = userEvent.setup();
+      mockUpdateResume.mockRejectedValue(new ApiError(status, "unsupported"));
+      await renderLoaded();
 
-    await user.type(screen.getByLabelText("이름"), "!");
-    await user.click(screen.getByRole("button", { name: "저장" }));
+      await user.type(screen.getByLabelText("이름"), "!");
+      await user.click(screen.getByRole("button", { name: "저장" }));
 
-    await waitFor(() =>
-      expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
-        outcome: "unsupported",
-        persisted: true,
-        sections: ["personal_info"],
-        section_count: 1,
-      }),
-    );
-  });
+      await waitFor(() =>
+        expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
+          outcome: "failed",
+          persisted: true,
+          sections: ["personal_info"],
+          section_count: 1,
+        }),
+      );
+    },
+  );
 
   it("그 외 오류는 outcome='failed'", async () => {
     const user = userEvent.setup();
@@ -323,6 +323,29 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     );
   });
 
+  // 400 은 예외다 — 서버가 이 코드를 내는 분기는 "아직 생성이 안 끝난 레쥬메"
+  // 하나뿐인데(`patch_resume`), 그 메시지가 영문("Resume is not completed yet.")이라
+  // 그대로 띄우면 사용자가 읽지 못한다. 사유를 보여주는 규칙보다 **읽히는 것**이 먼저다.
+  it("400 은 서버 영문 메시지 대신 생성 중이라는 한글 안내를 보여준다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockRejectedValue(
+      new ApiError(400, "Resume is not completed yet."),
+    );
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "아직 레쥬메를 만드는 중이에요. 완성되면 저장할 수 있어요.",
+      ),
+    );
+    expect(toast.error).not.toHaveBeenCalledWith(
+      "Resume is not completed yet.",
+    );
+  });
+
   // 반대쪽도 지켜야 한다 — 5xx·네트워크 장애는 실제로 잠시 후면 된다. 사유("오류가
   // 발생했어요")를 앞세우면 사용자는 재시도라는 **유효한 다음 행동**을 잃는다.
   it("5xx 는 재시도 안내를 유지한다", async () => {
@@ -343,7 +366,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
   // 서버도 로컬도 못 남긴 = **편집 유실**. outcome 만으로는 이 최악의 경우가 안 보인다.
   it("임시저장까지 실패하면 draft_saved=false 로 유실을 드러낸다", async () => {
     const user = userEvent.setup();
-    mockUpdateResume.mockRejectedValue(new ResumeMutationUnsupportedError(501));
+    mockUpdateResume.mockRejectedValue(new ApiError(500, "server error"));
     const setItem = vi
       .spyOn(Storage.prototype, "setItem")
       .mockImplementation(() => {
@@ -359,11 +382,39 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
         expect(mockCapture).toHaveBeenCalledWith(
           "resume_edit_saved",
           expect.objectContaining({
-            outcome: "unsupported",
+            outcome: "failed",
             persisted: false,
           }),
         ),
       );
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  // 임시 저장까지 실패하면 편집 유실 직전이다. 그렇다고 사유를 빼면 안 된다 —
+  // 제목 길이 초과라면 **고쳐서 바로 저장하는 것**이 이 위기의 탈출구이기 때문이다.
+  // 둘 중 하나만 말하면 사용자는 나갈 길을 모르거나, 나갈 길이 급한 줄을 모른다.
+  it("임시 저장까지 실패해도 서버가 준 사유는 사라지지 않는다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockRejectedValue(
+      new ApiError(422, "제목은 100자를 넘을 수 없어요."),
+    );
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("quota");
+      });
+    try {
+      await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      await user.click(screen.getByRole("button", { name: "저장" }));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+      const message = vi.mocked(toast.error).mock.calls.at(-1)?.[0] as string;
+      expect(message).toContain("제목은 100자를 넘을 수 없어요.");
+      expect(message).toContain("페이지를 닫지 마세요");
     } finally {
       setItem.mockRestore();
     }
@@ -392,12 +443,12 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     );
 
     await act(async () => {
-      rejectSave(new ResumeMutationUnsupportedError(501));
+      rejectSave(new ApiError(500, "server error"));
     });
 
     await waitFor(() =>
       expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
-        outcome: "unsupported",
+        outcome: "failed",
         persisted: true,
         sections: ["personal_info", "summary"],
         section_count: 2,

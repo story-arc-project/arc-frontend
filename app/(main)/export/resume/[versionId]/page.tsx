@@ -11,7 +11,6 @@ import { ApiError } from "@/lib/api/client";
 import {
   createResume,
   getResume,
-  ResumeMutationUnsupportedError,
   updateResume,
 } from "@/lib/api/export-api";
 import { capture, type ResumeSaveOutcome } from "@/lib/analytics";
@@ -213,49 +212,44 @@ export default function ResumeDetailPage({ params }: PageProps) {
       toast.success("저장됐어요");
       captureEditSaved("server", true, sections);
     } catch (err) {
-      if (err instanceof ResumeMutationUnsupportedError) {
-        // Persist the freshest state — never overwrite a newer draft with a stale snapshot.
-        const latest = resumeRef.current ?? snapshot;
-        const saved = writeDraft(versionId, latest);
-        if (saved) {
-          setInitial(snapshot);
-          // 방금 쓴 임시 저장이 곧 지금 편집 중인 내용이다. 배너를 그대로 두면 '복원'이
-          // 화면에 없는 낡은 스냅샷(pendingDraft)을 되돌리면서 clearDraft 로 방금 쓴
-          // 최신 임시 저장까지 지운다 — 배너 하나가 편집을 두 번 잃게 만든다.
-          setPendingDraft(null);
-          toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
-        } else {
-          toast.error("임시 저장도 실패했어요. 페이지를 닫지 마세요.");
-        }
-        // 사용자에게는 "저장했어요"로 보이지만 서버엔 아무것도 안 남은 갈래다(FRT-111 대기).
-        // server 와 뭉치면 관리자가 보는 '저장 건수'가 통째로 거짓이 된다.
-        // 섹션은 **실제로 보관된 값(latest)** 기준이다 — 요청이 도는 동안 이어서 고친
-        // 섹션이 draft 에는 들어갔는데 지표에서만 빠지면 보관된 편집을 과소 보고한다.
-        captureEditSaved(
-          "unsupported",
-          saved,
-          changedResumeSections(initial, latest),
-        );
-      } else {
-        // 서버 장애·오프라인도 편집을 잃을 이유는 아니다. 언마운트 핸들러에만 기대면
-        // 탭을 그대로 닫았을 때(cleanup 미실행) 고친 내용이 통째로 사라진다.
-        // dirty 는 그대로 두어 다음 저장/이탈 경로가 계속 살아 있게 한다.
-        const latest = resumeRef.current ?? snapshot;
-        const saved = writeDraft(versionId, latest);
-        if (saved) {
-          setPendingDraft(null);
-        }
-        // 4xx 는 다시 시도해도 같은 결과다 — 제목 길이 초과 같은 검증 실패(422)는 입력을
-        // 고쳐야 통과한다. "잠시 후 다시 시도해주세요"로 뭉개면 사용자는 고칠 수 있는 것을
-        // 못 고친 채 재시도만 반복한다. 서버가 준 사유를 그대로 보여준다(ProfileEditForm
-        // 과 같은 관용구). 5xx·네트워크 장애는 실제로 잠시 후면 되므로 그대로 둔다.
-        const reason =
-          err instanceof ApiError && err.status >= 400 && err.status < 500
+      // 실패는 갈래가 하나다. 서버에 PATCH 가 실재하는 지금(FRT-111) "아직 저장을 못
+      // 받는다"는 상태는 없고, 어떤 실패든 **서버엔 안 남았다**는 같은 사실을 뜻한다.
+      // 서버 장애·오프라인도 편집을 잃을 이유는 아니다. 언마운트 핸들러에만 기대면
+      // 탭을 그대로 닫았을 때(cleanup 미실행) 고친 내용이 통째로 사라진다.
+      // dirty 는 그대로 두어 다음 저장/이탈 경로가 계속 살아 있게 한다.
+      const latest = resumeRef.current ?? snapshot;
+      const saved = writeDraft(versionId, latest);
+      if (saved) {
+        // 방금 쓴 임시 저장이 곧 지금 편집 중인 내용이다. 배너를 그대로 두면 '복원'이
+        // 화면에 없는 낡은 스냅샷(pendingDraft)을 되돌리면서 clearDraft 로 방금 쓴
+        // 최신 임시 저장까지 지운다 — 배너 하나가 편집을 두 번 잃게 만든다.
+        setPendingDraft(null);
+      }
+      // 4xx 는 다시 시도해도 같은 결과다 — 제목 길이 초과 같은 검증 실패(422)는 입력을
+      // 고쳐야 통과한다. "잠시 후 다시 시도해주세요"로 뭉개면 사용자는 고칠 수 있는 것을
+      // 못 고친 채 재시도만 반복한다. 서버가 준 사유를 그대로 보여준다(ProfileEditForm
+      // 과 같은 관용구). 5xx·네트워크 장애는 실제로 잠시 후면 되므로 그대로 둔다.
+      //
+      // 단 400 은 서버 메시지를 그대로 쓰지 않는다. 이 코드를 내는 분기는 "생성이 아직
+      // 안 끝났다" 하나뿐인데(`patch_resume`) 메시지가 영문이라 읽히지 않는다 —
+      // 사유를 보여주는 규칙보다 **읽히는 것**이 먼저다.
+      const reason = !(err instanceof ApiError)
+        ? null
+        : err.status === 400
+          ? "아직 레쥬메를 만드는 중이에요. 완성되면 저장할 수 있어요."
+          : err.status > 400 && err.status < 500
             ? err.message
             : null;
-        toast.error(reason ?? "저장에 실패했어요. 잠시 후 다시 시도해주세요.");
-        captureEditSaved("failed", saved, changedResumeSections(initial, latest));
-      }
+      const detail = reason ?? "저장에 실패했어요. 잠시 후 다시 시도해주세요.";
+      // 서버도 로컬도 못 남긴 = 편집 유실 직전. 그렇다고 사유를 빼면 안 된다 — 사유가
+      // 곧 탈출구다(제목 길이 초과라면 고쳐서 바로 저장하면 위기 자체가 사라진다).
+      // 둘 다 말한다: 무엇이 잘못됐는지, 그리고 지금 닫으면 잃는다는 것.
+      toast.error(
+        saved ? detail : `${detail} 임시 저장도 안 됐으니 페이지를 닫지 마세요.`,
+      );
+      // 섹션은 **실제로 보관된 값(latest)** 기준이다 — 요청이 도는 동안 이어서 고친
+      // 섹션이 draft 에는 들어갔는데 지표에서만 빠지면 보관된 편집을 과소 보고한다.
+      captureEditSaved("failed", saved, changedResumeSections(initial, latest));
     } finally {
       setSaving(false);
     }
