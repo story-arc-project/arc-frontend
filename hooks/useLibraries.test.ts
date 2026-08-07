@@ -68,14 +68,18 @@ function membershipOf(libraries: Library[], id: string): string[] {
 
 /** 아직 응답하지 않은 멤버십 GET 들. 라이브러리 id 로 골라 해소한다. */
 let pendingMembership: Map<string, Deferred<ExperienceListData>>
+/** 같은 라이브러리로 여러 건이 겹칠 때 호출 순서로 골라 해소하기 위한 큐. */
+let membershipQueue: Deferred<ExperienceListData>[]
 
 beforeEach(() => {
   vi.clearAllMocks()
   pendingMembership = new Map()
+  membershipQueue = []
   getLibrariesMock.mockResolvedValue(LIBRARY_DTOS)
   getLibraryExperiencesMock.mockImplementation((id: string) => {
     const pending = deferred<ExperienceListData>()
     pendingMembership.set(id, pending)
+    membershipQueue.push(pending)
     return pending.promise
   })
   addExperienceToLibraryMock.mockResolvedValue(undefined)
@@ -257,6 +261,62 @@ describe("useLibraries — 병렬 멤버십 로딩과 mutation 경합", () => {
 
     expect(rejectedA).toBe(true)
     expect(membershipOf(result.current.libraries, "lib-a")).toContain("exp-3")
+  })
+
+  it("겹친 두 변경이 모두 실패하면, 뒤늦게 성공한 옛 복구가 새 복구의 재시도 안내를 지우지 않는다", async () => {
+    const { result } = await renderWithMembershipInFlight()
+
+    await act(async () => {
+      pendingMembership.get("lib-a")!.resolve(listData(["exp-1"]))
+      pendingMembership.get("lib-b")!.resolve(listData([]))
+      await Promise.resolve()
+    })
+    await settle()
+    pendingMembership.clear()
+    membershipQueue.length = 0
+
+    const postA = deferred<void>()
+    const postB = deferred<void>()
+    addExperienceToLibraryMock.mockImplementationOnce(() => postA.promise)
+    addExperienceToLibraryMock.mockImplementationOnce(() => postB.promise)
+
+    let addA!: Promise<void>
+    let addB!: Promise<void>
+    await act(async () => {
+      addA = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {})
+      addB = result.current.addExperienceToLibrary("lib-a", "exp-3").catch(() => {})
+      await Promise.resolve()
+    })
+
+    // 두 건 모두 실패해 각자의 복구 재조회가 뜬다 — 앞의 것이 queue[0], 뒤의 것이 queue[1].
+    await act(async () => {
+      postA.reject(new Error("서버 오류 A"))
+      await Promise.resolve()
+    })
+    await settle()
+    await act(async () => {
+      postB.reject(new Error("서버 오류 B"))
+      await Promise.resolve()
+    })
+    await settle()
+    expect(membershipQueue).toHaveLength(2)
+
+    // 뒤의 복구가 먼저 실패해 재시도 안내를 띄운다.
+    await act(async () => {
+      membershipQueue[1].reject(new Error("재조회 실패"))
+      await addB
+    })
+    await settle()
+    expect(result.current.membershipErrorIds.has("lib-a")).toBe(true)
+
+    // 앞의 복구가 뒤늦게 성공한다 — 이미 뒤처진 응답이므로 새 재시도 안내를 지우면 안 된다.
+    await act(async () => {
+      membershipQueue[0].resolve(listData(["exp-1"]))
+      await addA
+    })
+    await settle()
+
+    expect(result.current.membershipErrorIds.has("lib-a")).toBe(true)
   })
 
   it("경합이 없으면 두 라이브러리 모두 각자의 목록을 반영한다", async () => {

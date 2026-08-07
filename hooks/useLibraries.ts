@@ -246,14 +246,18 @@ export function useLibraries() {
         // we just fetched cannot contain it — applying it would erase an edit
         // that goes on to succeed. Any change since then means someone else is
         // authoritative, so we stay out of the way.
-        if (mutationVersion === (membershipVersionsRef.current.get(libraryId) ?? 0)) {
-          bumpMembershipVersion(libraryId);
-          setLibraries((prev) =>
-            prev.map((library) =>
-              library.id === libraryId ? { ...library, experienceIds: ids } : library,
-            ),
-          );
+        if (mutationVersion !== (membershipVersionsRef.current.get(libraryId) ?? 0)) {
+          // Superseded. Touch nothing — not even the loaded/error flags: another
+          // recovery may already have failed and raised the retry affordance,
+          // and clearing it here would present unreconciled state as loaded.
+          return true;
         }
+        bumpMembershipVersion(libraryId);
+        setLibraries((prev) =>
+          prev.map((library) =>
+            library.id === libraryId ? { ...library, experienceIds: ids } : library,
+          ),
+        );
         markMembershipLoaded(libraryId);
         return true;
       } catch {
