@@ -74,6 +74,13 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   // 수상경력도 같은 이유로 '수상일' 하나로 시점을 받는다. 역할·성과도 확정본에 없다 —
   // ① '수상 내용 / 배경'·'지원 동기'가 흡수했고, 팀에서의 역할은 조건부 필드가 따로 받는다.
   award: ['기간', '내 역할/기여도', '핵심 성과'],
+  // 어학 확정본에는 전체 기간이 없다 — 언어 능력은 시작·종료가 뚜렷하지 않아 required 로 물으면
+  // 억지 입력이 되고 진행도까지 막힌다. 시점은 ③ 각 경험의 '기간'과 ④ '취득일'이 받는다.
+  // 역할·성과도 확정본에 없다(② 어학 경험과 ③ 경험 상세 기록이 그 질문을 흡수했다).
+  // '증빙 자료'를 빼는 이유는 다르다 — 어학의 증빙은 ④ '성적표 첨부'이고, 그건 시험명·점수·
+  // 취득일과 **한 카드**여야 의미가 산다(교육의 '성적 증빙'과 같은 처리). core 를 남기면
+  // 같은 카드에 파일 입력칸이 두 벌 생긴다.
+  language: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
 }
 
 /**
@@ -1288,35 +1295,191 @@ function certificationExtensions(): TemplateSection[] {
   ]
 }
 
+/** 어학 ① '언어' 12종 — 확정본 표기·순서 그대로. 마지막 '기타'가 조건부 노출의 트리거다. */
+const LANGUAGE_OPTIONS = [
+  '영어',
+  '중국어',
+  '일본어',
+  '스페인어',
+  '독일어',
+  '프랑스어',
+  '러시아어',
+  '베트남어',
+  '아랍어',
+  '이탈리아어',
+  '포르투갈어',
+  '기타',
+] as const
+
+/** 어학 ① '전반적 수준' 6종 — 괄호 안 예시까지 확정본 표기 그대로다(선택 기준이 거기 있다). */
+const LANGUAGE_LEVEL_OPTIONS = [
+  '입문(인사·기초 표현)',
+  '초급(간단한 일상 대화)',
+  '중급(일상 회화·기본 업무 소통)',
+  '중상급(실무 소통·문서 이해)',
+  '고급(자유로운 업무 수행)',
+  '원어민 수준',
+] as const
+
+/**
+ * 어학 활용 영역 태그 9종. ① '가능한 활용 영역'과 ③ '어떤 언어 활동을 했나요?'가 **같은 선택지**를
+ * 쓴다(확정본 명시) — ①은 언어 전체의 가능 범위, ③은 그 경험에서 실제로 한 활동이라 질문은
+ * 다르지만 고르는 항목은 같다. 한 상수를 양쪽이 공유해 선택지가 갈라지지 않게 한다.
+ */
+const LANGUAGE_ACTIVITY_TAGS = [
+  '💬 일상 회화',
+  '💼 비즈니스 회화',
+  '📖 문서 독해',
+  '✍️ 문서 작성',
+  '🎓 학술 논문 독해',
+  '📝 학술 논문 작성',
+  '🎤 발표 / 프레젠테이션',
+  '🗣️ 통역 / 번역',
+  '🌍 원어민과 자유로운 소통',
+] as const
+
+/** 어학 ④ '성적표 첨부'의 증빙 유형 4종. 성적표가 맨 앞이다 — 어학 증빙의 대부분이 이것이다. */
+const LANGUAGE_EVIDENCE_OPTIONS = [
+  '성적표/점수 확인서',
+  '합격증/자격증 사본',
+  '발급 확인서',
+  '기타',
+] as const
+
+/** '언어 직접 입력'의 트리거 안정키 — `withSectionKeys` 가 만들 키를 미리 적은 것이다. */
+const LANGUAGE_KEY = 'lang-overview.언어'
+
+// 어학능력 확정본(2026-07) — ① 언어 개요 · ② 어학 경험 · ③ 경험 상세 기록 · ④ 어학 자격증.
+// 확정본의 방향은 "점수표가 아니라 경험"이다: 언어와 실전 활용 수준을 먼저 고르고, 이 언어를 쓴
+// 경험을 리스트업한 뒤, 그중 눈에 띄는 것만 ③에서 자세히 적고, 공인 성적은 ④에 붙인다.
+//
+// ⚠️ **섹션 id 를 구 `lang-info`/`lang-usage` 에서 전부 갈아치웠다.** 구 '언어'(text)가 확정본에선
+// 드롭다운이고 구 '유효기간'(text)은 date 인데, 섹션 id 를 유지하면 안정키가 그대로라 같은 키에
+// 타입만 다른 값이 남는다. 그러면 injectValue 는 타입 불일치로 값을 안 싣고(text↔textarea 만
+// 변환), 그 키는 consumedKeys 에 잡혀 orphanFieldsToBlocks 도 건너뛴다 — 값이 '기타' 카드에도
+// 없이 조용히 사라진다. id 를 바꾸면 구 키가 전부 orphan 안전망으로 흘러 보존된다(FRT-179 경로).
+// 같은 이유로 구 `lang-usage.활용 사례` 표(4컬럼)가 ③의 새 5컬럼 정의를 덮어쓰는 사고도 막힌다.
 function languageExtensions(): TemplateSection[] {
   return [
     {
-      id: 'lang-info',
+      id: 'lang-overview',
       category: 'basic',
-      label: '어학 정보',
+      label: '언어 개요',
       blocks: [
-        createTextField('언어', { required: true, placeholder: '영어' }),
-        createTextField('시험/인증명', { placeholder: 'TOEIC / OPIc / TOEFL 등' }),
-        createTextField('점수/등급'),
-        createDateField('응시일'),
-        createTextField('유효기간'),
-        createChecklistField('강점 영역', ['듣기', '읽기', '말하기', '쓰기']),
-        createPeriodField('학습 기간'),
-        createSelectField('학습 방식', ['학원', '독학', '회화', '첨삭', '스터디']),
+        createSelectField('언어', [...LANGUAGE_OPTIONS], {
+          required: true,
+          guide: '이 경험과 관련된 언어를 선택해주세요.',
+        }),
+        {
+          ...createTextField('언어 직접 입력', {
+            placeholder: '언어명을 직접 입력해주세요 (예: 태국어, 힌디어, 튀르키예어)',
+          }),
+          // 확정본 ① — '기타'를 골랐을 때만 노출. 선택지가 정확히 '기타' 하나라 equals 판정이다.
+          visibleWhen: { key: LANGUAGE_KEY, equals: ['기타'] },
+        },
+        createSelectField('전반적 수준', [...LANGUAGE_LEVEL_OPTIONS], {
+          required: true,
+          guide:
+            '이 언어의 전반적인 사용 수준을 선택해주세요. 공인 시험 점수와 별개로, 스스로 체감하는 실전 활용 수준을 기준으로 골라주세요.',
+        }),
+        createMoodTagField('가능한 활용 영역', [...LANGUAGE_ACTIVITY_TAGS], {
+          guide: '이 언어로 실제 할 수 있는 활동을 태그로 선택해주세요. 여러 개 가능해요.',
+        }),
       ],
     },
     {
-      id: 'lang-usage',
-      category: 'repeat',
-      label: '실제 활용 사례',
-      collapsed: true,
+      id: 'lang-experience',
+      category: 'detail',
+      label: '어학 경험',
       blocks: [
-        createRepeatableCell('활용 사례', [
-          { key: 'situation', label: '상황', blockType: 'text', required: true, placeholder: '발표/회의/여행/업무 등' },
-          { key: 'role', label: '내가 한 역할', blockType: 'textarea' },
-          { key: 'difficulty', label: '어려웠던 점과 해결', blockType: 'textarea' },
-          { key: 'result', label: '결과', blockType: 'textarea' },
-        ]),
+        createTextareaField('어학 학습 / 습득 동기', {
+          guide: '이 언어를 왜 학습하게 됐나요? 계기가 있다면 적어주세요.',
+          placeholder:
+            '예: 해외 커리어를 목표로 삼으면서 영어 실무 능력이 필수라고 판단했고, 대학교 2학년부터 본격적으로 학습을 시작했습니다.',
+        }),
+        createOutcomeList('주요 경험', {
+          guide:
+            '이 언어를 실제로 사용한 경험을 리스트업해주세요. 외국계 인턴, 통역, 해외 프로그램, 논문 작성, 원서 스터디 등 무엇이든.',
+          placeholder: '예: OO대학교 교환학생 6개월 / OO 외국계 인턴 3개월 / 학회 통역 3회',
+          itemLabel: '경험',
+          // 확정본 ② — 각 행의 '상세 기록'이 ③에 블록을 만들고 경험명을 채운 뒤 그리로 스크롤한다.
+          // titleColumnKey 는 반드시 명시한다(columns[0] 의존은 FRT-178 에서 깨진 전제).
+          link: { targetSectionId: 'lang-records', titleColumnKey: 'name', label: '상세 기록' },
+        }),
+        createTextareaField('학습 방법 / 노력', {
+          guide: '이 언어를 어떻게 학습했고, 어떤 노력을 기울였는지 적어주세요.',
+          placeholder:
+            '예: 1년간 원어민 튜터와 주 2회 화상 스피킹 진행 / 매일 영어 뉴스 요약 습관 / 대학 원서 강독 스터디 참여',
+        }),
+      ],
+    },
+    {
+      // 확정본이 "프로젝트/연구식 회고 프레임(STAR)이 아닌 슬림한 5필드"라고 설계 의도를 명시했다 —
+      // 부담을 줄여 실제 입력률을 높이는 것이 목적이므로 컬럼을 늘리지 말 것.
+      id: 'lang-records',
+      category: 'repeat',
+      label: '경험 상세 기록',
+      blocks: [
+        createRepeatableCell(
+          '경험 상세 기록',
+          [
+            {
+              key: 'name',
+              label: '경험명',
+              blockType: 'text',
+              required: true,
+              guide: '이 경험이 어떤 것이었는지 짧게 적어주세요.',
+              placeholder: '예: OO대학교 교환학생, OO 외국계 인턴, 국제학회 통역 자원봉사',
+            },
+            {
+              key: 'period',
+              label: '기간',
+              blockType: 'period',
+              guide: '이 경험이 진행된 기간을 선택해주세요.',
+            },
+            {
+              key: 'activities',
+              label: '어떤 언어 활동을 했나요?',
+              blockType: 'checklist',
+              options: [...LANGUAGE_ACTIVITY_TAGS],
+              guide: '이 경험에서 이 언어를 어떻게 사용했나요? 여러 개 가능해요.',
+            },
+            {
+              key: 'summary',
+              label: '어떤 경험이었는지 간단히',
+              blockType: 'textarea',
+              guide: '부담 없이 자유롭게 적어주세요. 기억나는 만큼만 적어도 괜찮아요.',
+              placeholder:
+                '예: 미국 시애틀에서 6개월간 교환학생으로 지내며 현지 학생들과 조별 과제를 진행했고, 학기말 팀 발표를 영어로 담당했어요.',
+            },
+            {
+              key: 'moment',
+              label: '인상 깊었던 순간',
+              blockType: 'textarea',
+              guide:
+                '이 경험에서 특별히 기억에 남는 장면이 있다면 적어주세요. 자랑스러웠던 순간도, 아찔했던 순간도 좋아요.',
+              placeholder: "예: 발표 후 현지 교수님이 '너가 유학생인 걸 몰랐다'고 하셔서 뿌듯했어요.",
+            },
+          ],
+          { allowRowExtras: true },
+        ),
+      ],
+    },
+    {
+      // 확정본 ④는 가이드라인이 전부 '—'다(무엇을 적는지 placeholder 로 충분한 항목들) —
+      // 없는 문구를 지어내지 않고 확정본 그대로 둔다. '성적표 첨부'만 안내가 있다.
+      id: 'lang-certificate',
+      category: 'evidence',
+      label: '어학 자격증',
+      blocks: [
+        createTextField('시험 / 자격증명', { placeholder: '예: TOEIC, TOEFL iBT, OPIc, HSK, JLPT' }),
+        createTextField('점수 / 등급', { placeholder: '예: 900점, IH, HSK 5급' }),
+        createDateField('취득일'),
+        createDateField('유효기간'),
+        createFileField('성적표 첨부', {
+          guide: '성적표, 점수 확인서, 자격증 사본 등',
+          options: [...LANGUAGE_EVIDENCE_OPTIONS],
+        }),
       ],
     },
   ]
@@ -1686,8 +1849,16 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
 /**
  * 템플릿 스키마 버전. content.template_version 으로 저장되어 향후 필드 셋 변경 추적에 쓰인다.
  * (안정키 기반 additive 변경은 마이그레이션 불필요 — 키가 곧 정체성)
+ *
+ * 2 — 어학능력 확정본 정렬(FRT-210). 섹션 id 를 `lang-info`/`lang-usage` 에서 4개로 갈아치워
+ *     안정키가 통째로 바뀌었다. 아래 `withSectionKeys` 규약이 요구하는 bump 다.
+ *
+ * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
+ * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
+ * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
+ * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 1
+export const TEMPLATE_VERSION = 2
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.

@@ -31,6 +31,20 @@ export interface ProjectLinkContextValue {
     titleColumnKey: string,
     projectRowId: string,
   ) => { title: string } | null
+  /**
+   * 역방향 조회 — 이 행을 가리키는 OutcomeList 소스 행이 있는지(FRT-210).
+   * 있으면 그 소스 **블록의 라벨**을 돌려준다("주요 경험에서 연결됨" 배지 문구가 된다).
+   *
+   * ⚠️ 링크의 진실은 `linkedProjectRowId` 로 **소스 행 한쪽에만** 있다(types/archive.ts).
+   * 대상 행에 역방향 필드를 저장하면 연결 해제·행 삭제 때 양쪽 갱신이 어긋나므로, 대상 쪽은
+   * 저장하지 않고 조회만 한다. 폼 전체를 훑는 비용은 provider 가 한 번만 치르고(역인덱스),
+   * 각 행은 Map 조회만 한다 — 행마다 훑으면 O(행 수 × 블록 수)가 된다.
+   *
+   * 문구를 `ProjectLinkConfig` 에 따로 두지 않는 이유: 원하는 문구가 이미 소스 블록의 label
+   * 과 같다(동아리 '주요 활동 / 이벤트', 어학 '주요 경험'). 설정 필드를 만들면 라벨만 바뀌고
+   * 배지 문구는 옛날 그대로인 동기화 버그가 하나 더 생긴다.
+   */
+  getIncomingLink: (rowId: string) => { sourceLabel: string } | null
   /** 프로젝트 행으로 스크롤(전역 유일 data-row-id 기준). */
   scrollToProjectRow: (projectRowId: string) => void
 }

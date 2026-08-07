@@ -121,6 +121,8 @@ function InteractiveWithLink({ initial }: { initial: string[] }) {
       const title = projectsRef.current.get(id)
       return title === undefined ? null : { title }
     },
+    // 역방향 배지는 대상 표(RepeatableCellBlock)가 그린다 — OutcomeList 스토리엔 그 표가 없다.
+    getIncomingLink: () => null,
     scrollToProjectRow: () => {},
   }
 

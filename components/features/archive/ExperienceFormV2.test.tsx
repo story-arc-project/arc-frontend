@@ -413,6 +413,45 @@ describe("FRT-178 동아리 역할 태그 동기화", () => {
     expect(linked).toHaveAttribute("title", "봄 정기 공연")
   })
 
+  /**
+   * 역방향 배지 (FRT-210). 대상 행은 자기가 연결돼 생겼는지 모르므로 폼이 역인덱스를 공급한다 —
+   * 여기서 검증하는 건 그 인덱스가 **소스 블록의 라벨**을 실어 나른다는 것이다.
+   */
+  it("연결로 만든 기록 행에 어디서 왔는지 배지가 붙는다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectClub(user)
+
+    await user.type(
+      screen.getByPlaceholderText("예: 2024 봄 정기 공연 / 신입 부원 모집 캠페인 기획"),
+      "봄 정기 공연",
+    )
+    await user.click(screen.getByRole("button", { name: "프로젝트로 기록" }))
+
+    expect(screen.getByText("주요 활동 / 이벤트에서 연결됨")).toBeInTheDocument()
+  })
+
+  /**
+   * 진실이 소스 행 한쪽에만 있으니(linkedProjectRowId) 해제하면 역방향 배지도 같은 순간 사라져야
+   * 한다. 대상 행에 배지 상태를 따로 저장했다면 여기서 어긋난다 — 그래서 저장하지 않고 조회한다.
+   */
+  it("연결을 해제하면 기록 행의 배지도 사라진다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectClub(user)
+
+    await user.type(
+      screen.getByPlaceholderText("예: 2024 봄 정기 공연 / 신입 부원 모집 캠페인 기획"),
+      "봄 정기 공연",
+    )
+    await user.click(screen.getByRole("button", { name: "프로젝트로 기록" }))
+    expect(screen.getByText("주요 활동 / 이벤트에서 연결됨")).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole("button", { name: "프로젝트 연결 해제" })[0])
+
+    expect(screen.queryByText(/에서 연결됨/)).not.toBeInTheDocument()
+  })
+
   it("역할 행을 지우면 붙어 있던 태그도 사라진다", async () => {
     const user = userEvent.setup()
     renderForm()

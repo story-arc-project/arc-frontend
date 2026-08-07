@@ -200,6 +200,48 @@ function isHeaderBlock(b: Block): boolean {
 const RENAMED_FIELD_KEYS: Record<string, string> = {
   'award-info.대회/프로그램명': 'award-info.대회 / 프로그램명',
   'award-info.주최/기관': 'award-info.주최 기관',
+  // 어학 확정본(FRT-210) — 구 `lang-info` 8필드 중 **질문도 타입도 같은 둘만** 옮긴다.
+  // 나머지는 옮기지 않고 orphan '기타' 카드에 남겨 사용자가 직접 판단하게 둔다:
+  //  · '언어'(text→single-select)·'유효기간'(text→date) 은 타입이 바뀌어 injectValue 가 못 싣는다
+  //  · '응시일'→'취득일' 은 **질문이 다르다**(응시한 날 ≠ 성적을 취득한 날)
+  //  · '강점 영역'(듣기/읽기/말하기/쓰기 4종)→'가능한 활용 영역'(9종) 도 묻는 것이 다르다
+  //  · '학습 기간'·'학습 방식'·'활용 사례' 표는 확정본에 대응 필드가 없다
+  'lang-info.시험/인증명': 'lang-certificate.시험 / 자격증명',
+  'lang-info.점수/등급': 'lang-certificate.점수 / 등급',
+}
+
+/**
+ * 숨김 키도 개명을 따라간다. 값만 새 키로 옮기고 숨김 상태를 두고 오면, 사용자가 감춰 둔 칸이
+ * 템플릿 개편 후 혼자 다시 나타난다 — 게다가 `normalizeHiddenKeys` 는 모르는 키를 버리지 않아
+ * 옛 키가 저장분에 영원히 남는다(FRT-210, Codex P2).
+ */
+function applyRenamedHiddenKeys(keys: string[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const key of keys) {
+    const mapped = RENAMED_FIELD_KEYS[key] ?? key
+    if (seen.has(mapped)) continue
+    seen.add(mapped)
+    out.push(mapped)
+  }
+  return out
+}
+
+/**
+ * 저장 블록의 값을 이 템플릿 블록에 실을 수 있는가. `injectValue` 의 허용 범위와 같은 기준이다
+ * (동일 타입 또는 text ↔ textarea).
+ *
+ * v1 레거시의 라벨 폴백이 이 판정을 거쳐야 한다. 라벨은 그대로인 채 입력 위젯만 바뀐 필드에
+ * 새 안정키를 붙이면, injectValue 는 값을 못 싣는데 키는 `consumedKeys` 에 잡혀 orphan 보존까지
+ * 막힌다 — 화면엔 저장 블록이 보여 멀쩡해 보이지만 한 번 저장하는 순간 값이 증발한다.
+ * 어학 확정본의 '언어'(text→single-select)·'유효기간'(text→date)이 그 경우다(FRT-210, Codex P1).
+ * v2 는 섹션 id 를 갈아 키가 달라진 덕에 orphan 으로 흐르지만, v1 은 **라벨로 매칭하므로 섹션 id
+ * 교체가 닿지 않는다.** 호환되지 않으면 키를 붙이지 않고 '기타' 로 보내 v2 와 경로를 맞춘다.
+ */
+function isInjectableInto(templateType: Block["type"], savedType: Block["type"]): boolean {
+  if (templateType === savedType) return true
+  const isTextual = (t: Block["type"]) => t === "text" || t === "textarea"
+  return isTextual(templateType) && isTextual(savedType)
 }
 
 /**
@@ -299,7 +341,8 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     status: content.status ?? ("draft" as ExperienceStatus),
     tags: content.tags ?? [],
     // 숨김 키는 v2 에서만 쓰지만, v1 레거시도 같은 모양(빈 배열)으로 내려 소비처가 분기하지 않게 한다.
-    hiddenKeys: parseHiddenKeys(content.hidden),
+    // 개명된 키는 값과 함께 숨김 상태도 따라가야 한다(applyRenamedHiddenKeys).
+    hiddenKeys: applyRenamedHiddenKeys(parseHiddenKeys(content.hidden)),
     importance: isImportanceLevel(exp.importance) ? exp.importance : undefined,
     createdAt: exp.created_at,
     updatedAt: exp.updated_at,
@@ -361,26 +404,44 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   const claimedKeys = new Set(
     savedExt.map(b => b.key ?? extKeyByLabel[b.label]).filter((k): k is string => !!k),
   )
-  const keyedExt = savedExt.map(b => {
-    if (b.key) {
-      const renamed = RENAMED_FIELD_KEYS[b.key]
-      return renamed && !claimedKeys.has(renamed) ? { ...b, key: renamed } : b
-    }
-    const current = extKeyByLabel[b.label]
-    if (current) return { ...b, key: current }
-    const alias = renamedExtKeys[b.label]
-    return { ...b, key: alias && !claimedKeys.has(alias) ? alias : undefined }
-  })
+  const extTemplateByKey = new Map<string, Block>()
   const extTemplateKeys = new Set<string>()
   const extTemplateLabels = new Set<string>()
   for (const s of tmpl.extensions) for (const b of s.blocks) {
-    if (b.key) extTemplateKeys.add(b.key)
+    if (b.key) {
+      extTemplateKeys.add(b.key)
+      extTemplateByKey.set(b.key, b)
+    }
     extTemplateLabels.add(b.label)
   }
+  // 타입이 호환되지 않는 매칭은 키를 붙이지 않고 '기타' 로 보낸다(isInjectableInto).
+  const keyedExt = savedExt.map(b => {
+    const injectable = (key: string | undefined) => {
+      const tb = key ? extTemplateByKey.get(key) : undefined
+      return !!tb && isInjectableInto(tb.type, b.type)
+    }
+    if (b.key) {
+      const renamed = RENAMED_FIELD_KEYS[b.key]
+      const keyed = renamed && !claimedKeys.has(renamed) ? { ...b, key: renamed } : b
+      // 현재 템플릿이 그 키를 갖고 있는데 값을 못 실으면 매칭을 포기한다 — 저장 왕복 때 사라진다.
+      const blocked = !!keyed.key && extTemplateKeys.has(keyed.key) && !injectable(keyed.key)
+      return { block: blocked ? { ...keyed, key: undefined } : keyed, blocked }
+    }
+    const current = extKeyByLabel[b.label]
+    if (current) {
+      return injectable(current)
+        ? { block: { ...b, key: current }, blocked: false }
+        : { block: { ...b, key: undefined }, blocked: true }
+    }
+    const alias = renamedExtKeys[b.label]
+    const usable = !!alias && !claimedKeys.has(alias) && injectable(alias)
+    return { block: { ...b, key: usable ? alias : undefined }, blocked: false }
+  })
   const matchedExt: Block[] = []
   const orphanExt: Block[] = []
-  for (const b of keyedExt) {
-    const matched = b.key ? extTemplateKeys.has(b.key) : extTemplateLabels.has(b.label)
+  for (const { block: b, blocked } of keyedExt) {
+    const matched =
+      !blocked && (b.key ? extTemplateKeys.has(b.key) : extTemplateLabels.has(b.label))
     // 빈 미매칭 블록은 승격하지 않는다(v2 orphanFieldsToBlocks 와 동일 기준). 구 학회 레코드엔
     // 빈 extended.* 항목이 흔한데, 그대로 custom 으로 올리면 '기타' 카드에 빈 레거시 필드가
     // 쌓이고 완료 저장이 이를 영구화한다(빈 group 만 정리, 빈 field custom 은 안 지움).

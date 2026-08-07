@@ -296,6 +296,7 @@ function makeCtx(overrides?: Partial<ProjectLinkContextValue>): ProjectLinkConte
   return {
     createProjectRow: vi.fn(() => "proj-1"),
     getProjectRow: vi.fn(() => ({ title: "케이스 대회 은상" })),
+    getIncomingLink: vi.fn(() => null),
     scrollToProjectRow: vi.fn(),
     ...overrides,
   }
