@@ -161,6 +161,49 @@ describe("useLibraries — 병렬 멤버십 로딩과 mutation 경합", () => {
     expect(result.current.loadingMembershipIds.has("lib-b")).toBe(false)
   })
 
+  it("실패 복구 재조회가 도착하기 전에 새 변경이 들어오면, 뒤늦은 서버 스냅샷이 그 변경을 덮지 않는다", async () => {
+    const { result } = await renderWithMembershipInFlight()
+
+    await act(async () => {
+      pendingMembership.get("lib-a")!.resolve(listData(["exp-1"]))
+      pendingMembership.get("lib-b")!.resolve(listData([]))
+      await Promise.resolve()
+    })
+    await settle()
+
+    // 초기 로딩분을 비워, 이후 등록되는 GET 은 실패 복구 재조회뿐이게 한다.
+    pendingMembership.clear()
+
+    // 추가가 서버에서 실패하면 훅은 서버 기준으로 재조회(resync)해 로컬 상태를 되돌린다.
+    // 재조회 응답이 도착해야 이 호출이 끝나므로 여기서 await 하면 안 된다.
+    addExperienceToLibraryMock.mockRejectedValueOnce(new Error("서버 오류"))
+    let rejected = false
+    let failedAdd!: Promise<void>
+    await act(async () => {
+      failedAdd = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {
+        rejected = true
+      })
+      await Promise.resolve()
+    })
+    await settle()
+    expect(pendingMembership.has("lib-a")).toBe(true)
+
+    // 재조회 응답이 오기 전에 사용자가 같은 라이브러리에 다른 경험을 추가한다.
+    await act(async () => {
+      await result.current.addExperienceToLibrary("lib-a", "exp-3")
+    })
+
+    // 재조회 응답은 exp-3 추가 이전 시점의 스냅샷이다 — 반영하면 방금 넣은 경험이 사라진다.
+    await act(async () => {
+      pendingMembership.get("lib-a")!.resolve(listData(["exp-1"]))
+      await failedAdd
+    })
+    await settle()
+
+    expect(rejected).toBe(true)
+    expect(membershipOf(result.current.libraries, "lib-a")).toContain("exp-3")
+  })
+
   it("경합이 없으면 두 라이브러리 모두 각자의 목록을 반영한다", async () => {
     const { result } = await renderWithMembershipInFlight()
 

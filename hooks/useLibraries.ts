@@ -234,15 +234,22 @@ export function useLibraries() {
   const resyncLibraryMembership = useCallback(
     async (libraryId: string): Promise<boolean> => {
       if (libraryId === ALL_LIBRARY_ID) return true;
+      // Pin to this library's mutation generation like loadLibraryMembership does.
+      // Without this guard, a second add/remove that lands (and optimistically
+      // patches state) while this GET is still in flight would be silently
+      // clobbered by this stale response once it resolves.
+      const membershipVersion = membershipVersionsRef.current.get(libraryId) ?? 0;
       try {
         const data = await getLibraryExperiences(libraryId);
         const ids = data.contents.map((experience) => experience.id);
-        bumpMembershipVersion(libraryId);
-        setLibraries((prev) =>
-          prev.map((library) =>
-            library.id === libraryId ? { ...library, experienceIds: ids } : library,
-          ),
-        );
+        if (membershipVersion === (membershipVersionsRef.current.get(libraryId) ?? 0)) {
+          bumpMembershipVersion(libraryId);
+          setLibraries((prev) =>
+            prev.map((library) =>
+              library.id === libraryId ? { ...library, experienceIds: ids } : library,
+            ),
+          );
+        }
         markMembershipLoaded(libraryId);
         return true;
       } catch {
