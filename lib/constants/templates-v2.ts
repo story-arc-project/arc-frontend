@@ -1849,8 +1849,16 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
 /**
  * 템플릿 스키마 버전. content.template_version 으로 저장되어 향후 필드 셋 변경 추적에 쓰인다.
  * (안정키 기반 additive 변경은 마이그레이션 불필요 — 키가 곧 정체성)
+ *
+ * 2 — 어학능력 확정본 정렬(FRT-210). 섹션 id 를 `lang-info`/`lang-usage` 에서 4개로 갈아치워
+ *     안정키가 통째로 바뀌었다. 아래 `withSectionKeys` 규약이 요구하는 bump 다.
+ *
+ * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
+ * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
+ * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
+ * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 1
+export const TEMPLATE_VERSION = 2
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.
