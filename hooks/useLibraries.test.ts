@@ -385,3 +385,119 @@ describe("useLibraries — 병렬 멤버십 로딩과 mutation 경합", () => {
     })
   })
 })
+
+/** 목록·멤버십 조회가 모두 끝나 lib-a 에 exp-1 만 들어 있는 평온한 상태까지 진행시킨다. */
+async function renderWithMembershipSettled() {
+  const rendered = await renderWithMembershipInFlight()
+  await act(async () => {
+    pendingMembership.get("lib-a")!.resolve(listData(["exp-1"]))
+    pendingMembership.get("lib-b")!.resolve(listData([]))
+    await Promise.resolve()
+  })
+  await settle()
+  await waitFor(() => {
+    expect(membershipOf(rendered.result.current.libraries, "lib-a")).toEqual(["exp-1"])
+  })
+  return rendered
+}
+
+// 멤버 여부 판정을 `setLibraries` 업데이터의 **부수효과**로 하면, React 가 그 업데이터를
+// dispatch 시점에 동기 실행해 준다는 조건부 보장(내부 eager state 최적화)에 기대게 된다.
+// 이 훅에서는 그 최적화가 걸리지 않아 판정이 늘 초기값으로 읽혔다 — 제거는 서버로 나가지도
+// 않은 채 화면에서만 사라졌고(FRT-234), 추가 쪽의 중복 클릭 방지는 조용히 죽어 있었다.
+// 판정은 업데이터 밖에서, 현재 목록을 미러링하는 ref 로 해야 한다.
+describe("useLibraries — 멤버십 판정은 상태 업데이터 밖에서 한다", () => {
+  it("경합이 없는 평범한 제거도 서버로 삭제 요청을 보낸다", async () => {
+    const { result } = await renderWithMembershipSettled()
+
+    await act(async () => {
+      await result.current.removeExperienceFromLibrary("lib-a", "exp-1")
+    })
+
+    expect(removeExperienceFromLibraryMock).toHaveBeenCalledWith("lib-a", "exp-1")
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual([])
+  })
+
+  it("들어 있지 않은 경험을 빼려 하면 서버로 요청을 보내지 않는다", async () => {
+    const { result } = await renderWithMembershipSettled()
+
+    await act(async () => {
+      await result.current.removeExperienceFromLibrary("lib-a", "없는-경험")
+    })
+
+    expect(removeExperienceFromLibraryMock).not.toHaveBeenCalled()
+  })
+
+  it("새 경험을 추가하면 서버로 추가 요청을 보낸다", async () => {
+    const { result } = await renderWithMembershipSettled()
+
+    await act(async () => {
+      await result.current.addExperienceToLibrary("lib-a", "exp-2")
+    })
+
+    expect(addExperienceToLibraryMock).toHaveBeenCalledWith("lib-a", "exp-2")
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1", "exp-2"])
+  })
+
+  it("이미 들어 있는 경험을 다시 추가하면 중복 요청을 보내지 않는다", async () => {
+    const { result } = await renderWithMembershipSettled()
+
+    await act(async () => {
+      await result.current.addExperienceToLibrary("lib-a", "exp-1")
+    })
+
+    expect(addExperienceToLibraryMock).not.toHaveBeenCalled()
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+  })
+
+  // 원래 주석이 약속한 동작: 느린 연결에서 두 번째 클릭은 낙관적으로 바뀐 상태를 보고
+  // 스스로 멈춘다. 판정이 업데이터 안에 있으면 첫 클릭의 상태 변화를 두 번째가 못 봐서
+  // 같은 경험에 POST 가 두 번 나간다.
+  it("응답이 오기 전에 같은 경험을 두 번 추가해도 요청은 한 번만 나간다", async () => {
+    const { result } = await renderWithMembershipSettled()
+
+    const post = deferred<undefined>()
+    addExperienceToLibraryMock.mockReturnValueOnce(post.promise)
+
+    let first!: Promise<void>
+    await act(async () => {
+      first = result.current.addExperienceToLibrary("lib-a", "exp-2")
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      await result.current.addExperienceToLibrary("lib-a", "exp-2")
+    })
+
+    expect(addExperienceToLibraryMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      post.resolve(undefined)
+      await first
+    })
+  })
+
+  it("응답이 오기 전에 같은 경험을 두 번 빼도 요청은 한 번만 나간다", async () => {
+    const { result } = await renderWithMembershipSettled()
+
+    const del = deferred<undefined>()
+    removeExperienceFromLibraryMock.mockReturnValueOnce(del.promise)
+
+    let first!: Promise<void>
+    await act(async () => {
+      first = result.current.removeExperienceFromLibrary("lib-a", "exp-1")
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      await result.current.removeExperienceFromLibrary("lib-a", "exp-1")
+    })
+
+    expect(removeExperienceFromLibraryMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      del.resolve(undefined)
+      await first
+    })
+  })
+})
