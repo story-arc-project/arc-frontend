@@ -1,9 +1,10 @@
 "use client"
 
 import { useRef, useState, type ReactNode } from "react"
-import { Plus, Trash2 } from "lucide-react"
+import { CornerUpLeft, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { RequiredDot } from "@/components/ui/required-dot"
+import { useProjectLink } from "@/contexts/ProjectLinkContext"
 import type {
   Block,
   RepeatableCellBlockValue,
@@ -51,6 +52,10 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   // FRT-145: 행마다 '항목 추가'. 열 잠금과 무관하다 — 열은 계속 템플릿이 소유하고(모든 행에 적용),
   // 여기서 열리는 건 그 행 하나에만 붙는 항목이다.
   const allowRowExtras = block.allowRowExtras === true
+
+  // FRT-210: 이 행이 형제 섹션의 개조식 리스트에서 연결돼 생겼는지(역방향 배지).
+  // provider 밖(상세뷰·스토리북)에서는 null 이라 배지가 자동으로 숨는다 — 정방향 링크 UI 와 대칭.
+  const projectLink = useProjectLink()
 
   // FRT-103: rows 가 비면 표시용 행 하나를 파생한다(value 에는 커밋되지 않음).
   // 항목 수·'행 추가' 노출은 계속 진짜 `val.rows` 를 본다.
@@ -288,6 +293,7 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
               columns={val.columns}
               isPlaceholder={isPlaceholderRow(row.id)}
               allowRowExtras={allowRowExtras}
+              incomingLink={projectLink?.getIncomingLink(row.id) ?? null}
               onCellChange={(colKey, cellVal) => updateCell(row.id, colKey, cellVal)}
               onExtrasChange={next => updateRowExtras(row.id, next)}
               onRemove={() => removeRow(row.id)}
@@ -319,6 +325,7 @@ function RowEditor({
   columns,
   isPlaceholder,
   allowRowExtras,
+  incomingLink,
   onCellChange,
   onExtrasChange,
   onRemove,
@@ -330,6 +337,8 @@ function RowEditor({
   isPlaceholder?: boolean
   /** FRT-145: 이 행에 사용자가 항목을 추가할 수 있는가(블록 층위 opt-in). */
   allowRowExtras?: boolean
+  /** FRT-210: 이 행을 만든 개조식 리스트가 있으면 그 블록 라벨. 없으면 null. */
+  incomingLink?: { sourceLabel: string } | null
   onCellChange: (colKey: string, value: CellValue) => void
   onExtrasChange: (next: (fields: RowExtraField[]) => RowExtraField[]) => void
   onRemove: () => void
@@ -338,7 +347,15 @@ function RowEditor({
     // data-row-id: FRT-76 '프로젝트로 연결' 스크롤 앵커(전역 유일 row.id 로 scrollIntoView).
     <div data-row-id={row.id} className="scroll-mt-20 bg-surface-secondary border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-caption text-text-tertiary">#{index + 1}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-caption text-text-tertiary">#{index + 1}</span>
+          {incomingLink && (
+            <span className="inline-flex min-w-0 items-center gap-1 rounded-full bg-surface-brand px-2 py-0.5 text-caption font-medium text-brand-dark">
+              <CornerUpLeft size={12} className="shrink-0" />
+              <span className="truncate">{incomingLink.sourceLabel}에서 연결됨</span>
+            </span>
+          )}
+        </div>
         {!isPlaceholder && (
           <button
             type="button"

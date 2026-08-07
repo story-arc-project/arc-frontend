@@ -373,6 +373,7 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   'club': { detail: '활동 상세', repeat: '활동 / 이벤트 기록' },
   'education': { detail: '수업 상세', repeat: '프로젝트 / 과제 / 제작물 기록' },
   'extracurricular': { detail: '활동 상세', repeat: '미션 / 프로젝트 기록' },
+  'language': { detail: '어학 경험', repeat: '경험 상세 기록', evidence: '어학 자격증' },
 }
 
 /**
@@ -410,6 +411,13 @@ export const SECTION_DESCRIPTION_OVERRIDES: Partial<
       "이 활동에서 수행한 미션, 프로젝트, 제작물 등을 단위별로 기록해주세요. 위 '주요 미션 / 프로젝트'에서 관련 항목을 프로젝트로 바로 연결할 수 있어요.",
     evidence:
       '수료증, 위촉장, 활동 확인서 등 이 활동을 공식적으로 증명할 수 있는 자료를 첨부해주세요.',
+  },
+  'language': {
+    detail:
+      '이 언어를 실제로 사용하거나 능력이 성장한 경험을 자유롭게 기록해주세요. 외국계 인턴, 해외 생활, 통역, 논문 작성, 스터디, 원서 강독 등 어떤 것이든 좋아요.',
+    repeat:
+      "위 '주요 경험'에서 눈에 띄는 항목이 있다면 이곳에서 단위별로 자세히 기록해주세요. 기억나는 것부터 하나씩 추가해도 좋아요.",
+    evidence: '보유한 어학 자격증이나 공인 시험 성적을 첨부해주세요.',
   },
 }
 

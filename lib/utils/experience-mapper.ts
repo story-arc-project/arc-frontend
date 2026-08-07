@@ -200,6 +200,14 @@ function isHeaderBlock(b: Block): boolean {
 const RENAMED_FIELD_KEYS: Record<string, string> = {
   'award-info.대회/프로그램명': 'award-info.대회 / 프로그램명',
   'award-info.주최/기관': 'award-info.주최 기관',
+  // 어학 확정본(FRT-210) — 구 `lang-info` 8필드 중 **질문도 타입도 같은 둘만** 옮긴다.
+  // 나머지는 옮기지 않고 orphan '기타' 카드에 남겨 사용자가 직접 판단하게 둔다:
+  //  · '언어'(text→single-select)·'유효기간'(text→date) 은 타입이 바뀌어 injectValue 가 못 싣는다
+  //  · '응시일'→'취득일' 은 **질문이 다르다**(응시한 날 ≠ 성적을 취득한 날)
+  //  · '강점 영역'(듣기/읽기/말하기/쓰기 4종)→'가능한 활용 영역'(9종) 도 묻는 것이 다르다
+  //  · '학습 기간'·'학습 방식'·'활용 사례' 표는 확정본에 대응 필드가 없다
+  'lang-info.시험/인증명': 'lang-certificate.시험 / 자격증명',
+  'lang-info.점수/등급': 'lang-certificate.점수 / 등급',
 }
 
 /**

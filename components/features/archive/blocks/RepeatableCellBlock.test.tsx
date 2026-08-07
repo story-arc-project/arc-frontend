@@ -11,6 +11,7 @@ vi.mock("@/lib/api/files-api", async () => {
 
 import RepeatableCellBlock from "./RepeatableCellBlock"
 import { isBlockEmpty } from "@/lib/utils/block-utils"
+import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
@@ -638,5 +639,64 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     )
 
     expect(screen.getByText(/발표자료 링크/)).toBeInTheDocument()
+  })
+})
+
+/**
+ * 역방향 연결 배지 (FRT-210). 링크의 진실은 소스 행의 `linkedProjectRowId` 한쪽에만 있어서
+ * 대상 행은 자기가 연결돼 생겼는지 모른다 — provider 가 역방향 조회를 공급하고 행은 그걸 읽는다.
+ */
+describe("RepeatableCellBlock — 역방향 연결 배지 (FRT-210)", () => {
+  function makeCtx(incoming: (rowId: string) => { sourceLabel: string } | null): ProjectLinkContextValue {
+    return {
+      createProjectRow: vi.fn(() => null),
+      getProjectRow: vi.fn(() => null),
+      getIncomingLink: vi.fn(incoming),
+      scrollToProjectRow: vi.fn(),
+    }
+  }
+
+  const rows: BlockRow[] = [
+    { id: "r1", cells: { name: "교환학생" } },
+    { id: "r2", cells: { name: "직접 적은 행" } },
+  ]
+
+  it("연결돼 생긴 행에 소스 블록 이름으로 배지가 뜬다", () => {
+    render(
+      <ProjectLinkProvider value={makeCtx(id => (id === "r1" ? { sourceLabel: "주요 경험" } : null))}>
+        <Harness block={makeBlock(rows)} />
+      </ProjectLinkProvider>,
+    )
+
+    expect(screen.getByText("주요 경험에서 연결됨")).toBeInTheDocument()
+    // 직접 만든 행에는 붙지 않는다 — 배지는 실제 링크에서만 파생된다.
+    expect(screen.getAllByText(/에서 연결됨/)).toHaveLength(1)
+  })
+
+  it("가리키는 소스 행이 없으면 배지가 없다", () => {
+    render(
+      <ProjectLinkProvider value={makeCtx(() => null)}>
+        <Harness block={makeBlock(rows)} />
+      </ProjectLinkProvider>,
+    )
+
+    expect(screen.queryByText(/에서 연결됨/)).not.toBeInTheDocument()
+  })
+
+  /** 상세뷰는 provider 가 없는 경로다 — 정방향 링크 UI 와 같은 규약으로 자동으로 숨어야 한다. */
+  it("provider 밖(상세뷰·스토리북)에서는 배지가 없다", () => {
+    render(<Harness block={makeBlock(rows)} />)
+
+    expect(screen.queryByText(/에서 연결됨/)).not.toBeInTheDocument()
+  })
+
+  it("읽기 전용 화면에는 배지가 없다", () => {
+    render(
+      <ProjectLinkProvider value={makeCtx(() => ({ sourceLabel: "주요 경험" }))}>
+        <Harness readOnly block={makeBlock(rows)} />
+      </ProjectLinkProvider>,
+    )
+
+    expect(screen.queryByText(/에서 연결됨/)).not.toBeInTheDocument()
   })
 })

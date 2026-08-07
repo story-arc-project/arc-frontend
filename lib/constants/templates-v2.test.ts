@@ -717,3 +717,228 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     }
   })
 })
+
+// 어학능력 확정본(2026-07) — ① 언어 개요 · ② 어학 경험 · ③ 경험 상세 기록 · ④ 어학 자격증 (FRT-210).
+describe("확정본: 어학능력", () => {
+  const sections = () => getTemplateForType("language").extensions.filter(s => s.id !== "extended")
+  const labelsIn = (blocks: Block[]) => blocks.map(b => b.label)
+  const blockAt = (idx: number, label: string) =>
+    sections()[idx].blocks.find(b => b.label === label)!
+
+  it("확정본 4섹션을 순서·id·category 그대로 갖는다", () => {
+    expect(sections().map(s => [s.id, s.category])).toEqual([
+      ["lang-overview", "basic"],
+      ["lang-experience", "detail"],
+      ["lang-records", "repeat"],
+      ["lang-certificate", "evidence"],
+    ])
+  })
+
+  /**
+   * 구 섹션 id 를 재사용하지 않는 것이 이 작업의 핵심 안전 장치다(FRT-210). 구 '언어'(text)가
+   * 확정본에선 드롭다운이고 구 '유효기간'(text)은 date 인데, id 를 유지하면 안정키가 같아져
+   * injectValue 는 타입 불일치로 값을 안 싣고 consumedKeys 때문에 orphan 안전망도 건너뛴다 —
+   * 값이 '기타' 카드에도 없이 사라진다. id 가 다르면 구 키가 전부 orphan 으로 흘러 보존된다.
+   */
+  it("구 섹션 id 를 재사용하지 않는다 — 구 키가 orphan 안전망으로 흐르게", () => {
+    const ids = sections().map(s => s.id)
+    expect(ids).not.toContain("lang-info")
+    expect(ids).not.toContain("lang-usage")
+  })
+
+  it("① 언어 개요는 확정본 4필드다", () => {
+    expect(labelsIn(sections()[0].blocks)).toEqual([
+      "언어",
+      "언어 직접 입력",
+      "전반적 수준",
+      "가능한 활용 영역",
+    ])
+  })
+
+  it("① 의 필수는 문서가 '선택'을 표기하지 않은 언어·전반적 수준뿐이다", () => {
+    const required = sections()[0].blocks.filter(b => b.required).map(b => b.label)
+    expect(required).toEqual(["언어", "전반적 수준"])
+  })
+
+  it("'언어'는 확정본 12종 드롭다운이다", () => {
+    const lang = blockAt(0, "언어")
+    expect(lang.type).toBe("single-select")
+    expect(lang.options).toEqual([
+      "영어",
+      "중국어",
+      "일본어",
+      "스페인어",
+      "독일어",
+      "프랑스어",
+      "러시아어",
+      "베트남어",
+      "아랍어",
+      "이탈리아어",
+      "포르투갈어",
+      "기타",
+    ])
+  })
+
+  it("'전반적 수준'은 괄호 예시까지 확정본 표기 그대로인 6종 드롭다운이다", () => {
+    const level = blockAt(0, "전반적 수준")
+    expect(level.type).toBe("single-select")
+    expect(level.options).toEqual([
+      "입문(인사·기초 표현)",
+      "초급(간단한 일상 대화)",
+      "중급(일상 회화·기본 업무 소통)",
+      "중상급(실무 소통·문서 이해)",
+      "고급(자유로운 업무 수행)",
+      "원어민 수준",
+    ])
+  })
+
+  it("'가능한 활용 영역'은 이모지 태그 9종 다중선택이다", () => {
+    const tags = blockAt(0, "가능한 활용 영역")
+    expect(tags.type).toBe("checklist")
+    expect(tags.variant).toBe("mood-tag")
+    expect(tags.options).toEqual([
+      "💬 일상 회화",
+      "💼 비즈니스 회화",
+      "📖 문서 독해",
+      "✍️ 문서 작성",
+      "🎓 학술 논문 독해",
+      "📝 학술 논문 작성",
+      "🎤 발표 / 프레젠테이션",
+      "🗣️ 통역 / 번역",
+      "🌍 원어민과 자유로운 소통",
+    ])
+  })
+
+  it("'언어 직접 입력'은 '기타'를 골랐을 때만 보이는 조건부 필드다", () => {
+    expect(blockAt(0, "언어 직접 입력").visibleWhen?.equals).toEqual(["기타"])
+  })
+
+  /**
+   * 안정키는 `${sectionId}.${label}` 파생이라 **라벨을 바꾸면 트리거 키도 바뀐다**.
+   * `visibleWhen.key` 는 문자열 상수라 자동으로 따라가지 않으므로, 갱신을 잊으면 조건이 영원히
+   * 미충족이 되어 칸이 조용히 사라진다. 상수를 베껴 적으면 사각지대가 생기므로 **템플릿에서
+   * 파생시켜** 비교한다(FRT-211 교훈).
+   */
+  it("조건부 필드의 트리거 키는 '언어'의 실제 안정키와 일치한다", () => {
+    expect(blockAt(0, "언어 직접 입력").visibleWhen?.key).toBe(blockAt(0, "언어").key)
+  })
+
+  it("② 어학 경험은 확정본 3필드이고 '주요 경험'이 개조식 리스트다", () => {
+    expect(labelsIn(sections()[1].blocks)).toEqual([
+      "어학 학습 / 습득 동기",
+      "주요 경험",
+      "학습 방법 / 노력",
+    ])
+    expect(blockAt(1, "주요 경험").variant).toBe("outcome-list")
+  })
+
+  /**
+   * ② 각 행의 '상세 기록' 이 ③ 에 행을 만든다. 대상 섹션·제목 컬럼이 실재하지 않으면 버튼을
+   * 눌러도 아무 일이 없거나(대상 없음) 제목이 엉뚱한 칸에 들어간다 — 둘 다 화면엔 조용하다.
+   */
+  it("'주요 경험'의 연결 설정이 ③ 섹션·제목 컬럼을 실제로 가리킨다", () => {
+    const link = blockAt(1, "주요 경험").linkConfig!
+    expect(link.targetSectionId).toBe("lang-records")
+
+    const target = sections().find(s => s.id === link.targetSectionId)!
+    const table = target.blocks.find(b => b.value.type === "repeatable-cell")!
+    const columns = table.value.type === "repeatable-cell" ? table.value.columns : []
+    expect(columns.map(c => c.key)).toContain(link.titleColumnKey)
+  })
+
+  it("③ 경험 상세 기록은 확정본 5컬럼이고 기간은 period 셀이다", () => {
+    const table = sections()[2].blocks[0]
+    expect(table.type).toBe("repeatable-cell")
+    const columns = table.value.type === "repeatable-cell" ? table.value.columns : []
+    expect(columns.map(c => [c.key, c.label, c.blockType])).toEqual([
+      ["name", "경험명", "text"],
+      ["period", "기간", "period"],
+      ["activities", "어떤 언어 활동을 했나요?", "checklist"],
+      ["summary", "어떤 경험이었는지 간단히", "textarea"],
+      ["moment", "인상 깊었던 순간", "textarea"],
+    ])
+  })
+
+  /**
+   * ①과 ③이 같은 태그 목록을 쓴다고 확정본이 명시했다 — 한쪽만 고치면 같은 질문에 다른 선택지가
+   * 나온다. 양쪽을 템플릿에서 읽어 비교하므로 상수를 베껴 적은 사본이 아니다.
+   */
+  it("③ 의 언어 활동 태그는 ① '가능한 활용 영역'과 같은 선택지다", () => {
+    const table = sections()[2].blocks[0]
+    const columns = table.value.type === "repeatable-cell" ? table.value.columns : []
+    const activities = columns.find(c => c.key === "activities")!
+    expect(activities.options).toEqual(blockAt(0, "가능한 활용 영역").options)
+  })
+
+  it("④ 어학 자격증은 확정본 5필드이고 취득일·유효기간이 date 다", () => {
+    expect(labelsIn(sections()[3].blocks)).toEqual([
+      "시험 / 자격증명",
+      "점수 / 등급",
+      "취득일",
+      "유효기간",
+      "성적표 첨부",
+    ])
+    expect(blockAt(3, "취득일").type).toBe("date")
+    expect(blockAt(3, "유효기간").type).toBe("date")
+  })
+
+  it("④ '성적표 첨부'는 증빙 유형 4종을 드롭다운으로 좁힌다", () => {
+    const file = blockAt(3, "성적표 첨부")
+    expect(file.type).toBe("file")
+    expect(file.options).toEqual([
+      "성적표/점수 확인서",
+      "합격증/자격증 사본",
+      "발급 확인서",
+      "기타",
+    ])
+  })
+
+  /**
+   * 확정본 ④는 시험명·점수·취득일·유효기간과 첨부가 **한 카드**다. core '증빙 자료'를 남기면
+   * 같은 카드(evidence)에 파일 입력칸이 두 벌 생긴다 — 교육의 '성적 증빙'과 같은 처리다.
+   * '기간'을 빼는 이유는 다르다: 어학은 시작·종료가 뚜렷하지 않아 required 기간이 억지 입력이 된다.
+   */
+  it("core 에서 기간·증빙 자료·역할·성과를 제외한다", () => {
+    const core = labelsIn(getTemplateForType("language").commonCore.blocks)
+    expect(core).toEqual(["경험명", "한 줄 요약"])
+  })
+
+  it("①②③ 의 필드에 가이드라인이 있다 (확정본이 '—'로 비운 것만 예외)", () => {
+    // 확정본이 가이드라인 칸을 '—'로 둔 필드들 — 없는 문구를 지어내지 않는다.
+    // '언어 직접 입력'은 placeholder 가 곧 안내이고, ④ 는 섹션 전체가 '—'라 아래 루프에서 제외.
+    const NO_GUIDE = new Set(["언어 직접 입력"])
+    for (const s of sections().slice(0, 3)) {
+      for (const b of s.blocks) {
+        if (NO_GUIDE.has(b.label)) {
+          expect(b.placeholder, `${s.id}/${b.label}`).toBeTruthy()
+          continue
+        }
+        // 표형 반복 입력은 안내가 컬럼마다 붙는다(확정본도 컬럼별로 기술) — 블록 자체 안내는
+        // 섹션 설명(SECTION_DESCRIPTION_OVERRIDES)이 맡는다. 개조식 리스트(outcome-list)는
+        // 컬럼이 내부 구현일 뿐이라 블록 층위 guide 를 그대로 본다.
+        if (b.value.type === "repeatable-cell" && b.variant !== "outcome-list") {
+          for (const c of b.value.columns) {
+            expect(c.guide, `${s.id}/${b.label}/${c.label}`).toBeTruthy()
+          }
+          continue
+        }
+        expect(b.guide, `${s.id}/${b.label}`).toBeTruthy()
+      }
+    }
+  })
+
+  it("확정본에 없는 구 필드는 템플릿에서 사라진다 (값은 매퍼가 orphan 으로 보존)", () => {
+    const labels = sections().flatMap(s => labelsIn(s.blocks))
+    for (const gone of [
+      "시험/인증명",
+      "점수/등급",
+      "응시일",
+      "강점 영역",
+      "학습 기간",
+      "학습 방식",
+      "활용 사례",
+    ]) {
+      expect(labels, gone).not.toContain(gone)
+    }
+  })
+})

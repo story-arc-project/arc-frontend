@@ -1339,3 +1339,110 @@ describe("선택 필드 숨김 키 (FRT-190)", () => {
     ])
   })
 })
+
+/**
+ * FRT-210 은 어학능력 템플릿을 확정본 4섹션으로 전면 교체하면서 **섹션 id 를 전부 갈아치운다**.
+ *
+ * 그게 이 작업의 안전 장치다. 구 '언어'(text)는 확정본에서 드롭다운이고 구 '유효기간'(text)은
+ * date 인데, 섹션 id 를 유지했다면 안정키가 같아져 injectValue 는 타입 불일치로 값을 안 싣고
+ * (text↔textarea 만 변환) 그 키는 consumedKeys 에 잡혀 orphan 안전망도 건너뛴다 — 값이 '기타'
+ * 카드에도 없이 조용히 사라진다. 그 무음 손실을 막았는지 여기서 못 박는다.
+ */
+describe("확정본 전면 교체 값 보존 (FRT-210 어학능력)", () => {
+  const OLD_TABLE_KEY = "lang-usage.활용 사례"
+
+  function legacyLanguageContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "영어",
+      summary: "실무 영어",
+      status: "complete",
+      tags: [],
+      fields: {
+        // 타입이 바뀌는 둘 — 이관하지 않고 orphan 으로 보존해야 한다(최대 리스크).
+        "lang-info.언어": text("영어"),
+        "lang-info.유효기간": text("2026-03-10"),
+        // 질문·타입이 같아 새 키로 이관되는 둘.
+        "lang-info.시험/인증명": text("TOEIC"),
+        "lang-info.점수/등급": text("920점"),
+        // 질문이 달라 이관하지 않는 것들.
+        "lang-info.응시일": { type: "date", date: "2024-03-10" },
+        "lang-info.강점 영역": {
+          type: "checklist",
+          options: ["듣기", "읽기", "말하기", "쓰기"],
+          checked: ["듣기", "읽기"],
+        },
+        "lang-info.학습 기간": { type: "period", start: "2022-03", end: "2024-02", isCurrent: false },
+        "lang-info.학습 방식": {
+          type: "single-select",
+          options: ["학원", "독학", "회화", "첨삭", "스터디"],
+          selected: "독학",
+        },
+        [OLD_TABLE_KEY]: {
+          type: "repeatable-cell",
+          columns: [
+            { key: "situation", label: "상황", blockType: "text", required: true },
+            { key: "role", label: "내가 한 역할", blockType: "textarea" },
+          ],
+          rows: [{ id: "r1", cells: { situation: "사내 화상회의 통역", role: "실시간 순차 통역" } }],
+        },
+      },
+      custom: [],
+    }
+  }
+
+  const loadLegacy = () =>
+    toExperienceV2(makeExperience({ type: "language", content: legacyLanguageContent() }))
+
+  it("질문·타입이 같은 두 필드는 확정본 ④ 자리로 이관된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("lang-certificate.시험 / 자격증명")?.value).toEqual(text("TOEIC"))
+    expect(byKey("lang-certificate.점수 / 등급")?.value).toEqual(text("920점"))
+    // 옮긴 구 키는 '기타' 에 중복으로 되살아나지 않는다.
+    expect(v2.customBlocks.find(b => b.key === "lang-info.시험/인증명")).toBeUndefined()
+    expect(v2.customBlocks.find(b => b.key === "lang-info.점수/등급")).toBeUndefined()
+  })
+
+  /**
+   * 이 테스트가 이번 작업의 그물이다. 섹션 id 를 구 이름으로 되돌리면 '언어'·'유효기간' 값이
+   * 어디에도 남지 않고 사라지므로 여기서 실패한다.
+   */
+  it("타입이 바뀐 필드의 값이 '기타' 카드로 살아남는다 (무음 손실 없음)", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    expect(byKey("lang-info.언어")?.value).toEqual(text("영어"))
+    expect(byKey("lang-info.유효기간")?.value).toEqual(text("2026-03-10"))
+  })
+
+  it("확정본이 묻지 않는 구 필드·표도 '기타' 카드로 보존된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    expect(byKey("lang-info.응시일")?.value).toEqual({ type: "date", date: "2024-03-10" })
+    expect(byKey("lang-info.강점 영역")?.value.type).toBe("checklist")
+    expect(byKey("lang-info.학습 기간")?.value.type).toBe("period")
+    expect(byKey("lang-info.학습 방식")?.value.type).toBe("single-select")
+
+    const table = byKey(OLD_TABLE_KEY)
+    expect(table?.type).toBe("repeatable-cell")
+    expect(table?.value.type === "repeatable-cell" && table.value.rows[0].cells.situation).toBe(
+      "사내 화상회의 통역",
+    )
+  })
+
+  it("보존·이관된 값이 재저장 왕복에도 살아남는다", () => {
+    const first = loadLegacy()
+    const payload = toSavePayload(first)
+    const second = toExperienceV2(makeExperience({ type: "language", content: payload.content }))
+
+    expect(
+      second.extensionBlocks.find(b => b.key === "lang-certificate.시험 / 자격증명")?.value,
+    ).toEqual(text("TOEIC"))
+    expect(second.customBlocks.find(b => b.key === "lang-info.언어")?.value).toEqual(text("영어"))
+    expect(second.customBlocks.find(b => b.key === OLD_TABLE_KEY)?.type).toBe("repeatable-cell")
+  })
+})

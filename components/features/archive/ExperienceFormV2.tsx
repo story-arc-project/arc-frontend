@@ -336,6 +336,25 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     [extensionSections],
   )
 
+  /**
+   * 역방향 인덱스 `대상 행 id → 소스 OutcomeList 블록 라벨` (FRT-210).
+   *
+   * 링크의 진실은 소스 행의 `linkedProjectRowId` 한쪽에만 있어(대상 행엔 아무 표시도 없다)
+   * "나를 가리키는 행이 있는가"는 훑어야만 알 수 있다. 훑기를 **폼에서 한 번만** 하고 각 행은
+   * Map 조회만 하게 한다 — 행마다 훑으면 O(행 수 × 블록 수)가 된다.
+   * `allBlocksFlat` 은 조건부 노출·숨김 정규화가 이미 쓰는 같은 목록이라 새 비용이 아니다.
+   */
+  const incomingProjectLinks = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const block of allBlocksFlat) {
+      if (block.variant !== "outcome-list" || block.value.type !== "repeatable-cell") continue
+      for (const row of block.value.rows) {
+        if (row.linkedProjectRowId) map.set(row.linkedProjectRowId, block.label)
+      }
+    }
+    return map
+  }, [allBlocksFlat])
+
   const projectLink = useMemo<ProjectLinkContextValue>(() => ({
     createProjectRow(targetSectionId, titleColumnKey, text) {
       const found = findProjectBlock(targetSectionId)
@@ -377,6 +396,10 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       const title = cellText(row.cells[titleColumnKey])
       return { title }
     },
+    getIncomingLink(rowId) {
+      const sourceLabel = incomingProjectLinks.get(rowId)
+      return sourceLabel ? { sourceLabel } : null
+    },
     scrollToProjectRow(projectRowId) {
       if (typeof document === "undefined") return
       // 새 행 DOM 이 커밋된 뒤로 미룬다(생성 직후 호출되므로).
@@ -385,7 +408,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         el?.scrollIntoView?.({ behavior: "smooth", block: "center" })
       })
     },
-  }), [findProjectBlock])
+  }), [findProjectBlock, incomingProjectLinks])
 
   // ── FRT-178: 역할 이력 → 역할 태그 파생·동기화 (RoleHistoryContext provider) ──
   // 태그 선택지가 상수가 아니라 형제 블록('역할 이력')의 값에서 나온다. 블록은 형제를 모르므로
