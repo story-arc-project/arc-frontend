@@ -19,6 +19,7 @@ import type {
 } from "@/types/archive"
 import { SECTION_DESCRIPTION_OVERRIDES, SECTION_LABEL_OVERRIDES } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
+import { mergeSavedIntoTemplate } from "@/lib/utils/experience-mapper"
 import {
   cloneBlocks,
   createEmptyRow,
@@ -34,6 +35,7 @@ import {
 import { capture } from "@/lib/analytics"
 import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
 import { normalizeHiddenKeys, resolveHiddenBlocks } from "@/lib/utils/hidden-fields"
+import { conditionHiddenKeys, partitionByCondition } from "@/lib/utils/conditional-fields"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
 import { RoleHistoryProvider, type RoleHistoryContextValue } from "@/contexts/RoleHistoryContext"
 
@@ -119,14 +121,26 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
    * (값이 다시 비는 순간) 조용히 사라진다. `normalizeHiddenKeys` 가 `canHideBlock` 이라는
    * 같은 잣대로 걸러 주므로, 소비처마다 판정 사본을 두지 않고 여기서 한 번만 맞춘다.
    */
-  const effectiveHiddenKeys = useMemo(
-    () =>
-      normalizeHiddenKeys(
-        [...coreBlocks, ...extensionSections.flatMap(s => s.blocks)],
-        hiddenKeys
-      ),
-    [coreBlocks, extensionSections, hiddenKeys]
+  /**
+   * 조건부 노출(FRT-211) 판정용 전체 블록 — 트리거가 다른 카드로 분배돼도 찾을 수 있어야 한다.
+   * `computeFormCards` 가 템플릿 섹션을 4카드로 재구성하므로 카드 안 블록만 보면 트리거를 놓친다.
+   */
+  const allBlocksFlat = useMemo(
+    () => [...coreBlocks, ...extensionSections.flatMap(s => s.blocks)],
+    [coreBlocks, extensionSections]
   )
+
+  const effectiveHiddenKeys = useMemo(
+    () => normalizeHiddenKeys(allBlocksFlat, hiddenKeys),
+    [allBlocksFlat, hiddenKeys]
+  )
+
+  /**
+   * 조건 미충족으로 화면에서 빠진 필드의 안정키 — **진행도 계산에만** `effectiveHiddenKeys` 와
+   * 합쳐 쓴다. 저장(`hiddenKeys`)에는 절대 섞지 않는다: 조건 미충족은 트리거 값에서 매번 다시
+   * 계산되는 파생 상태라 영속화할 것이 없고, 저장하면 사용자가 치운 것과 구분되지 않는다.
+   */
+  const conditionKeys = useMemo(() => conditionHiddenKeys(allBlocksFlat), [allBlocksFlat])
 
   // Load template when type changes
   useEffect(() => {
@@ -165,27 +179,34 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       if (extensionSections.length === 0) {
         const savedBlocks = initialExperience.extensionBlocks
         // Distribute saved extension blocks across template sections.
-        // schema v2: 안정키로 매칭(라벨 충돌 무관) → 화면순서=저장순서 보장.
-        // 키 없는 레거시 블록만 라벨 폴백.
+        // schema v2: 안정키로 매칭(라벨 충돌 무관). 키 없는 레거시 블록만 라벨 폴백.
+        //
+        // ⚠️ 매칭분으로 섹션을 **교체하지 않고 템플릿에 병합**한다(FRT-211, Codex P1).
+        // v2 레코드는 toExperienceV2 가 현재 템플릿 전체를 재구성해 내려주므로 교체든 병합이든
+        // 결과가 같지만, v1 레거시 레코드(저장된 블록 배열 그대로 — 데모 시드가 이 모양)는
+        // 살아남은 라벨만 들어 있어 교체하면 **나머지 새 필드가 화면에서 통째로 사라진다**.
+        // 수상경력은 확정본 개편으로 구 라벨 중 '수상일' 하나만 살아남아, 그 한 칸 때문에
+        // 필수 5개를 채울 방법이 없어져 완료 저장이 영구 차단됐다.
+        // 매칭된 블록은 **정의는 템플릿, 값은 저장분**으로 병합한다(mergeSavedIntoTemplate).
+        // 통째로 쓰면 구 템플릿의 required·guide 가 따라와 필수 표시가 사라진다(Codex P2).
+        const savedByKey = new Map<string, Block>()
+        const savedByLabel = new Map<string, Block>()
+        for (const b of savedBlocks) {
+          if (b.key) savedByKey.set(b.key, b)
+          else if (!savedByLabel.has(b.label)) savedByLabel.set(b.label, b)
+        }
         setExtensionSections(
-          tmpl.extensions.map(ext => {
-            const templateKeys = new Set(
-              ext.blocks.map(b => b.key).filter((k): k is string => !!k)
-            )
-            const templateLabels = new Set(ext.blocks.map(b => b.label))
-            const matchedBlocks = savedBlocks.filter(b =>
-              b.key ? templateKeys.has(b.key) : templateLabels.has(b.label)
-            )
-            return {
-              id: ext.id,
-              label: ext.label,
-              category: ext.category,
-              collapsed: ext.collapsed,
-              blocks: matchedBlocks.length > 0
-                ? matchedBlocks
-                : cloneBlocks(ext.blocks),
-            }
-          })
+          tmpl.extensions.map(ext => ({
+            id: ext.id,
+            label: ext.label,
+            category: ext.category,
+            collapsed: ext.collapsed,
+            blocks: ext.blocks.map(tb => {
+              const saved = (tb.key ? savedByKey.get(tb.key) : undefined) ?? savedByLabel.get(tb.label)
+              const [tplBlock] = cloneBlocks([tb])
+              return saved ? mergeSavedIntoTemplate(tplBlock, saved) : tplBlock
+            }),
+          }))
         )
       }
     }
@@ -513,9 +534,11 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   // 진행도는 별도 채널로 흘린다. formCards 는 블록 값 변화에 따라 재계산된다.
   // 숨긴 항목은 진행도에서도 빠져야 한다 — 안 빼면 "해당 없음"으로 치울수록 바가 안 차고,
   // 되돌려서 자기와 무관한 항목을 채워야만 100% 가 되는 모순이 난다(FRT-190).
+  // 조건 미충족으로 화면에 없는 필드도 같은 이유로 빠진다 — 보이지도 않는 칸 때문에 필수 없는
+  // 카드가 영원히 미완료로 남는다(FRT-211).
   const progress = useMemo(
-    () => computeFormProgress(formCards?.cards ?? [], effectiveHiddenKeys),
-    [formCards, effectiveHiddenKeys]
+    () => computeFormProgress(formCards?.cards ?? [], [...effectiveHiddenKeys, ...conditionKeys]),
+    [formCards, effectiveHiddenKeys, conditionKeys]
   )
   const onProgressChangeRef = useRef(onProgressChange)
   useEffect(() => {
@@ -617,7 +640,13 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
           {formCards.cards.map(card => {
             // 숨김은 카드 모델이 아니라 이 렌더 층에서 가른다 — 카드 자체와 하단 되살리기
             // 토글은 남겨야 마지막 필드를 숨겨도 되돌릴 길이 사라지지 않는다.
-            const { visible, hidden } = resolveHiddenBlocks(card.blocks, effectiveHiddenKeys)
+            //
+            // 조건부 노출(FRT-211)을 **먼저** 거른다. 두 필터는 층이 다르다 — 조건 미충족은
+            // `hidden`(되살리기 토글 목록)으로 넘기지 않는다. 사용자가 치운 적이 없으니 되살릴
+            // 것도 없고, 목록에 뜨면 자기가 하지 않은 일을 되돌리라는 버튼이 생긴다.
+            // 걸러진 블록의 값은 `writeBackBlocks` 가 id 기준으로 병합하므로 state 에 그대로 남는다.
+            const { visible: shown } = partitionByCondition(card.blocks, allBlocksFlat)
+            const { visible, hidden } = resolveHiddenBlocks(shown, effectiveHiddenKeys)
             return (
               <FormSection
                 key={card.category}

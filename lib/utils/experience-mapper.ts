@@ -10,6 +10,7 @@ import type {
   Block,
   BlockValue,
   CustomEntry,
+  TemplateV2,
 } from "@/types/archive"
 import { isImportanceLevel, SCHEMA_VERSION_V2 } from "@/types/archive"
 import {
@@ -84,6 +85,22 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
     return { ...block, value, lockColumns: false }
   }
   return { ...block, value }
+}
+
+/**
+ * 편집 모드 병합용 — **정의는 현재 템플릿, 값만 저장분**에서 싣는다.
+ *
+ * v1 레거시 블록은 구 템플릿의 메타데이터를 통째로 들고 있어 그대로 쓰면 required·guide·
+ * placeholder 가 옛 정의로 되돌아간다. 수상경력의 `수상일`은 구 템플릿에서 optional 이라,
+ * 저장 블록을 그대로 쓰면 필수 표시가 사라지고 `isRequiredBlock` 기준 완료 판정이 날짜가
+ * 비어도 카드를 완료로 본다(FRT-211, Codex P2).
+ *
+ * 타입 비호환으로 `injectValue` 가 주입을 생략하면(인자를 그대로 반환) 템플릿 블록엔 값이
+ * 없어 화면에서 저장값이 사라지므로, 그때는 저장 블록을 그대로 돌려준다 — 값 보존 우선.
+ */
+export function mergeSavedIntoTemplate(templateBlock: Block, saved: Block): Block {
+  const merged = injectValue(templateBlock, saved.value)
+  return merged === templateBlock ? saved : merged
 }
 
 /**
@@ -170,6 +187,61 @@ function isHeaderBlock(b: Block): boolean {
 }
 
 /**
+ * 순수 개명된 안정키의 별칭 — `구 키 → 새 키`.
+ *
+ * 안정키는 `${sectionId}.${label}` 파생이라 라벨을 바꾸면 키가 통째로 바뀌고, 저장된 값이 새
+ * 필드에 붙지 못한다. `orphanFieldsToBlocks` 안전망 덕에 값이 사라지지는 않지만 '기타' 카드로
+ * 밀려나, 사용자는 라벨이 바뀌었다는 이유만으로 **같은 정보를 다시 타이핑**해야 한다(FRT-211).
+ *
+ * ⚠️ **질문이 같은 개명만 넣는다.** 의미가 바뀐 대체는 넣지 않는다 — 수상경력의 '수상명'(상의
+ * 이름)·'수상 구분'(드롭다운)을 '수상 훈격'(상의 등급)으로 옮기면 **옛 답이 새 질문의 답으로
+ * 둔갑한다**(대회명이 훈격 칸에 들어간다). 그런 값은 '기타' 로 보존해 사용자가 직접 판단하게 둔다.
+ */
+const RENAMED_FIELD_KEYS: Record<string, string> = {
+  'award-info.대회/프로그램명': 'award-info.대회 / 프로그램명',
+  'award-info.주최/기관': 'award-info.주최 기관',
+}
+
+/**
+ * 구 키의 값을 새 키 자리로 옮긴 fields 사본을 돌려준다(원본 불변).
+ * 새 키에 이미 값이 있으면 **그쪽이 이긴다** — 개편 후 사용자가 채운 값을 옛 값이 덮으면 안 된다.
+ * 옮긴 구 키는 지워 orphan 안전망이 '기타' 에 중복으로 되살리지 않게 한다.
+ */
+function applyRenamedKeys(fields: Record<string, BlockValue>): Record<string, BlockValue> {
+  let out = fields
+  for (const [oldKey, newKey] of Object.entries(RENAMED_FIELD_KEYS)) {
+    const legacy = out[oldKey]
+    if (!legacy) continue
+    if (out === fields) out = { ...fields }
+    delete out[oldKey]
+    const current = out[newKey]
+    const currentFilled =
+      current && !isBlockEmpty({ id: '', type: current.type, label: '', value: current })
+    if (!currentFilled) out[newKey] = legacy
+  }
+  return out
+}
+
+/**
+ * v1 레거시용 — 개명된 구 **라벨** → 새 안정키. v1 레코드는 `fields` 맵이 없고 저장된 블록의
+ * 라벨로 매칭하므로 키 별칭(`applyRenamedKeys`)이 닿지 않는다.
+ *
+ * 현재 유형의 템플릿이 실제로 그 새 키를 가질 때만 별칭을 만든다 — 다른 유형에 우연히 같은
+ * 라벨의 블록이 있어도 엉뚱한 키가 붙지 않게 하는 유형 게이트다.
+ */
+function renamedLabelKeyMap(tmpl: TemplateV2): Record<string, string> {
+  const templateKeys = new Set<string>()
+  for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) templateKeys.add(b.key)
+
+  const out: Record<string, string> = {}
+  for (const [oldKey, newKey] of Object.entries(RENAMED_FIELD_KEYS)) {
+    if (!templateKeys.has(newKey)) continue
+    out[oldKey.slice(oldKey.indexOf('.') + 1)] = newKey
+  }
+  return out
+}
+
+/**
  * 현재 템플릿이 소비하지 않는 fields 항목(구 템플릿에서 이동·삭제·개편된 필드의 값)을
  * custom 필드 블록으로 보존한다. 이 안전망이 없으면 orphan 값이 로드 시 안 보이고
  * toSavePayload 재직렬화 때 영구 삭제된다(템플릿 개편 시 무음 데이터 손실 방지).
@@ -235,7 +307,9 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
 
   // ── v2: 레지스트리 순서로 블록 재구성 + fields 값 주입 ──
   if (content.schema_version === SCHEMA_VERSION_V2 && hasTemplate(exp.type)) {
-    const fields = content.fields ?? {}
+    // 개명된 구 키는 새 키 자리로 옮겨 놓고 시작한다 — 라벨이 바뀌었다는 이유로 사용자가 같은
+    // 정보를 다시 타이핑하게 만들지 않는다(RENAMED_FIELD_KEYS).
+    const fields = applyRenamedKeys(content.fields ?? {})
     const tmpl = getTemplateForType(typeId)
     const coreBlocks = tmpl.commonCore.blocks.map(b => {
       if (b.key === TITLE_KEY) return { ...b, value: { type: "text", text: title } as BlockValue }
@@ -279,7 +353,24 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   // buildSettingsSection 전환 후의 배경/목표·결과/성과·지원 동기 등)을 extensionBlocks 로 두면
   // 폼 로드 시 그 필터에서 탈락→저장 왕복에 유실되므로 custom 으로 보존한다.
   // v2 orphanFieldsToBlocks 안전망의 v1(schema_version 미기재) 대응.
-  const keyedExt = savedExt.map(b => (b.key ? b : { ...b, key: extKeyByLabel[b.label] }))
+  // 개명 별칭은 v1 에도 적용한다 — v1 은 fields 맵이 없어 키 별칭(applyRenamedKeys)이 닿지 않는데,
+  // 같은 순수 개명인데 v2 만 값이 이어지고 v1 은 '기타' 로 밀려나면 반쪽 수정이다.
+  const renamedExtKeys = renamedLabelKeyMap(tmpl)
+  // 새 라벨 블록이 이미 있으면 별칭을 붙이지 않는다 — 한 키에 두 블록이 겹치면 어느 쪽 값이
+  // 살아남는지 배열 순서에 좌우된다.
+  const claimedKeys = new Set(
+    savedExt.map(b => b.key ?? extKeyByLabel[b.label]).filter((k): k is string => !!k),
+  )
+  const keyedExt = savedExt.map(b => {
+    if (b.key) {
+      const renamed = RENAMED_FIELD_KEYS[b.key]
+      return renamed && !claimedKeys.has(renamed) ? { ...b, key: renamed } : b
+    }
+    const current = extKeyByLabel[b.label]
+    if (current) return { ...b, key: current }
+    const alias = renamedExtKeys[b.label]
+    return { ...b, key: alias && !claimedKeys.has(alias) ? alias : undefined }
+  })
   const extTemplateKeys = new Set<string>()
   const extTemplateLabels = new Set<string>()
   for (const s of tmpl.extensions) for (const b of s.blocks) {

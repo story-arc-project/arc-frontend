@@ -285,7 +285,36 @@ export interface Block {
    * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
    */
   allowRowExtras?: boolean
+  /**
+   * 조건부 노출 (FRT-211). 다른 블록(트리거)의 현재 값에 따라 이 필드를 보이거나 숨긴다 —
+   * 수상경력 확정본의 "'개인 / 팀'에서 '팀 수상'을 고르면 '팀에서 내가 맡은 역할'이 나타난다".
+   * `roleTags`·`lockColumns` 와 같은 규약이다: 템플릿 정의에만 존재하며 value(JSONB)에는
+   * 직렬화되지 않는다(로드 시 레지스트리에서 재공급).
+   *
+   * ⚠️ 사용자가 직접 치운 목록(`hiddenKeys`, FRT-190)과는 **다른 층**이다. 조건 미충족은 어디에도
+   * 저장되지 않는 순수 파생 상태이고, 조건으로 숨은 필드는 '숨긴 항목 N개' 되살리기 목록에
+   * 나타나지 않는다(사용자가 치운 것이 아니므로 되살릴 것도 없다).
+   */
+  visibleWhen?: VisibilityCondition
   value: BlockValue
+}
+
+/**
+ * 조건부 노출 트리거 조건 (FRT-211).
+ *
+ * 트리거는 라벨이 아니라 **안정키**로 가리킨다 — 같은 라벨이 여러 섹션에 존재할 수 있어
+ * 라벨로는 어느 블록이 트리거인지 확정되지 않는다.
+ *
+ * ⚠️ 안정키는 `withSectionKeys` 가 `${sectionId}.${label}` 로 만들므로 **라벨을 바꾸면 이 `key`
+ * 문자열도 함께 바꿔야 한다.** 잊으면 조건이 영원히 미충족이 되어 필드가 아예 안 보인다 —
+ * templates-v2.test.ts 의 "트리거 키가 실제 안정키와 일치한다" 테스트가 유일한 방어선이다.
+ *
+ * `equals` 는 정확히 일치, `startsWith` 는 접두어 일치. 둘 다 없으면 "트리거에 값이 있으면 노출".
+ */
+export interface VisibilityCondition {
+  key: string
+  equals?: string[]
+  startsWith?: string[]
 }
 
 /**
@@ -338,6 +367,7 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   Record<ExperienceTypeId, Partial<Record<SectionCategory, string>>>
 > = {
   'academic-society': { repeat: '프로젝트 기록' },
+  'award': { detail: '수상 과정과 배움', evidence: '상장 / 증빙' },
   'career': { repeat: '프로젝트 / 담당 업무 기록' },
   'certification': { detail: '취득 배경', evidence: '자격증 증빙' },
   'club': { detail: '활동 상세', repeat: '활동 / 이벤트 기록' },
@@ -353,6 +383,11 @@ export const SECTION_LABEL_OVERRIDES: Partial<
 export const SECTION_DESCRIPTION_OVERRIDES: Partial<
   Record<ExperienceTypeId, Partial<Record<SectionCategory, string>>>
 > = {
+  'award': {
+    detail:
+      '간단히만 적어도 괜찮아요. 이 중 하나만 채워도 이후 AI 분석과 자기소개서 문장 추천 품질이 크게 달라져요.',
+    evidence: '상장 사본, 트로피 사진, 관련 기사 등 수상을 증명할 자료를 첨부해주세요.',
+  },
   'certification': {
     detail:
       '전부 선택 항목이지만, 이 중 하나만 채워도 이후 AI 분석과 자기소개서·이력서 문장 추천의 품질이 크게 달라져요.',

@@ -117,8 +117,9 @@ export default function LinkBlock({ block, readOnly, onChange }: LinkBlockProps)
   return (
     <fieldset className="flex flex-col gap-3">
       <legend className="text-field-label text-text-primary mb-1">{block.label}</legend>
+      {/* 템플릿이 지정한 문구를 우선한다 — 확정본이 URL 칸의 안내를 따로 정한 필드가 있다(FRT-211). */}
       <Input
-        placeholder="https://..."
+        placeholder={block.placeholder ?? "https://..."}
         hint={block.guide}
         hintPosition="top"
         value={val.url}

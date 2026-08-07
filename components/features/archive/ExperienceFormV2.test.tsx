@@ -605,3 +605,96 @@ describe("FRT-190 선택 필드 숨김", () => {
     })
   })
 })
+
+/**
+ * FRT-211 회귀(Codex P1) — 구 레코드를 편집할 때 새 템플릿 필드가 사라지는 문제.
+ *
+ * 편집 모드는 저장된 확장 블록을 템플릿 섹션에 재분배하는데, 매칭된 블록이 하나라도 있으면
+ * 그 섹션을 **매칭분으로 통째 교체**했다. schema v2 레코드는 `toExperienceV2` 가 현재 템플릿
+ * 전체를 재구성해 내려주므로 무해했지만, **v1 레거시 레코드**(schema_version 없이 저장된
+ * 블록 배열 그대로 — 데모 시드가 이 모양이다)는 살아남은 라벨만 매칭돼 나머지 새 필드가
+ * 화면에서 통째로 사라진다.
+ *
+ * 수상경력은 확정본 개편으로 구 라벨 중 `수상일` 하나만 살아남아, 구 레코드를 열면 ① 섹션에
+ * 필드가 1개만 뜨고 **필수 5개를 채울 방법이 없어 완료 저장이 영구 차단**된다.
+ * 매칭분으로 교체하지 말고 **템플릿 섹션에 병합**해야 한다(v2 는 결과가 동일 — 무회귀).
+ */
+describe("FRT-211 구 레코드 편집 시 새 템플릿 필드 병합", () => {
+  function legacyAward(): ExperienceV2 {
+    return {
+      id: "exp-award-v1",
+      userId: "u1",
+      typeId: "award",
+      title: "전국 대학생 창업 경진대회 대상",
+      summary: "",
+      status: "complete",
+      tags: [],
+      importance: undefined,
+      coreBlocks: [],
+      // v1 레거시 매칭 결과: 구 award 라벨 중 현재 템플릿과 겹치는 건 '수상일' 하나뿐이다.
+      extensionBlocks: [
+        {
+          id: "b-date",
+          type: "date",
+          label: "수상일",
+          key: "award-info.수상일",
+          value: { type: "date", date: "2026-05-20" },
+        },
+      ],
+      customBlocks: [],
+      hiddenKeys: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }
+  }
+
+  it("살아남은 필드 하나 때문에 나머지 확정본 필드가 사라지지 않는다", () => {
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={legacyAward()}
+        onSave={vi.fn()}
+        onCancel={() => {}}
+      />,
+    )
+
+    // ① 수상 정보의 필수 5종이 모두 렌더돼야 완료 저장이 가능하다.
+    for (const label of ["대회 / 프로그램명", "대회 유형", "수상 훈격", "주최 기관", "수상일"]) {
+      expect(screen.getByLabelText(new RegExp(`^${label}`)), label).toBeInTheDocument()
+    }
+  })
+
+  it("병합해도 저장돼 있던 값은 그대로 남는다", () => {
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={legacyAward()}
+        onSave={vi.fn()}
+        onCancel={() => {}}
+      />,
+    )
+
+    const dateInput = screen.getByLabelText(/^수상일/) as HTMLInputElement
+    expect(dateInput.value).toBe("2026-05-20")
+  })
+
+  /**
+   * 구 award 템플릿의 '수상일'은 optional 이었다(`createDateField('수상일')`). 저장 블록을
+   * 통째로 쓰면 그 낡은 메타데이터가 따라와 필수 표시가 사라지고, `isRequiredBlock` 기준
+   * 완료 판정이 **날짜가 비어도 카드를 완료로 본다**. 값만 현재 템플릿 정의에 실어야 한다.
+   */
+  it("값은 저장분을, 정의는 현재 템플릿을 쓴다", () => {
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={legacyAward()}
+        onSave={vi.fn()}
+        onCancel={() => {}}
+      />,
+    )
+
+    const dateInput = screen.getByLabelText(/^수상일/) as HTMLInputElement
+    expect(dateInput.required).toBe(true)
+    expect(dateInput.value).toBe("2026-05-20")
+  })
+})

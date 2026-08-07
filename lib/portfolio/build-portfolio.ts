@@ -86,6 +86,27 @@ function periodOf(value: BlockValue | undefined): string {
 // SEMANTIC_GROUPS 에 넣지 않는다 — 폼 dedup 동작(아카이브 입력)을 바꾸지 않기 위해 로컬 처리.
 const SUMMARY_LABELS = ["한 줄 요약", "한 줄 설명", "한 줄 소개"];
 
+// 확정본 정렬로 코어 '기간'을 뺀 유형(CORE_EXCLUDE)은 단일 날짜 하나로 시점을 받는다.
+// period 의미그룹에도 없고 periodOf 는 date 값을 포맷하지 못해, 폴백이 없으면 새로 만든
+// 수상/자격증이 발행 시 날짜 없이 나간다. SUMMARY_LABELS 와 같은 이유로 SEMANTIC_GROUPS 가
+// 아니라 로컬 상수다 — 여기에 넣으면 아카이브 입력 폼의 dedup 동작까지 바뀐다.
+//
+// ⚠️ 라벨이 아니라 **유형별 안정키**로 찾는다(Codex P2). 라벨로 훑으면 다른 유형에 우연히
+// 같은 이름의 커스텀·레거시 블록이 있을 때 무관한 날짜가 발행 기간으로 나가고, 자격증에
+// '수상일' 잔재가 섞이면 탐색 순서만으로 엉뚱한 쪽이 뽑힌다.
+const DATE_PERIOD_KEY: Partial<Record<ExperienceTypeId, string>> = {
+  award: "award-info.수상일",
+  certification: "cert-info.취득일",
+};
+
+/** 코어 '기간'이 없는 유형의 시점 폴백. 값이 없으면 빈 문자열 — 없는 날짜를 지어내지 않는다. */
+function datePeriodOf(typeId: ExperienceTypeId, blocks: Block[]): string {
+  const key = DATE_PERIOD_KEY[typeId];
+  if (!key) return "";
+  const block = blocks.find((b) => b.key === key && !isBlockEmpty(b));
+  return block?.value.type === "date" ? ym(block.value.date) : "";
+}
+
 // 성과 라벨 그룹(SEMANTIC_GROUPS.achievement)엔 성격이 다른 둘이 섞여 있다:
 //  - 동의어(핵심 성과·결과/성과·성과 등): 같은 질문의 **대안**. 하나만 고른다(core 우선).
 //  - 상호보완(학회 `단체 활동 / 성과`·`개인 활동 / 성과`): 동시에 채우는 별개 항목. 모두 합친다.
@@ -145,7 +166,11 @@ export function experienceToPost(exp: Experience): PortfolioPost {
   return {
     id: exp.id,
     title: ev2.title || textOf(findBlock(core, "경험명")?.value),
-    period: periodOf(pickValue(blocks, "기간")),
+    // 확정본이 시점을 단일 날짜로 정한 유형은 **그 날짜가 먼저**다. 개편 전 레코드는 폐기된
+    // `core.기간` 이 orphan 으로 custom 에 남아 있어(experience-mapper 안전망) 범용 조회가
+    // 먼저 걸리면, 화면에서 볼 수도 고칠 수도 없는 옛 범위가 계속 발행되고 새로 채운 수상일이
+    // 반영되지 않는다. 날짜가 비어 있을 때만 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다.
+    period: datePeriodOf(exp.type as ExperienceTypeId, blocks) || periodOf(pickValue(blocks, "기간")),
     category: label,
     summary: ev2.summary || pickSummary(blocks),
     contribution: textOf(pickValue(blocks, "내 역할/기여도")),

@@ -4,6 +4,7 @@ import type { Block } from "@/types/archive";
 import { SCHEMA_VERSION_V2 } from "@/types/archive";
 import type { PortfolioProfile } from "@/types/portfolio";
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper";
+import { getTemplateForType } from "@/lib/constants/templates-v2";
 import { buildPortfolio, experienceToPost, isPublishableExperience } from "./build-portfolio";
 
 function blk(id: string, type: Block["type"], label: string, value: Block["value"]): Block {
@@ -356,5 +357,147 @@ describe("isPublishableExperience (명시적 옵트인)", () => {
     ["비공개", "비공개"],
   ])("기본 비공개 — %s 는 발행 불가", (_label, selected) => {
     expect(isPublishableExperience(withVisibility("x", selected))).toBe(false);
+  });
+});
+
+/**
+ * FRT-211 회귀(Codex P1) — 단일 날짜로 시점을 받는 유형의 발행 기간.
+ *
+ * 확정본 정렬로 수상경력·자격증은 코어 '기간'을 빼고(CORE_EXCLUDE) 각각 '수상일'·'취득일'
+ * 하나로 시점을 받는다. 그런데 발행 매퍼는 period 의미그룹(기간·활동 기간…)만 조회하고
+ * periodOf 는 date 값을 포맷하지 못해, **새로 만든 수상/자격증은 발행 시 날짜가 통째로 빈다**.
+ * (구 레코드는 폐기된 '기간'이 orphan 으로 custom 에 남아 있어 여전히 채워진다 — 신규만 해당.)
+ */
+describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
+  function dateOnlyExp(type: string, key: string, date: string): Experience {
+    return makeExp({
+      type,
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 창업 경진대회 대상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: { [key]: { type: "date", date } },
+      } as unknown as Experience["content"],
+    });
+  }
+
+  it("수상경력은 '수상일'을 발행 기간으로 쓴다", () => {
+    expect(experienceToPost(dateOnlyExp("award", "award-info.수상일", "2026-05-20")).period).toBe(
+      "2026.05",
+    );
+  });
+
+  it("자격증은 '취득일'을 발행 기간으로 쓴다", () => {
+    expect(
+      experienceToPost(dateOnlyExp("certification", "cert-info.취득일", "2025-11-03")).period,
+    ).toBe("2025.11");
+  });
+
+  it("날짜가 비어 있으면 기간도 빈다 — 없는 값을 지어내지 않는다", () => {
+    expect(experienceToPost(dateOnlyExp("award", "award-info.수상일", "")).period).toBe("");
+  });
+
+  /** 대조군: 코어 '기간'을 쓰는 유형은 날짜 폴백이 끼어들지 않는다. */
+  it("'기간'을 쓰는 유형의 표기는 그대로다", () => {
+    expect(experienceToPost(makeExp()).period).toBe("2026.02 – 2026.05");
+  });
+
+  /**
+   * 폴백은 **유형별 안정키**로만 찾는다. 라벨로 훑으면 다른 유형의 커스텀/레거시 블록에
+   * 우연히 같은 이름이 있을 때 무관한 날짜가 발행 기간으로 나간다.
+   */
+  it("다른 유형에 같은 라벨의 느슨한 블록이 있어도 기간으로 쓰지 않는다", () => {
+    const exp = makeExp({
+      content: {
+        title: "주가 예측 프로젝트",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        coreBlocks: [blk("c1", "text", "경험명", { type: "text", text: "주가 예측 프로젝트" })],
+        extensionBlocks: [],
+        customBlocks: [blk("x1", "date", "수상일", { type: "date", date: "2026-05-20" })],
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("");
+  });
+
+  /**
+   * 개편 전에 만든 v2 수상 기록은 폐기된 `core.기간` 이 orphan 으로 custom 에 남는다.
+   * 그 값이 `수상일` 을 이기면, 사용자가 화면에서 볼 수도 고칠 수도 없는 옛 범위가 계속
+   * 발행되고 **새로 채운 수상일이 반영되지 않는다.** 확정본이 시점으로 정한 쪽이 이겨야 한다.
+   */
+  it("폐기된 '기간'이 남아 있어도 '수상일'을 먼저 쓴다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 창업 경진대회 대상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.기간": { type: "period", start: "2025-01-01", end: "2025-03-31", isCurrent: false },
+          "award-info.수상일": { type: "date", date: "2026-05-20" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("2026.05");
+  });
+
+  /** 다만 수상일이 아직 비어 있으면 옛 기간이라도 보여준다 — 있는 정보를 지우지 않는다. */
+  it("'수상일'이 비어 있으면 폐기된 '기간'으로 폴백한다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 창업 경진대회 대상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.기간": { type: "period", start: "2025-01-01", end: "2025-03-31", isCurrent: false },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("2025.01 – 2025.03");
+  });
+
+  /** 자격증에 '수상일'까지 섞여 있어도 자기 유형의 키('취득일')를 쓴다. */
+  it("자격증은 '수상일'이 섞여 있어도 '취득일'을 쓴다", () => {
+    const exp = makeExp({
+      type: "certification",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "정보처리기사",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "cert-info.취득일": { type: "date", date: "2025-11-03" },
+          "award-info.수상일": { type: "date", date: "2026-05-20" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("2025.11");
+  });
+
+  /**
+   * 드리프트 가드 — 발행 매퍼의 날짜 폴백은 템플릿 안정키를 **문자열로 베껴 적은 것**이라
+   * (`withSectionKeys` 가 `${sectionId}.${label}` 로 만든다), 라벨을 바꾸면 조용히 깨진다.
+   * 위 테스트들은 같은 문자열을 하드코딩하므로 양쪽이 함께 어긋나도 초록이다 —
+   * 여기서만 픽스처 키를 **실제 템플릿에서 뽑아** 쓴다. 라벨이 바뀌면 매퍼가 그 키를 못 찾아
+   * 기간이 비고 이 테스트가 먼저 빨개진다. `visibleWhen.key` 일치 가드와 같은 성격이다.
+   */
+  it.each([
+    ["award" as const, "수상일", "2026-05-20", "2026.05"],
+    ["certification" as const, "취득일", "2025-11-03", "2025.11"],
+  ])("%s 의 날짜 폴백 키가 실제 템플릿 안정키와 일치한다", (type, label, date, expected) => {
+    const key = getTemplateForType(type)
+      .extensions.flatMap(s => s.blocks)
+      .find(b => b.label === label)?.key;
+    expect(key).toBeTruthy();
+    expect(experienceToPost(dateOnlyExp(type, key as string, date)).period).toBe(expected);
   });
 });
