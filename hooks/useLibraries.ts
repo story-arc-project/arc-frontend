@@ -49,7 +49,20 @@ export function useLibraries() {
   //   라이브러리의 추가/삭제가 남의 정상 응답까지 버려 그 목록이 빈 채로 고정된다.
   const membershipVersionRef = useRef(0);
   const membershipVersionsRef = useRef<Map<string, number>>(new Map());
+  // 서버 응답을 기다리는 중인 쓰기 수(라이브러리별). 하나라도 있으면 방금 받아온
+  // 서버 스냅샷이 그 쓰기를 아직 담고 있지 않을 수 있으므로 반영하면 안 된다.
+  const pendingWritesRef = useRef<Map<string, number>>(new Map());
   const loadLibraryMembershipRef = useRef<(id: string) => Promise<void>>(async () => {});
+
+  const beginWrite = useCallback((libraryId: string) => {
+    pendingWritesRef.current.set(libraryId, (pendingWritesRef.current.get(libraryId) ?? 0) + 1);
+  }, []);
+
+  const endWrite = useCallback((libraryId: string) => {
+    const next = (pendingWritesRef.current.get(libraryId) ?? 1) - 1;
+    if (next > 0) pendingWritesRef.current.set(libraryId, next);
+    else pendingWritesRef.current.delete(libraryId);
+  }, []);
 
   /** 두 카운터를 함께 올리고, 이 mutation 이 세운 라이브러리별 세대를 돌려준다. */
   const bumpMembershipVersion = useCallback((libraryId: string) => {
@@ -240,16 +253,19 @@ export function useLibraries() {
       try {
         const data = await getLibraryExperiences(libraryId);
         const ids = data.contents.map((experience) => experience.id);
-        // Pin to the generation the *failed* mutation established, not to the
-        // one current when this GET started. Another same-library write may
-        // already have been in flight when we entered, and the server snapshot
-        // we just fetched cannot contain it — applying it would erase an edit
-        // that goes on to succeed. Any change since then means someone else is
-        // authoritative, so we stay out of the way.
-        if (mutationVersion !== (membershipVersionsRef.current.get(libraryId) ?? 0)) {
-          // Superseded. Touch nothing — not even the loaded/error flags: another
-          // recovery may already have failed and raised the retry affordance,
-          // and clearing it here would present unreconciled state as loaded.
+        // Only apply when nothing else is racing this library. Two ways it can be:
+        //   - the generation moved on → a later write already patched state and
+        //     owns it, and our snapshot predates that write;
+        //   - a write is still awaiting its response → the snapshot cannot
+        //     contain it yet, so applying would erase an edit that goes on to
+        //     succeed, with no signal to the user.
+        // Either way we touch nothing — not even the loaded/error flags, since
+        // another recovery may already have raised the retry affordance and
+        // clearing it would present unreconciled state as loaded.
+        if (
+          mutationVersion !== (membershipVersionsRef.current.get(libraryId) ?? 0) ||
+          (pendingWritesRef.current.get(libraryId) ?? 0) > 0
+        ) {
           return true;
         }
         bumpMembershipVersion(libraryId);
@@ -302,16 +318,25 @@ export function useLibraries() {
       );
       markMembershipLoaded(libraryId);
       if (alreadyMember) return;
+      // Stop counting ourselves as pending before recovering, so the resync
+      // guard sees only writes that are genuinely still outstanding.
+      beginWrite(libraryId);
+      let failure: unknown = null;
       try {
         await apiAddExperienceToLibrary(libraryId, experienceId);
       } catch (err) {
+        failure = err;
+      } finally {
+        endWrite(libraryId);
+      }
+      if (failure) {
         // Overlapping toggles make naive rollback unsafe: another in-flight
         // remove may have already flipped state back. Resync from server.
         await resyncLibraryMembership(libraryId, mutationVersion);
-        throw err;
+        throw failure;
       }
     },
-    [bumpMembershipVersion, markMembershipLoaded, resyncLibraryMembership],
+    [beginWrite, bumpMembershipVersion, endWrite, markMembershipLoaded, resyncLibraryMembership],
   );
 
   const removeExperienceFromLibrary = useCallback(
@@ -331,14 +356,21 @@ export function useLibraries() {
       );
       markMembershipLoaded(libraryId);
       if (!wasMember) return;
+      beginWrite(libraryId);
+      let failure: unknown = null;
       try {
         await apiRemoveExperienceFromLibrary(libraryId, experienceId);
       } catch (err) {
+        failure = err;
+      } finally {
+        endWrite(libraryId);
+      }
+      if (failure) {
         await resyncLibraryMembership(libraryId, mutationVersion);
-        throw err;
+        throw failure;
       }
     },
-    [bumpMembershipVersion, markMembershipLoaded, resyncLibraryMembership],
+    [beginWrite, bumpMembershipVersion, endWrite, markMembershipLoaded, resyncLibraryMembership],
   );
 
   return {

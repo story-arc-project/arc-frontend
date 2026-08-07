@@ -319,6 +319,56 @@ describe("useLibraries — 병렬 멤버십 로딩과 mutation 경합", () => {
     expect(result.current.membershipErrorIds.has("lib-a")).toBe(true)
   })
 
+  it("아직 진행 중인 변경이 있으면, 나중 변경의 실패 복구가 그 변경을 지우지 않는다", async () => {
+    const { result } = await renderWithMembershipInFlight()
+
+    await act(async () => {
+      pendingMembership.get("lib-a")!.resolve(listData(["exp-1"]))
+      pendingMembership.get("lib-b")!.resolve(listData([]))
+      await Promise.resolve()
+    })
+    await settle()
+    pendingMembership.clear()
+    membershipQueue.length = 0
+
+    const postA = deferred<void>()
+    const postB = deferred<void>()
+    addExperienceToLibraryMock.mockImplementationOnce(() => postA.promise)
+    addExperienceToLibraryMock.mockImplementationOnce(() => postB.promise)
+
+    let addA!: Promise<void>
+    let addB!: Promise<void>
+    await act(async () => {
+      addA = result.current.addExperienceToLibrary("lib-a", "exp-2")
+      addB = result.current.addExperienceToLibrary("lib-a", "exp-3").catch(() => {})
+      await Promise.resolve()
+    })
+
+    // 뒤의 변경만 실패한다 — 앞의 변경은 아직 서버 응답을 기다리는 중이다.
+    await act(async () => {
+      postB.reject(new Error("서버 오류"))
+      await Promise.resolve()
+    })
+    await settle()
+    expect(membershipQueue).toHaveLength(1)
+
+    // 복구 재조회 응답에는 아직 처리 중인 앞의 변경이 담겨 있지 않다.
+    await act(async () => {
+      membershipQueue[0].resolve(listData(["exp-1"]))
+      await addB
+    })
+    await settle()
+
+    // 앞의 변경은 서버에서 성공한다 — 화면에서 사라지면 안 된다.
+    await act(async () => {
+      postA.resolve(undefined)
+      await addA
+    })
+    await settle()
+
+    expect(membershipOf(result.current.libraries, "lib-a")).toContain("exp-2")
+  })
+
   it("경합이 없으면 두 라이브러리 모두 각자의 목록을 반영한다", async () => {
     const { result } = await renderWithMembershipInFlight()
 
