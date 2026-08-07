@@ -81,6 +81,11 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   // 취득일과 **한 카드**여야 의미가 산다(교육의 '성적 증빙'과 같은 처리). core 를 남기면
   // 같은 카드에 파일 입력칸이 두 벌 생긴다.
   language: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
+  // 독서 확정본은 ① '독서 기간'으로 시점을 받는다. 역할·성과는 아예 성립하지 않는 질문이다
+  // (책을 읽는 데 '내 역할'과 '핵심 성과'가 없다). 다만 **'증빙 자료'는 빼지 않는다** —
+  // 어학은 자체 '성적표 첨부'가 있어서 뺄 수 있었던 것이고, 독서 확정본에는 증빙 필드가
+  // 하나도 없어 core 까지 빼면 첨부 수단이 통째로 사라진다.
+  reading: ['기간', '내 역할/기여도', '핵심 성과'],
 }
 
 /**
@@ -1709,34 +1714,134 @@ function sportsExtensions(): TemplateSection[] {
   ]
 }
 
+const READING_GENRE_OPTIONS = [
+  '인문/철학',
+  '역사',
+  '사회/정치',
+  '경제/경영',
+  '자기계발',
+  '과학/기술',
+  '심리/뇌과학',
+  '예술/문화',
+  '소설/문학',
+  '에세이/시',
+  '전공/학술',
+  '기타',
+] as const
+
+/** 확정본 ③ 은 별점을 이모지+괄호 표기 그대로 적었다 — 표기를 바꾸면 저장된 선택값이 어긋난다. */
+const READING_RATING_OPTIONS = [
+  '⭐⭐⭐⭐⭐ (강력 추천)',
+  '⭐⭐⭐⭐ (추천)',
+  '⭐⭐⭐ (괜찮았음)',
+  '⭐⭐ (아쉬웠음)',
+  '⭐ (별로)',
+] as const
+
+// 독서 — 확정본(독서_final). 구 `reading-info`/`reading-apply` 를 `book-*` 로 **전면 교체**한다.
+// 섹션 id 를 가는 것이 이 작업의 안전 장치다(FRT-210 과 같은 이유): 구 '읽은 기간/완독일'(text)이
+// 확정본에선 period, 구 '인상 깊은 문장'(textarea)은 개조식 리스트라, id 를 유지하면 안정키가
+// 같아져 injectValue 는 값을 안 싣고 그 키는 consumedKeys 에 잡혀 orphan 안전망까지 건너뛴다 —
+// 값이 '기타' 카드에도 없이 사라진다.
+//
+// 확정본 3섹션이 화면에선 4카드가 된다: 폼은 고정 4카테고리로 접히고 core '증빙 자료'가 항상
+// evidence 버킷에 들어간다. 확정본 ③ '평가'를 evidence 에 두지 않는 이유는 그 때문이다 —
+// '평가' 라는 이름의 카드에 파일 첨부칸이 딸려온다. detail 에 합치고 라벨만 바꾼다.
 function readingExtensions(): TemplateSection[] {
   return [
     {
-      id: 'reading-info',
+      id: 'book-info',
       category: 'basic',
-      label: '독서 정보',
+      label: '도서 정보',
       blocks: [
-        createTextField('도서명', { required: true }),
-        createTextField('저자'),
-        createTextField('읽은 기간/완독일'),
-        createTextareaField('읽은 이유'),
-        createTextareaField('핵심 요약 (3줄)', { required: true }),
-        createTextareaField('인상 깊은 문장'),
+        createTextField('도서명', {
+          required: true,
+          guide: '읽은 책의 정확한 제목을 적어주세요.',
+          placeholder: '예: 사피엔스',
+        }),
+        // 확정본 ① 에서 '선택' 표기가 없는 셋(도서명·저자·독서 기간)만 필수다.
+        createTextField('저자', {
+          required: true,
+          guide: '저자의 이름을 적어주세요.',
+          placeholder: '예: 유발 하라리',
+        }),
+        createSelectField('장르 / 분야', [...READING_GENRE_OPTIONS], {
+          guide:
+            '이 책이 속한 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createTextField('페이지 수', { placeholder: '예: 512쪽' }),
+        createPeriodField('독서 기간', {
+          required: true,
+          guide: '이 책을 읽기 시작하고 끝낸 시기를 선택해주세요.',
+        }),
+        createTextareaField('독서 이유', {
+          guide: '이 책을 읽게 된 계기가 있다면 적어주세요.',
+          placeholder:
+            '예: 교양 수업에서 추천 도서로 언급되어 관심이 생겼고, 인류사를 새로운 관점에서 이해하고 싶어 읽기 시작했습니다.',
+        }),
+        createTextField('한 줄 감상', {
+          guide: '이 책을 한 줄로 정리한다면?',
+          placeholder: '예: 인류의 역사를 새로운 시각으로 바라보게 해준 책',
+        }),
+        createTextareaField('요약', {
+          guide: '책의 전체 내용을 자유롭게 요약해주세요.',
+          placeholder:
+            '예: 인류 진화의 큰 흐름을 인지혁명·농업혁명·과학혁명이라는 세 가지 축으로 재구성한 책',
+        }),
+        createOutcomeList('인상 깊었던 문장', {
+          // 확정본 원문은 "아래 감상 세부기록에서" 라고 코드에 없는 섹션명을 가리킨다 —
+          // 안내가 화면에 없는 것을 가리키면 그게 더 큰 혼선이라 실제 카드명으로 맞췄다(FRT-177).
+          guide:
+            "기억하고 싶은 문장이나 구절을 항목별로 정리해주세요. 아래 '문장별 감상'에서 문장마다 생각을 남길 수 있어요.",
+          placeholder: '예: 우리가 사는 세계는 대부분 상상의 산물이다',
+          itemLabel: '문장',
+          // 확정본의 '↻ 문장 동기화'(섹션 상단 일괄 버튼)를 새로 만들지 않고 어학능력(FRT-210)의
+          // '상세 기록' 링크를 재사용한다. 행마다 버튼이 붙는 대신, 확정본이 명세하지 않은 지점
+          // (문장을 지웠을 때 그 감상을 어떻게 하는가)에서 감상이 조용히 사라지지 않는다.
+          // titleColumnKey 는 반드시 명시한다(columns[0] 의존은 FRT-178 에서 깨진 전제).
+          link: { targetSectionId: 'book-quotes', titleColumnKey: 'quote', label: '감상 남기기' },
+        }),
       ],
     },
     {
-      id: 'reading-apply',
-      category: 'repeat',
-      label: '적용/실험',
-      collapsed: true,
+      id: 'book-reflection',
+      category: 'detail',
+      label: '감상과 평가',
       blocks: [
-        createRepeatableCell('적용/실험', [
-          { key: 'topic', label: '적용할 주제', blockType: 'text', required: true },
-          { key: 'action', label: '내가 한 행동', blockType: 'textarea' },
-          { key: 'result', label: '결과/느낀 점', blockType: 'textarea' },
+        // 확정본 설계 노트: 기존 '배운 점'·'생각의 변화' 2필드를 하나로 통합했다. 대학생이 둘을
+        // 명확히 구분해 쓰기 어려워 결국 하나만 채우던 문제를 없애는 것이 목적이므로 다시 쪼개지 말 것.
+        createTextareaField('이 책이 나에게 남긴 것', {
+          guide: '새롭게 알게 된 지식, 관점의 변화, 앞으로 남길 습관 — 무엇이든 좋아요.',
+          placeholder:
+            "예: 화폐가 물리적 실체가 아닌 사회적 합의로 유지된다는 관점을 처음 이해했고, 이후 '왜 사람들이 이것을 믿는가'를 먼저 묻는 습관이 생겼습니다.",
+        }),
+        // 확정본 ③ 은 이 칸의 가이드라인 자리에 선택지 목록만 적었다 — guide 를 지어내지 않는다.
+        createSelectField('별점', [...READING_RATING_OPTIONS]),
+      ],
+    },
+    {
+      // 확정본은 이 카드의 컬럼을 명세하지 않았다. "굳이 모두 채울 필요는 없어요" 라고 못 박은
+      // 만큼 입력 부담 최소화가 설계 의도이므로 2컬럼을 넘기지 말 것.
+      id: 'book-quotes',
+      category: 'repeat',
+      label: '문장별 감상',
+      blocks: [
+        createRepeatableCell('문장별 감상', [
+          {
+            key: 'quote',
+            label: '문장',
+            blockType: 'text',
+            required: true,
+            guide: '위에서 기록한 문장이 여기에 채워져요.',
+          },
+          {
+            key: 'impression',
+            label: '이 문장에 대한 생각',
+            blockType: 'textarea',
+            guide: '이 문장이 왜 마음에 남았는지, 어떤 생각이 들었는지 적어주세요.',
+          },
         ]),
-        createLinkField('관련 자료'),
-        createTextField('추천 대상'),
       ],
     },
   ]

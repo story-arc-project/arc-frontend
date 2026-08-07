@@ -208,6 +208,15 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   //  · '학습 기간'·'학습 방식'·'활용 사례' 표는 확정본에 대응 필드가 없다
   'lang-info.시험/인증명': 'lang-certificate.시험 / 자격증명',
   'lang-info.점수/등급': 'lang-certificate.점수 / 등급',
+  // 독서 확정본(FRT-236) — 구 `reading-info` 6필드 중 **질문도 타입도 같은 넷만** 옮긴다.
+  // 나머지는 옮기지 않고 orphan '기타' 카드에 남겨 사용자가 직접 판단하게 둔다:
+  //  · '읽은 기간/완독일'(text→period)·'인상 깊은 문장'(textarea→개조식 리스트) 은 타입이
+  //    바뀌어 injectValue 가 못 싣는다
+  //  · '적용/실험' 표·'추천 대상'·'관련 자료' 는 확정본이 삭제를 지시한 항목이다
+  'reading-info.도서명': 'book-info.도서명',
+  'reading-info.저자': 'book-info.저자',
+  'reading-info.읽은 이유': 'book-info.독서 이유',
+  'reading-info.핵심 요약 (3줄)': 'book-info.요약',
 }
 
 /**
