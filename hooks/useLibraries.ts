@@ -42,8 +42,19 @@ export function useLibraries() {
   const [membershipErrorIds, setMembershipErrorIds] = useState<Set<string>>(() => new Set());
   const loadedMembershipRef = useRef<Set<string>>(new Set());
   const refetchVersionRef = useRef(0);
+  // 멤버십 mutation 세대를 두 층위로 센다.
+  // - 전역 카운터: 목록 재조회(refetch)는 "낙관적으로 바꾼 멤버십이 하나라도 있는가"만
+  //   알면 되므로 라이브러리를 구분하지 않는다.
+  // - 라이브러리별 카운터: 개별 GET 의 stale 판정용. 전역 하나로 판정하면 무관한
+  //   라이브러리의 추가/삭제가 남의 정상 응답까지 버려 그 목록이 빈 채로 고정된다.
   const membershipVersionRef = useRef(0);
+  const membershipVersionsRef = useRef<Map<string, number>>(new Map());
   const loadLibraryMembershipRef = useRef<(id: string) => Promise<void>>(async () => {});
+
+  const bumpMembershipVersion = useCallback((libraryId: string) => {
+    membershipVersionRef.current += 1;
+    membershipVersionsRef.current.set(libraryId, (membershipVersionsRef.current.get(libraryId) ?? 0) + 1);
+  }, []);
 
   const refetch = useCallback(async () => {
     const version = ++refetchVersionRef.current;
@@ -85,12 +96,13 @@ export function useLibraries() {
       if (libraryId === ALL_LIBRARY_ID) return;
       if (loadedMembershipRef.current.has(libraryId)) return;
       loadedMembershipRef.current.add(libraryId);
-      // Pin this call to both the refetch generation and the membership mutation
-      // generation. A mutation (add/remove) bumps membershipVersionRef, so an
-      // in-flight GET that resolves after a mutation is treated as stale and
-      // dropped — preventing optimistic state from being overwritten.
+      // Pin this call to the refetch generation and to *this library's* mutation
+      // generation. A mutation on this library bumps its own counter, so an
+      // in-flight GET that resolves afterwards is treated as stale and dropped —
+      // preventing optimistic state from being overwritten. A mutation on some
+      // other library leaves this counter untouched, so this response still lands.
       const version = refetchVersionRef.current;
-      const membershipVersion = membershipVersionRef.current;
+      const membershipVersion = membershipVersionsRef.current.get(libraryId) ?? 0;
       setLoadingMembershipIds((prev) => {
         const next = new Set(prev);
         next.add(libraryId);
@@ -105,7 +117,11 @@ export function useLibraries() {
       let succeeded = false;
       try {
         const data = await getLibraryExperiences(libraryId);
-        if (version !== refetchVersionRef.current || membershipVersion !== membershipVersionRef.current) return;
+        if (
+          version !== refetchVersionRef.current ||
+          membershipVersion !== (membershipVersionsRef.current.get(libraryId) ?? 0)
+        )
+          return;
         const ids = data.contents.map((experience) => experience.id);
         setLibraries((prev) =>
           prev.map((library) =>
@@ -116,17 +132,19 @@ export function useLibraries() {
       } catch {
         // error state tracked via setMembershipErrorIds below
       } finally {
-        // Always clear the loading indicator. If a mutation bumped the version
-        // while we were in flight, the local state is already authoritative
-        // (the mutation patched it); leaving loadingMembershipIds set here
-        // would strand the library in a permanent "loading" state.
+        // Always clear the loading indicator. If a mutation on *this* library
+        // bumped its version while we were in flight, the local state is already
+        // authoritative (the mutation patched it); leaving loadingMembershipIds
+        // set here would strand the library in a permanent "loading" state.
         setLoadingMembershipIds((prev) => {
           if (!prev.has(libraryId)) return prev;
           const next = new Set(prev);
           next.delete(libraryId);
           return next;
         });
-        const stale = version !== refetchVersionRef.current || membershipVersion !== membershipVersionRef.current;
+        const stale =
+          version !== refetchVersionRef.current ||
+          membershipVersion !== (membershipVersionsRef.current.get(libraryId) ?? 0);
         if (stale || succeeded) {
           setLoadedMembershipIds((prev) => {
             if (prev.has(libraryId)) return prev;
@@ -219,7 +237,7 @@ export function useLibraries() {
       try {
         const data = await getLibraryExperiences(libraryId);
         const ids = data.contents.map((experience) => experience.id);
-        membershipVersionRef.current += 1;
+        bumpMembershipVersion(libraryId);
         setLibraries((prev) =>
           prev.map((library) =>
             library.id === libraryId ? { ...library, experienceIds: ids } : library,
@@ -247,7 +265,7 @@ export function useLibraries() {
         return false;
       }
     },
-    [markMembershipLoaded],
+    [bumpMembershipVersion, markMembershipLoaded],
   );
 
   const addExperienceToLibrary = useCallback(
@@ -256,7 +274,7 @@ export function useLibraries() {
       // connection sees the updated state and short-circuits instead of
       // firing a duplicate POST.
       let alreadyMember = false;
-      membershipVersionRef.current += 1;
+      bumpMembershipVersion(libraryId);
       setLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
@@ -278,13 +296,13 @@ export function useLibraries() {
         throw err;
       }
     },
-    [markMembershipLoaded, resyncLibraryMembership],
+    [bumpMembershipVersion, markMembershipLoaded, resyncLibraryMembership],
   );
 
   const removeExperienceFromLibrary = useCallback(
     async (libraryId: string, experienceId: string): Promise<void> => {
       let wasMember = false;
-      membershipVersionRef.current += 1;
+      bumpMembershipVersion(libraryId);
       setLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
@@ -305,7 +323,7 @@ export function useLibraries() {
         throw err;
       }
     },
-    [markMembershipLoaded, resyncLibraryMembership],
+    [bumpMembershipVersion, markMembershipLoaded, resyncLibraryMembership],
   );
 
   return {
