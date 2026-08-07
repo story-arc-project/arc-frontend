@@ -51,9 +51,12 @@ export function useLibraries() {
   const membershipVersionsRef = useRef<Map<string, number>>(new Map());
   const loadLibraryMembershipRef = useRef<(id: string) => Promise<void>>(async () => {});
 
+  /** 두 카운터를 함께 올리고, 이 mutation 이 세운 라이브러리별 세대를 돌려준다. */
   const bumpMembershipVersion = useCallback((libraryId: string) => {
     membershipVersionRef.current += 1;
-    membershipVersionsRef.current.set(libraryId, (membershipVersionsRef.current.get(libraryId) ?? 0) + 1);
+    const next = (membershipVersionsRef.current.get(libraryId) ?? 0) + 1;
+    membershipVersionsRef.current.set(libraryId, next);
+    return next;
   }, []);
 
   const refetch = useCallback(async () => {
@@ -232,17 +235,18 @@ export function useLibraries() {
   }, []);
 
   const resyncLibraryMembership = useCallback(
-    async (libraryId: string): Promise<boolean> => {
+    async (libraryId: string, mutationVersion: number): Promise<boolean> => {
       if (libraryId === ALL_LIBRARY_ID) return true;
-      // Pin to this library's mutation generation like loadLibraryMembership does.
-      // Without this guard, a second add/remove that lands (and optimistically
-      // patches state) while this GET is still in flight would be silently
-      // clobbered by this stale response once it resolves.
-      const membershipVersion = membershipVersionsRef.current.get(libraryId) ?? 0;
       try {
         const data = await getLibraryExperiences(libraryId);
         const ids = data.contents.map((experience) => experience.id);
-        if (membershipVersion === (membershipVersionsRef.current.get(libraryId) ?? 0)) {
+        // Pin to the generation the *failed* mutation established, not to the
+        // one current when this GET started. Another same-library write may
+        // already have been in flight when we entered, and the server snapshot
+        // we just fetched cannot contain it — applying it would erase an edit
+        // that goes on to succeed. Any change since then means someone else is
+        // authoritative, so we stay out of the way.
+        if (mutationVersion === (membershipVersionsRef.current.get(libraryId) ?? 0)) {
           bumpMembershipVersion(libraryId);
           setLibraries((prev) =>
             prev.map((library) =>
@@ -281,7 +285,7 @@ export function useLibraries() {
       // connection sees the updated state and short-circuits instead of
       // firing a duplicate POST.
       let alreadyMember = false;
-      bumpMembershipVersion(libraryId);
+      const mutationVersion = bumpMembershipVersion(libraryId);
       setLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
@@ -299,7 +303,7 @@ export function useLibraries() {
       } catch (err) {
         // Overlapping toggles make naive rollback unsafe: another in-flight
         // remove may have already flipped state back. Resync from server.
-        await resyncLibraryMembership(libraryId);
+        await resyncLibraryMembership(libraryId, mutationVersion);
         throw err;
       }
     },
@@ -309,7 +313,7 @@ export function useLibraries() {
   const removeExperienceFromLibrary = useCallback(
     async (libraryId: string, experienceId: string): Promise<void> => {
       let wasMember = false;
-      bumpMembershipVersion(libraryId);
+      const mutationVersion = bumpMembershipVersion(libraryId);
       setLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
@@ -326,7 +330,7 @@ export function useLibraries() {
       try {
         await apiRemoveExperienceFromLibrary(libraryId, experienceId);
       } catch (err) {
-        await resyncLibraryMembership(libraryId);
+        await resyncLibraryMembership(libraryId, mutationVersion);
         throw err;
       }
     },

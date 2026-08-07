@@ -25,15 +25,18 @@ import { useLibraries } from "./useLibraries"
 interface Deferred<T> {
   promise: Promise<T>
   resolve: (value: T) => void
+  reject: (reason?: unknown) => void
 }
 
 /** 응답 도착 시점을 테스트가 직접 잡기 위한 수동 해소 Promise. */
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((res) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
     resolve = res
+    reject = rej
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 function experience(id: string): Experience {
@@ -201,6 +204,58 @@ describe("useLibraries — 병렬 멤버십 로딩과 mutation 경합", () => {
     await settle()
 
     expect(rejected).toBe(true)
+    expect(membershipOf(result.current.libraries, "lib-a")).toContain("exp-3")
+  })
+
+  it("실패한 변경의 복구 재조회가, 그 사이 시작된 다른 변경까지 되돌리지 않는다", async () => {
+    const { result } = await renderWithMembershipInFlight()
+
+    await act(async () => {
+      pendingMembership.get("lib-a")!.resolve(listData(["exp-1"]))
+      pendingMembership.get("lib-b")!.resolve(listData([]))
+      await Promise.resolve()
+    })
+    await settle()
+    pendingMembership.clear()
+
+    // 같은 라이브러리에 두 건이 겹쳐 진행된다. 앞의 것은 실패하고, 뒤의 것은 성공한다.
+    const postA = deferred<void>()
+    const postB = deferred<void>()
+    addExperienceToLibraryMock.mockImplementationOnce(() => postA.promise)
+    addExperienceToLibraryMock.mockImplementationOnce(() => postB.promise)
+
+    let rejectedA = false
+    let addA!: Promise<void>
+    let addB!: Promise<void>
+    await act(async () => {
+      addA = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {
+        rejectedA = true
+      })
+      addB = result.current.addExperienceToLibrary("lib-a", "exp-3")
+      await Promise.resolve()
+    })
+
+    // 앞의 변경이 실패해 복구 재조회가 시작된다.
+    await act(async () => {
+      postA.reject(new Error("서버 오류"))
+      await Promise.resolve()
+    })
+    await settle()
+    expect(pendingMembership.has("lib-a")).toBe(true)
+
+    // 재조회 응답은 뒤의 변경이 서버에 닿기 전 시점이라 exp-3 이 없다.
+    await act(async () => {
+      pendingMembership.get("lib-a")!.resolve(listData(["exp-1"]))
+      await addA
+    })
+    // 뒤의 변경은 서버에서 성공한다 — 화면에서 사라지면 안 된다.
+    await act(async () => {
+      postB.resolve(undefined)
+      await addB
+    })
+    await settle()
+
+    expect(rejectedA).toBe(true)
     expect(membershipOf(result.current.libraries, "lib-a")).toContain("exp-3")
   })
 
