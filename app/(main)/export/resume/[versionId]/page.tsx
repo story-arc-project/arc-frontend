@@ -245,7 +245,15 @@ export default function ResumeDetailPage({ params }: PageProps) {
         if (saved) {
           setPendingDraft(null);
         }
-        toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+        // 4xx 는 다시 시도해도 같은 결과다 — 제목 길이 초과 같은 검증 실패(422)는 입력을
+        // 고쳐야 통과한다. "잠시 후 다시 시도해주세요"로 뭉개면 사용자는 고칠 수 있는 것을
+        // 못 고친 채 재시도만 반복한다. 서버가 준 사유를 그대로 보여준다(ProfileEditForm
+        // 과 같은 관용구). 5xx·네트워크 장애는 실제로 잠시 후면 되므로 그대로 둔다.
+        const reason =
+          err instanceof ApiError && err.status >= 400 && err.status < 500
+            ? err.message
+            : null;
+        toast.error(reason ?? "저장에 실패했어요. 잠시 후 다시 시도해주세요.");
         captureEditSaved("failed", saved, changedResumeSections(initial, latest));
       }
     } finally {

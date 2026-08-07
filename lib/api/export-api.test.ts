@@ -482,20 +482,53 @@ describe("getResumeList — title/language/status 파싱 (FRT-123 계약 §2.4)"
   });
 });
 
+// ─── 저장 요청 본문 계약 ─────────────────────────────────────────────
+//
+// 서버(BAC-56)의 `ResumePatchRequest` 는 `{title?, result?}` 이고 pydantic 기본이
+// extra="ignore" 다. 맨 ResumeVersion 을 보내면 **거절당하지 않는다** — 두 필드 모두
+// 미지정으로 처리돼 아무것도 안 바뀐 채 200 과 **옛 본문**이 돌아오고, 언랩이 멀쩡히
+// 성공해 호출부는 옛 본문을 확정하고 draft 까지 지운 뒤 "저장됐어요"를 띄운다.
+// 실패가 아니라 **성공으로 위장된 유실**이라 상태코드 그물에는 안 걸린다 — 본문 모양을 박는다.
+describe("updateResume 요청 본문", () => {
+  const mockPatch = vi.mocked(api.patch);
+
+  it("본문을 result 로 감싸 보낸다", async () => {
+    mockPatch.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-b1", result: { meta: { language: "ko" } } },
+    });
+
+    const body = {
+      meta: { language: "ko" },
+      자기소개_요약: "고친 내용",
+    } as unknown as Parameters<typeof updateResume>[1];
+    await updateResume("res-b1", body);
+
+    expect(mockPatch).toHaveBeenCalledWith("/export/resume/res-b1", {
+      result: body,
+    });
+  });
+});
+
 // ─── 저장·삭제 실패 매핑 ─────────────────────────────────────────────
 //
-// 폴백 판정은 두 호출이 **서로 다른 상태 집합**을 봐야 한다. 하나로 묶으면 편집 저장을
-// 살리려고 넣은 422 가 삭제 버튼까지 숨긴다(RecentResumeList 의 setDeleteSupported(false)).
+// 폴백은 "서버에 저장 경로가 없다"(405/501)일 때만이다. 저장·삭제 어느 쪽도 422 를
+// 폴백으로 보지 않는다 — 삼키면 진짜 실패 이유가 화면에서 사라진다.
 describe("resume 뮤테이션 실패 매핑", () => {
   const mockPatch = vi.mocked(api.patch);
   const mockDelete = vi.mocked(api.delete);
 
-  it("updateResume: 422 를 폴백 신호로 본다 — 서버가 본문을 아직 못 받는다(FRT-148)", async () => {
-    mockPatch.mockRejectedValue(new ApiError(422, "Unprocessable Entity"));
+  // BAC-56(`result` 를 받는 PATCH) 배포 전에는 422 가 "본문을 저장할 경로가 없다"는 뜻이라
+  // 폴백 신호였다. 배포된 지금은 제목 100자 초과 같은 **진짜 검증 실패**라서, 폴백으로
+  // 삼키면 사용자는 "곧 제공될 예정이에요" 만 보고 원인을 영영 모른다.
+  it("updateResume: 422 는 폴백 신호가 아니다 — 진짜 검증 실패를 그대로 올린다", async () => {
+    mockPatch.mockRejectedValue(new ApiError(422, "제목은 100자를 넘을 수 없어요."));
 
-    await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
-      ResumeMutationUnsupportedError,
-    );
+    const err = await updateResume("res-1", {} as never).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).not.toBeInstanceOf(ResumeMutationUnsupportedError);
+    expect((err as ApiError).message).toContain("100자");
   });
 
   it.each([501, 405])(

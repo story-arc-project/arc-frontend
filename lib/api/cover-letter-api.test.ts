@@ -48,6 +48,39 @@ function ok(data: unknown) {
   return { status: "success", message: "ok", data };
 }
 
+// ─── 서버 경로 ──────────────────────────────────────────────────────
+//
+// 서버 경로는 **언더스코어**(`/export/cover_letter`)다. 화면 URL 이 하이픈
+// (`/export/cover-letter/[id]`)이라 API 경로까지 하이픈으로 맞춰 뒀던 적이 있는데, 서버에는
+// 그 경로가 없어 생성·조회·목록이 전부 404 였다. 플래그가 꺼져 있어 사용자에게 새지는
+// 않았지만 켜는 순간 기능 전체가 죽는다 — 하이픈으로 되돌아가지 못하게 여기서 고정한다.
+describe("서버 경로", () => {
+  it("생성·목록은 /export/cover_letter 로 간다", async () => {
+    mockPost.mockResolvedValue(ok({ id: "cl-1" }));
+    mockGet.mockResolvedValue(ok({ contents: [] }));
+
+    await createCoverLetter({ questions: [] });
+    await getCoverLetterList();
+
+    expect(mockPost.mock.calls[0][0]).toBe("/export/cover_letter");
+    expect(mockGet.mock.calls[0][0]).toBe("/export/cover_letter");
+  });
+
+  it("상세·수정·삭제는 /export/cover_letter/{id} 로 간다", async () => {
+    mockGet.mockResolvedValue(ok({ answers: [answer] }));
+    mockPatch.mockResolvedValue(ok({ answers: [answer] }));
+    mockDelete.mockResolvedValue(undefined as never);
+
+    await getCoverLetter("cl-1");
+    await updateCoverLetter("cl-1", { answers: [answer] } as CoverLetterResult);
+    await deleteCoverLetter("cl-1");
+
+    expect(mockGet.mock.calls[0][0]).toBe("/export/cover_letter/cl-1");
+    expect(mockPatch.mock.calls[0][0]).toBe("/export/cover_letter/cl-1");
+    expect(mockDelete.mock.calls[0][0]).toBe("/export/cover_letter/cl-1");
+  });
+});
+
 // ─── createCoverLetter ──────────────────────────────────────────────
 
 describe("createCoverLetter", () => {
