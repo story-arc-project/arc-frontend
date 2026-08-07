@@ -42,8 +42,35 @@ export function useLibraries() {
   const [membershipErrorIds, setMembershipErrorIds] = useState<Set<string>>(() => new Set());
   const loadedMembershipRef = useRef<Set<string>>(new Set());
   const refetchVersionRef = useRef(0);
+  // 멤버십 mutation 세대를 두 층위로 센다.
+  // - 전역 카운터: 목록 재조회(refetch)는 "낙관적으로 바꾼 멤버십이 하나라도 있는가"만
+  //   알면 되므로 라이브러리를 구분하지 않는다.
+  // - 라이브러리별 카운터: 개별 GET 의 stale 판정용. 전역 하나로 판정하면 무관한
+  //   라이브러리의 추가/삭제가 남의 정상 응답까지 버려 그 목록이 빈 채로 고정된다.
   const membershipVersionRef = useRef(0);
+  const membershipVersionsRef = useRef<Map<string, number>>(new Map());
+  // 서버 응답을 기다리는 중인 쓰기 수(라이브러리별). 하나라도 있으면 방금 받아온
+  // 서버 스냅샷이 그 쓰기를 아직 담고 있지 않을 수 있으므로 반영하면 안 된다.
+  const pendingWritesRef = useRef<Map<string, number>>(new Map());
   const loadLibraryMembershipRef = useRef<(id: string) => Promise<void>>(async () => {});
+
+  const beginWrite = useCallback((libraryId: string) => {
+    pendingWritesRef.current.set(libraryId, (pendingWritesRef.current.get(libraryId) ?? 0) + 1);
+  }, []);
+
+  const endWrite = useCallback((libraryId: string) => {
+    const next = (pendingWritesRef.current.get(libraryId) ?? 1) - 1;
+    if (next > 0) pendingWritesRef.current.set(libraryId, next);
+    else pendingWritesRef.current.delete(libraryId);
+  }, []);
+
+  /** 두 카운터를 함께 올리고, 이 mutation 이 세운 라이브러리별 세대를 돌려준다. */
+  const bumpMembershipVersion = useCallback((libraryId: string) => {
+    membershipVersionRef.current += 1;
+    const next = (membershipVersionsRef.current.get(libraryId) ?? 0) + 1;
+    membershipVersionsRef.current.set(libraryId, next);
+    return next;
+  }, []);
 
   const refetch = useCallback(async () => {
     const version = ++refetchVersionRef.current;
@@ -85,12 +112,13 @@ export function useLibraries() {
       if (libraryId === ALL_LIBRARY_ID) return;
       if (loadedMembershipRef.current.has(libraryId)) return;
       loadedMembershipRef.current.add(libraryId);
-      // Pin this call to both the refetch generation and the membership mutation
-      // generation. A mutation (add/remove) bumps membershipVersionRef, so an
-      // in-flight GET that resolves after a mutation is treated as stale and
-      // dropped — preventing optimistic state from being overwritten.
+      // Pin this call to the refetch generation and to *this library's* mutation
+      // generation. A mutation on this library bumps its own counter, so an
+      // in-flight GET that resolves afterwards is treated as stale and dropped —
+      // preventing optimistic state from being overwritten. A mutation on some
+      // other library leaves this counter untouched, so this response still lands.
       const version = refetchVersionRef.current;
-      const membershipVersion = membershipVersionRef.current;
+      const membershipVersion = membershipVersionsRef.current.get(libraryId) ?? 0;
       setLoadingMembershipIds((prev) => {
         const next = new Set(prev);
         next.add(libraryId);
@@ -105,7 +133,11 @@ export function useLibraries() {
       let succeeded = false;
       try {
         const data = await getLibraryExperiences(libraryId);
-        if (version !== refetchVersionRef.current || membershipVersion !== membershipVersionRef.current) return;
+        if (
+          version !== refetchVersionRef.current ||
+          membershipVersion !== (membershipVersionsRef.current.get(libraryId) ?? 0)
+        )
+          return;
         const ids = data.contents.map((experience) => experience.id);
         setLibraries((prev) =>
           prev.map((library) =>
@@ -116,17 +148,19 @@ export function useLibraries() {
       } catch {
         // error state tracked via setMembershipErrorIds below
       } finally {
-        // Always clear the loading indicator. If a mutation bumped the version
-        // while we were in flight, the local state is already authoritative
-        // (the mutation patched it); leaving loadingMembershipIds set here
-        // would strand the library in a permanent "loading" state.
+        // Always clear the loading indicator. If a mutation on *this* library
+        // bumped its version while we were in flight, the local state is already
+        // authoritative (the mutation patched it); leaving loadingMembershipIds
+        // set here would strand the library in a permanent "loading" state.
         setLoadingMembershipIds((prev) => {
           if (!prev.has(libraryId)) return prev;
           const next = new Set(prev);
           next.delete(libraryId);
           return next;
         });
-        const stale = version !== refetchVersionRef.current || membershipVersion !== membershipVersionRef.current;
+        const stale =
+          version !== refetchVersionRef.current ||
+          membershipVersion !== (membershipVersionsRef.current.get(libraryId) ?? 0);
         if (stale || succeeded) {
           setLoadedMembershipIds((prev) => {
             if (prev.has(libraryId)) return prev;
@@ -214,12 +248,27 @@ export function useLibraries() {
   }, []);
 
   const resyncLibraryMembership = useCallback(
-    async (libraryId: string): Promise<boolean> => {
+    async (libraryId: string, mutationVersion: number): Promise<boolean> => {
       if (libraryId === ALL_LIBRARY_ID) return true;
       try {
         const data = await getLibraryExperiences(libraryId);
         const ids = data.contents.map((experience) => experience.id);
-        membershipVersionRef.current += 1;
+        // Only apply when nothing else is racing this library. Two ways it can be:
+        //   - the generation moved on → a later write already patched state and
+        //     owns it, and our snapshot predates that write;
+        //   - a write is still awaiting its response → the snapshot cannot
+        //     contain it yet, so applying would erase an edit that goes on to
+        //     succeed, with no signal to the user.
+        // Either way we touch nothing — not even the loaded/error flags, since
+        // another recovery may already have raised the retry affordance and
+        // clearing it would present unreconciled state as loaded.
+        if (
+          mutationVersion !== (membershipVersionsRef.current.get(libraryId) ?? 0) ||
+          (pendingWritesRef.current.get(libraryId) ?? 0) > 0
+        ) {
+          return true;
+        }
+        bumpMembershipVersion(libraryId);
         setLibraries((prev) =>
           prev.map((library) =>
             library.id === libraryId ? { ...library, experienceIds: ids } : library,
@@ -247,7 +296,7 @@ export function useLibraries() {
         return false;
       }
     },
-    [markMembershipLoaded],
+    [bumpMembershipVersion, markMembershipLoaded],
   );
 
   const addExperienceToLibrary = useCallback(
@@ -256,7 +305,7 @@ export function useLibraries() {
       // connection sees the updated state and short-circuits instead of
       // firing a duplicate POST.
       let alreadyMember = false;
-      membershipVersionRef.current += 1;
+      const mutationVersion = bumpMembershipVersion(libraryId);
       setLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
@@ -269,22 +318,31 @@ export function useLibraries() {
       );
       markMembershipLoaded(libraryId);
       if (alreadyMember) return;
+      // Stop counting ourselves as pending before recovering, so the resync
+      // guard sees only writes that are genuinely still outstanding.
+      beginWrite(libraryId);
+      let failure: unknown = null;
       try {
         await apiAddExperienceToLibrary(libraryId, experienceId);
       } catch (err) {
+        failure = err;
+      } finally {
+        endWrite(libraryId);
+      }
+      if (failure) {
         // Overlapping toggles make naive rollback unsafe: another in-flight
         // remove may have already flipped state back. Resync from server.
-        await resyncLibraryMembership(libraryId);
-        throw err;
+        await resyncLibraryMembership(libraryId, mutationVersion);
+        throw failure;
       }
     },
-    [markMembershipLoaded, resyncLibraryMembership],
+    [beginWrite, bumpMembershipVersion, endWrite, markMembershipLoaded, resyncLibraryMembership],
   );
 
   const removeExperienceFromLibrary = useCallback(
     async (libraryId: string, experienceId: string): Promise<void> => {
       let wasMember = false;
-      membershipVersionRef.current += 1;
+      const mutationVersion = bumpMembershipVersion(libraryId);
       setLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
@@ -298,14 +356,21 @@ export function useLibraries() {
       );
       markMembershipLoaded(libraryId);
       if (!wasMember) return;
+      beginWrite(libraryId);
+      let failure: unknown = null;
       try {
         await apiRemoveExperienceFromLibrary(libraryId, experienceId);
       } catch (err) {
-        await resyncLibraryMembership(libraryId);
-        throw err;
+        failure = err;
+      } finally {
+        endWrite(libraryId);
+      }
+      if (failure) {
+        await resyncLibraryMembership(libraryId, mutationVersion);
+        throw failure;
       }
     },
-    [markMembershipLoaded, resyncLibraryMembership],
+    [beginWrite, bumpMembershipVersion, endWrite, markMembershipLoaded, resyncLibraryMembership],
   );
 
   return {
