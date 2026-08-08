@@ -91,6 +91,11 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   // 특히 '증빙 자료'는 evidence 카드를 따로 만들어 파일 입력칸이 두 벌이 된다(어학의 '성적표
   // 첨부'와 같은 처리). '핵심 성과'는 확정본에 아예 없다 — ② 회고 네 질문이 그 자리를 대신한다.
   volunteer: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
+  // 해외경험 확정본은 **'기간'을 빼지 않는다** — ① 의 '기간'(month~month)이 코어와 질문도 타입도
+  // 같아서 코어가 그대로 그 자리를 채운다(그래서 TYPE_PERIOD_KEY 등록도 불필요하다). 역할·성과는
+  // 확정본에 없고 — ② '주요 활동'과 '이 경험이 나에게 준 것'이 그 질문을 흡수했다 — '증빙 자료'는
+  // 확정본이 ① 안에 두었으므로 core 를 남기면 파일 입력칸이 두 벌이 된다(어학·봉사와 같은 처리).
+  overseas: ['내 역할/기여도', '핵심 성과', '증빙 자료'],
 }
 
 /**
@@ -1709,35 +1714,132 @@ function volunteerExtensions(): TemplateSection[] {
   ]
 }
 
+/** 해외경험 확정본 ① '경험 유형' 9종. 구 5종(교환학생/연수/여행/해외 인턴/기타)과 도메인이 다르다. */
+const OVERSEAS_KIND_OPTIONS = [
+  '교환학생',
+  '어학연수',
+  '해외 인턴/취업',
+  '해외 봉사',
+  '단기 프로그램/캠프',
+  '여행/자유 탐방',
+  '워킹홀리데이',
+  '학회/컨퍼런스 참가',
+  '기타',
+] as const
+
+/** 해외경험 확정본 ① '참여 형태' 4종 — 누구와 갔는가를 묻는다(봉사의 '참여 형태'와 질문이 다르다). */
+const OVERSEAS_COMPANION_OPTIONS = ['혼자', '친구/지인과 함께', '가족과 함께', '단체/팀 프로그램'] as const
+
+/** 해외경험 확정본 ② '이 경험이 나에게 준 것' 10종 (이모지 알약 태그, 다중 선택). */
+const OVERSEAS_GAIN_TAGS = [
+  '🗣️ 언어 능력 향상',
+  '🌍 다양성 이해',
+  '🤝 이문화 소통',
+  '💪 독립성/자립심',
+  '🎓 학문적 시야 확장',
+  '💼 커리어 방향 확립',
+  '🧭 새로운 관점',
+  '🌐 글로벌 네트워크',
+  '🔥 도전 정신',
+  '💡 문제 해결력',
+] as const
+
+// 해외경험 — 프로토타입 확정본(2026-08, FRT-249). 섹션 id 를 `overseas-info`/`overseas-challenges`
+// 에서 전면 교체했다. 특히 '경험 유형'은 라벨도 타입도 그대로인 채 **선택지 도메인만 9종으로
+// 바뀌어**, 키를 유지하면 구 '연수'·'여행'·'해외 인턴' 이 새 드롭다운에 없는 값으로 박힌다
+// (FRT-247 봉사 '대상'·'활동 형태'와 같은 함정). 구 키를 orphan 안전망으로 흘려보내는 것이 답이다.
 function overseasExtensions(): TemplateSection[] {
   return [
     {
-      id: 'overseas-info',
+      // 확정본 ① 의 '경험명'·'기간' 은 코어가 이미 같은 질문·같은 타입으로 갖고 있어 중복 정의하지
+      // 않는다. 그래서 CORE_EXCLUDE 에 '기간' 이 없고, build-portfolio 의 TYPE_PERIOD_KEY 등록도
+      // 불필요하다 — 봉사·독서·자격증과 갈리는 지점이니 베껴 오지 말 것.
+      id: 'overseas-program',
       category: 'basic',
-      label: '해외 경험 정보',
+      label: '해외경험 정보',
       blocks: [
-        createSelectField('경험 유형', ['교환학생', '연수', '여행', '해외 인턴', '기타']),
-        createTextField('국가/도시', { required: true }),
-        createPeriodField('기간', { required: true }),
-        createTextareaField('목적'),
-        createTextareaField('활동 요약', { required: true }),
-        createTextField('언어 사용 수준'),
+        createSelectField('경험 유형', [...OVERSEAS_KIND_OPTIONS], {
+          required: true,
+          guide:
+            '해외 경험의 유형을 선택해주세요. 여러 개 해당된다면 가장 대표되는 유형 기준으로 선택해주세요.',
+        }),
+        createTextField('국가 / 도시', {
+          required: true,
+          guide: '방문한 국가와 도시를 적어주세요.',
+          placeholder: '예: 미국 샌프란시스코, 독일 베를린',
+        }),
+        createTextField('주최 / 소속 기관', {
+          guide: '프로그램을 주최한 기관이나 현지에서 소속된 곳을 적어주세요.',
+          placeholder: '예: OO대학교, OO재단, OO 회사',
+        }),
+        createTextField('사용 언어', {
+          guide:
+            '현지에서 주로 사용한 언어를 적어주세요. 이미 등록한 어학능력이 있다면 같은 언어명으로 적어주시면 좋아요.',
+          placeholder: '예: 영어, 독일어, 영어+한국어',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createSelectField('참여 형태', [...OVERSEAS_COMPANION_OPTIONS]),
+        createFileField('증빙 자료', {
+          guide: '수료증, 참가 확인서, 활동 사진 등 이 경험을 증명할 자료를 첨부해주세요.',
+          options: ['수료증/참가 확인서', '활동 사진', '기타'],
+        }),
       ],
     },
     {
-      id: 'overseas-challenges',
-      category: 'repeat',
-      label: '어려웠던 상황',
-      collapsed: true,
+      id: 'overseas-reflection',
+      category: 'detail',
+      label: '경험 상세',
       blocks: [
-        createRepeatableCell('어려웠던 상황', [
-          { key: 'situation', label: '상황', blockType: 'text', required: true },
-          { key: 'response', label: '내가 한 대응', blockType: 'textarea' },
-          { key: 'result', label: '결과', blockType: 'textarea' },
-          { key: 'lesson', label: '배운 점', blockType: 'textarea' },
-        ]),
-        createTextareaField('성과/산출물'),
-        createFileField('증빙'),
+        createOutcomeList('주요 활동', {
+          guide:
+            "현지에서 수행한 주요 활동이나 프로젝트를 리스트업해주세요. 특정 활동을 더 자세히 풀어 쓰고 싶다면 '상세 설명'을 눌러 아래 '활동별 상세 설명'에서 개별로 적을 수 있어요.",
+          placeholder: '예: 국제 마케팅 팀 프로젝트 참여',
+          itemLabel: '활동',
+          // 확정본 §7 의 '↻ 활동 동기화'(섹션 상단 일괄 버튼)를 새로 만들지 않고 독서(FRT-236)가
+          // 쓴 행별 링크를 재사용한다. 일괄 동기화는 활동을 지웠을 때 그 상세를 어떻게 할지
+          // 확정본이 명세하지 않아, 재동기화 때 상세가 조용히 사라질 수 있다.
+          // titleColumnKey 는 반드시 명시한다(columns[0] 의존은 FRT-178 에서 깨진 전제).
+          link: { targetSectionId: 'overseas-activities', titleColumnKey: 'activity', label: '상세 설명' },
+        }),
+        createMoodTagField('이 경험이 나에게 준 것', [...OVERSEAS_GAIN_TAGS], {
+          guide: '해외 경험을 통해 얻은 관점, 배움, 변화를 태그로 표현해주세요.',
+        }),
+        createTextareaField('기억에 남는 순간', {
+          guide: '가장 인상 깊었던 경험, 만남, 문화적 충격 등을 적어주세요.',
+          placeholder:
+            '예: 팀 프로젝트에서 독일 학생이 정확한 데이터 근거 없이는 어떤 주장도 하지 않는 태도를 보고, 이후 저도 근거 중심으로 논리를 세우는 습관이 생겼습니다.',
+        }),
+      ],
+    },
+    {
+      // 확정본은 이 카드를 ② 안의 동기화 카드로 그렸지만(§8 "섹션 2개 앵커"), 우리 구조에서는
+      // 반드시 별도 섹션이어야 한다 — `ExperienceFormV2.findProjectBlock` 이 대상 섹션의 **첫
+      // repeatable-cell** 을 집는데 OutcomeList 자체가 repeatable-cell 이라, 한 섹션에 두면
+      // '주요 활동' 이 자기 자신을 대상으로 삼는다. 독서 `book-info` → `book-quotes` 와 같은 구성.
+      id: 'overseas-activities',
+      category: 'repeat',
+      label: '활동별 상세 설명',
+      blocks: [
+        createRepeatableCell('활동별 상세 설명', [
+          {
+            // ⚠️ required 금지. `isRequiredBlock` 은 컬럼 하나라도 required 면 표 블록 전체를
+            // 필수로 보고, 그러면 활동을 안 적은 사용자는 이 카드를 영영 완료할 수 없는 데다
+            // `canHideBlock` 이 숨기지도 못한다(FRT-236 '문장별 감상'과 같은 자리).
+            key: 'activity',
+            label: '활동',
+            blockType: 'text',
+            guide: "위 '주요 활동'에서 기록한 항목이 여기에 채워져요.",
+          },
+          {
+            key: 'detail',
+            label: '상세 설명',
+            blockType: 'textarea',
+            guide: '이 활동에 대해 더 자세히 설명하고 싶다면 적어주세요.',
+          },
+        ], {
+          guide:
+            "위 '주요 활동'에서 항목을 추가한 뒤 '상세 설명'을 누르면 여기에 행이 생겨요. 굳이 모두 채울 필요는 없어요.",
+        }),
       ],
     },
   ]
@@ -2064,13 +2166,15 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
  *     갈아치웠다. 규약이 유형별 예외를 두지 않으므로 어학과 같은 대우를 한다.
  * 4 — 봉사 확정본 정렬(FRT-247). 같은 이유 — `vol-info` 를 `volunteer-info`/`volunteer-reflection`
  *     으로 갈아치웠다.
+ * 5 — 해외경험 확정본 정렬(FRT-249). 같은 이유 — `overseas-info`/`overseas-challenges` 를
+ *     `overseas-program`/`overseas-reflection`/`overseas-activities` 로 갈아치웠다.
  *
  * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
  * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
  * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
  * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 4
+export const TEMPLATE_VERSION = 5
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.

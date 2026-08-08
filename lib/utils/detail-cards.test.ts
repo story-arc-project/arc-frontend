@@ -231,6 +231,37 @@ describe("buildDetailSections — 유형별 섹션 이름 (FRT-247)", () => {
     // 봉사는 basic 을 오버라이드하지 않는다 → 기본 라벨 유지.
     expect(sections.map(s => s.label)).toEqual(["기본 정보"])
   })
+
+  /**
+   * 해외경험(FRT-249)은 repeat 만 오버라이드한다 — detail 은 확정본 ② 의 이름이 기본 라벨과
+   * 같은 '경험 상세'라 오버라이드가 없는 것이 정상이다. 카드가 셋 다 뜨는 구성이라
+   * "오버라이드한 것만 바뀌고 나머지는 그대로"를 한 번에 증명할 수 있다.
+   */
+  it("해외경험의 repeat 카드는 상세뷰에서도 '활동별 상세 설명'으로 불린다", () => {
+    const tmpl = getTemplateForType("overseas")
+    let ext = cloneBlocks(tmpl.extensions.flatMap(s => s.blocks))
+    ext = setVal(ext, "overseas-program.국가 / 도시", text("독일 베를린"))
+    ext = setVal(ext, "overseas-reflection.기억에 남는 순간", textarea("근거 중심 논의에 놀랐다"))
+    ext = ext.map(b =>
+      b.key === "overseas-activities.활동별 상세 설명" && b.value.type === "repeatable-cell"
+        ? {
+            ...b,
+            value: {
+              ...b.value,
+              rows: [{ id: "r1", cells: { activity: "팀 프로젝트", detail: "마케팅 리서치" } }],
+            },
+          }
+        : b,
+    )
+
+    const sections = buildDetailSections(
+      makeExperienceV2({ typeId: "overseas", coreBlocks: [], extensionBlocks: ext }),
+      tmpl,
+    )
+
+    expect(sections.map(s => s.label)).toEqual(["기본 정보", "경험 상세", "활동별 상세 설명"])
+    expect(sections.find(s => s.label === "반복 기록")).toBeUndefined()
+  })
 })
 
 describe("buildDetailSections — 사용자 섹션 (FRT-78)", () => {

@@ -1861,3 +1861,146 @@ describe("확정본 전면 교체 값 보존 (FRT-247 봉사)", () => {
     expect(exp.hiddenKeys).toEqual(["volunteer-info.총 봉사시간"])
   })
 })
+
+/**
+ * 해외경험 확정본(FRT-249)은 구 `overseas-info`/`overseas-challenges` 를 `overseas-program`/
+ * `overseas-reflection`/`overseas-activities` 로 갈아치운다. 봉사(FRT-247)와 갈리는 지점 둘:
+ *  · 구 '경험 유형'(5종)과 새 '경험 유형'(9종)은 **라벨도 타입도 같고 선택지 도메인만 다르다.**
+ *    섹션 id 를 안 갈면 키가 같아 값이 그냥 실려 버린다 — 교체가 곧 방어선이다.
+ *  · 파일 증빙은 옮겨도 된다. `FileBlock` 이 옛 자유입력 `evidenceType` 이 새 options 에 없으면
+ *    **선택지에 덧붙여** 살려 두기 때문에, single-select 처럼 값이 박히지 않는다.
+ */
+describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
+  function legacyOverseasContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "베를린 교환학생",
+      summary: "한 학기 교환학생",
+      status: "complete",
+      tags: [],
+      fields: {
+        // 코어 '기간' 은 확정본에서도 코어가 그대로 갖는다(CORE_EXCLUDE 대상이 아니다).
+        "core.기간": { type: "period", start: "2024-03", end: "2024-08", isCurrent: false },
+        // 질문이 같아 새 키로 이관되는 것들.
+        "overseas-info.국가/도시": text("독일 베를린"),
+        "overseas-challenges.증빙": {
+          type: "file",
+          fileName: "수료증.pdf",
+          description: "교환학생 수료증",
+          // 구 템플릿은 증빙 유형이 자유 입력이었다 — 새 options 3종에 없는 값이다.
+          evidenceType: "학교 발급 서류",
+        },
+        // 선택지 도메인이 달라 옮기면 안 되는 하나.
+        "overseas-info.경험 유형": { type: "single-select", selected: "연수" },
+        // 확정본이 삭제를 지시했거나 질문이 다른 것들.
+        "overseas-info.목적": textarea("전공 수업을 현지에서 듣고 싶었다"),
+        "overseas-info.활동 요약": textarea("국제 마케팅 팀 프로젝트에 참여했다"),
+        "overseas-info.언어 사용 수준": text("일상 회화 가능"),
+        "overseas-info.기간": { type: "period", start: "2024-04", end: "2024-07", isCurrent: false },
+        "overseas-challenges.성과/산출물": textarea("팀 프로젝트 최우수상"),
+      },
+      custom: [],
+    }
+  }
+
+  const loadLegacy = () =>
+    toExperienceV2(makeExperience({ type: "overseas", content: legacyOverseasContent() }))
+
+  it("질문이 같은 필드는 확정본 자리로 이관된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("overseas-program.국가 / 도시")?.value).toEqual(text("독일 베를린"))
+    expect(byKey("overseas-program.증빙 자료")?.value).toMatchObject({
+      fileName: "수료증.pdf",
+      evidenceType: "학교 발급 서류",
+    })
+
+    // 옮긴 구 키는 '기타' 에 중복으로 되살아나지 않는다.
+    for (const oldKey of ["overseas-info.국가/도시", "overseas-challenges.증빙"]) {
+      expect(v2.customBlocks.find(b => b.key === oldKey), oldKey).toBeUndefined()
+    }
+  })
+
+  /**
+   * 이 테스트가 이번 작업의 그물이다. 구 '경험 유형'(교환학생/연수/여행/해외 인턴/기타)을 확정본
+   * 9종으로 옮기면 저장된 '연수'가 새 목록에 없는 값으로 들어가 드롭다운에서 고를 수도 지울 수도
+   * 없게 된다(FRT-247 봉사 '대상'·'활동 형태'와 같은 자리).
+   */
+  it("선택지가 달라진 '경험 유형'은 이관하지 않고 '기타' 카드로 보존한다", () => {
+    const v2 = loadLegacy()
+
+    expect(v2.customBlocks.find(b => b.key === "overseas-info.경험 유형")?.value).toMatchObject({
+      selected: "연수",
+    })
+    expect(
+      v2.extensionBlocks.find(b => b.key === "overseas-program.경험 유형")?.value,
+    ).toMatchObject({ selected: "" })
+  })
+
+  /**
+   * '언어 사용 수준'→'사용 언어' 는 타입이 같아 `isInjectableInto` 가 통과시키지만 **묻는 것이
+   * 다르다** — 수준(일상 회화 가능)과 언어명(독일어)은 다른 답이다. 옮기면 옛 답이 새 질문의
+   * 답으로 둔갑한다(FRT-211 의 '개명 vs 대체' 기준).
+   */
+  it("질문이 다른 '언어 사용 수준'은 '사용 언어'로 옮기지 않는다", () => {
+    const v2 = loadLegacy()
+
+    expect(v2.customBlocks.find(b => b.key === "overseas-info.언어 사용 수준")?.value).toEqual(
+      text("일상 회화 가능"),
+    )
+    expect(v2.extensionBlocks.find(b => b.key === "overseas-program.사용 언어")?.value).toEqual(
+      text(""),
+    )
+  })
+
+  it("확정본이 삭제한 칸들도 '기타' 카드로 보존된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)?.value
+
+    expect(byKey("overseas-info.목적")).toEqual(textarea("전공 수업을 현지에서 듣고 싶었다"))
+    expect(byKey("overseas-info.활동 요약")).toEqual(
+      textarea("국제 마케팅 팀 프로젝트에 참여했다"),
+    )
+    expect(byKey("overseas-challenges.성과/산출물")).toEqual(textarea("팀 프로젝트 최우수상"))
+  })
+
+  /**
+   * 구 `overseas-info.기간` 은 코어 '기간' 과 **목적지가 겹친다.** 이관 대상에 넣으면
+   * `applyRenamedKeys` 가 구 키를 무조건 삭제한 뒤 목적지가 차 있어 값을 안 싣는다 —
+   * 진 쪽이 '기타' 로도 보존되지 않고 사라진다(FRT-248 이 선행 조건으로 지목한 결함).
+   * 그래서 옮기지 않고 보존만 하며, 코어 '기간' 은 자기 값을 그대로 지킨다.
+   */
+  it("코어와 목적지가 겹치는 구 '기간'은 옮기지 않아 양쪽 다 살아남는다", () => {
+    const v2 = loadLegacy()
+
+    expect(v2.coreBlocks.find(b => b.key === "core.기간")?.value).toMatchObject({
+      start: "2024-03",
+      end: "2024-08",
+    })
+    expect(v2.customBlocks.find(b => b.key === "overseas-info.기간")?.value).toMatchObject({
+      start: "2024-04",
+      end: "2024-07",
+    })
+  })
+
+  it("보존·이관된 값이 재저장 왕복에도 살아남는다", () => {
+    const payload = toSavePayload(loadLegacy())
+    const second = toExperienceV2(makeExperience({ type: "overseas", content: payload.content }))
+
+    expect(second.extensionBlocks.find(b => b.key === "overseas-program.국가 / 도시")?.value).toEqual(
+      text("독일 베를린"),
+    )
+    expect(second.customBlocks.find(b => b.key === "overseas-info.경험 유형")?.value).toMatchObject({
+      selected: "연수",
+    })
+  })
+
+  it("숨김 키도 개명을 따라간다 (감춘 칸이 혼자 되살아나지 않게)", () => {
+    const content = { ...legacyOverseasContent(), hidden: ["overseas-info.국가/도시"] }
+    const exp = toExperienceV2(makeExperience({ type: "overseas", content }))
+
+    expect(exp.hiddenKeys).toEqual(["overseas-program.국가 / 도시"])
+  })
+})

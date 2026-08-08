@@ -1314,3 +1314,197 @@ describe("확정본: 봉사", () => {
     expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(4)
   })
 })
+
+describe("확정본: 해외경험", () => {
+  const sections = () => getTemplateForType("overseas").extensions.filter(s => s.id !== "extended")
+  const labelsIn = (blocks: Block[]) => blocks.map(b => b.label)
+  const blockAt = (idx: number, label: string) =>
+    sections()[idx].blocks.find(b => b.label === label)!
+
+  /**
+   * 확정본 §8 은 "섹션 2개 앵커"지만 화면 카드는 3장이다. ② 의 '↳ 활동별 상세 설명'을 ② 안에
+   * 두면 `ExperienceFormV2.findProjectBlock` 이 **대상 섹션의 첫 repeatable-cell** 을 집는데
+   * OutcomeList 자체가 repeatable-cell 이라 목록이 자기 자신을 가리킨다. 독서(book-info →
+   * book-quotes)와 같은 구성으로 분리하는 것이 유일한 안전한 배치다.
+   */
+  it("확정본 2섹션 + 링크 대상 1섹션을 순서·id·category 그대로 갖는다", () => {
+    expect(sections().map(s => [s.id, s.category])).toEqual([
+      ["overseas-program", "basic"],
+      ["overseas-reflection", "detail"],
+      ["overseas-activities", "repeat"],
+    ])
+  })
+
+  /**
+   * 구 `overseas-info` 를 유지하면 '경험 유형'의 안정키가 그대로라, **라벨도 타입도 같고 선택지
+   * 도메인만 다른** 값이 injectValue 로 실려 새 드롭다운에 없는 값이 박힌다(FRT-247에서 봉사
+   * '대상'·'활동 형태'로 확인한 함정). 섹션 id 교체가 그 값을 orphan 안전망으로 흘려보낸다.
+   */
+  it("구 섹션 id 를 재사용하지 않는다 — 구 키가 orphan 안전망으로 흐르게", () => {
+    const ids = sections().map(s => s.id)
+    expect(ids).not.toContain("overseas-info")
+    expect(ids).not.toContain("overseas-challenges")
+  })
+
+  it("① 해외경험 정보는 확정본 필드를 순서 그대로 갖는다 (경험명·기간은 코어 소유)", () => {
+    expect(labelsIn(sections()[0].blocks)).toEqual([
+      "경험 유형",
+      "국가 / 도시",
+      "주최 / 소속 기관",
+      "사용 언어",
+      "참여 형태",
+      "증빙 자료",
+    ])
+  })
+
+  /** 확정본 ① 에서 *(선택, 필드 삭제 가능)* 표기가 없는 것만 필수다. */
+  it("① 의 필수는 '경험 유형'·'국가 / 도시' 둘뿐이다", () => {
+    const required = sections()[0].blocks.filter(b => b.required).map(b => b.label)
+    expect(required).toEqual(["경험 유형", "국가 / 도시"])
+  })
+
+  it("'경험 유형'은 확정본 9종 드롭다운이다", () => {
+    const field = blockAt(0, "경험 유형")
+    expect(field.type).toBe("single-select")
+    expect(field.options).toEqual([
+      "교환학생",
+      "어학연수",
+      "해외 인턴/취업",
+      "해외 봉사",
+      "단기 프로그램/캠프",
+      "여행/자유 탐방",
+      "워킹홀리데이",
+      "학회/컨퍼런스 참가",
+      "기타",
+    ])
+  })
+
+  it("'참여 형태'는 확정본 4종 드롭다운이다", () => {
+    const field = blockAt(0, "참여 형태")
+    expect(field.type).toBe("single-select")
+    expect(field.options).toEqual(["혼자", "친구/지인과 함께", "가족과 함께", "단체/팀 프로그램"])
+  })
+
+  it("'증빙 자료'는 증빙 유형 3종을 고르는 파일 블록이다", () => {
+    const file = blockAt(0, "증빙 자료")
+    expect(file.type).toBe("file")
+    expect(file.options).toEqual(["수료증/참가 확인서", "활동 사진", "기타"])
+  })
+
+  /**
+   * 봉사·독서와 갈리는 지점 — 확정본 ① 의 '기간'(month~month)은 코어 '기간'과 질문도 타입도
+   * 같아서 코어가 그대로 그 자리다. 그래서 CORE_EXCLUDE 에 '기간'을 넣지 않고, 따라서
+   * build-portfolio 의 TYPE_PERIOD_KEY 등록도 필요 없다.
+   */
+  it("core 는 헤더 둘과 '기간'을 남긴다 — 역할·성과·증빙만 확정본 필드로 대체됐다", () => {
+    const core = labelsIn(getTemplateForType("overseas").commonCore.blocks)
+    expect(core).toEqual(["경험명", "기간", "한 줄 요약"])
+  })
+
+  it("② 경험 상세는 확정본 3필드를 순서 그대로 갖는다", () => {
+    expect(labelsIn(sections()[1].blocks)).toEqual([
+      "주요 활동",
+      "이 경험이 나에게 준 것",
+      "기억에 남는 순간",
+    ])
+  })
+
+  it("②③ 은 '섹션 전체 선택'이라 필수 필드가 하나도 없다", () => {
+    expect(sections()[1].blocks.some(b => b.required)).toBe(false)
+    expect(sections()[2].blocks.some(b => b.required)).toBe(false)
+  })
+
+  /**
+   * 확정본 §7 의 '↻ 활동 동기화' 일괄 버튼 대신 독서가 쓴 행별 링크를 재사용한다.
+   * `titleColumnKey` 는 반드시 명시한다 — columns[0] 의존은 FRT-178 에서 깨진 전제다.
+   */
+  it("'주요 활동'은 ③ 으로 이어지는 개조식 목록이다", () => {
+    const list = blockAt(1, "주요 활동")
+    expect(list.variant).toBe("outcome-list")
+    expect(list.linkConfig).toEqual({
+      targetSectionId: "overseas-activities",
+      titleColumnKey: "activity",
+      label: "상세 설명",
+    })
+  })
+
+  it("'이 경험이 나에게 준 것'은 확정본 10종 이모지 태그다", () => {
+    const tags = blockAt(1, "이 경험이 나에게 준 것")
+    expect(tags.type).toBe("checklist")
+    expect(tags.variant).toBe("mood-tag")
+    expect(tags.options).toEqual([
+      "🗣️ 언어 능력 향상",
+      "🌍 다양성 이해",
+      "🤝 이문화 소통",
+      "💪 독립성/자립심",
+      "🎓 학문적 시야 확장",
+      "💼 커리어 방향 확립",
+      "🧭 새로운 관점",
+      "🌐 글로벌 네트워크",
+      "🔥 도전 정신",
+      "💡 문제 해결력",
+    ])
+  })
+
+  /**
+   * ⚠️ 컬럼에 required 를 붙이지 말 것. `isRequiredBlock` 은 컬럼 하나라도 required 면 표 블록
+   * 전체를 필수로 보고, 그러면 활동을 하나도 안 적은 사용자가 이 카드를 영영 완료할 수 없는 데다
+   * `canHideBlock` 이 숨기지도 못한다(FRT-236 독서 '문장별 감상'과 같은 자리).
+   */
+  it("③ 활동별 상세 설명은 활동·상세 설명 2컬럼이다", () => {
+    const table = sections()[2].blocks[0]
+    expect(table.type).toBe("repeatable-cell")
+    const columns = table.value.type === "repeatable-cell" ? table.value.columns : []
+    expect(columns.map(c => [c.key, c.label, c.blockType])).toEqual([
+      ["activity", "활동", "text"],
+      ["detail", "상세 설명", "textarea"],
+    ])
+    expect(columns.some(c => c.required)).toBeFalsy()
+  })
+
+  it("③ 이 비어 있으면 치울 수 있다 — 숨긴 뒤에는 카드가 완료된다", () => {
+    const table = sections()[2].blocks[0]
+    // 필수 블록은 `canHideBlock` 이 거부한다. 여기가 실제 게이트다 —
+    // `isCardComplete` 는 숨김 키를 먼저 걸러내므로 "숨길 수 있는가"를 증명하지 못한다.
+    expect(canHideBlock(table)).toBe(true)
+
+    const card = { category: "repeat" as const, label: "활동별 상세 설명", blocks: [table] }
+    expect(isCardComplete(card)).toBe(false)
+    expect(isCardComplete(card, [table.key!])).toBe(true)
+  })
+
+  it("①②③ 의 모든 필드에 가이드라인이 있다 (확정본이 '—'로 비운 것만 예외)", () => {
+    // 확정본이 가이드라인 칸을 '—' 로 비운 필드 — 없는 문구를 지어내지 않는다.
+    const NO_GUIDE = new Map<string, "placeholder" | "options">([["참여 형태", "options"]])
+    for (const s of sections()) {
+      for (const b of s.blocks) {
+        const fallback = NO_GUIDE.get(b.label)
+        if (fallback) {
+          expect(b[fallback], `${s.id}/${b.label}`).toBeTruthy()
+          continue
+        }
+        expect(b.guide, `${s.id}/${b.label}`).toBeTruthy()
+      }
+    }
+  })
+
+  it("확정본에 없는 구 필드는 템플릿에서 사라진다 (값은 매퍼가 orphan 으로 보존)", () => {
+    const labels = sections().flatMap(s => labelsIn(s.blocks))
+    for (const gone of [
+      "국가/도시",
+      "목적",
+      "활동 요약",
+      "언어 사용 수준",
+      "어려웠던 상황",
+      "성과/산출물",
+      "증빙",
+    ]) {
+      expect(labels, gone).not.toContain(gone)
+    }
+  })
+
+  /** 섹션 id 교체는 breaking change 다 — `withSectionKeys` 규약대로 bump 를 동반한다. */
+  it("섹션 id 를 갈아치웠으므로 TEMPLATE_VERSION 이 봉사(4) 위로 올라가 있다", () => {
+    expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(5)
+  })
+})

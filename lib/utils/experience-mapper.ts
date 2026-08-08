@@ -239,6 +239,23 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   // (form-cards 의 SEMANTIC_GROUPS.lesson 도 이미 둘을 동의어로 묶고 있다).
   'vol-info.느낀 점/가치관 변화': 'volunteer-reflection.배운 점',
   'vol-info.봉사 확인서': 'volunteer-info.봉사 확인서 첨부',
+  // 해외경험 확정본(FRT-249) — 구 `overseas-info`/`overseas-challenges` 9필드 중 **둘만** 옮긴다.
+  // 나머지는 옮기지 않고 orphan '기타' 카드에 남겨 사용자가 직접 판단하게 둔다:
+  //  · '경험 유형'(교환학생/연수/여행/해외 인턴/기타 5종)→'경험 유형'(9종) 은 **라벨도 타입도
+  //    같고 선택지 도메인만 다르다.** 섹션 id 교체가 없었다면 키가 같아 값이 그대로 실렸을 자리다
+  //    (봉사 '대상'·'활동 형태'와 같은 함정 — 새 목록에 없는 값이 드롭다운에 박힌다).
+  //  · '언어 사용 수준'→'사용 언어' 는 타입이 같지만 **묻는 것이 다르다**(수준 ≠ 언어명).
+  //    옮기면 '일상 회화 가능' 이 언어명 칸의 답으로 둔갑한다.
+  //  · '목적'·'활동 요약'·'어려웠던 상황' 표·'성과/산출물' 은 확정본이 삭제한 항목이다
+  //    (설계 노트: 경험 요약은 '주요 활동'과 서술이 중복되어 삭제).
+  //  · 구 `overseas-info.기간` 은 **코어 '기간' 과 목적지가 겹친다.** 해외경험은 CORE_EXCLUDE 에
+  //    '기간'을 넣지 않아 `core.기간` 이 살아 있고, `applyRenamedKeys` 는 구 키를 무조건 delete
+  //    한 뒤 목적지가 차 있으면 값을 안 싣는다 — 옮기면 진 쪽이 '기타' 로도 보존되지 않고
+  //    사라진다(FRT-248 이 선행 조건으로 지목한 결함).
+  'overseas-info.국가/도시': 'overseas-program.국가 / 도시',
+  // 파일 증빙은 select 와 달리 도메인이 닫혀 있지 않다 — `FileBlock` 이 옛 자유입력 evidenceType
+  // 이 새 options 에 없으면 선택지에 덧붙여 살려 두므로(FileBlock.tsx), 옮겨도 값이 박히지 않는다.
+  'overseas-challenges.증빙': 'overseas-program.증빙 자료',
 }
 
 /**
