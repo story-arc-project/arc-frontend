@@ -16,7 +16,13 @@ import {
   useSortable,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import type { Block, BlockType, BlockValue } from "@/types/archive"
+import type {
+  Block,
+  BlockType,
+  BlockValue,
+  ChecklistBlockValue,
+  SingleSelectBlockValue,
+} from "@/types/archive"
 import { createBlock, cloneBlock } from "@/lib/utils/block-utils"
 import { canHideBlock } from "@/lib/utils/hidden-fields"
 import BlockRenderer from "./BlockRenderer"
@@ -96,7 +102,33 @@ export default function BlockList({
           }
           // Update value-level options/columns for relevant types
           if ((b.type === "single-select" || b.type === "checklist") && config.options) {
-            updated.value = { ...b.value, options: config.options } as unknown as BlockValue
+            // 모달에서 지운 옵션을 가리키던 선택값도 함께 거둔다(FRT-158 리뷰 지적). 인라인 편집기
+            // (ChecklistBlock.removeOption / SingleSelectBlock.removeOption)가 이미 지키는 규칙인데
+            // 모달 경로만 빠져 있었다 — 남으면 상세뷰는 지운 라벨을 칩으로 계속 그리고
+            // (readOnly 렌더는 checked 만 본다) `isBlockEmpty` 도 checked 만 보므로
+            // 편집기에선 빈 블록이 저장·진행도에선 "채워짐"으로 굳는다.
+            //
+            // 대조 기준은 '제출된 목록 전체'가 아니라 **모달이 열어 보여준 목록에서 사라진 것**이다.
+            // 옵션에 애초에 없던 값(프리셋 개편으로 orphan 된 선택 — MoodTagBlock 이 일부러 보존한다)
+            // 까지 걸러내면 라벨만 고친 편집에서 사용자의 옛 답이 조용히 증발한다.
+            const nextOptions = config.options
+            const shown = (b.value as { options?: string[] }).options ?? b.options ?? []
+            const removed = shown.filter(o => !nextOptions.includes(o))
+            if (b.type === "checklist") {
+              const val = b.value as ChecklistBlockValue
+              updated.value = {
+                ...val,
+                options: nextOptions,
+                checked: (val.checked ?? []).filter(c => !removed.includes(c)),
+              }
+            } else {
+              const val = b.value as SingleSelectBlockValue
+              updated.value = {
+                ...val,
+                options: nextOptions,
+                selected: removed.includes(val.selected) ? "" : val.selected,
+              }
+            }
           }
           if (b.type === "repeatable-cell" && config.columns) {
             updated.value = { ...b.value, columns: config.columns } as unknown as BlockValue

@@ -73,3 +73,52 @@ describe("BlockList 블록 편집 모달", () => {
     expect((latest[0].value as SingleSelectBlockValue).options).toEqual(["계약직"])
   })
 })
+
+describe("BlockList 모달에서 옵션을 지우면 그 옵션을 가리키던 선택값도 거둔다", () => {
+  it("체크리스트: 지운 옵션이 checked 에 유령으로 남지 않는다", async () => {
+    const user = userEvent.setup()
+    let latest: Block[] = []
+    const block = createChecklistField("참여 형태", ["온라인", "오프라인"])
+    block.value = { type: "checklist", options: ["온라인", "오프라인"], checked: ["온라인"] }
+    render(<Harness initial={[block]} onBlocks={b => { latest = b }} />)
+
+    await openBlockEditor(user)
+    await clickRemoveWhileEnabled(user, 2)
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    // 남으면 상세뷰가 지운 라벨을 칩으로 계속 그리고(ChecklistBlock readOnly 는 checked 만 본다)
+    // `isBlockEmpty` 도 checked 만 보므로 그 블록이 "채워짐"으로 굳는다.
+    expect((latest[0].value as ChecklistBlockValue).checked).toEqual([])
+  })
+
+  it("단일선택: 지운 옵션이 selected 로 남지 않는다", async () => {
+    const user = userEvent.setup()
+    let latest: Block[] = []
+    const block = createSelectField("고용 형태", ["정규직", "계약직"])
+    block.value = { type: "single-select", options: ["정규직", "계약직"], selected: "정규직" }
+    render(<Harness initial={[block]} onBlocks={b => { latest = b }} />)
+
+    await openBlockEditor(user)
+    await clickRemoveWhileEnabled(user, 1) // 첫 옵션(선택된 '정규직')만 지운다
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    expect((latest[0].value as SingleSelectBlockValue).selected).toBe("")
+  })
+
+  it("옵션에 애초에 없던 값은 옵션을 건드리지 않은 편집에서 지워지지 않는다", async () => {
+    const user = userEvent.setup()
+    let latest: Block[] = []
+    const block = createChecklistField("참여 형태", ["온라인"])
+    // 프리셋 개편 등으로 옵션에서 사라졌지만 checked 에는 남은 값 — MoodTagBlock 이 일부러
+    // 보존하는 그 값이다. '제출된 목록 전체'로 대조하면 라벨만 고친 편집에 조용히 증발한다.
+    block.value = { type: "checklist", options: ["온라인"], checked: ["온라인", "오프라인(구)"] }
+    render(<Harness initial={[block]} onBlocks={b => { latest = b }} />)
+
+    await openBlockEditor(user)
+    await user.clear(screen.getByPlaceholderText("블록 이름을 입력하세요"))
+    await user.type(screen.getByPlaceholderText("블록 이름을 입력하세요"), "참여 방식")
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    expect((latest[0].value as ChecklistBlockValue).checked).toEqual(["온라인", "오프라인(구)"])
+  })
+})
