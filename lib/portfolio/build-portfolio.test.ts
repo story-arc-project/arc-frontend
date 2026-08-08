@@ -586,4 +586,70 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
     });
     expect(experienceToPost(exp).summary).toBe("인류의 역사를 새로운 시각으로 바라보게 해준 책");
   });
+
+  /**
+   * 봉사(FRT-247)도 `CORE_EXCLUDE` 로 코어 '기간'을 빼고 '활동 기간'으로 시점을 받는다.
+   * 독서와 같은 자리에서 같은 함정을 밟는다 — orphan 된 `core.기간` 은 라벨이 정확히 '기간'
+   * 이라 `pickValue` 의 정확-라벨 우선 정렬에서 동의어 '활동 기간' 을 이긴다.
+   */
+  describe("봉사는 '활동 기간'을 발행 기간으로 쓴다 (FRT-247)", () => {
+    function volunteerExp(fields: Record<string, unknown>): Experience {
+      return makeExp({
+        type: "volunteer",
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "지역 학습 멘토링",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const VOL_PERIOD = { type: "period", start: "2024-03-01", end: "2024-12-31", isCurrent: false };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '활동 기간'이 orphan 된 옛 core '기간'을 이긴다", () => {
+      const post = experienceToPost(
+        volunteerExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "volunteer-info.활동 기간": VOL_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.12");
+    });
+
+    it("'활동 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(volunteerExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("봉사 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("volunteer")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "활동 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(volunteerExp({ [key as string]: VOL_PERIOD })).period).toBe(
+        "2024.03 – 2024.12",
+      );
+    });
+
+    /**
+     * `CORE_EXCLUDE.volunteer` 가 코어 '내 역할/기여도' 를 빼도, 확정본 '역할' 이
+     * SEMANTIC_GROUPS.role 동의어라 기여도 발행이 비지 않는다.
+     */
+    it("코어 역할을 빼도 확정본 '역할'이 기여도로 발행된다", () => {
+      const post = experienceToPost(
+        volunteerExp({ "volunteer-info.역할": { type: "text", text: "학습 멘토" } }),
+      );
+      expect(post.contribution).toBe("학습 멘토");
+    });
+  });
 });

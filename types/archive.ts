@@ -377,6 +377,9 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   // 독서 확정본은 3섹션이지만 화면은 고정 4카테고리로 접힌다. ③ '평가'(별점)를 evidence 에
   // 두면 core '증빙 자료' 파일칸이 '평가' 카드에 딸려오므로 detail 에 합쳐 이름만 바꾼다.
   'reading': { detail: '감상과 평가', repeat: '문장별 감상' },
+  // 봉사 확정본 ②. basic 은 오버라이드하지 않는다 — 확정본 ① '봉사 정보' 카드에는 헤더 코어
+  // (경험명·한 줄 요약)도 함께 들어가므로 기본 라벨 '기본 정보'가 맞다(선행 유형들과 동일).
+  'volunteer': { detail: '봉사 회고' },
 }
 
 /**

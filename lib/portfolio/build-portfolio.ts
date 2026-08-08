@@ -103,6 +103,7 @@ const TYPE_PERIOD_KEY: Partial<Record<ExperienceTypeId, string>> = {
   award: "award-info.수상일",
   certification: "cert-info.취득일",
   reading: "book-info.독서 기간",
+  volunteer: "volunteer-info.활동 기간",
 };
 
 /** 코어 '기간'이 없는 유형의 시점. 값이 없으면 빈 문자열 — 없는 날짜를 지어내지 않는다. */

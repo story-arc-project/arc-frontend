@@ -86,6 +86,11 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   // 어학은 자체 '성적표 첨부'가 있어서 뺄 수 있었던 것이고, 독서 확정본에는 증빙 필드가
   // 하나도 없어 core 까지 빼면 첨부 수단이 통째로 사라진다.
   reading: ['기간', '내 역할/기여도', '핵심 성과'],
+  // 봉사 확정본은 ① 이 네 칸을 모두 자기 필드로 받는다 — '활동 기간'·'역할'(한 줄)·
+  // '봉사 확인서 첨부'(증빙 유형 드롭다운 포함). core 를 남기면 같은 질문을 두 번 하게 되고,
+  // 특히 '증빙 자료'는 evidence 카드를 따로 만들어 파일 입력칸이 두 벌이 된다(어학의 '성적표
+  // 첨부'와 같은 처리). '핵심 성과'는 확정본에 아예 없다 — ② 회고 네 질문이 그 자리를 대신한다.
+  volunteer: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
 }
 
 /**
@@ -1588,24 +1593,117 @@ function teamProjectExtensions(): TemplateSection[] {
   ]
 }
 
+const VOLUNTEER_FIELD_OPTIONS = [
+  '교육/학습 지원',
+  '아동/청소년',
+  '노인/어르신',
+  '장애인',
+  '다문화/이주민',
+  '의료/보건',
+  '환경/동물',
+  '재난/재해 구호',
+  '지역사회/캠페인',
+  '해외 봉사',
+  '기타',
+] as const
+
+const VOLUNTEER_PARTICIPATION_OPTIONS = [
+  '정기 봉사(주기적)',
+  '단기/일회성',
+  '캠프/단기 집중',
+  '온라인/재택 봉사',
+  '해외 봉사',
+] as const
+
+const VOLUNTEER_EVIDENCE_OPTIONS = [
+  '봉사시간 인증서(1365 등)',
+  '봉사 확인서/수료증',
+  '활동 사진',
+  '기타',
+] as const
+
+// 봉사 — 확정본(봉사_final). 구 `vol-info` 1섹션을 `volunteer-*` 2섹션으로 **전면 교체**한다.
+// 섹션 id 를 가는 것이 이 작업의 안전 장치다(FRT-210·FRT-236 과 같은 이유): 구 '내 역할'(textarea)이
+// 확정본에선 한 줄 '역할'(text)이고 '기간'→'활동 기간' 처럼 라벨도 함께 갈리는데, id 를 유지하면
+// 라벨이 같은 칸의 안정키가 그대로라 injectValue 가 값을 못 싣고도 그 키가 consumedKeys 에 잡혀
+// orphan 안전망까지 건너뛴다 — 값이 '기타' 카드에도 없이 사라진다.
+//
+// 확정본 2섹션이 화면에서도 2카드다: 파일 첨부를 ① 안에 두고(확정본 배치) core '증빙 자료'를
+// CORE_EXCLUDE 로 빼, evidence 버킷이 비어 카드가 생기지 않는다. 확정본 §7 도 "사이드 네비:
+// 섹션 2개 앵커"로 못 박았다.
 function volunteerExtensions(): TemplateSection[] {
   return [
     {
-      id: 'vol-info',
+      id: 'volunteer-info',
       category: 'basic',
       label: '봉사 정보',
       blocks: [
-        createTextField('봉사활동명', { required: true }),
-        createTextField('기관/장소'),
-        createPeriodField('기간', { required: true }),
-        createTextField('총 시간'),
-        createSelectField('대상', ['아동', '노인', '동물', '환경', '기타']),
-        createSelectField('활동 형태', ['오프라인', '온라인', '기획', '현장']),
-        createTextareaField('내 역할', { required: true }),
-        createTextareaField('활동 내용'),
-        createTextareaField('임팩트/변화'),
-        createTextareaField('느낀 점/가치관 변화'),
-        createFileField('봉사 확인서'),
+        // 확정본 ① 에서 *(선택)* 표기가 없는 넷만 필수다.
+        createTextField('봉사 활동명', {
+          required: true,
+          guide: '참여한 봉사 활동의 이름을 적어주세요.',
+          placeholder: '예: OO아동복지센터 학습 멘토링, 지역 노인복지관 급식 봉사',
+        }),
+        createSelectField('봉사 분야', [...VOLUNTEER_FIELD_OPTIONS], {
+          required: true,
+          guide:
+            '이 봉사의 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
+        }),
+        createTextField('봉사 기관', {
+          required: true,
+          guide: '봉사 활동을 진행한 기관이나 단체를 적어주세요.',
+          placeholder: '예: OO구청, OO복지관, 대한적십자사',
+        }),
+        createPeriodField('활동 기간', {
+          required: true,
+          guide: '봉사 활동 기간을 선택해주세요.',
+        }),
+        createTextField('총 봉사시간', {
+          guide: '1365 등에 등록된 인증 시간이나 실제 봉사 시간을 적어주세요.',
+          placeholder: '예: 48시간',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createSelectField('참여 형태', [...VOLUNTEER_PARTICIPATION_OPTIONS]),
+        // 확정본은 한 줄 텍스트다(예: 학습 멘토, 팀장). 구 '내 역할' textarea 로 되돌리지 말 것 —
+        // core '내 역할/기여도' 를 뺀 자리를 이 칸이 대신한다.
+        createTextField('역할', {
+          guide: '봉사에서 맡은 역할이나 담당을 적어주세요.',
+          placeholder: '예: 학습 멘토, 팀장, 배식 담당',
+        }),
+        createFileField('봉사 확인서 첨부', {
+          guide: '봉사시간 인증서 등',
+          options: [...VOLUNTEER_EVIDENCE_OPTIONS],
+        }),
+      ],
+    },
+    {
+      // 확정본 설계 노트: 계기(왜 시작했나) → 내용(무엇을 했나) → 순간(어떤 장면이 남았나) →
+      // 배운 점(무엇을 얻었나). 시간 흐름과 회고 서사를 따르는 순서라 임의로 바꾸지 말 것.
+      // "섹션 전체 선택"이므로 required 를 하나도 두지 않는다.
+      id: 'volunteer-reflection',
+      category: 'detail',
+      label: '봉사 회고',
+      blocks: [
+        createTextareaField('시작하게 된 계기', {
+          guide: '이 봉사를 시작하게 된 계기나 이유가 있다면 적어주세요.',
+          placeholder:
+            '예: 교육 격차 문제에 관심이 있었고, 직접 도움을 줄 수 있는 활동을 찾다가 지역 학습 멘토링에 지원하게 됐습니다.',
+        }),
+        createTextareaField('봉사 내용', {
+          guide: '어떤 봉사를 어떻게 진행했는지 자유롭게 적어주세요.',
+          placeholder:
+            '예: 매주 토요일 2시간씩 초등학생 5명을 대상으로 수학·영어 학습을 도왔습니다. 특히 학습 부진 아동을 위한 개별 진도표를 만들어 관리했습니다.',
+        }),
+        createTextareaField('기억에 남는 순간', {
+          guide: '봉사 중 인상 깊었던 순간이나 만남을 적어주세요.',
+          placeholder:
+            '예: 처음에는 수업을 거부하던 아이가 3개월 후 스스로 문제를 풀어보겠다고 나서던 순간이 가장 기억에 남습니다.',
+        }),
+        createTextareaField('배운 점', {
+          guide: '이 봉사를 통해 얻은 관점, 태도, 배움을 적어주세요.',
+          placeholder:
+            '예: 도움을 주는 것보다 상대의 속도에 맞추는 것이 중요함을 배웠고, 이후 팀 프로젝트에서도 서두르지 않고 파트너의 페이스를 존중하게 됐습니다.',
+        }),
       ],
     },
   ]
@@ -1964,13 +2062,15 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
  *     안정키가 통째로 바뀌었다. 아래 `withSectionKeys` 규약이 요구하는 bump 다.
  * 3 — 독서 확정본 정렬(FRT-236). 같은 이유 — `reading-info`/`reading-apply` 를 `book-*` 3개로
  *     갈아치웠다. 규약이 유형별 예외를 두지 않으므로 어학과 같은 대우를 한다.
+ * 4 — 봉사 확정본 정렬(FRT-247). 같은 이유 — `vol-info` 를 `volunteer-info`/`volunteer-reflection`
+ *     으로 갈아치웠다.
  *
  * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
  * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
  * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
  * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 3
+export const TEMPLATE_VERSION = 4
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.

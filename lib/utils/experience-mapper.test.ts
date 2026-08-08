@@ -1721,3 +1721,129 @@ describe("확정본 전면 교체 값 보존 (FRT-236 독서)", () => {
     })
   })
 })
+
+/**
+ * 봉사 확정본(FRT-247)은 구 `vol-info` 1섹션을 `volunteer-info`/`volunteer-reflection` 으로
+ * 갈아치운다. 독서·어학과 같은 이유이며, 여기서 갈리는 것은 **무엇을 옮기고 무엇을 안 옮기는가**다:
+ * 선택지 도메인이 통째로 달라진 드롭다운 둘('대상'·'활동 형태')을 옮기면 새 목록에 없는 값이
+ * 실려 화면에서 고를 수도, 지울 수도 없는 상태가 된다.
+ */
+describe("확정본 전면 교체 값 보존 (FRT-247 봉사)", () => {
+  function legacyVolunteerContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "지역 학습 멘토링",
+      summary: "초등학생 학습 멘토",
+      status: "complete",
+      tags: [],
+      fields: {
+        // 질문이 같아 새 키로 이관되는 것들.
+        "vol-info.봉사활동명": text("OO아동복지센터 학습 멘토링"),
+        "vol-info.기관/장소": text("OO복지관"),
+        "vol-info.기간": {
+          type: "period",
+          startDate: "2024-03",
+          endDate: "2024-12",
+          isOngoing: false,
+        },
+        "vol-info.총 시간": text("48시간"),
+        // textarea → 한 줄 text. text↔textarea 는 injectValue 가 변환해 싣는다.
+        "vol-info.내 역할": textarea("학습 멘토"),
+        "vol-info.활동 내용": textarea("매주 토요일 2시간씩 학습을 도왔다"),
+        "vol-info.느낀 점/가치관 변화": textarea("상대의 속도에 맞추는 것이 중요하다"),
+        "vol-info.봉사 확인서": {
+          type: "file",
+          fileName: "확인서.pdf",
+          description: "",
+          evidenceType: "",
+        },
+        // 선택지 도메인이 달라 옮기면 안 되는 둘 + 확정본에 대응 필드가 없는 하나.
+        "vol-info.대상": { type: "single-select", selected: "아동" },
+        "vol-info.활동 형태": { type: "single-select", selected: "오프라인" },
+        "vol-info.임팩트/변화": textarea("아이들의 자기주도 학습 시간이 늘었다"),
+      },
+      custom: [],
+    }
+  }
+
+  const loadLegacy = () =>
+    toExperienceV2(makeExperience({ type: "volunteer", content: legacyVolunteerContent() }))
+
+  it("질문이 같은 필드는 확정본 자리로 이관된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("volunteer-info.봉사 활동명")?.value).toEqual(text("OO아동복지센터 학습 멘토링"))
+    expect(byKey("volunteer-info.봉사 기관")?.value).toEqual(text("OO복지관"))
+    expect(byKey("volunteer-info.활동 기간")?.value).toMatchObject({ startDate: "2024-03" })
+    expect(byKey("volunteer-info.총 봉사시간")?.value).toEqual(text("48시간"))
+    // textarea → text 로 좁아져도 값은 실린다.
+    expect(byKey("volunteer-info.역할")?.value).toEqual(text("학습 멘토"))
+    expect(byKey("volunteer-reflection.봉사 내용")?.value).toEqual(
+      textarea("매주 토요일 2시간씩 학습을 도왔다"),
+    )
+    expect(byKey("volunteer-reflection.배운 점")?.value).toEqual(
+      textarea("상대의 속도에 맞추는 것이 중요하다"),
+    )
+    expect(byKey("volunteer-info.봉사 확인서 첨부")?.value.type).toBe("file")
+
+    // 옮긴 구 키는 '기타' 에 중복으로 되살아나지 않는다.
+    for (const oldKey of [
+      "vol-info.봉사활동명",
+      "vol-info.기관/장소",
+      "vol-info.기간",
+      "vol-info.총 시간",
+      "vol-info.내 역할",
+      "vol-info.활동 내용",
+      "vol-info.느낀 점/가치관 변화",
+      "vol-info.봉사 확인서",
+    ]) {
+      expect(v2.customBlocks.find(b => b.key === oldKey), oldKey).toBeUndefined()
+    }
+  })
+
+  /**
+   * 이 테스트가 이번 작업의 그물이다. '대상'(5종)과 '활동 형태'(4종)를 확정본 '봉사 분야'(11종)·
+   * '참여 형태'(5종)로 옮기면 저장된 '아동'·'오프라인' 이 새 선택지에 없는 값으로 들어가
+   * 드롭다운이 고를 수도 지울 수도 없는 상태가 된다. 옛 답이 새 질문의 답으로 둔갑하는 것도 같다.
+   */
+  it("선택지가 달라진 드롭다운은 이관하지 않고 '기타' 카드로 보존한다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    expect(byKey("vol-info.대상")?.value).toMatchObject({ selected: "아동" })
+    expect(byKey("vol-info.활동 형태")?.value).toMatchObject({ selected: "오프라인" })
+
+    const field = v2.extensionBlocks.find(b => b.key === "volunteer-info.봉사 분야")
+    expect(field?.value).toMatchObject({ selected: "" })
+    const participation = v2.extensionBlocks.find(b => b.key === "volunteer-info.참여 형태")
+    expect(participation?.value).toMatchObject({ selected: "" })
+  })
+
+  it("확정본에 대응 필드가 없는 '임팩트/변화'도 '기타' 카드로 보존된다", () => {
+    const v2 = loadLegacy()
+    expect(v2.customBlocks.find(b => b.key === "vol-info.임팩트/변화")?.value).toEqual(
+      textarea("아이들의 자기주도 학습 시간이 늘었다"),
+    )
+  })
+
+  it("보존·이관된 값이 재저장 왕복에도 살아남는다", () => {
+    const payload = toSavePayload(loadLegacy())
+    const second = toExperienceV2(makeExperience({ type: "volunteer", content: payload.content }))
+
+    expect(second.extensionBlocks.find(b => b.key === "volunteer-info.봉사 활동명")?.value).toEqual(
+      text("OO아동복지센터 학습 멘토링"),
+    )
+    expect(second.customBlocks.find(b => b.key === "vol-info.대상")?.value).toMatchObject({
+      selected: "아동",
+    })
+  })
+
+  it("숨김 키도 개명을 따라간다 (감춘 칸이 혼자 되살아나지 않게)", () => {
+    const content = { ...legacyVolunteerContent(), hidden: ["vol-info.총 시간"] }
+    const exp = toExperienceV2(makeExperience({ type: "volunteer", content }))
+
+    expect(exp.hiddenKeys).toEqual(["volunteer-info.총 봉사시간"])
+  })
+})
