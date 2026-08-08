@@ -70,18 +70,24 @@ export default function BlockEditModal({
     }
   }
 
+  const needsOptions = blockType === "single-select" || blockType === "checklist"
+  // 단일선택은 옵션이 0개가 되면 고를 값이 없는 드롭다운이 된다 → 마지막 하나는 남긴다(FRT-158).
+  // 체크리스트는 인라인 편집기와 마찬가지로 0개를 허용한다.
+  const lockLastOption = blockType === "single-select" && options.length <= 1
+
   const handleConfirm = () => {
     if (!label.trim()) return
     onConfirm({
       label: label.trim(),
       placeholder: placeholder.trim() || undefined,
-      options: options.length > 0 ? options : undefined,
+      // 빈 배열도 그대로 넘긴다 — `undefined` 로 접으면 BlockList 가 "옵션을 안 건드렸다"로 읽어
+      // 사용자가 지운 옵션이 되살아난다(FRT-158 형제 결함).
+      options: needsOptions ? options : undefined,
       columns: columns.length > 0 ? columns : undefined,
       tableColumns: tableColumns.length > 0 ? tableColumns : undefined,
     })
   }
 
-  const needsOptions = blockType === "single-select" || blockType === "checklist"
   const needsColumns = blockType === "repeatable-cell"
   const needsTableCols = blockType === "table"
   const needsPlaceholder = blockType === "text" || blockType === "textarea"
@@ -136,7 +142,8 @@ export default function BlockEditModal({
                   <button
                     type="button"
                     onClick={() => setOptions(options.filter((_, i) => i !== idx))}
-                    className="p-1 text-text-tertiary hover:text-error transition-colors"
+                    disabled={lockLastOption}
+                    className="p-1 text-text-tertiary hover:text-error transition-colors disabled:text-text-disabled disabled:hover:text-text-disabled disabled:cursor-not-allowed"
                     aria-label="옵션 삭제"
                   >
                     <Trash2 size={12} />
@@ -144,6 +151,11 @@ export default function BlockEditModal({
                 </div>
               ))}
             </div>
+            {lockLastOption && (
+              <p className="text-caption text-text-tertiary">
+                옵션은 하나 이상 필요해요. 새 옵션을 추가하면 지울 수 있어요.
+              </p>
+            )}
             <div className="flex gap-2">
               <input
                 type="text"
