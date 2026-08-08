@@ -500,4 +500,87 @@ describe("useLibraries — 멤버십 판정은 상태 업데이터 밖에서 한
       await first
     })
   })
+
+  // 아무것도 바꾸지 않는 호출이 mutation 세대를 올리면, 진행 중이던 쓰기의 실패 복구가
+  // 자기 스냅샷을 stale 로 판정해 아무것도 되돌리지 못한다. 그러면 서버에서 실패한
+  // 낙관적 변경이 화면에 무기한 남는다 — no-op 은 세대를 건드리지 말아야 한다.
+  it("중복 클릭으로 무시된 추가가, 진행 중이던 추가의 실패 복구를 막지 않는다", async () => {
+    const { result } = await renderWithMembershipSettled()
+    // 초기 로딩분을 비워, 이후 등록되는 GET 은 실패 복구 재조회뿐이게 한다.
+    pendingMembership.clear()
+
+    const post = deferred<undefined>()
+    addExperienceToLibraryMock.mockReturnValueOnce(post.promise)
+
+    let rejected = false
+    let failedAdd!: Promise<void>
+    await act(async () => {
+      failedAdd = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {
+        rejected = true
+      })
+      await Promise.resolve()
+    })
+
+    // 응답을 기다리는 동안 같은 항목을 한 번 더 누른다 — 아무 일도 일어나지 않아야 한다.
+    await act(async () => {
+      await result.current.addExperienceToLibrary("lib-a", "exp-2")
+    })
+    expect(addExperienceToLibraryMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      post.reject(new Error("서버 오류"))
+      await Promise.resolve()
+    })
+    await settle()
+    expect(pendingMembership.has("lib-a")).toBe(true)
+
+    // 서버에는 exp-2 가 없다 — 실패한 낙관적 추가는 화면에서도 사라져야 한다.
+    await act(async () => {
+      pendingMembership.get("lib-a")!.resolve(listData(["exp-1"]))
+      await failedAdd
+    })
+    await settle()
+
+    expect(rejected).toBe(true)
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+  })
+
+  it("중복 클릭으로 무시된 제거가, 진행 중이던 제거의 실패 복구를 막지 않는다", async () => {
+    const { result } = await renderWithMembershipSettled()
+    pendingMembership.clear()
+
+    const del = deferred<undefined>()
+    removeExperienceFromLibraryMock.mockReturnValueOnce(del.promise)
+
+    let rejected = false
+    let failedRemove!: Promise<void>
+    await act(async () => {
+      failedRemove = result.current.removeExperienceFromLibrary("lib-a", "exp-1").catch(() => {
+        rejected = true
+      })
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      await result.current.removeExperienceFromLibrary("lib-a", "exp-1")
+    })
+    expect(removeExperienceFromLibraryMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      del.reject(new Error("서버 오류"))
+      await Promise.resolve()
+    })
+    await settle()
+    expect(pendingMembership.has("lib-a")).toBe(true)
+
+    // 서버에는 exp-1 이 그대로 있다 — 실패한 제거는 화면에서도 되돌아와야 한다.
+    await act(async () => {
+      pendingMembership.get("lib-a")!.resolve(listData(["exp-1"]))
+      await failedRemove
+    })
+    await settle()
+
+    expect(rejected).toBe(true)
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+  })
 })

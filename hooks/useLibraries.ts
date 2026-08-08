@@ -325,7 +325,12 @@ export function useLibraries() {
       // firing a duplicate POST. The check reads the mirror ref, not a side
       // effect of the updater — commitLibraries has already applied any
       // earlier click by the time we get here.
-      const alreadyMember = isMember(libraryId, experienceId);
+      //
+      // A no-op must change *nothing*: bumping the version would make the
+      // in-flight write's recovery treat its own snapshot as stale, stranding
+      // a failed optimistic change on screen; marking membership loaded would
+      // clear a retry affordance that nothing has resolved.
+      if (isMember(libraryId, experienceId)) return;
       const mutationVersion = bumpMembershipVersion(libraryId);
       commitLibraries((prev) =>
         prev.map((library) => {
@@ -335,7 +340,6 @@ export function useLibraries() {
         }),
       );
       markMembershipLoaded(libraryId);
-      if (alreadyMember) return;
       // Stop counting ourselves as pending before recovering, so the resync
       // guard sees only writes that are genuinely still outstanding.
       beginWrite(libraryId);
@@ -367,7 +371,9 @@ export function useLibraries() {
 
   const removeExperienceFromLibrary = useCallback(
     async (libraryId: string, experienceId: string): Promise<void> => {
-      const wasMember = isMember(libraryId, experienceId);
+      // Mirror of the add path: a no-op must not touch the version or the
+      // loaded/error flags. See the comment there for what each would break.
+      if (!isMember(libraryId, experienceId)) return;
       const mutationVersion = bumpMembershipVersion(libraryId);
       commitLibraries((prev) =>
         prev.map((library) => {
@@ -380,7 +386,6 @@ export function useLibraries() {
         }),
       );
       markMembershipLoaded(libraryId);
-      if (!wasMember) return;
       beginWrite(libraryId);
       let failure: unknown = null;
       try {
