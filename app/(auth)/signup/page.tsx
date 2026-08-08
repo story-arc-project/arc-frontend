@@ -85,6 +85,7 @@ function SignupForm() {
   const [verifyCode, setVerifyCode] = useState("");
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
 
   // UI state
@@ -220,14 +221,21 @@ function SignupForm() {
   async function handleResendCode() {
     if (isResending) return;
     setIsResending(true);
+    // 성공·실패 슬롯을 함께 비운다. 한쪽만 비우면 직전 회차 결과가 이번 결과와 나란히 남는다.
     setResendError(null);
+    setResendNotice(null);
     try {
       await api.post("/auth/resend-verification", { email }, { auth: false });
+      setResendNotice("코드를 다시 보냈어요.");
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.status === 429) setResendError("5분 후 재발송 가능해요.");
         else if (e.status === 400) setResendError("이미 인증된 이메일이에요.");
         else setResendError(e.message);
+      } else {
+        // client.ts 의 request() 는 fetch reject(네트워크 단절 등)를 ApiError 로 감싸지 않고
+        // 그대로 던진다. else 가 없으면 catch 가 통째로 no-op 이 되어 아무 안내도 뜨지 않는다.
+        setResendError("네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
       }
     } finally {
       setIsResending(false);
@@ -507,6 +515,9 @@ function SignupForm() {
                   </Button>
                   {resendError && (
                     <p className="text-body-sm text-error">{resendError}</p>
+                  )}
+                  {resendNotice && (
+                    <p className="text-body-sm text-text-tertiary">{resendNotice}</p>
                   )}
                   <button
                     type="button"
