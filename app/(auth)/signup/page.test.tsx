@@ -125,6 +125,23 @@ describe("회원가입 verify — 코드 재발송 결과 안내", () => {
     expect(screen.queryByText(SUCCESS_MESSAGE)).toBeNull();
   });
 
+  // 거울상: 성공 문구는 실패 슬롯과 달리 handleResendCode 진입 시에만 지워진다.
+  // 이 방향이 빠지면 setResendNotice(null) 을 지워도 아무 테스트가 빨개지지 않는다.
+  it("성공 후 다시 눌러 실패하면 성공 문구가 남지 않는다", async () => {
+    post
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await renderVerifyStep();
+
+    await clickResend();
+    expect(screen.getByText(SUCCESS_MESSAGE)).toBeDefined();
+
+    await clickResend();
+
+    expect(screen.getByText(NETWORK_MESSAGE)).toBeDefined();
+    expect(screen.queryByText(SUCCESS_MESSAGE)).toBeNull();
+  });
+
   it("실패 후 다시 눌러 성공하면 실패 문구가 남지 않는다", async () => {
     post
       .mockRejectedValueOnce(new TypeError("Failed to fetch"))
