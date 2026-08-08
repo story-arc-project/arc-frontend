@@ -500,4 +500,90 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
     expect(key).toBeTruthy();
     expect(experienceToPost(dateOnlyExp(type, key as string, date)).period).toBe(expected);
   });
+
+  /**
+   * 독서(FRT-236)는 시점을 **단일 날짜가 아니라 period 블록**(`독서 기간`)으로 받는다.
+   * 수상/자격증과 상황은 같다 — `CORE_EXCLUDE.reading` 이 코어 '기간'을 빼면서, 개편 전
+   * 레코드의 `core.기간` 은 orphan 으로 custom 에 남는다. 그 orphan 은 라벨이 정확히 '기간'
+   * 이라 `pickValue` 의 정확-라벨 우선 정렬에서 동의어 '독서 기간' 을 이긴다. 보정이 없으면
+   * **화면에서 볼 수도 고칠 수도 없는 옛 범위가 계속 발행된다**(Codex P2).
+   */
+  describe("독서는 '독서 기간'을 발행 기간으로 쓴다 (FRT-236)", () => {
+    function readingExp(fields: Record<string, unknown>): Experience {
+      return makeExp({
+        type: "reading",
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "사피엔스",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const READ_PERIOD = {
+      type: "period",
+      start: "2024-03-01",
+      end: "2024-05-31",
+      isCurrent: false,
+    };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '독서 기간'이 orphan 된 옛 core '기간'을 이긴다", () => {
+      const post = experienceToPost(
+        readingExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "book-info.독서 기간": READ_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.05");
+    });
+
+    it("'독서 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(readingExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("독서 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("reading")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "독서 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(readingExp({ [key as string]: READ_PERIOD })).period).toBe(
+        "2024.03 – 2024.05",
+      );
+    });
+  });
+
+  /**
+   * 독서의 '한 줄 감상'("이 책을 한 줄로 정리한다면?")은 곧 한 줄 요약이다. 코어 '한 줄 요약'
+   * 은 optional 이라 비워 두기 쉬운데, 폴백 목록에 없으면 발행물 요약이 통째로 빈다(Codex P2).
+   */
+  it("독서는 코어 '한 줄 요약'이 비면 '한 줄 감상'으로 폴백한다 (FRT-236)", () => {
+    const exp = makeExp({
+      type: "reading",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "사피엔스",
+        summary: "",
+        status: "complete",
+        tags: [],
+        fields: {
+          "book-info.한 줄 감상": {
+            type: "text",
+            text: "인류의 역사를 새로운 시각으로 바라보게 해준 책",
+          },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).summary).toBe("인류의 역사를 새로운 시각으로 바라보게 해준 책");
+  });
 });

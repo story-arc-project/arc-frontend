@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { SYSTEM_TEMPLATES_V2, getTemplateForType } from "@/lib/constants/templates-v2"
+import { SYSTEM_TEMPLATES_V2, TEMPLATE_VERSION, getTemplateForType } from "@/lib/constants/templates-v2"
+import { isRequiredBlock } from "@/lib/utils/block-utils"
+import { canHideBlock } from "@/lib/utils/hidden-fields"
+import { isCardComplete } from "@/lib/utils/form-cards"
 import type { ExperienceTypeId, Block } from "@/types/archive"
 
 describe("templates-v2 category tagging", () => {
@@ -1054,6 +1057,29 @@ describe("확정본: 독서", () => {
     ])
   })
 
+  /**
+   * 확정본 ②는 "섹션 전체 선택"이고 카드 안내도 "굳이 모두 채울 필요는 없어요"라고 적는다.
+   * 그런데 `isRequiredBlock` 은 **컬럼 하나라도 required 면 표 블록 전체를 필수로 본다** —
+   * 그러면 문장을 하나도 안 적은 사용자는 이 카드를 영영 완료할 수 없고(빈 표는
+   * `isCardComplete` 를 못 채운다), 필수 블록은 숨길 수도 없어 치울 방법조차 없다.
+   * 안내는 "안 채워도 된다"는데 진행도는 채우라고 요구하는 모순이다(Codex P2).
+   */
+  it("③ 은 통째로 선택이다 — 필수 컬럼이 카드를 영영 미완료로 만들지 않는다", () => {
+    const table = sections()[2].blocks[0]
+    expect(isRequiredBlock(table)).toBe(false)
+  })
+
+  it("③ 이 비어 있으면 치울 수 있다 — 숨긴 뒤에는 카드가 완료된다", () => {
+    const table = sections()[2].blocks[0]
+    // 필수 블록은 `canHideBlock` 이 거부한다. 여기가 실제 게이트다 —
+    // `isCardComplete` 는 숨김 키를 먼저 걸러내므로 "숨길 수 있는가"를 증명하지 못한다.
+    expect(canHideBlock(table)).toBe(true)
+
+    const card = { category: "repeat" as const, label: "문장별 감상", blocks: [table] }
+    expect(isCardComplete(card)).toBe(false)
+    expect(isCardComplete(card, [table.key!])).toBe(true)
+  })
+
   it("③ 문장별 감상은 문장·생각 2컬럼이다", () => {
     const table = sections()[2].blocks[0]
     expect(table.type).toBe("repeatable-cell")
@@ -1114,5 +1140,15 @@ describe("확정본: 독서", () => {
     ]) {
       expect(labels, gone).not.toContain(gone)
     }
+  })
+
+  /**
+   * `withSectionKeys` 규약: 안정키가 라벨에서 파생되므로 **섹션 id·라벨 교체는 breaking change**
+   * 이고 `TEMPLATE_VERSION` bump 를 동반해야 한다. 버전 2 자체가 어학능력(FRT-210)이 섹션 id 를
+   * 갈아치우며 올린 bump 다. 독서도 같은 교체를 했으므로 같은 대우를 받아야 한다 —
+   * 안 올리면 개편 전후 레코드가 `content.template_version` 으로 구분되지 않는다(Codex P2).
+   */
+  it("섹션 id 를 갈아치웠으므로 TEMPLATE_VERSION 이 어학능력(2) 위로 올라가 있다", () => {
+    expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(3)
   })
 })

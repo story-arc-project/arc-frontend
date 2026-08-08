@@ -1829,10 +1829,15 @@ function readingExtensions(): TemplateSection[] {
       blocks: [
         createRepeatableCell('문장별 감상', [
           {
+            // ⚠️ required 를 붙이지 말 것. `isRequiredBlock` 은 **컬럼 하나라도 required 면
+            // 표 블록 전체를 필수로** 보고, 그러면 문장을 하나도 안 적은 사용자는 이 카드를
+            // 영영 완료할 수 없는 데다(빈 표는 `isCardComplete` 를 못 채운다) 필수 블록은
+            // `canHideBlock` 이 숨기지도 못하게 해 치울 방법조차 없다. 확정본 ②는 "섹션 전체
+            // 선택"이고 카드 안내도 "굳이 모두 채울 필요는 없어요"다 — 진행도가 그 반대를
+            // 요구하면 안내가 거짓말이 된다.
             key: 'quote',
             label: '문장',
             blockType: 'text',
-            required: true,
             guide: '위에서 기록한 문장이 여기에 채워져요.',
           },
           {
@@ -1957,13 +1962,15 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
  *
  * 2 — 어학능력 확정본 정렬(FRT-210). 섹션 id 를 `lang-info`/`lang-usage` 에서 4개로 갈아치워
  *     안정키가 통째로 바뀌었다. 아래 `withSectionKeys` 규약이 요구하는 bump 다.
+ * 3 — 독서 확정본 정렬(FRT-236). 같은 이유 — `reading-info`/`reading-apply` 를 `book-*` 3개로
+ *     갈아치웠다. 규약이 유형별 예외를 두지 않으므로 어학과 같은 대우를 한다.
  *
  * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
  * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
  * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
  * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 2
+export const TEMPLATE_VERSION = 3
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.
