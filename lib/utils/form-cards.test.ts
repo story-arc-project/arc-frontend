@@ -4,6 +4,7 @@ import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks } from "@/lib/utils/block-utils"
 import type { FormCardSection, FormCardModel } from "@/lib/utils/form-cards"
 import type { Block } from "@/types/archive"
+import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
 
 function sectionsFor(typeId: Parameters<typeof getTemplateForType>[0]): { core: ReturnType<typeof cloneBlocks>; sections: FormCardSection[] } {
   const t = getTemplateForType(typeId)
@@ -124,13 +125,31 @@ describe("computeFormCards", () => {
   })
 
   // detail 섹션을 정의하지 않은 유형은 지금도 범용 확장 카드로 폴백한다.
-  // (club 은 FRT-178 에서 자기 detail 섹션을 갖게 되어 더는 이 예시가 아니다.)
-  it("비-커스텀 유형(volunteer)은 범용 확장 필드(배경/목표·공개 설정)를 유지한다", () => {
-    const { core, sections } = sectionsFor("volunteer")
+  // (club 은 FRT-178, volunteer 는 FRT-247 에서 자기 detail 섹션을 갖게 되어 더는 예시가 아니다 —
+  //  확정본 정렬이 한 유형씩 들어올 때마다 이 예시를 옮겨 왔다.)
+  it("비-커스텀 유형(sports)은 범용 확장 필드(배경/목표·공개 설정)를 유지한다", () => {
+    const { core, sections } = sectionsFor("sports")
     const r = computeFormCards(core, sections)
     const all = r.cards.flatMap(c => c.blocks).map(b => b.label)
     expect(all).toContain("배경/목표")
     expect(all).toContain("공개 설정")
+  })
+
+  /**
+   * FRT-247: 봉사 확정본은 섹션이 둘이고 §7 도 "사이드 네비: 섹션 2개 앵커"로 못 박았다.
+   * core '증빙 자료'를 CORE_EXCLUDE 로 빼지 않으면 evidence 카드가 따로 생겨 3카드가 되고,
+   * 확정본이 ① 안에 둔 '봉사 확인서 첨부' 옆에 파일 입력칸이 한 벌 더 붙는다.
+   */
+  it("봉사: 확정본대로 2카드이고 detail 카드 이름이 '봉사 회고'다", () => {
+    const { core, sections } = sectionsFor("volunteer")
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES.volunteer)
+
+    expect(r.visibleCategories).toEqual(["basic", "detail"])
+    expect(r.cards.find(c => c.category === "detail")!.label).toBe("봉사 회고")
+
+    // 파일 입력칸은 ① 안의 '봉사 확인서 첨부' 하나뿐이다.
+    const fileBlocks = r.cards.flatMap(c => c.blocks).filter(b => b.type === "file")
+    expect(fileBlocks.map(b => b.label)).toEqual(["봉사 확인서 첨부"])
   })
 
   // ── FRT-178: 동아리가 확정본 4카드로 그려지는지 (문서 ①~④) ──

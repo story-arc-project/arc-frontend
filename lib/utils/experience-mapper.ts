@@ -217,6 +217,28 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   'reading-info.저자': 'book-info.저자',
   'reading-info.읽은 이유': 'book-info.독서 이유',
   'reading-info.핵심 요약 (3줄)': 'book-info.요약',
+  // 봉사 확정본(FRT-247) — 구 `vol-info` 11필드 중 **질문이 같은 일곱만** 옮긴다.
+  // 나머지는 옮기지 않고 orphan '기타' 카드에 남겨 사용자가 직접 판단하게 둔다:
+  //  · '대상'(아동/노인/동물/환경/기타 5종)→'봉사 분야'(11종)·'활동 형태'(오프라인/온라인/기획/
+  //    현장)→'참여 형태'(정기/단기/캠프/온라인/해외) 는 **선택지 도메인이 통째로 다르다.**
+  //    타입은 같아 injectValue 가 값을 실어 버리므로, 옮기면 새 목록에 없는 값이 드롭다운에
+  //    박혀 고를 수도 지울 수도 없게 된다 — 타입 호환만으로 이관을 판단하면 안 되는 경우다.
+  //  · '임팩트/변화'(수혜자에게 생긴 변화)는 확정본에 대응 필드가 없다. ② '배운 점'은 내가
+  //    얻은 것을 묻는 다른 질문이라 여기에 실으면 답이 둔갑한다.
+  //  · '내 역할'(**required textarea**, 안내 문구 없음)→'역할'(한 줄 text, "예: 학습 멘토,
+  //    팀장, 배식 담당") 은 `isInjectableInto` 가 허용하는 text↔textarea 변환이지만 **묻는
+  //    granularity 가 다르다.** 문단으로 적힌 답을 한 줄 칸에 실으면 `<input>` 이 값에서 개행을
+  //    지워 여러 줄이 **구분자 없이 붙어** 보이고, 그 상태로 한 번만 편집하면 붙은 값이 저장돼
+  //    원문이 영구히 사라진다(Codex P2). 프로덕션 코드가 값을 못 지키면 옮기지 않는 쪽이 답이다.
+  'vol-info.봉사활동명': 'volunteer-info.봉사 활동명',
+  'vol-info.기관/장소': 'volunteer-info.봉사 기관',
+  'vol-info.기간': 'volunteer-info.활동 기간',
+  'vol-info.총 시간': 'volunteer-info.총 봉사시간',
+  'vol-info.활동 내용': 'volunteer-reflection.봉사 내용',
+  // 확정본 '배운 점' 가이드가 "얻은 관점, 태도, 배움"이라 구 '느낀 점/가치관 변화'와 같은 질문이다
+  // (form-cards 의 SEMANTIC_GROUPS.lesson 도 이미 둘을 동의어로 묶고 있다).
+  'vol-info.느낀 점/가치관 변화': 'volunteer-reflection.배운 점',
+  'vol-info.봉사 확인서': 'volunteer-info.봉사 확인서 첨부',
 }
 
 /**

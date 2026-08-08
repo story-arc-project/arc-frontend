@@ -1152,3 +1152,165 @@ describe("확정본: 독서", () => {
     expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(3)
   })
 })
+
+describe("확정본: 봉사", () => {
+  const sections = () => getTemplateForType("volunteer").extensions.filter(s => s.id !== "extended")
+  const labelsIn = (blocks: Block[]) => blocks.map(b => b.label)
+  const blockAt = (idx: number, label: string) =>
+    sections()[idx].blocks.find(b => b.label === label)!
+
+  it("확정본 2섹션을 순서·id·category 그대로 갖는다", () => {
+    expect(sections().map(s => [s.id, s.category])).toEqual([
+      ["volunteer-info", "basic"],
+      ["volunteer-reflection", "detail"],
+    ])
+  })
+
+  /**
+   * 어학능력(FRT-210)·독서(FRT-236)와 같은 안전 장치다. 구 `vol-info` 를 유지하면 라벨이 그대로인
+   * 필드의 안정키가 같아져, 타입이 바뀐 칸은 injectValue 가 값을 안 싣는데 그 키가 consumedKeys 에
+   * 잡혀 orphan 안전망까지 건너뛴다 — 값이 '기타' 카드에도 없이 사라진다.
+   */
+  it("구 섹션 id 를 재사용하지 않는다 — 구 키가 orphan 안전망으로 흐르게", () => {
+    expect(sections().map(s => s.id)).not.toContain("vol-info")
+  })
+
+  it("① 봉사 정보는 확정본 8필드다", () => {
+    expect(labelsIn(sections()[0].blocks)).toEqual([
+      "봉사 활동명",
+      "봉사 분야",
+      "봉사 기관",
+      "활동 기간",
+      "총 봉사시간",
+      "참여 형태",
+      "역할",
+      "봉사 확인서 첨부",
+    ])
+  })
+
+  /**
+   * 확정본 ① 은 "1/2, 필수" 섹션이고 선택 필드는 전부 *(선택, 필드 삭제 가능)* 으로 표기돼 있다.
+   * 그 표기가 없는 넷만 필수다 — 표기를 근거로 세지 않으면 선택 필드가 진행도를 막는다.
+   */
+  it("① 의 필수는 문서가 '선택'을 표기하지 않은 넷뿐이다", () => {
+    const required = sections()[0].blocks.filter(b => b.required).map(b => b.label)
+    expect(required).toEqual(["봉사 활동명", "봉사 분야", "봉사 기관", "활동 기간"])
+  })
+
+  it("'봉사 분야'는 확정본 11종 드롭다운이다", () => {
+    const field = blockAt(0, "봉사 분야")
+    expect(field.type).toBe("single-select")
+    expect(field.options).toEqual([
+      "교육/학습 지원",
+      "아동/청소년",
+      "노인/어르신",
+      "장애인",
+      "다문화/이주민",
+      "의료/보건",
+      "환경/동물",
+      "재난/재해 구호",
+      "지역사회/캠페인",
+      "해외 봉사",
+      "기타",
+    ])
+  })
+
+  it("'참여 형태'는 확정본 5종 드롭다운이다", () => {
+    const field = blockAt(0, "참여 형태")
+    expect(field.type).toBe("single-select")
+    expect(field.options).toEqual([
+      "정기 봉사(주기적)",
+      "단기/일회성",
+      "캠프/단기 집중",
+      "온라인/재택 봉사",
+      "해외 봉사",
+    ])
+  })
+
+  it("'활동 기간'은 시작·종료를 받는 period 다", () => {
+    expect(blockAt(0, "활동 기간").type).toBe("period")
+  })
+
+  /** 확정본 ① 의 '역할'은 한 줄 텍스트다(예: 학습 멘토, 팀장) — 구 '내 역할' textarea 가 아니다. */
+  it("'역할'은 한 줄 텍스트이고 선택 입력이다", () => {
+    const role = blockAt(0, "역할")
+    expect(role.type).toBe("text")
+    expect(role.required).toBeFalsy()
+  })
+
+  it("'봉사 확인서 첨부'는 증빙 유형 4종을 고르는 파일 블록이다", () => {
+    const file = blockAt(0, "봉사 확인서 첨부")
+    expect(file.type).toBe("file")
+    expect(file.options).toEqual([
+      "봉사시간 인증서(1365 등)",
+      "봉사 확인서/수료증",
+      "활동 사진",
+      "기타",
+    ])
+  })
+
+  /**
+   * 확정본 ② 는 계기(왜 시작했나) → 내용(무엇을 했나) → 순간(어떤 장면이 남았나) →
+   * 배운 점(무엇을 얻었나) 순서를 설계 노트로 못 박았다. 회고 서사 순서라 임의로 바꾸지 말 것.
+   */
+  it("② 봉사 회고는 확정본 4필드를 서사 순서 그대로 갖는다", () => {
+    expect(labelsIn(sections()[1].blocks)).toEqual([
+      "시작하게 된 계기",
+      "봉사 내용",
+      "기억에 남는 순간",
+      "배운 점",
+    ])
+  })
+
+  it("② 는 '섹션 전체 선택'이라 필수 필드가 하나도 없다", () => {
+    expect(sections()[1].blocks.some(b => b.required)).toBe(false)
+  })
+
+  /**
+   * 확정본은 파일 첨부를 ① 안에 두고 사이드 네비도 "섹션 2개 앵커"로 못 박았다. core '증빙 자료'를
+   * 남기면 evidence 카드가 따로 생겨 파일 입력칸이 두 벌이 되고 카드가 3장이 된다 —
+   * 어학능력의 '성적표 첨부'(FRT-210)와 같은 처리다.
+   */
+  it("core 는 헤더 둘만 남는다 — 기간·역할·성과·증빙이 확정본 필드로 대체됐다", () => {
+    const core = labelsIn(getTemplateForType("volunteer").commonCore.blocks)
+    expect(core).toEqual(["경험명", "한 줄 요약"])
+  })
+
+  it("①② 의 모든 필드에 가이드라인이 있다 (확정본이 '—'로 비운 것만 예외)", () => {
+    // 확정본이 가이드라인 칸을 '—' 로 비운 필드 — 없는 문구를 지어내지 않는다.
+    const NO_GUIDE = new Map<string, "placeholder" | "options">([["참여 형태", "options"]])
+    for (const s of sections()) {
+      for (const b of s.blocks) {
+        const fallback = NO_GUIDE.get(b.label)
+        if (fallback) {
+          expect(b[fallback], `${s.id}/${b.label}`).toBeTruthy()
+          continue
+        }
+        expect(b.guide, `${s.id}/${b.label}`).toBeTruthy()
+      }
+    }
+  })
+
+  it("확정본에 없는 구 필드는 템플릿에서 사라진다 (값은 매퍼가 orphan 으로 보존)", () => {
+    const labels = sections().flatMap(s => labelsIn(s.blocks))
+    for (const gone of [
+      "봉사활동명",
+      "기관/장소",
+      "총 시간",
+      "대상",
+      "활동 형태",
+      "내 역할",
+      "활동 내용",
+      "임팩트/변화",
+      "느낀 점/가치관 변화",
+      "봉사 확인서",
+    ]) {
+      expect(labels, gone).not.toContain(gone)
+    }
+  })
+
+  /** 섹션 id 교체는 breaking change 다 — `withSectionKeys` 규약대로 bump 를 동반한다(FRT-236). */
+  it("섹션 id 를 갈아치웠으므로 TEMPLATE_VERSION 이 독서(3) 위로 올라가 있다", () => {
+    expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(4)
+  })
+})
