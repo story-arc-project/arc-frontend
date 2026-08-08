@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { SYSTEM_TEMPLATES_V2, getTemplateForType } from "@/lib/constants/templates-v2"
+import { SYSTEM_TEMPLATES_V2, TEMPLATE_VERSION, getTemplateForType } from "@/lib/constants/templates-v2"
+import { isRequiredBlock } from "@/lib/utils/block-utils"
+import { canHideBlock } from "@/lib/utils/hidden-fields"
+import { isCardComplete } from "@/lib/utils/form-cards"
 import type { ExperienceTypeId, Block } from "@/types/archive"
 
 describe("templates-v2 category tagging", () => {
@@ -940,5 +943,212 @@ describe("확정본: 어학능력", () => {
     ]) {
       expect(labels, gone).not.toContain(gone)
     }
+  })
+})
+
+describe("확정본: 독서", () => {
+  const sections = () => getTemplateForType("reading").extensions.filter(s => s.id !== "extended")
+  const labelsIn = (blocks: Block[]) => blocks.map(b => b.label)
+  const blockAt = (idx: number, label: string) =>
+    sections()[idx].blocks.find(b => b.label === label)!
+
+  it("확정본 3섹션을 순서·id·category 그대로 갖는다", () => {
+    expect(sections().map(s => [s.id, s.category])).toEqual([
+      ["book-info", "basic"],
+      ["book-reflection", "detail"],
+      ["book-quotes", "repeat"],
+    ])
+  })
+
+  /**
+   * 어학능력(FRT-210)과 같은 안전 장치다. 구 '읽은 기간/완독일'(text)이 확정본에선 period 이고
+   * 구 '인상 깊은 문장'(textarea)은 개조식 리스트인데, 섹션 id 를 유지하면 안정키가 같아져
+   * injectValue 는 타입 불일치로 값을 안 싣고 그 키는 consumedKeys 에 잡혀 orphan 안전망도
+   * 건너뛴다 — 값이 '기타' 카드에도 없이 사라진다. id 가 다르면 구 키가 전부 orphan 으로 흐른다.
+   */
+  it("구 섹션 id 를 재사용하지 않는다 — 구 키가 orphan 안전망으로 흐르게", () => {
+    const ids = sections().map(s => s.id)
+    expect(ids).not.toContain("reading-info")
+    expect(ids).not.toContain("reading-apply")
+  })
+
+  it("① 도서 정보는 확정본 9필드다", () => {
+    expect(labelsIn(sections()[0].blocks)).toEqual([
+      "도서명",
+      "저자",
+      "장르 / 분야",
+      "페이지 수",
+      "독서 기간",
+      "독서 이유",
+      "한 줄 감상",
+      "요약",
+      "인상 깊었던 문장",
+    ])
+  })
+
+  /**
+   * 확정본 ① 은 "1/3, 필수" 섹션이고 선택 필드는 전부 *(선택, 필드 삭제 가능)* 으로 표기돼 있다.
+   * 그 표기가 없는 셋만 필수다 — 표기를 근거로 세지 않으면 선택 필드가 진행도를 막는다.
+   */
+  it("① 의 필수는 문서가 '선택'을 표기하지 않은 도서명·저자·독서 기간뿐이다", () => {
+    const required = sections()[0].blocks.filter(b => b.required).map(b => b.label)
+    expect(required).toEqual(["도서명", "저자", "독서 기간"])
+  })
+
+  it("'장르 / 분야'는 확정본 12종 드롭다운이다", () => {
+    const genre = blockAt(0, "장르 / 분야")
+    expect(genre.type).toBe("single-select")
+    expect(genre.options).toEqual([
+      "인문/철학",
+      "역사",
+      "사회/정치",
+      "경제/경영",
+      "자기계발",
+      "과학/기술",
+      "심리/뇌과학",
+      "예술/문화",
+      "소설/문학",
+      "에세이/시",
+      "전공/학술",
+      "기타",
+    ])
+  })
+
+  it("'독서 기간'은 시작·종료를 받는 period 다 (구 text 완독일이 아니다)", () => {
+    expect(blockAt(0, "독서 기간").type).toBe("period")
+  })
+
+  it("'인상 깊었던 문장'은 개조식 불릿 리스트다", () => {
+    const quotes = blockAt(0, "인상 깊었던 문장")
+    expect(quotes.variant).toBe("outcome-list")
+    const columns = quotes.value.type === "repeatable-cell" ? quotes.value.columns : []
+    expect(columns.map(c => c.label)).toEqual(["문장"])
+  })
+
+  /**
+   * 확정본의 '↻ 문장 동기화' 를 행별 '감상 남기기' 링크로 구현했다. 대상 섹션·제목 컬럼이
+   * 실재하지 않으면 버튼을 눌러도 아무 일이 없거나(대상 없음) 문장이 엉뚱한 칸에 들어간다 —
+   * 둘 다 화면엔 조용하다. 상수를 베껴 적지 않고 **템플릿에서 파생시켜** 대조한다.
+   */
+  it("'인상 깊었던 문장'의 연결 설정이 ③ 섹션·문장 컬럼을 실제로 가리킨다", () => {
+    const link = blockAt(0, "인상 깊었던 문장").linkConfig!
+    expect(link.targetSectionId).toBe("book-quotes")
+
+    const target = sections().find(s => s.id === link.targetSectionId)!
+    const table = target.blocks.find(b => b.value.type === "repeatable-cell")!
+    const columns = table.value.type === "repeatable-cell" ? table.value.columns : []
+    expect(columns.map(c => c.key)).toContain(link.titleColumnKey)
+  })
+
+  it("② 감상과 평가는 확정본 ②의 회고와 ③의 별점을 함께 갖는다", () => {
+    expect(labelsIn(sections()[1].blocks)).toEqual(["이 책이 나에게 남긴 것", "별점"])
+    expect(sections()[1].blocks.some(b => b.required)).toBe(false)
+  })
+
+  it("'별점'은 확정본 표기 그대로인 5종 드롭다운이다", () => {
+    const rating = blockAt(1, "별점")
+    expect(rating.type).toBe("single-select")
+    expect(rating.options).toEqual([
+      "⭐⭐⭐⭐⭐ (강력 추천)",
+      "⭐⭐⭐⭐ (추천)",
+      "⭐⭐⭐ (괜찮았음)",
+      "⭐⭐ (아쉬웠음)",
+      "⭐ (별로)",
+    ])
+  })
+
+  /**
+   * 확정본 ②는 "섹션 전체 선택"이고 카드 안내도 "굳이 모두 채울 필요는 없어요"라고 적는다.
+   * 그런데 `isRequiredBlock` 은 **컬럼 하나라도 required 면 표 블록 전체를 필수로 본다** —
+   * 그러면 문장을 하나도 안 적은 사용자는 이 카드를 영영 완료할 수 없고(빈 표는
+   * `isCardComplete` 를 못 채운다), 필수 블록은 숨길 수도 없어 치울 방법조차 없다.
+   * 안내는 "안 채워도 된다"는데 진행도는 채우라고 요구하는 모순이다(Codex P2).
+   */
+  it("③ 은 통째로 선택이다 — 필수 컬럼이 카드를 영영 미완료로 만들지 않는다", () => {
+    const table = sections()[2].blocks[0]
+    expect(isRequiredBlock(table)).toBe(false)
+  })
+
+  it("③ 이 비어 있으면 치울 수 있다 — 숨긴 뒤에는 카드가 완료된다", () => {
+    const table = sections()[2].blocks[0]
+    // 필수 블록은 `canHideBlock` 이 거부한다. 여기가 실제 게이트다 —
+    // `isCardComplete` 는 숨김 키를 먼저 걸러내므로 "숨길 수 있는가"를 증명하지 못한다.
+    expect(canHideBlock(table)).toBe(true)
+
+    const card = { category: "repeat" as const, label: "문장별 감상", blocks: [table] }
+    expect(isCardComplete(card)).toBe(false)
+    expect(isCardComplete(card, [table.key!])).toBe(true)
+  })
+
+  it("③ 문장별 감상은 문장·생각 2컬럼이다", () => {
+    const table = sections()[2].blocks[0]
+    expect(table.type).toBe("repeatable-cell")
+    const columns = table.value.type === "repeatable-cell" ? table.value.columns : []
+    expect(columns.map(c => [c.key, c.label, c.blockType])).toEqual([
+      ["quote", "문장", "text"],
+      ["impression", "이 문장에 대한 생각", "textarea"],
+    ])
+  })
+
+  /**
+   * 확정본에 증빙 섹션이 없다고 core '증빙 자료'까지 빼면 첨부 수단이 아예 사라진다 —
+   * 어학능력은 자체 '성적표 첨부'가 있어서 뺄 수 있었던 것이라 그대로 베끼면 안 된다.
+   * 시점은 확정본의 '독서 기간'이 받고, 역할·성과는 독서에 성립하지 않는 질문이라 뺀다.
+   */
+  it("core 에서 기간·역할·성과만 제외하고 증빙 자료는 남긴다", () => {
+    const core = labelsIn(getTemplateForType("reading").commonCore.blocks)
+    expect(core).toEqual(["경험명", "한 줄 요약", "증빙 자료"])
+  })
+
+  it("①②③ 의 필드에 가이드라인이 있다 (확정본이 '—'로 비운 것만 예외)", () => {
+    // 확정본이 가이드라인 칸을 비운 필드들 — 없는 문구를 지어내지 않는다.
+    // '페이지 수'는 '—', '별점'은 그 칸이 선택지 목록이라 안내가 따로 없다.
+    const NO_GUIDE = new Map<string, "placeholder" | "options">([
+      ["페이지 수", "placeholder"],
+      ["별점", "options"],
+    ])
+    for (const s of sections()) {
+      for (const b of s.blocks) {
+        const fallback = NO_GUIDE.get(b.label)
+        if (fallback) {
+          expect(b[fallback], `${s.id}/${b.label}`).toBeTruthy()
+          continue
+        }
+        // 표형 반복 입력은 안내가 컬럼마다 붙는다. 개조식 리스트(outcome-list)는 컬럼이 내부
+        // 구현일 뿐이라 블록 층위 guide 를 본다 — 어학능력(FRT-210)과 같은 기준이다.
+        if (b.value.type === "repeatable-cell" && b.variant !== "outcome-list") {
+          for (const c of b.value.columns) {
+            expect(c.guide, `${s.id}/${b.label}/${c.label}`).toBeTruthy()
+          }
+          continue
+        }
+        expect(b.guide, `${s.id}/${b.label}`).toBeTruthy()
+      }
+    }
+  })
+
+  it("확정본에 없는 구 필드는 템플릿에서 사라진다 (값은 매퍼가 orphan 으로 보존)", () => {
+    const labels = sections().flatMap(s => labelsIn(s.blocks))
+    for (const gone of [
+      "읽은 기간/완독일",
+      "읽은 이유",
+      "핵심 요약 (3줄)",
+      "인상 깊은 문장",
+      "적용/실험",
+      "관련 자료",
+      "추천 대상",
+    ]) {
+      expect(labels, gone).not.toContain(gone)
+    }
+  })
+
+  /**
+   * `withSectionKeys` 규약: 안정키가 라벨에서 파생되므로 **섹션 id·라벨 교체는 breaking change**
+   * 이고 `TEMPLATE_VERSION` bump 를 동반해야 한다. 버전 2 자체가 어학능력(FRT-210)이 섹션 id 를
+   * 갈아치우며 올린 bump 다. 독서도 같은 교체를 했으므로 같은 대우를 받아야 한다 —
+   * 안 올리면 개편 전후 레코드가 `content.template_version` 으로 구분되지 않는다(Codex P2).
+   */
+  it("섹션 id 를 갈아치웠으므로 TEMPLATE_VERSION 이 어학능력(2) 위로 올라가 있다", () => {
+    expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(3)
   })
 })

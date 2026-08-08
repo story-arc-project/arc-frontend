@@ -374,6 +374,9 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   'education': { detail: '수업 상세', repeat: '프로젝트 / 과제 / 제작물 기록' },
   'extracurricular': { detail: '활동 상세', repeat: '미션 / 프로젝트 기록' },
   'language': { detail: '어학 경험', repeat: '경험 상세 기록', evidence: '어학 자격증' },
+  // 독서 확정본은 3섹션이지만 화면은 고정 4카테고리로 접힌다. ③ '평가'(별점)를 evidence 에
+  // 두면 core '증빙 자료' 파일칸이 '평가' 카드에 딸려오므로 detail 에 합쳐 이름만 바꾼다.
+  'reading': { detail: '감상과 평가', repeat: '문장별 감상' },
 }
 
 /**
@@ -418,6 +421,14 @@ export const SECTION_DESCRIPTION_OVERRIDES: Partial<
     repeat:
       "위 '주요 경험'에서 눈에 띄는 항목이 있다면 이곳에서 단위별로 자세히 기록해주세요. 기억나는 것부터 하나씩 추가해도 좋아요.",
     evidence: '보유한 어학 자격증이나 공인 시험 성적을 첨부해주세요.',
+  },
+  'reading': {
+    // 확정본 ② 의 empty state 원문은 "문장을 추가하면 여기에 나타나요"(자동 동기화 전제)다.
+    // 실제 구현은 행별 '감상 남기기' 버튼이므로 무엇을 눌러야 나타나는지로 맞췄다 — 안내가
+    // 일어나지 않는 일을 약속하면 사용자는 버튼을 못 찾는다.
+    repeat:
+      "위 '인상 깊었던 문장'에서 문장에 '감상 남기기'를 누르면 여기에 나타나요. 문장이 특별히 마음에 남았다면 그때 남겨보세요 — 굳이 모두 채울 필요는 없어요.",
+    // detail 은 override 하지 않는다 — 확정본에 대응 문구가 없어 지어내는 대신 폼 기본 문구로 폴백한다.
   },
 }
 

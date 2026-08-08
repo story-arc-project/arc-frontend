@@ -1534,3 +1534,190 @@ describe("확정본 전면 교체 값 보존 (FRT-210 어학능력)", () => {
     })
   })
 })
+
+/**
+ * FRT-236 은 독서 템플릿을 확정본 3섹션으로 전면 교체하면서 섹션 id 를 `reading-*` → `book-*` 로
+ * 갈아치운다. 어학능력(FRT-210)과 같은 이유다 — 구 '읽은 기간/완독일'(text)이 확정본에선
+ * period 이고 구 '인상 깊은 문장'(textarea)은 개조식 리스트라, id 를 유지했다면 안정키가 같아져
+ * injectValue 는 값을 안 싣고 consumedKeys 가 orphan 안전망까지 막아 값이 조용히 사라진다.
+ */
+describe("확정본 전면 교체 값 보존 (FRT-236 독서)", () => {
+  const OLD_TABLE_KEY = "reading-apply.적용/실험"
+
+  function legacyReadingContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "사피엔스",
+      summary: "인류사 개론",
+      status: "complete",
+      tags: [],
+      fields: {
+        // 질문·타입이 같아 새 키로 이관되는 넷.
+        "reading-info.도서명": text("사피엔스"),
+        "reading-info.저자": text("유발 하라리"),
+        "reading-info.읽은 이유": textarea("교양 수업에서 추천받았다"),
+        "reading-info.핵심 요약 (3줄)": textarea("인지혁명·농업혁명·과학혁명"),
+        // 타입이 바뀌는 둘 — 이관하지 않고 orphan 으로 보존해야 한다(최대 리스크).
+        "reading-info.읽은 기간/완독일": text("2024.03 ~ 2024.05"),
+        "reading-info.인상 깊은 문장": textarea("우리가 사는 세계는 대부분 상상의 산물이다"),
+        // 확정본이 삭제를 지시한 것들.
+        "reading-apply.추천 대상": text("역사에 관심 있는 사람"),
+        "reading-apply.관련 자료": {
+          type: "link",
+          url: "https://example.com/review",
+          title: "서평",
+          description: "",
+          linkType: "",
+        },
+        [OLD_TABLE_KEY]: {
+          type: "repeatable-cell",
+          columns: [
+            { key: "topic", label: "적용할 주제", blockType: "text", required: true },
+            { key: "action", label: "내가 한 행동", blockType: "textarea" },
+          ],
+          rows: [{ id: "r1", cells: { topic: "화폐 개념 재해석", action: "독서 모임에서 발제" } }],
+        },
+      },
+      custom: [],
+    }
+  }
+
+  const loadLegacy = () =>
+    toExperienceV2(makeExperience({ type: "reading", content: legacyReadingContent() }))
+
+  it("질문·타입이 같은 네 필드는 확정본 ① 자리로 이관된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("book-info.도서명")?.value).toEqual(text("사피엔스"))
+    expect(byKey("book-info.저자")?.value).toEqual(text("유발 하라리"))
+    expect(byKey("book-info.독서 이유")?.value).toEqual(textarea("교양 수업에서 추천받았다"))
+    expect(byKey("book-info.요약")?.value).toEqual(textarea("인지혁명·농업혁명·과학혁명"))
+
+    // 옮긴 구 키는 '기타' 에 중복으로 되살아나지 않는다.
+    for (const oldKey of [
+      "reading-info.도서명",
+      "reading-info.저자",
+      "reading-info.읽은 이유",
+      "reading-info.핵심 요약 (3줄)",
+    ]) {
+      expect(v2.customBlocks.find(b => b.key === oldKey), oldKey).toBeUndefined()
+    }
+  })
+
+  /**
+   * 이 테스트가 이번 작업의 그물이다. 섹션 id 를 구 이름으로 되돌리면 '읽은 기간/완독일'·
+   * '인상 깊은 문장' 값이 어디에도 남지 않고 사라지므로 여기서 실패한다.
+   */
+  it("타입이 바뀐 필드의 값이 '기타' 카드로 살아남는다 (무음 손실 없음)", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    expect(byKey("reading-info.읽은 기간/완독일")?.value).toEqual(text("2024.03 ~ 2024.05"))
+    expect(byKey("reading-info.인상 깊은 문장")?.value).toEqual(
+      textarea("우리가 사는 세계는 대부분 상상의 산물이다"),
+    )
+  })
+
+  it("확정본이 삭제를 지시한 구 필드·표도 '기타' 카드로 보존된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    expect(byKey("reading-apply.추천 대상")?.value).toEqual(text("역사에 관심 있는 사람"))
+    expect(byKey("reading-apply.관련 자료")?.value.type).toBe("link")
+
+    const table = byKey(OLD_TABLE_KEY)
+    expect(table?.type).toBe("repeatable-cell")
+    expect(table?.value.type === "repeatable-cell" && table.value.rows[0].cells.topic).toBe(
+      "화폐 개념 재해석",
+    )
+  })
+
+  it("보존·이관된 값이 재저장 왕복에도 살아남는다", () => {
+    const first = loadLegacy()
+    const payload = toSavePayload(first)
+    const second = toExperienceV2(makeExperience({ type: "reading", content: payload.content }))
+
+    expect(second.extensionBlocks.find(b => b.key === "book-info.도서명")?.value).toEqual(
+      text("사피엔스"),
+    )
+    expect(
+      second.customBlocks.find(b => b.key === "reading-info.읽은 기간/완독일")?.value,
+    ).toEqual(text("2024.03 ~ 2024.05"))
+    expect(second.customBlocks.find(b => b.key === OLD_TABLE_KEY)?.type).toBe("repeatable-cell")
+  })
+
+  it("숨김 키도 개명을 따라간다 (감춘 칸이 혼자 되살아나지 않게)", () => {
+    const content = { ...legacyReadingContent(), hidden: ["reading-info.읽은 이유"] }
+    const exp = toExperienceV2(makeExperience({ type: "reading", content }))
+
+    expect(exp.hiddenKeys).toEqual(["book-info.독서 이유"])
+  })
+
+  /**
+   * ⚠️ **섹션 id 교체는 v1 레거시를 지켜주지 못한다.** v1 은 `fields` 맵이 없어 저장 블록의
+   * **라벨**로 안정키를 붙이므로, 섹션 id 가 무엇이든 라벨이 그대로면 새 키가 붙는다.
+   * 독서에는 라벨이 그대로 유지되면서 타입만 바뀌는 필드가 없지만(둘 다 라벨도 함께 바뀐다),
+   * 그건 우연이므로 `isInjectableInto` 가 실제로 걸러 주는지 라벨을 고정해 못 박는다.
+   */
+  describe("v1 레거시는 라벨로 매칭한다 (섹션 id 교체가 닿지 않는 경로)", () => {
+    function legacyV1Content(): Record<string, unknown> {
+      return {
+        title: "사피엔스",
+        summary: "",
+        status: "complete",
+        tags: [],
+        coreBlocks: [],
+        extensionBlocks: [
+          // 라벨이 개명됐고 타입은 그대로 — 이관 대상(renamedLabelKeyMap).
+          { id: "b1", type: "text", label: "도서명", value: text("사피엔스") },
+          { id: "b2", type: "textarea", label: "읽은 이유", value: textarea("추천받아서") },
+          // 확정본에서 타입이 바뀐 둘 — 라벨이 달라 새 키가 붙지 않아야 한다.
+          { id: "b3", type: "text", label: "읽은 기간/완독일", value: text("2024.03 ~ 2024.05") },
+          { id: "b4", type: "textarea", label: "인상 깊은 문장", value: textarea("상상의 산물") },
+        ],
+        customBlocks: [],
+      }
+    }
+
+    const loadV1 = () =>
+      toExperienceV2(makeExperience({ type: "reading", content: legacyV1Content() }))
+
+    it("타입이 바뀐 라벨에는 새 안정키를 붙이지 않고 '기타' 로 보낸다", () => {
+      const v1 = loadV1()
+
+      expect(v1.extensionBlocks.find(b => b.key === "book-info.독서 기간")?.value).not.toEqual(
+        text("2024.03 ~ 2024.05"),
+      )
+      expect(v1.customBlocks.find(b => b.label === "읽은 기간/완독일")?.value).toEqual(
+        text("2024.03 ~ 2024.05"),
+      )
+      expect(v1.customBlocks.find(b => b.label === "인상 깊은 문장")?.value).toEqual(
+        textarea("상상의 산물"),
+      )
+    })
+
+    it("타입이 호환되는 라벨은 그대로 이관된다 (과잉 차단이 아니다)", () => {
+      const v1 = loadV1()
+
+      expect(v1.extensionBlocks.find(b => b.key === "book-info.도서명")?.value).toEqual(
+        text("사피엔스"),
+      )
+      expect(v1.extensionBlocks.find(b => b.key === "book-info.독서 이유")?.value).toEqual(
+        textarea("추천받아서"),
+      )
+    })
+
+    it("v1 → 저장 → 재로드 왕복에서 값이 사라지지 않는다", () => {
+      const payload = toSavePayload(loadV1())
+      const second = toExperienceV2(makeExperience({ type: "reading", content: payload.content }))
+
+      const survived = (label: string) =>
+        [...second.extensionBlocks, ...second.customBlocks].find(b => b.label === label)?.value
+      expect(survived("읽은 기간/완독일")).toEqual(text("2024.03 ~ 2024.05"))
+      expect(survived("인상 깊은 문장")).toEqual(textarea("상상의 산물"))
+      expect(survived("도서명")).toEqual(text("사피엔스"))
+    })
+  })
+})
