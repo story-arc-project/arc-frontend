@@ -334,6 +334,9 @@ describe("분석 기록 목록 — 필터·정렬 전환 race (FRT-185)", () => 
 
     // 지금 목록은 멀쩡하다 — 옛 요청이 겪은 실패를 지금 화면의 사실로 옮기면 거짓 경고다.
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // 안내가 없다는 것만으로는 부족하다 — 화면이 로딩으로 되돌아가 안내가 가려진 것도
+    // 같은 모습이기 때문이다. 지금 목록이 그대로 서 있어야 진짜 무시한 것이다.
+    expect(screen.getByText("분석 fresh")).toBeInTheDocument();
   });
 
   it("늦게 도착한 옛 응답의 성공이 지금의 부분 실패 안내를 지우지 않는다", async () => {
@@ -362,6 +365,7 @@ describe("분석 기록 목록 — 필터·정렬 전환 race (FRT-185)", () => 
 
     // 반대 방향도 같다 — 옛 요청이 성공했다고 지금의 실패가 없던 일이 되지 않는다.
     expect(screen.getByRole("alert")).toHaveTextContent("종합 분석");
+    expect(screen.getByText("분석 fresh")).toBeInTheDocument();
   });
 
   it("'다시 시도'를 누른 직후에는 이전 실패가 아니라 기다리는 중임을 보여준다", async () => {

@@ -27,6 +27,9 @@ const getList = vi.mocked(getIndividualAnalysisList);
 afterEach(cleanup);
 
 beforeEach(() => {
+  // clearAllMocks 는 mockReturnValueOnce 큐를 비우지 않는다 — 한 테스트가 큐를 남기면
+  // 다음 테스트가 남의 응답을 받는다. 큐까지 비우려면 reset 이어야 한다.
+  getList.mockReset();
   vi.clearAllMocks();
 });
 

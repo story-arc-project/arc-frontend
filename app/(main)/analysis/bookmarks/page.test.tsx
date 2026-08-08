@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { BookmarkedSnapshot, AnalysisType } from "@/types/analysis";
 
@@ -28,6 +29,9 @@ const getList = vi.mocked(getBookmarks);
 afterEach(cleanup);
 
 beforeEach(() => {
+  // clearAllMocks 는 mockReturnValueOnce 큐를 비우지 않는다 — 한 테스트가 큐를 남기면
+  // 다음 테스트가 남의 응답을 받는다. 큐까지 비우려면 reset 이어야 한다.
+  getList.mockReset();
   vi.clearAllMocks();
 });
 
@@ -186,5 +190,22 @@ describe("즐겨찾기 목록 — 필터 전환 race (FRT-185)", () => {
     expect(getList).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
     expect(screen.getByText("분석 kept")).toBeInTheDocument();
+  });
+
+  it("StrictMode 이중 마운트에서도 목록이 뜬다 — 버려지는 건 첫 요청뿐이다", async () => {
+    // dev 는 effect 를 mount→cleanup→mount 로 두 번 돌린다. 첫 요청은 cleanup 으로
+    // 무시되므로, 두 번째가 화면을 채우지 못하면 목록이 영영 스켈레톤에 머문다.
+    getList.mockResolvedValue([snap("mounted")]);
+
+    const { container } = render(
+      <StrictMode>
+        <BookmarksPage />
+      </StrictMode>,
+    );
+    await flush();
+
+    expect(getList).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("분석 mounted")).toBeInTheDocument();
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeInTheDocument();
   });
 });
