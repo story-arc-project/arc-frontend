@@ -53,7 +53,13 @@ function contextToParams(ctx: ArchiveContext): URLSearchParams {
   if (f.sortBy && f.sortBy !== "updated") params.set(PARAM.sort, f.sortBy)
   if (f.typeIds && f.typeIds.length > 0) params.set(PARAM.type, f.typeIds.join(","))
   if (f.statuses && f.statuses.length > 0) params.set(PARAM.status, f.statuses.join(","))
-  if (f.tags && f.tags.length > 0) params.set(PARAM.tags, f.tags.join(","))
+  // 유형·상태는 화이트리스트 enum 이라 쉼표로 이어 붙여도 안전하지만, tags 는 사용자가 자유롭게
+  // 입력하는 문자열이라 값 안에 쉼표가 섞일 수 있다(TagsBlock·ExperienceFormV2 의 TagInput 은
+  // trim 만 한다). 구분자를 재사용하면 "AI, ML" 이 왕복에서 두 태그로 갈라지므로 구분자를 쓰지
+  // 않고 반복 파라미터로 싣는다 — URLSearchParams 가 값별로 인코딩해 왕복이 손실 없이 닫힌다(FRT-162).
+  if (f.tags) {
+    for (const tag of f.tags) params.append(PARAM.tags, tag)
+  }
   return params
 }
 
@@ -90,11 +96,12 @@ export function parseArchiveContext(
     if (ss.length > 0) filter.statuses = ss
   }
 
-  const tags = params.get(PARAM.tags)
-  if (tags) {
-    const ts = tags.split(",").filter(Boolean)
-    if (ts.length > 0) filter.tags = ts
-  }
+  // 반복 파라미터로 실린 태그를 값 단위로 되읽는다(contextToParams 참고). 옛 `tags=a,b` 형식을
+  // 쉼표로 쪼개는 하위호환 폴백은 두지 않는다 — 그 폴백이 곧 "쉼표는 구분자"라는 선언이라
+  // 쉼표를 품은 태그를 다시 갈라놓는다. 태그 필터를 켜는 UI 가 아직 없어(useLibraryFilter 의
+  // toggleTagFilter 는 호출처가 없다) 옛 형식이 실린 URL 도 실존하지 않는다(FRT-162).
+  const ts = params.getAll(PARAM.tags).filter(Boolean)
+  if (ts.length > 0) filter.tags = ts
 
   const hasLib = !!lib && lib !== ALL_LIBRARY_ID
   const hasFilter = Object.keys(filter).length > 0
