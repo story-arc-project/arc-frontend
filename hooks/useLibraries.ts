@@ -53,6 +53,25 @@ export function useLibraries() {
   // 서버 스냅샷이 그 쓰기를 아직 담고 있지 않을 수 있으므로 반영하면 안 된다.
   const pendingWritesRef = useRef<Map<string, number>>(new Map());
   const loadLibraryMembershipRef = useRef<(id: string) => Promise<void>>(async () => {});
+  // 현재 목록의 미러. 멤버 여부 판정을 setLibraries 업데이터의 부수효과로 하면 React 가
+  // 업데이터를 dispatch 시점에 동기 실행해 준다는 조건부 보장(eager state 최적화)에
+  // 기대게 되는데, 이 훅에서는 그 최적화가 걸리지 않아 판정이 늘 초기값으로 읽혔다.
+  // 제거는 서버로 나가지도 않고 화면에서만 사라졌다(FRT-234).
+  const librariesRef = useRef<Library[]>(libraries);
+
+  // 모든 목록 갱신은 이 함수 하나를 지난다 — 그래야 librariesRef 가 항상 최신을 가리킨다는
+  // 불변식이 성립한다. setLibraries 를 직접 부르면 그 순간 ref 가 거짓말을 시작한다.
+  const commitLibraries = useCallback((update: (prev: Library[]) => Library[]) => {
+    const next = update(librariesRef.current);
+    librariesRef.current = next;
+    setLibraries(next);
+  }, []);
+
+  /** 업데이터 밖에서 멤버 여부를 판정한다. 라이브러리가 없으면 false. */
+  const isMember = useCallback((libraryId: string, experienceId: string) => {
+    const library = librariesRef.current.find((item) => item.id === libraryId);
+    return library?.experienceIds.includes(experienceId) ?? false;
+  }, []);
 
   const beginWrite = useCallback((libraryId: string) => {
     pendingWritesRef.current.set(libraryId, (pendingWritesRef.current.get(libraryId) ?? 0) + 1);
@@ -89,7 +108,7 @@ export function useLibraries() {
       loadedMembershipRef.current = new Set();
       setLoadedMembershipIds(new Set());
       setMembershipErrorIds(new Set());
-      setLibraries([createAllLibrary(), ...mappedLibraries]);
+      commitLibraries(() => [createAllLibrary(), ...mappedLibraries]);
       mappedLibraries.forEach((library) => {
         if (!library.filter) void loadLibraryMembershipRef.current(library.id);
       });
@@ -101,7 +120,7 @@ export function useLibraries() {
         setIsLoading(false);
       }
     }
-  }, []);
+  }, [commitLibraries]);
 
   useEffect(() => {
     void refetch();
@@ -139,7 +158,7 @@ export function useLibraries() {
         )
           return;
         const ids = data.contents.map((experience) => experience.id);
-        setLibraries((prev) =>
+        commitLibraries((prev) =>
           prev.map((library) =>
             library.id === libraryId ? { ...library, experienceIds: ids } : library,
           ),
@@ -182,7 +201,7 @@ export function useLibraries() {
         }
       }
     },
-    [],
+    [commitLibraries],
   );
 
   loadLibraryMembershipRef.current = loadLibraryMembership;
@@ -269,7 +288,7 @@ export function useLibraries() {
           return true;
         }
         bumpMembershipVersion(libraryId);
-        setLibraries((prev) =>
+        commitLibraries((prev) =>
           prev.map((library) =>
             library.id === libraryId ? { ...library, experienceIds: ids } : library,
           ),
@@ -296,28 +315,31 @@ export function useLibraries() {
         return false;
       }
     },
-    [bumpMembershipVersion, markMembershipLoaded],
+    [bumpMembershipVersion, commitLibraries, markMembershipLoaded],
   );
 
   const addExperienceToLibrary = useCallback(
     async (libraryId: string, experienceId: string): Promise<void> => {
       // Flip local membership BEFORE awaiting so a second click on a slow
       // connection sees the updated state and short-circuits instead of
-      // firing a duplicate POST.
-      let alreadyMember = false;
+      // firing a duplicate POST. The check reads the mirror ref, not a side
+      // effect of the updater — commitLibraries has already applied any
+      // earlier click by the time we get here.
+      //
+      // A no-op must change *nothing*: bumping the version would make the
+      // in-flight write's recovery treat its own snapshot as stale, stranding
+      // a failed optimistic change on screen; marking membership loaded would
+      // clear a retry affordance that nothing has resolved.
+      if (isMember(libraryId, experienceId)) return;
       const mutationVersion = bumpMembershipVersion(libraryId);
-      setLibraries((prev) =>
+      commitLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
-          if (library.experienceIds.includes(experienceId)) {
-            alreadyMember = true;
-            return library;
-          }
+          if (library.experienceIds.includes(experienceId)) return library;
           return { ...library, experienceIds: [...library.experienceIds, experienceId] };
         }),
       );
       markMembershipLoaded(libraryId);
-      if (alreadyMember) return;
       // Stop counting ourselves as pending before recovering, so the resync
       // guard sees only writes that are genuinely still outstanding.
       beginWrite(libraryId);
@@ -336,18 +358,27 @@ export function useLibraries() {
         throw failure;
       }
     },
-    [beginWrite, bumpMembershipVersion, endWrite, markMembershipLoaded, resyncLibraryMembership],
+    [
+      beginWrite,
+      bumpMembershipVersion,
+      commitLibraries,
+      endWrite,
+      isMember,
+      markMembershipLoaded,
+      resyncLibraryMembership,
+    ],
   );
 
   const removeExperienceFromLibrary = useCallback(
     async (libraryId: string, experienceId: string): Promise<void> => {
-      let wasMember = false;
+      // Mirror of the add path: a no-op must not touch the version or the
+      // loaded/error flags. See the comment there for what each would break.
+      if (!isMember(libraryId, experienceId)) return;
       const mutationVersion = bumpMembershipVersion(libraryId);
-      setLibraries((prev) =>
+      commitLibraries((prev) =>
         prev.map((library) => {
           if (library.id !== libraryId) return library;
           if (!library.experienceIds.includes(experienceId)) return library;
-          wasMember = true;
           return {
             ...library,
             experienceIds: library.experienceIds.filter((id) => id !== experienceId),
@@ -355,7 +386,6 @@ export function useLibraries() {
         }),
       );
       markMembershipLoaded(libraryId);
-      if (!wasMember) return;
       beginWrite(libraryId);
       let failure: unknown = null;
       try {
@@ -370,7 +400,15 @@ export function useLibraries() {
         throw failure;
       }
     },
-    [beginWrite, bumpMembershipVersion, endWrite, markMembershipLoaded, resyncLibraryMembership],
+    [
+      beginWrite,
+      bumpMembershipVersion,
+      commitLibraries,
+      endWrite,
+      isMember,
+      markMembershipLoaded,
+      resyncLibraryMembership,
+    ],
   );
 
   return {
