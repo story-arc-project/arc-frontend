@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { Trash2, Pencil, Check, X, RotateCcw } from "lucide-react";
 import type { AnalysisSnapshot, AnalysisType } from "@/types/analysis";
@@ -80,33 +80,46 @@ export default function HistoryPage() {
   const [failedTypes, setFailedTypes] = useState<AnalysisType[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sort, setSort] = useState<SortKey>("newest");
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<
     { id: string; type: AnalysisType } | null
   >(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const data = await getAnalysisHistory({ type: filter, sort });
-      setItems(data.items);
-      setFailedTypes(data.failedTypes);
-    } catch {
-      // 전멸(세 소스 모두 실패)만 여기로 온다 — 화면 전체가 에러로 바뀌므로
-      // 유형별 안내는 거둔다.
-      setFailedTypes([]);
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [filter, sort]);
+  // 화면이 지금 답해야 할 질문과, 실제로 답을 받아둔 질문. 둘이 다르면 그 자체가 로딩이다 —
+  // 별도 플래그를 두지 않으므로 "로딩만 꺼지고 목록은 옛것"인 어긋난 중간 상태가 아예 없다.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const requestKey = `${filter}:${sort}:${retryKey}`;
+  const loading = loadedKey !== requestKey;
 
+  // 필터와 정렬 두 축으로 재조회한다 — 둘 다 빠르게 바꿀 수 있고, 그때마다 이전 요청은
+  // 취소되지 않은 채 계속 날아온다. 늦게 도착한 답이 목록·에러·부분 실패 안내 중
+  // 무엇 하나라도 건드리면 화면이 지금의 선택과 어긋나므로, 응답 이후의 갱신은 전부 가드 안에 둔다.
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    let ignore = false;
+    getAnalysisHistory({ type: filter, sort })
+      .then((data) => {
+        if (ignore) return;
+        setItems(data.items);
+        setFailedTypes(data.failedTypes);
+        setError(false);
+        setLoadedKey(requestKey);
+      })
+      .catch(() => {
+        if (ignore) return;
+        // 전멸(세 소스 모두 실패)만 여기로 온다 — 화면 전체가 에러로 바뀌므로
+        // 유형별 안내는 거둔다.
+        setFailedTypes([]);
+        setError(true);
+        setLoadedKey(requestKey);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [filter, sort, requestKey]);
+
+  const handleRetry = () => setRetryKey((k) => k + 1);
 
   const [renameError, setRenameError] = useState<string | null>(null);
 
@@ -175,24 +188,13 @@ export default function HistoryPage() {
         {!error && !loading && relevantFailures.length > 0 && (
           <PartialFailureNotice
             message={`${relevantFailures.map((t) => analysisTypeLabel[t]).join("·")} 기록을 불러오지 못했어요. 목록에 보이지 않을 뿐, 사라진 것은 아니에요.`}
-            onRetry={loadData}
+            onRetry={handleRetry}
           />
         )}
 
-        {error ? (
-          <div className="py-12 text-center" role="alert">
-            <p className="text-body text-text-secondary mb-3">
-              데이터를 불러오지 못했습니다.
-            </p>
-            <button
-              type="button"
-              onClick={loadData}
-              className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
-            >
-              다시 시도
-            </button>
-          </div>
-        ) : loading ? (
+        {/* 로딩이 에러보다 앞이다 — 재조회를 시작한 순간 화면은 이전 실패가 아니라
+            지금 기다리는 중임을 보여야 한다. */}
+        {loading ? (
           <div className="space-y-3" aria-busy="true">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="bg-surface-secondary rounded-lg animate-pulse p-4 space-y-2">
@@ -205,6 +207,19 @@ export default function HistoryPage() {
                 <div className="h-3 w-1/4 bg-surface-tertiary rounded" />
               </div>
             ))}
+          </div>
+        ) : error ? (
+          <div className="py-12 text-center" role="alert">
+            <p className="text-body text-text-secondary mb-3">
+              데이터를 불러오지 못했습니다.
+            </p>
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="px-4 py-2 rounded-md bg-brand text-white text-label hover:bg-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+            >
+              다시 시도
+            </button>
           </div>
         ) : items.length === 0 && relevantFailures.length > 0 ? (
           // 목록이 빈 원인이 "없어서"가 아니라 "못 불러와서"인 경우다. 여기서 빈 상태
