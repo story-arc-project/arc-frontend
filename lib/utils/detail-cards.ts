@@ -1,5 +1,5 @@
 import type { Block, ExperienceV2, SectionCategory, TemplateV2 } from "@/types/archive"
-import { SECTION_CATEGORIES } from "@/types/archive"
+import { SECTION_CATEGORIES, SECTION_LABEL_OVERRIDES } from "@/types/archive"
 import { isBlockEmpty } from "@/lib/utils/block-utils"
 import { computeFormCards, type FormCardSection } from "@/lib/utils/form-cards"
 
@@ -80,9 +80,14 @@ export function buildDetailSections(
       if (consumed.has(b.id) || isBlockEmpty(b)) continue
       add(b.category ?? "detail", [b])
     }
+    // 카드 이름은 입력 폼과 같아야 한다 — 저장 직후 '봉사 회고'로 적어 넣은 카드가 상세뷰에서만
+    // 일반 라벨 '경험 상세'로 바뀌면 같은 카드가 화면마다 다른 이름으로 불린다(FRT-247 Codex P2).
+    // 폼은 ExperienceFormV2 가 computeFormCards 에 넘겨 적용하지만 상세뷰는 여기서 라벨을 직접
+    // 만들어 왔다. 표시 전용이라 안정키·저장 shape 와 무관하다.
+    const labelOverrides = SECTION_LABEL_OVERRIDES[experience.typeId]
     for (const { id, label } of SECTION_CATEGORIES) {
       const blocks = blocksByCat.get(id)
-      if (blocks && blocks.length > 0) out.push({ label, blocks })
+      if (blocks && blocks.length > 0) out.push({ label: labelOverrides?.[id] ?? label, blocks })
     }
   } else {
     const coreBlocks = experience.coreBlocks.filter(

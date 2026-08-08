@@ -76,10 +76,12 @@ describe("buildDetailSections", () => {
       makeExperienceV2({ coreBlocks: core, extensionBlocks: ext }),
       tmpl,
     )
+    // career 는 repeat 카드에 유형별 이름을 쓴다(SECTION_LABEL_OVERRIDES) — 입력 폼과 같은 이름이
+    // 상세뷰에도 나와야 한다(FRT-247).
     expect(sections.map(s => s.label)).toEqual([
       "기본 정보",
       "경험 상세",
-      "반복 기록",
+      "프로젝트 / 담당 업무 기록",
       "활동 증빙",
     ])
   })
@@ -107,7 +109,7 @@ describe("buildDetailSections", () => {
     expect(sections.map(s => s.label)).toEqual([
       "기본 정보",
       "경험 상세",
-      "반복 기록",
+      "프로젝트 / 담당 업무 기록",
       "활동 증빙",
     ])
   })
@@ -142,7 +144,7 @@ describe("buildDetailSections", () => {
       makeExperienceV2({ coreBlocks: core, extensionBlocks: blanked }),
       tmpl,
     )
-    expect(sections.find(s => s.label === "반복 기록")).toBeUndefined()
+    expect(sections.find(s => s.label === "프로젝트 / 담당 업무 기록")).toBeUndefined()
   })
 
   it("매칭되지 않는 확장 블록(레거시 라벨)은 '추가 입력' 없이 정식 섹션에 합류한다", () => {
@@ -176,7 +178,8 @@ describe("buildDetailSections", () => {
       tmpl,
     )
     expect(sections.find(s => s.label === "추가 입력")).toBeUndefined()
-    const detail = sections.find(s => s.label === "경험 상세")
+    // extracurricular 의 detail 카드 이름은 '활동 상세'(SECTION_LABEL_OVERRIDES).
+    const detail = sections.find(s => s.label === "활동 상세")
     expect(detail?.blocks).toContainEqual(legacy)
   })
 
@@ -190,6 +193,43 @@ describe("buildDetailSections", () => {
     const basicLabels = sections[0].blocks.map(b => b.label)
     expect(basicLabels).not.toContain("경험명")
     expect(basicLabels).not.toContain("한 줄 요약")
+  })
+})
+
+/**
+ * 상세뷰 카드 이름은 입력 폼과 같아야 한다. 폼은 ExperienceFormV2 가 SECTION_LABEL_OVERRIDES 를
+ * computeFormCards 에 넘겨 적용해 왔지만 상세뷰는 SECTION_CATEGORIES 의 일반 라벨을 직접
+ * 만들어 써서, 저장 전에는 '봉사 회고'로 보이던 카드가 저장 후엔 '경험 상세'가 됐다
+ * (FRT-247 Codex P2 — 오버라이드를 쓰는 10개 유형 공통).
+ */
+describe("buildDetailSections — 유형별 섹션 이름 (FRT-247)", () => {
+  it("봉사 확정본의 detail 카드는 상세뷰에서도 '봉사 회고'로 불린다", () => {
+    const tmpl = getTemplateForType("volunteer")
+    let ext = cloneBlocks(tmpl.extensions.flatMap(s => s.blocks))
+    ext = setVal(ext, "volunteer-info.봉사 활동명", text("OO복지관 학습 멘토링"))
+    ext = setVal(ext, "volunteer-reflection.배운 점", textarea("상대의 속도에 맞추게 됐다"))
+
+    const sections = buildDetailSections(
+      makeExperienceV2({ typeId: "volunteer", coreBlocks: [], extensionBlocks: ext }),
+      tmpl,
+    )
+
+    expect(sections.map(s => s.label)).toEqual(["기본 정보", "봉사 회고"])
+    expect(sections.find(s => s.label === "경험 상세")).toBeUndefined()
+  })
+
+  it("오버라이드가 없는 카테고리는 기본 라벨로 폴백한다", () => {
+    const tmpl = getTemplateForType("volunteer")
+    let ext = cloneBlocks(tmpl.extensions.flatMap(s => s.blocks))
+    ext = setVal(ext, "volunteer-info.봉사 활동명", text("OO복지관 학습 멘토링"))
+
+    const sections = buildDetailSections(
+      makeExperienceV2({ typeId: "volunteer", coreBlocks: [], extensionBlocks: ext }),
+      tmpl,
+    )
+
+    // 봉사는 basic 을 오버라이드하지 않는다 → 기본 라벨 유지.
+    expect(sections.map(s => s.label)).toEqual(["기본 정보"])
   })
 })
 

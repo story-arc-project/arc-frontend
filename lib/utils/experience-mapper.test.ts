@@ -1748,8 +1748,6 @@ describe("확정본 전면 교체 값 보존 (FRT-247 봉사)", () => {
           isOngoing: false,
         },
         "vol-info.총 시간": text("48시간"),
-        // textarea → 한 줄 text. text↔textarea 는 injectValue 가 변환해 싣는다.
-        "vol-info.내 역할": textarea("학습 멘토"),
         "vol-info.활동 내용": textarea("매주 토요일 2시간씩 학습을 도왔다"),
         "vol-info.느낀 점/가치관 변화": textarea("상대의 속도에 맞추는 것이 중요하다"),
         "vol-info.봉사 확인서": {
@@ -1758,10 +1756,13 @@ describe("확정본 전면 교체 값 보존 (FRT-247 봉사)", () => {
           description: "",
           evidenceType: "",
         },
-        // 선택지 도메인이 달라 옮기면 안 되는 둘 + 확정본에 대응 필드가 없는 하나.
+        // 선택지 도메인이 달라 옮기면 안 되는 둘 + 확정본에 대응 필드가 없는 하나
+        // + 한 줄 칸으로 좁히면 안 되는 하나.
         "vol-info.대상": { type: "single-select", selected: "아동" },
         "vol-info.활동 형태": { type: "single-select", selected: "오프라인" },
         "vol-info.임팩트/변화": textarea("아이들의 자기주도 학습 시간이 늘었다"),
+        // 구 '내 역할' 은 안내 문구 없는 **required textarea** 라 문단 답이 흔하다.
+        "vol-info.내 역할": textarea("학습 멘토로 참여했다.\n후반부에는 팀 일정 조율도 맡았다."),
       },
       custom: [],
     }
@@ -1778,8 +1779,6 @@ describe("확정본 전면 교체 값 보존 (FRT-247 봉사)", () => {
     expect(byKey("volunteer-info.봉사 기관")?.value).toEqual(text("OO복지관"))
     expect(byKey("volunteer-info.활동 기간")?.value).toMatchObject({ startDate: "2024-03" })
     expect(byKey("volunteer-info.총 봉사시간")?.value).toEqual(text("48시간"))
-    // textarea → text 로 좁아져도 값은 실린다.
-    expect(byKey("volunteer-info.역할")?.value).toEqual(text("학습 멘토"))
     expect(byKey("volunteer-reflection.봉사 내용")?.value).toEqual(
       textarea("매주 토요일 2시간씩 학습을 도왔다"),
     )
@@ -1794,7 +1793,6 @@ describe("확정본 전면 교체 값 보존 (FRT-247 봉사)", () => {
       "vol-info.기관/장소",
       "vol-info.기간",
       "vol-info.총 시간",
-      "vol-info.내 역할",
       "vol-info.활동 내용",
       "vol-info.느낀 점/가치관 변화",
       "vol-info.봉사 확인서",
@@ -1826,6 +1824,22 @@ describe("확정본 전면 교체 값 보존 (FRT-247 봉사)", () => {
     expect(v2.customBlocks.find(b => b.key === "vol-info.임팩트/변화")?.value).toEqual(
       textarea("아이들의 자기주도 학습 시간이 늘었다"),
     )
+  })
+
+  /**
+   * `isInjectableInto` 는 text↔textarea 를 허용하지만, **허용된다고 옮겨도 되는 것은 아니다.**
+   * 구 '내 역할' 은 안내 문구 없는 required textarea 라 문단 답이 흔한데 확정본 '역할' 은
+   * "예: 학습 멘토, 팀장" 짜리 한 줄 `<input>` 이다. `<input>` 은 값에서 개행을 지우므로
+   * (HTML 명세의 value sanitization) 옮기는 순간 여러 줄이 구분자 없이 붙어 보이고, 사용자가
+   * 그 칸을 한 번만 건드리면 붙은 값이 그대로 저장돼 원문이 영구히 사라진다(Codex P2).
+   */
+  it("문단으로 적은 '내 역할'은 한 줄 '역할' 칸으로 옮기지 않고 '기타'에 보존한다", () => {
+    const v2 = loadLegacy()
+
+    expect(v2.customBlocks.find(b => b.key === "vol-info.내 역할")?.value).toEqual(
+      textarea("학습 멘토로 참여했다.\n후반부에는 팀 일정 조율도 맡았다."),
+    )
+    expect(v2.extensionBlocks.find(b => b.key === "volunteer-info.역할")?.value).toEqual(text(""))
   })
 
   it("보존·이관된 값이 재저장 왕복에도 살아남는다", () => {
