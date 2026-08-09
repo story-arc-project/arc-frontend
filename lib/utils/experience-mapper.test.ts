@@ -1979,6 +1979,75 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
   })
 
   /**
+   * 개편 전 폼은 코어 증빙(`isEvidenceBlock` 이라 dedup 을 타지 않아 '활동 증빙' 카드로 **항상**
+   * 보였다)과 `overseas-challenges.증빙`(접힌 섹션 안)을 **동시에** 노출했다. 그래서 첨부가
+   * 코어 쪽에만 있는 레코드가 실재한다. 확정본은 증빙을 ① 안에 두므로 코어를 뺐는데
+   * (`CORE_EXCLUDE`), 옮기지 않으면 그 파일은 '기타' 로 밀리고 ① 증빙 칸은 빈 채로 남는다.
+   *
+   * 전역 `RENAMED_FIELD_KEYS` 로는 `core.*` 를 출발점으로 쓸 수 없다 — 다른 9유형까지 끌려간다.
+   * 유형 스코프 맵이라야 표현되는 이관이다(FRT-249, Codex P2).
+   */
+  it("코어에만 남은 증빙은 확정본 ① 의 증빙 자료로 옮긴다", () => {
+    const content = legacyOverseasContent()
+    const fields = content.fields as Record<string, BlockValue>
+    delete fields["overseas-challenges.증빙"]
+    fields["core.증빙 자료"] = {
+      type: "file",
+      fileName: "항공권.pdf",
+      description: "출국 증빙",
+      evidenceType: "기타",
+    }
+    const v2 = toExperienceV2(makeExperience({ type: "overseas", content }))
+
+    expect(
+      v2.extensionBlocks.find(b => b.key === "overseas-program.증빙 자료")?.value,
+    ).toMatchObject({ fileName: "항공권.pdf" })
+    expect(v2.customBlocks.find(b => b.key === "core.증빙 자료")).toBeUndefined()
+  })
+
+  /**
+   * 둘 다 채워진 레코드에서는 **유형 섹션 쪽이 이기고 코어 값은 '기타' 에 남는다.** 목적지가 찬
+   * 상태에서 구 키를 지우면 첨부가 **조용히 사라진다** — 전역 `applyRenamedKeys` 가 그렇게
+   * 동작하므로(목적지가 차 있으면 구 키를 보존 없이 delete) 유형 스코프 이관은 반대로,
+   * 못 옮길 때 **구 키를 손대지 않는다**.
+   */
+  it("증빙이 양쪽에 다 있으면 유형 섹션 값이 이기고 코어 값은 '기타' 에 보존된다", () => {
+    const content = legacyOverseasContent()
+    const fields = content.fields as Record<string, BlockValue>
+    fields["core.증빙 자료"] = {
+      type: "file",
+      fileName: "항공권.pdf",
+      description: "출국 증빙",
+      evidenceType: "기타",
+    }
+    const v2 = toExperienceV2(makeExperience({ type: "overseas", content }))
+
+    expect(
+      v2.extensionBlocks.find(b => b.key === "overseas-program.증빙 자료")?.value,
+    ).toMatchObject({ fileName: "수료증.pdf" })
+    expect(v2.customBlocks.find(b => b.key === "core.증빙 자료")?.value).toMatchObject({
+      fileName: "항공권.pdf",
+    })
+  })
+
+  /**
+   * 타입이 안 맞는 값(손상된 레거시 데이터)은 옮기지 않는다. 옮기면 구 키를 지운 뒤 하류
+   * `injectValue` 가 타입 불일치로 주입을 **생략**해, 값이 어디에도 없이 사라진다.
+   */
+  it("타입이 맞지 않는 코어 값은 옮기지 않고 '기타' 에 남긴다", () => {
+    const content = legacyOverseasContent()
+    const fields = content.fields as Record<string, BlockValue>
+    delete fields["overseas-challenges.증빙"]
+    fields["core.증빙 자료"] = text("증빙 없음")
+    const v2 = toExperienceV2(makeExperience({ type: "overseas", content }))
+
+    expect(v2.customBlocks.find(b => b.key === "core.증빙 자료")?.value).toEqual(text("증빙 없음"))
+    expect(
+      v2.extensionBlocks.find(b => b.key === "overseas-program.증빙 자료")?.value,
+    ).toMatchObject({ fileName: "" })
+  })
+
+  /**
    * '언어 사용 수준'→'사용 언어' 는 타입이 같아 `isInjectableInto` 가 통과시키지만 **묻는 것이
    * 다르다** — 수준(일상 회화 가능)과 언어명(독일어)은 다른 답이다. 옮기면 옛 답이 새 질문의
    * 답으로 둔갑한다(FRT-211 의 '개명 vs 대체' 기준).

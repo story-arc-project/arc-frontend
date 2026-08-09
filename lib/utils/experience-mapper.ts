@@ -249,13 +249,9 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   //  · '목적'·'활동 요약'·'어려웠던 상황' 표·'성과/산출물' 은 확정본이 삭제한 항목이다
   //    (설계 노트: 경험 요약은 '주요 활동'과 서술이 중복되어 삭제).
   //
-  // ⚠️ 옮기지 **못하는** 것도 하나 있다 — 구 `core.증빙 자료`. 개편 전 해외경험 폼은 코어 증빙
-  //    블록(`isEvidenceBlock` 이라 dedup 을 타지 않아 '활동 증빙' 카드로 **항상** 보였다)과
-  //    `overseas-challenges.증빙`(collapsed 섹션 안) 을 동시에 노출했으므로, 첨부가 코어 쪽에만
-  //    있는 레코드가 실제로 존재한다. 그런데 이 맵은 유형 구분이 없는 **전역 맵**이라 `core.*` 를
-  //    출발점으로 쓰면 다른 9유형의 같은 키까지 함께 끌려간다. 그래서 코어 증빙은 orphan '기타'
-  //    카드로 보존만 된다 — 파일은 살아 있고 사용자가 옮길 수 있다(FRT-249, Codex P2).
-  //    유형별 이관이 필요하면 맵을 유형 스코프로 넓히는 선행 작업이 있어야 한다(FRT-248).
+  // ⚠️ 구 `core.증빙 자료` 는 여기 넣을 수 **없다** — 이 맵은 유형 구분이 없는 전역 맵이라
+  //    `core.*` 를 출발점으로 쓰면 그 키를 쓰는 다른 9유형까지 함께 끌려간다. 대신 유형 스코프인
+  //    `V2_CORE_SCOPED_MIGRATIONS` 가 맡는다(FRT-249, Codex P2).
   //
   // 구 `overseas-info.기간` 은 옮긴다. 목적지 `overseas-program.기간` 은 이번에 새로 생긴 키라
   // 항상 비어 있어 `applyRenamedKeys` 의 "목적지가 차 있으면 진다" 규칙에 걸리지 않는다.
@@ -288,11 +284,43 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
  * ⚠️ 라벨이 **바뀐** 대체(봉사 '대상'→'봉사 분야', 어학 '강점 영역'→'가능한 활용 영역')는 여기
  * 넣지 않는다 — 질문 자체가 달라진 것이라 값이 남아 있어도 옮기면 안 된다.
  */
-const SELECT_DOMAIN_MIGRATIONS: Partial<Record<ExperienceTypeId, Record<string, string>>> = {
+type ScopedMigration = {
+  from: string
+  to: string
+  /** 값을 실을 수 있으면 (필요하면 정규화해서) 돌려주고, 못 실으면 null → 구 키 보존. */
+  carry: (templateBlock: Block | undefined, saved: BlockValue) => BlockValue | null
+}
+
+const SELECT_DOMAIN_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigration[]>> = {
   // 해외경험 확정본(FRT-249): '경험 유형' 5종(교환학생/연수/여행/해외 인턴/기타) → 9종.
   // 새 목록에 그대로 남은 답은 '교환학생'·'기타' 둘이고, 나머지 셋은 이름이 바뀌었다
   // (연수→어학연수 · 여행→여행/자유 탐방 · 해외 인턴→해외 인턴/취업).
-  overseas: { 'overseas-info.경험 유형': 'overseas-program.경험 유형' },
+  overseas: [
+    {
+      from: 'overseas-info.경험 유형',
+      to: 'overseas-program.경험 유형',
+      carry: carrySelectValue,
+    },
+  ],
+}
+
+/**
+ * 출발 키가 `core.*` 라 **전역 맵에 넣을 수 없는** 이관(v2 전용).
+ *
+ * `RENAMED_FIELD_KEYS` 에 `core.증빙 자료` 를 출발점으로 넣으면 그 키를 쓰는 다른 9유형까지
+ * 함께 끌려간다. 유형 스코프라야 표현되는 이관이다(FRT-249, Codex P2).
+ *
+ * v1 은 대상이 아니다 — v1 코어 블록은 라벨 그대로 `coreBlocks` 에 남고 `CORE_EXCLUDE` 가
+ * 적용되지 않아 화면에서 사라지지 않는다(그 간극은 FRT-246 이 다룬다).
+ */
+const V2_CORE_SCOPED_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigration[]>> = {
+  // 개편 전 해외경험 폼은 코어 증빙(`isEvidenceBlock` 이라 dedup 을 안 타 '활동 증빙' 카드로
+  // 항상 보였다)과 `overseas-challenges.증빙` 을 동시에 노출했다 — 첨부가 코어 쪽에만 있는
+  // 레코드가 실재한다. 확정본은 증빙을 ① 안에 두므로 코어를 뺐고(CORE_EXCLUDE), 옮기지 않으면
+  // 그 파일은 '기타' 로 밀리고 ① 증빙 칸은 빈 채로 남는다.
+  overseas: [
+    { from: 'core.증빙 자료', to: 'overseas-program.증빙 자료', carry: carryCompatibleValue },
+  ],
 }
 
 /**
@@ -310,28 +338,40 @@ function carrySelectValue(
   return { type: 'single-select', options: [...options], selected: saved.selected }
 }
 
+/** 타입만 맞으면 그대로 싣는다(text↔textarea 변환은 하류의 `injectValue` 가 맡는다). */
+function carryCompatibleValue(
+  templateBlock: Block | undefined,
+  saved: BlockValue,
+): BlockValue | null {
+  if (!templateBlock) return null
+  return isInjectableInto(templateBlock.type, saved.type) ? saved : null
+}
+
 /**
- * v2 `fields` 에 `SELECT_DOMAIN_MIGRATIONS` 를 적용한 사본을 돌려준다(원본 불변).
- * `applyRenamedKeys` 와 같이 목적지가 이미 차 있으면 그쪽이 이긴다.
+ * v2 `fields` 에 유형 스코프 이관 규칙을 적용한 사본을 돌려준다(원본 불변).
+ *
+ * ⚠️ 전역 `applyRenamedKeys` 와 결정적으로 다른 점: **못 옮길 때 구 키를 손대지 않는다.**
+ * 전역 쪽은 목적지가 차 있으면 구 키를 보존 없이 delete 해서 값이 조용히 사라지는데
+ * (FRT-247 에서 확인), 여기서는 구 키가 남아 orphan '기타' 카드로 흘러 사용자가 볼 수 있다.
  */
-function applySelectDomainMigrations(
+function applyScopedMigrations(
   fields: Record<string, BlockValue>,
-  typeId: ExperienceTypeId,
+  rules: ScopedMigration[],
   templateByKey: Map<string, Block>,
 ): Record<string, BlockValue> {
   let out = fields
-  for (const [oldKey, newKey] of Object.entries(SELECT_DOMAIN_MIGRATIONS[typeId] ?? {})) {
-    const legacy = out[oldKey]
+  for (const { from, to, carry } of rules) {
+    const legacy = out[from]
     if (!legacy) continue
-    const carried = carrySelectValue(templateByKey.get(newKey), legacy)
+    const carried = carry(templateByKey.get(to), legacy)
     if (!carried) continue
-    const current = out[newKey]
+    const current = out[to]
     const currentFilled =
       current && !isBlockEmpty({ id: '', type: current.type, label: '', value: current })
     if (currentFilled) continue
     if (out === fields) out = { ...fields }
-    delete out[oldKey]
-    out[newKey] = carried
+    delete out[from]
+    out[to] = carried
   }
   return out
 }
@@ -484,10 +524,11 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     const templateByKey = new Map<string, Block>()
     for (const b of tmpl.commonCore.blocks) if (b.key) templateByKey.set(b.key, b)
     for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) templateByKey.set(b.key, b)
-    // 선택지 도메인이 교체된 필드는 값이 새 목록에 남아 있을 때만 옮긴다(SELECT_DOMAIN_MIGRATIONS).
-    const fields = applySelectDomainMigrations(
+    // 전역 개명 별칭 뒤에 유형 스코프 이관을 얹는다 — 순서가 규칙이다. 유형 섹션 쪽 값이 먼저
+    // 목적지를 차지하고, 코어 잔재는 목적지가 비었을 때만 들어간다.
+    const fields = applyScopedMigrations(
       applyRenamedKeys(content.fields ?? {}),
-      typeId,
+      [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
       templateByKey,
     )
     const coreBlocks = tmpl.commonCore.blocks.map(b => {
@@ -551,8 +592,8 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   // 선택지 도메인이 교체된 필드는 v1 에서도 v2 와 **같은 값 조건부 판정**을 받는다
   // (SELECT_DOMAIN_MIGRATIONS). v1 은 라벨로 매칭하므로 새 템플릿 블록을 라벨로 찾아 둔다.
   const domainMigratedByLabel = new Map<string, Block>()
-  for (const newKey of Object.values(SELECT_DOMAIN_MIGRATIONS[typeId] ?? {})) {
-    const tb = extTemplateByKey.get(newKey)
+  for (const { to } of SELECT_DOMAIN_MIGRATIONS[typeId] ?? []) {
+    const tb = extTemplateByKey.get(to)
     if (tb) domainMigratedByLabel.set(tb.label, tb)
   }
   // 타입이 호환되지 않는 매칭은 키를 붙이지 않고 '기타' 로 보낸다(isInjectableInto).
