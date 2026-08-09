@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup } from "@testing-library/react"
+import { render, screen, cleanup, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import type { ExperienceV2 } from "@/types/archive"
@@ -735,5 +735,40 @@ describe("FRT-211 구 레코드 편집 시 새 템플릿 필드 병합", () => {
     const dateInput = screen.getByLabelText(/^수상일/) as HTMLInputElement
     expect(dateInput.required).toBe(true)
     expect(dateInput.value).toBe("2026-05-20")
+  })
+})
+
+/**
+ * FRT-172 — 한글 IME 로 태그를 치다 마지막 음절을 확정하려고 누른 Enter 가
+ * 조합이 끝나기 전에 태그를 커밋해선 안 된다. 조합 확정용 keydown 은 `isComposing: true` 로 온다.
+ *
+ * 두 케이스를 짝으로 둔다 — "커밋되지 않는다"만 두면 셀렉터가 틀려도 통과하므로,
+ * 같은 셀렉터로 "조합이 끝나면 커밋된다"까지 증명해야 그물이 된다.
+ */
+describe("FRT-172 태그 입력 IME 조합 중 Enter", () => {
+  async function typeTag(user: ReturnType<typeof userEvent.setup>) {
+    renderForm()
+    await selectType(user)
+    const input = screen.getByPlaceholderText("태그 입력 후 Enter")
+    await user.type(input, "리더십")
+    return input
+  }
+
+  it("조합 중 Enter 는 미완성 텍스트를 태그로 커밋하지 않는다", async () => {
+    const user = userEvent.setup()
+    const input = await typeTag(user)
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true })
+
+    expect(screen.queryByRole("button", { name: "리더십 삭제" })).toBeNull()
+  })
+
+  it("조합이 끝난 Enter 는 태그를 커밋한다", async () => {
+    const user = userEvent.setup()
+    const input = await typeTag(user)
+
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(screen.getByRole("button", { name: "리더십 삭제" })).toBeInTheDocument()
   })
 })

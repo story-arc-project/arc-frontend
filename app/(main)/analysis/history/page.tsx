@@ -13,6 +13,7 @@ import {
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import { useBasePath } from "@/lib/utils/use-base-path";
+import { isImeComposing } from "@/lib/utils/keyboard";
 import { Badge, Button, Dialog } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import FilterBar from "@/components/features/analysis/common/FilterBar";
@@ -50,6 +51,8 @@ function InlineEdit({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
+          // 조합 중 Enter 는 확정용, Escape 는 조합 취소용이므로 제목 편집을 끝내지 않는다.
+          if (isImeComposing(e)) return;
           if (e.key === "Enter") onSave(text);
           if (e.key === "Escape") onCancel();
         }}

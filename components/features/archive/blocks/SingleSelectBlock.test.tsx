@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { cleanup, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 
@@ -116,5 +116,43 @@ describe("SingleSelectBlock 옵션 편집", () => {
     await user.click(screen.getByRole("button", { name: "확인" }))
 
     expect(renderedOptions()).toEqual(["파견직"])
+  })
+})
+
+/**
+ * FRT-172 — 이름 편집처럼 Enter·Escape 를 함께 다루는 핸들러는 헬퍼로 감쌀 수 없어
+ * `isImeComposing` 가드만 맨 앞에 둔다. 그 갈래도 실물로 증명해 둔다.
+ */
+describe("FRT-172 옵션 이름 편집 중 IME 조합", () => {
+  async function startRename(user: ReturnType<typeof userEvent.setup>) {
+    render(<Harness initial={["정규직", "계약직"]} />)
+    await openEditor(user)
+    await user.click(screen.getAllByRole("button", { name: "옵션 수정" })[0])
+    const input = screen.getByDisplayValue("정규직")
+    await user.clear(input)
+    await user.type(input, "파견직")
+    return input
+  }
+
+  it("조합 중 Enter 는 이름 편집을 확정하지 않는다", async () => {
+    const user = userEvent.setup()
+    const input = await startRename(user)
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true })
+
+    // 목록을 먼저 단언한다 — combobox 는 항상 있으므로 가드가 빠지면 "찾지 못함"이 아니라
+    // "단언 실패"로 떨어져 셀렉터 오타와 구별된다.
+    expect(renderedOptions()).toEqual(["정규직", "계약직"])
+    // 편집 창도 그대로 열려 있다.
+    expect(screen.getByDisplayValue("파견직")).toBeInTheDocument()
+  })
+
+  it("조합이 끝난 Enter 는 이름 편집을 확정한다", async () => {
+    const user = userEvent.setup()
+    const input = await startRename(user)
+
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(renderedOptions()).toEqual(["파견직", "계약직"])
   })
 })

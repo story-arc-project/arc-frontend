@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Star, Copy, Trash2, Pencil, Search } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import type { Preset } from "@/types/archive"
+import { isImeComposing } from "@/lib/utils/keyboard"
 
 interface PresetManagerProps {
   presets: Preset[]
@@ -101,6 +102,8 @@ export default function PresetManager({
                     onChange={e => setEditName(e.target.value)}
                     onBlur={commitRename}
                     onKeyDown={e => {
+                      // 조합 중 Enter 는 확정용, Escape 는 조합 취소용이므로 이름 편집을 끝내지 않는다.
+                      if (isImeComposing(e)) return
                       if (e.key === "Enter") commitRename()
                       if (e.key === "Escape") setEditingId(null)
                     }}

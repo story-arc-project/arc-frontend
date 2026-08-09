@@ -36,6 +36,7 @@ import { capture } from "@/lib/analytics"
 import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
 import { normalizeHiddenKeys, resolveHiddenBlocks } from "@/lib/utils/hidden-fields"
 import { conditionHiddenKeys, partitionByCondition } from "@/lib/utils/conditional-fields"
+import { onEnterCommit } from "@/lib/utils/keyboard"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
 import { RoleHistoryProvider, type RoleHistoryContextValue } from "@/contexts/RoleHistoryContext"
 
@@ -801,7 +802,7 @@ function TagInput({ inputId, tags, onChange }: { inputId?: string; tags: string[
           placeholder="태그 입력 후 Enter"
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add() } }}
+          onKeyDown={onEnterCommit(add)}
         />
       </div>
     </div>

@@ -18,6 +18,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Plus, Trash2, X } from "lucide-react";
 
 import type { ResumeVersion } from "@/types/resume";
+import { isImeComposing } from "@/lib/utils/keyboard";
 
 // ─── EditorField: compact label + input pair ───────────────────────
 
@@ -201,6 +202,8 @@ export function TagArrayEditor({
           type="text"
           placeholder={placeholder}
           onKeyDown={(e) => {
+            // 조합 중 Enter 는 확정용, Backspace 는 음소 삭제용이므로 태그를 넣거나 지우지 않는다.
+            if (isImeComposing(e)) return;
             if (e.key === "Enter" || e.key === ",") {
               e.preventDefault();
               const target = e.currentTarget;

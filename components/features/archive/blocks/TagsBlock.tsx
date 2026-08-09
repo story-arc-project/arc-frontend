@@ -3,6 +3,7 @@
 import { useId, useState } from "react"
 import { X } from "lucide-react"
 import type { Block, TagsBlockValue } from "@/types/archive"
+import { onEnterCommit } from "@/lib/utils/keyboard"
 
 interface TagsBlockProps {
   block: Block
@@ -75,7 +76,7 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
           placeholder="태그 입력 후 Enter"
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag() } }}
+          onKeyDown={onEnterCommit(addTag)}
         />
         <button
           type="button"

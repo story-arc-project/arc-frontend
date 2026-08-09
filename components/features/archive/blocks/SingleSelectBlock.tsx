@@ -4,6 +4,7 @@ import { useId, useState } from "react"
 import { Plus, Trash2, Pencil, Check, X } from "lucide-react"
 import { RequiredDot } from "@/components/ui/required-dot"
 import type { Block, SingleSelectBlockValue } from "@/types/archive"
+import { isImeComposing, onEnterCommit } from "@/lib/utils/keyboard"
 
 interface SingleSelectBlockProps {
   block: Block
@@ -122,6 +123,8 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
                       value={editValue}
                       onChange={e => setEditValue(e.target.value)}
                       onKeyDown={e => {
+                        // 조합 중 Enter 는 확정용, Escape 는 조합 취소용이므로 편집을 끝내지 않는다.
+                        if (isImeComposing(e)) return
                         if (e.key === "Enter") commitEdit()
                         if (e.key === "Escape") setEditingIdx(null)
                       }}
@@ -184,7 +187,7 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
               placeholder="새 옵션 추가..."
               value={newOption}
               onChange={e => setNewOption(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addOption() } }}
+              onKeyDown={onEnterCommit(addOption)}
             />
             <button
               type="button"
