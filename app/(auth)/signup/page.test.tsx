@@ -8,8 +8,15 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 // 걸리지 않았다 — 버튼만 원상복귀되고 사용자는 재발송 성공 여부를 알 수 없었다.
 // 성공 역시 안내가 없어 같은 무반응으로 보였다.
 
+// Next 의 useSearchParams 는 내비게이션 단위로 같은 인스턴스를 돌려준다.
+// 매 렌더 새 객체를 주면 page.tsx:111 의 [searchParams] 이펙트가 렌더마다 재실행돼
+// step 이 계속 verify 로 되돌아간다 — 스텝을 벗어나는 흐름을 아예 테스트할 수 없다.
+const { SEARCH_PARAMS } = vi.hoisted(() => ({
+  SEARCH_PARAMS: new URLSearchParams("step=verify&email=test@example.com"),
+}));
+
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams("step=verify&email=test@example.com"),
+  useSearchParams: () => SEARCH_PARAMS,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
@@ -89,10 +96,32 @@ async function renderVerifyStep() {
   await act(async () => {});
 }
 
-async function clickResend() {
+async function clickButton(name: string) {
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "코드 재발송" }));
+    fireEvent.click(screen.getByRole("button", { name }));
   });
+}
+
+async function clickResend() {
+  await clickButton("코드 재발송");
+}
+
+async function typeInto(label: string, value: string) {
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  });
+}
+
+// verify 에서 「← 이전」으로 start 까지 되돌아가 다른 이메일로 다시 가입한다.
+// 컴포넌트는 언마운트되지 않으므로 이전 이메일의 상태가 그대로 따라온다.
+async function restartSignupWith(nextEmail: string) {
+  await clickButton("← 이전"); // verify → password
+  await clickButton("← 이전"); // password → start
+  await typeInto("이메일", nextEmail);
+  await clickButton("이메일로 계속하기");
+  await typeInto("비밀번호", "arcpass123");
+  await typeInto("비밀번호 확인", "arcpass123");
+  await clickButton("가입하기");
 }
 
 describe("회원가입 verify — 코드 재발송 결과 안내", () => {
@@ -155,5 +184,52 @@ describe("회원가입 verify — 코드 재발송 결과 안내", () => {
 
     expect(screen.getByText(SUCCESS_MESSAGE)).toBeDefined();
     expect(screen.queryByText(NETWORK_MESSAGE)).toBeNull();
+  });
+
+  // 재발송 결과는 그 이메일에 매인 진술이다. 다른 이메일로 다시 가입하면
+  // 재발송한 적 없는 주소의 화면에 "보냈어요"가 남아 거짓 안내가 된다.
+  it("다른 이메일로 다시 가입하면 직전의 재발송 성공 문구가 남지 않는다", async () => {
+    post
+      .mockResolvedValueOnce(undefined) // 재발송 성공
+      .mockResolvedValueOnce(undefined); // 새 이메일로 가입 성공
+    await renderVerifyStep();
+
+    await clickResend();
+    expect(screen.getByText(SUCCESS_MESSAGE)).toBeDefined();
+
+    await restartSignupWith("other@example.com");
+
+    expect(screen.getByText("other@example.com")).toBeDefined();
+    expect(screen.queryByText(SUCCESS_MESSAGE)).toBeNull();
+  });
+
+  it("다른 이메일로 다시 가입하면 직전의 재발송 실패 문구도 남지 않는다", async () => {
+    post
+      .mockRejectedValueOnce(new TypeError("Failed to fetch")) // 재발송 실패
+      .mockResolvedValueOnce(undefined); // 새 이메일로 가입 성공
+    await renderVerifyStep();
+
+    await clickResend();
+    expect(screen.getByText(NETWORK_MESSAGE)).toBeDefined();
+
+    await restartSignupWith("other@example.com");
+
+    expect(screen.getByText("other@example.com")).toBeDefined();
+    expect(screen.queryByText(NETWORK_MESSAGE)).toBeNull();
+  });
+
+  // 재발송 결과는 버튼에 포커스가 머문 채 비동기로 나타난다 —
+  // 문단을 그냥 끼워 넣으면 스크린리더 사용자는 성공·실패를 전혀 통보받지 못한다.
+  it("재발송 결과를 보조기술이 읽을 수 있게 노출한다", async () => {
+    post
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await renderVerifyStep();
+
+    await clickResend();
+    expect(screen.getByRole("status").textContent).toBe(SUCCESS_MESSAGE);
+
+    await clickResend();
+    expect(screen.getByRole("alert").textContent).toBe(NETWORK_MESSAGE);
   });
 });

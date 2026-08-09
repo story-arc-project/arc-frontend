@@ -150,6 +150,10 @@ function SignupForm() {
 
     try {
       await api.post("/auth/signup", { email, password }, { auth: false });
+      // 재발송 결과는 그 이메일에 매인 진술이다. 「← 이전」으로 돌아가 다른 주소로 다시 가입하면
+      // 컴포넌트가 언마운트되지 않아, 재발송한 적 없는 새 주소 화면에 직전 결과가 그대로 남는다.
+      setResendNotice(null);
+      setResendError(null);
       goTo("verify");
     } catch (e) {
       if (e instanceof ApiError) {
@@ -513,11 +517,13 @@ function SignupForm() {
                   <Button onClick={handleVerify} disabled={!verifyCode.trim() || isLoading}>
                     {isLoading ? "확인 중..." : "확인"}
                   </Button>
+                  {/* 재발송 결과는 버튼에 포커스가 머문 채 비동기로 나타난다.
+                      역할을 주지 않으면 스크린리더 사용자에게는 아무 일도 일어나지 않은 것과 같다. */}
                   {resendError && (
-                    <p className="text-body-sm text-error">{resendError}</p>
+                    <p role="alert" aria-live="polite" className="text-body-sm text-error">{resendError}</p>
                   )}
                   {resendNotice && (
-                    <p className="text-body-sm text-text-tertiary">{resendNotice}</p>
+                    <p role="status" aria-live="polite" className="text-body-sm text-text-tertiary">{resendNotice}</p>
                   )}
                   <button
                     type="button"
