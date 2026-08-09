@@ -104,6 +104,10 @@ const TYPE_PERIOD_KEY: Partial<Record<ExperienceTypeId, string>> = {
   certification: "cert-info.취득일",
   reading: "book-info.독서 기간",
   volunteer: "volunteer-info.활동 기간",
+  // 해외경험(FRT-249)은 새 필드 라벨이 코어와 같은 '기간'이라, 등록하지 않아도 아래 범용 폴백이
+  // 같은 블록을 집는다 — 지금은 **동작을 바꾸지 않는 의도 표기**다. 라벨이 '체류 기간' 처럼
+  // 동의어로 바뀌는 순간 정확일치 우선 정렬 때문에 orphan 코어 기간이 앞서므로 그때 실제로 값을 한다.
+  overseas: "overseas-program.기간",
 };
 
 /** 코어 '기간'이 없는 유형의 시점. 값이 없으면 빈 문자열 — 없는 날짜를 지어내지 않는다. */
