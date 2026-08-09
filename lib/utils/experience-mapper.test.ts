@@ -2037,4 +2037,48 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
 
     expect(exp.hiddenKeys).toEqual(["overseas-program.국가 / 도시"])
   })
+
+  /**
+   * ⚠️ 섹션 id 교체는 **v2 만** 지킨다(FRT-210 의 구조, Codex P2). v1 은 `fields` 맵이 없어
+   * **라벨로** 템플릿 필드를 찾으므로 '경험 유형'은 라벨이 그대로라 그 방어선을 통과해 버린다.
+   * 통과시키면 렌더러가 `val.options` 를 우선하는 탓에(SingleSelectBlock) 구 레코드가 **옛 5종
+   * 목록을 그대로 달고** 새 키에 눌러앉아, 확정본 9종을 영영 못 받고 다음 저장에 v2 로 굳는다.
+   */
+  it("v1 레거시의 '경험 유형'도 이관하지 않는다 — 라벨 매칭이 섹션 id 교체를 우회하지 못하게", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "overseas",
+        content: {
+          title: "베를린 교환학생",
+          summary: "",
+          status: "complete",
+          tags: [],
+          coreBlocks: [],
+          extensionBlocks: [
+            {
+              id: "b1",
+              type: "single-select",
+              label: "경험 유형",
+              value: {
+                type: "single-select",
+                selected: "연수",
+                options: ["교환학생", "연수", "여행", "해외 인턴", "기타"],
+              },
+            },
+            // 대조군 — 라벨도 질문도 그대로인 필드는 v1 에서도 정상 매칭된다.
+            { id: "b2", type: "text", label: "사용 언어", value: text("독일어") },
+          ],
+          customBlocks: [],
+        },
+      }),
+    )
+
+    expect(v1.extensionBlocks.find(b => b.label === "경험 유형")).toBeUndefined()
+    expect(v1.customBlocks.find(b => b.label === "경험 유형")?.value).toMatchObject({
+      selected: "연수",
+    })
+    expect(v1.extensionBlocks.find(b => b.key === "overseas-program.사용 언어")?.value).toEqual(
+      text("독일어"),
+    )
+  })
 })

@@ -267,6 +267,28 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
 }
 
 /**
+ * v1 라벨 매칭을 **명시적으로 거부**할 (유형, 라벨) 쌍.
+ *
+ * v2 는 섹션 id 를 갈아 키가 달라지면 값이 자동으로 orphan '기타' 로 흐른다. 하지만 **그
+ * 방어선은 v2 만 지킨다** — v1 은 `fields` 맵이 없어 **라벨로** 템플릿 필드를 찾으므로,
+ * 라벨이 그대로면 섹션 id 교체를 통과해 버린다(FRT-210 에서 확인한 구조, Codex P2).
+ *
+ * 여기 등록하는 것은 **라벨은 같은데 선택지 도메인이 통째로 교체된** 필드다. 타입이 같아
+ * `isInjectableInto` 가 통과시키고, 렌더러는 `val.options` 를 우선하므로
+ * (`SingleSelectBlock`: `val.options.length > 0 ? val.options : block.options`) 값을 실으면
+ * **구 레코드가 옛 선택지 목록을 그대로 달고 새 키에 눌러앉는다** — 확정본이 새로 준 선택지를
+ * 영영 못 받고, 다음 저장에서 그 상태가 v2 로 굳는다.
+ *
+ * ⚠️ 라벨이 **바뀐** 대체(봉사 '대상'→'봉사 분야', 어학 '강점 영역'→'가능한 활용 영역')는
+ * 여기 넣을 필요가 없다 — 라벨이 다르면 애초에 매칭되지 않고, `RENAMED_FIELD_KEYS` 에도
+ * 일부러 넣지 않았다. 이 목록은 **라벨 동일 + 도메인 교체**라는 좁은 경우만 다룬다.
+ */
+const V1_LABEL_MIGRATION_BLOCKLIST: Partial<Record<ExperienceTypeId, string[]>> = {
+  // 해외경험 확정본(FRT-249): '경험 유형' 5종(교환학생/연수/여행/해외 인턴/기타) → 9종.
+  overseas: ['경험 유형'],
+}
+
+/**
  * 숨김 키도 개명을 따라간다. 값만 새 키로 옮기고 숨김 상태를 두고 오면, 사용자가 감춰 둔 칸이
  * 템플릿 개편 후 혼자 다시 나타난다 — 게다가 `normalizeHiddenKeys` 는 모르는 키를 버리지 않아
  * 옛 키가 저장분에 영원히 남는다(FRT-210, Codex P2).
@@ -470,9 +492,13 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     }
     extTemplateLabels.add(b.label)
   }
+  // 선택지 도메인이 교체된 라벨은 v1 에서도 매칭시키지 않는다 — v2 의 섹션 id 교체와 같은 결과
+  // (orphan '기타' 보존)를 내려는 것이다(V1_LABEL_MIGRATION_BLOCKLIST).
+  const blockedLabels = new Set(V1_LABEL_MIGRATION_BLOCKLIST[typeId] ?? [])
   // 타입이 호환되지 않는 매칭은 키를 붙이지 않고 '기타' 로 보낸다(isInjectableInto).
   const keyedExt = savedExt.map(b => {
     const injectable = (key: string | undefined) => {
+      if (blockedLabels.has(b.label)) return false
       const tb = key ? extTemplateByKey.get(key) : undefined
       return !!tb && isInjectableInto(tb.type, b.type)
     }
