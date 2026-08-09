@@ -18,6 +18,12 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+// useBasePath 는 mock 하지 않는다 — 데모 URL 에서 실제로 /demo 가 나오는지가 핵심이다(FRT-161).
+const mockUsePathname = vi.fn(() => "/analysis/individual");
+vi.mock("next/navigation", () => ({
+  usePathname: () => mockUsePathname(),
+}));
+
 import { getIndividualAnalysisList } from "@/lib/api/analysis-api";
 
 import IndividualAnalysisPage from "./page";
@@ -31,6 +37,7 @@ beforeEach(() => {
   // 다음 테스트가 남의 응답을 받는다. 큐까지 비우려면 reset 이어야 한다.
   getList.mockReset();
   vi.clearAllMocks();
+  mockUsePathname.mockReturnValue("/analysis/individual");
 });
 
 function snap(
@@ -196,5 +203,58 @@ describe("개별 분석 목록 — 필터 전환 race (FRT-185)", () => {
     expect(getList).toHaveBeenCalledTimes(3);
     expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
     expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
+  });
+});
+
+// 데모에 목록이 열렸다 — 여기서 나가는 링크가 하나라도 접두를 빠뜨리면 그 순간 실제 서비스로
+// 이탈하고, 비로그인 사용자는 로그인 벽을 만난다(FRT-161 과 같은 결·FRT-232).
+describe("데모 모드에서는 데모 안에 머문다 (FRT-232)", () => {
+  it("항목 상세 링크에 /demo 가 붙는다", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis/individual");
+    getList.mockResolvedValue([snap("i1")]);
+
+    render(<IndividualAnalysisPage />);
+    await flush();
+
+    expect(screen.getByRole("link", { name: /분석 i1/ })).toHaveAttribute(
+      "href",
+      "/demo/analysis/individual/i1",
+    );
+  });
+
+  it("빈 상태 CTA 는 데모 아카이브로 보낸다", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis/individual");
+    getList.mockResolvedValue([]);
+
+    render(<IndividualAnalysisPage />);
+    await flush();
+
+    expect(screen.getByRole("link", { name: "경험 기록하러 가기" })).toHaveAttribute(
+      "href",
+      "/demo/archive",
+    );
+  });
+
+  it("데모에서는 즐겨찾기 버튼이 없다 — 눌러도 재조회하면 되살아나기 때문", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis/individual");
+    getList.mockResolvedValue([snap("i1")]);
+
+    render(<IndividualAnalysisPage />);
+    await flush();
+
+    expect(screen.queryByRole("button", { name: "즐겨찾기" })).toBeNull();
+  });
+
+  it("일반 모드는 그대로다 (거울상)", async () => {
+    getList.mockResolvedValue([snap("i1")]);
+
+    render(<IndividualAnalysisPage />);
+    await flush();
+
+    expect(screen.getByRole("link", { name: /분석 i1/ })).toHaveAttribute(
+      "href",
+      "/analysis/individual/i1",
+    );
+    expect(screen.getByRole("button", { name: "즐겨찾기" })).toBeInTheDocument();
   });
 });

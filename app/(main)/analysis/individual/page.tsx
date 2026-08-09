@@ -6,6 +6,7 @@ import type { AnalysisSnapshot } from "@/types/analysis";
 import { getIndividualAnalysisList } from "@/lib/api/analysis-api";
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import { Button } from "@/components/ui";
 import AnalysisStatusBadge from "@/components/features/analysis/common/AnalysisStatusBadge";
 import FilterBar from "@/components/features/analysis/common/FilterBar";
@@ -19,6 +20,7 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 ];
 
 export default function IndividualAnalysisPage() {
+  const basePath = useBasePath();
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
   const [error, setError] = useState(false);
   // 고른 필터와 세대를 한 값으로 묶는다. 따로 두면 "필터는 바뀌었는데 세대는 그대로"가 가능해지고,
@@ -107,7 +109,7 @@ export default function IndividualAnalysisPage() {
               경험을 기록하면 자동으로 분석이 시작됩니다.
             </p>
             <Button asChild variant="secondary" size="sm" className="mt-4">
-              <Link href="/archive">경험 기록하러 가기</Link>
+              <Link href={`${basePath}/archive`}>경험 기록하러 가기</Link>
             </Button>
           </div>
         ) : (
@@ -132,7 +134,7 @@ export default function IndividualAnalysisPage() {
                   <div className="flex items-start justify-between gap-3">
                     {isNavigable ? (
                       <Link
-                        href={`/analysis/individual/${item.id}`}
+                        href={`${basePath}/analysis/individual/${item.id}`}
                         className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
                       >
                         <div className="flex items-center gap-2 flex-wrap mb-1">
