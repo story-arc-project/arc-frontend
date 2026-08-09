@@ -218,6 +218,56 @@ describe("회원가입 verify — 코드 재발송 결과 안내", () => {
     expect(screen.queryByText(NETWORK_MESSAGE)).toBeNull();
   });
 
+  // 재발송이 비행 중일 때 「← 이전」은 비활성화되지 않는다. 응답이 늦게 도착하면
+  // 이미 다른 이메일의 인증 화면인데 옛 주소의 결과가 찍힌다.
+  it("재발송 응답이 늦게 와도 그사이 바뀐 이메일의 화면에 찍히지 않는다", async () => {
+    let settleResend!: () => void;
+    const pendingResend = new Promise<void>((resolve) => {
+      settleResend = () => resolve();
+    });
+    post
+      .mockReturnValueOnce(pendingResend as ReturnType<typeof api.post>) // 재발송 — 아직 안 끝남
+      .mockResolvedValueOnce(undefined); // 새 이메일로 가입 성공
+    await renderVerifyStep();
+
+    await clickResend(); // 응답을 붙잡아 둔 채 진행
+    await restartSignupWith("other@example.com");
+
+    await act(async () => {
+      settleResend();
+      await pendingResend;
+    });
+
+    expect(screen.getByText("other@example.com")).toBeDefined();
+    expect(screen.queryByText(SUCCESS_MESSAGE)).toBeNull();
+    // 옛 요청의 in-flight 상태가 남으면 새 화면의 재발송 버튼이 영영 잠긴다.
+    expect(screen.getByRole("button", { name: "코드 재발송" })).toBeDefined();
+  });
+
+  it("재발송 중에는 직전 회차 결과를 지운 채 기다린다", async () => {
+    let settleResend!: () => void;
+    const pendingResend = new Promise<void>((resolve) => {
+      settleResend = () => resolve();
+    });
+    post
+      .mockResolvedValueOnce(undefined) // 1회차 성공
+      .mockReturnValueOnce(pendingResend as ReturnType<typeof api.post>); // 2회차 — 비행 중
+    await renderVerifyStep();
+
+    await clickResend();
+    expect(screen.getByText(SUCCESS_MESSAGE)).toBeDefined();
+
+    await clickResend();
+
+    expect(screen.getByRole("button", { name: "보내는 중..." })).toBeDefined();
+    expect(screen.queryByText(SUCCESS_MESSAGE)).toBeNull();
+
+    await act(async () => {
+      settleResend();
+      await pendingResend;
+    });
+  });
+
   // 재발송 결과는 버튼에 포커스가 머문 채 비동기로 나타난다 —
   // 문단을 그냥 끼워 넣으면 스크린리더 사용자는 성공·실패를 전혀 통보받지 못한다.
   it("재발송 결과를 보조기술이 읽을 수 있게 노출한다", async () => {
