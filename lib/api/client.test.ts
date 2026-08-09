@@ -126,3 +126,98 @@ describe("401 → refresh 분기 (FRT-11 회귀 가드)", () => {
     expect(window.location.href).toBe("")
   })
 })
+
+/**
+ * 백엔드(`arc-backend app/src/api/auth.py`)의 refresh 토큰 **회전 + 재사용 탐지**를 흉내낸다.
+ *
+ * - 회전 성공 시 옛 토큰에 `next` 를 기록한다 → 그 토큰이 다시 오면 재사용(=탈취)으로 본다.
+ * - 재사용 응답은 403 인 동시에 `remove_tokens(response)` 로 **쿠키를 지운다**. 즉 먼저 성공한
+ *   refresh 가 방금 심어 둔 새 쿠키까지 함께 사라져, 이후 재시도로는 복구할 수 없다.
+ *
+ * `detectReuse: false` 는 회전하지 않는 관대한 서버 — 중복 발사 자체만 세고 싶을 때 쓴다.
+ */
+function stubRotatingServer(opts: { detectReuse: boolean }) {
+  const state = { accessValid: false, sessionAlive: true, refreshCalls: 0 }
+
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.includes("/auth/refresh")) {
+      state.refreshCalls += 1
+      if (!state.sessionAlive) return new Response(null, { status: 401 })
+      if (opts.detectReuse && state.refreshCalls > 1) {
+        state.sessionAlive = false
+        state.accessValid = false
+        return new Response(null, { status: 403 })
+      }
+      state.accessValid = true
+      return new Response(null, { status: 200 })
+    }
+    return state.accessValid
+      ? jsonResponse({ ok: true })
+      : new Response(null, { status: 401 })
+  })
+
+  return state
+}
+
+// 주의: client.ts 의 공유 refresh Promise 는 **모듈 스코프**라 이 파일의 테스트 전체가
+// 한 슬롯을 나눠 쓴다. 완료 시 비워지므로(`finally`) 요청을 await 로 완결시키는 한 안전하지만,
+// refresh 를 띄운 채 끝나는 테스트를 새로 넣으면 그 결과가 다음 테스트로 샌다.
+describe("병렬 401 → refresh 단일화 (FRT-209/FRT-253)", () => {
+  it("동시에 401 을 받은 요청들이 refresh 를 한 번만 보낸다", async () => {
+    const state = stubRotatingServer({ detectReuse: false })
+
+    await Promise.all([api.get("/a"), api.get("/b"), api.get("/c")])
+
+    expect(state.refreshCalls).toBe(1)
+  })
+
+  it("회전하는 서버에서도 병렬 요청이 세션을 죽이지 않는다", async () => {
+    // 신고된 버그 그 자체: 15분 자리를 비운 뒤 대시보드에 들어오면 GET 4개가 동시에 401 을
+    // 받고, 각자 쏜 refresh 중 뒤의 것들이 403 + 쿠키 삭제를 부른다.
+    const state = stubRotatingServer({ detectReuse: true })
+
+    const results = await Promise.all([
+      api.get<{ ok: boolean }>("/a"),
+      api.get<{ ok: boolean }>("/b"),
+      api.get<{ ok: boolean }>("/c"),
+    ])
+
+    expect(results).toEqual([{ ok: true }, { ok: true }, { ok: true }])
+    expect(state.refreshCalls).toBe(1)
+    expect(state.sessionAlive).toBe(true)
+    // 핵심: 유효한 세션이 로그아웃되지 않는다.
+    expect(window.location.href).toBe("")
+  })
+
+  it("refresh 가 401 이면 병렬 요청 전부가 같은 재인증 판정으로 수렴한다", async () => {
+    // 실패 결과도 공유해야 한다 — 각자 다시 쏘면 그것이 곧 중복 발사다.
+    const state = stubRotatingServer({ detectReuse: false })
+    state.sessionAlive = false
+
+    const errors = await Promise.all([
+      api.get("/a").catch((e: unknown) => e),
+      api.get("/b").catch((e: unknown) => e),
+      api.get("/c").catch((e: unknown) => e),
+    ])
+
+    for (const err of errors) {
+      expect(err).toBeInstanceOf(ApiError)
+      if (err instanceof ApiError) expect(err.status).toBe(401)
+    }
+    expect(state.refreshCalls).toBe(1)
+    expect(window.location.href).toBe("/login")
+  })
+
+  it("앞선 refresh 가 끝난 뒤 만료되면 새 refresh 를 다시 시작한다", async () => {
+    // 거울상: 공유 Promise 가 완료된 채로 눌러앉으면 다음 만료 때 갱신이 영영 되지 않는다.
+    const state = stubRotatingServer({ detectReuse: false })
+
+    await api.get("/a")
+    expect(state.refreshCalls).toBe(1)
+
+    state.accessValid = false // 액세스 토큰이 다시 만료됨
+    await api.get("/b")
+
+    expect(state.refreshCalls).toBe(2)
+  })
+})

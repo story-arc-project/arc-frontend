@@ -31,7 +31,22 @@ type RequestOptions = RequestInit & { auth?: boolean };
 // 같은 false로 뭉개면, 일시 장애로 갱신에 실패한 유효 세션까지 로그아웃 처리된다.
 type RefreshResult = "ok" | "unauthorized" | "error";
 
-async function tryRefresh(): Promise<RefreshResult> {
+// 진행 중인 refresh 를 401 을 받은 모든 요청이 공유한다. 각자 쏘면 브라우저가 아직 갱신되지
+// 않은 **같은 쿠키**를 전부에 실어 보내고, 서버는 회전된 옛 토큰의 재사용(=탈취)으로 보아
+// 403 + 쿠키 삭제로 응답한다. 그 삭제가 먼저 성공한 refresh 가 심어 둔 새 쿠키까지 지우므로
+// 유효한 세션이 죽는다 — 403 을 관대하게 분류해도 이미 쿠키가 없어 되살릴 수 없다.
+// 그래서 처방은 분류가 아니라 **두 번째 요청을 애초에 보내지 않는 것**이다 (FRT-209/FRT-253).
+let inflightRefresh: Promise<RefreshResult> | null = null;
+
+function tryRefresh(): Promise<RefreshResult> {
+  // 완료 후 반드시 비운다. 결과가 눌러앉으면 다음 만료 때 갱신이 영영 되지 않는다.
+  inflightRefresh ??= runRefresh().finally(() => {
+    inflightRefresh = null;
+  });
+  return inflightRefresh;
+}
+
+async function runRefresh(): Promise<RefreshResult> {
   try {
     const res = await fetch(`${API_URL}/auth/refresh`, {
       method: "POST",
