@@ -78,10 +78,16 @@ function InlineEdit({
 export default function HistoryPage() {
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
   const [failedTypes, setFailedTypes] = useState<AnalysisType[]>([]);
-  const [filter, setFilter] = useState<FilterKey>("all");
-  const [sort, setSort] = useState<SortKey>("newest");
   const [error, setError] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
+  // 고른 필터·정렬과 세대를 한 값으로 묶는다. 따로 두면 "선택은 바뀌었는데 세대는 그대로"가
+  // 가능해지고, 그러면 잠깐 다른 선택을 들렀다 돌아왔을 때 새 요청의 키가
+  // 이미 받아둔 답의 키와 같아진다.
+  const [request, setRequest] = useState<{
+    filter: FilterKey;
+    sort: SortKey;
+    seq: number;
+  }>({ filter: "all", sort: "newest", seq: 0 });
+  const { filter, sort } = request;
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<
     { id: string; type: AnalysisType } | null
@@ -90,7 +96,7 @@ export default function HistoryPage() {
   // 화면이 지금 답해야 할 질문과, 실제로 답을 받아둔 질문. 둘이 다르면 그 자체가 로딩이다 —
   // 별도 플래그를 두지 않으므로 "로딩만 꺼지고 목록은 옛것"인 어긋난 중간 상태가 아예 없다.
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
-  const requestKey = `${filter}:${sort}:${retryKey}`;
+  const requestKey = `${filter}:${sort}:${request.seq}`;
   const loading = loadedKey !== requestKey;
 
   // 필터와 정렬 두 축으로 재조회한다 — 둘 다 빠르게 바꿀 수 있고, 그때마다 이전 요청은
@@ -119,7 +125,14 @@ export default function HistoryPage() {
     };
   }, [filter, sort, requestKey]);
 
-  const handleRetry = () => setRetryKey((k) => k + 1);
+  // 이미 보고 있는 선택을 다시 고르는 건 아무 일도 아니다 — 같은 값을 돌려줘 재조회조차 만들지 않는다.
+  const handleFilterChange = (next: FilterKey) =>
+    setRequest((r) => (r.filter === next ? r : { ...r, filter: next, seq: r.seq + 1 }));
+
+  const handleSortChange = (next: SortKey) =>
+    setRequest((r) => (r.sort === next ? r : { ...r, sort: next, seq: r.seq + 1 }));
+
+  const handleRetry = () => setRequest((r) => ({ ...r, seq: r.seq + 1 }));
 
   const [renameError, setRenameError] = useState<string | null>(null);
 
@@ -166,10 +179,10 @@ export default function HistoryPage() {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-          <FilterBar options={ANALYSIS_TYPE_FILTERS} value={filter} onChange={setFilter} id="history" />
+          <FilterBar options={ANALYSIS_TYPE_FILTERS} value={filter} onChange={handleFilterChange} id="history" />
           <select
             value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
+            onChange={(e) => handleSortChange(e.target.value as SortKey)}
             aria-label="정렬 기준"
             className="px-3 py-2 min-h-[44px] w-full sm:w-auto text-label border border-border rounded-md bg-surface text-text-primary appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22currentColor%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:12px] bg-[right_8px_center] bg-no-repeat pr-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           >

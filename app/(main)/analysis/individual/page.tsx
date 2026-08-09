@@ -20,13 +20,18 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 
 export default function IndividualAnalysisPage() {
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
-  const [filter, setFilter] = useState<FilterKey>("all");
   const [error, setError] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
+  // 고른 필터와 세대를 한 값으로 묶는다. 따로 두면 "필터는 바뀌었는데 세대는 그대로"가 가능해지고,
+  // 그러면 잠깐 다른 탭을 들렀다 돌아왔을 때 새 요청의 키가 이미 받아둔 답의 키와 같아진다.
+  const [request, setRequest] = useState<{ filter: FilterKey; seq: number }>({
+    filter: "all",
+    seq: 0,
+  });
+  const { filter } = request;
   // 화면이 지금 답해야 할 질문과, 실제로 답을 받아둔 질문. 둘이 다르면 그 자체가 로딩이다 —
   // 별도 플래그를 두지 않으므로 "로딩만 꺼지고 목록은 옛것"인 어긋난 중간 상태가 아예 없다.
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
-  const requestKey = `${filter}:${retryKey}`;
+  const requestKey = `${filter}:${request.seq}`;
   const loading = loadedKey !== requestKey;
 
   // 필터를 빠르게 바꾸면 이전 요청은 취소되지 않은 채 계속 날아온다. 늦게 도착한 답이
@@ -50,7 +55,11 @@ export default function IndividualAnalysisPage() {
     };
   }, [filter, requestKey]);
 
-  const handleRetry = () => setRetryKey((k) => k + 1);
+  // 이미 보고 있는 필터를 다시 누르는 건 아무 일도 아니다 — 같은 값을 돌려줘 재조회조차 만들지 않는다.
+  const handleFilterChange = (next: FilterKey) =>
+    setRequest((r) => (r.filter === next ? r : { filter: next, seq: r.seq + 1 }));
+
+  const handleRetry = () => setRequest((r) => ({ ...r, seq: r.seq + 1 }));
 
   return (
     <main className="px-4 py-8 sm:px-8">
@@ -62,7 +71,7 @@ export default function IndividualAnalysisPage() {
           </p>
         </div>
 
-        <FilterBar options={FILTERS} value={filter} onChange={setFilter} id="individual" />
+        <FilterBar options={FILTERS} value={filter} onChange={handleFilterChange} id="individual" />
 
         {/* 로딩이 에러보다 앞이다 — 재조회를 시작한 순간 화면은 이전 실패가 아니라
             지금 기다리는 중임을 보여야 한다. */}

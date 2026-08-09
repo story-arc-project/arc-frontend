@@ -176,6 +176,30 @@ describe("즐겨찾기 목록 — 필터 전환 race (FRT-185)", () => {
     expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
   });
 
+  it("실패한 필터로 되돌아오면 이전 실패가 아니라 새로 기다리는 중임을 보여준다", async () => {
+    // 잠깐 다른 탭을 들렀다 돌아오는 것도 재조회다. 옛 실패 화면을 다시 세우면 사용자는
+    // 이미 떠 있는 요청을 모른 채 '다시 시도'를 또 누른다.
+    getList.mockRejectedValueOnce(new Error("즐겨찾기를 불러올 수 없습니다.")); // all 실패
+
+    const { container } = render(<BookmarksPage />);
+    await flush();
+    expect(screen.getByText("데이터를 불러오지 못했습니다.")).toBeInTheDocument();
+
+    const pendingOther = deferred<BookmarkedSnapshot[]>();
+    getList.mockReturnValueOnce(pendingOther.promise);
+    await click(screen.getByRole("tab", { name: "개별" }));
+    await flush();
+
+    const pendingBack = deferred<BookmarkedSnapshot[]>();
+    getList.mockReturnValueOnce(pendingBack.promise);
+    await click(screen.getByRole("tab", { name: "전체" }));
+    await flush();
+
+    expect(getList).toHaveBeenCalledTimes(3);
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
+  });
+
   it("이미 고른 필터를 다시 눌러도 목록이 로딩으로 되돌아가지 않는다", async () => {
     // 요청을 새로 보내지 않는 클릭이라면 로딩도 없어야 한다 — 아니면 영영 끝나지 않는다.
     getList.mockResolvedValueOnce([snap("kept")]);

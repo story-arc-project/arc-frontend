@@ -383,4 +383,49 @@ describe("분석 기록 목록 — 필터·정렬 전환 race (FRT-185)", () => 
     expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
     expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
   });
+
+  it("정렬을 되돌려와도 이전 실패가 아니라 새로 기다리는 중임을 보여준다", async () => {
+    // 두 축 중 어느 쪽으로 나갔다 돌아오든 같다 — 되돌아온 선택도 새 요청이다.
+    getHistory.mockRejectedValueOnce(new Error("분석 기록을 불러올 수 없습니다.")); // newest 실패
+
+    const { container } = render(<HistoryPage />);
+    await flush();
+    expect(screen.getByText("데이터를 불러오지 못했습니다.")).toBeInTheDocument();
+
+    const pendingOther = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(pendingOther.promise);
+    await changeSort("oldest");
+    await flush();
+
+    const pendingBack = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(pendingBack.promise);
+    await changeSort("newest");
+    await flush();
+
+    expect(getHistory).toHaveBeenCalledTimes(3);
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
+  });
+
+  it("실패한 필터로 되돌아와도 마찬가지다 — 필터 축도 같은 규칙을 받는다", async () => {
+    getHistory.mockRejectedValueOnce(new Error("분석 기록을 불러올 수 없습니다.")); // all 실패
+
+    const { container } = render(<HistoryPage />);
+    await flush();
+    expect(screen.getByText("데이터를 불러오지 못했습니다.")).toBeInTheDocument();
+
+    const pendingOther = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(pendingOther.promise);
+    await click(screen.getByRole("tab", { name: "종합" }));
+    await flush();
+
+    const pendingBack = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(pendingBack.promise);
+    await click(screen.getByRole("tab", { name: "전체" }));
+    await flush();
+
+    expect(getHistory).toHaveBeenCalledTimes(3);
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
+  });
 });
