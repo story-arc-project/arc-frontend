@@ -1880,9 +1880,13 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
       status: "complete",
       tags: [],
       fields: {
-        // 코어 '기간' 은 확정본에서도 코어가 그대로 갖는다(CORE_EXCLUDE 대상이 아니다).
-        "core.기간": { type: "period", start: "2024-03", end: "2024-08", isCurrent: false },
+        // ⚠️ 개편 전 폼에서 **코어 '기간' 은 화면에 뜬 적이 없다** — 구 `overseas-info` 에도
+        // '기간' 앵커가 있어 `computeFormCards` 의 dedup 이 빈 코어 블록을 지웠다. 그래서 실제
+        // 레코드의 코어 기간은 이렇게 비어 있고, 사용자가 채운 값은 `overseas-info.기간` 에 있다.
+        // 이 픽스처가 처음엔 코어를 채워 뒀던 탓에 P1 을 못 잡았다(FRT-249, Codex P1).
+        "core.기간": { type: "period", start: "", end: "", isCurrent: false },
         // 질문이 같아 새 키로 이관되는 것들.
+        "overseas-info.기간": { type: "period", start: "2024-04", end: "2024-07", isCurrent: false },
         "overseas-info.국가/도시": text("독일 베를린"),
         "overseas-challenges.증빙": {
           type: "file",
@@ -1897,7 +1901,6 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
         "overseas-info.목적": textarea("전공 수업을 현지에서 듣고 싶었다"),
         "overseas-info.활동 요약": textarea("국제 마케팅 팀 프로젝트에 참여했다"),
         "overseas-info.언어 사용 수준": text("일상 회화 가능"),
-        "overseas-info.기간": { type: "period", start: "2024-04", end: "2024-07", isCurrent: false },
         "overseas-challenges.성과/산출물": textarea("팀 프로젝트 최우수상"),
       },
       custom: [],
@@ -1967,21 +1970,52 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
   })
 
   /**
-   * 구 `overseas-info.기간` 은 코어 '기간' 과 **목적지가 겹친다.** 이관 대상에 넣으면
-   * `applyRenamedKeys` 가 구 키를 무조건 삭제한 뒤 목적지가 차 있어 값을 안 싣는다 —
-   * 진 쪽이 '기타' 로도 보존되지 않고 사라진다(FRT-248 이 선행 조건으로 지목한 결함).
-   * 그래서 옮기지 않고 보존만 하며, 코어 '기간' 은 자기 값을 그대로 지킨다.
+   * ⚠️ 이번 라운드의 핵심 그물(FRT-249, Codex P1). 코어 '기간'을 남기는 설계에서는 사용자가
+   * 채운 `overseas-info.기간` 이 '기타' 로 밀리고 화면에는 **값 없는 required 기간 칸**이 떴다 —
+   * 완료 저장된 레코드를 다시 열면 저장이 막힌다. 확정본 ① 이 자기 '기간'을 갖도록 되돌린 뒤
+   * 그 자리로 이관한다. 목적지가 새 키라 `applyRenamedKeys` 의 "목적지가 차 있으면 진다"에
+   * 걸리지 않는다.
    */
-  it("코어와 목적지가 겹치는 구 '기간'은 옮기지 않아 양쪽 다 살아남는다", () => {
+  it("구 '기간'은 확정본 ① 의 '기간' 칸으로 이관된다 — 빈 required 칸이 뜨지 않게", () => {
     const v2 = loadLegacy()
 
-    expect(v2.coreBlocks.find(b => b.key === "core.기간")?.value).toMatchObject({
+    expect(v2.extensionBlocks.find(b => b.key === "overseas-program.기간")?.value).toMatchObject({
+      start: "2024-04",
+      end: "2024-07",
+    })
+    // 옮긴 구 키가 '기타' 에 중복으로 되살아나지 않는다.
+    expect(v2.customBlocks.find(b => b.key === "overseas-info.기간")).toBeUndefined()
+  })
+
+  it("코어에서 빠진 '기간'은 블록으로도 '기타'로도 남지 않는다 (빈 값이라 보존 대상이 아님)", () => {
+    const v2 = loadLegacy()
+
+    expect(v2.coreBlocks.find(b => b.key === "core.기간")).toBeUndefined()
+    expect(v2.customBlocks.find(b => b.key === "core.기간")).toBeUndefined()
+  })
+
+  /**
+   * 코어 기간이 채워진 레코드가 어떤 경로로든 있었다면, 코어에서 빼는 순간 그 값이 조용히
+   * 사라지면 안 된다. orphan 안전망이 '기타' 로 받는지 따로 세운다 — 이관 대상(구 `overseas-info`
+   * 쪽)이 이겼다고 해서 진 쪽을 버리지 않는다는 뜻이다.
+   */
+  it("코어 기간이 채워진 예외 레코드는 '기타' 카드로 보존된다", () => {
+    const content = legacyOverseasContent()
+    ;(content.fields as Record<string, unknown>)["core.기간"] = {
+      type: "period",
+      start: "2024-03",
+      end: "2024-08",
+      isCurrent: false,
+    }
+    const v2 = toExperienceV2(makeExperience({ type: "overseas", content }))
+
+    expect(v2.customBlocks.find(b => b.key === "core.기간")?.value).toMatchObject({
       start: "2024-03",
       end: "2024-08",
     })
-    expect(v2.customBlocks.find(b => b.key === "overseas-info.기간")?.value).toMatchObject({
+    // 사용자가 실제로 채운 쪽은 여전히 확정본 자리에 실린다.
+    expect(v2.extensionBlocks.find(b => b.key === "overseas-program.기간")?.value).toMatchObject({
       start: "2024-04",
-      end: "2024-07",
     })
   })
 

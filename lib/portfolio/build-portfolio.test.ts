@@ -399,6 +399,57 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
     expect(experienceToPost(dateOnlyExp("award", "award-info.수상일", "")).period).toBe("");
   });
 
+  /**
+   * 해외경험(FRT-249)도 코어 '기간'을 빼고 확정본 ① 이 자기 '기간'을 갖는다. 수상·자격증과 달리
+   * 라벨이 코어와 같은 '기간'이라 범용 폴백만으로도 값이 잡히므로, 이 두 건은 TYPE_PERIOD_KEY
+   * 등록의 그물이 아니라 **발행 결과 자체**를 고정한다(등록을 지워도 통과한다 — 회귀 주입으로 확인).
+   */
+  function overseasExp(fields: Record<string, unknown>): Experience {
+    return makeExp({
+      type: "overseas",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "베를린 교환학생",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields,
+      } as unknown as Experience["content"],
+    });
+  }
+
+  it("해외경험은 확정본 ① 의 '기간'을 발행 기간으로 쓴다", () => {
+    const exp = overseasExp({
+      "overseas-program.기간": {
+        type: "period",
+        start: "2024-03",
+        end: "2024-08",
+        isCurrent: false,
+      },
+    });
+
+    expect(experienceToPost(exp).period).toBe("2024.03 – 2024.08");
+  });
+
+  /**
+   * 개편 전 레코드에는 폐기된 `core.기간` 이 orphan 으로 남을 수 있다(코어 기간이 채워진 예외
+   * 레코드). 사용자가 화면에서 보고 고치는 값은 확정본 ① 쪽이므로, 발행도 그쪽을 따라야 한다 —
+   * 옛 범위가 이기면 화면에서 볼 수도 고칠 수도 없는 기간이 계속 나간다(FRT-211 과 같은 결).
+   */
+  it("화면에서 못 고치는 orphan 코어 기간보다 확정본 ① 의 '기간'이 앞선다", () => {
+    const exp = overseasExp({
+      "core.기간": { type: "period", start: "2020-01", end: "2020-02", isCurrent: false },
+      "overseas-program.기간": {
+        type: "period",
+        start: "2024-03",
+        end: "2024-08",
+        isCurrent: false,
+      },
+    });
+
+    expect(experienceToPost(exp).period).toBe("2024.03 – 2024.08");
+  });
+
   /** 대조군: 코어 '기간'을 쓰는 유형은 날짜 폴백이 끼어들지 않는다. */
   it("'기간'을 쓰는 유형의 표기는 그대로다", () => {
     expect(experienceToPost(makeExp()).period).toBe("2026.02 – 2026.05");

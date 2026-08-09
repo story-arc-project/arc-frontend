@@ -248,10 +248,18 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   //    옮기면 '일상 회화 가능' 이 언어명 칸의 답으로 둔갑한다.
   //  · '목적'·'활동 요약'·'어려웠던 상황' 표·'성과/산출물' 은 확정본이 삭제한 항목이다
   //    (설계 노트: 경험 요약은 '주요 활동'과 서술이 중복되어 삭제).
-  //  · 구 `overseas-info.기간` 은 **코어 '기간' 과 목적지가 겹친다.** 해외경험은 CORE_EXCLUDE 에
-  //    '기간'을 넣지 않아 `core.기간` 이 살아 있고, `applyRenamedKeys` 는 구 키를 무조건 delete
-  //    한 뒤 목적지가 차 있으면 값을 안 싣는다 — 옮기면 진 쪽이 '기타' 로도 보존되지 않고
-  //    사라진다(FRT-248 이 선행 조건으로 지목한 결함).
+  //
+  // ⚠️ 옮기지 **못하는** 것도 하나 있다 — 구 `core.증빙 자료`. 개편 전 해외경험 폼은 코어 증빙
+  //    블록(`isEvidenceBlock` 이라 dedup 을 타지 않아 '활동 증빙' 카드로 **항상** 보였다)과
+  //    `overseas-challenges.증빙`(collapsed 섹션 안) 을 동시에 노출했으므로, 첨부가 코어 쪽에만
+  //    있는 레코드가 실제로 존재한다. 그런데 이 맵은 유형 구분이 없는 **전역 맵**이라 `core.*` 를
+  //    출발점으로 쓰면 다른 9유형의 같은 키까지 함께 끌려간다. 그래서 코어 증빙은 orphan '기타'
+  //    카드로 보존만 된다 — 파일은 살아 있고 사용자가 옮길 수 있다(FRT-249, Codex P2).
+  //    유형별 이관이 필요하면 맵을 유형 스코프로 넓히는 선행 작업이 있어야 한다(FRT-248).
+  //
+  // 구 `overseas-info.기간` 은 옮긴다. 목적지 `overseas-program.기간` 은 이번에 새로 생긴 키라
+  // 항상 비어 있어 `applyRenamedKeys` 의 "목적지가 차 있으면 진다" 규칙에 걸리지 않는다.
+  'overseas-info.기간': 'overseas-program.기간',
   'overseas-info.국가/도시': 'overseas-program.국가 / 도시',
   // 파일 증빙은 select 와 달리 도메인이 닫혀 있지 않다 — `FileBlock` 이 옛 자유입력 evidenceType
   // 이 새 options 에 없으면 선택지에 덧붙여 살려 두므로(FileBlock.tsx), 옮겨도 값이 박히지 않는다.

@@ -91,11 +91,16 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   // 특히 '증빙 자료'는 evidence 카드를 따로 만들어 파일 입력칸이 두 벌이 된다(어학의 '성적표
   // 첨부'와 같은 처리). '핵심 성과'는 확정본에 아예 없다 — ② 회고 네 질문이 그 자리를 대신한다.
   volunteer: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
-  // 해외경험 확정본은 **'기간'을 빼지 않는다** — ① 의 '기간'(month~month)이 코어와 질문도 타입도
-  // 같아서 코어가 그대로 그 자리를 채운다(그래서 TYPE_PERIOD_KEY 등록도 불필요하다). 역할·성과는
-  // 확정본에 없고 — ② '주요 활동'과 '이 경험이 나에게 준 것'이 그 질문을 흡수했다 — '증빙 자료'는
-  // 확정본이 ① 안에 두었으므로 core 를 남기면 파일 입력칸이 두 벌이 된다(어학·봉사와 같은 처리).
-  overseas: ['내 역할/기여도', '핵심 성과', '증빙 자료'],
+  // 해외경험 확정본 ① 도 '기간'을 자기 필드로 갖는다. "코어가 그 자리를 채우니 빼지 말자"던 초안은
+  // 틀렸다(FRT-249, Codex P1) — 구 `overseas-info` 에도 '기간' 앵커가 있어 `computeFormCards` 의
+  // dedup 이 **비어 있는 코어 '기간' 블록을 화면에서 지웠고**(form-cards.ts, keepCoreOrExtended),
+  // 그래서 기존 레코드의 기간 값은 `core.기간` 이 아니라 `overseas-info.기간` 에 들어 있다.
+  // 코어를 남기면 화면에 뜨는 건 값이 없는 required 칸이라, 완료된 레코드를 다시 열면 기간이 비어
+  // 저장조차 막힌다. 선행 5유형과 같이 코어를 빼고 ① 이 자기 '기간'을 정의한다
+  // (값은 RENAMED_FIELD_KEYS 로 이관, 발행 시점은 TYPE_PERIOD_KEY 로 조회).
+  // 역할·성과는 확정본에 없고 — ② '주요 활동'과 '이 경험이 나에게 준 것'이 그 질문을 흡수했다 —
+  // '증빙 자료'는 확정본이 ① 안에 두었으므로 core 를 남기면 파일 입력칸이 두 벌이 된다.
+  overseas: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
 }
 
 /**
@@ -1751,9 +1756,11 @@ const OVERSEAS_GAIN_TAGS = [
 function overseasExtensions(): TemplateSection[] {
   return [
     {
-      // 확정본 ① 의 '경험명'·'기간' 은 코어가 이미 같은 질문·같은 타입으로 갖고 있어 중복 정의하지
-      // 않는다. 그래서 CORE_EXCLUDE 에 '기간' 이 없고, build-portfolio 의 TYPE_PERIOD_KEY 등록도
-      // 불필요하다 — 봉사·독서·자격증과 갈리는 지점이니 베껴 오지 말 것.
+      // 확정본 ① 의 '경험명'·'한 줄 요약' 은 헤더 코어가 갖는다. '기간' 만은 여기서 정의한다 —
+      // 코어를 남기면 dedup 탓에 값 없는 required 칸이 뜬다(CORE_EXCLUDE 의 overseas 주석 참조).
+      // 블록 순서는 확정본 ① 표 그대로다: 경험 유형 → 국가 / 도시 → 주최 / 소속 기관 → 기간 →
+      // 사용 언어 → 참여 형태 → 증빙 자료. 코어 블록은 `computeFormCards` 가 뒤에 붙이므로,
+      // 확정본 순서를 지키려면 시점 필드를 코어에 맡기지 말고 이렇게 섹션이 소유해야 한다.
       id: 'overseas-program',
       category: 'basic',
       label: '해외경험 정보',
@@ -1772,6 +1779,9 @@ function overseasExtensions(): TemplateSection[] {
           guide: '프로그램을 주최한 기관이나 현지에서 소속된 곳을 적어주세요.',
           placeholder: '예: OO대학교, OO재단, OO 회사',
         }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸. month~month 는 코어 '기간' 과 같은 period 위젯이라
+        // 구 `overseas-info.기간` 값을 그대로 실을 수 있다(RENAMED_FIELD_KEYS).
+        createPeriodField('기간', { required: true }),
         createTextField('사용 언어', {
           guide:
             '현지에서 주로 사용한 언어를 적어주세요. 이미 등록한 어학능력이 있다면 같은 언어명으로 적어주시면 좋아요.',

@@ -1346,21 +1346,36 @@ describe("확정본: 해외경험", () => {
     expect(ids).not.toContain("overseas-challenges")
   })
 
-  it("① 해외경험 정보는 확정본 필드를 순서 그대로 갖는다 (경험명·기간은 코어 소유)", () => {
+  it("① 해외경험 정보는 확정본 필드를 순서 그대로 갖는다 (경험명은 헤더 코어 소유)", () => {
     expect(labelsIn(sections()[0].blocks)).toEqual([
       "경험 유형",
       "국가 / 도시",
       "주최 / 소속 기관",
+      "기간",
       "사용 언어",
       "참여 형태",
       "증빙 자료",
     ])
   })
 
+  /**
+   * '기간'은 코어에 맡기면 순서를 잃는다 — `computeFormCards` 가 유형 섹션 블록을 전부 깐 뒤에
+   * 코어를 붙이므로 확정본 4번째 자리가 아니라 카드 맨 끝으로 밀린다. 섹션이 소유해야 하는 이유.
+   */
+  it("'기간'은 확정본 ① 의 4번째 자리, 즉 '주최 / 소속 기관' 과 '사용 언어' 사이다", () => {
+    const labels = labelsIn(sections()[0].blocks)
+    expect(labels.indexOf("기간")).toBe(labels.indexOf("주최 / 소속 기관") + 1)
+    expect(labels.indexOf("사용 언어")).toBe(labels.indexOf("기간") + 1)
+  })
+
+  it("'기간'은 month~month 를 받는 period 블록이다", () => {
+    expect(blockAt(0, "기간").type).toBe("period")
+  })
+
   /** 확정본 ① 에서 *(선택, 필드 삭제 가능)* 표기가 없는 것만 필수다. */
-  it("① 의 필수는 '경험 유형'·'국가 / 도시' 둘뿐이다", () => {
+  it("① 의 필수는 '경험 유형'·'국가 / 도시'·'기간' 셋이다", () => {
     const required = sections()[0].blocks.filter(b => b.required).map(b => b.label)
-    expect(required).toEqual(["경험 유형", "국가 / 도시"])
+    expect(required).toEqual(["경험 유형", "국가 / 도시", "기간"])
   })
 
   it("'경험 유형'은 확정본 9종 드롭다운이다", () => {
@@ -1392,13 +1407,14 @@ describe("확정본: 해외경험", () => {
   })
 
   /**
-   * 봉사·독서와 갈리는 지점 — 확정본 ① 의 '기간'(month~month)은 코어 '기간'과 질문도 타입도
-   * 같아서 코어가 그대로 그 자리다. 그래서 CORE_EXCLUDE 에 '기간'을 넣지 않고, 따라서
-   * build-portfolio 의 TYPE_PERIOD_KEY 등록도 필요 없다.
+   * 코어 '기간'을 남기면 안 된다(FRT-249, Codex P1). 구 `overseas-info` 에도 '기간' 앵커가 있어
+   * dedup 이 **빈 코어 블록을 화면에서 지웠고**, 그래서 기존 레코드의 값은 `core.기간` 이 아니라
+   * `overseas-info.기간` 에 있다. 코어를 남기면 값 없는 required 칸이 떠서 완료 저장이 막힌다.
+   * 봉사·독서·자격증과 같은 처리로 되돌린 자리다.
    */
-  it("core 는 헤더 둘과 '기간'을 남긴다 — 역할·성과·증빙만 확정본 필드로 대체됐다", () => {
+  it("core 에는 헤더 둘만 남는다 — 기간·역할·성과·증빙이 확정본 필드로 대체됐다", () => {
     const core = labelsIn(getTemplateForType("overseas").commonCore.blocks)
-    expect(core).toEqual(["경험명", "기간", "한 줄 요약"])
+    expect(core).toEqual(["경험명", "한 줄 요약"])
   })
 
   it("② 경험 상세는 확정본 3필드를 순서 그대로 갖는다", () => {
@@ -1475,7 +1491,11 @@ describe("확정본: 해외경험", () => {
 
   it("①②③ 의 모든 필드에 가이드라인이 있다 (확정본이 '—'로 비운 것만 예외)", () => {
     // 확정본이 가이드라인 칸을 '—' 로 비운 필드 — 없는 문구를 지어내지 않는다.
-    const NO_GUIDE = new Map<string, "placeholder" | "options">([["참여 형태", "options"]])
+    // '기간'은 placeholder·options 도 없는 period 위젯이라 타입 자체로 확인한다.
+    const NO_GUIDE = new Map<string, "placeholder" | "options" | "type">([
+      ["참여 형태", "options"],
+      ["기간", "type"],
+    ])
     for (const s of sections()) {
       for (const b of s.blocks) {
         const fallback = NO_GUIDE.get(b.label)
