@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -85,6 +85,9 @@ function SignupForm() {
   const [verifyCode, setVerifyCode] = useState("");
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
+  // 인증 흐름의 세대. 가입이 성공할 때마다 올라간다 — 재발송 응답이 자기 흐름의 것인지 판정한다.
+  const verifyFlowId = useRef(0);
   const [isResending, setIsResending] = useState(false);
 
   // UI state
@@ -149,6 +152,14 @@ function SignupForm() {
 
     try {
       await api.post("/auth/signup", { email, password }, { auth: false });
+      // 여기서부터 새 인증 흐름이다. 재발송 결과는 그 이메일에 매인 진술이라,
+      // 「← 이전」으로 돌아가 다른 주소로 다시 가입하면(컴포넌트는 언마운트되지 않는다)
+      // 재발송한 적 없는 새 주소 화면에 직전 결과가 그대로 남는다.
+      // 세대를 올려 아직 비행 중인 재발송 응답까지 무효로 만든다.
+      verifyFlowId.current += 1;
+      setResendNotice(null);
+      setResendError(null);
+      setIsResending(false);
       goTo("verify");
     } catch (e) {
       if (e instanceof ApiError) {
@@ -219,19 +230,37 @@ function SignupForm() {
   // 호출하면 백엔드가 코드를 새로 발급/무효화하거나 즉시 rate limit 될 수 있다.
   async function handleResendCode() {
     if (isResending) return;
+    const flowId = verifyFlowId.current;
     setIsResending(true);
+    // 성공·실패 슬롯을 함께 비운다. 한쪽만 비우면 직전 회차 결과가 이번 결과와 나란히 남는다.
     setResendError(null);
+    setResendNotice(null);
+
+    // 결과를 곧바로 쓰지 않고 모아 둔다 — 화면에 반영할 자격은 아래 세대 판정이 정한다.
+    let notice: string | null = null;
+    let error: string | null = null;
     try {
       await api.post("/auth/resend-verification", { email }, { auth: false });
+      notice = "코드를 다시 보냈어요.";
     } catch (e) {
       if (e instanceof ApiError) {
-        if (e.status === 429) setResendError("5분 후 재발송 가능해요.");
-        else if (e.status === 400) setResendError("이미 인증된 이메일이에요.");
-        else setResendError(e.message);
+        if (e.status === 429) error = "5분 후 재발송 가능해요.";
+        else if (e.status === 400) error = "이미 인증된 이메일이에요.";
+        else error = e.message;
+      } else {
+        // client.ts 의 request() 는 fetch reject(네트워크 단절 등)를 ApiError 로 감싸지 않고
+        // 그대로 던진다. else 가 없으면 아무 안내도 뜨지 않는다.
+        error = "네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
       }
-    } finally {
-      setIsResending(false);
     }
+
+    // 응답을 기다리는 동안 「← 이전」으로 빠져나가 다른 이메일로 다시 가입했을 수 있다.
+    // 그 경우 이 결과는 이미 사라진 흐름의 것이라 새 화면에 찍으면 거짓 안내가 된다.
+    // 새 흐름이 isResending 까지 초기화하므로 여기서는 아무것도 되돌리지 않는다.
+    if (verifyFlowId.current !== flowId) return;
+    setResendNotice(notice);
+    setResendError(error);
+    setIsResending(false);
   }
 
   // 이메일로 계속(가입 경로 선택) — 소셜과 갈라 채널별 전환 차이를 본다.
@@ -505,8 +534,13 @@ function SignupForm() {
                   <Button onClick={handleVerify} disabled={!verifyCode.trim() || isLoading}>
                     {isLoading ? "확인 중..." : "확인"}
                   </Button>
+                  {/* 재발송 결과는 버튼에 포커스가 머문 채 비동기로 나타난다.
+                      역할을 주지 않으면 스크린리더 사용자에게는 아무 일도 일어나지 않은 것과 같다. */}
                   {resendError && (
-                    <p className="text-body-sm text-error">{resendError}</p>
+                    <p role="alert" aria-live="polite" className="text-body-sm text-error">{resendError}</p>
+                  )}
+                  {resendNotice && (
+                    <p role="status" aria-live="polite" className="text-body-sm text-text-tertiary">{resendNotice}</p>
                   )}
                   <button
                     type="button"
