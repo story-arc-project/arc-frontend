@@ -14,6 +14,7 @@ import {
   BarChart3,
   Lightbulb,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { AnalysisHomeSummary } from "@/types/analysis";
 import { analysisTypeLabel, ANALYSIS_DETAIL_PATH } from "@/types/analysis";
 import { getAnalysisHomeSummary } from "@/lib/api/analysis-api";
@@ -28,7 +29,16 @@ import PartialFailureNotice, {
 
 const STAT_ICONS = [FileText, CheckCircle, Clock, AlertTriangle] as const;
 
-const QUICK_ACTIONS = [
+type QuickAction = {
+  href: string;
+  icon: LucideIcon;
+  title: string;
+  desc: string;
+  /** 카드 하단 문구. 기본은 "시작하기" — 만들 수 없는 데모 카드만 "보기"로 바꾼다. */
+  cta?: string;
+};
+
+const QUICK_ACTIONS: QuickAction[] = [
   {
     href: "/analysis/individual",
     icon: FileSearch,
@@ -49,6 +59,27 @@ const QUICK_ACTIONS = [
   },
 ];
 
+// 데모에는 생성(new) 라우트를 미러링하지 않는다 — 예전엔 그래서 이 3칸을 통째로 감췄고,
+// 데모 사용자가 유형별 목록으로 들어갈 길이 아예 없었다. 자리·아이콘·개수는 그대로 두고
+// 목적지와 문구만 "만들기 → 보기"로 바꿔 둘러보기까지는 이어지게 한다(FRT-232).
+const QUICK_ACTIONS_DEMO: QuickAction[] = [
+  { ...QUICK_ACTIONS[0], cta: "보기" },
+  {
+    href: "/analysis/comprehensive",
+    icon: Layers,
+    title: "종합 분석 보기",
+    desc: "여러 경험을 묶은 스토리라인을 확인합니다.",
+    cta: "보기",
+  },
+  {
+    href: "/analysis/keyword",
+    icon: Tags,
+    title: "키워드 분석 보기",
+    desc: "키워드별로 분석한 경험을 확인합니다.",
+    cta: "보기",
+  },
+];
+
 type TabKey = "individual" | "comprehensive" | "keyword";
 const TABS: { key: TabKey; label: string }[] = [
   { key: "individual", label: "개별" },
@@ -58,6 +89,7 @@ const TABS: { key: TabKey; label: string }[] = [
 
 export default function AnalysisHomePage() {
   const basePath = useBasePath();
+  const quickActions = basePath === "" ? QUICK_ACTIONS : QUICK_ACTIONS_DEMO;
   const [data, setData] = useState<AnalysisHomeSummary | null>(null);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<TabKey>("individual");
@@ -174,10 +206,9 @@ export default function AnalysisHomePage() {
           })}
         </div>
 
-        {/* Quick Actions — 데모에서는 list/new 페이지를 미러링하지 않으므로 숨긴다 */}
-        {basePath === "" && (
+        {/* Quick Actions — 데모는 만들 수 없으므로 같은 3칸이 '보기'로 바뀐다 (QUICK_ACTIONS_DEMO) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
-          {QUICK_ACTIONS.map((action) => (
+          {quickActions.map((action) => (
             <Link
               key={action.href}
               href={`${basePath}${action.href}`}
@@ -193,12 +224,11 @@ export default function AnalysisHomePage() {
                 {action.desc}
               </p>
               <span className="inline-flex items-center gap-1 mt-3 text-caption text-brand font-medium group-hover:gap-2 transition-all">
-                시작하기 <ArrowRight size={12} aria-hidden="true" />
+                {action.cta ?? "시작하기"} <ArrowRight size={12} aria-hidden="true" />
               </span>
             </Link>
           ))}
         </div>
-        )}
 
         {/* Recent Results */}
         <section>
@@ -331,8 +361,7 @@ export default function AnalysisHomePage() {
         </div>
         )}
 
-        {/* Bottom Links — 데모에서는 history/bookmarks 페이지를 미러링하지 않으므로 숨긴다 */}
-        {basePath === "" && (
+        {/* Bottom Links — history/bookmarks 는 데모에도 미러링돼 있다 (FRT-232) */}
         <div className="flex items-center gap-4 pt-2">
           <Link
             href={`${basePath}/analysis/history`}
@@ -347,7 +376,6 @@ export default function AnalysisHomePage() {
             즐겨찾기 바로가기 &rarr;
           </Link>
         </div>
-        )}
       </div>
     </main>
   );

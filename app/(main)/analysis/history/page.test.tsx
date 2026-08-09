@@ -16,10 +16,27 @@ vi.mock("@/lib/api/analysis-api", () => ({
 }));
 
 // next/link 는 앱 라우터 컨텍스트를 요구한다 — 표시 검증에는 순수 앵커로 충분하다.
+// 나머지 props 도 그대로 넘긴다: '다시 분석'은 아이콘뿐이라 aria-label 이 유일한 이름이고,
+// 그걸 버리면 일반 모드에서도 못 찾게 되어 "데모에서 없다"는 단언이 늘 통과하는 위양성이 된다.
 vi.mock("next/link", () => ({
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
+  default: ({
+    children,
+    href,
+    ...rest
+  }: {
+    children: React.ReactNode;
+    href: string;
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
   ),
+}));
+
+// useBasePath 는 mock 하지 않는다 — 데모 URL 에서 실제로 /demo 가 나오는지가 핵심이다(FRT-161).
+const mockUsePathname = vi.fn(() => "/analysis/history");
+vi.mock("next/navigation", () => ({
+  usePathname: () => mockUsePathname(),
 }));
 
 import { getAnalysisHistory } from "@/lib/api/analysis-api";
@@ -32,6 +49,7 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockUsePathname.mockReturnValue("/analysis/history");
 });
 
 function snap(id: string, type: AnalysisType): AnalysisSnapshot {
@@ -427,5 +445,63 @@ describe("분석 기록 목록 — 필터·정렬 전환 race (FRT-185)", () => 
     expect(getHistory).toHaveBeenCalledTimes(3);
     expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
     expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
+  });
+});
+
+// 데모는 둘러보기만 한다. 특히 '다시 분석'은 /new 로 가는데 데모엔 그 라우트가 없다 —
+// 그대로 두면 이 화면을 여는 것 자체가 새 데드엔드를 만든다(FRT-232).
+describe("데모 모드 — 둘러보기만 남긴다 (FRT-232)", () => {
+  it("이름 변경·다시 분석·삭제가 모두 사라진다", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis/history");
+    getHistory.mockResolvedValue({ items: [snap("c1", "comprehensive")], failedTypes: [] });
+
+    render(<HistoryPage />);
+    await flush();
+
+    expect(screen.queryByRole("button", { name: "이름 변경" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "다시 분석" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "삭제" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "즐겨찾기" })).toBeNull();
+  });
+
+  it("항목 제목 링크와 빈 상태 CTA 는 데모 안에 머문다", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis/history");
+    getHistory.mockResolvedValue({ items: [snap("c1", "comprehensive")], failedTypes: [] });
+
+    render(<HistoryPage />);
+    await flush();
+
+    expect(screen.getByRole("link", { name: /분석 c1/ })).toHaveAttribute(
+      "href",
+      "/demo/analysis/comprehensive/c1",
+    );
+  });
+
+  it("빈 상태 CTA 는 데모 아카이브로 보낸다", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis/history");
+    getHistory.mockResolvedValue({ items: [], failedTypes: [] });
+
+    render(<HistoryPage />);
+    await flush();
+
+    expect(screen.getByRole("link", { name: "경험 기록하러 가기" })).toHaveAttribute(
+      "href",
+      "/demo/archive",
+    );
+  });
+
+  it("일반 모드는 그대로다 (거울상 — 데모 분기가 본계약을 먹지 않았는지)", async () => {
+    getHistory.mockResolvedValue({ items: [snap("c1", "comprehensive")], failedTypes: [] });
+
+    render(<HistoryPage />);
+    await flush();
+
+    expect(screen.getByRole("button", { name: "이름 변경" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "다시 분석" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "삭제" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /분석 c1/ })).toHaveAttribute(
+      "href",
+      "/analysis/comprehensive/c1",
+    );
   });
 });

@@ -45,9 +45,11 @@ export default function AnalysisResultUnavailable({
 }: AnalysisResultUnavailableProps) {
   const showRetry = status === "failed" && canRetry && analysisType !== undefined;
   const { headline, detail } = messageFor(status, showRetry);
-  // 기존 상세 화면의 error 분기와 같은 규칙: 데모(basePath 있음)면 유형별 목록 라우트가
-  // 없어(app/demo/analysis 아래엔 [analysisId] 만 존재) /demo/analysis 허브로 보낸다.
-  // fallbackHref(유형별 목록)는 basePath 가 없을 때만 쓴다 — 안 그러면 데모에서 404 다.
+  // 기존 상세 화면의 error 분기와 같은 규칙: 데모(basePath 있음)면 /demo/analysis 허브로 보낸다.
+  // FRT-232 로 유형별 목록도 데모에 미러링됐으니 이제 fallbackHref 를 그대로 써도 404 는 아니다 —
+  // 그럼에도 허브로 보내는 건 의도적 선택이다. 결과를 못 연 사람에게는 같은 유형의 목록보다
+  // 분석 홈이 다음 행동을 더 넓게 열어준다. 상세 3화면의 인라인 '돌아가기'도 같은 규칙이라,
+  // 바꾸려면 6곳을 함께 옮겨야 한다(별도 건).
   const listHref = basePath ? `${basePath}/analysis` : fallbackHref;
 
   return (

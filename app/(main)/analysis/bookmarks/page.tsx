@@ -7,6 +7,7 @@ import { analysisTypeLabel, ANALYSIS_DETAIL_PATH, ANALYSIS_TYPE_FILTERS } from "
 import { getBookmarks } from "@/lib/api/analysis-api";
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge, Button } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import FilterBar from "@/components/features/analysis/common/FilterBar";
@@ -14,6 +15,7 @@ import FilterBar from "@/components/features/analysis/common/FilterBar";
 type FilterKey = "all" | AnalysisType;
 
 export default function BookmarksPage() {
+  const basePath = useBasePath();
   const [items, setItems] = useState<BookmarkedSnapshot[]>([]);
   const [error, setError] = useState(false);
   // 고른 필터와 세대를 한 값으로 묶는다. 따로 두면 "필터는 바뀌었는데 세대는 그대로"가 가능해지고,
@@ -105,7 +107,7 @@ export default function BookmarksPage() {
               분석 결과에서 &#9733;를 눌러 저장해보세요.
             </p>
             <Button asChild variant="secondary" size="sm" className="mt-4">
-              <Link href="/analysis/history">분석 결과 보러 가기</Link>
+              <Link href={`${basePath}/analysis/history`}>분석 결과 보러 가기</Link>
             </Button>
           </div>
         ) : (
@@ -117,7 +119,7 @@ export default function BookmarksPage() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <Link
-                    href={`${ANALYSIS_DETAIL_PATH[item.type]}/${item.id}`}
+                    href={`${basePath}${ANALYSIS_DETAIL_PATH[item.type]}/${item.id}`}
                     className="flex-1 min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md"
                   >
                     <div className="flex items-center gap-2 flex-wrap mb-1">

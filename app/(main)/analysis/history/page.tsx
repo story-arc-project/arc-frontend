@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/analysis-api";
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge, Button, Dialog } from "@/components/ui";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
 import FilterBar from "@/components/features/analysis/common/FilterBar";
@@ -76,6 +77,10 @@ function InlineEdit({
 }
 
 export default function HistoryPage() {
+  // 데모는 둘러보기만 한다 — 이름 변경·다시 분석·삭제는 mock 위에서 화면만 바꾸고
+  // 재조회하면 되살아난다. 특히 '다시 분석'의 목적지(/new)는 데모에 미러링돼 있지도 않다(FRT-232).
+  const basePath = useBasePath();
+  const isDemo = basePath !== "";
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
   const [failedTypes, setFailedTypes] = useState<AnalysisType[]>([]);
   const [error, setError] = useState(false);
@@ -247,7 +252,7 @@ export default function HistoryPage() {
               경험을 기록하고 분석을 시작해보세요.
             </p>
             <Button asChild variant="secondary" size="sm" className="mt-4">
-              <Link href="/archive">경험 기록하러 가기</Link>
+              <Link href={`${basePath}/archive`}>경험 기록하러 가기</Link>
             </Button>
           </div>
         ) : (
@@ -273,7 +278,7 @@ export default function HistoryPage() {
                         />
                       ) : isNavigable ? (
                         <Link
-                          href={`${ANALYSIS_DETAIL_PATH[item.type]}/${item.id}`}
+                          href={`${basePath}${ANALYSIS_DETAIL_PATH[item.type]}/${item.id}`}
                           className="text-title text-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
                         >
                           {getDisplayTitle(item.title)}
@@ -295,31 +300,37 @@ export default function HistoryPage() {
                       isBookmarked={item.isBookmarked}
                       size="sm"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setEditId(item.id)}
-                      disabled={item.type === "individual"}
-                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-tertiary disabled:hover:bg-transparent"
-                      aria-label="이름 변경"
-                    >
-                      <Pencil size={16} />
-                    </button>
-                    <Link
-                      href={NEW_PATH[item.type]}
-                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-brand hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                      aria-label="다시 분석"
-                    >
-                      <RotateCcw size={16} />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTarget({ id: item.id, type: item.type })}
-                      disabled={item.type === "individual"}
-                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                      aria-label="삭제"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {/* 이름 변경·다시 분석·삭제는 데모에 없다 — 앞의 둘은 되돌아올 성공이고,
+                        '다시 분석'의 목적지(/new)는 데모에 미러링돼 있지도 않다(FRT-232). */}
+                    {!isDemo && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setEditId(item.id)}
+                          disabled={item.type === "individual"}
+                          className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-tertiary disabled:hover:bg-transparent"
+                          aria-label="이름 변경"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <Link
+                          href={NEW_PATH[item.type]}
+                          className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-brand hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                          aria-label="다시 분석"
+                        >
+                          <RotateCcw size={16} />
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget({ id: item.id, type: item.type })}
+                          disabled={item.type === "individual"}
+                          className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                          aria-label="삭제"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
