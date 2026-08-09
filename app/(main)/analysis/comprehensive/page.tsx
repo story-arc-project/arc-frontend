@@ -13,6 +13,7 @@ import {
 } from "@/lib/analysis/use-analysis-progress-watch";
 import { formatDate } from "@/lib/utils/date-utils";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import { Button, Dialog } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
@@ -24,6 +25,10 @@ export default function ComprehensiveAnalysisPage() {
   // 라우터 컨텍스트 밖(스토리북·단위 테스트)에서는 null 이다 — 그때는 그냥 감시만 한다.
   const router = useRouter();
   const startedId = useSearchParams()?.get("started") ?? null;
+  // 데모는 둘러보기만 한다 — 만들기·지우기·다시 시도는 mock 위에서 화면만 바꾸고
+  // 재조회하면 되살아나므로 아예 내보내지 않는다(FRT-232).
+  const basePath = useBasePath();
+  const isDemo = basePath !== "";
 
   const [items, setItems] = useState<AnalysisSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -149,12 +154,14 @@ export default function ComprehensiveAnalysisPage() {
               여러 경험을 묶어 일관된 스토리라인을 만듭니다.
             </p>
           </div>
-          <Button asChild size="sm" className="min-h-11 shrink-0 whitespace-nowrap sm:min-h-0">
-            <Link href="/analysis/comprehensive/new" aria-label="새 종합 분석">
-              <Plus size={16} aria-hidden="true" />
-              <span className="hidden sm:inline">새 종합 분석</span>
-            </Link>
-          </Button>
+          {!isDemo && (
+            <Button asChild size="sm" className="min-h-11 shrink-0 whitespace-nowrap sm:min-h-0">
+              <Link href="/analysis/comprehensive/new" aria-label="새 종합 분석">
+                <Plus size={16} aria-hidden="true" />
+                <span className="hidden sm:inline">새 종합 분석</span>
+              </Link>
+            </Button>
+          )}
         </div>
 
         {error ? (
@@ -188,19 +195,21 @@ export default function ComprehensiveAnalysisPage() {
             <p className="text-body-sm text-text-tertiary mt-1">
               여러 경험을 선택해 종합 분석을 시작해보세요.
             </p>
-            <Button asChild size="sm" className="mt-4">
-              <Link href="/analysis/comprehensive/new">
-                <Plus size={16} aria-hidden="true" />
-                새 종합 분석
-              </Link>
-            </Button>
+            {!isDemo && (
+              <Button asChild size="sm" className="mt-4">
+                <Link href="/analysis/comprehensive/new">
+                  <Plus size={16} aria-hidden="true" />
+                  새 종합 분석
+                </Link>
+              </Button>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
             {items.map((item) => {
               const isNavigable = item.status === "completed";
               // 재시도 엔드포인트(BAC-42) 배포 전까지 플래그 off — 노출 없음
-              const canRetry = item.status === "failed" && isAnalysisRetryEnabled();
+              const canRetry = item.status === "failed" && isAnalysisRetryEnabled() && !isDemo;
               return (
                 <div
                   key={item.id}
@@ -248,7 +257,7 @@ export default function ComprehensiveAnalysisPage() {
                           )}
                         </div>
                       ) : (
-                        <Link href={`/analysis/comprehensive/${item.id}`} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md">
+                        <Link href={`${basePath}/analysis/comprehensive/${item.id}`} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-md">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <span className="text-title text-text-primary">
                               {getDisplayTitle(item.title)}
@@ -279,14 +288,16 @@ export default function ComprehensiveAnalysisPage() {
                         }}
                         size="sm"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setDeleteId(item.id)}
-                        className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                        aria-label="삭제"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {!isDemo && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteId(item.id)}
+                          className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-md text-text-tertiary hover:text-error hover:bg-surface-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                          aria-label="삭제"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -21,7 +21,13 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("@/lib/utils/use-base-path", () => ({ useBasePath: () => "" }));
+// useBasePath 를 통째로 mock 하면 "컴포넌트가 basePath 를 쓰는가"만 보이고 "데모 URL 에서 실제로
+// /demo 가 나오는가"는 못 본다 — 퀵액션의 데모 분기가 바로 그 지점이다(FRT-161·FRT-232).
+// usePathname 만 갈아끼우고 실제 훅을 태운다.
+const mockUsePathname = vi.fn(() => "/analysis");
+vi.mock("next/navigation", () => ({
+  usePathname: () => mockUsePathname(),
+}));
 
 import { getAnalysisHomeSummary } from "@/lib/api/analysis-api";
 
@@ -33,6 +39,7 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockUsePathname.mockReturnValue("/analysis");
 });
 
 function snap(id: string, type: AnalysisType): AnalysisSnapshot {
@@ -184,5 +191,69 @@ describe("분석 홈 — 부분 실패 안내 (FRT-169)", () => {
     await flush();
 
     expect(screen.getByText("데이터를 불러오지 못했습니다.")).toBeInTheDocument();
+  });
+});
+
+// 데모에는 생성(new) 라우트를 미러링하지 않는다. 전에는 퀵액션 3칸을 통째로 감춰
+// 데모 사용자가 유형별 목록에 들어갈 길이 아예 없었다 — 같은 3칸을 "만들기"에서 "보기"로
+// 바꿔치기해 둘러보기까지는 이어지게 한다(FRT-232).
+describe("분석 홈 — 데모 퀵액션은 '보기'로 바뀐다 (FRT-232)", () => {
+  it("데모에서는 종합·키워드 카드가 생성(/new)이 아니라 목록으로 간다", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis");
+    getSummary.mockResolvedValue(summary());
+
+    render(<AnalysisHomePage />);
+    await flush();
+
+    expect(screen.getByRole("link", { name: /종합 분석 보기/ })).toHaveAttribute(
+      "href",
+      "/demo/analysis/comprehensive",
+    );
+    expect(screen.getByRole("link", { name: /키워드 분석 보기/ })).toHaveAttribute(
+      "href",
+      "/demo/analysis/keyword",
+    );
+    // 개별은 원래도 목록이 목적지였다 — 데모 접두만 붙는다.
+    expect(screen.getByRole("link", { name: /개별 분석 보기/ })).toHaveAttribute(
+      "href",
+      "/demo/analysis/individual",
+    );
+  });
+
+  it("데모에서도 하단 '전체 결과 보기'·'즐겨찾기'가 보이고 데모 안에 머문다", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis");
+    getSummary.mockResolvedValue(summary());
+
+    render(<AnalysisHomePage />);
+    await flush();
+
+    expect(screen.getByRole("link", { name: /전체 결과 보기/ })).toHaveAttribute(
+      "href",
+      "/demo/analysis/history",
+    );
+    expect(screen.getByRole("link", { name: /즐겨찾기 바로가기/ })).toHaveAttribute(
+      "href",
+      "/demo/analysis/bookmarks",
+    );
+  });
+
+  it("일반 모드는 그대로 생성으로 간다 (거울상 — 데모 분기가 본계약을 먹지 않았는지)", async () => {
+    getSummary.mockResolvedValue(summary());
+
+    render(<AnalysisHomePage />);
+    await flush();
+
+    expect(screen.getByRole("link", { name: /종합 분석 시작/ })).toHaveAttribute(
+      "href",
+      "/analysis/comprehensive/new",
+    );
+    expect(screen.getByRole("link", { name: /키워드 분석 시작/ })).toHaveAttribute(
+      "href",
+      "/analysis/keyword/new",
+    );
+    expect(screen.getByRole("link", { name: /전체 결과 보기/ })).toHaveAttribute(
+      "href",
+      "/analysis/history",
+    );
   });
 });
