@@ -1,21 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
-import * as Sentry from "@sentry/nextjs";
 import { AlertTriangle } from "lucide-react";
 import { Button, FullPageMessage } from "@/components/ui";
 
+// `error` 는 Next 가 넘겨주지만 화면에 쓰지 않는다 — 사용자에게 스택을 노출하지 않기 위해서다.
+// 원인은 브라우저 콘솔(클라이언트)과 Vercel 런타임 로그(서버)에 남는다.
 export default function MainError({
-  error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    Sentry.captureException(error);
-  }, [error]);
-
   return (
     <FullPageMessage
       role="alert"
