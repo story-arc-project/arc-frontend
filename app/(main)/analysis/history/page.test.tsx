@@ -56,6 +56,26 @@ async function click(element: HTMLElement) {
   });
 }
 
+async function changeSort(value: string) {
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText("정렬 기준"), { target: { value } });
+  });
+}
+
+// 응답 순서를 손으로 정하려면 프로미스를 붙잡고 있어야 한다. reject 도 필요하다 —
+// 늦게 도착하는 것이 성공만은 아니기 때문이다.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+type HistoryResult = { items: AnalysisSnapshot[]; failedTypes: AnalysisType[] };
+
 // FRT-127: 이 목록의 제목은 표시 상태와 편집 상태가 같은 자리에서 교체 렌더된다.
 // 두 쪽이 다른 타이포 토큰을 쓰면 제목을 고치려고 누른 순간 글자 크기가 튄다.
 describe("분석 기록 목록 — 제목 타이포 (FRT-127)", () => {
@@ -181,5 +201,231 @@ describe("분석 기록 목록 — 부분 실패 안내 (FRT-170)", () => {
     await flush();
 
     expect(screen.getByText("데이터를 불러오지 못했습니다.")).toBeInTheDocument();
+  });
+});
+
+// FRT-185: 이 화면은 필터와 정렬 두 축으로 재조회한다 — 둘 다 빠르게 바꿀 수 있고,
+// 그때마다 이전 요청은 취소되지 않은 채 계속 날아온다. 지켜야 할 계약은 하나다:
+// **늦게 도착한 옛 응답은 목록도, 로딩도, 에러도, 부분 실패 안내도 건드리지 못한다.**
+describe("분석 기록 목록 — 필터·정렬 전환 race (FRT-185)", () => {
+  // 앞 describe 가 남긴 영구 mock 구현이 새어 들어오면 Once 큐 뒤로 엉뚱한 응답이 붙는다.
+  beforeEach(() => {
+    getHistory.mockReset();
+  });
+
+  it("먼저 떠난 요청이 뒤늦게 도착해도 지금 고른 필터의 목록을 덮지 않는다", async () => {
+    const stale = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(stale.promise); // filter=all (느림)
+
+    render(<HistoryPage />);
+    await flush();
+
+    const fresh = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(fresh.promise); // filter=comprehensive (현재)
+    await click(screen.getByRole("tab", { name: "종합" }));
+    await flush();
+
+    await act(async () => {
+      fresh.resolve({ items: [snap("fresh", "comprehensive")], failedTypes: [] });
+    });
+    expect(screen.getByText("분석 fresh")).toBeInTheDocument();
+
+    await act(async () => {
+      stale.resolve({ items: [snap("stale", "individual")], failedTypes: [] });
+    });
+
+    expect(screen.queryByText("분석 stale")).not.toBeInTheDocument();
+    expect(screen.getByText("분석 fresh")).toBeInTheDocument();
+  });
+
+  it("정렬 전환도 같은 방어를 받는다 — 옛 정렬의 응답이 뒤늦게 와도 버린다", async () => {
+    const stale = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(stale.promise); // sort=newest (느림)
+
+    render(<HistoryPage />);
+    await flush();
+
+    const fresh = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(fresh.promise); // sort=oldest (현재)
+    await changeSort("oldest");
+    await flush();
+
+    await act(async () => {
+      fresh.resolve({ items: [snap("fresh", "individual")], failedTypes: [] });
+    });
+    expect(screen.getByText("분석 fresh")).toBeInTheDocument();
+
+    await act(async () => {
+      stale.resolve({ items: [snap("stale", "individual")], failedTypes: [] });
+    });
+
+    expect(screen.queryByText("분석 stale")).not.toBeInTheDocument();
+    expect(screen.getByText("분석 fresh")).toBeInTheDocument();
+  });
+
+  it("새 요청이 아직 진행 중인데 늦은 응답이 로딩을 꺼버리지 않는다", async () => {
+    const stale = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(stale.promise);
+
+    const { container } = render(<HistoryPage />);
+    await flush();
+
+    const pending = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(pending.promise); // 끝내 응답하지 않는다
+    await click(screen.getByRole("tab", { name: "종합" }));
+    await flush();
+
+    await act(async () => {
+      stale.resolve({ items: [snap("stale", "individual")], failedTypes: [] });
+    });
+
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.queryByText("분석 stale")).not.toBeInTheDocument();
+  });
+
+  it("늦게 도착한 옛 요청의 실패는 멀쩡한 화면을 에러로 바꾸지 않는다", async () => {
+    const stale = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(stale.promise);
+
+    render(<HistoryPage />);
+    await flush();
+
+    const fresh = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(fresh.promise);
+    await click(screen.getByRole("tab", { name: "종합" }));
+    await flush();
+
+    await act(async () => {
+      fresh.resolve({ items: [snap("fresh", "comprehensive")], failedTypes: [] });
+    });
+    expect(screen.getByText("분석 fresh")).toBeInTheDocument();
+
+    await act(async () => {
+      stale.reject(new Error("분석 기록을 불러올 수 없습니다."));
+    });
+
+    expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
+    expect(screen.getByText("분석 fresh")).toBeInTheDocument();
+  });
+
+  it("늦게 도착한 옛 응답의 부분 실패로 없던 안내를 띄우지 않는다", async () => {
+    const stale = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(stale.promise); // sort=newest, 종합이 실패했던 시점
+
+    render(<HistoryPage />);
+    await flush();
+
+    const fresh = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(fresh.promise);
+    await changeSort("oldest");
+    await flush();
+
+    await act(async () => {
+      fresh.resolve({ items: [snap("fresh", "individual")], failedTypes: [] });
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    await act(async () => {
+      stale.resolve({
+        items: [snap("stale", "individual")],
+        failedTypes: ["comprehensive"],
+      });
+    });
+
+    // 지금 목록은 멀쩡하다 — 옛 요청이 겪은 실패를 지금 화면의 사실로 옮기면 거짓 경고다.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // 안내가 없다는 것만으로는 부족하다 — 화면이 로딩으로 되돌아가 안내가 가려진 것도
+    // 같은 모습이기 때문이다. 지금 목록이 그대로 서 있어야 진짜 무시한 것이다.
+    expect(screen.getByText("분석 fresh")).toBeInTheDocument();
+  });
+
+  it("늦게 도착한 옛 응답의 성공이 지금의 부분 실패 안내를 지우지 않는다", async () => {
+    const stale = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(stale.promise);
+
+    render(<HistoryPage />);
+    await flush();
+
+    const fresh = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(fresh.promise);
+    await changeSort("oldest");
+    await flush();
+
+    await act(async () => {
+      fresh.resolve({
+        items: [snap("fresh", "individual")],
+        failedTypes: ["comprehensive"],
+      });
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("종합 분석");
+
+    await act(async () => {
+      stale.resolve({ items: [snap("stale", "individual")], failedTypes: [] });
+    });
+
+    // 반대 방향도 같다 — 옛 요청이 성공했다고 지금의 실패가 없던 일이 되지 않는다.
+    expect(screen.getByRole("alert")).toHaveTextContent("종합 분석");
+    expect(screen.getByText("분석 fresh")).toBeInTheDocument();
+  });
+
+  it("'다시 시도'를 누른 직후에는 이전 실패가 아니라 기다리는 중임을 보여준다", async () => {
+    getHistory.mockRejectedValueOnce(new Error("분석 기록을 불러올 수 없습니다."));
+
+    const { container } = render(<HistoryPage />);
+    await flush();
+    expect(screen.getByText("데이터를 불러오지 못했습니다.")).toBeInTheDocument();
+
+    const pending = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(pending.promise);
+    await click(screen.getByRole("button", { name: "다시 시도" }));
+    await flush();
+
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
+  });
+
+  it("정렬을 되돌려와도 이전 실패가 아니라 새로 기다리는 중임을 보여준다", async () => {
+    // 두 축 중 어느 쪽으로 나갔다 돌아오든 같다 — 되돌아온 선택도 새 요청이다.
+    getHistory.mockRejectedValueOnce(new Error("분석 기록을 불러올 수 없습니다.")); // newest 실패
+
+    const { container } = render(<HistoryPage />);
+    await flush();
+    expect(screen.getByText("데이터를 불러오지 못했습니다.")).toBeInTheDocument();
+
+    const pendingOther = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(pendingOther.promise);
+    await changeSort("oldest");
+    await flush();
+
+    const pendingBack = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(pendingBack.promise);
+    await changeSort("newest");
+    await flush();
+
+    expect(getHistory).toHaveBeenCalledTimes(3);
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
+  });
+
+  it("실패한 필터로 되돌아와도 마찬가지다 — 필터 축도 같은 규칙을 받는다", async () => {
+    getHistory.mockRejectedValueOnce(new Error("분석 기록을 불러올 수 없습니다.")); // all 실패
+
+    const { container } = render(<HistoryPage />);
+    await flush();
+    expect(screen.getByText("데이터를 불러오지 못했습니다.")).toBeInTheDocument();
+
+    const pendingOther = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(pendingOther.promise);
+    await click(screen.getByRole("tab", { name: "종합" }));
+    await flush();
+
+    const pendingBack = deferred<HistoryResult>();
+    getHistory.mockReturnValueOnce(pendingBack.promise);
+    await click(screen.getByRole("tab", { name: "전체" }));
+    await flush();
+
+    expect(getHistory).toHaveBeenCalledTimes(3);
+    expect(container.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.queryByText("데이터를 불러오지 못했습니다.")).not.toBeInTheDocument();
   });
 });
