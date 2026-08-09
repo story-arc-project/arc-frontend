@@ -1528,3 +1528,265 @@ describe("확정본: 해외경험", () => {
     expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(5)
   })
 })
+
+describe("확정본: 창작물", () => {
+  const sections = () => getTemplateForType("creative-work").extensions.filter(s => s.id !== "extended")
+  const labelsIn = (blocks: Block[]) => blocks.map(b => b.label)
+  const blockAt = (idx: number, label: string) =>
+    sections()[idx].blocks.find(b => b.label === label)!
+
+  it("확정본 2섹션을 순서·id·category 그대로 갖는다", () => {
+    expect(sections().map(s => [s.id, s.category])).toEqual([
+      ["creative-info", "basic"],
+      ["creative-detail", "detail"],
+    ])
+  })
+
+  /**
+   * 구 `cw-info` 를 유지하면 '분야'(7종)의 안정키가 그대로라, 선택지 도메인만 13종으로 바뀐 값이
+   * injectValue 로 실려 새 드롭다운에 없는 값('디자인'·'글'…)이 박힌다 — 고를 수도 지울 수도 없다
+   * (FRT-247 봉사 '대상', FRT-249 해외경험 '경험 유형'과 같은 함정).
+   * 구 `cw-process.제작 과정`(표)도 확정본에선 같은 라벨의 textarea 라, id 를 갈아야 orphan 으로 흐른다.
+   */
+  it("구 섹션 id 를 재사용하지 않는다 — 구 키가 orphan 안전망으로 흐르게", () => {
+    const ids = sections().map(s => s.id)
+    expect(ids).not.toContain("cw-info")
+    expect(ids).not.toContain("cw-process")
+  })
+
+  it("① 작품 정보는 확정본 필드를 순서 그대로 갖는다 (경험명·한 줄 요약은 헤더 코어 소유)", () => {
+    expect(labelsIn(sections()[0].blocks)).toEqual([
+      "작품명 / 작업물명",
+      "유형 / 매체",
+      "개인 / 팀",
+      "역할",
+      "작업 기간",
+      "공개 / 전시 이력",
+      "사용 툴 / 기술",
+      "작품 링크 / 파일",
+    ])
+  })
+
+  /**
+   * '작업 기간'은 코어에 맡기면 순서를 잃는다 — `computeFormCards` 가 유형 섹션 블록을 전부 깐 뒤에
+   * 코어를 붙이므로 확정본 5번째 자리가 아니라 카드 맨 끝으로 밀린다(FRT-249와 같은 이유).
+   */
+  it("'작업 기간'은 확정본 ① 의 5번째 자리, 즉 '역할' 과 '공개 / 전시 이력' 사이다", () => {
+    const labels = labelsIn(sections()[0].blocks)
+    expect(labels.indexOf("작업 기간")).toBe(labels.indexOf("역할") + 1)
+    expect(labels.indexOf("공개 / 전시 이력")).toBe(labels.indexOf("작업 기간") + 1)
+  })
+
+  it("'작업 기간'은 month~month 를 받는 period 블록이다", () => {
+    expect(blockAt(0, "작업 기간").type).toBe("period")
+  })
+
+  /**
+   * 확정본 ① 에서 *(선택, 필드 삭제 가능)* 표기가 없는 것만 필수다 — 다만 둘은 예외로 뺀다.
+   *  · '역할'은 조건부 노출이라 required 로 두면 '개인 작업'을 고른 사용자가 **화면에 없는 칸**
+   *    때문에 완료 저장을 못 한다(FRT-211 의 "조건 판정에 걸린 칸이 도달 불가"). 수상경력의
+   *    '팀에서 내가 맡은 역할'도 같은 이유로 required 가 아니다.
+   *  · '작품 링크 / 파일'은 표라서 required 로 두면 `isRequiredBlock` 이 블록 전체를 필수로 보고
+   *    `canHideBlock` 이 숨기지도 못한다 — 링크가 없는 작업은 영영 완료 불가(FRT-236).
+   */
+  it("① 의 필수는 '작품명 / 작업물명'·'유형 / 매체'·'작업 기간' 셋이다", () => {
+    const required = sections()[0].blocks.filter(b => b.required).map(b => b.label)
+    expect(required).toEqual(["작품명 / 작업물명", "유형 / 매체", "작업 기간"])
+  })
+
+  it("'유형 / 매체'는 확정본 13종 드롭다운이다", () => {
+    const field = blockAt(0, "유형 / 매체")
+    expect(field.type).toBe("single-select")
+    expect(field.options).toEqual([
+      "그래픽/디자인",
+      "브랜딩/아이덴티티",
+      "웹/앱 UI",
+      "영상/모션",
+      "사진",
+      "일러스트/그림",
+      "글/문학",
+      "음악/사운드",
+      "개발/프로젝트",
+      "제품/프로덕트",
+      "공간/건축",
+      "공연/퍼포먼스",
+      "기타",
+    ])
+  })
+
+  it("'개인 / 팀'은 확정본 4종 드롭다운이다", () => {
+    const field = blockAt(0, "개인 / 팀")
+    expect(field.type).toBe("single-select")
+    expect(field.options).toEqual([
+      "개인 작업",
+      "팀 작업(2~5명)",
+      "팀 작업(6명 이상)",
+      "공동 프로젝트",
+    ])
+  })
+
+  /**
+   * 확정본은 "'개인 작업' 외 선택 시 노출"이라는 **부정 조건**인데 `VisibilityCondition` 에는
+   * 부정이 없어 양성 값을 열거한다. 그래서 선택지가 늘면 이 목록도 함께 늘려야 하고,
+   * 빠뜨리면 그 값을 고른 사용자에게 역할 칸이 영영 안 뜬다 — 드리프트를 여기서 고정한다.
+   */
+  it("'역할'은 '개인 작업'을 뺀 나머지 선택지 전부에서 노출된다", () => {
+    const role = blockAt(0, "역할")
+    const options = blockAt(0, "개인 / 팀").options ?? []
+    expect(role.visibleWhen).toEqual({
+      key: "creative-info.개인 / 팀",
+      equals: options.filter(o => o !== "개인 작업"),
+    })
+    // 트리거 키가 실재 블록의 안정키와 어긋나면 조건이 영원히 거짓이 된다.
+    expect(role.visibleWhen!.key).toBe(blockAt(0, "개인 / 팀").key)
+  })
+
+  it("'공개 / 전시 이력'은 개조식 목록이고 '사용 툴 / 기술'은 자유 태그다", () => {
+    expect(blockAt(0, "공개 / 전시 이력").variant).toBe("outcome-list")
+    expect(blockAt(0, "사용 툴 / 기술").type).toBe("tags")
+  })
+
+  /**
+   * 확정본 ① '결과물 블록(artifact-blocks) — 다중 등록 가능'. FRT-213 이 셀 컬럼에 file·link 를
+   * 열어 둔 덕에 신규 위젯 없이 표로 받는다. ⚠️ 컬럼에 required 를 붙이지 말 것 — 위 ① 필수 주석과
+   * 같은 이유로 링크가 없는 작업이 카드를 영영 완료할 수 없게 된다.
+   */
+  it("'작품 링크 / 파일'은 링크·파일·설명 3컬럼 다중 등록 표다", () => {
+    const table = blockAt(0, "작품 링크 / 파일")
+    expect(table.type).toBe("repeatable-cell")
+    const columns = table.value.type === "repeatable-cell" ? table.value.columns : []
+    expect(columns.map(c => [c.key, c.label, c.blockType])).toEqual([
+      ["link", "링크", "link"],
+      ["file", "파일", "file"],
+      ["desc", "설명", "text"],
+    ])
+    expect(columns.some(c => c.required)).toBeFalsy()
+  })
+
+  /**
+   * 이 표는 **파일 열을 가진 첫 템플릿 블록**이라 `hostsAttachment` 가 숨김을 막는다
+   * (hidden-fields.ts — 표는 열 단위 업로드 상태를 위로 흘릴 배선이 없어 제외하며, 그 주석은
+   * "현재 템플릿에 파일 열이 0개라 비용이 없다"를 전제로 쓰였다. 이 필드가 그 전제를 깬다).
+   *
+   * 그래도 결함이 아니다 — 확정본이 '작품 링크 / 파일'에 *(선택, 필드 삭제 가능)* 표기를 하지
+   * 않았으므로 **치울 수 없는 것이 확정본과 일치**한다. 진행도도 막히지 않는다: ① 은 필수가 있는
+   * 카드라 `isCardComplete` 가 필수만으로 판정하고, 비어 있는 이 표는 세지 않는다.
+   *
+   * ⚠️ 그래서 ① 에서 필수를 전부 없애면 이 카드는 `some(채워짐)` 기준으로 바뀌고, 그 순간 링크가
+   * 없는 사용자는 **치울 수도 채울 수도 없는** 카드를 얻는다(FRT-236 이 독서에서 만난 자리).
+   * 두 사실을 한 테스트에 묶어 그 조합이 깨지면 여기서 걸리게 한다.
+   */
+  it("'작품 링크 / 파일'은 치울 수 없지만 — ① 이 필수 기준 카드라 진행도를 막지 않는다", () => {
+    const table = blockAt(0, "작품 링크 / 파일")
+    // 실제 게이트는 `canHideBlock` 이다 — `isCardComplete` 는 숨김 키를 먼저 걸러내므로
+    // "숨길 수 있는가"를 증명하지 못한다(FRT-236).
+    expect(isRequiredBlock(table)).toBe(false)
+    expect(canHideBlock(table)).toBe(false)
+
+    const card = { category: "basic" as const, label: "기본 정보", blocks: sections()[0].blocks }
+    expect(card.blocks.some(isRequiredBlock)).toBe(true)
+    // 필수를 채우면 빈 '작품 링크 / 파일' 이 남아 있어도 카드가 완료된다.
+    const filled = {
+      ...card,
+      blocks: card.blocks.map(b =>
+        isRequiredBlock(b)
+          ? b.value.type === "period"
+            ? { ...b, value: { ...b.value, start: "2024-01" } }
+            : b.value.type === "single-select"
+              ? { ...b, value: { ...b.value, selected: "사진" } }
+              : { ...b, value: { type: "text" as const, text: "채움" } }
+          : b,
+      ),
+    }
+    expect(isCardComplete(filled)).toBe(true)
+  })
+
+  /**
+   * ⚠️ 선행 5종과 **반대 결론**이다. 봉사·해외경험 등은 core '내 역할/기여도'를 뺐지만, 창작물은
+   * 빼지 않는다 — 구 `cw-info`/`cw-process` 에 role 동의어 앵커가 **하나도 없어** 이 코어 칸이
+   * 실제로 화면에 렌더됐고 값이 들어 있을 수 있기 때문이다. 빼면 그 값이 '기타'로 밀린다.
+   * 대신 확정본의 '역할'이 새 앵커가 되므로 `keepCoreOrExtended` 가 빈 것만 숨기고 값 있는 것은
+   * 남긴다 — 확정본 충실성과 값 보존이 동시에 성립한다.
+   * (FRT-249 Codex P1 의 판정식 "그 유형 섹션에 동명·동의어 앵커가 있었나"를 필드마다 따로 물은 결과다.)
+   */
+  it("core 에는 헤더 둘과 '내 역할/기여도'가 남는다 — 기간·성과·증빙만 확정본 필드로 대체됐다", () => {
+    const core = labelsIn(getTemplateForType("creative-work").commonCore.blocks)
+    expect(core).toEqual(["경험명", "한 줄 요약", "내 역할/기여도"])
+  })
+
+  it("② 작업 상세는 확정본 5필드를 순서 그대로 갖는다", () => {
+    expect(labelsIn(sections()[1].blocks)).toEqual([
+      "작업 배경 / 컨셉",
+      "제작 과정",
+      "반응 / 피드백",
+      "이 작업이 나에게 남긴 것",
+      "작품 성격",
+    ])
+  })
+
+  it("② 는 '섹션 전체 선택'이라 필수 필드가 하나도 없다", () => {
+    expect(sections()[1].blocks.some(b => b.required)).toBe(false)
+  })
+
+  /** 확정본 설계 노트: 🌱 개인 프로젝트 태그는 ① '개인/팀'과 중복이라 삭제됐다 — 되살리지 말 것. */
+  it("'작품 성격'은 확정본 12종 이모지 태그다", () => {
+    const tags = blockAt(1, "작품 성격")
+    expect(tags.type).toBe("checklist")
+    expect(tags.variant).toBe("mood-tag")
+    expect(tags.options).toEqual([
+      "🎨 실험적",
+      "💼 상업적",
+      "📖 서사적",
+      "🔍 리서치 기반",
+      "💡 컨셉 중심",
+      "🛠️ 기술 중심",
+      "🤝 협업 기반",
+      "🧪 프로토타입/실험작",
+      "🎯 특정 타겟 대상",
+      "🏆 공모전 출품작",
+      "📚 학술/졸업 작품",
+      "🌍 사회적 메시지",
+    ])
+    expect(tags.options).not.toContain("🌱 개인 프로젝트")
+  })
+
+  it("①② 의 모든 필드에 가이드라인이 있다 (확정본이 '—'로 비운 것만 예외)", () => {
+    // 확정본이 가이드라인 칸을 '—' 로 비운 필드 — 없는 문구를 지어내지 않는다.
+    const NO_GUIDE = new Map<string, "placeholder" | "options" | "type">([
+      ["개인 / 팀", "options"],
+      ["작업 기간", "type"],
+    ])
+    for (const s of sections()) {
+      for (const b of s.blocks) {
+        const fallback = NO_GUIDE.get(b.label)
+        if (fallback) {
+          expect(b[fallback], `${s.id}/${b.label}`).toBeTruthy()
+          continue
+        }
+        expect(b.guide, `${s.id}/${b.label}`).toBeTruthy()
+      }
+    }
+  })
+
+  it("확정본에 없는 구 필드는 템플릿에서 사라진다 (값은 매퍼가 orphan 으로 보존)", () => {
+    const labels = sections().flatMap(s => labelsIn(s.blocks))
+    for (const gone of [
+      "작품/작업물명",
+      "분야",
+      "제작 기간",
+      "한 줄 소개",
+      "의도/주제",
+      "사용 도구",
+      "공개 링크",
+      "반응/성과",
+      "저작권/사용 범위",
+    ]) {
+      expect(labels, gone).not.toContain(gone)
+    }
+  })
+
+  /** 섹션 id 교체는 breaking change 다 — `withSectionKeys` 규약대로 bump 를 동반한다. */
+  it("섹션 id 를 갈아치웠으므로 TEMPLATE_VERSION 이 해외경험(5) 위로 올라가 있다", () => {
+    expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(6)
+  })
+})

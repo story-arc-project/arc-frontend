@@ -152,6 +152,45 @@ describe("computeFormCards", () => {
     expect(fileBlocks.map(b => b.label)).toEqual(["봉사 확인서 첨부"])
   })
 
+  /**
+   * FRT-267: 창작물 확정본도 섹션이 둘이고 §7 이 "사이드 네비: 섹션 2개 앵커"로 못 박았다.
+   * core '증빙 자료'를 CORE_EXCLUDE 로 빼지 않으면 evidence 카드가 따로 생겨 3카드가 된다.
+   *
+   * ⚠️ 봉사와 달리 core '내 역할/기여도'는 남긴다 — 구 창작물 템플릿에 role 앵커가 없어 이 칸이
+   * 실제로 렌더됐고 값이 들어 있을 수 있기 때문이다. **비어 있으면** 확정본 '역할'이 앵커가 되어
+   * dedup 이 숨기고, 값이 있으면 남는다. 두 방향을 함께 고정한다.
+   */
+  it("창작물: 확정본대로 2카드이고 detail 카드 이름이 '작업 상세'다", () => {
+    const { core, sections } = sectionsFor("creative-work")
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES["creative-work"])
+
+    expect(r.visibleCategories).toEqual(["basic", "detail"])
+    expect(r.cards.find(c => c.category === "detail")!.label).toBe("작업 상세")
+
+    const all = r.cards.flatMap(c => c.blocks).map(b => b.label)
+    // detail 섹션이 생겼으므로 범용 확장 필드는 더 이상 붙지 않는다.
+    expect(all).not.toContain("배경/목표")
+    expect(all).not.toContain("배운 점")
+    // 빈 코어 '내 역할/기여도'는 확정본 '역할' 앵커에 밀려 숨는다.
+    expect(all).not.toContain("내 역할/기여도")
+    // 파일 입력칸은 ① 안의 '작품 링크 / 파일' 표뿐 — core '증빙 자료' 파일 블록이 남지 않는다.
+    expect(r.cards.flatMap(c => c.blocks).filter(b => b.type === "file")).toEqual([])
+  })
+
+  it("창작물: 값이 든 코어 '내 역할/기여도'는 dedup 에 지워지지 않는다", () => {
+    const { core, sections } = sectionsFor("creative-work")
+    const filledCore = core.map(b =>
+      b.label === "내 역할/기여도"
+        ? { ...b, value: { type: "textarea" as const, text: "기획·촬영·편집을 모두 맡았습니다." } }
+        : b,
+    )
+    const r = computeFormCards(filledCore, sections, SECTION_LABEL_OVERRIDES["creative-work"])
+
+    expect(r.cards.flatMap(c => c.blocks).map(b => b.label)).toContain("내 역할/기여도")
+    // 값이 살아나도 카드 수는 그대로 둘이다(코어는 detail 버킷으로 들어간다).
+    expect(r.visibleCategories).toEqual(["basic", "detail"])
+  })
+
   // ── FRT-178: 동아리가 확정본 4카드로 그려지는지 (문서 ①~④) ──
   it("동아리: 4카드가 모두 보이고 범용 확장 카드가 걷힌다", () => {
     const { core, sections } = sectionsFor("club")

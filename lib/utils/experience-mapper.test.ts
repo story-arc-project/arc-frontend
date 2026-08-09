@@ -2226,3 +2226,242 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
     expect(v1.customBlocks.find(b => b.label === "경험 유형")).toBeUndefined()
   })
 })
+
+describe("확정본 전면 교체 값 보존 (FRT-267 창작물)", () => {
+  /**
+   * ⚠️ 레거시 픽스처는 "그럴듯한 값"이 아니라 **그 시점의 렌더 경로가 실제로 만들어낼 수 있는 값**
+   * 이어야 한다(FRT-249 Codex P1 을 놓친 이유). 코어 4칸이 서로 다른 이유로 갈린다:
+   *  · `core.기간` — 구 `cw-info` 에 '제작 기간'(SEMANTIC_GROUPS.period) 앵커가 있어 dedup 이
+   *    빈 코어를 화면에서 지웠다 → 채울 방법이 없었으므로 **항상 비어 있다.**
+   *  · `core.핵심 성과` — 구 `cw-process` 에 '반응/성과'(achievement) 앵커가 있어 같은 이유로 비어 있다.
+   *  · `core.내 역할/기여도` — role 동의어 앵커가 **하나도 없어 실제로 렌더됐다** → 값이 있을 수 있다.
+   *    이 한 줄이 `CORE_EXCLUDE` 에서 이 필드만 뺀 근거이자, 그 판정을 지키는 그물이다.
+   *  · `core.증빙 자료` — `isEvidenceBlock` 이라 dedup 자체를 타지 않고 '활동 증빙' 카드에 **항상**
+   *    보였다 → 값이 있을 수 있다.
+   */
+  function legacyCreativeContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "골목 기록 프로젝트",
+      summary: "사진과 인터뷰를 엮은 독립 잡지",
+      status: "complete",
+      tags: [],
+      fields: {
+        "core.기간": { type: "period", start: "", end: "", isCurrent: false },
+        "core.핵심 성과": textarea(""),
+        "core.내 역할/기여도": textarea("기획·촬영·편집을 모두 맡았습니다."),
+        "core.증빙 자료": {
+          type: "file",
+          fileName: "졸업전시-도록.pdf",
+          description: "졸업전시 도록",
+          evidenceType: "전시 도록",
+        },
+        // 질문이 같아 새 키로 이관되는 것들.
+        "cw-info.작품/작업물명": text("골목의 기록"),
+        "cw-info.제작 기간": { type: "period", start: "2024-03", end: "2024-06", isCurrent: false },
+        "cw-info.사용 도구": { type: "tags", tags: ["Lightroom", "InDesign"] },
+        "cw-info.의도/주제": textarea("사라져가는 골목 문화를 기록하고 싶었습니다."),
+        "cw-process.반응/성과": textarea("졸업전시 우수작으로 선정됐습니다."),
+        // 선택지 도메인이 달라 **값 조건부**인 것 — '디자인'은 새 13종에 그대로 없다.
+        "cw-info.분야": { type: "single-select", selected: "디자인", options: ["디자인", "글", "영상", "음악", "사진", "일러스트", "기타"] },
+        // 타입이 달라 못 옮기는 것들.
+        "cw-process.제작 과정": {
+          type: "repeatable-cell",
+          columns: [
+            { key: "step", label: "단계명", blockType: "text" },
+            { key: "work", label: "한 일", blockType: "textarea" },
+          ],
+          rows: [{ id: "r1", cells: { step: "리서치", work: "골목 20곳 답사" } }],
+        },
+        "cw-process.공개 링크": { type: "link", url: "https://behance.net/golmok" },
+        // 확정본에 대응 칸이 없는 것들.
+        "cw-info.한 줄 소개": text("골목을 기록한 독립 잡지"),
+        "cw-process.저작권/사용 범위": text("CC BY-NC"),
+        // 범용 '확장 입력' — 창작물은 자기 detail 섹션이 없어 이 8필드가 실제로 렌더됐다.
+        "extended.배운 점": textarea("편집 단계에서 톤이 결정된다는 걸 배웠습니다."),
+      },
+      custom: [],
+    }
+  }
+
+  const loadLegacy = () =>
+    toExperienceV2(makeExperience({ type: "creative-work", content: legacyCreativeContent() }))
+
+  /** 확정본 '유형 / 매체' 13종을 템플릿에서 읽는다 — 목록을 테스트에 복제하지 않는다. */
+  const mediumOptions = (): string[] =>
+    getTemplateForType("creative-work")
+      .extensions.flatMap(s => s.blocks)
+      .find(b => b.key === "creative-info.유형 / 매체")?.options ?? []
+
+  it("질문이 같은 필드는 확정본 자리로 이관된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("creative-info.작품명 / 작업물명")?.value).toEqual(text("골목의 기록"))
+    expect(byKey("creative-info.작업 기간")?.value).toMatchObject({ start: "2024-03", end: "2024-06" })
+    expect(byKey("creative-info.사용 툴 / 기술")?.value).toMatchObject({ tags: ["Lightroom", "InDesign"] })
+    expect(byKey("creative-detail.작업 배경 / 컨셉")?.value).toEqual(
+      textarea("사라져가는 골목 문화를 기록하고 싶었습니다."),
+    )
+    expect(byKey("creative-detail.반응 / 피드백")?.value).toEqual(
+      textarea("졸업전시 우수작으로 선정됐습니다."),
+    )
+
+    // 옮긴 구 키는 '기타' 에 중복으로 되살아나지 않는다.
+    for (const oldKey of [
+      "cw-info.작품/작업물명",
+      "cw-info.제작 기간",
+      "cw-info.사용 도구",
+      "cw-info.의도/주제",
+      "cw-process.반응/성과",
+    ]) {
+      expect(v2.customBlocks.find(b => b.key === oldKey), oldKey).toBeUndefined()
+    }
+  })
+
+  /**
+   * 구 '분야'(7종)와 확정본 '유형 / 매체'(13종)는 **같은 질문**(이 작업의 매체가 무엇인가)이지만
+   * 선택지가 통째로 다시 짜였다. '디자인'은 새 목록에서 그래픽/브랜딩/웹·앱 UI/제품/공간으로
+   * 갈라졌으므로 어느 하나로 좁히면 **답이 둔갑한다** — 옮기지 않고 사용자가 원본을 보고 고르게 둔다
+   * (FRT-249 ⑨ 의 값 조건부 이관, 판정 단위는 필드가 아니라 **값**).
+   */
+  it("새 목록에 없는 '분야' 값은 이관하지 않고 '기타' 카드로 보존한다", () => {
+    const v2 = loadLegacy()
+
+    expect(v2.customBlocks.find(b => b.key === "cw-info.분야")?.value).toMatchObject({
+      selected: "디자인",
+    })
+    expect(
+      v2.extensionBlocks.find(b => b.key === "creative-info.유형 / 매체")?.value,
+    ).toMatchObject({ selected: "" })
+  })
+
+  /**
+   * 답이 새 목록에 그대로 남아 있으면 옮긴다. 안 옮기면 '유형 / 매체'는 값 없는 **required** 칸이
+   * 되고, 완료 저장된 레코드를 다시 연 사용자가 **바뀐 것도 없는 답을 다시 골라야** 저장된다.
+   * 옮길 때 선택지는 템플릿 것으로 정규화한다 — 저장값이 들고 온 옛 7종이 그대로 실리면
+   * `SingleSelectBlock` 이 그쪽을 우선해 확정본이 새로 준 13종을 영영 못 받는다.
+   */
+  it("확정본 목록에 그대로 남은 답('사진')은 옮기고 선택지도 확정본 것으로 바꾼다", () => {
+    const content = legacyCreativeContent()
+    const fields = content.fields as Record<string, BlockValue>
+    fields["cw-info.분야"] = {
+      type: "single-select",
+      selected: "사진",
+      options: ["디자인", "글", "영상", "음악", "사진", "일러스트", "기타"],
+    }
+    const v2 = toExperienceV2(makeExperience({ type: "creative-work", content }))
+
+    const moved = v2.extensionBlocks.find(b => b.key === "creative-info.유형 / 매체")
+    expect(moved?.value).toMatchObject({ selected: "사진" })
+    expect((moved?.value as SingleSelectBlockValue).options).toEqual(mediumOptions())
+    expect(v2.customBlocks.find(b => b.key === "cw-info.분야")).toBeUndefined()
+  })
+
+  /**
+   * 확정본 ② '제작 과정'은 구 4컬럼 표와 **라벨이 같은 textarea** 다. 타입이 달라
+   * `isInjectableInto` 가 막지 않으면 표가 통째로 사라진다 — 섹션 id 교체와 타입 판정이
+   * 이중으로 지키는 자리다.
+   */
+  it("타입이 달라진 필드는 확정본 자리에 실리지 않고 '기타' 카드로 보존한다", () => {
+    const v2 = loadLegacy()
+
+    const table = v2.customBlocks.find(b => b.key === "cw-process.제작 과정")
+    expect((table?.value as RepeatableCellBlockValue).rows).toHaveLength(1)
+    expect(v2.extensionBlocks.find(b => b.key === "creative-detail.제작 과정")?.value).toEqual(
+      textarea(""),
+    )
+
+    expect(v2.customBlocks.find(b => b.key === "cw-process.공개 링크")?.value).toMatchObject({
+      url: "https://behance.net/golmok",
+    })
+  })
+
+  /**
+   * 코어 증빙은 옮길 자리가 없다 — 확정본 ① 의 '작품 링크 / 파일'은 `repeatable-cell` 이라
+   * `file` 값을 받을 수 없다(해외경험이 쓴 `V2_CORE_SCOPED_MIGRATIONS` 는 타입이 맞을 때만 성립).
+   * 그래서 '기타'로 보존하는 것이 유일한 무손실 경로이고, 그 사실을 여기서 고정한다.
+   */
+  it("확정본에 대응 칸이 없는 값 · 코어 증빙 · 범용 확장 필드는 '기타' 카드로 보존된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    expect(byKey("cw-info.한 줄 소개")?.value).toEqual(text("골목을 기록한 독립 잡지"))
+    expect(byKey("cw-process.저작권/사용 범위")?.value).toEqual(text("CC BY-NC"))
+    expect(byKey("core.증빙 자료")?.value).toMatchObject({ fileName: "졸업전시-도록.pdf" })
+    // detail 섹션이 생기면서 범용 '확장 입력'이 걷힌다 — 그 값도 사라지지 않는다.
+    // (확정본 '이 작업이 나에게 남긴 것'으로의 이관은 FRT-248 범위다.)
+    expect(byKey("extended.배운 점")?.value).toEqual(
+      textarea("편집 단계에서 톤이 결정된다는 걸 배웠습니다."),
+    )
+  })
+
+  /**
+   * ⚠️ 선행 5종과 **반대 결론**을 지키는 그물이다. 봉사·해외경험은 코어 '내 역할/기여도'를 뺐지만
+   * 창작물은 빼지 않는다 — 구 템플릿에 role 앵커가 없어 이 칸이 실제로 렌더됐고, 빼면 사용자가
+   * 적어 둔 역할 서술이 '기타'로 밀리기 때문이다. 코어에 남기면 dedup 이 빈 것만 숨긴다.
+   */
+  it("코어 '내 역할/기여도'는 코어에 그대로 남는다 — 값이 '기타'로 밀리지 않는다", () => {
+    const v2 = loadLegacy()
+
+    expect(v2.coreBlocks.find(b => b.key === "core.내 역할/기여도")?.value).toEqual(
+      textarea("기획·촬영·편집을 모두 맡았습니다."),
+    )
+    expect(v2.customBlocks.find(b => b.key === "core.내 역할/기여도")).toBeUndefined()
+    // 반면 앵커가 있어 늘 비어 있던 코어 둘은 템플릿에서 아예 사라진다.
+    for (const gone of ["core.기간", "core.핵심 성과"]) {
+      expect(v2.coreBlocks.find(b => b.key === gone), gone).toBeUndefined()
+    }
+  })
+
+  /** 값만 새 키로 옮기고 숨김 상태를 두고 오면 사용자가 감춰 둔 칸이 혼자 다시 나타난다(FRT-210). */
+  it("숨김 키도 개명을 따라간다", () => {
+    const content = legacyCreativeContent()
+    content.hidden = ["cw-info.사용 도구"]
+    const v2 = toExperienceV2(makeExperience({ type: "creative-work", content }))
+
+    expect(v2.hiddenKeys).toContain("creative-info.사용 툴 / 기술")
+    expect(v2.hiddenKeys).not.toContain("cw-info.사용 도구")
+  })
+
+  describe("v1 레거시는 라벨로 매칭한다 (섹션 id 교체가 닿지 않는 경로)", () => {
+    /**
+     * v1 은 `fields` 맵이 없어 **라벨로** 매칭하므로 섹션 id 교체라는 방어선이 통째로 비껴간다.
+     * 구 '제작 과정'(표)과 확정본 '제작 과정'(textarea)은 라벨이 같아 여기서 정면으로 만나고,
+     * `isInjectableInto` 만이 값을 지킨다(FRT-210 Codex P1 과 같은 자리).
+     */
+    it("라벨이 같아도 타입이 다른 '제작 과정' 표는 '기타'로 보존된다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [],
+            extensionBlocks: [
+              {
+                id: "b1",
+                type: "repeatable-cell",
+                label: "제작 과정",
+                value: {
+                  type: "repeatable-cell",
+                  columns: [{ key: "step", label: "단계명", blockType: "text" }],
+                  rows: [{ id: "r1", cells: { step: "리서치" } }],
+                },
+              },
+            ],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      const preserved = v1.customBlocks.find(b => b.label === "제작 과정")
+      expect((preserved?.value as RepeatableCellBlockValue).rows).toHaveLength(1)
+      // v1 은 저장된 블록만 싣는다 — 표가 새 키를 달고 확장 블록으로 넘어가지 않아야 한다.
+      expect(v1.extensionBlocks.find(b => b.key === "creative-detail.제작 과정")).toBeUndefined()
+    })
+  })
+})

@@ -260,6 +260,29 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   // 파일 증빙은 select 와 달리 도메인이 닫혀 있지 않다 — `FileBlock` 이 옛 자유입력 evidenceType
   // 이 새 options 에 없으면 선택지에 덧붙여 살려 두므로(FileBlock.tsx), 옮겨도 값이 박히지 않는다.
   'overseas-challenges.증빙': 'overseas-program.증빙 자료',
+  // 창작물 확정본(FRT-267) — 구 `cw-info`/`cw-process` 10필드 중 **질문도 타입도 같은 다섯만** 옮긴다.
+  // 나머지는 옮기지 않고 orphan '기타' 카드에 남겨 사용자가 직접 판단하게 둔다:
+  //  · '분야'(디자인/글/영상/음악/사진/일러스트/기타 7종)→'유형 / 매체'(13종) 은 **같은 질문인데
+  //    선택지가 통째로 다시 짜였다.** 라벨까지 바뀌어 v1 라벨 매칭도 닿지 않는다. 값 조건부로
+  //    옮겨야 하므로 `SELECT_DOMAIN_MIGRATIONS` 가 맡는다(여기 넣으면 '디자인' 이 무조건 실린다).
+  //  · '제작 과정'(repeatable-cell 4컬럼)→'제작 과정'(textarea)·'공개 링크'(link)→'작품 링크 /
+  //    파일'(repeatable-cell) 은 타입이 달라 injectValue 가 못 싣는다. 전자는 **라벨까지 같아**
+  //    v1 라벨 매칭이 정면으로 닿는 자리라, `isInjectableInto` 가 유일한 방어선이다(FRT-210 Codex P1).
+  //  · '한 줄 소개'·'저작권/사용 범위' 는 확정본에 대응 칸이 없다. 전자를 코어 '한 줄 요약'으로
+  //    보내면 헤더 요약이 사용자 모르게 덮일 수 있어 옮기지 않는다.
+  //
+  // ⚠️ 구 `core.증빙 자료` 는 `V2_CORE_SCOPED_MIGRATIONS` 에도 넣지 않는다 — 확정본 ① 의 목적지가
+  //    '작품 링크 / 파일'(repeatable-cell) 뿐이라 `file` 값을 받을 타입 호환 자리가 없다.
+  //    옮기면 하류 injectValue 가 주입을 생략해 값이 어디에도 없이 사라진다(FRT-249 ⑩ 의 타입 가드).
+  'cw-info.작품/작업물명': 'creative-info.작품명 / 작업물명',
+  'cw-info.제작 기간': 'creative-info.작업 기간',
+  'cw-info.사용 도구': 'creative-info.사용 툴 / 기술',
+  // 확정본 '작업 배경 / 컨셉' 가이드가 "이 작품을 만든 배경, 컨셉, **의도**"라 구 '의도/주제'와
+  // 같은 질문이다. 타입도 textarea 로 같다.
+  'cw-info.의도/주제': 'creative-detail.작업 배경 / 컨셉',
+  // 확정본 '반응 / 피드백' 가이드가 조회수·반응·채택 사례를 묶어 물어 구 '반응/성과'와 같은 질문이다
+  // (SEMANTIC_GROUPS.achievement 도 이미 둘을 동의어로 묶고 있다).
+  'cw-process.반응/성과': 'creative-detail.반응 / 피드백',
 }
 
 /**
@@ -299,6 +322,22 @@ const SELECT_DOMAIN_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigration
     {
       from: 'overseas-info.경험 유형',
       to: 'overseas-program.경험 유형',
+      carry: carrySelectValue,
+    },
+  ],
+  // 창작물 확정본(FRT-267): '분야' 7종(디자인/글/영상/음악/사진/일러스트/기타) → '유형 / 매체' 13종.
+  // 새 목록에 **그대로** 남은 답은 '사진'·'기타' 둘뿐이고, 나머지 다섯은 이름이 바뀌었거나
+  // (글→글/문학 · 영상→영상/모션 · 음악→음악/사운드 · 일러스트→일러스트/그림) 여러 갈래로
+  // 쪼개졌다(디자인 → 그래픽/디자인 · 브랜딩 · 웹/앱 UI · 제품 · 공간). 어느 쪽이든 좁히면
+  // **답이 둔갑**하므로 옮기지 않고 사용자가 원본을 보고 직접 고르게 둔다.
+  //
+  // ⚠️ 위 라벨-변경 대체 금지 규칙의 예외다. 그 규칙의 근거는 "질문 자체가 달라졌다"인데
+  // ('대상'=누구를 도왔나 → '봉사 분야'=어떤 영역인가), 여기서는 라벨만 다듬였을 뿐 묻는 것이
+  // 그대로다(이 작업의 매체가 무엇인가). 판정 기준은 라벨이 아니라 **질문**이다(FRT-211).
+  'creative-work': [
+    {
+      from: 'cw-info.분야',
+      to: 'creative-info.유형 / 매체',
       carry: carrySelectValue,
     },
   ],
