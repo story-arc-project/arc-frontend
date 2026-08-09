@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { computeFormCards, isCardComplete, computeFormProgress } from "@/lib/utils/form-cards"
+import { partitionByCondition } from "@/lib/utils/conditional-fields"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks } from "@/lib/utils/block-utils"
 import type { FormCardSection, FormCardModel } from "@/lib/utils/form-cards"
@@ -189,6 +190,85 @@ describe("computeFormCards", () => {
     expect(r.cards.flatMap(c => c.blocks).map(b => b.label)).toContain("내 역할/기여도")
     // 값이 살아나도 카드 수는 그대로 둘이다(코어는 detail 버킷으로 들어간다).
     expect(r.visibleCategories).toEqual(["basic", "detail"])
+  })
+
+  /**
+   * FRT-267 리뷰 지적 — 위 두 테스트는 `computeFormCards` 만 본다. 실제 화면은 그 뒤에
+   * `partitionByCondition` 이 한 번 더 걸리므로, **둘을 함께 돌려야** 사용자가 보는 역할 칸이 나온다.
+   *
+   * ⚠️ 여기서 나오는 결론이 창작물의 의도된 동작이다: **'개인 작업'을 고르면 역할 칸이 하나도 없다.**
+   * `computeFormCards` 는 `visibleWhen` 을 보지 않고 템플릿 라벨을 전부 앵커로 삼으므로 확정본
+   * '역할'(SEMANTIC_GROUPS.role 동의어)이 빈 코어 '내 역할/기여도'를 항상 지우고, 그 '역할'은
+   * 조건 미충족이라 렌더되지 않는다. 확정본 §7 이 "'개인 작업' 외 선택 시 노출"로 정한 그대로다 —
+   * 혼자 한 작업에 역할을 묻지 않는 것이 확정본의 결정이고, 선행 5종(봉사·해외경험·독서·어학·자격증)은
+   * 아예 `CORE_EXCLUDE` 로 역할 칸을 없앴다.
+   *
+   * ⚠️ 그래도 **값은 어느 경로로도 잃지 않는다** — 아래 두 케이스가 그 방어선이다:
+   *  · 구 레코드의 코어 역할에 값이 있으면 dedup 이 못 지운다(`keepCoreOrExtended`)
+   *  · 팀에서 '역할'을 적고 '개인 작업'으로 되돌려도 `partitionByCondition` 은 빈 블록만 숨긴다
+   * 이 넷을 한 테스트에 묶는다. 어느 하나라도 뒤집히면(예: '역할' 라벨을 role 그룹 밖으로 바꾸거나
+   * `computeFormCards` 가 `visibleWhen` 을 보게 되면) 여기서 걸린다.
+   */
+  it("창작물: 개인/팀 값에 따라 화면에 남는 역할 칸이 갈리고, 값은 어느 쪽에서도 안 사라진다", () => {
+    const roleFieldsFor = (collab: string, coreRole = "") => {
+      const { core, sections } = sectionsFor("creative-work")
+      const withCore = core.map(b =>
+        b.label === "내 역할/기여도" && coreRole
+          ? { ...b, value: { type: "textarea" as const, text: coreRole } }
+          : b,
+      )
+      const withCollab = sections.map(s => ({
+        ...s,
+        blocks: s.blocks.map(b =>
+          b.label === "개인 / 팀" && collab
+            ? { ...b, value: { type: "single-select" as const, selected: collab, options: [] } }
+            : b,
+        ),
+      }))
+      const r = computeFormCards(withCore, withCollab, SECTION_LABEL_OVERRIDES["creative-work"])
+      const cardBlocks = r.cards.flatMap(c => c.blocks)
+      const allFlat = [...withCore, ...withCollab.flatMap(s => s.blocks)]
+      return partitionByCondition(cardBlocks, allFlat)
+        .visible.map(b => b.label)
+        .filter(l => l.includes("역할") || l.includes("기여"))
+    }
+
+    // 아직 안 고른 신규 기록 · '개인 작업' — 확정본대로 역할을 묻지 않는다.
+    expect(roleFieldsFor("")).toEqual([])
+    expect(roleFieldsFor("개인 작업")).toEqual([])
+    // 팀 작업 — 확정본 '역할' 하나만. 코어가 함께 나와 두 칸이 되면 안 된다.
+    expect(roleFieldsFor("팀 작업(2~5명)")).toEqual(["역할"])
+    // 구 레코드가 코어에 남긴 값은 '개인 작업'에서도 화면에 남는다(= 유실 없음).
+    expect(roleFieldsFor("개인 작업", "혼자 기획·촬영·편집")).toEqual(["내 역할/기여도"])
+  })
+
+  /**
+   * 위 마지막 방어선의 짝 — 팀에서 '역할'을 적은 뒤 '개인 작업'으로 되돌리는 경로.
+   * `partitionByCondition` 이 조건 미충족이어도 **빈 블록만** 숨기므로 적어 둔 값이 화면에 남는다
+   * (conditional-fields.ts 의 FRT-190 결론: 값 있는 필드를 숨기면 화면엔 없는데 저장 payload·
+   * AI 분석에는 남는 무음 잔존이 된다).
+   */
+  it("창작물: 팀에서 적은 '역할' 값은 '개인 작업'으로 되돌려도 화면에서 사라지지 않는다", () => {
+    const { core, sections } = sectionsFor("creative-work")
+    const edited = sections.map(s => ({
+      ...s,
+      blocks: s.blocks.map(b => {
+        if (b.label === "개인 / 팀") {
+          return { ...b, value: { type: "single-select" as const, selected: "개인 작업", options: [] } }
+        }
+        if (b.label === "역할") {
+          return { ...b, value: { type: "text" as const, text: "아트디렉터" } }
+        }
+        return b
+      }),
+    }))
+    const r = computeFormCards(core, edited, SECTION_LABEL_OVERRIDES["creative-work"])
+    const cardBlocks = r.cards.flatMap(c => c.blocks)
+    const allFlat = [...core, ...edited.flatMap(s => s.blocks)]
+    const { visible, hidden } = partitionByCondition(cardBlocks, allFlat)
+
+    expect(visible.map(b => b.label)).toContain("역할")
+    expect(hidden.map(b => b.label)).not.toContain("역할")
   })
 
   // ── FRT-178: 동아리가 확정본 4카드로 그려지는지 (문서 ①~④) ──

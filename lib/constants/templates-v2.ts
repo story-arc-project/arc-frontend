@@ -1950,6 +1950,14 @@ function creativeWorkExtensions(): TemplateSection[] {
           },
           // ⚠️ required 금지 — 조건부 노출이라 '개인 작업'을 고르면 화면에 없는 칸이 완료 저장을
           // 막는다(수상경력 '팀에서 내가 맡은 역할'과 같은 처리, FRT-211).
+          //
+          // ⚠️ 라벨 '역할'은 `SEMANTIC_GROUPS.role` 동의어다 — 수상경력이 '팀에서 내가 맡은 역할'로
+          // 그룹 밖에 있는 것과 **반대**이고, 그 차이가 화면을 가른다. `computeFormCards` 는
+          // `visibleWhen` 을 보지 않고 이 라벨을 앵커로 삼으므로 **빈 코어 '내 역할/기여도'가 항상
+          // dedup 된다** → '개인 작업'에서는 역할 칸이 하나도 남지 않는다. 확정본 §7 이 "'개인 작업'
+          // 외 선택 시 노출"로 정한 그대로이므로 의도된 결과지만, 값이 든 코어는 `keepCoreOrExtended`
+          // 가 남기므로 구 레코드는 잃지 않는다. 넷 다 form-cards.test.ts 가 고정한다 —
+          // 라벨을 role 그룹 밖으로 옮기면 팀 작업에서 역할 칸이 두 벌이 된다.
         },
         // 확정본이 가이드라인을 '—' 로 비운 칸. month~month 는 코어 '기간' 과 같은 period 위젯이라
         // 구 `cw-info.제작 기간` 값을 그대로 실을 수 있다(RENAMED_FIELD_KEYS).
