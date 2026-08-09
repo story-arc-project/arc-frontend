@@ -197,6 +197,8 @@ export default function ExperienceCard({
       role="button"
       tabIndex={0}
       aria-pressed={selected}
+      // FRT-86: 키보드로 이웃 기록을 넘길 때 목록이 선택 카드를 따라가기 위한 스크롤 타깃.
+      data-experience-id={experience.id}
       onClick={onClick}
       onKeyDown={e => {
         if (e.key === "Enter" || e.key === " ") {
@@ -206,8 +208,12 @@ export default function ExperienceCard({
       }}
       className={[
         "group relative bg-surface border rounded-lg p-4 cursor-pointer transition-colors",
+        // FRT-86: 선택은 테두리·배경 틴트에 좌측 accent bar 를 더해 훑는 중에도 눈에 걸리게 한다.
+        // 선택 상태에도 hover 반응(테두리 진해짐)을 남겨 "선택됨"과 "지금 가리키는 중"을 구분한다.
         selected
-          ? "border-brand bg-surface-brand/30"
+          ? "border-brand bg-surface-brand/30 hover:border-brand-dark " +
+            "before:content-[''] before:absolute before:left-0 before:top-3 before:bottom-3 " +
+            "before:w-[3px] before:rounded-r-full before:bg-brand"
           : "border-border hover:border-border-strong",
       ].join(" ")}
     >
