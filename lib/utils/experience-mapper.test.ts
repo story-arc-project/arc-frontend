@@ -5,6 +5,7 @@ import type {
   CustomEntry,
   ExperienceV2,
   RepeatableCellBlockValue,
+  SingleSelectBlockValue,
 } from "@/types/archive"
 import type { Experience } from "@/types/experience"
 import { getTemplateForType, TEMPLATE_VERSION } from "@/lib/constants/templates-v2"
@@ -1910,6 +1911,12 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
   const loadLegacy = () =>
     toExperienceV2(makeExperience({ type: "overseas", content: legacyOverseasContent() }))
 
+  /** 확정본 '경험 유형' 9종을 템플릿에서 읽는다 — 목록을 테스트에 복제하지 않는다. */
+  const overseasKindOptions = (): string[] =>
+    getTemplateForType("overseas")
+      .extensions.flatMap(s => s.blocks)
+      .find(b => b.key === "overseas-program.경험 유형")?.options ?? []
+
   it("질문이 같은 필드는 확정본 자리로 이관된다", () => {
     const v2 = loadLegacy()
     const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
@@ -1930,6 +1937,9 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
    * 이 테스트가 이번 작업의 그물이다. 구 '경험 유형'(교환학생/연수/여행/해외 인턴/기타)을 확정본
    * 9종으로 옮기면 저장된 '연수'가 새 목록에 없는 값으로 들어가 드롭다운에서 고를 수도 지울 수도
    * 없게 된다(FRT-247 봉사 '대상'·'활동 형태'와 같은 자리).
+   *
+   * ⚠️ 판정 단위는 **필드가 아니라 값**이다 — '연수'처럼 새 목록에 없는 답만 여기 해당한다.
+   * 그대로 남은 답('교환학생'·'기타')은 아래 테스트대로 이관한다(FRT-249, Codex P2).
    */
   it("선택지가 달라진 '경험 유형'은 이관하지 않고 '기타' 카드로 보존한다", () => {
     const v2 = loadLegacy()
@@ -1940,6 +1950,32 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
     expect(
       v2.extensionBlocks.find(b => b.key === "overseas-program.경험 유형")?.value,
     ).toMatchObject({ selected: "" })
+  })
+
+  /**
+   * 도메인이 교체돼도 **답 자체가 새 목록에 그대로 남아 있으면** 옮긴다. 안 옮기면 새 '경험 유형'
+   * 은 값 없는 **required** 칸이 되고, 완료 저장된 레코드를 다시 연 사용자는 **바뀐 것도 없는
+   * 답을 다시 골라야** 저장할 수 있다 — 코어 '기간' 에서 겪은 P1 과 같은 실패 양식이다.
+   *
+   * 옮길 때 선택지는 **템플릿 것으로 정규화**해야 한다. 저장값이 들고 온 옛 5종 목록을 그대로
+   * 실으면 `SingleSelectBlock` 이 그쪽을 우선해(`val.options.length > 0 ? val.options : ...`)
+   * 확정본이 새로 준 워킹홀리데이·해외 봉사 같은 선택지를 영영 못 받는다.
+   */
+  it("확정본 목록에 그대로 남은 답은 새 자리로 옮기고 선택지도 확정본 것으로 바꾼다", () => {
+    const content = legacyOverseasContent()
+    const fields = content.fields as Record<string, BlockValue>
+    fields["overseas-info.경험 유형"] = {
+      type: "single-select",
+      selected: "교환학생",
+      options: ["교환학생", "연수", "여행", "해외 인턴", "기타"],
+    }
+    const v2 = toExperienceV2(makeExperience({ type: "overseas", content }))
+
+    const moved = v2.extensionBlocks.find(b => b.key === "overseas-program.경험 유형")
+    expect(moved?.value).toMatchObject({ selected: "교환학생" })
+    expect((moved?.value as SingleSelectBlockValue).options).toEqual(overseasKindOptions())
+    // 옮긴 값이 '기타' 에 중복으로 남지 않는다.
+    expect(v2.customBlocks.find(b => b.key === "overseas-info.경험 유형")).toBeUndefined()
   })
 
   /**
@@ -2080,5 +2116,44 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
     expect(v1.extensionBlocks.find(b => b.key === "overseas-program.사용 언어")?.value).toEqual(
       text("독일어"),
     )
+  })
+
+  /**
+   * v1 도 v2 와 **같은 판정**을 받아야 한다. 한쪽만 값을 이어받으면 스키마 버전이 사용자 눈에
+   * 보이는 차이가 되고, 그건 v1 을 통째로 막았던 위 테스트가 피하려던 것과 같은 종류의 어긋남이다.
+   * v1 은 라벨로 매칭하므로 선택지 정규화도 여기서 해줘야 한다 — 저장 블록의 값을 그대로 두면
+   * `mergeSavedIntoTemplate` 이 옛 5종 목록째 실어 나른다.
+   */
+  it("v1 레거시도 같은 값 조건부 판정을 받는다 — 남은 답은 확정본 선택지로 매칭된다", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "overseas",
+        content: {
+          title: "베를린 교환학생",
+          summary: "",
+          status: "complete",
+          tags: [],
+          coreBlocks: [],
+          extensionBlocks: [
+            {
+              id: "b1",
+              type: "single-select",
+              label: "경험 유형",
+              value: {
+                type: "single-select",
+                selected: "교환학생",
+                options: ["교환학생", "연수", "여행", "해외 인턴", "기타"],
+              },
+            },
+          ],
+          customBlocks: [],
+        },
+      }),
+    )
+
+    const moved = v1.extensionBlocks.find(b => b.key === "overseas-program.경험 유형")
+    expect(moved?.value).toMatchObject({ selected: "교환학생" })
+    expect((moved?.value as SingleSelectBlockValue).options).toEqual(overseasKindOptions())
+    expect(v1.customBlocks.find(b => b.label === "경험 유형")).toBeUndefined()
   })
 })

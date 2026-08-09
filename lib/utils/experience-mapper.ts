@@ -267,25 +267,73 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
 }
 
 /**
- * v1 라벨 매칭을 **명시적으로 거부**할 (유형, 라벨) 쌍.
+ * **선택지 도메인이 통째로 교체된** single-select 의 구 키 → 새 키(유형 스코프).
  *
- * v2 는 섹션 id 를 갈아 키가 달라지면 값이 자동으로 orphan '기타' 로 흐른다. 하지만 **그
- * 방어선은 v2 만 지킨다** — v1 은 `fields` 맵이 없어 **라벨로** 템플릿 필드를 찾으므로,
- * 라벨이 그대로면 섹션 id 교체를 통과해 버린다(FRT-210 에서 확인한 구조, Codex P2).
+ * `RENAMED_FIELD_KEYS` 와 두 가지가 다르다.
  *
- * 여기 등록하는 것은 **라벨은 같은데 선택지 도메인이 통째로 교체된** 필드다. 타입이 같아
- * `isInjectableInto` 가 통과시키고, 렌더러는 `val.options` 를 우선하므로
- * (`SingleSelectBlock`: `val.options.length > 0 ? val.options : block.options`) 값을 실으면
- * **구 레코드가 옛 선택지 목록을 그대로 달고 새 키에 눌러앉는다** — 확정본이 새로 준 선택지를
- * 영영 못 받고, 다음 저장에서 그 상태가 v2 로 굳는다.
+ * 1. **값 조건부**다. 저장된 답이 새 선택지 목록에 **그대로 남아 있을 때만** 옮기고, 아니면
+ *    구 키를 손대지 않아 orphan '기타' 카드로 흐르게 둔다. 해석이 필요한 답을 시스템이 대신
+ *    정하지 않는다는 뜻이다 — 해외경험 '연수'는 새 목록의 '어학연수'로 좁히면 기업 연수를 다녀온
+ *    사람의 답이 둔갑하므로(FRT-211 의 '개명 vs 대체'), 사용자가 원본을 보고 직접 고르게 둔다.
+ * 2. 옮길 때 **선택지를 템플릿 것으로 정규화**한다. 저장값이 들고 온 옛 목록을 그대로 실으면
+ *    `SingleSelectBlock` 이 그쪽을 우선해(`val.options.length > 0 ? val.options : block.options`)
+ *    확정본이 새로 준 선택지를 영영 못 받고, 다음 저장에 그 상태가 굳는다.
  *
- * ⚠️ 라벨이 **바뀐** 대체(봉사 '대상'→'봉사 분야', 어학 '강점 영역'→'가능한 활용 영역')는
- * 여기 넣을 필요가 없다 — 라벨이 다르면 애초에 매칭되지 않고, `RENAMED_FIELD_KEYS` 에도
- * 일부러 넣지 않았다. 이 목록은 **라벨 동일 + 도메인 교체**라는 좁은 경우만 다룬다.
+ * 옮길 수 있는데 안 옮기면 새 필드는 **값 없는 required 칸**이 된다 — 완료 저장된 레코드를 다시
+ * 연 사용자가 **바뀐 것도 없는 답을 다시 골라야** 저장이 된다(FRT-249, Codex P1 과 같은 양식의 P2).
+ *
+ * 이 판정은 **v1·v2 양쪽에** 같게 적용한다. v2 는 섹션 id 가 갈려 키로, v1 은 `fields` 맵이 없어
+ * 라벨로 매칭하지만(FRT-210), 사용자에게 스키마 버전이 보이면 안 된다.
+ *
+ * ⚠️ 라벨이 **바뀐** 대체(봉사 '대상'→'봉사 분야', 어학 '강점 영역'→'가능한 활용 영역')는 여기
+ * 넣지 않는다 — 질문 자체가 달라진 것이라 값이 남아 있어도 옮기면 안 된다.
  */
-const V1_LABEL_MIGRATION_BLOCKLIST: Partial<Record<ExperienceTypeId, string[]>> = {
+const SELECT_DOMAIN_MIGRATIONS: Partial<Record<ExperienceTypeId, Record<string, string>>> = {
   // 해외경험 확정본(FRT-249): '경험 유형' 5종(교환학생/연수/여행/해외 인턴/기타) → 9종.
-  overseas: ['경험 유형'],
+  // 새 목록에 그대로 남은 답은 '교환학생'·'기타' 둘이고, 나머지 셋은 이름이 바뀌었다
+  // (연수→어학연수 · 여행→여행/자유 탐방 · 해외 인턴→해외 인턴/취업).
+  overseas: { 'overseas-info.경험 유형': 'overseas-program.경험 유형' },
+}
+
+/**
+ * 도메인이 교체된 select 의 저장값을 새 템플릿 블록에 실을 수 있으면 **템플릿 선택지로
+ * 정규화한** 값을, 아니면 `null`(→ orphan '기타' 보존)을 돌려준다.
+ */
+function carrySelectValue(
+  templateBlock: Block | undefined,
+  saved: BlockValue | undefined,
+): BlockValue | null {
+  if (!templateBlock || templateBlock.type !== 'single-select') return null
+  if (saved?.type !== 'single-select') return null
+  const options = templateBlock.options ?? []
+  if (!saved.selected || !options.includes(saved.selected)) return null
+  return { type: 'single-select', options: [...options], selected: saved.selected }
+}
+
+/**
+ * v2 `fields` 에 `SELECT_DOMAIN_MIGRATIONS` 를 적용한 사본을 돌려준다(원본 불변).
+ * `applyRenamedKeys` 와 같이 목적지가 이미 차 있으면 그쪽이 이긴다.
+ */
+function applySelectDomainMigrations(
+  fields: Record<string, BlockValue>,
+  typeId: ExperienceTypeId,
+  templateByKey: Map<string, Block>,
+): Record<string, BlockValue> {
+  let out = fields
+  for (const [oldKey, newKey] of Object.entries(SELECT_DOMAIN_MIGRATIONS[typeId] ?? {})) {
+    const legacy = out[oldKey]
+    if (!legacy) continue
+    const carried = carrySelectValue(templateByKey.get(newKey), legacy)
+    if (!carried) continue
+    const current = out[newKey]
+    const currentFilled =
+      current && !isBlockEmpty({ id: '', type: current.type, label: '', value: current })
+    if (currentFilled) continue
+    if (out === fields) out = { ...fields }
+    delete out[oldKey]
+    out[newKey] = carried
+  }
+  return out
 }
 
 /**
@@ -430,8 +478,18 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   if (content.schema_version === SCHEMA_VERSION_V2 && hasTemplate(exp.type)) {
     // 개명된 구 키는 새 키 자리로 옮겨 놓고 시작한다 — 라벨이 바뀌었다는 이유로 사용자가 같은
     // 정보를 다시 타이핑하게 만들지 않는다(RENAMED_FIELD_KEYS).
-    const fields = applyRenamedKeys(content.fields ?? {})
     const tmpl = getTemplateForType(typeId)
+    // 템플릿이 소비하는 키 → 블록. 도메인 교체 select 의 새 선택지를 읽는 데 쓰고,
+    // 아래 orphan 판정의 consumedKeys 도 이 맵의 키 집합이다.
+    const templateByKey = new Map<string, Block>()
+    for (const b of tmpl.commonCore.blocks) if (b.key) templateByKey.set(b.key, b)
+    for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) templateByKey.set(b.key, b)
+    // 선택지 도메인이 교체된 필드는 값이 새 목록에 남아 있을 때만 옮긴다(SELECT_DOMAIN_MIGRATIONS).
+    const fields = applySelectDomainMigrations(
+      applyRenamedKeys(content.fields ?? {}),
+      typeId,
+      templateByKey,
+    )
     const coreBlocks = tmpl.commonCore.blocks.map(b => {
       if (b.key === TITLE_KEY) return { ...b, value: { type: "text", text: title } as BlockValue }
       if (b.key === SUMMARY_KEY) return { ...b, value: { type: "text", text: summary } as BlockValue }
@@ -441,9 +499,7 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
       .flatMap(s => s.blocks)
       .map(b => injectValue(b, b.key ? fields[b.key] : undefined))
     // 템플릿이 소비한 키 집합. 그 밖의 fields 값은 구 템플릿 잔재이므로 custom 으로 보존한다.
-    const consumedKeys = new Set<string>()
-    for (const b of tmpl.commonCore.blocks) if (b.key) consumedKeys.add(b.key)
-    for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) consumedKeys.add(b.key)
+    const consumedKeys = new Set(templateByKey.keys())
     return {
       ...base,
       coreBlocks,
@@ -492,32 +548,41 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     }
     extTemplateLabels.add(b.label)
   }
-  // 선택지 도메인이 교체된 라벨은 v1 에서도 매칭시키지 않는다 — v2 의 섹션 id 교체와 같은 결과
-  // (orphan '기타' 보존)를 내려는 것이다(V1_LABEL_MIGRATION_BLOCKLIST).
-  const blockedLabels = new Set(V1_LABEL_MIGRATION_BLOCKLIST[typeId] ?? [])
+  // 선택지 도메인이 교체된 필드는 v1 에서도 v2 와 **같은 값 조건부 판정**을 받는다
+  // (SELECT_DOMAIN_MIGRATIONS). v1 은 라벨로 매칭하므로 새 템플릿 블록을 라벨로 찾아 둔다.
+  const domainMigratedByLabel = new Map<string, Block>()
+  for (const newKey of Object.values(SELECT_DOMAIN_MIGRATIONS[typeId] ?? {})) {
+    const tb = extTemplateByKey.get(newKey)
+    if (tb) domainMigratedByLabel.set(tb.label, tb)
+  }
   // 타입이 호환되지 않는 매칭은 키를 붙이지 않고 '기타' 로 보낸다(isInjectableInto).
   const keyedExt = savedExt.map(b => {
+    // 도메인 교체 select 는 값이 새 목록에 남아 있을 때만 싣고, 그때 선택지를 템플릿 것으로 바꾼다.
+    const domainTb = domainMigratedByLabel.get(b.label)
+    const carried = domainTb ? carrySelectValue(domainTb, b.value) : null
     const injectable = (key: string | undefined) => {
-      if (blockedLabels.has(b.label)) return false
+      if (domainTb) return !!carried && key === domainTb.key
       const tb = key ? extTemplateByKey.get(key) : undefined
       return !!tb && isInjectableInto(tb.type, b.type)
     }
+    /** 매칭이 성사된 블록에는 정규화한 값을 실어 옛 선택지 목록이 따라오지 않게 한다. */
+    const matched = (block: Block): Block => (carried ? { ...block, value: carried } : block)
     if (b.key) {
       const renamed = RENAMED_FIELD_KEYS[b.key]
       const keyed = renamed && !claimedKeys.has(renamed) ? { ...b, key: renamed } : b
       // 현재 템플릿이 그 키를 갖고 있는데 값을 못 실으면 매칭을 포기한다 — 저장 왕복 때 사라진다.
       const blocked = !!keyed.key && extTemplateKeys.has(keyed.key) && !injectable(keyed.key)
-      return { block: blocked ? { ...keyed, key: undefined } : keyed, blocked }
+      return { block: blocked ? { ...keyed, key: undefined } : matched(keyed), blocked }
     }
     const current = extKeyByLabel[b.label]
     if (current) {
       return injectable(current)
-        ? { block: { ...b, key: current }, blocked: false }
+        ? { block: matched({ ...b, key: current }), blocked: false }
         : { block: { ...b, key: undefined }, blocked: true }
     }
     const alias = renamedExtKeys[b.label]
     const usable = !!alias && !claimedKeys.has(alias) && injectable(alias)
-    return { block: { ...b, key: usable ? alias : undefined }, blocked: false }
+    return { block: usable ? matched({ ...b, key: alias }) : { ...b, key: undefined }, blocked: false }
   })
   const matchedExt: Block[] = []
   const orphanExt: Block[] = []
