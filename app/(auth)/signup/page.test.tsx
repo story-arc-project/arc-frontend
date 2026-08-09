@@ -268,6 +268,31 @@ describe("회원가입 verify — 코드 재발송 결과 안내", () => {
     });
   });
 
+  // 거울상. 이 방향이 없으면 진입 시 setResendError(null) 을 지워도 아무 테스트가 빨개지지 않는다.
+  it("재발송 중에는 직전 회차 실패 문구도 지운 채 기다린다", async () => {
+    let settleResend!: () => void;
+    const pendingResend = new Promise<void>((resolve) => {
+      settleResend = () => resolve();
+    });
+    post
+      .mockRejectedValueOnce(new TypeError("Failed to fetch")) // 1회차 실패
+      .mockReturnValueOnce(pendingResend as ReturnType<typeof api.post>); // 2회차 — 비행 중
+    await renderVerifyStep();
+
+    await clickResend();
+    expect(screen.getByText(NETWORK_MESSAGE)).toBeDefined();
+
+    await clickResend();
+
+    expect(screen.getByRole("button", { name: "보내는 중..." })).toBeDefined();
+    expect(screen.queryByText(NETWORK_MESSAGE)).toBeNull();
+
+    await act(async () => {
+      settleResend();
+      await pendingResend;
+    });
+  });
+
   // 재발송 결과는 버튼에 포커스가 머문 채 비동기로 나타난다 —
   // 문단을 그냥 끼워 넣으면 스크린리더 사용자는 성공·실패를 전혀 통보받지 못한다.
   it("재발송 결과를 보조기술이 읽을 수 있게 노출한다", async () => {
