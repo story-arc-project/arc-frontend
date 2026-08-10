@@ -18,7 +18,7 @@ import {
   getTemplateForType,
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
-import { uid, createGroupBlock, isBlockEmpty } from "@/lib/utils/block-utils"
+import { uid, cloneBlocks, createGroupBlock, isBlockDiscardable, isBlockEmpty } from "@/lib/utils/block-utils"
 import { normalizeHiddenKeys, parseHiddenKeys } from "@/lib/utils/hidden-fields"
 
 /**
@@ -260,6 +260,29 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   // 파일 증빙은 select 와 달리 도메인이 닫혀 있지 않다 — `FileBlock` 이 옛 자유입력 evidenceType
   // 이 새 options 에 없으면 선택지에 덧붙여 살려 두므로(FileBlock.tsx), 옮겨도 값이 박히지 않는다.
   'overseas-challenges.증빙': 'overseas-program.증빙 자료',
+  // 창작물 확정본(FRT-267) — 구 `cw-info`/`cw-process` 10필드 중 **질문도 타입도 같은 다섯만** 옮긴다.
+  // 나머지는 옮기지 않고 orphan '기타' 카드에 남겨 사용자가 직접 판단하게 둔다:
+  //  · '분야'(디자인/글/영상/음악/사진/일러스트/기타 7종)→'유형 / 매체'(13종) 은 **같은 질문인데
+  //    선택지가 통째로 다시 짜였다.** 라벨까지 바뀌어 v1 라벨 매칭도 닿지 않는다. 값 조건부로
+  //    옮겨야 하므로 `SELECT_DOMAIN_MIGRATIONS` 가 맡는다(여기 넣으면 '디자인' 이 무조건 실린다).
+  //  · '제작 과정'(repeatable-cell 4컬럼)→'제작 과정'(textarea)·'공개 링크'(link)→'작품 링크 /
+  //    파일'(repeatable-cell) 은 타입이 달라 injectValue 가 못 싣는다. 전자는 **라벨까지 같아**
+  //    v1 라벨 매칭이 정면으로 닿는 자리라, `isInjectableInto` 가 유일한 방어선이다(FRT-210 Codex P1).
+  //  · '한 줄 소개'·'저작권/사용 범위' 는 확정본에 대응 칸이 없다. 전자를 코어 '한 줄 요약'으로
+  //    보내면 헤더 요약이 사용자 모르게 덮일 수 있어 옮기지 않는다.
+  //
+  // ⚠️ 구 `core.증빙 자료` 는 `V2_CORE_SCOPED_MIGRATIONS` 에도 넣지 않는다 — 확정본 ① 의 목적지가
+  //    '작품 링크 / 파일'(repeatable-cell) 뿐이라 `file` 값을 받을 타입 호환 자리가 없다.
+  //    옮기면 하류 injectValue 가 주입을 생략해 값이 어디에도 없이 사라진다(FRT-249 ⑩ 의 타입 가드).
+  'cw-info.작품/작업물명': 'creative-info.작품명 / 작업물명',
+  'cw-info.제작 기간': 'creative-info.작업 기간',
+  'cw-info.사용 도구': 'creative-info.사용 툴 / 기술',
+  // 확정본 '작업 배경 / 컨셉' 가이드가 "이 작품을 만든 배경, 컨셉, **의도**"라 구 '의도/주제'와
+  // 같은 질문이다. 타입도 textarea 로 같다.
+  'cw-info.의도/주제': 'creative-detail.작업 배경 / 컨셉',
+  // 확정본 '반응 / 피드백' 가이드가 조회수·반응·채택 사례를 묶어 물어 구 '반응/성과'와 같은 질문이다
+  // (SEMANTIC_GROUPS.achievement 도 이미 둘을 동의어로 묶고 있다).
+  'cw-process.반응/성과': 'creative-detail.반응 / 피드백',
 }
 
 /**
@@ -302,16 +325,34 @@ const SELECT_DOMAIN_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigration
       carry: carrySelectValue,
     },
   ],
+  // 창작물 확정본(FRT-267): '분야' 7종(디자인/글/영상/음악/사진/일러스트/기타) → '유형 / 매체' 13종.
+  // 새 목록에 **그대로** 남은 답은 '사진'·'기타' 둘뿐이고, 나머지 다섯은 이름이 바뀌었거나
+  // (글→글/문학 · 영상→영상/모션 · 음악→음악/사운드 · 일러스트→일러스트/그림) 여러 갈래로
+  // 쪼개졌다(디자인 → 그래픽/디자인 · 브랜딩 · 웹/앱 UI · 제품 · 공간). 어느 쪽이든 좁히면
+  // **답이 둔갑**하므로 옮기지 않고 사용자가 원본을 보고 직접 고르게 둔다.
+  //
+  // ⚠️ 위 라벨-변경 대체 금지 규칙의 예외다. 그 규칙의 근거는 "질문 자체가 달라졌다"인데
+  // ('대상'=누구를 도왔나 → '봉사 분야'=어떤 영역인가), 여기서는 라벨만 다듬였을 뿐 묻는 것이
+  // 그대로다(이 작업의 매체가 무엇인가). 판정 기준은 라벨이 아니라 **질문**이다(FRT-211).
+  'creative-work': [
+    {
+      from: 'cw-info.분야',
+      to: 'creative-info.유형 / 매체',
+      carry: carrySelectValue,
+    },
+  ],
 }
 
 /**
- * 출발 키가 `core.*` 라 **전역 맵에 넣을 수 없는** 이관(v2 전용).
+ * 출발 키가 `core.*` 라 **전역 맵에 넣을 수 없는** 이관.
  *
  * `RENAMED_FIELD_KEYS` 에 `core.증빙 자료` 를 출발점으로 넣으면 그 키를 쓰는 다른 9유형까지
  * 함께 끌려간다. 유형 스코프라야 표현되는 이관이다(FRT-249, Codex P2).
  *
- * v1 은 대상이 아니다 — v1 코어 블록은 라벨 그대로 `coreBlocks` 에 남고 `CORE_EXCLUDE` 가
- * 적용되지 않아 화면에서 사라지지 않는다(그 간극은 FRT-246 이 다룬다).
+ * ⚠️ 이름은 `V2_` 로 남아 있지만 **v1 레코드도 같은 규칙을 탄다**(FRT-267 Codex P2). v1 은
+ * `fields` 맵이 없어 `applyScopedMigrations` 가 닿지 않으므로, v1 경로가 저장된 코어 배열을
+ * 직접 훑어 같은 이관을 수행한다(`toExperienceV2` 꼬리). 한쪽만 이관하면 같은 유형인데
+ * 레코드 세대에 따라 권위 있는 칸의 개수가 갈린다.
  */
 const V2_CORE_SCOPED_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigration[]>> = {
   // 개편 전 해외경험 폼은 코어 증빙(`isEvidenceBlock` 이라 dedup 을 안 타 '활동 증빙' 카드로
@@ -320,6 +361,23 @@ const V2_CORE_SCOPED_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigratio
   // 그 파일은 '기타' 로 밀리고 ① 증빙 칸은 빈 채로 남는다.
   overseas: [
     { from: 'core.증빙 자료', to: 'overseas-program.증빙 자료', carry: carryCompatibleValue },
+  ],
+  // 창작물은 구 템플릿에 role 앵커가 없어 코어 '내 역할/기여도'가 실제로 렌더됐다 — 값이 든
+  // 레코드가 실재한다. 그 코어를 **남겨 두기만 하면** 확정본 '역할'과 함께 두 칸이 살아나는데,
+  // 둘 다 값이 있으면 `pickValue` 가 정확 라벨을 먼저 고르므로(build-portfolio.ts) 사용자가 새
+  // '역할'을 고쳐도 포트폴리오는 **옛 코어 값을 계속 발행한다** — 화면과 산출물이 어긋나는
+  // 무음 오염이다(FRT-267 Codex P2). 값을 확정본 칸으로 옮겨 권위 있는 칸을 하나로 만든다.
+  //
+  // 이관 후 코어는 비므로 `keepCoreOrExtended` 가 숨기고, 옮겨진 값은 '개인 작업'을 골라도
+  // 화면에 남는다(`partitionByCondition` 은 **빈** 블록만 숨긴다). textarea→text 는
+  // `isInjectableInto` 가 허용하고 문자열은 그대로 보존된다 — 위젯만 한 줄로 좁아진다.
+  // ⚠️ v1 레코드도 같은 이관을 받는다 — 한때 "v1 은 값 유실이 없으니 두 칸이 남아도 된다"고
+  //    미뤘지만, 남는 두 칸이 바로 위에 적은 무음 오염 그 자체였다(FRT-267 Codex P2).
+  // ⚠️ 확정본 '역할'은 한 줄 `text` 다 — 여러 줄 값은 `carryIntoSingleLine` 이 걸러 구 코어 칸에
+  //    남긴다. 옮기면 `<input>` 이 개행을 지워 문단이 사라진다(그때는 칸이 둘로 남지만, 화면에
+  //    둘 다 보이므로 사용자가 판단할 수 있다 — 값이 뭉개지는 쪽이 훨씬 나쁘다).
+  'creative-work': [
+    { from: 'core.내 역할/기여도', to: 'creative-info.역할', carry: carryIntoSingleLine },
   ],
 }
 
@@ -345,6 +403,27 @@ function carryCompatibleValue(
 ): BlockValue | null {
   if (!templateBlock) return null
   return isInjectableInto(templateBlock.type, saved.type) ? saved : null
+}
+
+/**
+ * `carryCompatibleValue` 에 **"한 줄 칸에 여러 줄을 넣지 않는다"**를 더한다.
+ *
+ * `isInjectableInto` 는 text↔textarea 를 호환으로 본다 — 저장 형식이 같은 문자열이니 맞는 말이다.
+ * 그런데 목적지가 `text` 면 화면에 뜨는 것은 `<input>` 이고, **브라우저가 input value 에서 개행을
+ * 지운다.** 문단이 든 구 '내 역할/기여도'를 그대로 옮기면 사용자는 첫 화면부터 한 줄로 뭉개진 값을
+ * 보고, 한 글자만 고쳐도 그 뭉개진 값이 저장된다 — 조용한 데이터 손실이다(FRT-267 Codex P2).
+ *
+ * 여러 줄이면 옮기지 않는다. 값은 구 코어 칸에 그대로 남아 화면에도 보이고 발행에도 쓰인다 —
+ * 옮길 수 없는 값을 시스템이 뭉개는 대신 원본을 두고 사용자가 판단하게 한다(`carrySelectValue` 와 같은 철학).
+ */
+function carryIntoSingleLine(
+  templateBlock: Block | undefined,
+  saved: BlockValue,
+): BlockValue | null {
+  const carried = carryCompatibleValue(templateBlock, saved)
+  if (!carried || templateBlock?.type !== 'text') return carried
+  const raw = carried.type === 'text' || carried.type === 'textarea' ? carried.text : ''
+  return /[\r\n]/.test(raw) ? null : carried
 }
 
 /**
@@ -470,7 +549,7 @@ function orphanFieldsToBlocks(
     if (!value || typeof value !== "object" || !("type" in value)) continue
     const label = key.includes(".") ? key.slice(key.indexOf(".") + 1) : key
     const block: Block = { id: uid(), key, type: value.type, label, value }
-    if (isBlockEmpty(block)) continue
+    if (isBlockDiscardable(block)) continue
     out.push(block)
   }
   return out
@@ -592,14 +671,25 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   // 선택지 도메인이 교체된 필드는 v1 에서도 v2 와 **같은 값 조건부 판정**을 받는다
   // (SELECT_DOMAIN_MIGRATIONS). v1 은 라벨로 매칭하므로 새 템플릿 블록을 라벨로 찾아 둔다.
   const domainMigratedByLabel = new Map<string, Block>()
-  for (const { to } of SELECT_DOMAIN_MIGRATIONS[typeId] ?? []) {
+  const domainMigratedByKey = new Map<string, Block>()
+  for (const { from, to } of SELECT_DOMAIN_MIGRATIONS[typeId] ?? []) {
     const tb = extTemplateByKey.get(to)
-    if (tb) domainMigratedByLabel.set(tb.label, tb)
+    if (!tb) continue
+    domainMigratedByKey.set(from, tb)
+    domainMigratedByLabel.set(tb.label, tb)
+    // ⚠️ 목적지 라벨만 색인하면 **라벨이 바뀐 규칙에는 조회가 빗나간다.** 선행 유형은 선택지만
+    // 갈리고 라벨은 그대로여서 목적지 라벨 == 저장 라벨이었지만, 창작물은 '분야'→'유형 / 매체'로
+    // 라벨까지 갈렸다(FRT-267 Codex P2). 구 키에서 원래 라벨을 뽑아 함께 색인한다 — 안 하면
+    // 값이 새 목록에 그대로 있는데도 '기타'로 밀리고 required 칸은 빈 채 남아, 사용자가 바뀐 것도
+    // 없는 답을 다시 골라야 저장된다.
+    const sourceLabel = from.slice(from.indexOf('.') + 1)
+    if (sourceLabel) domainMigratedByLabel.set(sourceLabel, tb)
   }
   // 타입이 호환되지 않는 매칭은 키를 붙이지 않고 '기타' 로 보낸다(isInjectableInto).
   const keyedExt = savedExt.map(b => {
     // 도메인 교체 select 는 값이 새 목록에 남아 있을 때만 싣고, 그때 선택지를 템플릿 것으로 바꾼다.
-    const domainTb = domainMigratedByLabel.get(b.label)
+    const domainTb =
+      (b.key ? domainMigratedByKey.get(b.key) : undefined) ?? domainMigratedByLabel.get(b.label)
     const carried = domainTb ? carrySelectValue(domainTb, b.value) : null
     const injectable = (key: string | undefined) => {
       if (domainTb) return !!carried && key === domainTb.key
@@ -609,7 +699,9 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     /** 매칭이 성사된 블록에는 정규화한 값을 실어 옛 선택지 목록이 따라오지 않게 한다. */
     const matched = (block: Block): Block => (carried ? { ...block, value: carried } : block)
     if (b.key) {
-      const renamed = RENAMED_FIELD_KEYS[b.key]
+      // 도메인 교체 규칙도 개명과 같은 자리에서 키를 갈아준다 — 값이 새 목록에 남았을 때만
+      // `injectable` 이 통과하므로, 못 옮길 값은 여기서 키가 갈려도 곧바로 blocked 로 떨어진다.
+      const renamed = RENAMED_FIELD_KEYS[b.key] ?? domainMigratedByKey.get(b.key)?.key
       const keyed = renamed && !claimedKeys.has(renamed) ? { ...b, key: renamed } : b
       // 현재 템플릿이 그 키를 갖고 있는데 값을 못 실으면 매칭을 포기한다 — 저장 왕복 때 사라진다.
       const blocked = !!keyed.key && extTemplateKeys.has(keyed.key) && !injectable(keyed.key)
@@ -621,7 +713,8 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
         ? { block: matched({ ...b, key: current }), blocked: false }
         : { block: { ...b, key: undefined }, blocked: true }
     }
-    const alias = renamedExtKeys[b.label]
+    // 키 없는 v1 블록은 라벨이 유일한 단서다 — 개명 별칭이 없으면 도메인 교체 목적지를 쓴다.
+    const alias = renamedExtKeys[b.label] ?? domainTb?.key
     const usable = !!alias && !claimedKeys.has(alias) && injectable(alias)
     return { block: usable ? matched({ ...b, key: alias }) : { ...b, key: undefined }, blocked: false }
   })
@@ -634,12 +727,66 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     // 빈 extended.* 항목이 흔한데, 그대로 custom 으로 올리면 '기타' 카드에 빈 레거시 필드가
     // 쌓이고 완료 저장이 이를 영구화한다(빈 group 만 정리, 빈 field custom 은 안 지움).
     if (matched) matchedExt.push(b)
-    else if (!isBlockEmpty(b)) orphanExt.push(b)
+    else if (!isBlockDiscardable(b)) orphanExt.push(b)
   }
+
+  // v2 는 `applyScopedMigrations` 로 코어 잔재를 확정본 목적지로 옮기지만, v1 은 저장 배열을
+  // 그대로 통과시켜 그 이관이 통째로 빠져 있었다. "값이 사라지진 않으니 괜찮다"고 미뤄 뒀는데
+  // **틀린 근거였다 — 값 유실보다 나쁜 것이 무음 오염이다.** 코어 원본이 살아 있는 채로 폼이
+  // 확정본 칸을 materialize 하면 권위 있는 칸이 둘이 되고, 발행(`pickValue`)은 정확 라벨인 코어
+  // 쪽을 먼저 골라 **사용자가 새 칸에 고쳐 쓴 값 대신 옛 값을 내보낸다**(FRT-267 Codex P2).
+  // v2 에서 이미 고친 것과 같은 기전이다 — 한쪽만 고치면 레코드 세대에 따라 결과가 갈린다.
+  //
+  // 이관에 성공한 코어 블록은 **현재 템플릿에 그 라벨이 남아 있으면 빈 템플릿 블록으로 되돌리고**
+  // (v2 가 `delete fields[from]` 뒤 템플릿에서 다시 짜는 것과 같은 결과 — 빈 코어는 dedup 이 숨긴다),
+  // `CORE_EXCLUDE` 로 사라진 라벨이면 뺀다. 원본을 남기면 이관해 놓고 칸을 둘로 만드는 셈이다.
+  const coreTemplateByLabel = new Map(tmpl.commonCore.blocks.map(b => [b.label, b]))
+  /** 이관된 코어 블록 → 그 자리에 남길 빈 템플릿 블록(`undefined` 면 제거). */
+  const consolidatedCore = new Map<Block, Block | undefined>()
+  for (const { from, to, carry } of V2_CORE_SCOPED_MIGRATIONS[typeId] ?? []) {
+    const tb = extTemplateByKey.get(to)
+    if (!tb) continue
+    const fromLabel = from.slice(from.indexOf('.') + 1)
+    const source = savedCore.find(b => (b.key ? b.key === from : b.label === fromLabel))
+    if (!source || isBlockDiscardable(source)) continue
+    const carried = carry(tb, source.value)
+    if (!carried) continue
+    // 목적지가 이미 차 있으면 코어 잔재는 넣지 않는다(v2 와 같은 우선순위 — 유형 섹션 쪽이 먼저다).
+    const idx = matchedExt.findIndex(b => b.key === to)
+    if (idx >= 0 && !isBlockDiscardable(matchedExt[idx])) continue
+    // ⚠️ 값을 그냥 얹지 않고 `injectValue` 를 태운다 — v2 는 코어를 다시 짜며 이 함수를 거쳐
+    // text↔textarea 를 목적지 타입으로 **변환**하는데, v1 만 원본 타입을 그대로 실으면 같은
+    // 이관인데 저장된 값의 타입이 세대별로 갈린다(위젯이 textarea 로 렌더돼 확정본과 어긋난다).
+    const dest = injectValue(cloneBlocks([tb])[0], carried)
+    if (idx >= 0) matchedExt[idx] = dest
+    else matchedExt.push(dest)
+    const coreTpl = coreTemplateByLabel.get(source.label)
+    consolidatedCore.set(source, coreTpl ? cloneBlocks([coreTpl])[0] : undefined)
+  }
+
+  // v2 는 코어를 현재 템플릿에서 다시 짜므로 `CORE_EXCLUDE` 가 저절로 적용되지만, v1 은 저장된
+  // 코어 배열을 그대로 통과시켜 **확정본이 뺀 칸이 되살아난다.** 빈 코어 '증빙 자료' 하나가
+  // `computeFormCards` 에서 dedup 없이 evidence 버킷으로 직행해(코어 증빙은 항상 그 카드에 넣는다)
+  // 2카드 설계인 유형에 **쓸모없는 세 번째 카드**를 만든다 — 채울 것도 없는 카드라 진행도만 막는다.
+  // (창작물만의 문제가 아니다 — 봉사·해외경험 등 `CORE_EXCLUDE` 를 쓰는 유형 전부가 같았다.)
+  //
+  // ⚠️ **버릴 수 있는 것만 버린다.** 값이 든 코어 블록은 확정본이 그 칸을 뺐더라도 남긴다 — 사용자가
+  // 적어 둔 것을 화면에서 지우는 쪽이 카드 하나 더 뜨는 것보다 훨씬 나쁘다(`orphanExt` 승격 기준과 같다).
+  // 판정에 `isBlockEmpty` 가 아니라 `isBlockDiscardable` 을 쓰는 이유가 여기 있다: 파일 없이 설명·
+  // 증빙 유형만 적어 둔 증빙 블록은 `isBlockEmpty` 로 **비어 있어서**, 그 기준으로 버리면 사용자가
+  // 입력한 메타데이터가 다음 저장에 영구 삭제된다(FRT-267 Codex P2).
+  const currentCoreLabels = new Set(coreTemplateByLabel.keys())
+  const liveCore = savedCore.flatMap(b => {
+    if (consolidatedCore.has(b)) {
+      const replacement = consolidatedCore.get(b)
+      return replacement ? [replacement] : []
+    }
+    return currentCoreLabels.has(b.label) || !isBlockDiscardable(b) ? [b] : []
+  })
 
   return {
     ...base,
-    coreBlocks: savedCore.map(b => (b.key ? b : { ...b, key: coreKeyByLabel[b.label] })),
+    coreBlocks: liveCore.map(b => (b.key ? b : { ...b, key: coreKeyByLabel[b.label] })),
     extensionBlocks: matchedExt,
     customBlocks: [...savedCustom, ...orphanExt],
   }

@@ -639,6 +639,68 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
   });
 
   /**
+   * 창작물(FRT-267)도 `CORE_EXCLUDE` 로 코어 '기간'을 빼고 '작업 기간'으로 시점을 받는다.
+   * 여기에는 **구 `cw-info.제작 기간` 이라는 두 번째 orphan** 이 더 있다 — 확정본 개편으로 그
+   * 키도 화면에서 사라지므로, 새 '작업 기간'이 둘 다 이겨야 한다.
+   */
+  describe("창작물은 '작업 기간'을 발행 기간으로 쓴다 (FRT-267)", () => {
+    function creativeExp(fields: Record<string, unknown>): Experience {
+      return makeExp({
+        type: "creative-work",
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "골목의 기록",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const WORK_PERIOD = { type: "period", start: "2024-03-01", end: "2024-06-30", isCurrent: false };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+    const OLD_SECTION_PERIOD = {
+      type: "period",
+      start: "2020-05-01",
+      end: "2020-08-31",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '작업 기간'이 orphan 된 옛 기간 둘을 모두 이긴다", () => {
+      const post = experienceToPost(
+        creativeExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "cw-info.제작 기간": OLD_SECTION_PERIOD,
+          "creative-info.작업 기간": WORK_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.06");
+    });
+
+    it("'작업 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(creativeExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("창작물 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("creative-work")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "작업 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(creativeExp({ [key as string]: WORK_PERIOD })).period).toBe(
+        "2024.03 – 2024.06",
+      );
+    });
+  });
+
+  /**
    * 봉사(FRT-247)도 `CORE_EXCLUDE` 로 코어 '기간'을 빼고 '활동 기간'으로 시점을 받는다.
    * 독서와 같은 자리에서 같은 함정을 밟는다 — orphan 된 `core.기간` 은 라벨이 정확히 '기간'
    * 이라 `pickValue` 의 정확-라벨 우선 정렬에서 동의어 '활동 기간' 을 이긴다.

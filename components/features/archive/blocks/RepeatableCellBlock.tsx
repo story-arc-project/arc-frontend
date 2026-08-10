@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState, type ReactNode } from "react"
-import { CornerUpLeft, Plus, Trash2 } from "lucide-react"
+import { CornerUpLeft, ExternalLink, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { RequiredDot } from "@/components/ui/required-dot"
 import { useProjectLink } from "@/contexts/ProjectLinkContext"
@@ -30,6 +30,8 @@ import {
   parsePeriodString,
   truncateToMonth,
 } from "@/lib/utils/period-format"
+import { getSafeHref } from "@/lib/utils/url-utils"
+import { capture } from "@/lib/analytics"
 import FileCellInput from "./file/FileCellInput"
 import RoleChips from "./RoleChips"
 import { usePlaceholderRow } from "./usePlaceholderRow"
@@ -183,6 +185,19 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
                               아직 지원하지 않는 입력 유형이에요 — 저장된 값을 그대로 보여줘요.
                             </span>
                           </>
+                        ) : col.blockType === "link" && getSafeHref(display) ? (
+                          // 링크 열은 글자로 접으면 보는 사람이 주소를 손으로 옮겨 적어야 한다 —
+                          // 이 표가 대체한 `공개 링크`(LinkBlock)는 조회에서 실제 anchor 였다(FRT-267 Codex P2).
+                          // 안전하지 않은 스킴은 아래 일반 텍스트 분기로 떨어져 글자로만 보인다.
+                          <a
+                            href={getSafeHref(display) as string}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-body-sm text-brand underline underline-offset-2 break-all hover:text-brand-dark"
+                          >
+                            <span className="break-all">{display}</span>
+                            <ExternalLink size={13} className="shrink-0" aria-hidden />
+                          </a>
                         ) : display ? (
                           <span className="text-body-sm text-text-primary whitespace-pre-wrap">{display}</span>
                         ) : (
@@ -761,13 +776,11 @@ function CellInput({
 
     case "link":
       return (
-        <input
-          type="url"
-          aria-label={ariaLabel}
-          className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
-          placeholder={column.placeholder ?? "https://..."}
+        <LinkCellInput
           value={strVal}
-          onChange={e => onChange(e.target.value)}
+          onChange={onChange}
+          placeholder={column.placeholder ?? "https://..."}
+          ariaLabel={ariaLabel}
         />
       )
 
@@ -873,6 +886,65 @@ function CellInput({
  * 이 파일의 기존 방식이다(`date` 셀도 `DatePicker` 를 쓰지 않는다). 확정본이 요구하는
  * month~month 만 다루고, 일 단위가 필요해지면 그때 granularity 를 연다.
  */
+/**
+ * 링크 셀 — 원시 input 과 다른 점은 **URL 첨부 계측(FRT-113)** 하나다.
+ *
+ * 이 표가 대체한 `공개 링크`(LinkBlock)는 blur 시점에 `archive_attachment_added` 를 쐈다.
+ * 셀로 옮기며 그 발화가 빠지면 창작물의 URL 첨부만 지표에서 사라져, 파일 첨부는 세는데
+ * 링크는 안 세는 비대칭이 된다(FRT-267 Codex P2). LinkBlock 과 **같은 세 가지 위양성 방어**를 쓴다:
+ *  - `editedRef`: 실제로 타이핑했는가(기존 링크를 focus 만 하고 나가는 경우 제외)
+ *  - `knownRef`: 이미 첨부로 아는 URL 집합(A→B→A 로 되돌아온 A 를 새 첨부로 세지 않는다)
+ *  - 비교는 원문이 아니라 `getSafeHref` 정규화 결과로 — `https://a.dev` 와 `https://a.dev/` 는 같은 첨부다
+ *
+ * 셀 단위 컴포넌트라 ref 가 행·열마다 따로 산다 — 한 행의 링크를 고쳐도 다른 행의 기준선을
+ * 건드리지 않는다.
+ */
+function LinkCellInput({
+  value,
+  placeholder,
+  ariaLabel,
+  onChange,
+}: {
+  value: string
+  placeholder?: string
+  ariaLabel?: string
+  onChange: (value: string) => void
+}) {
+  const editedRef = useRef(false)
+  const knownRef = useRef<Set<string>>(new Set())
+
+  function handleChange(next: string) {
+    if (!editedRef.current) {
+      editedRef.current = true
+      // 편집을 시작한 순간의 값이 "이미 있던 첨부"다. 빈 값·무효값이면 기준선이 없다.
+      const baseline = getSafeHref(value)
+      if (baseline) knownRef.current.add(baseline)
+    }
+    onChange(next)
+  }
+
+  function handleBlur() {
+    if (!editedRef.current) return
+    const safe = getSafeHref(value)
+    if (!safe || knownRef.current.has(safe)) return
+    knownRef.current.add(safe)
+    // URL 원문은 싣지 않는다(PII·식별 위험) — 첨부 "여부"만 본다.
+    capture("archive_attachment_added", { attachment_type: "url" })
+  }
+
+  return (
+    <input
+      type="url"
+      aria-label={ariaLabel}
+      className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+      placeholder={placeholder}
+      value={value}
+      onChange={e => handleChange(e.target.value)}
+      onBlur={handleBlur}
+    />
+  )
+}
+
 function PeriodCellInput({
   value,
   ariaLabel,

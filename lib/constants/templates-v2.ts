@@ -101,6 +101,18 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   // 역할·성과는 확정본에 없고 — ② '주요 활동'과 '이 경험이 나에게 준 것'이 그 질문을 흡수했다 —
   // '증빙 자료'는 확정본이 ① 안에 두었으므로 core 를 남기면 파일 입력칸이 두 벌이 된다.
   overseas: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
+  // 창작물 확정본(FRT-267) — **필드마다 따로 물어 선행 5종과 결론이 갈렸다.** 판정식은 FRT-249
+  // Codex P1 그대로: "구 템플릿 섹션에 동명(또는 SEMANTIC_GROUPS 동의어) 앵커가 있었나".
+  //  · '기간' — 구 `cw-info` 에 '제작 기간'(SEMANTIC_GROUPS.period 등재)이 있었다 → dedup 이 빈
+  //    코어를 화면에서 지워 왔으므로 값은 `core.기간` 이 아니라 `cw-info.제작 기간` 에 있다. 빼도
+  //    안전하고, 남기면 값 없는 required 칸이 떠 완료 저장이 막힌다.
+  //  · '핵심 성과' — 구 `cw-process` 에 '반응/성과'(SEMANTIC_GROUPS.achievement 등재)가 있었다. 같은 판정.
+  //  · '증빙 자료' — 확정본이 ① 안에 '작품 링크 / 파일'을 두었으므로 코어를 남기면 evidence 카드가
+  //    따로 생겨 3카드가 되고 첨부칸이 두 벌이 된다(봉사·어학과 같은 처리).
+  //  · ⚠️ '내 역할/기여도'는 **빼지 않는다.** 구 창작물 템플릿에는 role 동의어 앵커가 하나도 없어
+  //    이 코어 칸이 실제로 렌더됐고 값이 들어 있을 수 있다 — 빼면 그 값이 '기타'로 밀린다. 대신
+  //    확정본의 '역할'이 새 앵커가 되므로 dedup 이 빈 것만 숨긴다(충실성과 값 보존이 동시에 성립).
+  'creative-work': ['기간', '핵심 성과', '증빙 자료'],
 }
 
 /**
@@ -1855,36 +1867,166 @@ function overseasExtensions(): TemplateSection[] {
   ]
 }
 
+/** 창작물 확정본 ① '유형 / 매체' 13종. 구 '분야' 7종(디자인/글/영상/음악/사진/일러스트/기타)과 도메인이 다르다. */
+const CREATIVE_MEDIUM_OPTIONS = [
+  '그래픽/디자인',
+  '브랜딩/아이덴티티',
+  '웹/앱 UI',
+  '영상/모션',
+  '사진',
+  '일러스트/그림',
+  '글/문학',
+  '음악/사운드',
+  '개발/프로젝트',
+  '제품/프로덕트',
+  '공간/건축',
+  '공연/퍼포먼스',
+  '기타',
+] as const
+
+/** 창작물 확정본 ① '개인 / 팀' 4종. '개인 작업' 외를 고르면 '역할' 칸이 나타난다. */
+const CREATIVE_COLLAB_OPTIONS = ['개인 작업', '팀 작업(2~5명)', '팀 작업(6명 이상)', '공동 프로젝트'] as const
+
+const CREATIVE_COLLAB_KEY = 'creative-info.개인 / 팀'
+
+/** 창작물 확정본 ② '작품 성격' 12종 (이모지 알약 태그, 다중 선택). */
+const CREATIVE_MOOD_TAGS = [
+  '🎨 실험적',
+  '💼 상업적',
+  '📖 서사적',
+  '🔍 리서치 기반',
+  '💡 컨셉 중심',
+  '🛠️ 기술 중심',
+  '🤝 협업 기반',
+  '🧪 프로토타입/실험작',
+  '🎯 특정 타겟 대상',
+  '🏆 공모전 출품작',
+  '📚 학술/졸업 작품',
+  '🌍 사회적 메시지',
+] as const
+
+// 창작물 — 확정본(창작물_final, FRT-267). 구 `cw-info`/`cw-process` 를 `creative-*` 로 **전면 교체**한다.
+// 섹션 id 를 가는 것이 이 작업의 안전 장치다(FRT-210 이후 공통): 구 '분야'(7종)는 확정본에서
+// '유형 / 매체'(13종)로 **선택지 도메인이 통째로 바뀌고**, 구 '제작 과정'(표)은 확정본에서 같은
+// 라벨의 textarea 다. id 를 유지하면 앞은 새 목록에 없는 값이 드롭다운에 박히고, 뒤는 injectValue 가
+// 값을 못 싣고도 키가 consumedKeys 에 잡혀 orphan 안전망까지 건너뛴다.
+//
+// 확정본 2섹션이 화면에서도 2카드다: 결과물 첨부를 ① 안에 두고(확정본 배치) core '증빙 자료'를
+// CORE_EXCLUDE 로 빼, evidence 버킷이 비어 카드가 생기지 않는다. 확정본 §7 도 "사이드 네비:
+// 섹션 2개 앵커"로 못 박았다.
 function creativeWorkExtensions(): TemplateSection[] {
   return [
     {
-      id: 'cw-info',
+      // 블록 순서는 확정본 ① 표 그대로다: 작품명 → 유형/매체 → 개인/팀 → ↳역할 → 작업 기간 →
+      // 공개/전시 이력 → 사용 툴/기술 → 작품 링크/파일. 코어 블록은 `computeFormCards` 가 뒤에
+      // 붙이므로, 확정본 순서를 지키려면 시점 필드를 코어에 맡기지 말고 이렇게 섹션이 소유해야 한다.
+      id: 'creative-info',
       category: 'basic',
       label: '작품 정보',
       blocks: [
-        createTextField('작품/작업물명', { required: true }),
-        createSelectField('분야', ['디자인', '글', '영상', '음악', '사진', '일러스트', '기타']),
-        createPeriodField('제작 기간'),
-        createTextField('한 줄 소개', { required: true }),
-        createTextareaField('의도/주제'),
-        createTagsField('사용 도구'),
+        createTextField('작품명 / 작업물명', {
+          required: true,
+          guide: '이 창작물이나 작업물의 이름을 적어주세요.',
+          placeholder: '예: 브랜드 리뉴얼 프로젝트, 단편 소설 〈OO〉, 개인 웹사이트',
+        }),
+        createSelectField('유형 / 매체', [...CREATIVE_MEDIUM_OPTIONS], {
+          required: true,
+          guide:
+            '이 작품의 유형을 선택해주세요. 여러 매체가 결합된 작업이라면 가장 대표되는 유형 기준으로 선택해주세요.',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createSelectField('개인 / 팀', [...CREATIVE_COLLAB_OPTIONS]),
+        {
+          ...createTextField('역할', {
+            guide: '이 작업에서 내가 맡은 역할을 적어주세요.',
+            placeholder: '예: 아트디렉터, 개발, 카피라이터',
+          }),
+          // 확정본 §7 — "'개인 작업' 외 선택 시 노출". `VisibilityCondition` 에 부정이 없어 양성
+          // 값을 열거한다. ⚠️ CREATIVE_COLLAB_OPTIONS 가 늘면 여기도 함께 늘려야 한다 — 빠뜨리면
+          // 그 값을 고른 사용자에게 이 칸이 영영 안 뜬다(파생으로 두어 어긋날 수 없게 했다).
+          visibleWhen: {
+            key: CREATIVE_COLLAB_KEY,
+            equals: CREATIVE_COLLAB_OPTIONS.filter(o => o !== '개인 작업'),
+          },
+          // ⚠️ required 금지 — 조건부 노출이라 '개인 작업'을 고르면 화면에 없는 칸이 완료 저장을
+          // 막는다(수상경력 '팀에서 내가 맡은 역할'과 같은 처리, FRT-211).
+          //
+          // ⚠️ 라벨 '역할'은 `SEMANTIC_GROUPS.role` 동의어다 — 수상경력이 '팀에서 내가 맡은 역할'로
+          // 그룹 밖에 있는 것과 **반대**이고, 그 차이가 화면을 가른다. `computeFormCards` 는
+          // `visibleWhen` 을 보지 않고 이 라벨을 앵커로 삼으므로 **빈 코어 '내 역할/기여도'가 항상
+          // dedup 된다** → '개인 작업'에서는 역할 칸이 하나도 남지 않는다. 확정본 §7 이 "'개인 작업'
+          // 외 선택 시 노출"로 정한 그대로이므로 의도된 결과지만, 값이 든 코어는 `keepCoreOrExtended`
+          // 가 남기므로 구 레코드는 잃지 않는다. 넷 다 form-cards.test.ts 가 고정한다 —
+          // 라벨을 role 그룹 밖으로 옮기면 팀 작업에서 역할 칸이 두 벌이 된다.
+        },
+        // 확정본이 가이드라인을 '—' 로 비운 칸. month~month 는 코어 '기간' 과 같은 period 위젯이라
+        // 구 `cw-info.제작 기간` 값을 그대로 실을 수 있다(RENAMED_FIELD_KEYS).
+        createPeriodField('작업 기간', { required: true }),
+        createOutcomeList('공개 / 전시 이력', {
+          guide: '이 작품이 전시되거나 공개된 곳이 있다면 채널별로 리스트업해주세요.',
+          placeholder: '예: 2024 학과 졸업전시',
+          itemLabel: '공개 / 전시',
+        }),
+        createTagsField('사용 툴 / 기술', {
+          guide: '사용한 도구, 소프트웨어, 기술을 태그로 추가해주세요.',
+        }),
+        // 확정본 '결과물 블록(artifact-blocks) — 다중 등록 가능'. FRT-213 이 셀 컬럼에 file·link 를
+        // 열어 둔 덕에(SUPPORTED_CELL_TYPES) 신규 위젯 없이 표로 받는다.
+        // ⚠️ 컬럼에 required 금지 — `isRequiredBlock` 은 컬럼 하나라도 required 면 표 전체를 필수로
+        // 보고 `canHideBlock` 이 숨기지도 못한다. 공개 링크가 없는 작업은 영영 완료 불가가 된다(FRT-236).
+        createRepeatableCell(
+          '작품 링크 / 파일',
+          [
+            { key: 'link', label: '링크', blockType: 'link', placeholder: 'Behance, Vimeo, GitHub, Notion 등' },
+            { key: 'file', label: '파일', blockType: 'file' },
+            {
+              key: 'desc',
+              label: '설명',
+              blockType: 'text',
+              placeholder: '설명 (예: 최종 결과물, 프로세스 스케치, 발표 자료)',
+            },
+          ],
+          {
+            guide:
+              '작품을 볼 수 있는 링크나 파일을 채널별로 첨부해주세요. 최종 결과물, 프로세스 문서, 발표 자료 등 여러 개 등록 가능해요.',
+          },
+        ),
       ],
     },
     {
-      id: 'cw-process',
-      category: 'repeat',
-      label: '제작 과정',
-      collapsed: true,
+      // "섹션 전체 선택"이므로 required 를 하나도 두지 않는다.
+      id: 'creative-detail',
+      category: 'detail',
+      label: '작업 상세',
       blocks: [
-        createRepeatableCell('제작 과정', [
-          { key: 'step', label: '단계명', blockType: 'text', required: true },
-          { key: 'work', label: '한 일', blockType: 'textarea' },
-          { key: 'decision', label: '고민/결정', blockType: 'textarea' },
-          { key: 'result', label: '결과', blockType: 'textarea' },
-        ]),
-        createLinkField('공개 링크'),
-        createTextareaField('반응/성과'),
-        createTextField('저작권/사용 범위'),
+        createTextareaField('작업 배경 / 컨셉', {
+          guide: '이 작품을 만든 배경, 컨셉, 의도를 자유롭게 설명해주세요.',
+          placeholder:
+            '예: 지방 소도시의 사라져가는 골목 문화를 기록하고 싶어서 시작한 프로젝트로, 사진과 인터뷰를 결합한 잡지 형식으로 구성했습니다.',
+        }),
+        // 구 `cw-process.제작 과정` 은 단계별 4컬럼 표였다. 확정본은 서술형 한 칸이고 라벨이 같아
+        // v1 라벨 매칭이 닿는 자리인데, repeatable-cell → textarea 는 `isInjectableInto` 가 막아
+        // 표 값이 '기타' 로 보존된다(FRT-210 Codex P1 의 방어선이 v1 에서도 유일하게 작동하는 경로).
+        createTextareaField('제작 과정', {
+          guide: '어떤 단계로 진행됐고, 내가 어떤 결정을 내렸는지 적어주세요.',
+          placeholder:
+            '예: 3주 리서치 → 2주 컨셉 스케치 → 4주 촬영·인터뷰 → 3주 편집·디자인. 초반 방향이 너무 감성적이라 판단되어 중반부터 다큐멘터리 톤으로 재조정했습니다.',
+        }),
+        createTextareaField('반응 / 피드백', {
+          guide:
+            '조회수·관람객 반응·피드백뿐 아니라, 실제 배포·서비스 반영·클라이언트 채택·재사용된 사례도 함께 적어주세요.',
+          placeholder:
+            '예: Behance 조회수 5,000회 / 학과 졸업전시 우수작 선정 / 지역 소상공인 3곳이 실제 리뉴얼 시안으로 채택하여 사용 중',
+        }),
+        createTextareaField('이 작업이 나에게 남긴 것', {
+          guide: '새로 익힌 기술이나 방법, 관점의 변화, 다음 작업에 이어갈 방향 — 무엇이든 좋아요.',
+          placeholder:
+            '예: 촬영보다 편집 단계에서 톤을 결정하는 감각을 처음 익혔고, 이후 작업할 때 촬영 전 편집 흐름을 먼저 스케치하는 습관이 생겼습니다.',
+        }),
+        // 확정본 설계 노트: 구 🌱 개인 프로젝트 태그는 ① '개인/팀' 과 중복이라 삭제됐다 — 되살리지 말 것.
+        createMoodTagField('작품 성격', [...CREATIVE_MOOD_TAGS], {
+          guide: '이 작품의 성격을 태그로 표현해주세요.',
+        }),
       ],
     },
   ]
@@ -2178,13 +2320,15 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
  *     으로 갈아치웠다.
  * 5 — 해외경험 확정본 정렬(FRT-249). 같은 이유 — `overseas-info`/`overseas-challenges` 를
  *     `overseas-program`/`overseas-reflection`/`overseas-activities` 로 갈아치웠다.
+ * 6 — 창작물 확정본 정렬(FRT-267). 같은 이유 — `cw-info`/`cw-process` 를 `creative-info`/
+ *     `creative-detail` 로 갈아치웠다.
  *
  * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
  * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
  * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
  * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 5
+export const TEMPLATE_VERSION = 6
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.

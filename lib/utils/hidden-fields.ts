@@ -1,5 +1,5 @@
 import type { Block } from "@/types/archive"
-import { isBlockEmpty, isRequiredBlock } from "@/lib/utils/block-utils"
+import { hasResidualValue, isBlockEmpty, isRequiredBlock } from "@/lib/utils/block-utils"
 
 /**
  * 선택 필드 숨김 (FRT-190) — 확정본 §7 "'선택' 뱃지가 붙은 필드에 한해 × 버튼으로 숨김".
@@ -14,29 +14,11 @@ import { isBlockEmpty, isRequiredBlock } from "@/lib/utils/block-utils"
  * 빈 블록을 이미 세지 않으므로 소비처를 하나도 건드리지 않는다.
  */
 
-/**
- * `isBlockEmpty` 가 안 세는 부속 값이 남아 있는지.
- *
- * `isBlockEmpty` 는 링크를 `url`, 파일을 업로드 신원으로만 판정한다 — "상세뷰에 그릴 게 있는가"를
- * 묻는 기준이라 그 자체로는 옳다. 그런데 두 블록 모두 **주 값 없이 부속 값을 먼저 칠 수 있어서**
- * (LinkBlock 의 제목·유형·설명, FileBlock 의 설명·증빙 유형), 그 상태로 숨기면 화면엔 없는데
- * 저장 payload 엔 남는다 — 이 기능이 막으려던 무음 잔존 그대로다. 숨김만 더 엄격하게 본다.
- *
- * ⚠️ **저장된 값은 타입이 약속한 모양대로 오지 않는다.** `injectValue`(experience-mapper) 는
- * `content.fields[key]` 를 `{...block, value}` 로 통째로 싣는데 `content` 는 서버 JSONB 라,
- * 부속 필드가 빠진 채 저장된 구 레코드가 그대로 블록 값이 된다. 이 판정은 숨김 버튼을 그리며
- * **모든 블록에 대해** 도므로, 여기서 `undefined.trim()` 이 나면 편집 화면이 통째로 터진다.
+/*
+ * 부속 값 판정(`hasResidualValue`)은 `block-utils` 가 정본이다 — 숨김만 쓰는 기준이 아니라
+ * **로드 시 블록을 버릴지**(`isBlockDiscardable`, experience-mapper)와 같은 질문이라,
+ * 사본을 두면 한쪽만 고쳐져 "숨길 수는 없는데 로드에서 버려지는" 칸이 생긴다(FRT-267 Codex P2).
  */
-function isFilledText(s: unknown): boolean {
-  return typeof s === "string" && s.trim() !== ""
-}
-
-function hasResidualValue(block: Block): boolean {
-  const v = block.value
-  if (v.type === "link") return [v.title, v.description, v.linkType].some(isFilledText)
-  if (v.type === "file") return [v.description, v.evidenceType].some(isFilledText)
-  return false
-}
 
 /**
  * 표 안에 첨부 열을 품은 블록인지 — 숨김 대상에서 뺀다.
@@ -54,8 +36,19 @@ function hasResidualValue(block: Block): boolean {
  * `FileBlock` 의 업로드 상태를 받아 처리). 순수 함수인 여기서는 업로드 상태를 알 수 없어
  * 판정하지 않는다 — 값만 보고 "치울 수 있는 칸인가"에만 답한다.
  *
- * 표 쪽은 열 단위 업로드 상태를 위로 흘릴 배선이 없어 그대로 제외한다. 현재 템플릿에 파일 열이
- * 0개라 비용이 없고, 사용자가 열 유형을 파일로 바꾼 경우(FRT-213)만 방어한다.
+ * 표 쪽은 열 단위 업로드 상태를 위로 흘릴 배선이 없어 그대로 제외한다.
+ *
+ * ⚠️ **이 제외는 더 이상 가정이 아니다.** 원래는 "현재 템플릿에 파일 열이 0개라 비용이 없고,
+ * 사용자가 열 유형을 파일로 바꾼 경우(FRT-213)만 방어한다"였는데, 창작물 확정본의
+ * '작품 링크 / 파일'(link·file·desc)이 **파일 열을 가진 첫 템플릿 블록**이라 그 전제가 깨졌다
+ * (FRT-267). 이제 그 표는 비어 있어도 × 로 치울 수 없다.
+ *
+ * 그래도 괜찮은 이유가 둘 있다 — **둘 다 성립할 때만** 괜찮다:
+ *  (ㄱ) 확정본이 그 필드에 *(필드 삭제 가능)* 표기를 하지 않았다 → 못 치우는 것이 확정본과 일치.
+ *  (ㄴ) 그 표가 사는 창작물 ① 카드에는 필수 필드가 있어 `isCardComplete` 이 **필수만으로** 판정한다
+ *       → 치울 수 없는 빈 표가 진행도를 막지 않는다.
+ * ① 에서 필수를 전부 걷어내면 그 순간 `some(채워짐)` 기준으로 바뀌어, 링크도 파일도 없는 작업은
+ * 치울 수도 채울 수도 없는 카드를 얻는다 — 위 증빙 카드에서 이미 한 번 겪은 실패다.
  */
 function hostsAttachment(block: Block): boolean {
   const v = block.value

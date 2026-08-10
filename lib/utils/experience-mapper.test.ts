@@ -13,7 +13,9 @@ import {
   toExperienceV2,
   toSavePayload,
 } from "@/lib/utils/experience-mapper"
-import { createGroupBlock, createTextField } from "@/lib/utils/block-utils"
+import { cloneBlocks, createGroupBlock, createTextField, isBlockEmpty } from "@/lib/utils/block-utils"
+import { computeFormCards } from "@/lib/utils/form-cards"
+import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
 
 function makeExperience(overrides: Partial<Experience> = {}): Experience {
   return {
@@ -2224,5 +2226,549 @@ describe("확정본 전면 교체 값 보존 (FRT-249 해외경험)", () => {
     expect(moved?.value).toMatchObject({ selected: "교환학생" })
     expect((moved?.value as SingleSelectBlockValue).options).toEqual(overseasKindOptions())
     expect(v1.customBlocks.find(b => b.label === "경험 유형")).toBeUndefined()
+  })
+})
+
+describe("확정본 전면 교체 값 보존 (FRT-267 창작물)", () => {
+  /**
+   * ⚠️ 레거시 픽스처는 "그럴듯한 값"이 아니라 **그 시점의 렌더 경로가 실제로 만들어낼 수 있는 값**
+   * 이어야 한다(FRT-249 Codex P1 을 놓친 이유). 코어 4칸이 서로 다른 이유로 갈린다:
+   *  · `core.기간` — 구 `cw-info` 에 '제작 기간'(SEMANTIC_GROUPS.period) 앵커가 있어 dedup 이
+   *    빈 코어를 화면에서 지웠다 → 채울 방법이 없었으므로 **항상 비어 있다.**
+   *  · `core.핵심 성과` — 구 `cw-process` 에 '반응/성과'(achievement) 앵커가 있어 같은 이유로 비어 있다.
+   *  · `core.내 역할/기여도` — role 동의어 앵커가 **하나도 없어 실제로 렌더됐다** → 값이 있을 수 있다.
+   *    이 한 줄이 `CORE_EXCLUDE` 에서 이 필드만 뺀 근거이자, 그 판정을 지키는 그물이다.
+   *  · `core.증빙 자료` — `isEvidenceBlock` 이라 dedup 자체를 타지 않고 '활동 증빙' 카드에 **항상**
+   *    보였다 → 값이 있을 수 있다.
+   */
+  function legacyCreativeContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "골목 기록 프로젝트",
+      summary: "사진과 인터뷰를 엮은 독립 잡지",
+      status: "complete",
+      tags: [],
+      fields: {
+        "core.기간": { type: "period", start: "", end: "", isCurrent: false },
+        "core.핵심 성과": textarea(""),
+        "core.내 역할/기여도": textarea("기획·촬영·편집을 모두 맡았습니다."),
+        "core.증빙 자료": {
+          type: "file",
+          fileName: "졸업전시-도록.pdf",
+          description: "졸업전시 도록",
+          evidenceType: "전시 도록",
+        },
+        // 질문이 같아 새 키로 이관되는 것들.
+        "cw-info.작품/작업물명": text("골목의 기록"),
+        "cw-info.제작 기간": { type: "period", start: "2024-03", end: "2024-06", isCurrent: false },
+        "cw-info.사용 도구": { type: "tags", tags: ["Lightroom", "InDesign"] },
+        "cw-info.의도/주제": textarea("사라져가는 골목 문화를 기록하고 싶었습니다."),
+        "cw-process.반응/성과": textarea("졸업전시 우수작으로 선정됐습니다."),
+        // 선택지 도메인이 달라 **값 조건부**인 것 — '디자인'은 새 13종에 그대로 없다.
+        "cw-info.분야": { type: "single-select", selected: "디자인", options: ["디자인", "글", "영상", "음악", "사진", "일러스트", "기타"] },
+        // 타입이 달라 못 옮기는 것들.
+        "cw-process.제작 과정": {
+          type: "repeatable-cell",
+          columns: [
+            { key: "step", label: "단계명", blockType: "text" },
+            { key: "work", label: "한 일", blockType: "textarea" },
+          ],
+          rows: [{ id: "r1", cells: { step: "리서치", work: "골목 20곳 답사" } }],
+        },
+        "cw-process.공개 링크": { type: "link", url: "https://behance.net/golmok" },
+        // 확정본에 대응 칸이 없는 것들.
+        "cw-info.한 줄 소개": text("골목을 기록한 독립 잡지"),
+        "cw-process.저작권/사용 범위": text("CC BY-NC"),
+        // 범용 '확장 입력' — 창작물은 자기 detail 섹션이 없어 이 8필드가 실제로 렌더됐다.
+        "extended.배운 점": textarea("편집 단계에서 톤이 결정된다는 걸 배웠습니다."),
+      },
+      custom: [],
+    }
+  }
+
+  const loadLegacy = () =>
+    toExperienceV2(makeExperience({ type: "creative-work", content: legacyCreativeContent() }))
+
+  /** 확정본 '유형 / 매체' 13종을 템플릿에서 읽는다 — 목록을 테스트에 복제하지 않는다. */
+  const mediumOptions = (): string[] =>
+    getTemplateForType("creative-work")
+      .extensions.flatMap(s => s.blocks)
+      .find(b => b.key === "creative-info.유형 / 매체")?.options ?? []
+
+  it("질문이 같은 필드는 확정본 자리로 이관된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("creative-info.작품명 / 작업물명")?.value).toEqual(text("골목의 기록"))
+    expect(byKey("creative-info.작업 기간")?.value).toMatchObject({ start: "2024-03", end: "2024-06" })
+    expect(byKey("creative-info.사용 툴 / 기술")?.value).toMatchObject({ tags: ["Lightroom", "InDesign"] })
+    expect(byKey("creative-detail.작업 배경 / 컨셉")?.value).toEqual(
+      textarea("사라져가는 골목 문화를 기록하고 싶었습니다."),
+    )
+    expect(byKey("creative-detail.반응 / 피드백")?.value).toEqual(
+      textarea("졸업전시 우수작으로 선정됐습니다."),
+    )
+
+    // 옮긴 구 키는 '기타' 에 중복으로 되살아나지 않는다.
+    for (const oldKey of [
+      "cw-info.작품/작업물명",
+      "cw-info.제작 기간",
+      "cw-info.사용 도구",
+      "cw-info.의도/주제",
+      "cw-process.반응/성과",
+    ]) {
+      expect(v2.customBlocks.find(b => b.key === oldKey), oldKey).toBeUndefined()
+    }
+  })
+
+  /**
+   * 구 '분야'(7종)와 확정본 '유형 / 매체'(13종)는 **같은 질문**(이 작업의 매체가 무엇인가)이지만
+   * 선택지가 통째로 다시 짜였다. '디자인'은 새 목록에서 그래픽/브랜딩/웹·앱 UI/제품/공간으로
+   * 갈라졌으므로 어느 하나로 좁히면 **답이 둔갑한다** — 옮기지 않고 사용자가 원본을 보고 고르게 둔다
+   * (FRT-249 ⑨ 의 값 조건부 이관, 판정 단위는 필드가 아니라 **값**).
+   */
+  it("새 목록에 없는 '분야' 값은 이관하지 않고 '기타' 카드로 보존한다", () => {
+    const v2 = loadLegacy()
+
+    expect(v2.customBlocks.find(b => b.key === "cw-info.분야")?.value).toMatchObject({
+      selected: "디자인",
+    })
+    expect(
+      v2.extensionBlocks.find(b => b.key === "creative-info.유형 / 매체")?.value,
+    ).toMatchObject({ selected: "" })
+  })
+
+  /**
+   * 답이 새 목록에 그대로 남아 있으면 옮긴다. 안 옮기면 '유형 / 매체'는 값 없는 **required** 칸이
+   * 되고, 완료 저장된 레코드를 다시 연 사용자가 **바뀐 것도 없는 답을 다시 골라야** 저장된다.
+   * 옮길 때 선택지는 템플릿 것으로 정규화한다 — 저장값이 들고 온 옛 7종이 그대로 실리면
+   * `SingleSelectBlock` 이 그쪽을 우선해 확정본이 새로 준 13종을 영영 못 받는다.
+   */
+  it("확정본 목록에 그대로 남은 답('사진')은 옮기고 선택지도 확정본 것으로 바꾼다", () => {
+    const content = legacyCreativeContent()
+    const fields = content.fields as Record<string, BlockValue>
+    fields["cw-info.분야"] = {
+      type: "single-select",
+      selected: "사진",
+      options: ["디자인", "글", "영상", "음악", "사진", "일러스트", "기타"],
+    }
+    const v2 = toExperienceV2(makeExperience({ type: "creative-work", content }))
+
+    const moved = v2.extensionBlocks.find(b => b.key === "creative-info.유형 / 매체")
+    expect(moved?.value).toMatchObject({ selected: "사진" })
+    expect((moved?.value as SingleSelectBlockValue).options).toEqual(mediumOptions())
+    expect(v2.customBlocks.find(b => b.key === "cw-info.분야")).toBeUndefined()
+  })
+
+  /**
+   * 확정본 ② '제작 과정'은 구 4컬럼 표와 **라벨이 같은 textarea** 다. 타입이 달라
+   * `isInjectableInto` 가 막지 않으면 표가 통째로 사라진다 — 섹션 id 교체와 타입 판정이
+   * 이중으로 지키는 자리다.
+   */
+  it("타입이 달라진 필드는 확정본 자리에 실리지 않고 '기타' 카드로 보존한다", () => {
+    const v2 = loadLegacy()
+
+    const table = v2.customBlocks.find(b => b.key === "cw-process.제작 과정")
+    expect((table?.value as RepeatableCellBlockValue).rows).toHaveLength(1)
+    expect(v2.extensionBlocks.find(b => b.key === "creative-detail.제작 과정")?.value).toEqual(
+      textarea(""),
+    )
+
+    expect(v2.customBlocks.find(b => b.key === "cw-process.공개 링크")?.value).toMatchObject({
+      url: "https://behance.net/golmok",
+    })
+  })
+
+  /**
+   * 코어 증빙은 옮길 자리가 없다 — 확정본 ① 의 '작품 링크 / 파일'은 `repeatable-cell` 이라
+   * `file` 값을 받을 수 없다(해외경험이 쓴 `V2_CORE_SCOPED_MIGRATIONS` 는 타입이 맞을 때만 성립).
+   * 그래서 '기타'로 보존하는 것이 유일한 무손실 경로이고, 그 사실을 여기서 고정한다.
+   */
+  it("확정본에 대응 칸이 없는 값 · 코어 증빙 · 범용 확장 필드는 '기타' 카드로 보존된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    expect(byKey("cw-info.한 줄 소개")?.value).toEqual(text("골목을 기록한 독립 잡지"))
+    expect(byKey("cw-process.저작권/사용 범위")?.value).toEqual(text("CC BY-NC"))
+    expect(byKey("core.증빙 자료")?.value).toMatchObject({ fileName: "졸업전시-도록.pdf" })
+    // detail 섹션이 생기면서 범용 '확장 입력'이 걷힌다 — 그 값도 사라지지 않는다.
+    // (확정본 '이 작업이 나에게 남긴 것'으로의 이관은 FRT-248 범위다.)
+    expect(byKey("extended.배운 점")?.value).toEqual(
+      textarea("편집 단계에서 톤이 결정된다는 걸 배웠습니다."),
+    )
+  })
+
+  /**
+   * ⚠️ 선행 5종과 **반대 결론**을 지키는 그물이다. 봉사·해외경험은 코어 '내 역할/기여도'를
+   * `CORE_EXCLUDE` 로 뺐지만 창작물은 빼지 않는다 — 구 템플릿에 role 앵커가 없어 이 칸이 실제로
+   * 렌더됐고, 빼면 사용자가 적어 둔 역할 서술이 '기타'로 밀리기 때문이다.
+   *
+   * ⚠️ 다만 **남기는 것만으로는 부족했다.** 코어를 남긴 채 확정본 '역할'을 새로 띄우면 값이 든
+   * 코어는 dedup 을 안 타므로 권위 있는 칸이 **둘**이 되고, `pickValue` 는 정확 라벨을 먼저
+   * 고르므로(build-portfolio.ts) 사용자가 새 '역할'을 고쳐도 포트폴리오는 옛 코어 값을 계속
+   * 발행한다 — 화면과 산출물이 어긋난다(FRT-267 Codex P2). 그래서 값을 확정본 칸으로 **옮긴다**:
+   * 코어는 비어 dedup 이 숨기고, 옮겨진 값은 '개인 작업'에서도 화면에 남는다.
+   */
+  it("코어 '내 역할/기여도' 값은 확정본 '역할'로 옮겨 권위 있는 칸을 하나로 만든다", () => {
+    const v2 = loadLegacy()
+
+    // 값은 확정본 칸에 있다(textarea→text 는 `isInjectableInto` 가 허용, 문자열은 그대로).
+    expect(v2.extensionBlocks.find(b => b.key === "creative-info.역할")?.value).toEqual(
+      text("기획·촬영·편집을 모두 맡았습니다."),
+    )
+    // 코어에는 남지 않는다 — 남으면 두 칸이 되어 발행이 옛 값으로 굳는다.
+    const coreRole = v2.coreBlocks.find(b => b.key === "core.내 역할/기여도")
+    expect(coreRole === undefined || isBlockEmpty(coreRole)).toBe(true)
+    // '기타'로도 밀리지 않는다 — 옮긴 것이지 버린 것이 아니다.
+    expect(v2.customBlocks.find(b => b.key === "core.내 역할/기여도")).toBeUndefined()
+    // 반면 앵커가 있어 늘 비어 있던 코어 둘은 템플릿에서 아예 사라진다.
+    for (const gone of ["core.기간", "core.핵심 성과"]) {
+      expect(v2.coreBlocks.find(b => b.key === gone), gone).toBeUndefined()
+    }
+  })
+
+  /**
+   * ⚠️ 이관의 경계 — 확정본 '역할'은 한 줄 `text` 다. `isInjectableInto` 는 text↔textarea 를
+   * 호환으로 보지만(저장 형식이 같은 문자열이라 맞는 말이다), 화면의 `<input>` 은 개행을 지운다.
+   * 문단이 든 구 값을 옮기면 첫 화면부터 한 줄로 뭉개져 보이고 한 글자만 고쳐도 그대로 저장된다.
+   * 옮기지 않고 구 코어 칸에 남기면 값도 문단 구조도 그대로다(FRT-267 Codex P2).
+   */
+  it("여러 줄 역할 값은 한 줄 '역할' 칸으로 옮기지 않고 원본을 남긴다", () => {
+    const content = legacyCreativeContent()
+    ;(content.fields as Record<string, BlockValue>)["core.내 역할/기여도"] = {
+      type: "textarea",
+      text: "기획을 맡았습니다.\n\n촬영과 편집도 직접 했습니다.",
+    }
+    const v2 = toExperienceV2(makeExperience({ type: "creative-work", content }))
+
+    // 확정본 칸은 비어 있다 — 뭉갠 사본을 만들지 않는다.
+    const moved = v2.extensionBlocks.find(b => b.key === "creative-info.역할")
+    expect(moved && isBlockEmpty(moved)).toBe(true)
+    // 원본은 개행까지 그대로 코어에 남는다.
+    expect(v2.coreBlocks.find(b => b.key === "core.내 역할/기여도")?.value).toEqual(
+      textarea("기획을 맡았습니다.\n\n촬영과 편집도 직접 했습니다."),
+    )
+  })
+
+  /** 값만 새 키로 옮기고 숨김 상태를 두고 오면 사용자가 감춰 둔 칸이 혼자 다시 나타난다(FRT-210). */
+  it("숨김 키도 개명을 따라간다", () => {
+    const content = legacyCreativeContent()
+    content.hidden = ["cw-info.사용 도구"]
+    const v2 = toExperienceV2(makeExperience({ type: "creative-work", content }))
+
+    expect(v2.hiddenKeys).toContain("creative-info.사용 툴 / 기술")
+    expect(v2.hiddenKeys).not.toContain("cw-info.사용 도구")
+  })
+
+  describe("v1 레거시는 라벨로 매칭한다 (섹션 id 교체가 닿지 않는 경로)", () => {
+    /**
+     * v1 은 `fields` 맵이 없어 **라벨로** 매칭하므로 섹션 id 교체라는 방어선이 통째로 비껴간다.
+     * 구 '제작 과정'(표)과 확정본 '제작 과정'(textarea)은 라벨이 같아 여기서 정면으로 만나고,
+     * `isInjectableInto` 만이 값을 지킨다(FRT-210 Codex P1 과 같은 자리).
+     */
+    it("라벨이 같아도 타입이 다른 '제작 과정' 표는 '기타'로 보존된다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [],
+            extensionBlocks: [
+              {
+                id: "b1",
+                type: "repeatable-cell",
+                label: "제작 과정",
+                value: {
+                  type: "repeatable-cell",
+                  columns: [{ key: "step", label: "단계명", blockType: "text" }],
+                  rows: [{ id: "r1", cells: { step: "리서치" } }],
+                },
+              },
+            ],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      const preserved = v1.customBlocks.find(b => b.label === "제작 과정")
+      expect((preserved?.value as RepeatableCellBlockValue).rows).toHaveLength(1)
+      // v1 은 저장된 블록만 싣는다 — 표가 새 키를 달고 확장 블록으로 넘어가지 않아야 한다.
+      expect(v1.extensionBlocks.find(b => b.key === "creative-detail.제작 과정")).toBeUndefined()
+    })
+
+    /**
+     * ⚠️ 도메인 교체(`SELECT_DOMAIN_MIGRATIONS`)의 v1 조회는 **목적지 라벨로만** 색인돼 있었다.
+     * 선행 유형은 선택지만 갈리고 라벨은 그대로여서 목적지 라벨 == 저장 라벨이라 우연히 맞았는데,
+     * 창작물은 '분야'→'유형 / 매체' 로 라벨까지 갈려 조회가 빗나갔다 — 값이 새 목록에 그대로
+     * 있는데도 '기타'로 밀리고 required 칸은 빈 채 남는다(FRT-267 Codex P2). 키가 있든 없든 같다.
+     */
+    function loadV1Medium(saved: string, withKey: boolean) {
+      return toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [],
+            extensionBlocks: [
+              {
+                id: "b1",
+                ...(withKey ? { key: "cw-info.분야" } : {}),
+                type: "single-select",
+                label: "분야",
+                value: { type: "single-select", options: ["사진", "디자인", "기타"], selected: saved },
+              },
+            ],
+            customBlocks: [],
+          },
+        }),
+      )
+    }
+
+    /**
+     * ⚠️ v2 는 코어를 현재 템플릿에서 다시 짜 `CORE_EXCLUDE` 가 저절로 적용되지만, v1 은 저장된
+     * 코어 배열을 그대로 통과시켜 **확정본이 뺀 칸이 되살아난다.** 빈 코어 '증빙 자료' 하나가
+     * dedup 없이 evidence 버킷으로 직행해 2카드 설계에 세 번째 카드를 만든다 — 채울 것도 없는
+     * 카드라 진행도만 막힌다(FRT-267 Codex P2). 창작물만의 문제가 아니라 `CORE_EXCLUDE` 를 쓰는
+     * 유형 전부가 같았고, 이 수정은 그 전부에 적용된다.
+     */
+    it("확정본이 뺀 빈 코어 칸은 v1 에서도 되살아나지 않는다 — 2카드가 유지된다", () => {
+      const core = cloneBlocks(getTemplateForType("creative-work").commonCore.blocks)
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              ...core,
+              { id: "ev", type: "file", label: "증빙 자료", value: { type: "file", fileName: "", description: "", evidenceType: "" } },
+            ],
+            extensionBlocks: [],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      expect(v1.coreBlocks.find(b => b.label === "증빙 자료")).toBeUndefined()
+
+      const t = getTemplateForType("creative-work")
+      const cards = computeFormCards(
+        v1.coreBlocks,
+        t.extensions.map(e => ({ id: e.id, category: e.category, blocks: cloneBlocks(e.blocks) })),
+        SECTION_LABEL_OVERRIDES["creative-work"],
+      )
+      expect(cards.visibleCategories).toEqual(["basic", "detail"])
+    })
+
+    /** ⚠️ 빈 것만 버린다 — 값이 든 칸을 지우는 쪽이 카드 하나 더 뜨는 것보다 훨씬 나쁘다. */
+    it("값이 든 코어 칸은 확정본이 뺐어도 v1 에서 그대로 남는다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              {
+                id: "ev",
+                type: "file",
+                label: "증빙 자료",
+                value: { type: "file", fileName: "poster.pdf", description: "", evidenceType: "", fileId: "f1" },
+              },
+            ],
+            extensionBlocks: [],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      expect(v1.coreBlocks.find(b => b.label === "증빙 자료")).toBeDefined()
+    })
+
+    /**
+     * ⚠️ **"비었다"를 버림 판정에 그대로 쓰면 안 된다.** `isBlockEmpty` 는 파일 블록을 업로드
+     * 신원(`fileName`/`fileId`/`url`)으로만 보는데, `FileBlock` 은 파일 없이도 설명·증빙 유형을
+     * 먼저 칠 수 있고 파일을 지워도 그 둘을 **의도적으로 남긴다**(handleDelete). 그 블록을 빈 것으로
+     * 보고 버리면 사용자가 입력한 메타데이터가 다음 저장에 영구 삭제된다(FRT-267 Codex P2).
+     */
+    it("파일 없이 설명·증빙 유형만 남은 코어 증빙은 v1 에서 버리지 않는다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              {
+                id: "ev",
+                type: "file",
+                label: "증빙 자료",
+                value: { type: "file", fileName: "", description: "전시 도록 사진", evidenceType: "전시 도록" },
+              },
+            ],
+            extensionBlocks: [],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      const kept = v1.coreBlocks.find(b => b.label === "증빙 자료")
+      expect(kept?.value).toEqual({
+        type: "file",
+        fileName: "",
+        description: "전시 도록 사진",
+        evidenceType: "전시 도록",
+      })
+    })
+
+    /** 같은 판정은 v2 orphan 안전망에도 걸려 있다 — 한쪽만 고치면 세대에 따라 결과가 갈린다. */
+    it("파일 없이 설명만 남은 orphan 증빙은 v2 에서도 '기타'로 보존된다", () => {
+      const content = legacyCreativeContent()
+      ;(content.fields as Record<string, BlockValue>)["cw-old.옛 증빙"] = {
+        type: "file",
+        fileName: "",
+        description: "도록 스캔본을 다시 올릴 것",
+        evidenceType: "",
+      }
+      const v2 = toExperienceV2(makeExperience({ type: "creative-work", content }))
+
+      expect(v2.customBlocks.find(b => b.key === "cw-old.옛 증빙")?.value).toEqual({
+        type: "file",
+        fileName: "",
+        description: "도록 스캔본을 다시 올릴 것",
+        evidenceType: "",
+      })
+    })
+
+    /**
+     * ⚠️ v2 는 코어 잔재를 확정본 칸으로 옮겨 권위 있는 칸을 하나로 만드는데, v1 은 그 이관이
+     * 통째로 빠져 있었다. "값 유실은 없다"는 것이 미룬 근거였지만 — 남는 두 칸이 바로 무음
+     * 오염이다. `pickValue` 가 정확 라벨인 코어를 먼저 골라, 사용자가 새 '역할'에 고쳐 써도
+     * 포트폴리오는 옛 코어 값을 계속 발행한다(FRT-267 Codex P2).
+     */
+    it("v1 코어 '내 역할/기여도'도 확정본 '역할'로 옮겨 칸을 하나로 만든다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              { id: "role", type: "textarea", label: "내 역할/기여도", value: textarea("기획·촬영·편집을 모두 맡았습니다.") },
+            ],
+            extensionBlocks: [],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      // 값은 확정본 칸으로 옮겨진다.
+      expect(v1.extensionBlocks.find(b => b.key === "creative-info.역할")?.value).toEqual(
+        text("기획·촬영·편집을 모두 맡았습니다."),
+      )
+      // 코어에는 값이 남지 않는다 — 남으면 발행이 옛 값으로 굳는다.
+      const coreRole = v1.coreBlocks.find(b => b.label === "내 역할/기여도")
+      expect(coreRole === undefined || isBlockEmpty(coreRole)).toBe(true)
+      // 옮긴 것이지 버린 것이 아니다.
+      expect(v1.customBlocks.find(b => b.label === "내 역할/기여도")).toBeUndefined()
+    })
+
+    /**
+     * ⚠️ 이관은 **목적지가 비었을 때만** 한다 — v2 `applyScopedMigrations` 와 같은 우선순위다
+     * (유형 섹션 쪽 값이 먼저 목적지를 차지하고, 코어 잔재는 빈자리에만 들어간다). 이 순서가
+     * 없으면 사용자가 확정본 칸에 새로 적은 답을 구 코어 값이 조용히 덮는다.
+     */
+    it("확정본 '역할'이 이미 차 있으면 코어 잔재가 그 값을 덮지 않는다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              { id: "role", type: "textarea", label: "내 역할/기여도", value: textarea("옛 코어 값") },
+            ],
+            extensionBlocks: [
+              { id: "newrole", key: "creative-info.역할", type: "text", label: "역할", value: text("팀 리더") },
+            ],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      expect(v1.extensionBlocks.find(b => b.key === "creative-info.역할")?.value).toEqual(text("팀 리더"))
+      // 옮기지 못한 코어 값은 버리지 않는다 — 화면에 남겨 사용자가 판단하게 한다.
+      expect(v1.coreBlocks.find(b => b.label === "내 역할/기여도")?.value).toEqual(textarea("옛 코어 값"))
+    })
+
+    /** 이관 경계는 v1 에서도 같다 — 여러 줄 값은 한 줄 칸으로 옮기지 않고 원본을 남긴다. */
+    it("v1 여러 줄 역할 값은 옮기지 않고 코어에 그대로 남긴다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              {
+                id: "role",
+                type: "textarea",
+                label: "내 역할/기여도",
+                value: textarea("기획을 맡았습니다.\n\n촬영과 편집도 직접 했습니다."),
+              },
+            ],
+            extensionBlocks: [],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      const moved = v1.extensionBlocks.find(b => b.key === "creative-info.역할")
+      expect(moved === undefined || isBlockEmpty(moved)).toBe(true)
+      expect(v1.coreBlocks.find(b => b.label === "내 역할/기여도")?.value).toEqual(
+        textarea("기획을 맡았습니다.\n\n촬영과 편집도 직접 했습니다."),
+      )
+    })
+
+    for (const withKey of [false, true]) {
+      const how = withKey ? "키가 있는" : "키가 없는"
+
+      it(`${how} v1 '분야'의 답이 새 목록에 그대로 있으면 '유형 / 매체'로 옮는다`, () => {
+        const v1 = loadV1Medium("사진", withKey)
+
+        const moved = v1.extensionBlocks.find(b => b.key === "creative-info.유형 / 매체")
+        expect((moved?.value as SingleSelectBlockValue).selected).toBe("사진")
+        // 선택지는 템플릿 것으로 정규화된다 — 옛 목록이 따라오면 확정본 13종을 영영 못 받는다.
+        expect((moved?.value as SingleSelectBlockValue).options).toContain("웹/앱 UI")
+        expect(v1.customBlocks.find(b => b.label === "분야")).toBeUndefined()
+      })
+
+      it(`${how} v1 '분야'의 답이 새 목록에 없으면 '기타'로 보존한다 — 시스템이 대신 고르지 않는다`, () => {
+        const v1 = loadV1Medium("디자인", withKey)
+
+        expect(v1.extensionBlocks.find(b => b.key === "creative-info.유형 / 매체")).toBeUndefined()
+        const preserved = v1.customBlocks.find(b => b.label === "분야")
+        expect((preserved?.value as SingleSelectBlockValue).selected).toBe("디자인")
+      })
+    }
   })
 })
