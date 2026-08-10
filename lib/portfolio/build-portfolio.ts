@@ -112,6 +112,10 @@ const TYPE_PERIOD_KEY: Partial<Record<ExperienceTypeId, string>> = {
   // 코어와 정확히 같은 이름이 아니어서, 등록하지 않으면 개편 전 레코드에 orphan 으로 남은
   // `core.기간`(정확-라벨 우선)이 확정본 값을 이긴다.
   "creative-work": "creative-info.작업 기간",
+  // 연구논문(FRT-269)도 창작물과 같다 — 새 라벨이 '연구 기간'이라 코어와 정확히 같은 이름이
+  // 아니어서, 등록하지 않으면 개편 전 레코드에 orphan 으로 남은 `core.기간`(정확-라벨 우선)이
+  // 확정본 값을 이긴다.
+  research: "research-paper.연구 기간",
 };
 
 /** 코어 '기간'이 없는 유형의 시점. 값이 없으면 빈 문자열 — 없는 날짜를 지어내지 않는다. */

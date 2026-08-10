@@ -1790,3 +1790,266 @@ describe("확정본: 창작물", () => {
     expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(6)
   })
 })
+
+describe("확정본: 연구논문", () => {
+  const sections = () => getTemplateForType("research").extensions.filter(s => s.id !== "extended")
+  const labelsIn = (blocks: Block[]) => blocks.map(b => b.label)
+  const blockAt = (idx: number, label: string) =>
+    sections()[idx].blocks.find(b => b.label === label)!
+  const columnsOf = (block: Block) =>
+    block.value.type === "repeatable-cell" ? block.value.columns : []
+
+  it("확정본 3섹션을 순서·id·category 그대로 갖는다 (④ 는 코어 증빙이 받는다)", () => {
+    expect(sections().map(s => [s.id, s.category])).toEqual([
+      ["research-paper", "basic"],
+      ["research-content", "detail"],
+      ["research-publication", "repeat"],
+    ])
+  })
+
+  /**
+   * 구 `research-info` 를 유지하면 '역할'(주저자/공저/연구원/RA/기타)의 안정키가 그대로라,
+   * 선택지가 5종으로 다시 짜인 값이 injectValue 로 실려 새 드롭다운에 없는 값이 박힌다 —
+   * 고를 수도 지울 수도 없다(FRT-247 봉사 '대상', FRT-249 해외경험 '경험 유형'과 같은 함정).
+   */
+  it("구 섹션 id 를 재사용하지 않는다 — 구 키가 orphan 안전망으로 흐르게", () => {
+    expect(sections().map(s => s.id)).not.toContain("research-info")
+  })
+
+  it("① 기본 정보는 확정본 필드를 순서 그대로 갖는다 (경험명·한 줄 요약은 헤더 코어 소유)", () => {
+    expect(labelsIn(sections()[0].blocks)).toEqual([
+      "연구 / 논문 제목",
+      "유형",
+      "연구 분야",
+      "지도 교수",
+      "소속 기관 / 연구실",
+      "연구 기간",
+      "역할 / 기여도",
+      "공저자 / 팀원",
+      "논문 파일 / 링크",
+    ])
+  })
+
+  /**
+   * '연구 기간'은 코어에 맡기면 순서를 잃는다 — `computeFormCards` 가 유형 섹션 블록을 전부 깐 뒤에
+   * 코어를 붙이므로 확정본 6번째 자리가 아니라 카드 맨 끝으로 밀린다(FRT-249·FRT-267과 같은 이유).
+   */
+  it("'연구 기간'은 확정본 ① 의 6번째 자리, 즉 '소속 기관 / 연구실' 과 '역할 / 기여도' 사이다", () => {
+    const labels = labelsIn(sections()[0].blocks)
+    expect(labels.indexOf("연구 기간")).toBe(labels.indexOf("소속 기관 / 연구실") + 1)
+    expect(labels.indexOf("역할 / 기여도")).toBe(labels.indexOf("연구 기간") + 1)
+    expect(blockAt(0, "연구 기간").type).toBe("period")
+  })
+
+  /**
+   * 확정본 ① 에서 *(선택, 필드 삭제 가능)* 표기가 없는 것만 필수다. '논문 파일 / 링크'는
+   * 표기가 **있으므로** 애초에 대상이 아니고, 표라서 required 를 붙이면 `isRequiredBlock` 이
+   * 블록 전체를 필수로 보고 `canHideBlock` 이 숨기지도 못한다(FRT-236) — 확정본이 삭제 가능이라
+   * 못 박은 칸이 영영 삭제 불가가 된다. 두 근거가 같은 결론을 가리킨다.
+   */
+  it("① 의 필수는 '연구 / 논문 제목'·'유형'·'연구 분야'·'연구 기간' 넷이다", () => {
+    const required = sections()[0].blocks.filter(b => b.required).map(b => b.label)
+    expect(required).toEqual(["연구 / 논문 제목", "유형", "연구 분야", "연구 기간"])
+  })
+
+  it("'유형'은 확정본 9종 드롭다운이다", () => {
+    const field = blockAt(0, "유형")
+    expect(field.type).toBe("single-select")
+    expect(field.options).toEqual([
+      "학부 논문/졸업 논문",
+      "학회 발표 논문",
+      "저널 게재 논문",
+      "학부생 연구 프로젝트(URP 등)",
+      "연구실 인턴/참여 연구",
+      "공동 연구",
+      "리뷰/서베이 페이퍼",
+      "학위 논문(석·박사)",
+      "기타",
+    ])
+  })
+
+  it("'역할 / 기여도'는 확정본 5종 드롭다운이다", () => {
+    const field = blockAt(0, "역할 / 기여도")
+    expect(field.type).toBe("single-select")
+    expect(field.options).toEqual([
+      "제 1저자(주저자)",
+      "공동 저자",
+      "연구 참여(데이터 수집·분석)",
+      "지도 하 단독 연구",
+      "기타",
+    ])
+    // 구 '역할' 선택지가 섞여 남으면 이관 판정(SELECT_DOMAIN_MIGRATIONS)의 전제가 무너진다.
+    for (const gone of ["주저자", "공저", "연구원", "RA"]) {
+      expect(field.options, gone).not.toContain(gone)
+    }
+  })
+
+  /**
+   * 확정본은 이 한 칸에서 'URL + 파일 첨부'를 함께 받는다. 블록 `file` 은 업로드 전용이고
+   * (`FileBlockValue.url` 은 사용자가 적는 링크가 아니라 만료되는 presigned 다운로드 URL),
+   * 블록 `link` 는 파일을 못 받는다 — 둘을 한 칸에 담는 위젯은 표뿐이다(창작물 '작품 링크 / 파일').
+   */
+  it("'논문 파일 / 링크'는 링크·파일 2컬럼 표이고 컬럼에 필수가 없다", () => {
+    const table = blockAt(0, "논문 파일 / 링크")
+    expect(table.type).toBe("repeatable-cell")
+    expect(columnsOf(table).map(c => [c.key, c.label, c.blockType])).toEqual([
+      ["link", "링크", "link"],
+      ["file", "파일", "file"],
+    ])
+    expect(columnsOf(table).some(c => c.required)).toBeFalsy()
+  })
+
+  /**
+   * ⚠️ 확정본 ④ '연구 증빙'은 **코어 증빙 카드 그 자체**다 — 파일 + '파일 설명' + '증빙 유형'
+   * 세 칸이 `FileBlockValue` 와 1:1이다. 그래서 봉사·어학·해외와 **반대로** core '증빙 자료'를
+   * 빼지 않는다(자격증·수상경력과 같은 처리). 빼면 첨부 수단이 통째로 사라진다.
+   * 반대로 기간·역할·성과는 구 `research-info` 에 동명·동의어 앵커가 있어 dedup 이 빈 코어를
+   * 이미 지워 왔으므로 빼도 안전하다(FRT-249 Codex P1 의 판정식).
+   */
+  it("core 에는 헤더 둘과 '증빙 자료'가 남는다 — 기간·역할·성과만 확정본 필드로 대체됐다", () => {
+    const core = labelsIn(getTemplateForType("research").commonCore.blocks)
+    expect(core).toEqual(["경험명", "한 줄 요약", "증빙 자료"])
+  })
+
+  it("코어 '증빙 자료'의 증빙 유형이 확정본 ④ 4종 드롭다운이다", () => {
+    const evidence = getTemplateForType("research").commonCore.blocks.find(
+      b => b.label === "증빙 자료",
+    )!
+    expect(evidence.options).toEqual([
+      "연구 참여 확인서",
+      "IRB 승인서",
+      "우수 발표 인증서/상장",
+      "기타",
+    ])
+  })
+
+  it("② 연구 내용은 확정본 6필드를 순서 그대로 갖고, 필수가 하나도 없다", () => {
+    expect(labelsIn(sections()[1].blocks)).toEqual([
+      "연구 주제 / 배경",
+      "초록 / 핵심 요약",
+      "연구 방법론",
+      "주요 발견 / 결과",
+      "연구 성격",
+      "평가 / 피드백",
+    ])
+    // 확정본은 ② 를 '필수' 섹션이라 부르지만 여섯 칸 모두 (선택, 필드 삭제 가능) 이다.
+    expect(sections()[1].blocks.some(b => b.required)).toBe(false)
+  })
+
+  it("'연구 방법론'·'주요 발견 / 결과'는 개조식 목록이다", () => {
+    expect(blockAt(1, "연구 방법론").variant).toBe("outcome-list")
+    expect(blockAt(1, "주요 발견 / 결과").variant).toBe("outcome-list")
+  })
+
+  it("'연구 성격'은 확정본 10종 이모지 태그다", () => {
+    const tags = blockAt(1, "연구 성격")
+    expect(tags.type).toBe("checklist")
+    expect(tags.variant).toBe("mood-tag")
+    expect(tags.options).toEqual([
+      "📊 정량 연구",
+      "💬 정성 연구",
+      "🔬 실험 연구",
+      "📚 문헌 연구",
+      "🔍 사례 연구",
+      "🧮 데이터 분석",
+      "🤖 머신러닝/AI",
+      "🌐 융합/학제간",
+      "📝 이론 정립",
+      "🎯 응용/실용",
+    ])
+  })
+
+  it("③ 게재 / 발표 이력은 확정본 7컬럼 반복 표이고 컬럼에 필수가 없다", () => {
+    expect(sections()[2].blocks).toHaveLength(1)
+    const table = blockAt(2, "게재 / 발표")
+    expect(table.type).toBe("repeatable-cell")
+    expect(columnsOf(table).map(c => [c.key, c.label, c.blockType])).toEqual([
+      ["type", "유형", "single-select"],
+      ["venue", "저널 / 학회명", "text"],
+      ["date", "게재 / 발표일", "date"],
+      ["place", "발표 장소", "text"],
+      ["status", "게재 상태", "single-select"],
+      ["citations", "피인용 수", "text"],
+      ["award", "수상 내역", "text"],
+    ])
+    // 확정본 ③ 은 "섹션 전체 선택" — 필수 컬럼이 하나라도 생기면 표를 숨길 수 없게 된다(FRT-236).
+    expect(columnsOf(table).some(c => c.required)).toBeFalsy()
+  })
+
+  /**
+   * 확정본은 '게재 / 발표일'을 **month** 로 정했다. 셀의 `date` 는 기본이 일 단위라 그대로 두면
+   * 호(issue) 단위로만 아는 게재 시점에 없는 날짜를 지어내게 한다 — `variant: 'month'` 로 좁힌다.
+   * (`period` 컬럼은 시작~종료 두 칸이라 단일 시점을 담을 수 없어 대안이 아니다.)
+   */
+  it("'게재 / 발표일'은 일이 아니라 월 단위로 받는다", () => {
+    const date = columnsOf(blockAt(2, "게재 / 발표")).find(c => c.key === "date")
+    expect(date?.blockType).toBe("date")
+    expect(date?.variant).toBe("month")
+  })
+
+  it("③ 의 두 드롭다운 컬럼이 확정본 선택지를 그대로 갖는다", () => {
+    const columns = columnsOf(blockAt(2, "게재 / 발표"))
+    expect(columns.find(c => c.key === "type")?.options).toEqual([
+      "국내 학술지 게재",
+      "SCI(E)/SSCI/A&HCI 등재",
+      "국내 학회 발표(구두)",
+      "국내 학회 발표(포스터)",
+      "국제 학회 발표(구두)",
+      "국제 학회 발표(포스터)",
+      "대학·기관 내부 발표",
+      "워킹 페이퍼/프리프린트",
+      "기타",
+    ])
+    expect(columns.find(c => c.key === "status")?.options).toEqual([
+      "투고 중",
+      "심사 중(Under Review)",
+      "게재 예정(Accepted)",
+      "게재 완료",
+    ])
+  })
+
+  it("①② 의 모든 필드에 가이드라인이 있다 (확정본이 '—'로 비운 것만 예외)", () => {
+    // 확정본이 가이드라인 칸을 '—' 로 비운 필드 — 없는 문구를 지어내지 않는다.
+    const NO_GUIDE = new Map<string, "placeholder" | "options" | "type">([
+      ["지도 교수", "placeholder"],
+      ["소속 기관 / 연구실", "placeholder"],
+      ["연구 기간", "type"],
+      ["역할 / 기여도", "options"],
+    ])
+    for (const s of sections().slice(0, 2)) {
+      for (const b of s.blocks) {
+        const fallback = NO_GUIDE.get(b.label)
+        if (fallback) {
+          expect(b[fallback], `${s.id}/${b.label}`).toBeTruthy()
+          continue
+        }
+        expect(b.guide, `${s.id}/${b.label}`).toBeTruthy()
+      }
+    }
+  })
+
+  it("확정본에 없는 구 필드는 템플릿에서 사라진다 (값은 매퍼가 orphan 으로 보존)", () => {
+    const labels = sections().flatMap(s => labelsIn(s.blocks))
+    for (const gone of [
+      "연구 주제/논문 제목",
+      "소속/기관/랩",
+      "역할",
+      "연구 질문/가설",
+      "방법/설계",
+      "데이터/자료 출처",
+      "내가 맡은 파트",
+      "결과 요약",
+      "성과",
+      "재현/공유 자료",
+      "참고문헌/관련 읽을거리",
+      "산출물",
+    ]) {
+      expect(labels, gone).not.toContain(gone)
+    }
+  })
+
+  /** 섹션 id 교체는 breaking change 다 — `withSectionKeys` 규약대로 bump 를 동반한다. */
+  it("섹션 id 를 갈아치웠으므로 TEMPLATE_VERSION 이 창작물(6) 위로 올라가 있다", () => {
+    expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(7)
+  })
+})

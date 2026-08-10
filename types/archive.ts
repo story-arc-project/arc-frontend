@@ -85,13 +85,16 @@ export interface BlockColumnDef {
    * 셀 렌더 모드 힌트 (FRT-178). 블록의 `variant` 와 같은 역할을 컬럼 층위에서 한다.
    * `'role-chip'` 은 옵션 없는 `checklist` 컬럼을 자유 태그 입력이 아니라 역할 칩으로 렌더한다 —
    * 선택지가 상수가 아니라 같은 폼의 '역할 이력' 값에서 파생되기 때문이다(RoleHistoryContext).
+   * `'month'` 는 `date` 컬럼을 일 단위가 아니라 **월 단위**로 받는다(FRT-269) — 확정본이 month 로
+   * 정한 시점 컬럼용이다. 블록 층위에는 `DatePicker mode` 가 있는데 셀에는 없어 생긴 구멍이고,
+   * `period` 컬럼은 시작~종료 **두 칸**이라 단일 시점을 담을 수 없다. 안 주면 기존대로 일 단위다.
    *
    * ⚠️ 블록 층위의 `variant` 와 달리 이건 `RepeatableCellBlockValue.columns` 안에 있어
    * **value(JSONB)에 함께 저장된다** — 저장된 레코드를 다시 열면 템플릿이 아니라 저장값의
    * columns 가 채택되므로(`injectValue`), 값을 읽는 쪽은 columns 에 `variant` 키가 실릴 수
    * 있음을 전제해야 한다. 렌더 힌트일 뿐이라 무시해도 무해하다.
    */
-  variant?: 'role-chip'
+  variant?: 'role-chip' | 'month'
 }
 
 /**
@@ -388,6 +391,9 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   // 안내 문구(SECTION_DESCRIPTION_OVERRIDES)는 두지 않는다 — 확정본이 ② 에 섹션 안내를 달지
   // 않았고, 없는 문구를 지어내는 대신 폼 기본 문구로 폴백한다(독서와 같은 처리).
   'creative-work': { detail: '작업 상세' },
+  // 연구논문 확정본 ②③④(FRT-269). basic 은 오버라이드하지 않는다 — 확정본 ① 의 이름이 기본
+  // 라벨과 같은 '기본 정보'이고, 헤더 코어(경험명·한 줄 요약)도 함께 드는 카드다.
+  'research': { detail: '연구 내용', repeat: '게재 / 발표 이력', evidence: '연구 증빙' },
 }
 
 /**
@@ -440,6 +446,14 @@ export const SECTION_DESCRIPTION_OVERRIDES: Partial<
     repeat:
       "위 '인상 깊었던 문장'에서 문장에 '감상 남기기'를 누르면 여기에 나타나요. 문장이 특별히 마음에 남았다면 그때 남겨보세요 — 굳이 모두 채울 필요는 없어요.",
     // detail 은 override 하지 않는다 — 확정본에 대응 문구가 없어 지어내는 대신 폼 기본 문구로 폴백한다.
+  },
+  // 연구논문 확정본 ②③④ 의 '섹션 안내' 원문(FRT-269). ③ 은 이 카드 문구가 곧 안내라
+  // 표 블록에는 guide 를 따로 달지 않는다 — 같은 문장이 카드 제목 아래와 표 위에 두 번 뜬다.
+  'research': {
+    detail: '이 연구가 무엇에 대한 것이었는지, 어떻게 진행했는지 정리해주세요.',
+    repeat: '이 연구가 논문으로 게재되었거나 학회에서 발표된 이력을 기록해주세요.',
+    evidence:
+      '연구 참여 확인서, 상장, IRB 승인서 등 이 연구를 증명할 수 있는 자료를 첨부해주세요.',
   },
 }
 

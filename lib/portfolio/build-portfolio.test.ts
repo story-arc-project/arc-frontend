@@ -701,6 +701,69 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
   });
 
   /**
+   * 연구논문(FRT-269)도 창작물과 같은 자리다 — `CORE_EXCLUDE` 로 코어 '기간'을 빼고 '연구 기간'으로
+   * 시점을 받으며, 구 `research-info.기간` 이라는 두 번째 orphan 이 더 있다. 새 라벨이 '연구 기간'
+   * 이라 코어와 정확히 같은 이름이 아니므로, `TYPE_PERIOD_KEY` 등록을 빠뜨리면 정확-라벨 우선
+   * 정렬 때문에 orphan `core.기간` 이 확정본 값을 이긴다.
+   */
+  describe("연구논문은 '연구 기간'을 발행 기간으로 쓴다 (FRT-269)", () => {
+    function researchExp(fields: Record<string, unknown>): Experience {
+      return makeExp({
+        type: "research",
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "SNS 사용과 학업 몰입도 연구",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const STUDY_PERIOD = { type: "period", start: "2024-03-01", end: "2024-08-31", isCurrent: false };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+    const OLD_SECTION_PERIOD = {
+      type: "period",
+      start: "2020-05-01",
+      end: "2020-08-31",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '연구 기간'이 orphan 된 옛 기간 둘을 모두 이긴다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "research-info.기간": OLD_SECTION_PERIOD,
+          "research-paper.연구 기간": STUDY_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.08");
+    });
+
+    it("'연구 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(researchExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("연구논문 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("research")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "연구 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(researchExp({ [key as string]: STUDY_PERIOD })).period).toBe(
+        "2024.03 – 2024.08",
+      );
+    });
+  });
+
+  /**
    * 봉사(FRT-247)도 `CORE_EXCLUDE` 로 코어 '기간'을 빼고 '활동 기간'으로 시점을 받는다.
    * 독서와 같은 자리에서 같은 함정을 밟는다 — orphan 된 `core.기간` 은 라벨이 정확히 '기간'
    * 이라 `pickValue` 의 정확-라벨 우선 정렬에서 동의어 '활동 기간' 을 이긴다.

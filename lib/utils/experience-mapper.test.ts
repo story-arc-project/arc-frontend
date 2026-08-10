@@ -2772,3 +2772,317 @@ describe("확정본 전면 교체 값 보존 (FRT-267 창작물)", () => {
     }
   })
 })
+
+describe("확정본 전면 교체 값 보존 (FRT-269 연구논문)", () => {
+  /**
+   * ⚠️ 레거시 픽스처는 "그럴듯한 값"이 아니라 **그 시점의 렌더 경로가 실제로 만들어낼 수 있는 값**
+   * 이어야 한다(FRT-249 Codex P1 을 놓친 이유). 코어 4칸이 서로 다른 이유로 갈린다:
+   *  · `core.기간` — 구 `research-info` 에 '기간'(동명) 앵커가 있어 dedup 이 빈 코어를 화면에서
+   *    지웠다 → 채울 방법이 없었으므로 **항상 비어 있다.**
+   *  · `core.내 역할/기여도` — 구 '역할'·'내가 맡은 파트' 둘 다 SEMANTIC_GROUPS.role 등재라 같은 이유.
+   *  · `core.핵심 성과` — 구 '성과'(tags)가 achievement 등재라 같은 이유.
+   *  · `core.증빙 자료` — `isEvidenceBlock` 이라 dedup 자체를 타지 않고 '활동 증빙' 카드에 **항상**
+   *    보였다 → 값이 있을 수 있다. 확정본 ④ 가 곧 이 카드이므로 창작물과 달리 **빼지 않는다.**
+   */
+  function legacyResearchContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "SNS 사용과 학업 몰입도 연구",
+      summary: "대학생 300명 설문 기반 실증 연구",
+      status: "complete",
+      tags: [],
+      fields: {
+        "core.기간": { type: "period", start: "", end: "", isCurrent: false },
+        "core.핵심 성과": textarea(""),
+        "core.내 역할/기여도": textarea(""),
+        "core.증빙 자료": {
+          type: "file",
+          fileName: "연구참여확인서.pdf",
+          description: "학과 발급 확인서",
+          evidenceType: "연구 참여 확인서",
+        },
+        // 질문도 타입도 같아 새 키로 이관되는 것들.
+        "research-info.연구 주제/논문 제목": text("대학생의 SNS 사용 패턴이 학업 몰입도에 미치는 영향"),
+        "research-info.소속/기관/랩": text("OO대학교 경영학과 소비자행동연구실"),
+        "research-info.기간": { type: "period", start: "2024-03", end: "2024-08", isCurrent: false },
+        // 선택지 도메인이 달라 **값 조건부**인 것 — '주저자'는 새 5종에 그대로 없다.
+        "research-info.역할": {
+          type: "single-select",
+          selected: "주저자",
+          options: ["주저자", "공저", "연구원", "RA", "기타"],
+        },
+        // 묻는 것이 달라 옮기지 않는 것들.
+        "research-info.연구 질문/가설": textarea("SNS 사용량이 학업 몰입도를 낮추는가?"),
+        "research-info.결과 요약": textarea("3시간 이상 사용 시 몰입도가 유의하게 감소했다."),
+        // 타입이 달라 옮길 수 없는 것들.
+        "research-info.방법/설계": textarea("설문 300부 + 심층 인터뷰 8명"),
+        "research-info.성과": { type: "tags", tags: ["학회 발표"] },
+        "research-info.재현/공유 자료": { type: "link", url: "https://osf.io/abcde" },
+        "research-info.산출물": {
+          type: "file",
+          fileName: "논문초고.pdf",
+          description: "",
+          evidenceType: "",
+        },
+        // 확정본에 대응 칸이 없는 것들.
+        "research-info.데이터/자료 출처": text("한국복지패널 2023"),
+        "research-info.참고문헌/관련 읽을거리": textarea("Kim(2022), Lee(2021)"),
+        "research-info.내가 맡은 파트": textarea("설문 설계와 회귀 분석을 맡았습니다."),
+      },
+      custom: [],
+    }
+  }
+
+  const loadLegacy = () =>
+    toExperienceV2(makeExperience({ type: "research", content: legacyResearchContent() }))
+
+  /** 확정본 '역할 / 기여도' 5종을 템플릿에서 읽는다 — 목록을 테스트에 복제하지 않는다. */
+  const roleOptions = (): string[] =>
+    getTemplateForType("research")
+      .extensions.flatMap(s => s.blocks)
+      .find(b => b.key === "research-paper.역할 / 기여도")?.options ?? []
+
+  it("질문도 타입도 같은 필드는 확정본 자리로 이관된다", () => {
+    const v2 = loadLegacy()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("research-paper.연구 / 논문 제목")?.value).toEqual(
+      text("대학생의 SNS 사용 패턴이 학업 몰입도에 미치는 영향"),
+    )
+    expect(byKey("research-paper.소속 기관 / 연구실")?.value).toEqual(
+      text("OO대학교 경영학과 소비자행동연구실"),
+    )
+    expect(byKey("research-paper.연구 기간")?.value).toMatchObject({
+      start: "2024-03",
+      end: "2024-08",
+    })
+
+    // 옮긴 구 키는 '기타' 에 중복으로 되살아나지 않는다.
+    for (const oldKey of [
+      "research-info.연구 주제/논문 제목",
+      "research-info.소속/기관/랩",
+      "research-info.기간",
+    ]) {
+      expect(v2.customBlocks.find(b => b.key === oldKey), oldKey).toBeUndefined()
+    }
+  })
+
+  /**
+   * 구 '역할'(주저자/공저/연구원/RA/기타)과 확정본 '역할 / 기여도'(5종)는 **같은 질문**(이 연구에서
+   * 내가 무엇이었나)이지만 선택지가 통째로 다시 짜였다. '주저자'→'제 1저자(주저자)' 는 이름이
+   * 바뀌었고 '연구원'·'RA' 는 확정본이 역할의 성격을 묻는 쪽으로 갈아 1:1이 아니다 — 어느 쪽으로든
+   * 좁히면 **답이 둔갑한다**(FRT-249 ⑨ 의 값 조건부 이관, 판정 단위는 필드가 아니라 **값**).
+   */
+  it("새 목록에 없는 '역할' 값은 이관하지 않고 '기타' 카드로 보존한다", () => {
+    const v2 = loadLegacy()
+
+    expect(v2.customBlocks.find(b => b.key === "research-info.역할")?.value).toMatchObject({
+      selected: "주저자",
+    })
+    expect(
+      v2.extensionBlocks.find(b => b.key === "research-paper.역할 / 기여도")?.value,
+    ).toMatchObject({ selected: "" })
+  })
+
+  /**
+   * 답이 새 목록에 그대로 남아 있으면 옮긴다. 옮길 때 선택지는 템플릿 것으로 정규화한다 —
+   * 저장값이 들고 온 옛 5종이 그대로 실리면 `SingleSelectBlock` 이 그쪽을 우선해(`val.options`)
+   * 확정본이 새로 준 선택지를 영영 못 받고, 다음 저장에 그 상태가 굳는다.
+   */
+  it("확정본 목록에 그대로 남은 답('기타')은 옮기고 선택지도 확정본 것으로 바꾼다", () => {
+    const content = legacyResearchContent()
+    const fields = content.fields as Record<string, BlockValue>
+    fields["research-info.역할"] = {
+      type: "single-select",
+      selected: "기타",
+      options: ["주저자", "공저", "연구원", "RA", "기타"],
+    }
+    const v2 = toExperienceV2(makeExperience({ type: "research", content }))
+
+    const moved = v2.extensionBlocks.find(b => b.key === "research-paper.역할 / 기여도")
+    expect(moved?.value).toMatchObject({ selected: "기타" })
+    expect((moved?.value as SingleSelectBlockValue).options).toEqual(roleOptions())
+    expect(v2.customBlocks.find(b => b.key === "research-info.역할")).toBeUndefined()
+  })
+
+  /**
+   * 질문이 다르거나 타입이 다른 구 필드는 시스템이 대신 판단하지 않는다 — 원본 그대로 '기타'에
+   * 남겨 사용자가 직접 옮기게 둔다. 특히 '결과 요약'→'초록 / 핵심 요약' 은 타입이 같아 **옮기려면
+   * 옮길 수 있는데도** 옮기지 않는다: 확정본 초록은 목적·방법·결과 전체의 요약이라, 결과만 적힌
+   * 옛 답을 실으면 초록 칸이 채워진 것처럼 보인다(FRT-211 의 '개명 vs 대체').
+   */
+  it("질문·타입이 달라진 구 필드는 확정본 자리에 실리지 않고 '기타' 카드로 보존한다", () => {
+    const v2 = loadLegacy()
+    const custom = (k: string) => v2.customBlocks.find(b => b.key === k)
+
+    expect(custom("research-info.결과 요약")?.value).toEqual(
+      textarea("3시간 이상 사용 시 몰입도가 유의하게 감소했다."),
+    )
+    expect(
+      v2.extensionBlocks.find(b => b.key === "research-content.초록 / 핵심 요약")?.value,
+    ).toEqual(textarea(""))
+
+    expect(custom("research-info.연구 질문/가설")?.value).toEqual(
+      textarea("SNS 사용량이 학업 몰입도를 낮추는가?"),
+    )
+    expect(custom("research-info.방법/설계")?.value).toEqual(textarea("설문 300부 + 심층 인터뷰 8명"))
+    expect(custom("research-info.내가 맡은 파트")?.value).toEqual(
+      textarea("설문 설계와 회귀 분석을 맡았습니다."),
+    )
+    expect(custom("research-info.성과")?.value).toMatchObject({ tags: ["학회 발표"] })
+    expect(custom("research-info.재현/공유 자료")?.value).toMatchObject({
+      url: "https://osf.io/abcde",
+    })
+    expect(custom("research-info.산출물")?.value).toMatchObject({ fileName: "논문초고.pdf" })
+    expect(custom("research-info.데이터/자료 출처")?.value).toEqual(text("한국복지패널 2023"))
+    expect(custom("research-info.참고문헌/관련 읽을거리")?.value).toEqual(
+      textarea("Kim(2022), Lee(2021)"),
+    )
+  })
+
+  /**
+   * ⚠️ 선행 5종과 **반대 결론**이다. 봉사·어학·해외는 유형 섹션이 자기 증빙 칸을 따로 가져
+   * core '증빙 자료'를 뺐지만, 연구논문 확정본 ④ '연구 증빙'은 **코어 증빙 카드 그 자체**다.
+   * 빼면 첨부 수단이 통째로 사라지고 확정본 4섹션이 3카드로 줄어든다.
+   */
+  it("코어 증빙은 코어에 그대로 남고, 확정본 4섹션이 화면에서도 4카드다", () => {
+    const v2 = loadLegacy()
+
+    expect(v2.coreBlocks.find(b => b.key === "core.증빙 자료")?.value).toMatchObject({
+      fileName: "연구참여확인서.pdf",
+      evidenceType: "연구 참여 확인서",
+    })
+    // 확정본이 뺀 코어 셋은 되살아나지 않는다.
+    for (const gone of ["core.기간", "core.내 역할/기여도", "core.핵심 성과"]) {
+      expect(v2.coreBlocks.find(b => b.key === gone), gone).toBeUndefined()
+    }
+
+    const t = getTemplateForType("research")
+    const cards = computeFormCards(
+      v2.coreBlocks,
+      t.extensions.map(e => ({ id: e.id, category: e.category, blocks: cloneBlocks(e.blocks) })),
+      SECTION_LABEL_OVERRIDES["research"],
+    )
+    expect(cards.visibleCategories).toEqual(["basic", "detail", "repeat", "evidence"])
+    expect(cards.cards.map(c => c.label)).toEqual([
+      "기본 정보",
+      "연구 내용",
+      "게재 / 발표 이력",
+      "연구 증빙",
+    ])
+  })
+
+  describe("v1 레거시(라벨 매칭)", () => {
+    function loadV1(blocks: { coreBlocks?: Block[]; extensionBlocks?: Block[] }): ExperienceV2 {
+      return toExperienceV2(
+        makeExperience({
+          type: "research",
+          content: {
+            title: "SNS 사용과 학업 몰입도 연구",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: blocks.coreBlocks ?? [],
+            extensionBlocks: blocks.extensionBlocks ?? [],
+            customBlocks: [],
+          },
+        }),
+      )
+    }
+
+    /**
+     * ⚠️ v2 는 코어를 현재 템플릿에서 다시 짜 `CORE_EXCLUDE` 가 저절로 적용되지만, v1 은 저장된
+     * 코어 배열을 그대로 통과시킨다 — 확정본이 뺀 빈 칸이 되살아나면 채울 것도 없는 칸이 카드에
+     * 낀다(FRT-267 Codex P2). 반대로 **'증빙 자료'는 남아야 한다** — 확정본 ④ 가 그 칸이라
+     * 버리면 v1 레코드만 증빙 카드를 잃는다. 한 판정이 두 방향으로 갈리는 자리다.
+     */
+    it("확정본이 뺀 빈 코어만 사라지고 '증빙 자료'는 v1 에서도 남는다 — 4카드가 유지된다", () => {
+      const v1 = loadV1({
+        coreBlocks: [
+          {
+            id: "p",
+            type: "period",
+            label: "기간",
+            value: { type: "period", start: "", end: "", isCurrent: false },
+          },
+          { id: "r", type: "textarea", label: "내 역할/기여도", value: textarea("") },
+          { id: "a", type: "textarea", label: "핵심 성과", value: textarea("") },
+          {
+            id: "ev",
+            type: "file",
+            label: "증빙 자료",
+            value: { type: "file", fileName: "", description: "", evidenceType: "" },
+          },
+        ],
+      })
+
+      for (const gone of ["기간", "내 역할/기여도", "핵심 성과"]) {
+        expect(v1.coreBlocks.find(b => b.label === gone), gone).toBeUndefined()
+      }
+      expect(v1.coreBlocks.find(b => b.label === "증빙 자료")).toBeDefined()
+
+      const t = getTemplateForType("research")
+      const cards = computeFormCards(
+        v1.coreBlocks,
+        t.extensions.map(e => ({ id: e.id, category: e.category, blocks: cloneBlocks(e.blocks) })),
+        SECTION_LABEL_OVERRIDES["research"],
+      )
+      expect(cards.visibleCategories).toEqual(["basic", "detail", "repeat", "evidence"])
+    })
+
+    /** ⚠️ 빈 것만 버린다 — 값이 든 칸을 지우는 쪽이 칸 하나 더 뜨는 것보다 훨씬 나쁘다. */
+    it("값이 든 코어 칸은 확정본이 뺐어도 v1 에서 그대로 남는다", () => {
+      const v1 = loadV1({
+        coreBlocks: [
+          {
+            id: "r",
+            type: "textarea",
+            label: "내 역할/기여도",
+            value: textarea("회귀 분석을 맡았습니다."),
+          },
+        ],
+      })
+
+      expect(v1.coreBlocks.find(b => b.label === "내 역할/기여도")?.value).toEqual(
+        textarea("회귀 분석을 맡았습니다."),
+      )
+    })
+
+    /** 값 조건부 이관은 v1·v2 양쪽에 같게 적용한다 — 사용자에게 스키마 버전이 보이면 안 된다. */
+    for (const withKey of [false, true]) {
+      const how = withKey ? "키가 있는" : "키가 없는"
+      const loadV1Role = (saved: string) =>
+        loadV1({
+          extensionBlocks: [
+            {
+              id: "b1",
+              ...(withKey ? { key: "research-info.역할" } : {}),
+              type: "single-select",
+              label: "역할",
+              value: { type: "single-select", options: ["주저자", "공저", "기타"], selected: saved },
+            },
+          ],
+        })
+
+      it(`${how} v1 '역할'의 답이 새 목록에 그대로 있으면 '역할 / 기여도'로 옮는다`, () => {
+        const v1 = loadV1Role("기타")
+
+        const moved = v1.extensionBlocks.find(b => b.key === "research-paper.역할 / 기여도")
+        expect((moved?.value as SingleSelectBlockValue).selected).toBe("기타")
+        // 선택지는 템플릿 것으로 정규화된다 — 옛 목록이 따라오면 확정본 5종을 영영 못 받는다.
+        expect((moved?.value as SingleSelectBlockValue).options).toEqual(roleOptions())
+        expect(v1.customBlocks.find(b => b.label === "역할")).toBeUndefined()
+      })
+
+      it(`${how} v1 '역할'의 답이 새 목록에 없으면 '기타'로 보존한다 — 시스템이 대신 고르지 않는다`, () => {
+        const v1 = loadV1Role("주저자")
+
+        const moved = v1.extensionBlocks.find(b => b.key === "research-paper.역할 / 기여도")
+        expect(moved === undefined || isBlockEmpty(moved)).toBe(true)
+        const preserved = v1.customBlocks.find(b => b.label === "역할")
+        expect((preserved?.value as SingleSelectBlockValue).selected).toBe("주저자")
+      })
+    }
+  })
+})
