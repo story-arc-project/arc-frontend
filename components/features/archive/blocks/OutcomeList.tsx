@@ -11,6 +11,7 @@ import {
 import { ArrowUpRight, Link2, Plus } from "lucide-react"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 import { cellText, createEmptyRow } from "@/lib/utils/block-utils"
+import { isImeComposing } from "@/lib/utils/keyboard"
 import { useProjectLink } from "@/contexts/ProjectLinkContext"
 import RoleChips from "./RoleChips"
 import { usePlaceholderRow } from "./usePlaceholderRow"
@@ -222,7 +223,7 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>, index: number, row: BlockRow) {
     // IME 조합 중의 Enter/Backspace 는 조합 확정용이므로 행 조작을 트리거하지 않는다(한글 입력).
-    if (e.nativeEvent.isComposing) return
+    if (isImeComposing(e)) return
     // FRT-103: 표시용 행에서의 Enter 는 막는다. 그냥 두면 addAfter 가 진짜 rows(빈 배열) 위에서
     // 돌아 placeholder 와 **다른 id** 의 빈 행을 커밋한다 → 리마운트 + 누른 적 없는 둘째 줄.
     // Backspace 는 아래 `rows.length > 1` 가드가 진짜 rows(0)를 보므로 자동으로 막힌다.

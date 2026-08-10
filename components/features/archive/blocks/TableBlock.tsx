@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Block, TableBlockValue } from "@/types/archive"
+import { onEnterCommit } from "@/lib/utils/keyboard"
 
 interface TableBlockProps {
   block: Block
@@ -85,7 +86,7 @@ export default function TableBlock({ block, readOnly, onChange }: TableBlockProp
             placeholder="첫 번째 열 이름..."
             value={newCol}
             onChange={e => setNewCol(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addColumn() } }}
+            onKeyDown={onEnterCommit(addColumn)}
           />
           <button
             type="button"
@@ -148,7 +149,7 @@ export default function TableBlock({ block, readOnly, onChange }: TableBlockProp
                 placeholder="열 추가..."
                 value={newCol}
                 onChange={e => setNewCol(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addColumn() } }}
+                onKeyDown={onEnterCommit(addColumn)}
               />
               <button
                 type="button"

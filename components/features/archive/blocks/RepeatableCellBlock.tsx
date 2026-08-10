@@ -33,6 +33,7 @@ import {
 import FileCellInput from "./file/FileCellInput"
 import RoleChips from "./RoleChips"
 import { usePlaceholderRow } from "./usePlaceholderRow"
+import { onEnterCommit } from "@/lib/utils/keyboard"
 
 interface RepeatableCellBlockProps {
   block: Block
@@ -239,7 +240,7 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
               placeholder="열 이름..."
               value={newColLabel}
               onChange={e => setNewColLabel(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addColumn() } }}
+              onKeyDown={onEnterCommit(addColumn)}
             />
             <button
               type="button"
@@ -278,7 +279,7 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
                   placeholder="열 추가..."
                   value={newColLabel}
                   onChange={e => setNewColLabel(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addColumn() } }}
+                  onKeyDown={onEnterCommit(addColumn)}
                 />
               </div>
             </div>
@@ -560,7 +561,7 @@ function RowExtraFieldsEditor({
             placeholder="항목 이름..."
             value={draftLabel}
             onChange={e => setDraftLabel(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add() } }}
+            onKeyDown={onEnterCommit(add)}
           />
           <button
             type="button"
@@ -982,7 +983,7 @@ function TagsCellInput({
         placeholder={placeholder ?? "입력 후 Enter"}
         value={input}
         onChange={e => setInput(e.target.value)}
-        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add() } }}
+        onKeyDown={onEnterCommit(add)}
         onBlur={add}
       />
     </div>

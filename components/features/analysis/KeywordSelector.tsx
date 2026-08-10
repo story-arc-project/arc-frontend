@@ -4,6 +4,7 @@ import { useState } from "react";
 import { X, Plus } from "lucide-react";
 import type { KeywordSuggestion, KeywordCategory } from "@/types/analysis";
 import { keywordCategoryLabel } from "@/types/analysis";
+import { onEnterCommit } from "@/lib/utils/keyboard";
 import { Badge, Input } from "@/components/ui";
 
 interface SelectedKeyword {
@@ -128,12 +129,7 @@ export default function KeywordSelector({
             onChange={(e) => setCustomLabel(e.target.value)}
             placeholder="키워드 입력"
             className="flex-1"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addCustom();
-              }
-            }}
+            onKeyDown={onEnterCommit(addCustom)}
           />
           <select
             value={customCategory}

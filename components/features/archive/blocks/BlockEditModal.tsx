@@ -6,6 +6,7 @@ import { Dialog } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import type { BlockType, BlockColumnDef } from "@/types/archive"
 import { uid } from "@/lib/utils/block-utils"
+import { onEnterCommit } from "@/lib/utils/keyboard"
 
 export interface BlockEditConfig {
   label: string
@@ -163,16 +164,13 @@ export default function BlockEditModal({
                 placeholder="옵션 추가..."
                 value={newOption}
                 onChange={e => setNewOption(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    const t = newOption.trim()
-                    if (t && !options.includes(t)) {
-                      setOptions([...options, t])
-                      setNewOption("")
-                    }
+                onKeyDown={onEnterCommit(() => {
+                  const t = newOption.trim()
+                  if (t && !options.includes(t)) {
+                    setOptions([...options, t])
+                    setNewOption("")
                   }
-                }}
+                })}
               />
               <button
                 type="button"
@@ -231,16 +229,13 @@ export default function BlockEditModal({
                 placeholder="열 이름 추가..."
                 value={newColLabel}
                 onChange={e => setNewColLabel(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    const t = newColLabel.trim()
-                    if (t) {
-                      setColumns([...columns, { key: uid("col"), label: t, blockType: "text" }])
-                      setNewColLabel("")
-                    }
+                onKeyDown={onEnterCommit(() => {
+                  const t = newColLabel.trim()
+                  if (t) {
+                    setColumns([...columns, { key: uid("col"), label: t, blockType: "text" }])
+                    setNewColLabel("")
                   }
-                }}
+                })}
               />
               <button
                 type="button"
@@ -288,16 +283,13 @@ export default function BlockEditModal({
                 placeholder="열 이름 추가..."
                 value={newTableCol}
                 onChange={e => setNewTableCol(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    const t = newTableCol.trim()
-                    if (t && !tableColumns.includes(t)) {
-                      setTableColumns([...tableColumns, t])
-                      setNewTableCol("")
-                    }
+                onKeyDown={onEnterCommit(() => {
+                  const t = newTableCol.trim()
+                  if (t && !tableColumns.includes(t)) {
+                    setTableColumns([...tableColumns, t])
+                    setNewTableCol("")
                   }
-                }}
+                })}
               />
               <button
                 type="button"
