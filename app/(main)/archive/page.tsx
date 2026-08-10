@@ -230,6 +230,8 @@ export default function ArchivePage() {
   // 이번 시각과 직전 시각의 간격으로만 알 수 있다 — 이동 직후의 effect 에서 재면 항상 0 이다.
   const lastPeerNavAtRef = useRef(0)
   const listScrollRef = useRef<HTMLDivElement | null>(null)
+  // md 아래에서는 목록 카드가 숨겨져 포커스를 받을 수 없다 → 풀스크린 미리보기가 대신 받는다.
+  const mobilePanelRef = useRef<HTMLDivElement | null>(null)
   // 키보드로 넘겼을 때만 DOM 포커스를 새 카드로 옮긴다(아래 effect 가 소비).
   const moveFocusOnSelectRef = useRef(false)
 
@@ -307,16 +309,25 @@ export default function ArchivePage() {
   // (모바일은 패널이 풀스크린이라 목록 스크롤을 맞출 필요가 없다.)
   useEffect(() => {
     if (!selectedId) return
+    const shouldMoveFocus = moveFocusOnSelectRef.current
+    moveFocusOnSelectRef.current = false
     const card = listScrollRef.current?.querySelector<HTMLElement>(
       `[data-experience-id="${selectedId}"]`,
     )
-    if (!card) return
-    if (moveFocusOnSelectRef.current) {
-      moveFocusOnSelectRef.current = false
+
+    if (shouldMoveFocus) {
       // 스크롤은 바로 아래에서 의도한 방식(부드럽게/즉시)으로 처리하므로 여기선 막는다.
-      card.focus({ preventScroll: true })
+      card?.focus({ preventScroll: true })
+      // md 아래에서는 이 카드가 hidden md:flex 안에 있어 display:none 이다 — focus() 가
+      // 조용히 무시된다. CSS 를 추론하는 대신 "포커스가 실제로 옮겨갔는가"로 판정하고,
+      // 실패했으면 화면을 채우고 있는 미리보기 자체에 포커스를 준다(스크린리더가
+      // 새 기록의 제목부터 읽는다). 목록이 안 보이는 화면이라 카드로 옮길 이유도 없다.
+      if (document.activeElement !== card) {
+        mobilePanelRef.current?.focus({ preventScroll: true })
+      }
     }
-    card.scrollIntoView({
+
+    card?.scrollIntoView({
       block: "nearest",
       behavior: reduceMotion || isRapidPeerNav ? "auto" : "smooth",
     })
@@ -807,7 +818,13 @@ export default function ArchivePage() {
               </div>
               <motion.div
                 key={selectedId ?? "none"}
-                className="flex-1 overflow-y-auto"
+                ref={mobilePanelRef}
+                // 키보드로 기록을 넘겼을 때 포커스를 받는 자리. 목록 카드가 숨겨진 화면이라
+                // 여기가 "새 기록"의 시작점이다. 프로그램 포커스라 링은 그리지 않는다 —
+                // 패널 내용이 통째로 바뀌는 것이 이미 시각적 신호다.
+                tabIndex={-1}
+                data-preview-panel="mobile"
+                className="flex-1 overflow-y-auto focus:outline-none"
                 initial={{ opacity: 0, x: 8 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{

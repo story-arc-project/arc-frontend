@@ -164,6 +164,26 @@ test.describe("FRT-86 미리보기 peer 네비게이션", () => {
     // URL 이 안정된 뒤의 Back 동작은 archive-empty-states.behavior.spec.ts 가 이미 덮는다.
   });
 
+  test("md 아래(모바일)에서는 포커스가 풀스크린 미리보기로 옮겨온다", async ({ page }) => {
+    // 목록 카드는 데스크톱 레이아웃(hidden md:flex) 안에 있어 이 폭에서는 display:none 이다.
+    // 그대로 card.focus() 를 부르면 조용히 무시돼 포커스가 body 에 남고, 스크린리더가
+    // 넘어간 기록을 따라오지 못한다. 화면을 채우고 있는 미리보기가 대신 포커스를 받아야 한다.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/archive");
+
+    await page.getByRole("heading", { level: 3, name: FIRST }).click();
+    await expect(detailHeading(page, FIRST)).toBeVisible();
+
+    await page.keyboard.press("ArrowDown");
+    await expect(detailHeading(page, SECOND)).toBeVisible();
+
+    const focusedPanel = await page.evaluate(
+      () => (document.activeElement as HTMLElement | null)?.dataset.previewPanel ?? null,
+    );
+    expect(focusedPanel).toBe("mobile");
+  });
+
   test("ESC 로 미리보기를 닫는 기존 동작이 유지된다", async ({ page }) => {
     await stubApi(page, { authed: true, scenario: "data" });
     await page.goto("/archive");
