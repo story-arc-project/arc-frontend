@@ -53,6 +53,16 @@ function selectedOf(value: BlockValue | undefined): string {
 }
 
 /**
+ * 내 역할은 유형마다 **위젯이 다르다** — 대부분 textarea 지만 연구논문 '역할 / 기여도'는
+ * 확정본이 5종 select 로 정했다(FRT-269). `textOf` 는 single-select 를 빈 문자열로 돌려주므로
+ * 라벨을 동의어로 등록해도 값이 발행되지 않는다. `textOf` 자체를 넓히지 않는 이유는 요약·성과
+ * 경로까지 함께 바뀌기 때문 — 그쪽은 select 를 발행 대상으로 삼은 적이 없다.
+ */
+function contributionText(value: BlockValue | undefined): string {
+  return textOf(value) || selectedOf(value);
+}
+
+/**
  * 포트폴리오는 공개 발행물이므로 명시적 옵트인(공개)만 발행한다.
  * status 는 toExperienceV2 가 정규화한 값(content.status, 없으면 "draft") 기준이고,
  * 공개 여부는 '공개 설정' single-select 가 정확히 "공개" 일 때만 true 다.
@@ -194,7 +204,7 @@ export function experienceToPost(exp: Experience): PortfolioPost {
     period: typePeriodOf(exp.type as ExperienceTypeId, blocks) || periodOf(pickValue(blocks, "기간")),
     category: label,
     summary: ev2.summary || pickSummary(blocks),
-    contribution: textOf(pickValue(blocks, "내 역할/기여도")),
+    contribution: contributionText(pickValue(blocks, "내 역할/기여도")),
     achievement: achievementText(blocks),
     keywords: ev2.tags,
   };

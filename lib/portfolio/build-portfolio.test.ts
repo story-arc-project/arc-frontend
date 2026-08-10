@@ -5,6 +5,7 @@ import { SCHEMA_VERSION_V2 } from "@/types/archive";
 import type { PortfolioProfile } from "@/types/portfolio";
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper";
 import { getTemplateForType } from "@/lib/constants/templates-v2";
+import { equivalentLabels } from "@/lib/utils/form-cards";
 import { buildPortfolio, experienceToPost, isPublishableExperience } from "./build-portfolio";
 
 function blk(id: string, type: Block["type"], label: string, value: Block["value"]): Block {
@@ -760,6 +761,54 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
       expect(experienceToPost(researchExp({ [key as string]: STUDY_PERIOD })).period).toBe(
         "2024.03 – 2024.08",
       );
+    });
+
+    /**
+     * `CORE_EXCLUDE` 로 코어를 빼면 그 자리를 이어받은 확정본 필드가 **동의어로 등록돼 있어야**
+     * 발행 경로가 값을 찾는다(FRT-269 리뷰). 코어를 빼는 것과 새 라벨을 SEMANTIC_GROUPS 에
+     * 넣는 것은 한 쌍이다 — 앞만 하면 폴백이던 코어까지 함께 사라져 발행물이 조용히 빈다.
+     * 픽스처가 아니라 **실제 템플릿**으로 돌린다(v2 fields 주입) — 라벨·타입 전제를 여기 적으면
+     * 템플릿이 바뀌어도 테스트만 계속 통과한다.
+     */
+    it("'역할 / 기여도'(select)를 고르면 발행물의 내 역할에 실린다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "research-paper.역할 / 기여도": {
+            type: "single-select",
+            selected: "제 1저자(주저자)",
+          },
+        }),
+      );
+      expect(post.contribution).toBe("제 1저자(주저자)");
+    });
+
+    it("'주요 발견 / 결과'(outcome-list)에 적은 행이 발행물의 핵심 성과에 실린다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "research-content.주요 발견 / 결과": {
+            type: "repeatable-cell",
+            columns: [{ key: "item", label: "발견 / 결과", blockType: "text" }],
+            rows: [
+              { id: "r1", cells: { item: "SNS 사용 시간과 몰입도의 음의 상관 확인" } },
+              { id: "r2", cells: { item: "알림 차단군에서 효과가 사라짐" } },
+            ],
+          },
+        }),
+      );
+      expect(post.achievement).toBe(
+        "SNS 사용 시간과 몰입도의 음의 상관 확인\n알림 차단군에서 효과가 사라짐",
+      );
+    });
+
+    /** 드리프트 가드 — 두 라벨을 실제 템플릿에서 뽑아 동의어 등록 여부를 대조한다. */
+    it("역할·성과를 이어받은 두 필드가 동의어 그룹에 등록돼 있다", () => {
+      const labels = getTemplateForType("research")
+        .extensions.flatMap(s => s.blocks)
+        .map(b => b.label);
+      expect(labels).toContain("역할 / 기여도");
+      expect(labels).toContain("주요 발견 / 결과");
+      expect(equivalentLabels("내 역할/기여도")).toContain("역할 / 기여도");
+      expect(equivalentLabels("핵심 성과")).toContain("주요 발견 / 결과");
     });
   });
 
