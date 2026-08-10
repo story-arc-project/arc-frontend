@@ -55,7 +55,7 @@ type FieldSpec =
   | string[]
   | { start: string; end: string; isCurrent?: boolean }
   | { url: string; title?: string; description?: string; linkType?: string }
-  | { fileName: string; description?: string; evidenceType?: string; fileId?: string }
+  | { fileName: string; description?: string; evidenceType?: string }
   | { rows: (RowSpec | FullRowSpec)[] };
 
 function isRowsSpec(v: FieldSpec): v is { rows: (RowSpec | FullRowSpec)[] } {
@@ -145,9 +145,15 @@ function materialize(block: Block, spec: FieldSpec, where: string): BlockValue {
         fileName: spec.fileName,
         description: spec.description ?? "",
         evidenceType: spec.evidenceType ?? "",
-        // 데모는 실제 업로드가 없다. fileId 를 비워두면 `cellFilled`/`isBlockEmpty` 가
-        // "첨부 없음"으로 보므로, 화면에 파일 카드가 보이도록 정적 id 를 붙인다.
-        ...(spec.fileId ? { fileId: spec.fileId } : {}),
+        // ⚠️ `fileId` 는 넣지 않는다. 데모에는 업로드된 실물이 없는데 FileBlock 은 fileId 가
+        // 있으면 마운트 시 `getFileUrl(id)` 로 다운로드 URL 을 받아오려 하고(FileBlock.tsx),
+        // 백엔드가 없는 데모에서는 그 요청이 전부 실패해 콘솔이 에러로 찬다.
+        // fileId 가 없으면 그 effect 는 `if (!id) return` 으로 빠지고, `isBlockEmpty` 는
+        // fileName 만으로도 "첨부 있음"으로 보므로 카드는 그대로 그려진다.
+        //
+        // 그 대가로 **상세뷰에서 `description` 은 보이지 않는다** — FileBlock 의 readOnly
+        // 렌더가 설명을 업로드된 첨부(`hasUploaded`)에만 붙이기 때문이다. 값은 그대로 저장돼
+        // 편집 화면에는 뜨고, 백엔드 분석도 content 를 그대로 읽으므로 남겨 둔다.
       };
     }
     case "repeatable-cell": {
@@ -312,7 +318,6 @@ const careerFields = fieldsFor("career", {
   "core.증빙 자료": {
     fileName: "연구실_활동확인서.pdf",
     description: "지도교수 확인 학부연구생 활동 확인서",
-    fileId: "demo-file-career-1",
   },
   ...PUBLIC,
 });
@@ -382,7 +387,6 @@ const extracurricularFields = fieldsFor("extracurricular", {
   "core.증빙 자료": {
     fileName: "부스트캠프_수료증.pdf",
     description: "네이버 커넥트재단 발급 수료증",
-    fileId: "demo-file-extra-1",
   },
   ...PUBLIC,
 });
@@ -467,7 +471,6 @@ const clubFields = fieldsFor("club", {
   "core.증빙 자료": {
     fileName: "DataWave_임원_활동확인서.pdf",
     description: "학회장 재임 확인서 (2025)",
-    fileId: "demo-file-club-1",
   },
   ...PUBLIC,
 });
@@ -504,7 +507,6 @@ const awardFields = fieldsFor("award", {
     fileName: "데이터분석공모전_상장.pdf",
     description: "한국데이터산업진흥원장상 상장",
     evidenceType: "상장 원본/사본",
-    fileId: "demo-file-award-1",
   },
   ...PUBLIC,
 });
@@ -536,11 +538,9 @@ const creativeFields = fieldsFor("creative-work", {
         desc: "소스 코드 저장소",
       },
       {
-        file: {
-          type: "file",
-          fileId: "demo-file-creative-1",
-          fileName: "전시회_발표자료.pdf",
-        },
+        // 확정본의 '파일' 컬럼은 실제 업로드가 있어야 셀이 채워진 것으로 판정된다
+        // (`cellFilled` 는 fileId 로 본다). 데모에는 실물이 없으므로 링크로 남긴다.
+        link: "https://demo.story-arc.org/seoul-night/deck",
         desc: "교내 전시회 발표 자료",
       },
     ],
@@ -616,7 +616,6 @@ const languageFields = fieldsFor("language", {
     fileName: "TOEIC_성적표.pdf",
     description: "2024년 9월 정기시험 성적표",
     evidenceType: "성적표/점수 확인서",
-    fileId: "demo-file-lang-1",
   },
   ...PUBLIC,
 });
@@ -634,7 +633,6 @@ const overseasFields = fieldsFor("overseas", {
     fileName: "교환학생_수료증.pdf",
     description: "University of Washington 수학 증명서",
     evidenceType: "수료증/참가 확인서",
-    fileId: "demo-file-overseas-1",
   },
 
   "overseas-reflection.주요 활동": {
@@ -690,7 +688,6 @@ const certificationFields = fieldsFor("certification", {
     fileName: "SQLD_자격증.pdf",
     description: "한국데이터산업진흥원 발급 자격증 사본",
     evidenceType: "합격증/자격증 사본",
-    fileId: "demo-file-cert-1",
   },
   ...PUBLIC,
 });
