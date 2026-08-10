@@ -36,6 +36,9 @@ type RefreshResult = "ok" | "unauthorized" | "error";
 // 403 + 쿠키 삭제로 응답한다. 그 삭제가 먼저 성공한 refresh 가 심어 둔 새 쿠키까지 지우므로
 // 유효한 세션이 죽는다 — 403 을 관대하게 분류해도 이미 쿠키가 없어 되살릴 수 없다.
 // 그래서 처방은 분류가 아니라 **두 번째 요청을 애초에 보내지 않는 것**이다 (FRT-209/FRT-253).
+//
+// 주의: 위 "403 은 되살릴 수 없다"는 **이 엔드포인트(`/auth/refresh`)에 한한** 이야기다.
+// 일반 요청의 403 은 쿠키가 살아 있어 되살릴 수 있다 — `ROTATED_OUT_CODE` 아래를 볼 것.
 let inflightRefresh: Promise<RefreshResult> | null = null;
 
 function tryRefresh(): Promise<RefreshResult> {
@@ -63,10 +66,28 @@ async function runRefresh(): Promise<RefreshResult> {
   }
 }
 
+// 액세스 토큰은 **자기를 발급한 refresh 토큰의 jti 를 품는다**
+// (arc-backend `utils/token.py`: `create_access_token(user_id, ref.jti)`). refresh 가 성공하면
+// 옛 행에 `next` 가 박히므로 직전 액세스 토큰도 **그 순간 함께 죽고**, 그 토큰을 실은 요청은
+// `check_auth` 에서 403 `AUTH_REUSE_DETECTED` 로 거절된다 — 유예 창은 없다.
+//
+// 이 403 은 `/auth/refresh` 의 403 과 다르다. `check_auth` 는 `remove_tokens` 를 부르지 않아
+// **쿠키가 살아 있고**, 갱신 후 다시 보내면 그대로 성공한다. FRT-209 에서 "403 은 관대하게
+// 읽어도 이미 쿠키가 없어 못 살린다"고 적은 것은 **refresh 엔드포인트에 한한** 이야기였는데,
+// 그 판단을 일반 요청까지 확대한 것이 재발의 원인이었다. 같은 상태 코드라도 어느 엔드포인트가
+// 주었는지에 따라 복구 가능성이 갈린다.
+const ROTATED_OUT_CODE = "AUTH_REUSE_DETECTED";
+
+// 갱신 경계를 걸친 요청에 줄 기회. 1 이면 갱신 직후의 재시도가 또 경계에 걸렸을 때 그 요청이
+// 영구히 실패한다 — 신고된 트레이스가 정확히 그 상태였다(refresh 200 뒤 401 넷이 그대로 죽고,
+// 두 번째 갱신을 받은 하나만 200 으로 돌아왔다). 상한이 없으면 회전이 잦은 서버에서 한 요청이
+// 영원히 맴돌 수 있으므로 2 로 묶는다.
+const MAX_REFRESH_ROUNDS = 2;
+
 async function request<T>(
   path: string,
   options: RequestOptions = {},
-  retry = true
+  refreshRoundsLeft = MAX_REFRESH_ROUNDS
 ): Promise<T> {
   const { auth = true, ...fetchOptions } = options;
   const isFormData = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
@@ -85,10 +106,23 @@ async function request<T>(
 
   logResponse(method, path, res.status, Math.round(performance.now() - start));
 
-  if (res.status === 401 && retry) {
+  if ((res.status === 401 || res.status === 403) && refreshRoundsLeft > 0) {
+    // 403 은 "내 액세스 토큰이 갱신에 밀려났다"일 때만 되살린다. 진짜 폐기(`AUTH_REVOKED`)나
+    // 인가 실패는 갱신해도 달라지지 않으므로 여기서 갈라 그대로 던진다. 본문은 한 번만 읽을 수
+    // 있으니 파싱한 값을 그대로 써서 던진다.
+    if (res.status === 403) {
+      const body = (await res.json().catch(() => ({}))) as {
+        message?: string;
+        code?: string;
+      };
+      if (body.code !== ROTATED_OUT_CODE) {
+        throw new ApiError(res.status, body.message ?? "오류가 발생했어요.", body.code);
+      }
+    }
+
     const refresh = await tryRefresh();
     if (refresh === "ok") {
-      return request<T>(path, options, false);
+      return request<T>(path, options, refreshRoundsLeft - 1);
     }
     if (refresh === "error") {
       // refresh 자체가 일시 장애(5xx·네트워크) → 비인증으로 단정하지 않는다.

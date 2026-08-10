@@ -221,3 +221,134 @@ describe("병렬 401 → refresh 단일화 (FRT-209/FRT-253)", () => {
     expect(state.refreshCalls).toBe(2)
   })
 })
+
+/**
+ * 백엔드의 **액세스 토큰 검증**(`arc-backend app/src/utils/auth.py: check_auth`)까지 흉내낸다.
+ *
+ * 액세스 토큰은 자기를 발급한 refresh 토큰의 jti 를 품는다
+ * (`utils/token.py: create_access_token(user_id, ref.jti)`). refresh 가 성공하면 옛 행에
+ * `next` 가 박히므로 **그 액세스 토큰도 같은 순간 죽는다** — 이후 그 토큰을 실은 요청은
+ * 401 이 아니라 **403 `AUTH_REUSE_DETECTED`** 로 거절된다. 유예 창은 없다.
+ *
+ * 위 `stubRotatingServer` 는 refresh 엔드포인트의 재사용 탐지만 모델링해 이 경로를 볼 수 없었고,
+ * 그래서 "갱신 경계를 걸친 요청이 죽는다"는 결함이 FRT-253 의 그물을 그대로 통과했다.
+ *
+ * 두 403 을 반드시 구별해야 한다:
+ * - `/auth/refresh` 의 403 은 `remove_tokens` 를 동반한다 → 쿠키가 사라져 복구 불가.
+ * - `check_auth` 의 403 은 `remove_tokens` 를 부르지 않는다 → **쿠키가 살아 있어** 갱신 후
+ *   다시 보내면 그대로 성공한다.
+ */
+function stubRotatedOutServer(script: Array<Response | "refresh-ok">) {
+  const state = { refreshCalls: 0, dataCalls: 0 }
+  const queue = [...script]
+
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.includes("/auth/refresh")) {
+      state.refreshCalls += 1
+      return new Response(null, { status: 200 })
+    }
+    state.dataCalls += 1
+    const next = queue.shift()
+    if (next === undefined || next === "refresh-ok") return jsonResponse({ ok: true })
+    return next
+  })
+
+  return state
+}
+
+function rotatedOut() {
+  return jsonResponse({ message: "Login required.", code: "AUTH_REUSE_DETECTED" }, 403)
+}
+
+describe("갱신에 밀려난 요청 되살리기 (FRT-209 재발)", () => {
+  it("403 AUTH_REUSE_DETECTED 를 받으면 갱신 후 다시 보내 성공시킨다", async () => {
+    // 신고된 증상 그 자체: refresh 200 뒤에 individual 403 이 뜨고, 그 화면은
+    // "경험 데이터를 불러오지 못했어요."로 끝났다. 쿠키는 살아 있으므로 되살릴 수 있다.
+    const state = stubRotatedOutServer([rotatedOut()])
+
+    const res = await api.get<{ ok: boolean }>("/individual")
+
+    expect(res).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+    // 핵심: 유효한 세션이 에러 화면으로 끝나지 않는다.
+    expect(window.location.href).toBe("")
+  })
+
+  it("AUTH_REVOKED 403 은 갱신하지 않고 그대로 던진다", async () => {
+    // 진짜 폐기된 세션이다. 여기서 갱신을 시도하면 죽은 세션을 붙잡고 늘어지는 셈이고,
+    // 되살릴 수도 없다 — 되살리기는 '회전에 밀려남'에만 적용한다.
+    const state = stubRotatedOutServer([
+      jsonResponse({ message: "Login required.", code: "AUTH_REVOKED" }, 403),
+    ])
+
+    const err = await api.get("/x").catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(403)
+    expect(err.code).toBe("AUTH_REVOKED")
+    expect(state.refreshCalls).toBe(0)
+  })
+
+  it("인증과 무관한 403 은 갱신하지 않고 그대로 던진다", async () => {
+    const state = stubRotatedOutServer([
+      jsonResponse({ message: "권한이 없어요", code: "FORBIDDEN" }, 403),
+    ])
+
+    const err = await api.get("/x").catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(403)
+    expect(err.code).toBe("FORBIDDEN")
+    expect(state.refreshCalls).toBe(0)
+  })
+
+  it("갱신해도 403 이 계속되면 무한히 재시도하지 않는다", async () => {
+    // 거울상: 되살리기에 상한이 없으면 회전이 계속되는 서버에서 한 요청이 영원히 맴돈다.
+    const state = stubRotatedOutServer([rotatedOut(), rotatedOut(), rotatedOut(), rotatedOut()])
+
+    const err = await api.get("/x").catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(403)
+    expect(state.dataCalls).toBeLessThanOrEqual(3)
+  })
+
+  it("갱신 직후 재시도가 다시 401 이어도 한 번 더 갱신해 되살린다", async () => {
+    // 신고된 트레이스의 나머지 절반: refresh 200 뒤 재시도가 다시 401 을 받았고, 재시도
+    // 예산이 1회뿐이라 그 요청들은 영구히 실패했다(화면에는 에러 카드만 남는다).
+    // 실제로 두 번째 refresh 를 받은 요청 하나만 200 으로 돌아왔다.
+    const state = stubRotatedOutServer([
+      new Response(null, { status: 401 }),
+      new Response(null, { status: 401 }),
+    ])
+
+    const res = await api.get<{ ok: boolean }>("/experiences")
+
+    expect(res).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(2)
+    expect(window.location.href).toBe("")
+  })
+
+  it("동시에 쏜 요청 중 갱신 경계에 걸린 것도 함께 되살아난다", async () => {
+    // 대시보드는 GET 을 한꺼번에 쏘고, 그중 몇 개가 갱신 경계의 어느 쪽에 떨어지는지는
+    // 밀리초 타이밍이라 매번 다르다 — 신고자가 "될 때가 있고 안 될 때가 있다"고 한 이유다.
+    // 어느 쪽에 떨어지든 결과는 같아야 한다.
+    stubRotatedOutServer([
+      rotatedOut(), // 갱신에 밀려난 요청
+      jsonResponse({ ok: true }),
+      rotatedOut(), // 또 하나
+    ])
+
+    const results = await Promise.all([
+      api.get<{ ok: boolean }>("/individual"),
+      api.get<{ ok: boolean }>("/keyword"),
+      api.get<{ ok: boolean }>("/comprehensive"),
+    ])
+
+    expect(results).toEqual([{ ok: true }, { ok: true }, { ok: true }])
+    expect(window.location.href).toBe("")
+  })
+})
