@@ -371,8 +371,11 @@ const V2_CORE_SCOPED_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigratio
   // `isInjectableInto` 가 허용하고 문자열은 그대로 보존된다 — 위젯만 한 줄로 좁아진다.
   // ⚠️ v1 레코드는 fields 맵이 없어 이 규칙이 닿지 않는다. 코어를 ext 로 잇는 v1 경로는
   //    코드베이스에 없으므로, 그쪽은 두 칸이 남을 수 있다(값 유실은 없다).
+  // ⚠️ 확정본 '역할'은 한 줄 `text` 다 — 여러 줄 값은 `carryIntoSingleLine` 이 걸러 구 코어 칸에
+  //    남긴다. 옮기면 `<input>` 이 개행을 지워 문단이 사라진다(그때는 칸이 둘로 남지만, 화면에
+  //    둘 다 보이므로 사용자가 판단할 수 있다 — 값이 뭉개지는 쪽이 훨씬 나쁘다).
   'creative-work': [
-    { from: 'core.내 역할/기여도', to: 'creative-info.역할', carry: carryCompatibleValue },
+    { from: 'core.내 역할/기여도', to: 'creative-info.역할', carry: carryIntoSingleLine },
   ],
 }
 
@@ -398,6 +401,27 @@ function carryCompatibleValue(
 ): BlockValue | null {
   if (!templateBlock) return null
   return isInjectableInto(templateBlock.type, saved.type) ? saved : null
+}
+
+/**
+ * `carryCompatibleValue` 에 **"한 줄 칸에 여러 줄을 넣지 않는다"**를 더한다.
+ *
+ * `isInjectableInto` 는 text↔textarea 를 호환으로 본다 — 저장 형식이 같은 문자열이니 맞는 말이다.
+ * 그런데 목적지가 `text` 면 화면에 뜨는 것은 `<input>` 이고, **브라우저가 input value 에서 개행을
+ * 지운다.** 문단이 든 구 '내 역할/기여도'를 그대로 옮기면 사용자는 첫 화면부터 한 줄로 뭉개진 값을
+ * 보고, 한 글자만 고쳐도 그 뭉개진 값이 저장된다 — 조용한 데이터 손실이다(FRT-267 Codex P2).
+ *
+ * 여러 줄이면 옮기지 않는다. 값은 구 코어 칸에 그대로 남아 화면에도 보이고 발행에도 쓰인다 —
+ * 옮길 수 없는 값을 시스템이 뭉개는 대신 원본을 두고 사용자가 판단하게 한다(`carrySelectValue` 와 같은 철학).
+ */
+function carryIntoSingleLine(
+  templateBlock: Block | undefined,
+  saved: BlockValue,
+): BlockValue | null {
+  const carried = carryCompatibleValue(templateBlock, saved)
+  if (!carried || templateBlock?.type !== 'text') return carried
+  const raw = carried.type === 'text' || carried.type === 'textarea' ? carried.text : ''
+  return /[\r\n]/.test(raw) ? null : carried
 }
 
 /**
@@ -704,9 +728,20 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     else if (!isBlockEmpty(b)) orphanExt.push(b)
   }
 
+  // v2 는 코어를 현재 템플릿에서 다시 짜므로 `CORE_EXCLUDE` 가 저절로 적용되지만, v1 은 저장된
+  // 코어 배열을 그대로 통과시켜 **확정본이 뺀 칸이 되살아난다.** 빈 코어 '증빙 자료' 하나가
+  // `computeFormCards` 에서 dedup 없이 evidence 버킷으로 직행해(코어 증빙은 항상 그 카드에 넣는다)
+  // 2카드 설계인 유형에 **쓸모없는 세 번째 카드**를 만든다 — 채울 것도 없는 카드라 진행도만 막는다.
+  // (창작물만의 문제가 아니다 — 봉사·해외경험 등 `CORE_EXCLUDE` 를 쓰는 유형 전부가 같았다.)
+  //
+  // ⚠️ **빈 것만 버린다.** 값이 든 코어 블록은 확정본이 그 칸을 뺐더라도 그대로 남긴다 — 사용자가
+  // 적어 둔 것을 화면에서 지우는 쪽이 카드 하나 더 뜨는 것보다 훨씬 나쁘다(`orphanExt` 승격 기준과 같다).
+  const currentCoreLabels = new Set(tmpl.commonCore.blocks.map(b => b.label))
+  const liveCore = savedCore.filter(b => currentCoreLabels.has(b.label) || !isBlockEmpty(b))
+
   return {
     ...base,
-    coreBlocks: savedCore.map(b => (b.key ? b : { ...b, key: coreKeyByLabel[b.label] })),
+    coreBlocks: liveCore.map(b => (b.key ? b : { ...b, key: coreKeyByLabel[b.label] })),
     extensionBlocks: matchedExt,
     customBlocks: [...savedCustom, ...orphanExt],
   }

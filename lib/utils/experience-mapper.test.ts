@@ -13,7 +13,9 @@ import {
   toExperienceV2,
   toSavePayload,
 } from "@/lib/utils/experience-mapper"
-import { createGroupBlock, createTextField, isBlockEmpty } from "@/lib/utils/block-utils"
+import { cloneBlocks, createGroupBlock, createTextField, isBlockEmpty } from "@/lib/utils/block-utils"
+import { computeFormCards } from "@/lib/utils/form-cards"
+import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
 
 function makeExperience(overrides: Partial<Experience> = {}): Experience {
   return {
@@ -2426,6 +2428,29 @@ describe("확정본 전면 교체 값 보존 (FRT-267 창작물)", () => {
     }
   })
 
+  /**
+   * ⚠️ 이관의 경계 — 확정본 '역할'은 한 줄 `text` 다. `isInjectableInto` 는 text↔textarea 를
+   * 호환으로 보지만(저장 형식이 같은 문자열이라 맞는 말이다), 화면의 `<input>` 은 개행을 지운다.
+   * 문단이 든 구 값을 옮기면 첫 화면부터 한 줄로 뭉개져 보이고 한 글자만 고쳐도 그대로 저장된다.
+   * 옮기지 않고 구 코어 칸에 남기면 값도 문단 구조도 그대로다(FRT-267 Codex P2).
+   */
+  it("여러 줄 역할 값은 한 줄 '역할' 칸으로 옮기지 않고 원본을 남긴다", () => {
+    const content = legacyCreativeContent()
+    ;(content.fields as Record<string, BlockValue>)["core.내 역할/기여도"] = {
+      type: "textarea",
+      text: "기획을 맡았습니다.\n\n촬영과 편집도 직접 했습니다.",
+    }
+    const v2 = toExperienceV2(makeExperience({ type: "creative-work", content }))
+
+    // 확정본 칸은 비어 있다 — 뭉갠 사본을 만들지 않는다.
+    const moved = v2.extensionBlocks.find(b => b.key === "creative-info.역할")
+    expect(moved && isBlockEmpty(moved)).toBe(true)
+    // 원본은 개행까지 그대로 코어에 남는다.
+    expect(v2.coreBlocks.find(b => b.key === "core.내 역할/기여도")?.value).toEqual(
+      textarea("기획을 맡았습니다.\n\n촬영과 편집도 직접 했습니다."),
+    )
+  })
+
   /** 값만 새 키로 옮기고 숨김 상태를 두고 오면 사용자가 감춰 둔 칸이 혼자 다시 나타난다(FRT-210). */
   it("숨김 키도 개명을 따라간다", () => {
     const content = legacyCreativeContent()
@@ -2505,6 +2530,71 @@ describe("확정본 전면 교체 값 보존 (FRT-267 창작물)", () => {
         }),
       )
     }
+
+    /**
+     * ⚠️ v2 는 코어를 현재 템플릿에서 다시 짜 `CORE_EXCLUDE` 가 저절로 적용되지만, v1 은 저장된
+     * 코어 배열을 그대로 통과시켜 **확정본이 뺀 칸이 되살아난다.** 빈 코어 '증빙 자료' 하나가
+     * dedup 없이 evidence 버킷으로 직행해 2카드 설계에 세 번째 카드를 만든다 — 채울 것도 없는
+     * 카드라 진행도만 막힌다(FRT-267 Codex P2). 창작물만의 문제가 아니라 `CORE_EXCLUDE` 를 쓰는
+     * 유형 전부가 같았고, 이 수정은 그 전부에 적용된다.
+     */
+    it("확정본이 뺀 빈 코어 칸은 v1 에서도 되살아나지 않는다 — 2카드가 유지된다", () => {
+      const core = cloneBlocks(getTemplateForType("creative-work").commonCore.blocks)
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              ...core,
+              { id: "ev", type: "file", label: "증빙 자료", value: { type: "file", fileName: "", description: "", evidenceType: "" } },
+            ],
+            extensionBlocks: [],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      expect(v1.coreBlocks.find(b => b.label === "증빙 자료")).toBeUndefined()
+
+      const t = getTemplateForType("creative-work")
+      const cards = computeFormCards(
+        v1.coreBlocks,
+        t.extensions.map(e => ({ id: e.id, category: e.category, blocks: cloneBlocks(e.blocks) })),
+        SECTION_LABEL_OVERRIDES["creative-work"],
+      )
+      expect(cards.visibleCategories).toEqual(["basic", "detail"])
+    })
+
+    /** ⚠️ 빈 것만 버린다 — 값이 든 칸을 지우는 쪽이 카드 하나 더 뜨는 것보다 훨씬 나쁘다. */
+    it("값이 든 코어 칸은 확정본이 뺐어도 v1 에서 그대로 남는다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              {
+                id: "ev",
+                type: "file",
+                label: "증빙 자료",
+                value: { type: "file", fileName: "poster.pdf", description: "", evidenceType: "", fileId: "f1" },
+              },
+            ],
+            extensionBlocks: [],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      expect(v1.coreBlocks.find(b => b.label === "증빙 자료")).toBeDefined()
+    })
 
     for (const withKey of [false, true]) {
       const how = withKey ? "키가 있는" : "키가 없는"
