@@ -70,6 +70,7 @@ vi.mock("@/lib/export/resume-docx", () => ({
 
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
+import { writeDraft } from "./_components/resume-draft";
 import ResumeDetailPage from "./page";
 
 function resumeFixture(overrides: Partial<ResumeVersion> = {}): ResumeVersion {
@@ -133,6 +134,9 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks 는 mockReturnValueOnce 큐를 비우지 않는다 — 경합 테스트가 남긴 큐가
+  // 다음 테스트로 새면 "왜 이 응답이 오지"를 한참 쫓게 된다.
+  mockGetResume.mockReset();
   window.localStorage.clear();
   window.print = vi.fn();
   mockGetResume.mockResolvedValue(resumeFixture());
@@ -756,5 +760,298 @@ describe("영문 읽기 전용 — 보완 안내", () => {
     expect(
       screen.getByRole("button", { name: "빈 레쥬메 편집하기" }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * FRT-238 — 버전을 빠르게 갈아탈 때 늦게 도착한 이전 요청의 응답.
+ *
+ * App Router 는 versionId 만 바뀌면 같은 컴포넌트 인스턴스를 재사용한다. 그래서 A 의 조회가
+ * 아직 날아다니는 채로 B 의 조회가 시작될 수 있고, A 가 뒤늦게 도착하면 B 화면이 A 의
+ * 내용으로 바뀐다 — 그 상태로 저장하면 **B 의 id 로 A 의 본문이 서버에 실린다.**
+ *
+ * 응답 순서는 코드 순서가 아니라 resolve 를 부르는 순서로 뒤집는다.
+ */
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/**
+ * 조회를 versionId 별로 붙잡아 둔다. 같은 id 로 두 번 부르면 **각각 다른** 응답을 쥔다 —
+ * "돌아왔을 때 캐시가 번쩍이는가"를 보려면 두 번째 방문이 따로 기다려야 하기 때문이다.
+ */
+function routeByVersion() {
+  const calls = new Map<string, Deferred<ResumeVersion>[]>();
+  mockGetResume.mockReset();
+  mockGetResume.mockImplementation((versionId: string) => {
+    const d = deferred<ResumeVersion>();
+    const list = calls.get(versionId) ?? [];
+    list.push(d);
+    calls.set(versionId, list);
+    return d.promise;
+  });
+  const at = (versionId: string, nth: number) => {
+    const list = calls.get(versionId);
+    if (!list?.[nth]) {
+      throw new Error(
+        `${versionId} 의 ${nth}번째 조회가 아직 없다 (실제 ${list?.length ?? 0}회)`,
+      );
+    }
+    return list[nth];
+  };
+  return {
+    resolve: (versionId: string, data: ResumeVersion, nth = 0) =>
+      at(versionId, nth).resolve(data),
+    reject: (versionId: string, reason: unknown, nth = 0) =>
+      at(versionId, nth).reject(reason),
+  };
+}
+
+function paramsFor(versionId: string) {
+  return Promise.resolve({ versionId });
+}
+
+/** 로드 완료를 기다리지 않는다 — 진행 중인 상태 자체가 검증 대상이다. */
+async function renderVersion(versionId: string) {
+  let result!: ReturnType<typeof render>;
+  await act(async () => {
+    result = render(
+      <Suspense fallback={null}>
+        <ResumeDetailPage params={paramsFor(versionId)} />
+      </Suspense>,
+    );
+  });
+  return result;
+}
+
+/**
+ * key 를 바꾸지 않는 rerender 여야 한다. key 를 갈면 언마운트-재마운트라
+ * "같은 인스턴스가 재사용된다"는 이 버그의 전제 자체가 사라진다.
+ */
+async function navigateTo(
+  result: ReturnType<typeof render>,
+  versionId: string,
+) {
+  await act(async () => {
+    result.rerender(
+      <Suspense fallback={null}>
+        <ResumeDetailPage params={paramsFor(versionId)} />
+      </Suspense>,
+    );
+  });
+}
+
+async function flush() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+function named(
+  name: string,
+  overrides: Partial<ResumeVersion> = {},
+): ResumeVersion {
+  return resumeFixture({
+    인적사항: {
+      이름: name,
+      영문명: null,
+      생년월일: null,
+      이메일: null,
+      전화번호: null,
+      주소: null,
+      링크: [],
+    },
+    ...overrides,
+  });
+}
+
+/** 지금 화면에 실린 레쥬메가 누구 것인지 — 편집기가 없으면 null. */
+function shownName(): string | null {
+  const input = screen.queryByLabelText("이름");
+  return input ? (input as HTMLInputElement).value : null;
+}
+
+function loadingShown(): boolean {
+  return document.querySelector('[aria-busy="true"]') !== null;
+}
+
+describe("FRT-238 — 버전 전환 중 늦게 도착한 응답", () => {
+  it("A→B 로 옮긴 뒤 늦게 도착한 A 응답이 B 화면을 덮지 않는다", async () => {
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    await navigateTo(result, "B");
+
+    route.resolve("B", named("B유저"));
+    await flush();
+    expect(shownName()).toBe("B유저");
+
+    route.resolve("A", named("A유저"));
+    await flush();
+    expect(shownName()).toBe("B유저");
+  });
+
+  it("B 를 기다리는 동안 늦은 A 응답이 로딩을 꺼버리지 않는다", async () => {
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    await navigateTo(result, "B");
+
+    route.resolve("A", named("A유저"));
+    await flush();
+
+    expect(shownName()).toBeNull();
+    expect(loadingShown()).toBe(true);
+  });
+
+  it("늦게 도착한 A 의 실패가 B 화면을 에러로 바꾸지 않는다", async () => {
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    await navigateTo(result, "B");
+
+    route.resolve("B", named("B유저"));
+    await flush();
+
+    route.reject("A", new Error("late failure"));
+    await flush();
+
+    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+    expect(shownName()).toBe("B유저");
+  });
+
+  it("A→B→A 로 되돌아오면 캐시된 옛 내용이 아니라 로딩을 보여준다", async () => {
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    route.resolve("A", named("A유저"));
+    await flush();
+    expect(shownName()).toBe("A유저");
+
+    await navigateTo(result, "B");
+    await navigateTo(result, "A");
+
+    expect(loadingShown()).toBe(true);
+    expect(shownName()).toBeNull();
+  });
+
+  it("늦게 도착한 A 응답은 A 의 임시저장을 지우지 않는다", async () => {
+    // 서버 본문이 draft 보다 새로우므로, 가드가 없으면 이 응답이 draft 를 지운다.
+    // localStorage 삭제는 되돌릴 수 없다 — 여기서 새면 사용자가 쓰던 초안이 사라진다.
+    writeDraft("A", resumeFixture());
+    const serverNewerThanDraft = named("A유저", {
+      meta: {
+        language: "ko",
+        format: "json",
+        generated_at: "2099-01-01T00:00:00Z",
+        source_chars: 100,
+      },
+    });
+
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    await navigateTo(result, "B");
+    route.resolve("B", named("B유저"));
+    await flush();
+
+    route.resolve("A", serverNewerThanDraft);
+    await flush();
+
+    expect(window.localStorage.getItem("arc:resume-draft:A")).not.toBeNull();
+  });
+
+  it("에러 화면의 '다시 시도'는 지금 보고 있는 버전으로 다시 읽는다", async () => {
+    mockGetResume.mockReset();
+    mockGetResume
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(named("재시도됨"));
+
+    await renderVersion("B");
+    await screen.findByText("레쥬메를 불러오지 못했어요");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+
+    expect(await screen.findByLabelText("이름")).toHaveValue("재시도됨");
+    expect(mockGetResume).toHaveBeenCalledTimes(2);
+    expect(mockGetResume).toHaveBeenLastCalledWith("B");
+  });
+
+  it("실패 후 다시 시도가 성공하면 에러 화면이 사라진다", async () => {
+    mockGetResume.mockReset();
+    mockGetResume
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(named("복구됨"));
+
+    await renderVersion("A");
+    await screen.findByText("레쥬메를 불러오지 못했어요");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+
+    expect(await screen.findByLabelText("이름")).toHaveValue("복구됨");
+    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+  });
+
+  it("'다시 시도'를 누른 직후에는 옛 실패 화면이 아니라 로딩을 보여준다", async () => {
+    const pending: Deferred<ResumeVersion>[] = [];
+    mockGetResume.mockReset();
+    mockGetResume.mockImplementationOnce(() =>
+      Promise.reject(new Error("boom")),
+    );
+    mockGetResume.mockImplementation(() => {
+      const d = deferred<ResumeVersion>();
+      pending.push(d);
+      return d.promise;
+    });
+
+    await renderVersion("A");
+    await screen.findByText("레쥬메를 불러오지 못했어요");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+
+    // 재조회를 시작한 순간 화면은 지난 실패가 아니라 지금 기다리는 중임을 보여야 한다.
+    expect(loadingShown()).toBe(true);
+    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+    expect(pending).toHaveLength(1);
+  });
+
+  it("재시도 응답이 늦어 그 사이 다른 버전으로 옮기면, 늦은 응답이 새 버전을 덮지 않는다", async () => {
+    const pending: Deferred<ResumeVersion>[] = [];
+    mockGetResume.mockReset();
+    mockGetResume.mockImplementationOnce(() =>
+      Promise.reject(new Error("boom")),
+    );
+    mockGetResume.mockImplementation(() => {
+      const d = deferred<ResumeVersion>();
+      pending.push(d);
+      return d.promise;
+    });
+
+    const result = await renderVersion("A");
+    await screen.findByText("레쥬메를 불러오지 못했어요");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    await navigateTo(result, "B");
+
+    // pending[0] = A 의 재시도, pending[1] = B 의 첫 조회
+    pending[1].resolve(named("B유저"));
+    await flush();
+    expect(shownName()).toBe("B유저");
+
+    pending[0].resolve(named("A유저"));
+    await flush();
+    expect(shownName()).toBe("B유저");
   });
 });

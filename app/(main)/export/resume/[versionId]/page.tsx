@@ -53,7 +53,6 @@ export default function ResumeDetailPage({ params }: PageProps) {
 
   const [resume, setResume] = useState<ResumeVersion | null>(null);
   const [initial, setInitial] = useState<ResumeVersion | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("editor");
   const [saving, setSaving] = useState(false);
@@ -71,41 +70,74 @@ export default function ResumeDetailPage({ params }: PageProps) {
   // 한 번의 이탈이 두 건으로 잡힌다. 먼저 쏜 쪽이 이 플래그로 뒤쪽을 막는다.
   const exitDraftFiredRef = useRef(false);
 
-  const load = useCallback(async () => {
+  // FRT-238 — App Router 는 versionId 만 바뀌면 이 인스턴스를 재사용한다. 그래서 이전 버전의
+  // 조회가 아직 날아다니는 채로 다음 조회가 시작되고, 늦게 도착한 쪽이 화면을 덮으면 **보고 있는
+  // 버전과 실린 내용이 어긋난 채로 저장**된다.
+  //
+  // 세대(seq)까지 키에 넣는 건 **되돌아오는 경로** 때문이다. versionId 만으로 키를 만들면
+  // A→B→A 로 돌아왔을 때 그 키가 이미 답을 받아둔 키와 같아져, 재조회 중인데도 옛 내용이
+  // 그대로 보인다. versionId 는 prop 이라 setState 로 못 바꾸므로 "지난 렌더와 달라졌는가"를
+  // 렌더 중에 비교해 커밋 전에 세대를 올린다 — 한 번 쓴 키는 다시 쓰이지 않는다.
+  const [seq, setSeq] = useState(0);
+  const [trackedVersionId, setTrackedVersionId] = useState(versionId);
+  if (versionId !== trackedVersionId) {
+    setTrackedVersionId(versionId);
+    setSeq((s) => s + 1);
+  }
+
+  // 화면이 지금 답해야 할 질문과, 실제로 답을 받아둔 질문. 둘이 다르면 그 자체가 로딩이다 —
+  // 별도 플래그를 두지 않으므로 "로딩만 꺼지고 내용은 옛것"인 어긋난 중간 상태가 아예 없다.
+  const requestKey = `${versionId}:${seq}`;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const loading = loadedKey !== requestKey;
+
+  const handleRetry = useCallback(() => setSeq((s) => s + 1), []);
+
+  useEffect(() => {
+    // 늦게 도착한 답이 무엇 하나라도 건드리면 버전과 내용이 어긋나므로, 응답 이후의 갱신은
+    // 전부 이 가드 안에 둔다. 절반만 가드하면 절반만 고쳐진 버그가 된다.
+    let ignore = false;
+
     // 새 버전 로드(재생성으로 이동해 온 경우 포함) 시 재생성 UI 상태를 초기화한다.
-    // App Router가 versionId만 바뀔 때 동일 인스턴스를 재사용해도 '다시 만들기'
-    // 버튼/다이얼로그가 잔존(영구 비활성)하지 않도록 여기서 리셋한다.
+    // 동일 인스턴스가 재사용돼도 '다시 만들기' 버튼/다이얼로그가 잔존(영구 비활성)하지
+    // 않도록 여기서 리셋한다.
     setRegenerating(false);
     setRegenerateOpen(false);
-    setLoading(true);
-    setError(null);
     // 다른 버전을 열면 그 버전의 초안은 아직 손대지 않은 상태다.
     editedFiredRef.current = false;
     exitDraftFiredRef.current = false;
-    try {
-      const data = await getResume(versionId);
-      setResume(data);
-      setInitial(data);
-      reserveClientIds(data);
 
-      const draft = readDraft(versionId);
-      if (draft && isDraftNewer(draft, data)) {
-        reserveClientIds(draft.data);
-        setPendingDraft(draft);
-      } else {
-        setPendingDraft(null);
-        if (draft) clearDraft(versionId);
-      }
-    } catch (err) {
-      setError(err as Error);
-    } finally {
-      setLoading(false);
-    }
-  }, [versionId]);
+    getResume(versionId)
+      .then((data) => {
+        if (ignore) return;
+        setResume(data);
+        setInitial(data);
+        // 성공은 지난 실패를 지운다 — 안 지우면 재시도가 성공해도 에러 화면이 남는다.
+        setError(null);
+        reserveClientIds(data);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+        const draft = readDraft(versionId);
+        if (draft && isDraftNewer(draft, data)) {
+          reserveClientIds(draft.data);
+          setPendingDraft(draft);
+        } else {
+          setPendingDraft(null);
+          // draft 삭제는 되돌릴 수 없다. 버려질 응답이 낡은 시점의 판정으로 사용자의
+          // 임시저장분을 지우지 않도록, 이 정리도 반드시 가드 뒤에 있어야 한다.
+          if (draft) clearDraft(versionId);
+        }
+        setLoadedKey(requestKey);
+      })
+      .catch((err) => {
+        if (ignore) return;
+        setError(err as Error);
+        setLoadedKey(requestKey);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [versionId, requestKey]);
 
   const dirtyRef = useRef(false);
   const resumeRef = useRef<ResumeVersion | null>(null);
@@ -478,7 +510,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
             <Link href={`${basePath}/export`}>익스포트로 돌아가기</Link>
           </Button>
           {!isNotFound && (
-            <Button variant="primary" size="sm" onClick={load}>
+            <Button variant="primary" size="sm" onClick={handleRetry}>
               다시 시도
             </Button>
           )}
