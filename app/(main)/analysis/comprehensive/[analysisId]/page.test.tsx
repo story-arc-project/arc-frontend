@@ -117,7 +117,7 @@ describe("종합 분석 상세 — v2.0 섹션 렌더", () => {
     render(<ComprehensiveDetailPage />);
 
     // 회귀 시엔 asStringArray 로 뭉개져 자격증 섹션이 통째로 비었다.
-    expect(await screen.findByText("정보처리기사")).toBeInTheDocument();
+    expect(await screen.findByText("ADsP (데이터분석 준전문가)")).toBeInTheDocument();
     expect(screen.getByText("추천 자격증")).toBeInTheDocument();
   });
 
@@ -127,9 +127,11 @@ describe("종합 분석 상세 — v2.0 섹션 렌더", () => {
 
     // 회귀 시엔 `reason || description` 이라 description(그 단체가 무엇을 하는지)이 통째로 버려졌다.
     expect(
-      await screen.findByText("AWS 기반 클라우드·서버리스 스터디 및 세미나"),
+      await screen.findByText(
+        "머신러닝·데이터 분야 오픈 스터디와 논문 리뷰를 진행하는 커뮤니티",
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByText("클라우드 배포 경험을 보강할 수 있습니다.")).toBeInTheDocument();
+    expect(screen.getByText("학회 운영 경험을 교외 커뮤니티로 넓혀 외부 네트워크를 만들 수 있습니다.")).toBeInTheDocument();
   });
 
   it("마감된 채용 공고를 '마감된 공고'로 별도 표기한다", async () => {
@@ -250,13 +252,13 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
 
     expect(
       await screen.findByText(
-        "LLM 감성 점수와 기술 지표를 결합해 백테스팅 파이프라인을 처음부터 구축",
+        "판단이 갈리던 320건을 6개 패턴으로 정리해 데이터 신뢰도를 끌어올림",
       ),
     ).toBeInTheDocument();
     // 배움(L)은 원문에 명시된 경우에만 오므로, 값이 있을 때만 칸이 생긴다.
     // 라벨은 근거 인용 쪽에도 쓰이므로 값으로 확인한다.
     expect(
-      screen.getByText("지표를 늘리는 것보다 신호 간 상관을 먼저 확인해야 한다는 걸 배웠습니다."),
+      screen.getByText("모델을 바꾸는 것보다 판단 기준을 다시 세우는 편이 점수를 올렸다는 것"),
     ).toBeInTheDocument();
   });
 
@@ -269,7 +271,7 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
       screen.getByText("행동과 결과가 원문 근거로 잘 묶여 있어 그대로 써도 좋아요."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("혼자 진행한 프로젝트라면 '개인 프로젝트'라고 한 마디 덧붙여보세요."),
+      screen.getByText("'왜 문제였는지'와 '내가 맡은 일'을 다른 문장으로 나눠보세요."),
     ).toBeInTheDocument();
     // 등급 문자는 배지로 보인다.
     expect(screen.getByText(/충분해요/)).toBeInTheDocument();
@@ -297,7 +299,7 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
     expect(details).not.toHaveAttribute("open");
     // 인용문 자체는 접힌 상태로도 DOM 에 있다.
     expect(
-      screen.getByText("개인 투자자로서 뉴스의 영향을 감으로만 판단하는 게 답답했다"),
+      screen.getByText("'인용된 혐오 표현'을 혐오로 볼지 의견이 갈려 2주간 결론이 나지 않았습니다."),
     ).toBeInTheDocument();
   });
 
@@ -316,7 +318,7 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
 
     expect(
       await screen.findByText(
-        "한 건은 그대로 써도 좋고, 한 건은 행동 서술을 채우면 크게 좋아져요.",
+        "한 건은 그대로 써도 좋고, 두 건은 출발점만 채우면 크게 좋아져요.",
       ),
     ).toBeInTheDocument();
   });
@@ -328,9 +330,11 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
     render(<ComprehensiveDetailPage />);
 
     await screen.findByRole("heading", { name: "자소서용 STAR" });
-    expect(screen.getAllByText("교내 코딩 동아리 활동")).toHaveLength(1);
+    expect(screen.getAllByText("SQL 개발자 (SQLD)")).toHaveLength(1);
     expect(
-      screen.getByText("무엇을 맡아 어떻게 했고 무엇이 달라졌는지 한 문장씩 적어보세요."),
+      screen.getByText(
+        "이 자격증을 실제로 써서 해결한 일이 있다면 그 사례를 따로 적어보세요. STAR 로 만들 수 있어요.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -404,7 +408,7 @@ describe("종합 분석 상세 — v3.1 추천 사유 (FRT-208)", () => {
 
     // 지금은 url 이 null 이면 링크가 조용히 사라질 뿐이라 사용자가 찾아갈 방법이 없다.
     expect(
-      await screen.findByText("직접 확인하십시오: 한양대 데이터사이언스 학회 모집"),
+      await screen.findByText("직접 확인하십시오: 한양대 데이터 저널리즘 소모임 모집"),
     ).toBeInTheDocument();
   });
 });

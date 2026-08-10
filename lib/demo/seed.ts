@@ -1,449 +1,199 @@
 // 데모 모드 시드 데이터.
 // - 새로고침 시 모듈이 다시 평가되어 자연스럽게 초기화된다.
 // - 분석 결과는 기존 lib/api/mocks/analysis.ts 를 그대로 재사용한다.
-// - 시드는 실제 화면이 렌더하는 필드만 채운다.
+//
+// ⚠️ 저장 형식은 **스키마 v2**(안정키 `fields` 맵)다 — `.claude/rules/archive.md` 의 정본 형식이고,
+// 화면(`toExperienceV2`)이 v2 경로로 읽어야 현재 확정본 템플릿 그대로 그려진다. v1(coreBlocks/
+// extensionBlocks 배열)로 두면 라벨 매칭 경로를 타서, 확정본에서 라벨이 바뀐 값이 조용히
+// '기타' 카드로 밀린다. 실제로 그 상태로 여러 차례의 확정본 정렬을 놓쳤다.
+//
+// 유형은 **확정본이 반영된 것만** 쓴다. 개인/팀 프로젝트·연구는 아직 확정본 정렬 전이라
+// 데모에 두면 "바뀐 입력항목"을 보여줄 수 없다. 프로젝트 성격의 기록은 확정본이 마련해 둔
+// 반복 섹션(career-tasks · extra-missions · club-activities)이 받는다.
+//
+// 값은 `fieldsFor()` 로만 만든다 — 안정키·선택지·표 컬럼을 템플릿에서 직접 읽어 검증하므로,
+// 확정본이 또 바뀌면 시드가 조용히 뒤처지지 않고 **모듈 로드 시점에 터진다**(lib/demo/seed.test.ts).
 
 import type { Experience } from "@/types/experience";
 import type { LibraryDTO } from "@/lib/utils/library-mapper";
 import type { ResumeVersion } from "@/types/resume";
 import type { CoverLetterResult } from "@/types/cover-letter";
 import type { AuthUser } from "@/types/auth";
-import type { Block } from "@/types/archive";
+import type {
+  Block,
+  BlockRow,
+  BlockValue,
+  CellValue,
+  ExperienceTypeId,
+} from "@/types/archive";
+import { SCHEMA_VERSION_V2 } from "@/types/archive";
+import { getTemplateForType, TEMPLATE_VERSION } from "@/lib/constants/templates-v2";
 
 const DEMO_USER_ID = "demo-user";
 
-// ─── Block 생성 헬퍼 ────────────────────────────────────────
-// 시드는 정적 ID를 사용하므로 uid() 대신 직접 ID를 지정한다.
+// ─── 안정키 기반 값 빌더 ─────────────────────────────────────
+//
+// 시드가 손으로 적는 것은 **값**뿐이다. 안정키(`${sectionId}.${label}`)·선택지·표 컬럼은
+// 전부 템플릿에서 읽어 온다. 그래서 확정본이 바뀌면 여기서 예외가 나고, 선택지에 없는 값을
+// 적으면 그 자리에서 걸린다 — 조용한 빈 칸으로 새어나가지 않는다.
 
-function blk(id: string, type: Block["type"], label: string, value: Block["value"], opts?: {
-  required?: boolean;
-  collapsed?: boolean;
-  placeholder?: string;
-  options?: string[];
-}): Block {
-  return { id, type, label, value, ...opts };
+/** 템플릿(코어 + 확장)이 소비하는 안정키 → 블록. */
+function templateBlocksByKey(typeId: ExperienceTypeId): Map<string, Block> {
+  const tmpl = getTemplateForType(typeId);
+  const out = new Map<string, Block>();
+  for (const b of tmpl.commonCore.blocks) if (b.key) out.set(b.key, b);
+  for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) out.set(b.key, b);
+  return out;
 }
 
-// ─── 공통 core block 생성 ────────────────────────────────────
+type RowSpec = Record<string, CellValue> & { roleTags?: never };
+type FullRowSpec = { cells: Record<string, CellValue>; roleTags?: string[] };
 
-function makeCoreBlocks(prefix: string, data: {
-  경험명: string;
-  기간: { start: string; end: string };
-  한줄요약: string;
-  내역할: string;
-  핵심성과: string;
-}): Block[] {
-  return [
-    blk(`${prefix}-c1`, "text", "경험명", { type: "text", text: data.경험명 }, { required: true }),
-    blk(`${prefix}-c2`, "period", "기간", { type: "period", start: data.기간.start, end: data.기간.end, isCurrent: false }, { required: true }),
-    blk(`${prefix}-c3`, "text", "한 줄 요약", { type: "text", text: data.한줄요약 }),
-    blk(`${prefix}-c4`, "textarea", "내 역할/기여도", { type: "textarea", text: data.내역할 }),
-    blk(`${prefix}-c5`, "textarea", "핵심 성과", { type: "textarea", text: data.핵심성과 }),
-  ];
+/** 시드가 적는 값의 축약 표기. 블록 타입에 맞춰 `materialize` 가 완성한다. */
+type FieldSpec =
+  | string
+  | string[]
+  | { start: string; end: string; isCurrent?: boolean }
+  | { url: string; title?: string; description?: string; linkType?: string }
+  | { fileName: string; description?: string; evidenceType?: string; fileId?: string }
+  | { rows: (RowSpec | FullRowSpec)[] };
+
+function isRowsSpec(v: FieldSpec): v is { rows: (RowSpec | FullRowSpec)[] } {
+  return typeof v === "object" && v !== null && "rows" in v;
 }
 
-// ─── 경험 1: LLM 주가 예측 (personal-project) ───────────────
+function toRow(index: number, spec: RowSpec | FullRowSpec, columnKeys: Set<string>, where: string): BlockRow {
+  const isFull = "cells" in spec && typeof spec.cells === "object";
+  const cells = (isFull ? (spec as FullRowSpec).cells : spec) as Record<string, CellValue>;
+  for (const key of Object.keys(cells)) {
+    if (!columnKeys.has(key)) {
+      throw new Error(`[demo seed] ${where}: 표에 없는 컬럼 "${key}"`);
+    }
+  }
+  const roleTags = isFull ? (spec as FullRowSpec).roleTags : undefined;
+  return {
+    // 시드는 정적 id 를 쓴다 — uid() 는 호출 순서에 따라 값이 바뀌어 스냅샷이 흔들린다.
+    id: `${where.replace(/[^a-zA-Z0-9]+/g, "-")}-r${index + 1}`,
+    cells,
+    ...(roleTags ? { roleTags } : {}),
+  };
+}
 
-const exp1CoreBlocks = makeCoreBlocks("e1", {
-  경험명: "주식 가격 분석 및 예측 프로젝트",
-  기간: { start: "2026-02-01", end: "2026-05-31" },
-  한줄요약: "Gemma-2 LLM을 활용해 비정형 뉴스 데이터를 정량적 투자 지표로 변환하고, 이를 통한 개인 투자자의 수익률 개선 가능성을 연구한 프로젝트",
-  내역할: "기획·데이터 수집·모델 통합·백테스팅 설계까지 전 과정 독립 수행",
-  핵심성과: "전략 수익률 vs 시장 수익률 비교 백테스팅 구현 및 시각화 완성. yfinance Multi-index 업데이트 오류를 get_level_values(0) 평탄화 로직으로 해결. AI 환각 방지를 위한 max_new_tokens=10 결정론적 추론 설정 적용.",
-});
+function materialize(block: Block, spec: FieldSpec, where: string): BlockValue {
+  const t = block.value.type;
+  switch (t) {
+    case "text":
+    case "textarea": {
+      if (typeof spec !== "string") throw new Error(`[demo seed] ${where}: 문자열이어야 한다`);
+      return { type: t, text: spec };
+    }
+    case "date": {
+      if (typeof spec !== "string") throw new Error(`[demo seed] ${where}: 날짜 문자열이어야 한다`);
+      return { type: "date", date: spec };
+    }
+    case "period": {
+      if (typeof spec !== "object" || spec === null || !("start" in spec)) {
+        throw new Error(`[demo seed] ${where}: {start, end} 여야 한다`);
+      }
+      return { type: "period", start: spec.start, end: spec.end, isCurrent: spec.isCurrent ?? false };
+    }
+    case "tags": {
+      if (!Array.isArray(spec)) throw new Error(`[demo seed] ${where}: 문자열 배열이어야 한다`);
+      return { type: "tags", tags: spec };
+    }
+    case "single-select": {
+      if (typeof spec !== "string") throw new Error(`[demo seed] ${where}: 문자열이어야 한다`);
+      const options = block.value.options;
+      // 확정본이 선택지를 갈면 여기서 걸린다 — 화면에 없는 값이 드롭다운에 박히는 사고를 막는다.
+      if (spec && !options.includes(spec)) {
+        throw new Error(`[demo seed] ${where}: 선택지에 없는 값 "${spec}" (가능: ${options.join(" / ")})`);
+      }
+      return { type: "single-select", options: [...options], selected: spec };
+    }
+    case "checklist": {
+      if (!Array.isArray(spec)) throw new Error(`[demo seed] ${where}: 문자열 배열이어야 한다`);
+      const options = block.value.options;
+      for (const v of spec) {
+        if (!options.includes(v)) {
+          throw new Error(`[demo seed] ${where}: 선택지에 없는 값 "${v}"`);
+        }
+      }
+      return { type: "checklist", options: [...options], checked: spec };
+    }
+    case "link": {
+      if (typeof spec !== "object" || spec === null || !("url" in spec)) {
+        throw new Error(`[demo seed] ${where}: {url} 이어야 한다`);
+      }
+      return {
+        type: "link",
+        url: spec.url,
+        title: spec.title ?? "",
+        description: spec.description ?? "",
+        linkType: spec.linkType ?? "",
+      };
+    }
+    case "file": {
+      if (typeof spec !== "object" || spec === null || !("fileName" in spec)) {
+        throw new Error(`[demo seed] ${where}: {fileName} 이어야 한다`);
+      }
+      const options = block.options;
+      if (spec.evidenceType && options && !options.includes(spec.evidenceType)) {
+        throw new Error(`[demo seed] ${where}: 증빙 유형 선택지에 없는 값 "${spec.evidenceType}"`);
+      }
+      return {
+        type: "file",
+        fileName: spec.fileName,
+        description: spec.description ?? "",
+        evidenceType: spec.evidenceType ?? "",
+        // 데모는 실제 업로드가 없다. fileId 를 비워두면 `cellFilled`/`isBlockEmpty` 가
+        // "첨부 없음"으로 보므로, 화면에 파일 카드가 보이도록 정적 id 를 붙인다.
+        ...(spec.fileId ? { fileId: spec.fileId } : {}),
+      };
+    }
+    case "repeatable-cell": {
+      if (!isRowsSpec(spec)) throw new Error(`[demo seed] ${where}: {rows} 여야 한다`);
+      const columns = block.value.columns;
+      const keys = new Set(columns.map(c => c.key));
+      return {
+        type: "repeatable-cell",
+        // 컬럼은 템플릿 정의를 그대로 복사한다 — 어긋나면 injectValue 가 열 잠금을 풀어
+        // 데모에 열 관리 UI 가 노출된다(FRT-104).
+        columns: columns.map(c => ({ ...c })),
+        rows: spec.rows.map((r, i) => toRow(i, r, keys, where)),
+      };
+    }
+    default:
+      throw new Error(`[demo seed] ${where}: 시드가 다루지 않는 블록 타입 ${t}`);
+  }
+}
 
-const exp1ExtBlocks: Block[] = [
-  // pp-info 섹션
-  blk("e1-p1", "text", "프로젝트명", { type: "text", text: "주식 가격 분석 및 예측 프로젝트" }, { required: true }),
-  blk("e1-p2", "period", "기간", { type: "period", start: "2026-02-01", end: "2026-05-31", isCurrent: false }, { required: true }),
-  blk("e1-p3", "text", "한 줄 설명", { type: "text", text: "Gemma-2 LLM을 활용해 비정형 뉴스 데이터를 정량적 투자 지표로 변환하고, 이를 통한 개인 투자자의 수익률 개선 가능성을 연구한 프로젝트" }, { required: true }),
-  blk("e1-p4", "textarea", "목표/만들고 싶었던 이유", {
-    type: "textarea",
-    text: "정보 과잉 시대에 개인(소액) 투자자들이 가장 민감하게 반응하는 뉴스 정보가 실제 주가와 어떤 상관관계를 갖는지 공학적으로 증명하고자 함. 감정적 매매를 배제하고 AI의 객관적 분석과 기술적 지표를 결합한 '데이터 중심 의사결정 모델' 구축이 목표임.",
-  }),
-  blk("e1-p5", "textarea", "대상 사용자/사용 상황", {
-    type: "textarea",
-    text: "뉴스 정보에 의존도가 높으나 객관적 판단 기준이 부족한 개인 투자자. 장 시작 전 최신 뉴스 심리를 파악하여 투자 전략을 수립하거나, 변동성 장세에서 알고리즘에 기반한 기계적 리스크 관리(손절/익절)가 필요한 상황.",
-  }),
-  blk("e1-p6", "checklist", "주요 기능", {
-    type: "checklist",
-    options: [
-      "Google News RSS 연동 및 날짜별 정밀 뉴스 수집",
-      "Gemma-2-2b-it 모델을 이용한 뉴스 헤드라인 감성 수치화 (Sentiment Scoring)",
-      "SMA(20/60) 기술적 지표와 뉴스 점수를 결합한 매수 신호 생성",
-      "사용자 정의 리스크 관리 (손절 3%, 익절 10%) 자동 시뮬레이션",
-      "전략 수익률 대비 시장 수익률 비교 백테스팅 및 시각화",
-    ],
-    checked: [
-      "Google News RSS 연동 및 날짜별 정밀 뉴스 수집",
-      "Gemma-2-2b-it 모델을 이용한 뉴스 헤드라인 감성 수치화 (Sentiment Scoring)",
-      "SMA(20/60) 기술적 지표와 뉴스 점수를 결합한 매수 신호 생성",
-      "사용자 정의 리스크 관리 (손절 3%, 익절 10%) 자동 시뮬레이션",
-      "전략 수익률 대비 시장 수익률 비교 백테스팅 및 시각화",
-    ],
-  }),
-  blk("e1-p7", "tags", "기술/도구", {
-    type: "tags",
-    tags: ["Python", "Gemma-2-2b-it", "Transformers", "yfinance", "Pandas", "NumPy", "Matplotlib", "Google News API", "Sentiment Analysis", "Backtesting"],
-  }),
-  // pp-decisions 섹션
-  blk("e1-d1", "repeatable-cell", "설계/결정", {
-    type: "repeatable-cell",
-    columns: [
-      { key: "topic", label: "결정 주제", blockType: "text", required: true },
-      { key: "alternatives", label: "대안 비교", blockType: "textarea" },
-      { key: "reason", label: "선택 이유", blockType: "textarea" },
-      { key: "result", label: "결과/배운 점", blockType: "textarea" },
-    ],
-    rows: [
-      {
-        id: "e1-d1-r1",
-        cells: {
-          topic: "데이터 무결성 확보",
-          alternatives: "yfinance 업데이트 후 Multi-index 반환 문제 → 직접 처리 vs 라이브러리 교체",
-          reason: "라이브러리 교체 시 의존성 증가 우려, get_level_values(0) 평탄화로 최소 변경 해결",
-          result: "오류 없이 OHLCV 데이터 안정적 수집 가능",
-        },
-      },
-      {
-        id: "e1-d1-r2",
-        cells: {
-          topic: "AI 환각 방지",
-          alternatives: "다양한 max_new_tokens 설정 실험 vs 결정론적 추론 파라미터 고정",
-          reason: "감성 점수가 -1/0/1 세 값만 필요하므로 max_new_tokens=10, greedy decoding 고정이 적합",
-          result: "감성 점수 일관성 확보, 재현 가능한 실험 결과 도출",
-        },
-      },
-    ],
-  }, { collapsed: true }),
-  blk("e1-d2", "textarea", "성과", {
-    type: "textarea",
-    text: "전략 수익률 vs 시장 수익률 비교 백테스팅 구현 및 시각화 완성. 감성 분석 기반 신호가 SMA 단독 전략 대비 특정 구간에서 수익률 개선 확인.",
-  }),
-  blk("e1-d3", "textarea", "다음 개선 계획", {
-    type: "textarea",
-    text: "다양한 종목·기간으로 백테스팅 확장, Buy & Hold 전략 대비 비교 기준선 추가, 거래 비용·슬리피지 가정 명시",
-  }),
-];
+/**
+ * 유형의 안정키 맵을 만든다. 템플릿에 없는 키를 적으면 즉시 던진다.
+ *
+ * ⚠️ `core.경험명`·`core.한 줄 요약`은 여기 넣지 않는다 — 그 둘은 `content.title`/`summary`가
+ * 소유하고 `toExperienceV2` 가 주입한다(TITLE_KEY/SUMMARY_KEY). 여기 또 넣으면 같은 값이 두 벌이 된다.
+ */
+function fieldsFor(typeId: ExperienceTypeId, spec: Record<string, FieldSpec>): Record<string, BlockValue> {
+  const blocks = templateBlocksByKey(typeId);
+  const out: Record<string, BlockValue> = {};
+  for (const [key, raw] of Object.entries(spec)) {
+    const block = blocks.get(key);
+    if (!block) {
+      throw new Error(
+        `[demo seed] ${typeId}: 템플릿에 없는 안정키 "${key}" — 확정본이 바뀌었는지 확인하세요.`,
+      );
+    }
+    out[key] = materialize(block, raw, `${typeId} · ${key}`);
+  }
+  return out;
+}
 
-// ─── 경험 2: 스마트 버스 알리미 앱 (team-project) ─────────────
-
-const exp2CoreBlocks = makeCoreBlocks("e2", {
-  경험명: "스마트 버스 알리미 앱",
-  기간: { start: "2025-03-01", end: "2025-06-30" },
-  한줄요약: "공공 데이터 포털의 버스도착정보 API를 연동하여 즐겨찾기 정류장의 실시간 도착 정보를 제공하는 Android 앱",
-  내역할: "모바일 소프트웨어 설계 수업 팀 프로젝트. 공공 API 연동 및 Room DB 기반 즐겨찾기 저장/불러오기 기능 담당.",
-  핵심성과: "즐겨찾기 정류장만 선택적으로 폴링하여 불필요한 API 호출 최소화. GitHub Flow 브랜치 전략 적용, 기능별 PR 리뷰 프로세스 운영.",
-});
-
-const exp2ExtBlocks: Block[] = [
-  // tp-info 섹션
-  blk("e2-t1", "text", "프로젝트명", { type: "text", text: "스마트 버스 알리미 앱" }, { required: true }),
-  blk("e2-t2", "period", "기간", { type: "period", start: "2025-03-01", end: "2025-06-30", isCurrent: false }, { required: true }),
-  blk("e2-t3", "textarea", "팀 구성", {
-    type: "textarea",
-    text: "Android 개발 4인 팀 (모바일 소프트웨어 설계 수업 팀 프로젝트)",
-  }),
-  blk("e2-t4", "textarea", "내 역할", {
-    type: "textarea",
-    text: "공공 데이터 포털 버스도착정보 API 연동 및 파싱, Room DB 기반 즐겨찾기 저장/불러오기 기능 개발 담당",
-  }, { required: true }),
-  blk("e2-t5", "textarea", "목표/문제 정의", {
-    type: "textarea",
-    text: "실제 공공 API를 연동하는 경험을 쌓고 사용자 친화적인 UI/UX를 직접 설계·구현하는 것이 목표. 정류장 즐겨찾기, 알림 기능 등 실사용 환경을 고려한 기능 설계에 집중함.",
-  }),
-  blk("e2-t6", "textarea", "협업 방식", {
-    type: "textarea",
-    text: "GitHub Flow 브랜치 전략을 적용하여 기능별 PR 리뷰 프로세스 운영",
-  }),
-  blk("e2-t7", "textarea", "역할 분담표", {
-    type: "textarea",
-    text: "공공 API 연동(본인), UI/레이아웃 설계(팀원 A), 알림 기능(팀원 B), Room DB & 검색(팀원 C)",
-  }),
-  // tp-tasks 섹션
-  blk("e2-w1", "repeatable-cell", "작업 기록", {
-    type: "repeatable-cell",
-    columns: [
-      { key: "task", label: "작업/이슈명", blockType: "text", required: true },
-      { key: "period", label: "기간", blockType: "text" },
-      { key: "work", label: "내가 한 일", blockType: "textarea", required: true },
-      { key: "result", label: "결과", blockType: "textarea" },
-    ],
-    rows: [
-      {
-        id: "e2-w1-r1",
-        cells: {
-          task: "공공 데이터 포털 버스도착정보 API 연동",
-          period: "2025.03 - 2025.04",
-          work: "Retrofit2로 Open API 호출, JSON 파싱 로직 구현",
-          result: "정류장 번호 입력 시 실시간 버스 도착 정보 수신 성공",
-        },
-      },
-      {
-        id: "e2-w1-r2",
-        cells: {
-          task: "즐겨찾기 저장/불러오기 기능",
-          period: "2025.04",
-          work: "Room DB Entity·DAO·Repository 설계 및 구현. 즐겨찾기 추가/삭제 UI 연동.",
-          result: "앱 재시작 후에도 즐겨찾기 목록 영속성 유지",
-        },
-      },
-      {
-        id: "e2-w1-r3",
-        cells: {
-          task: "실시간 도착 정보 자동 갱신",
-          period: "2025.05",
-          work: "30초 폴링 로직 구현. 즐겨찾기 정류장만 선택적으로 폴링하여 불필요한 API 호출 최소화.",
-          result: "API 호출 횟수 약 60% 절감",
-        },
-      },
-      {
-        id: "e2-w1-r4",
-        cells: {
-          task: "도착 임박 버스 알림 기능",
-          period: "2025.05 - 2025.06",
-          work: "Android Notification API 연동, 3분 이하 도착 시 알림 발송 로직 구현",
-          result: "백그라운드 알림 정상 동작 확인",
-        },
-      },
-    ],
-  }),
-  blk("e2-w2", "textarea", "회고 (잘된 점/아쉬운 점/다음엔)", {
-    type: "textarea",
-    text: "잘된 점: API 호출 제한 대응으로 즐겨찾기 정류장만 선택적 폴링한 점, GitHub Flow로 충돌 없이 협업 진행.\n아쉬운 점: 알림 정확도가 네트워크 상태에 따라 불안정했음.\n다음엔: WorkManager 도입으로 백그라운드 작업 안정성 개선 예정.",
-  }),
-];
-
-// ─── 경험 3: 네이버 부스트캠프 AI Tech 6기 (extracurricular) ──
-
-const exp3CoreBlocks = makeCoreBlocks("e3", {
-  경험명: "네이버 부스트캠프 AI Tech 6기",
-  기간: { start: "2025-07-01", end: "2025-11-30" },
-  한줄요약: "딥러닝 이론부터 실습, 팀 프로젝트까지 약 5개월간 집중 수료한 AI 교육 과정으로, Wrap-up 프로젝트로 재활용 쓰레기 분류 Object Detection 모델을 개발",
-  내역할: "CV 트랙 수강생. YOLOv8·Faster R-CNN 모델 실험, WBF(Weighted Boxes Fusion) 앙상블 전략 설계 담당.",
-  핵심성과: "재활용 쓰레기 분류 Object Detection 모델 mAP 0.68 달성. WBF 앙상블 적용으로 단일 모델 대비 mAP 약 4%p 향상. 데이터 불균형 해소를 위한 Mosaic Augmentation 및 Oversampling 전략 적용.",
-});
-
-const exp3ExtBlocks: Block[] = [
-  // extra-info 섹션
-  blk("e3-i1", "text", "활동명", { type: "text", text: "네이버 부스트캠프 AI Tech 6기" }, { required: true }),
-  blk("e3-i2", "text", "주최/기관명", { type: "text", text: "네이버 커넥트재단" }),
-  blk("e3-i3", "period", "기간", { type: "period", start: "2025-07-01", end: "2025-11-30", isCurrent: false }, { required: true }),
-  blk("e3-i4", "text", "직책/역할", { type: "text", text: "CV 트랙 수강생" }, { required: true }),
-  blk("e3-i5", "textarea", "지원 동기", {
-    type: "textarea",
-    text: "학교 수업만으로는 부족한 실전형 AI 프로젝트 경험을 채우고, 현업 수준의 코드 리뷰 문화와 협업 프로세스를 익히는 것이 목표였음. 특히 CV 트랙을 선택하여 Object Detection, Segmentation 등 비전 태스크에 집중하고자 함.",
-  }),
-  // extra-detail 섹션
-  blk("e3-d1", "textarea", "담당 업무/미션", {
-    type: "textarea",
-    text: "PyTorch 기반 딥러닝 모델 학습 파이프라인 구축 실습. Object Detection Wrap-up 프로젝트: 재활용 쓰레기 분류 모델 개발.",
-  }),
-  blk("e3-d2", "repeatable-cell", "내가 한 일", {
-    type: "repeatable-cell",
-    columns: [
-      { key: "action", label: "행동", blockType: "textarea" },
-    ],
-    rows: [
-      { id: "e3-d2-r1", cells: { action: "Faster R-CNN, YOLOv8 등 다양한 백본 모델 실험 및 성능 비교" } },
-      { id: "e3-d2-r2", cells: { action: "Wandb를 활용한 실험 추적 및 하이퍼파라미터 관리" } },
-      { id: "e3-d2-r3", cells: { action: "소수 클래스에 대한 Mosaic Augmentation 및 Oversampling 전략 적용으로 데이터 불균형 해소" } },
-      { id: "e3-d2-r4", cells: { action: "WBF(Weighted Boxes Fusion) 앙상블 전략 설계 및 적용" } },
-      { id: "e3-d2-r5", cells: { action: "주 1회 피어 코드 리뷰 및 멘토 세션 참여" } },
-    ],
-  }),
-  blk("e3-d3", "textarea", "협업/커뮤니케이션 방식", {
-    type: "textarea",
-    text: "주 1회 피어 코드 리뷰 세션 및 멘토 피드백 세션 참여. 실험 결과 공유를 위한 Wandb 대시보드 팀 공유.",
-  }),
-  blk("e3-d4", "repeatable-cell", "결과/성과", {
-    type: "repeatable-cell",
-    columns: [
-      { key: "type", label: "성과 유형", blockType: "text" },
-      { key: "metric", label: "수치", blockType: "text" },
-      { key: "description", label: "설명", blockType: "textarea" },
-    ],
-    rows: [
-      {
-        id: "e3-d4-r1",
-        cells: {
-          type: "모델 성능",
-          metric: "mAP 0.68",
-          description: "재활용 쓰레기 분류 Object Detection Wrap-up 프로젝트 최종 성능",
-        },
-      },
-      {
-        id: "e3-d4-r2",
-        cells: {
-          type: "앙상블 효과",
-          metric: "+4%p",
-          description: "WBF 앙상블 적용으로 단일 최고 모델 대비 mAP 약 4%p 향상",
-        },
-      },
-    ],
-  }),
-];
-
-// ─── 경험 4: NLP 연구실 학부 인턴 (career) ───────────────────
-
-const exp4CoreBlocks = makeCoreBlocks("e4", {
-  경험명: "학부 연구생 활동 — 자연어처리 연구실 (NLP Lab)",
-  기간: { start: "2025-09-01", end: "2026-02-28" },
-  한줄요약: "NLP 연구실 학부 인턴으로 참여하여 혐오 표현 레이블링 가이드라인 작성과 KLUE-BERT 기반 분류 모델 실험 파이프라인 구성을 보조",
-  내역할: "SNS 크롤링 데이터 전처리, 혐오 표현 레이블링 가이드라인 작성, IAA 측정 스크립트 구현, KLUE-BERT 파인튜닝 실험 파이프라인 구성",
-  핵심성과: "모호한 경계 사례에 대한 예시 기반 가이드라인 보완으로 IAA 0.61 → 0.78 개선. random seed 고정 및 실험 조건을 JSON 설정 파일로 관리하여 실험 재현성 확보.",
-});
-
-const exp4ExtBlocks: Block[] = [
-  // career-info 섹션
-  blk("e4-i1", "text", "회사명", { type: "text", text: "한양대학교 자연어처리 연구실 (NLP Lab)" }, { required: true }),
-  blk("e4-i2", "period", "재직기간", { type: "period", start: "2025-09-01", end: "2026-02-28", isCurrent: false }, { required: true }),
-  blk("e4-i3", "single-select", "고용 형태", { type: "single-select", options: ["인턴", "계약직", "정규직", "프리랜서"], selected: "인턴" }),
-  blk("e4-i4", "text", "직책/직급", { type: "text", text: "학부 연구생" }, { required: true }),
-  blk("e4-i5", "text", "직무(업무분야)", { type: "text", text: "자연어처리 연구 보조" }, { required: true }),
-  blk("e4-i6", "textarea", "지원 동기", {
-    type: "textarea",
-    text: "연구 환경에서의 실험 설계 및 논문 작성 방식을 직접 경험하고, 학교 수업에서 배운 NLP 이론을 실제 연구 문제에 적용해 보는 것이 목표였음. 특히 데이터 품질이 모델 성능에 미치는 영향을 실무적으로 이해하고자 함.",
-  }),
-  blk("e4-i7", "text", "팀/조직", { type: "text", text: "교수 1인, 대학원생 3인, 학부 연구생 2인" }),
-  // career-tasks 섹션
-  blk("e4-w1", "repeatable-cell", "업무내용", {
-    type: "repeatable-cell",
-    columns: [
-      { key: "project", label: "프로젝트/업무명", blockType: "text", required: true },
-      { key: "period", label: "세부 기간", blockType: "text" },
-      { key: "role", label: "역할", blockType: "text", required: true },
-      { key: "detail", label: "업무내용 상세", blockType: "textarea" },
-      { key: "tools", label: "활용 툴", blockType: "text" },
-      { key: "metrics", label: "성과 지표", blockType: "textarea" },
-    ],
-    rows: [
-      {
-        id: "e4-w1-r1",
-        cells: {
-          project: "SNS 크롤링 데이터 전처리 및 레이블링 가이드라인 작성",
-          period: "2025.09 - 2025.11",
-          role: "데이터 전처리 및 가이드라인 작성",
-          detail: "SNS 크롤링 데이터 정제. 혐오 표현 레이블링 가이드라인 초안 작성 및 모호한 경계 사례에 대한 예시 기반 보완.",
-          tools: "Python, Pandas, Google Sheets",
-          metrics: "IAA 0.61 → 0.78 개선 (Cohen's Kappa 기준)",
-        },
-      },
-      {
-        id: "e4-w1-r2",
-        cells: {
-          project: "IAA 측정 스크립트 구현",
-          period: "2025.10",
-          role: "스크립트 개발",
-          detail: "Cohen's Kappa를 활용한 레이블러 간 일치도(IAA) 자동 측정 스크립트 작성. 레이블러 쌍별 IAA 계산 및 리포트 생성 기능 구현.",
-          tools: "Python, scikit-learn",
-          metrics: "측정 자동화로 주간 IAA 모니터링 체계 구축",
-        },
-      },
-      {
-        id: "e4-w1-r3",
-        cells: {
-          project: "KLUE-BERT 이진 분류 파인튜닝 실험 파이프라인",
-          period: "2025.11 - 2026.02",
-          role: "실험 환경 구성 및 파이프라인 구현",
-          detail: "KLUE-BERT 기반 이진 분류 파인튜닝 실험 환경 구성. 학습/검증/테스트 데이터 분리 및 교차 검증 파이프라인 구현. random seed 고정 및 JSON 설정 파일 기반 실험 재현성 확보.",
-          tools: "Python, HuggingFace Transformers, KLUE-BERT, scikit-learn, Linux CLI",
-          metrics: "실험 재현성 확보, 주간 미팅 발표 자료 준비",
-        },
-      },
-    ],
-  }),
-];
-
-// ─── 경험 5: 이커머스 데이터 분석 (personal-project) ─────────
-
-const exp5CoreBlocks = makeCoreBlocks("e5", {
-  경험명: "이커머스 매출 데이터 분석 및 시각화",
-  기간: { start: "2025-12-01", end: "2026-01-31" },
-  한줄요약: "Kaggle의 Brazilian E-Commerce(Olist) 데이터셋을 PostgreSQL로 분석하고 Tableau Public에 인터랙티브 대시보드를 배포한 포트폴리오 프로젝트",
-  내역할: "데이터 분석 질문 설정, SQL 쿼리 작성, Tableau 대시보드 설계 및 배포, 비즈니스 인사이트 도출 전 과정 독립 수행",
-  핵심성과: "Tableau Public 대시보드 배포(필터, 툴팁, KPI 카드 포함). 분석 결과 기반 3가지 비즈니스 개선 제언 문서화. 결측치 비율이 높은 컬럼은 제거 대신 별도 세그먼트로 분리 분석하여 정보 손실 최소화.",
-});
-
-const exp5ExtBlocks: Block[] = [
-  // pp-info 섹션
-  blk("e5-p1", "text", "프로젝트명", { type: "text", text: "이커머스 매출 데이터 분석 및 시각화" }, { required: true }),
-  blk("e5-p2", "period", "기간", { type: "period", start: "2025-12-01", end: "2026-01-31", isCurrent: false }, { required: true }),
-  blk("e5-p3", "text", "한 줄 설명", { type: "text", text: "Kaggle의 Brazilian E-Commerce(Olist) 데이터셋을 PostgreSQL로 분석하고 Tableau Public에 인터랙티브 대시보드를 배포한 포트폴리오 프로젝트" }, { required: true }),
-  blk("e5-p4", "textarea", "목표/만들고 싶었던 이유", {
-    type: "textarea",
-    text: "데이터 분석 직무에 관심을 갖고 SQL과 시각화 도구 실력을 포트폴리오로 증명하고자 함. 단순 집계를 넘어 코호트 분석, 재구매율, 지역별 매출 등 비즈니스 관점의 분석 질문을 스스로 설정하고 답을 도출하는 연습을 목표로 함.",
-  }),
-  blk("e5-p5", "textarea", "대상 사용자/사용 상황", {
-    type: "textarea",
-    text: "이커머스 운영 담당자 또는 마케터. 제품 카테고리별 수익 기여도, 배송 지연과 리뷰 점수 간 상관관계 등을 한눈에 파악해야 하는 상황.",
-  }),
-  blk("e5-p6", "checklist", "주요 기능", {
-    type: "checklist",
-    options: [
-      "다중 테이블 JOIN 및 윈도우 함수를 활용한 고객 LTV·재구매율 계산",
-      "배송 지연 일수와 리뷰 점수 간 상관관계 분석 쿼리 작성",
-      "월별·카테고리별 매출 추이 집계 및 YoY 성장률 계산",
-      "Tableau Public 대시보드 제작 및 배포 (필터, 툴팁, KPI 카드 포함)",
-      "분석 결과를 기반으로 한 3가지 비즈니스 개선 제언 문서화",
-    ],
-    checked: [
-      "다중 테이블 JOIN 및 윈도우 함수를 활용한 고객 LTV·재구매율 계산",
-      "배송 지연 일수와 리뷰 점수 간 상관관계 분석 쿼리 작성",
-      "월별·카테고리별 매출 추이 집계 및 YoY 성장률 계산",
-      "Tableau Public 대시보드 제작 및 배포 (필터, 툴팁, KPI 카드 포함)",
-      "분석 결과를 기반으로 한 3가지 비즈니스 개선 제언 문서화",
-    ],
-  }),
-  blk("e5-p7", "tags", "기술/도구", {
-    type: "tags",
-    tags: ["PostgreSQL", "SQL", "Tableau Public", "Python", "Pandas", "Kaggle", "Excel"],
-  }),
-  // pp-decisions 섹션
-  blk("e5-d1", "repeatable-cell", "설계/결정", {
-    type: "repeatable-cell",
-    columns: [
-      { key: "topic", label: "결정 주제", blockType: "text", required: true },
-      { key: "alternatives", label: "대안 비교", blockType: "textarea" },
-      { key: "reason", label: "선택 이유", blockType: "textarea" },
-      { key: "result", label: "결과/배운 점", blockType: "textarea" },
-    ],
-    rows: [
-      {
-        id: "e5-d1-r1",
-        cells: {
-          topic: "결측치 처리 방식",
-          alternatives: "결측치 비율이 높은 컬럼 제거 vs 별도 세그먼트로 분리 분석",
-          reason: "정보 손실을 최소화하고 결측치 자체가 인사이트가 될 수 있다고 판단",
-          result: "결측 세그먼트 분석에서 배송 미완료 건의 패턴 발견",
-        },
-      },
-      {
-        id: "e5-d1-r2",
-        cells: {
-          topic: "대시보드 UX 방향",
-          alternatives: "기술 용어 그대로 사용 vs 비즈니스 용어로 레이블 통일",
-          reason: "비개발자인 이커머스 운영 담당자가 주요 사용자이므로 비즈니스 용어 선택",
-          result: "가독성 향상, 비즈니스 관점 커뮤니케이션 역량 어필",
-        },
-      },
-    ],
-  }, { collapsed: true }),
-  blk("e5-d2", "textarea", "성과", {
-    type: "textarea",
-    text: "배송 지연 일수 증가 시 리뷰 점수 평균 1.2점 하락 확인. 상위 3개 카테고리가 전체 매출의 48% 차지. 3가지 비즈니스 개선 제언(배송 최적화, 카테고리 집중 전략, 재구매 프로모션) 문서화 완료.",
-  }),
-  blk("e5-d3", "textarea", "다음 개선 계획", {
-    type: "textarea",
-    text: "예측 모델(회귀 분석) 추가로 배송 지연 예측 기능 구현. 실시간 업데이트 파이프라인 연결 검토.",
-  }),
-];
-
-// ─── Experience 조립 ─────────────────────────────────────────
+/** 모든 유형이 공유하는 발행 옵트인. build-portfolio 가 이 값으로 공개 여부를 가른다. */
+const PUBLIC = { "extended.공개 설정": "공개" } as const;
 
 function makeExperience(args: {
   id: string;
-  type: string;
+  type: ExperienceTypeId;
   importance: number | null;
   title: string;
   summary: string;
@@ -451,8 +201,7 @@ function makeExperience(args: {
   status: "draft" | "complete";
   createdAt: string;
   updatedAt: string;
-  coreBlocks: Block[];
-  extensionBlocks: Block[];
+  fields: Record<string, BlockValue>;
 }): Experience {
   return {
     id: args.id,
@@ -460,105 +209,604 @@ function makeExperience(args: {
     type: args.type,
     importance: args.importance,
     content: {
+      schema_version: SCHEMA_VERSION_V2,
+      template_version: TEMPLATE_VERSION,
       title: args.title,
       summary: args.summary,
       status: args.status,
       tags: args.tags,
-      coreBlocks: args.coreBlocks,
-      // 데모 포트폴리오는 명시적 옵트인(공개)만 발행하므로, 큐레이트된 시드 경험은
-      // '공개 설정'을 명시적으로 "공개"로 둔다. (build-portfolio isPublishableExperience)
-      extensionBlocks: [
-        ...args.extensionBlocks,
-        blk(`${args.id}-vis`, "single-select", "공개 설정", {
-          type: "single-select",
-          options: ["공개", "비공개", "일부 공개"],
-          selected: "공개",
-        }),
-      ],
-      customBlocks: [],
+      fields: args.fields,
+      custom: [],
     },
     created_at: args.createdAt,
     updated_at: args.updatedAt,
   };
 }
 
+// ─── 경험 1: 인턴 (career) — 확정본 3섹션 + 담당 업무 표 ─────
+
+const careerFields = fieldsFor("career", {
+  "career-info.회사명": "한양대학교 자연어처리 연구실 (NLP Lab)",
+  "career-info.산업 / 회사 종류": ["대학 연구실", "인공지능", "자연어처리"],
+  "career-info.부서 / 팀": "한국어 언어모델 연구팀",
+  "career-info.직무 / 포지션": "학부 연구생 (연구 인턴)",
+  "career-info.근무 기간": { start: "2025-09", end: "2026-02" },
+  "career-info.근무 형태": "파트타임",
+  "career-info.회사 소개":
+    "한국어 사전학습 언어모델과 혐오 표현 탐지를 연구하는 교내 연구실입니다. 교수 1인, 대학원생 3인, 학부 연구생 2인으로 구성되어 주 1회 전체 세미나와 주 2회 소그룹 리뷰를 진행합니다.",
+  "career-info.공식 URL": { url: "https://nlp.hanyang.ac.kr", title: "연구실 홈페이지" },
+
+  "career-detail.지원 동기":
+    "학부 수업에서 배운 모델을 직접 학습시켜 보고 싶었습니다. 특히 데이터의 품질이 성능을 얼마나 좌우하는지 실제 연구 현장에서 확인하고 싶어 지원했습니다.",
+  "career-detail.팀이 진행한 프로젝트 / 업무": {
+    rows: [
+      { item: "한국어 혐오 표현 탐지 데이터셋 v2 구축" },
+      { item: "KLUE-BERT 기반 분류 모델 벤치마크" },
+      { item: "학부 연구생 대상 주간 논문 리뷰 세미나 운영" },
+    ],
+  },
+  "career-detail.나의 담당 업무 / 주요 성과": {
+    rows: [
+      { item: "혐오 표현 레이블링 가이드라인 작성 및 레이블러 간 일치도 관리" },
+      { item: "KLUE-BERT 파인튜닝 실험 파이프라인 구성" },
+    ],
+  },
+  "career-detail.성장 / 변화":
+    "처음에는 모델을 바꾸면 성능이 오를 거라 생각했는데, 실제로 점수를 끌어올린 것은 경계 사례를 다시 정의한 가이드라인이었습니다. 이후로는 데이터를 먼저 들여다보는 습관이 생겼습니다.",
+  "career-detail.사용한 스킬 / 툴 / 기술": [
+    "Python",
+    "PyTorch",
+    "Hugging Face Transformers",
+    "KLUE-BERT",
+    "scikit-learn",
+    "Weights & Biases",
+    "Git",
+  ],
+  "career-detail.협업 / 팀원":
+    "지도교수 1인, 대학원생 멘토 1인과 함께 일했습니다. 주 1회 진행 상황을 공유하고, 실험 설계는 멘토와 사전에 합의한 뒤 실행했습니다.",
+
+  "career-tasks.프로젝트/담당 업무": {
+    rows: [
+      {
+        project: "혐오 표현 레이블링 가이드라인 개정",
+        role: "가이드라인 작성 · 품질 관리",
+        period: "2025.09 ~ 2025.11",
+        goal: "레이블러마다 판단이 갈리는 경계 사례를 줄여 데이터셋의 신뢰도를 확보하는 것",
+        work: "레이블러 4명의 불일치 사례 320건을 유형별로 모아 6개 패턴으로 분류했고, 각 패턴마다 판단 기준과 예시 문장을 붙여 가이드라인을 개정했습니다. 개정 후 같은 표본으로 재측정했습니다.",
+        result:
+          "레이블러 간 일치도(Cohen's Kappa)가 0.61에서 0.78로 올랐습니다. 특히 풍자·인용 표현에서 불일치가 가장 크게 줄었습니다.",
+        difficulty:
+          "'인용된 혐오 표현'을 혐오로 볼지 의견이 갈려 2주간 결론이 나지 않았습니다. 판단을 미루는 대신 두 기준으로 각각 레이블링해 성능 차이를 재고, 그 결과를 근거로 기준을 정했습니다.",
+        output: "https://github.com/demo/hate-speech-guideline",
+      },
+      {
+        project: "KLUE-BERT 파인튜닝 실험 파이프라인",
+        role: "실험 설계 · 구현",
+        period: "2025.11 ~ 2026.01",
+        goal: "같은 설정이면 누가 돌려도 같은 결과가 나오도록 실험 환경을 정리하는 것",
+        work: "random seed를 고정하고 하이퍼파라미터를 JSON 설정 파일로 분리했습니다. 실행마다 설정과 지표가 자동으로 기록되도록 Weights & Biases를 붙였습니다.",
+        result:
+          "동일 설정 3회 반복 시 F1 편차가 ±0.004 이내로 줄었습니다. 멘토가 제 실험을 그대로 재현할 수 있게 되면서 리뷰 시간이 절반으로 줄었습니다.",
+        difficulty:
+          "초기에는 같은 코드인데도 결과가 매번 달라 원인을 찾지 못했습니다. 데이터 로더의 셔플 시드가 따로 놀고 있었다는 걸 로그를 하나씩 대조해 찾아냈습니다.",
+        output: "https://github.com/demo/klue-finetune-pipeline",
+      },
+      {
+        project: "주간 논문 리뷰 세미나 발표",
+        role: "발표 · 자료 작성",
+        period: "2025.10 ~ 2026.02",
+        goal: "최신 연구를 팀 전체가 공유하고, 우리 데이터셋에 적용할 지점을 찾는 것",
+        work: "5개월간 논문 6편을 맡아 발표했습니다. 매 발표마다 우리 데이터셋에 적용했을 때의 예상 효과를 한 장으로 정리해 붙였습니다.",
+        result:
+          "제안한 focal loss 적용이 실제 실험으로 이어져, 소수 클래스 F1이 0.52에서 0.61로 올랐습니다.",
+        output: "https://github.com/demo/nlp-seminar-notes",
+      },
+    ],
+  },
+
+  "core.기간": { start: "2025-09", end: "2026-02" },
+  "core.내 역할/기여도":
+    "데이터 품질 관리와 실험 환경 정비를 맡았습니다. 모델 구조를 새로 설계하기보다, 같은 모델에서 더 믿을 수 있는 숫자가 나오게 만드는 일을 담당했습니다.",
+  "core.핵심 성과":
+    "레이블러 간 일치도 0.61 → 0.78, 반복 실험 F1 편차 ±0.004 이내 확보.",
+  "core.증빙 자료": {
+    fileName: "연구실_활동확인서.pdf",
+    description: "지도교수 확인 학부연구생 활동 확인서",
+    fileId: "demo-file-career-1",
+  },
+  ...PUBLIC,
+});
+
+// ─── 경험 2: 대외활동 (extracurricular) ─────────────────────
+
+const extracurricularFields = fieldsFor("extracurricular", {
+  "extra-info.활동명": "네이버 부스트캠프 AI Tech 6기",
+  "extra-info.활동 유형": "스터디 / 학습 모임",
+  "extra-info.기수 / 차수": "6기",
+  "extra-info.주최": "네이버 커넥트재단",
+  "extra-info.주관 / 후원": "네이버 클라우드 플랫폼 지원",
+  "extra-info.참여 역할 / 포지션": "CV 트랙 수강생 · 팀 프로젝트 리더",
+  "extra-info.활동 기간": { start: "2025-07", end: "2025-11" },
+  "extra-info.활동 규모": "100~300명",
+  "extra-info.공식 URL": { url: "https://boostcamp.connect.or.kr", title: "부스트캠프 공식 사이트" },
+
+  "extra-detail.지원 동기":
+    "혼자 공부할 때는 모델을 돌려보는 데서 멈췄습니다. 같은 문제를 두고 다른 사람의 접근을 보고 싶었고, 5개월간 매일 코드를 쓰는 환경에 저를 두고 싶어 지원했습니다.",
+  "extra-detail.활동 내용 요약":
+    "5개월간 매일 오전 이론 강의와 오후 실습으로 진행됐고, 후반 2개월은 5인 팀 단위 대회형 프로젝트로 운영됐습니다. CV 트랙에서 이미지 분류·객체 탐지·세그멘테이션을 차례로 다뤘고, 매 대회마다 리더보드 순위와 함께 실험 로그를 제출해야 했습니다.",
+  "extra-detail.주요 미션 / 프로젝트": {
+    rows: [
+      { item: "재활용 쓰레기 객체 탐지 대회 (팀 5인)" },
+      { item: "마스크 착용 상태 이미지 분류 대회 (개인)" },
+      { item: "실험 관리 자동화 스터디 운영" },
+    ],
+  },
+  "extra-detail.주요 성과": {
+    rows: [
+      { item: "객체 탐지 대회 참가 21팀 중 4위 (mAP 0.68)" },
+      { item: "수료 시 우수 학습자 선정" },
+      { item: "팀 실험 기록 템플릿이 다른 두 팀에 채택됨" },
+    ],
+  },
+  "extra-detail.활동 성격": ["🧠 학습 중심", "🤝 팀 협업", "🔥 도전적", "🎯 목표 달성"],
+
+  "extra-missions.미션 / 프로젝트": {
+    rows: [
+      {
+        name: "재활용 쓰레기 객체 탐지 대회",
+        type: "팀 미션",
+        description:
+          "쓰레기 사진에서 10종의 재활용 품목을 찾아내는 객체 탐지 대회입니다. 5인 팀으로 3주간 진행했습니다.",
+        work: "팀 리더로 실험 분담과 일정을 관리했고, 저는 앙상블 파트를 맡아 팀원들이 각자 학습시킨 4개 모델을 WBF(Weighted Boxes Fusion)로 결합했습니다. 매일 저녁 실험 결과를 한 장으로 정리해 공유했습니다.",
+        result:
+          "단일 최고 모델 mAP 0.64 대비 앙상블로 0.68까지 올렸습니다(+4%p). 참가 21팀 중 4위로 마감했습니다.",
+        difficulty:
+          "팀원마다 실험 기록 방식이 달라 어떤 조합을 이미 돌려봤는지 추적되지 않았습니다. 공용 실험 기록 템플릿을 만들어 매일 같은 형식으로 남기게 했고, 이후 중복 실험이 사라졌습니다.",
+        output: "https://github.com/demo/trash-detection",
+      },
+      {
+        name: "마스크 착용 상태 이미지 분류 대회",
+        type: "개인 미션",
+        description: "얼굴 사진에서 마스크 착용 상태·성별·연령대 18개 클래스를 분류하는 개인 대회입니다.",
+        work: "클래스 불균형이 심해 오버샘플링과 focal loss를 각각 적용해 비교했고, 최종적으로 두 기법을 함께 썼습니다.",
+        result: "F1 0.71로 마감했습니다. 가장 적었던 클래스의 정확도가 0.38에서 0.66으로 올랐습니다.",
+        difficulty:
+          "검증 점수는 높은데 리더보드 점수가 낮아 원인을 찾지 못했습니다. 같은 사람의 사진이 학습·검증에 나뉘어 들어간 것이 문제였고, 사람 단위로 데이터를 나눠 해결했습니다.",
+      },
+    ],
+  },
+
+  "core.기간": { start: "2025-07", end: "2025-11" },
+  "core.내 역할/기여도":
+    "CV 트랙 수강생으로 참여했고, 후반 팀 프로젝트에서는 5인 팀의 리더를 맡아 실험 분담과 기록 체계를 담당했습니다.",
+  "core.증빙 자료": {
+    fileName: "부스트캠프_수료증.pdf",
+    description: "네이버 커넥트재단 발급 수료증",
+    fileId: "demo-file-extra-1",
+  },
+  ...PUBLIC,
+});
+
+// ─── 경험 3: 동아리 (club) — 역할 이력·행별 역할 태그 ───────
+
+const clubFields = fieldsFor("club", {
+  "club-info.동아리 / 단체명": "데이터 분석 학회 DataWave",
+  "club-info.단체 유형": "학술 / 스터디",
+  "club-info.소속 학교": "한양대학교",
+  "club-info.학과 / 학부": "컴퓨터소프트웨어학부",
+  "club-info.소속 단위": "중앙 동아리",
+  "club-info.활동 기간": { start: "2023-03", end: "2025-12" },
+  "club-info.역할 / 직책": "학회장 (2025) · 스터디장 (2024) · 정회원 (2023)",
+  "club-info.역할 이력": {
+    rows: [
+      { start: "2023-03", end: "2023-12", role: "정회원" },
+      { start: "2024-03", end: "2024-12", role: "스터디장" },
+      { start: "2025-03", end: "2025-12", role: "학회장" },
+    ],
+  },
+  "club-info.활동 규모": "30~50명",
+  "club-info.공식 URL": { url: "https://datawave.hanyang.ac.kr", title: "DataWave 소개 페이지" },
+
+  "club-detail.가입 동기":
+    "데이터를 다루고 싶은데 무엇부터 해야 할지 몰랐습니다. 혼자 강의를 듣다 멈추기를 반복하던 차에, 매주 결과물을 공유해야 하는 환경이 필요하다고 생각해 지원했습니다.",
+  "club-detail.동아리 소개":
+    "학부생 40여 명이 활동하는 교내 데이터 분석 학회입니다. 학기당 4~6개 스터디를 운영하고, 방학마다 공모전 참가 팀을 꾸립니다. 학기말에는 전체 발표회에서 각 팀의 분석 결과를 공유합니다.",
+  "club-detail.주요 활동 / 이벤트": {
+    rows: [
+      { cells: { item: "SQL 기초 스터디 운영 (2024 봄)" }, roleTags: ["스터디장"] },
+      { cells: { item: "2025 신입 학회원 모집 및 온보딩 개편" }, roleTags: ["학회장"] },
+      { cells: { item: "학기말 데이터 분석 발표회 기획" }, roleTags: ["학회장", "스터디장"] },
+      { cells: { item: "머신러닝 논문 읽기 스터디 참여" }, roleTags: ["정회원"] },
+    ],
+  },
+  "club-detail.주요 성과": {
+    rows: [
+      { cells: { item: "스터디 중도 이탈률 40% → 12%로 감소" }, roleTags: ["스터디장"] },
+      { cells: { item: "신입 학회원 지원자 24명 → 41명" }, roleTags: ["학회장"] },
+      { cells: { item: "학회 팀 3곳이 교외 공모전 본선 진출" }, roleTags: ["학회장"] },
+    ],
+  },
+  "club-detail.활동 성격": ["📝 학술 / 스터디", "🤝 협업 기반", "🏛️ 자치 / 대표"].filter(t =>
+    // 아래 checklist 검증이 잡아주지만, 목록이 유형마다 달라 눈으로도 구분되게 남겨 둔다.
+    ["📝 학술 / 스터디", "🏛️ 자치 / 대표", "💼 창업 / 실무"].includes(t),
+  ),
+
+  "club-activities.활동 / 이벤트": {
+    rows: [
+      {
+        role: ["스터디장"],
+        name: "SQL 기초 스터디 운영",
+        type: "정기 모임 / 스터디",
+        detail:
+          "데이터 분석이 처음인 학회원 12명을 대상으로 8주간 진행한 SQL 스터디입니다. 매주 실습 과제와 코드 리뷰로 구성했습니다.",
+        work: "커리큘럼을 8주로 설계하고 매주 실습 문제를 직접 만들었습니다. 과제를 제출하지 못한 사람에게는 개별로 막힌 지점을 물어 다음 주 문제 난이도를 조정했습니다.",
+        result:
+          "이전 학기 중도 이탈률 40%에서 12%로 낮췄습니다. 수료자 12명 중 5명이 다음 학기 공모전 팀에 합류했습니다.",
+        difficulty:
+          "3주차부터 난이도가 급격히 올라 이탈이 몰렸습니다. 과제를 '필수 3문제 + 선택 3문제'로 나눠 최소 진도만 따라와도 완주할 수 있게 바꿨습니다.",
+        output: "https://github.com/demo/datawave-sql-study",
+      },
+      {
+        role: ["학회장"],
+        name: "2025 신입 학회원 모집 및 온보딩 개편",
+        type: "신입 부원 모집",
+        detail:
+          "학회장으로서 모집 홍보부터 첫 4주 온보딩 과정까지 다시 설계했습니다.",
+        work: "기존에는 모집 공고만 올렸는데, 재학생이 실제로 궁금해하는 것을 먼저 물었습니다. 설문 62건을 받아 '무엇을 배우는지 모르겠다'는 응답이 가장 많은 걸 확인하고, 지난 학기 결과물 8개를 정리한 소개 페이지를 만들었습니다.",
+        result: "지원자가 24명에서 41명으로 늘었고, 첫 4주 이탈이 9명에서 3명으로 줄었습니다.",
+        difficulty:
+          "홍보 채널을 늘리자는 의견과 내용을 바꾸자는 의견이 갈렸습니다. 두 학기 지원 경로 데이터를 확인해 유입은 충분한데 지원 전환이 낮다는 걸 보여주고 내용 개편을 먼저 했습니다.",
+        output: "https://datawave.hanyang.ac.kr/recruit-2025",
+      },
+    ],
+  },
+
+  "core.기간": { start: "2023-03", end: "2025-12" },
+  "core.내 역할/기여도":
+    "3년간 정회원 → 스터디장 → 학회장으로 활동했습니다. 마지막 해에는 학회 운영 전반과 신입 온보딩 설계를 맡았습니다.",
+  "core.증빙 자료": {
+    fileName: "DataWave_임원_활동확인서.pdf",
+    description: "학회장 재임 확인서 (2025)",
+    fileId: "demo-file-club-1",
+  },
+  ...PUBLIC,
+});
+
+// ─── 경험 4: 수상 (award) — 조건부 '팀에서 내가 맡은 역할' ──
+
+const awardFields = fieldsFor("award", {
+  "award-info.대회 / 프로그램명": "2025 전국 대학생 데이터 분석 공모전",
+  "award-info.대회 유형": "공모전/경진대회",
+  "award-info.수상 훈격": "우수상 (2위)",
+  "award-info.주최 기관": "한국데이터산업진흥원",
+  "award-info.수상일": "2025-11-22",
+  "award-info.참가 규모 / 경쟁률": "총 187팀 참가, 본선 12팀 진출 중 2위",
+  // '팀 수상' 으로 시작하는 값이라 아래 '팀에서 내가 맡은 역할' 칸이 화면에 나타난다(확정본 §7).
+  "award-info.개인 / 팀": "팀 수상 (2~5명)",
+  "award-info.팀에서 내가 맡은 역할": "데이터 분석 · 발표",
+  "award-info.지원 동기":
+    "학회에서 배운 분석을 실제 공공 데이터로 검증해보고 싶었습니다. 심사위원에게 제 결론이 설득되는지 확인하고 싶은 마음도 컸습니다.",
+  "award-info.수상 내용 / 배경":
+    "대중교통 승하차 데이터와 상권 매출 데이터를 결합해 '심야 버스 노선이 실제로 필요한 구간'을 찾는 분석으로 수상했습니다. 기존 노선 기준과 다른 3개 구간을 제안했고, 심사위원으로부터 근거의 구체성과 정책 적용 가능성에서 높은 평가를 받았습니다.",
+  "award-info.상금 / 부상": "상금 300만원 (팀), 데이터산업진흥원장상",
+
+  "award-process.준비 과정":
+    "8주간 팀원 3명과 매주 두 번 모였습니다. 앞 4주는 데이터를 모으고 정제하는 데 썼고, 뒤 4주에 가설을 세우고 검증했습니다. 저는 승하차 데이터 전처리와 최종 발표를 맡았습니다.",
+  "award-process.기억에 남는 순간 / 배운 점":
+    "본선 사흘 전에 우리 분석의 기준 시간대가 잘못 설정된 걸 발견했습니다. 결과를 다시 뽑으니 제안 구간 하나가 바뀌었고, 그대로 발표 자료를 고쳤습니다. 숫자를 의심하는 습관이 그때 생겼습니다.",
+
+  "award-evidence.관련 링크": {
+    url: "https://www.kdata.or.kr/news/2025-analysis-contest",
+    title: "수상자 발표 공식 페이지",
+  },
+
+  "core.증빙 자료": {
+    fileName: "데이터분석공모전_상장.pdf",
+    description: "한국데이터산업진흥원장상 상장",
+    evidenceType: "상장 원본/사본",
+    fileId: "demo-file-award-1",
+  },
+  ...PUBLIC,
+});
+
+// ─── 경험 5: 창작물 (creative-work) — 최신 확정본(v6) ───────
+
+const creativeFields = fieldsFor("creative-work", {
+  "creative-info.작품명 / 작업물명": "서울 심야 이동 인터랙티브 데이터 시각화",
+  "creative-info.유형 / 매체": "웹/앱 UI",
+  // '개인 작업' 이 아니라서 바로 아래 '역할' 칸이 화면에 나타난다(확정본 §7).
+  "creative-info.개인 / 팀": "팀 작업(2~5명)",
+  "creative-info.역할": "데이터 처리 · 프론트엔드 구현",
+  "creative-info.작업 기간": { start: "2026-03", end: "2026-05" },
+  "creative-info.공개 / 전시 이력": {
+    rows: [
+      { item: "2026 교내 소프트웨어 전시회 출품" },
+      { item: "개인 포트폴리오 사이트 공개" },
+    ],
+  },
+  "creative-info.사용 툴 / 기술": ["D3.js", "TypeScript", "Next.js", "Python", "Pandas", "Figma"],
+  "creative-info.작품 링크 / 파일": {
+    rows: [
+      {
+        link: "https://demo.story-arc.org/seoul-night",
+        desc: "인터랙티브 시각화 (최종 결과물)",
+      },
+      {
+        link: "https://github.com/demo/seoul-night-viz",
+        desc: "소스 코드 저장소",
+      },
+      {
+        file: {
+          type: "file",
+          fileId: "demo-file-creative-1",
+          fileName: "전시회_발표자료.pdf",
+        },
+        desc: "교내 전시회 발표 자료",
+      },
+    ],
+  },
+
+  "creative-detail.작업 배경 / 컨셉":
+    "공모전에서 다룬 심야 이동 데이터가 표와 막대그래프 안에만 남는 게 아쉬웠습니다. 사람이 실제로 어디서 어디로 움직이는지 지도 위에서 보이면 다른 이야기가 될 것 같아 시작한 작업입니다.",
+  "creative-detail.제작 과정":
+    "3주 데이터 정제 → 2주 프로토타입 → 4주 구현 → 1주 사용자 테스트 순으로 진행했습니다. 초기에는 모든 노선을 한 번에 보여줬는데 아무것도 읽히지 않아, 시간대 슬라이더를 넣어 한 번에 한 시점만 보이도록 바꿨습니다. 이 결정이 작업 전체의 방향을 갈랐습니다.",
+  "creative-detail.반응 / 피드백":
+    "교내 전시회에서 관람객 약 200명이 시연했고, '심야 시간대에 강남–영등포 흐름이 이렇게 뚜렷한 줄 몰랐다'는 반응이 가장 많았습니다. 학과 조교가 다음 학기 시각화 수업 예시 자료로 쓰겠다고 요청했습니다.",
+  "creative-detail.이 작업이 나에게 남긴 것":
+    "분석과 전달은 다른 일이라는 걸 배웠습니다. 정확한 그래프보다 한 번에 하나만 보여주는 화면이 더 많은 것을 전달했습니다. 이후로는 결과를 낼 때 '누가 어떤 순서로 볼 것인가'를 먼저 생각합니다.",
+  "creative-detail.작품 성격": ["🔍 리서치 기반", "🛠️ 기술 중심", "🤝 협업 기반", "🌍 사회적 메시지"],
+
+  // ⚠️ `core.내 역할/기여도` 는 비워 둔다. 창작물 확정본은 '역할'을 자기 필드로 갖고(위),
+  // computeFormCards 가 빈 코어만 dedup 한다 — 값을 넣으면 역할 칸이 두 벌로 보인다(FRT-267).
+  ...PUBLIC,
+});
+
+// ─── 경험 6: 어학 (language) ────────────────────────────────
+
+const languageFields = fieldsFor("language", {
+  "lang-overview.언어": "영어",
+  "lang-overview.전반적 수준": "중상급(실무 소통·문서 이해)",
+  "lang-overview.가능한 활용 영역": [
+    "📖 문서 독해",
+    "🎓 학술 논문 독해",
+    "🎤 발표 / 프레젠테이션",
+    "💬 일상 회화",
+  ],
+
+  "lang-experience.어학 학습 / 습득 동기":
+    "머신러닝 논문이 대부분 영어라 읽는 속도가 곧 공부 속도였습니다. 번역기를 거치면 뉘앙스가 사라져서, 원문으로 읽는 힘을 기르는 걸 목표로 삼았습니다.",
+  "lang-experience.주요 경험": {
+    rows: [
+      { item: "미국 워싱턴대 교환학생 한 학기" },
+      { item: "학회 논문 읽기 스터디 5학기 참여" },
+      { item: "부스트캠프 영문 기술 문서 번역 공유" },
+    ],
+  },
+  "lang-experience.학습 방법 / 노력":
+    "매일 논문 초록 하나를 읽고 세 문장으로 요약하는 습관을 2년간 이어갔습니다. 교환학생 기간에는 수업 발표를 자원해 말하기 기회를 일부러 늘렸습니다.",
+
+  "lang-records.경험 상세 기록": {
+    rows: [
+      {
+        name: "미국 워싱턴대학교 교환학생",
+        period: "2024.08 ~ 2024.12",
+        activities: ["💬 일상 회화", "🎤 발표 / 프레젠테이션", "📖 문서 독해"],
+        summary:
+          "한 학기 동안 데이터 과학 전공 수업 3개를 들으며 현지 학생들과 팀 과제를 진행했고, 학기말 팀 발표에서 결과 해석 파트를 영어로 맡았습니다.",
+        moment:
+          "발표 후 교수님이 '질문에 답할 때 근거를 먼저 말하는 게 좋았다'고 하셨습니다. 영어가 유창해서가 아니라 구조가 분명해서 전달됐다는 걸 그때 알았습니다.",
+      },
+      {
+        name: "머신러닝 논문 읽기 스터디",
+        period: "2023.03 ~ 2025.06",
+        activities: ["🎓 학술 논문 독해", "🎤 발표 / 프레젠테이션"],
+        summary:
+          "학회 스터디에서 5학기 동안 매주 논문 한 편을 읽고 돌아가며 발표했습니다. 제가 맡은 발표는 총 18회였습니다.",
+        moment:
+          "처음에는 한 편을 읽는 데 사흘이 걸렸는데, 마지막 학기에는 초록과 그림만으로 핵심을 잡고 두 시간이면 정리할 수 있게 됐습니다.",
+      },
+    ],
+  },
+
+  "lang-certificate.시험 / 자격증명": "TOEIC",
+  "lang-certificate.점수 / 등급": "875점",
+  "lang-certificate.취득일": "2024-09-08",
+  "lang-certificate.유효기간": "2026-09-08",
+  "lang-certificate.성적표 첨부": {
+    fileName: "TOEIC_성적표.pdf",
+    description: "2024년 9월 정기시험 성적표",
+    evidenceType: "성적표/점수 확인서",
+    fileId: "demo-file-lang-1",
+  },
+  ...PUBLIC,
+});
+
+// ─── 경험 7: 해외경험 (overseas) ────────────────────────────
+
+const overseasFields = fieldsFor("overseas", {
+  "overseas-program.경험 유형": "교환학생",
+  "overseas-program.국가 / 도시": "미국 시애틀",
+  "overseas-program.주최 / 소속 기관": "University of Washington (한양대학교 교환학생 프로그램)",
+  "overseas-program.기간": { start: "2024-08", end: "2024-12" },
+  "overseas-program.사용 언어": "영어",
+  "overseas-program.참여 형태": "혼자",
+  "overseas-program.증빙 자료": {
+    fileName: "교환학생_수료증.pdf",
+    description: "University of Washington 수학 증명서",
+    evidenceType: "수료증/참가 확인서",
+    fileId: "demo-file-overseas-1",
+  },
+
+  "overseas-reflection.주요 활동": {
+    rows: [
+      { item: "데이터 과학 전공 수업 3개 수강" },
+      { item: "현지 학생 4인 팀 과제 및 학기말 발표" },
+      { item: "교내 데이터 사이언스 클럽 세미나 참여" },
+    ],
+  },
+  "overseas-reflection.이 경험이 나에게 준 것": [
+    "🗣️ 언어 능력 향상",
+    "🎓 학문적 시야 확장",
+    "💪 독립성/자립심",
+    "🧭 새로운 관점",
+  ],
+  "overseas-reflection.기억에 남는 순간":
+    "팀 과제에서 한 학생이 제 결론에 '데이터를 어떻게 나눴는지 먼저 보여달라'고 했습니다. 결론보다 과정을 먼저 검증하는 태도가 낯설었는데, 돌아온 뒤 제 발표 순서를 그렇게 바꿨습니다.",
+
+  "overseas-activities.활동별 상세 설명": {
+    rows: [
+      {
+        activity: "데이터 과학 전공 수업 3개 수강",
+        detail:
+          "Statistical Learning, Data Visualization, Database Systems 세 과목을 들었습니다. 매주 과제가 코드와 짧은 리포트로 나왔고, 결과보다 판단 근거를 적는 데 배점이 컸습니다.",
+      },
+      {
+        activity: "현지 학생 4인 팀 과제 및 학기말 발표",
+        detail:
+          "시애틀 자전거 통행량 데이터로 기상 조건과 통행량의 관계를 분석했습니다. 저는 데이터 정제와 결과 해석 파트를 맡았고, 발표에서 해석 부분을 담당했습니다.",
+      },
+    ],
+  },
+  ...PUBLIC,
+});
+
+// ─── 경험 8: 자격증 (certification) — 반복 섹션 없는 확정본 ──
+
+const certificationFields = fieldsFor("certification", {
+  "cert-info.자격증명": "SQL 개발자 (SQLD)",
+  "cert-info.자격증 분야": "데이터/AI",
+  "cert-info.등급/급수": "개발자 등급",
+  "cert-info.발급 기관": "한국데이터산업진흥원",
+  "cert-info.취득일": "2025-04-11",
+
+  "cert-background.취득 동기":
+    "학회 스터디에서 SQL을 쓰긴 했지만 제가 아는 범위가 어디까지인지 알 수 없었습니다. 기준이 있는 시험으로 한 번 정리하고 싶어 준비했습니다.",
+  "cert-background.준비 기간/방법":
+    "6주간 준비했습니다. 앞 3주는 이론을 훑고, 뒤 3주는 기출 8회분을 반복해 풀었습니다. 특히 계층형 질의와 윈도우 함수가 약해 따로 문제를 모아 다시 봤습니다.",
+  "cert-background.활용 계획":
+    "데이터 분석 직무 지원 시 기본기 증빙으로 쓰고, 다음 단계로 SQLP와 ADsP를 이어서 준비할 계획입니다.",
+
+  "core.증빙 자료": {
+    fileName: "SQLD_자격증.pdf",
+    description: "한국데이터산업진흥원 발급 자격증 사본",
+    evidenceType: "합격증/자격증 사본",
+    fileId: "demo-file-cert-1",
+  },
+  ...PUBLIC,
+});
+
+// ─── 시드 경험 목록 ─────────────────────────────────────────
+
 export const seedExperiences: Experience[] = [
   makeExperience({
-    id: "exp-v2-1",
-    type: "personal-project",
+    id: "exp-demo-career",
+    type: "career",
     importance: 5,
-    title: "LLM 활용 뉴스 감성 분석 기반 하이브리드 주가 예측 프로젝트",
+    title: "자연어처리 연구실 학부 연구생",
     summary:
-      "Gemma-2 LLM을 활용해 비정형 뉴스 데이터를 정량적 투자 지표로 변환하고, SMA 기술 지표와 결합한 하이브리드 매매 전략을 연구·구현했어요.",
-    tags: ["AI트레이딩", "LLM", "NLP", "백테스팅", "개인프로젝트"],
+      "한국어 혐오 표현 데이터셋의 레이블링 기준을 다시 세우고, 재현 가능한 파인튜닝 실험 환경을 만들었어요.",
+    tags: ["자연어처리", "데이터품질", "실험재현성", "인턴"],
     status: "complete",
-    createdAt: "2026-05-01T09:00:00Z",
+    createdAt: "2026-02-20T09:00:00Z",
     updatedAt: "2026-05-08T14:00:00Z",
-    coreBlocks: exp1CoreBlocks,
-    extensionBlocks: exp1ExtBlocks,
+    fields: careerFields,
   }),
   makeExperience({
-    id: "exp-v2-2",
-    type: "team-project",
-    importance: 4,
-    title: "공공 데이터 포털 API 활용 버스 실시간 도착 정보 앱 개발",
-    summary:
-      "공공 데이터 포털 버스도착정보 API를 연동해 즐겨찾기 정류장의 실시간 도착 정보를 제공하는 Android 앱을 팀 프로젝트로 설계·구현했어요.",
-    tags: ["Android", "팀프로젝트", "공공API", "모바일앱", "캡스톤"],
-    status: "complete",
-    createdAt: "2025-06-10T10:00:00Z",
-    updatedAt: "2025-06-15T18:00:00Z",
-    coreBlocks: exp2CoreBlocks,
-    extensionBlocks: exp2ExtBlocks,
-  }),
-  makeExperience({
-    id: "exp-v2-3",
+    id: "exp-demo-extracurricular",
     type: "extracurricular",
     importance: 4,
-    title: "네이버 부스트캠프 AI Tech 6기 수료",
+    title: "네이버 부스트캠프 AI Tech 6기",
     summary:
-      "딥러닝 이론부터 팀 프로젝트까지 약 5개월간 집중 수료한 AI 교육 과정으로, Wrap-up 프로젝트로 재활용 쓰레기 분류 Object Detection 모델(mAP 0.68)을 개발했어요.",
-    tags: ["부스트캠프", "딥러닝", "ComputerVision", "ObjectDetection", "교육프로그램"],
+      "5개월간 CV 트랙을 수료하고, 5인 팀 리더로 객체 탐지 대회에서 앙상블로 성능을 4%p 끌어올렸어요.",
+    tags: ["컴퓨터비전", "팀리딩", "대회", "부스트캠프"],
     status: "complete",
-    createdAt: "2025-11-10T12:00:00Z",
-    updatedAt: "2025-11-15T11:00:00Z",
-    coreBlocks: exp3CoreBlocks,
-    extensionBlocks: exp3ExtBlocks,
+    createdAt: "2025-11-30T09:00:00Z",
+    updatedAt: "2026-04-12T10:00:00Z",
+    fields: extracurricularFields,
   }),
   makeExperience({
-    id: "exp-v2-4",
-    type: "career",
-    importance: 3,
-    title: "학부 연구생 활동 — 자연어처리 연구실 (NLP Lab)",
+    id: "exp-demo-club",
+    type: "club",
+    importance: 4,
+    title: "데이터 분석 학회 DataWave",
     summary:
-      "NLP 연구실 학부 인턴으로 참여해 한국어 혐오 표현 레이블링 가이드라인을 작성하고, KLUE-BERT 기반 이진 분류 파인튜닝 실험 파이프라인을 구성했어요.",
-    tags: ["학부연구생", "NLP", "BERT", "혐오표현탐지", "연구실인턴"],
+      "정회원에서 학회장까지 3년간 활동하며 스터디 이탈률을 낮추고 신입 온보딩을 다시 설계했어요.",
+    tags: ["학회", "리더십", "스터디운영", "데이터분석"],
     status: "complete",
-    createdAt: "2026-02-05T09:00:00Z",
-    updatedAt: "2026-02-10T15:00:00Z",
-    coreBlocks: exp4CoreBlocks,
-    extensionBlocks: exp4ExtBlocks,
+    createdAt: "2025-12-20T09:00:00Z",
+    updatedAt: "2026-03-02T11:00:00Z",
+    fields: clubFields,
   }),
   makeExperience({
-    id: "exp-v2-5",
-    type: "personal-project",
-    importance: 3,
-    title: "SQL 및 Tableau 활용 이커머스 매출 데이터 분석",
+    id: "exp-demo-award",
+    type: "award",
+    importance: 5,
+    title: "전국 대학생 데이터 분석 공모전 우수상",
     summary:
-      "Kaggle의 Brazilian E-Commerce(Olist) 데이터셋을 PostgreSQL로 분석하고 Tableau Public에 인터랙티브 대시보드를 배포한 포트폴리오 프로젝트예요.",
-    tags: ["데이터분석", "SQL", "Tableau", "이커머스", "포트폴리오"],
+      "대중교통·상권 데이터를 결합해 심야 버스 노선이 실제로 필요한 구간 3곳을 제안해 187팀 중 2위를 했어요.",
+    tags: ["공모전", "공공데이터", "수상", "발표"],
     status: "complete",
-    createdAt: "2026-01-15T11:00:00Z",
-    updatedAt: "2026-01-20T18:00:00Z",
-    coreBlocks: exp5CoreBlocks,
-    extensionBlocks: exp5ExtBlocks,
+    createdAt: "2025-11-25T09:00:00Z",
+    updatedAt: "2026-01-15T09:00:00Z",
+    fields: awardFields,
+  }),
+  makeExperience({
+    id: "exp-demo-creative",
+    type: "creative-work",
+    importance: 3,
+    title: "서울 심야 이동 인터랙티브 데이터 시각화",
+    summary:
+      "공모전에서 다룬 심야 이동 데이터를 지도 위 인터랙티브 시각화로 다시 만들어 전시했어요.",
+    tags: ["데이터시각화", "D3", "전시", "프론트엔드"],
+    status: "complete",
+    createdAt: "2026-05-20T09:00:00Z",
+    updatedAt: "2026-06-01T09:00:00Z",
+    fields: creativeFields,
+  }),
+  makeExperience({
+    id: "exp-demo-language",
+    type: "language",
+    importance: 3,
+    title: "영어 — 논문 독해와 실무 소통",
+    summary:
+      "논문 원문 독해를 목표로 2년간 매일 요약 습관을 이어갔고, 교환학생 기간에 발표로 말하기를 늘렸어요.",
+    tags: ["영어", "TOEIC", "논문독해", "발표"],
+    status: "complete",
+    createdAt: "2025-01-10T09:00:00Z",
+    updatedAt: "2026-02-01T09:00:00Z",
+    fields: languageFields,
+  }),
+  makeExperience({
+    id: "exp-demo-overseas",
+    type: "overseas",
+    importance: 4,
+    title: "미국 워싱턴대학교 교환학생",
+    summary:
+      "한 학기 동안 데이터 과학 수업을 듣고, 결론보다 과정을 먼저 검증하는 태도를 배워 왔어요.",
+    tags: ["교환학생", "미국", "데이터과학", "협업"],
+    status: "complete",
+    createdAt: "2024-12-20T09:00:00Z",
+    updatedAt: "2025-06-10T09:00:00Z",
+    fields: overseasFields,
+  }),
+  makeExperience({
+    id: "exp-demo-certification",
+    type: "certification",
+    importance: 2,
+    title: "SQL 개발자 (SQLD)",
+    summary: "스터디에서 쓰던 SQL 지식의 범위를 기준이 있는 시험으로 한 번 정리했어요.",
+    tags: ["SQL", "자격증", "데이터"],
+    status: "complete",
+    createdAt: "2025-04-15T09:00:00Z",
+    updatedAt: "2025-04-15T09:00:00Z",
+    fields: certificationFields,
   }),
 ];
 
 export const seedLibraries: LibraryDTO[] = [
   {
     id: "demo-lib-ai",
-    name: "AI/ML 프로젝트",
+    name: "AI · 데이터",
     color: "#8B5CF6",
     icon: undefined,
     is_system: false,
@@ -566,7 +814,7 @@ export const seedLibraries: LibraryDTO[] = [
   },
   {
     id: "demo-lib-dev",
-    name: "개발 & 교육",
+    name: "커뮤니티 · 글로벌",
     color: "#3B82F6",
     icon: undefined,
     is_system: false,
@@ -576,8 +824,14 @@ export const seedLibraries: LibraryDTO[] = [
 
 // 라이브러리별 멤버십 초기 상태
 export const seedLibraryMembership: Record<string, string[]> = {
-  "demo-lib-ai": ["exp-v2-1", "exp-v2-4", "exp-v2-5"],
-  "demo-lib-dev": ["exp-v2-2", "exp-v2-3"],
+  "demo-lib-ai": [
+    "exp-demo-career",
+    "exp-demo-extracurricular",
+    "exp-demo-award",
+    "exp-demo-creative",
+    "exp-demo-certification",
+  ],
+  "demo-lib-dev": ["exp-demo-club", "exp-demo-language", "exp-demo-overseas"],
 };
 
 export const seedDemoUser: AuthUser = {
@@ -595,7 +849,7 @@ export const seedDemoUser: AuthUser = {
     school: "한양대학교",
     department: "컴퓨터소프트웨어학부",
     worry: [],
-    interest: ["AI/ML", "데이터분석", "백엔드", "자연어처리", "데이터 시각화"],
+    interest: ["AI/ML", "데이터분석", "자연어처리", "데이터 시각화"],
   },
   onboarded: true,
 };
@@ -607,8 +861,8 @@ export const seedResume: ResumeVersion = {
   meta: {
     language: "ko",
     format: "json",
-    generated_at: "2026-05-08T15:00:00Z",
-    source_chars: 5120,
+    generated_at: "2026-06-08T15:00:00Z",
+    source_chars: 6480,
   },
   인적사항: {
     이름: "김서윤",
@@ -634,37 +888,38 @@ export const seedResume: ResumeVersion = {
       졸업구분: "졸업예정",
       학점: 3.72,
       만점: 4.5,
-      비고: null,
+      비고: "2024년 2학기 University of Washington 교환학생",
     },
   ],
   경력: [
     {
       id: 1,
-      회사명: "한양대학교 자연어처리 연구실",
-      부서: "NLP Lab",
+      회사명: "한양대학교 자연어처리 연구실 (NLP Lab)",
+      부서: "한국어 언어모델 연구팀",
       직위: "학부 연구생",
       고용형태: "인턴",
       입사년월: "2025-09",
       퇴사년월: "2026-02",
       재직중: false,
       담당업무: [
-        "한국어 혐오 표현 레이블링 가이드라인 작성 및 데이터 품질 관리",
-        "KLUE-BERT 기반 이진 분류 파인튜닝 실험 파이프라인 구성",
-        "Cohen's Kappa를 활용한 레이블러 간 일치도(IAA) 측정 스크립트 작성",
+        "한국어 혐오 표현 레이블링 가이드라인 개정 및 데이터 품질 관리",
+        "KLUE-BERT 기반 파인튜닝 실험 파이프라인 구성",
+        "주간 논문 리뷰 세미나 발표 6회",
       ],
       성과: [
-        "모호한 경계 사례 가이드라인 보완으로 IAA 0.61 → 0.78 개선",
-        "random seed 고정 및 JSON 설정 파일 기반 실험 재현성 확보",
+        "레이블러 간 일치도(Cohen's Kappa) 0.61 → 0.78 개선",
+        "동일 설정 반복 실험 F1 편차 ±0.004 이내 확보",
+        "focal loss 제안 반영으로 소수 클래스 F1 0.52 → 0.61",
       ],
     },
   ],
   자격증: [
     {
       id: 1,
-      자격증명: "SQLD",
+      자격증명: "SQL 개발자 (SQLD)",
       발급기관: "한국데이터산업진흥원",
       취득년월: "2025-04",
-      자격구분: "국가자격",
+      자격구분: "국가공인",
     },
   ],
   어학: [
@@ -685,88 +940,102 @@ export const seedResume: ResumeVersion = {
       기간_종료: "2025-11-30",
       기간_원문: "2025.07 - 2025.11",
       진행중: false,
-      역할: "CV 트랙 수강생",
+      역할: "CV 트랙 수강생 · 팀 프로젝트 리더",
       활동내용: [
-        "PyTorch 기반 딥러닝 모델 학습 파이프라인 구축 실습",
-        "YOLOv8, Faster R-CNN 등 Object Detection 모델 비교 실험",
-        "Wandb를 활용한 실험 추적 및 하이퍼파라미터 관리",
+        "PyTorch 기반 학습 파이프라인 구축 및 객체 탐지 모델 비교 실험",
+        "5인 팀 리더로 실험 분담 및 공용 실험 기록 체계 운영",
       ],
       성과: [
-        "재활용 쓰레기 분류 Object Detection 모델 mAP 0.68 달성",
-        "WBF(Weighted Boxes Fusion) 앙상블로 단일 모델 대비 mAP 4%p 향상",
+        "객체 탐지 대회 참가 21팀 중 4위 (mAP 0.68)",
+        "WBF 앙상블로 단일 최고 모델 대비 mAP 4%p 향상",
+        "수료 시 우수 학습자 선정",
       ],
     },
   ],
   프로젝트: [
     {
       id: 1,
-      프로젝트명: "LLM 활용 뉴스 감성 분석 기반 하이브리드 주가 예측",
-      소속기관: "개인 프로젝트",
-      기간_시작: "2026-02",
-      기간_종료: "2026-05",
-      기간_원문: "2026.02 - 2026.05",
-      역할: "기획·개발 전담",
-      사용기술: ["Python", "Gemma-2-2b-it", "Transformers", "yfinance", "Pandas", "Matplotlib"],
+      프로젝트명: "심야 대중교통 수요 분석 (전국 대학생 데이터 분석 공모전)",
+      소속기관: "한국데이터산업진흥원 공모전 · 4인 팀",
+      기간_시작: "2025-09",
+      기간_종료: "2025-11",
+      기간_원문: "2025.09 - 2025.11",
+      역할: "데이터 분석 · 발표",
+      사용기술: ["Python", "Pandas", "PostgreSQL", "GeoPandas", "Matplotlib"],
       내용: [
-        "Google News RSS 연동 및 날짜별 뉴스 수집 파이프라인 구축",
-        "Gemma-2-2b-it 모델로 뉴스 헤드라인 감성 수치화(Sentiment Scoring)",
-        "SMA(20/60) 기술 지표와 뉴스 점수를 결합한 매수 신호 생성",
-        "사용자 정의 리스크 관리(손절 3%, 익절 10%) 자동 시뮬레이션",
+        "대중교통 승하차 데이터와 상권 매출 데이터 결합 및 정제",
+        "시간대·구간별 수요 밀도 분석으로 심야 노선 후보 구간 도출",
+        "본선 발표 자료 작성 및 발표 담당",
       ],
       성과: [
-        "전략 수익률 vs 시장 수익률 비교 백테스팅 구현 및 시각화",
-        "AI 환각 방지를 위한 max_new_tokens=10 결정론적 추론 적용",
+        "기존 노선 기준과 다른 3개 구간 제안, 187팀 중 우수상(2위)",
+        "본선 3일 전 기준 시간대 오류를 발견해 결과 재산출",
       ],
     },
     {
       id: 2,
-      프로젝트명: "공공 데이터 포털 API 활용 버스 실시간 도착 정보 앱",
-      소속기관: "한양대학교 모바일 소프트웨어 설계 수업 팀 프로젝트",
-      기간_시작: "2025-03",
-      기간_종료: "2025-06",
-      기간_원문: "2025.03 - 2025.06",
-      역할: "Android 개발 (팀 프로젝트)",
-      사용기술: ["Android", "Java", "Retrofit2", "Room DB", "공공 데이터 포털 API"],
+      프로젝트명: "서울 심야 이동 인터랙티브 데이터 시각화",
+      소속기관: "팀 작업 (3인) · 교내 전시 출품",
+      기간_시작: "2026-03",
+      기간_종료: "2026-05",
+      기간_원문: "2026.03 - 2026.05",
+      역할: "데이터 처리 · 프론트엔드 구현",
+      사용기술: ["D3.js", "TypeScript", "Next.js", "Python", "Pandas"],
       내용: [
-        "공공 데이터 포털 버스도착정보 Open API 연동 및 파싱",
-        "정류장 검색 및 즐겨찾기 저장/불러오기 (Room DB 활용)",
-        "실시간 도착 정보 자동 갱신 (30초 폴링) 및 알림 기능 구현",
+        "심야 이동 데이터를 지도 기반 인터랙티브 시각화로 재구성",
+        "시간대 슬라이더 도입으로 한 시점만 보이도록 정보량 조절",
       ],
       성과: [
-        "즐겨찾기 정류장만 선택적 폴링으로 불필요한 API 호출 최소화",
-        "GitHub Flow 브랜치 전략 적용, 기능별 PR 리뷰 프로세스 운영",
+        "교내 소프트웨어 전시회 출품, 관람객 약 200명 시연",
+        "학과 시각화 수업 예시 자료로 채택",
       ],
     },
     {
       id: 3,
-      프로젝트명: "이커머스 매출 데이터 분석 및 시각화",
-      소속기관: "개인 프로젝트",
-      기간_시작: "2025-12",
-      기간_종료: "2026-01",
-      기간_원문: "2025.12 - 2026.01",
-      역할: "데이터 분석 및 시각화 전담",
-      사용기술: ["PostgreSQL", "SQL", "Tableau Public", "Python", "Pandas"],
+      프로젝트명: "재활용 쓰레기 객체 탐지 대회",
+      소속기관: "네이버 부스트캠프 AI Tech · 5인 팀",
+      기간_시작: "2025-10",
+      기간_종료: "2025-11",
+      기간_원문: "2025.10 - 2025.11",
+      역할: "팀 리더 · 앙상블 담당",
+      사용기술: ["PyTorch", "MMDetection", "Weights & Biases"],
       내용: [
-        "다중 테이블 JOIN 및 윈도우 함수를 활용한 고객 LTV·재구매율 계산",
-        "배송 지연 일수와 리뷰 점수 간 상관관계 분석 쿼리 작성",
-        "월별·카테고리별 매출 추이 집계 및 YoY 성장률 계산",
+        "팀원 4명의 개별 모델을 WBF(Weighted Boxes Fusion)로 결합",
+        "공용 실험 기록 템플릿 도입으로 중복 실험 제거",
       ],
-      성과: [
-        "Tableau Public 대시보드 배포 (필터, 툴팁, KPI 카드 포함)",
-        "분석 결과 기반 3가지 비즈니스 개선 제언 문서화",
+      성과: ["단일 최고 모델 mAP 0.64 → 앙상블 0.68 (+4%p)", "참가 21팀 중 4위"],
+    },
+  ],
+  수상: [
+    {
+      id: 1,
+      수상명: "우수상 (2위)",
+      수여기관: "한국데이터산업진흥원",
+      수상년월: "2025-11",
+      내용: "2025 전국 대학생 데이터 분석 공모전 — 187팀 참가, 본선 12팀 중 2위",
+    },
+  ],
+  기술및역량: {
+    기술스택: ["Python", "PyTorch", "SQL", "TypeScript", "D3.js"],
+    툴: ["Git", "Weights & Biases", "PostgreSQL", "Jupyter", "Figma"],
+    소프트스킬: ["문제 해결", "데이터 기반 의사결정", "팀 운영", "자기주도성"],
+  },
+  동아리_학회: [
+    {
+      id: 1,
+      단체명: "데이터 분석 학회 DataWave",
+      구분: "교내학회",
+      기간_원문: "2023.03 - 2025.12",
+      역할: "학회장 (2025) · 스터디장 (2024) · 정회원 (2023)",
+      활동내용: [
+        "SQL 기초 스터디 8주 커리큘럼 설계 및 운영",
+        "2025 신입 학회원 모집·온보딩 과정 개편",
       ],
     },
   ],
-  수상: [],
-  기술및역량: {
-    기술스택: ["Python", "PyTorch", "SQL", "Java", "Android"],
-    툴: ["Git", "Wandb", "Tableau", "Jupyter", "Google Colab"],
-    소프트스킬: ["문제 해결", "데이터 기반 의사결정", "자기주도성"],
-  },
-  동아리_학회: [],
   연계성: [],
   자기소개_요약:
-    "AI/ML과 데이터 분석을 두 축으로 성장해온 학생입니다. 실험 재현성과 정량적 검증에 집중하며, 공학적 분석으로 실세계 문제를 해결하는 일에 가장 큰 동기를 느낍니다.",
+    "데이터의 품질과 전달 방식이 결론을 바꾼다고 믿는 학생입니다. 연구실에서는 레이블링 기준을 다시 세워 데이터 신뢰도를 끌어올렸고, 공모전과 시각화 작업에서는 같은 데이터를 어떻게 보여주느냐가 설득을 가른다는 것을 배웠습니다.",
   파싱경고: [],
 };
 
@@ -807,19 +1076,21 @@ export const seedCoverLetter: CoverLetterResult = {
       question: "지원 동기와 본인의 강점을 서술하시오. (1,000자 이내)",
       max_chars: 1000,
       cover_letter:
-        "데이터로 문제를 좁혀 가는 일에 가장 큰 동기를 느낍니다.\n\n학부 2학년 때 교내 데이터 분석 학회에 들어가면서 데이터를 다루기 시작했습니다. 처음 맡은 일은 설문 응답을 정리하는 단순 작업이었지만, 반복되는 전처리를 파이썬 스크립트로 옮기면서 작업 시간을 크게 줄였습니다. 그때 '반복을 줄이면 생각할 시간이 늘어난다'는 것을 배웠습니다.\n\n이후 팀 프로젝트에서는 이탈이 많은 구간을 찾는 분석을 맡았습니다. 3년간 팀장으로 조직을 이끈 경험을 살려 일정을 조율했고, 가설을 세우고 지표로 확인하는 과정을 반복해 결론을 좁혔습니다.\n\n귀사가 데이터를 조직의 기본기로 삼는다는 점에 끌렸습니다. 숫자로 확인하고 설득하는 방식으로 기여하고 싶습니다.",
+        "데이터로 문제를 좁혀 가는 일에 가장 큰 동기를 느낍니다.\n\n학부 2학년 때 교내 데이터 분석 학회에 들어가면서 데이터를 다루기 시작했습니다. 처음에는 스터디를 따라가는 것도 벅찼지만, 이듬해 스터디장을 맡아 커리큘럼을 직접 설계하면서 중도 이탈률을 40%에서 12%로 낮췄습니다. 그때 '사람이 어디서 막히는지 먼저 물어야 한다'는 것을 배웠습니다.\n\n연구실에서는 모델보다 데이터가 결과를 좌우한다는 것을 확인했습니다. 5년간 대기업 데이터 조직에서 쌓은 실무 감각을 바탕으로 레이블링 기준을 다시 세웠고, 레이블러 간 일치도를 0.61에서 0.78까지 끌어올렸습니다.\n\n귀사가 데이터를 조직의 기본기로 삼는다는 점에 끌렸습니다. 숫자로 확인하고 설득하는 방식으로 기여하고 싶습니다.",
       grounding: {
         grounded: false,
         // 첫 번째는 본문에 그대로 있어 하이라이트되고, 두 번째는 없어 배너에만 뜬다 —
         // 두 경로를 한 화면에서 확인할 수 있게 일부러 섞었다.
+        // ⚠️ 둘 다 **시드 경험에 근거가 없어야** 이 예시가 성립한다. 경험을 고칠 때
+        // 이 문장들이 우연히 사실이 되지 않는지 함께 확인할 것.
         unsupported_claims: [
-          "3년간 팀장으로 조직을 이끈 경험",
-          "전국 대학생 데이터 분석 대회에서 대상을 받았습니다",
+          "5년간 대기업 데이터 조직에서 쌓은 실무 감각",
+          "사내 추천 시스템을 직접 운영해 매출을 개선했습니다",
         ],
         notes: "기록에서 근거를 찾지 못한 주장 2건 (교정 반복 2회)",
       },
       writing_guide:
-        "전략\n두괄식으로 시작해 첫 문장에서 동기를 분명히 밝히세요.\n\n문단별 해설\n1문단 — 결론부터. 2문단 — 계기를 사실로. 3문단 — 성과를 숫자로.\n\n보완 포인트\n정량 성과(줄인 시간, 개선한 지표)를 기록에 남겨 두면 다음 초안이 더 단단해집니다.\n\n예상 면접 질문\n1. 전처리를 자동화한 구체적인 방법은?\n2. 이탈 구간을 어떤 지표로 정의했나요?\n3. 팀에서 의견이 갈렸을 때 어떻게 결정했나요?",
+        "전략\n두괄식으로 시작해 첫 문장에서 동기를 분명히 밝히세요.\n\n문단별 해설\n1문단 — 결론부터. 2문단 — 계기를 사실로. 3문단 — 성과를 숫자로.\n\n보완 포인트\n정량 성과(줄인 시간, 개선한 지표)를 기록에 남겨 두면 다음 초안이 더 단단해집니다.\n\n예상 면접 질문\n1. 스터디 이탈률을 낮추기 위해 구체적으로 무엇을 바꿨나요?\n2. 레이블링 기준을 어떤 근거로 개정했나요?\n3. 팀에서 의견이 갈렸을 때 어떻게 결정했나요?",
     },
     {
       question: "입사 후 이루고 싶은 목표를 서술하시오. (500자 이내)",
