@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
@@ -9,6 +9,9 @@ vi.mock("@/lib/api/files-api", async () => {
   return { ...actual, getFileUrl: vi.fn(async () => ({ url: "https://files.example/dl", expiresAt: undefined })) }
 })
 
+vi.mock("@/lib/analytics", () => ({ capture: vi.fn() }))
+const { capture } = await import("@/lib/analytics")
+
 import RepeatableCellBlock from "./RepeatableCellBlock"
 import { isBlockEmpty } from "@/lib/utils/block-utils"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
@@ -16,6 +19,7 @@ import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
 afterEach(cleanup)
+beforeEach(() => vi.mocked(capture).mockClear())
 
 function makeBlock(rows: BlockRow[], opts?: { allowRowExtras?: boolean }): Block {
   return {
@@ -698,5 +702,69 @@ describe("RepeatableCellBlock — 역방향 연결 배지 (FRT-210)", () => {
     )
 
     expect(screen.queryByText(/에서 연결됨/)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * 링크 열 (FRT-267 '작품 링크 / 파일'). 이 표가 대체한 `공개 링크`(LinkBlock)가 하던 두 가지를
+ * 셀에서도 해야 한다 — 조회에서 **열리는 링크**로 보이는 것과, URL 첨부를 **계측**하는 것.
+ * 둘 다 셀로 옮기며 조용히 빠졌던 자리다.
+ */
+describe("RepeatableCellBlock — 링크 열", () => {
+  function linkBlock(url: string): Block {
+    return {
+      id: "lb",
+      type: "repeatable-cell",
+      label: "작품 링크 / 파일",
+      value: {
+        type: "repeatable-cell",
+        columns: [
+          { key: "link", label: "링크", blockType: "link" },
+          { key: "desc", label: "설명", blockType: "text" },
+        ],
+        rows: [{ id: "r1", cells: { link: url, desc: "최종 결과물" } }],
+      },
+    }
+  }
+
+  it("조회 화면에서 링크 열은 새 탭으로 열리는 anchor 다", () => {
+    render(<Harness readOnly block={linkBlock("https://behance.net/my-work")} />)
+
+    const anchor = screen.getByRole("link", { name: /behance\.net\/my-work/ })
+    expect(anchor).toHaveAttribute("href", "https://behance.net/my-work")
+    expect(anchor).toHaveAttribute("target", "_blank")
+    // opener 를 넘기면 열린 페이지가 원본 탭을 조작할 수 있다.
+    expect(anchor).toHaveAttribute("rel", expect.stringContaining("noopener"))
+  })
+
+  /** 안전하지 않은 스킴은 anchor 로 만들지 않는다 — 값은 글자로 남아 사용자가 볼 수는 있다. */
+  it("javascript: 같은 위험한 스킴은 링크로 만들지 않는다", () => {
+    render(<Harness readOnly block={linkBlock("javascript:alert(1)")} />)
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument()
+    expect(screen.getByText("javascript:alert(1)")).toBeInTheDocument()
+  })
+
+  it("URL 을 입력하고 나가면 첨부 계측이 한 번 발화한다", async () => {
+    const user = userEvent.setup()
+    render(<Harness block={linkBlock("")} />)
+
+    const input = screen.getByLabelText("링크", { selector: "input" })
+    await user.type(input, "https://vimeo.com/123")
+    await user.tab()
+
+    expect(capture).toHaveBeenCalledWith("archive_attachment_added", { attachment_type: "url" })
+    expect(vi.mocked(capture).mock.calls.filter(c => c[0] === "archive_attachment_added")).toHaveLength(1)
+  })
+
+  /** 기존 링크를 focus 만 했다 나가는 것은 새 첨부가 아니다(LinkBlock 과 같은 위양성 방어). */
+  it("타이핑 없이 지나가기만 하면 계측하지 않는다", async () => {
+    const user = userEvent.setup()
+    render(<Harness block={linkBlock("https://vimeo.com/123")} />)
+
+    await user.click(screen.getByLabelText("링크", { selector: "input" }))
+    await user.tab()
+
+    expect(capture).not.toHaveBeenCalledWith("archive_attachment_added", expect.anything())
   })
 })

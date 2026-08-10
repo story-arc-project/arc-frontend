@@ -5,24 +5,13 @@ import { ExternalLink, Link as LinkIcon } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { capture } from "@/lib/analytics"
+import { getSafeHref } from "@/lib/utils/url-utils"
 import type { Block, LinkBlockValue } from "@/types/archive"
 
 interface LinkBlockProps {
   block: Block
   readOnly?: boolean
   onChange: (value: LinkBlockValue) => void
-}
-
-const SAFE_SCHEMES = ["http:", "https:", "mailto:"]
-
-function getSafeHref(url: string): string | null {
-  if (!url) return null
-  try {
-    const parsed = new URL(url)
-    return SAFE_SCHEMES.includes(parsed.protocol) ? parsed.toString() : null
-  } catch {
-    return null
-  }
 }
 
 function getDomain(url: string): string {

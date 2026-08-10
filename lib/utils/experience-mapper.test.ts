@@ -13,7 +13,7 @@ import {
   toExperienceV2,
   toSavePayload,
 } from "@/lib/utils/experience-mapper"
-import { createGroupBlock, createTextField } from "@/lib/utils/block-utils"
+import { createGroupBlock, createTextField, isBlockEmpty } from "@/lib/utils/block-utils"
 
 function makeExperience(overrides: Partial<Experience> = {}): Experience {
   return {
@@ -2398,16 +2398,27 @@ describe("확정본 전면 교체 값 보존 (FRT-267 창작물)", () => {
   })
 
   /**
-   * ⚠️ 선행 5종과 **반대 결론**을 지키는 그물이다. 봉사·해외경험은 코어 '내 역할/기여도'를 뺐지만
-   * 창작물은 빼지 않는다 — 구 템플릿에 role 앵커가 없어 이 칸이 실제로 렌더됐고, 빼면 사용자가
-   * 적어 둔 역할 서술이 '기타'로 밀리기 때문이다. 코어에 남기면 dedup 이 빈 것만 숨긴다.
+   * ⚠️ 선행 5종과 **반대 결론**을 지키는 그물이다. 봉사·해외경험은 코어 '내 역할/기여도'를
+   * `CORE_EXCLUDE` 로 뺐지만 창작물은 빼지 않는다 — 구 템플릿에 role 앵커가 없어 이 칸이 실제로
+   * 렌더됐고, 빼면 사용자가 적어 둔 역할 서술이 '기타'로 밀리기 때문이다.
+   *
+   * ⚠️ 다만 **남기는 것만으로는 부족했다.** 코어를 남긴 채 확정본 '역할'을 새로 띄우면 값이 든
+   * 코어는 dedup 을 안 타므로 권위 있는 칸이 **둘**이 되고, `pickValue` 는 정확 라벨을 먼저
+   * 고르므로(build-portfolio.ts) 사용자가 새 '역할'을 고쳐도 포트폴리오는 옛 코어 값을 계속
+   * 발행한다 — 화면과 산출물이 어긋난다(FRT-267 Codex P2). 그래서 값을 확정본 칸으로 **옮긴다**:
+   * 코어는 비어 dedup 이 숨기고, 옮겨진 값은 '개인 작업'에서도 화면에 남는다.
    */
-  it("코어 '내 역할/기여도'는 코어에 그대로 남는다 — 값이 '기타'로 밀리지 않는다", () => {
+  it("코어 '내 역할/기여도' 값은 확정본 '역할'로 옮겨 권위 있는 칸을 하나로 만든다", () => {
     const v2 = loadLegacy()
 
-    expect(v2.coreBlocks.find(b => b.key === "core.내 역할/기여도")?.value).toEqual(
-      textarea("기획·촬영·편집을 모두 맡았습니다."),
+    // 값은 확정본 칸에 있다(textarea→text 는 `isInjectableInto` 가 허용, 문자열은 그대로).
+    expect(v2.extensionBlocks.find(b => b.key === "creative-info.역할")?.value).toEqual(
+      text("기획·촬영·편집을 모두 맡았습니다."),
     )
+    // 코어에는 남지 않는다 — 남으면 두 칸이 되어 발행이 옛 값으로 굳는다.
+    const coreRole = v2.coreBlocks.find(b => b.key === "core.내 역할/기여도")
+    expect(coreRole === undefined || isBlockEmpty(coreRole)).toBe(true)
+    // '기타'로도 밀리지 않는다 — 옮긴 것이지 버린 것이 아니다.
     expect(v2.customBlocks.find(b => b.key === "core.내 역할/기여도")).toBeUndefined()
     // 반면 앵커가 있어 늘 비어 있던 코어 둘은 템플릿에서 아예 사라진다.
     for (const gone of ["core.기간", "core.핵심 성과"]) {
@@ -2463,5 +2474,58 @@ describe("확정본 전면 교체 값 보존 (FRT-267 창작물)", () => {
       // v1 은 저장된 블록만 싣는다 — 표가 새 키를 달고 확장 블록으로 넘어가지 않아야 한다.
       expect(v1.extensionBlocks.find(b => b.key === "creative-detail.제작 과정")).toBeUndefined()
     })
+
+    /**
+     * ⚠️ 도메인 교체(`SELECT_DOMAIN_MIGRATIONS`)의 v1 조회는 **목적지 라벨로만** 색인돼 있었다.
+     * 선행 유형은 선택지만 갈리고 라벨은 그대로여서 목적지 라벨 == 저장 라벨이라 우연히 맞았는데,
+     * 창작물은 '분야'→'유형 / 매체' 로 라벨까지 갈려 조회가 빗나갔다 — 값이 새 목록에 그대로
+     * 있는데도 '기타'로 밀리고 required 칸은 빈 채 남는다(FRT-267 Codex P2). 키가 있든 없든 같다.
+     */
+    function loadV1Medium(saved: string, withKey: boolean) {
+      return toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [],
+            extensionBlocks: [
+              {
+                id: "b1",
+                ...(withKey ? { key: "cw-info.분야" } : {}),
+                type: "single-select",
+                label: "분야",
+                value: { type: "single-select", options: ["사진", "디자인", "기타"], selected: saved },
+              },
+            ],
+            customBlocks: [],
+          },
+        }),
+      )
+    }
+
+    for (const withKey of [false, true]) {
+      const how = withKey ? "키가 있는" : "키가 없는"
+
+      it(`${how} v1 '분야'의 답이 새 목록에 그대로 있으면 '유형 / 매체'로 옮는다`, () => {
+        const v1 = loadV1Medium("사진", withKey)
+
+        const moved = v1.extensionBlocks.find(b => b.key === "creative-info.유형 / 매체")
+        expect((moved?.value as SingleSelectBlockValue).selected).toBe("사진")
+        // 선택지는 템플릿 것으로 정규화된다 — 옛 목록이 따라오면 확정본 13종을 영영 못 받는다.
+        expect((moved?.value as SingleSelectBlockValue).options).toContain("웹/앱 UI")
+        expect(v1.customBlocks.find(b => b.label === "분야")).toBeUndefined()
+      })
+
+      it(`${how} v1 '분야'의 답이 새 목록에 없으면 '기타'로 보존한다 — 시스템이 대신 고르지 않는다`, () => {
+        const v1 = loadV1Medium("디자인", withKey)
+
+        expect(v1.extensionBlocks.find(b => b.key === "creative-info.유형 / 매체")).toBeUndefined()
+        const preserved = v1.customBlocks.find(b => b.label === "분야")
+        expect((preserved?.value as SingleSelectBlockValue).selected).toBe("디자인")
+      })
+    }
   })
 })

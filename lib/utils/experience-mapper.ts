@@ -360,6 +360,20 @@ const V2_CORE_SCOPED_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigratio
   overseas: [
     { from: 'core.증빙 자료', to: 'overseas-program.증빙 자료', carry: carryCompatibleValue },
   ],
+  // 창작물은 구 템플릿에 role 앵커가 없어 코어 '내 역할/기여도'가 실제로 렌더됐다 — 값이 든
+  // 레코드가 실재한다. 그 코어를 **남겨 두기만 하면** 확정본 '역할'과 함께 두 칸이 살아나는데,
+  // 둘 다 값이 있으면 `pickValue` 가 정확 라벨을 먼저 고르므로(build-portfolio.ts) 사용자가 새
+  // '역할'을 고쳐도 포트폴리오는 **옛 코어 값을 계속 발행한다** — 화면과 산출물이 어긋나는
+  // 무음 오염이다(FRT-267 Codex P2). 값을 확정본 칸으로 옮겨 권위 있는 칸을 하나로 만든다.
+  //
+  // 이관 후 코어는 비므로 `keepCoreOrExtended` 가 숨기고, 옮겨진 값은 '개인 작업'을 골라도
+  // 화면에 남는다(`partitionByCondition` 은 **빈** 블록만 숨긴다). textarea→text 는
+  // `isInjectableInto` 가 허용하고 문자열은 그대로 보존된다 — 위젯만 한 줄로 좁아진다.
+  // ⚠️ v1 레코드는 fields 맵이 없어 이 규칙이 닿지 않는다. 코어를 ext 로 잇는 v1 경로는
+  //    코드베이스에 없으므로, 그쪽은 두 칸이 남을 수 있다(값 유실은 없다).
+  'creative-work': [
+    { from: 'core.내 역할/기여도', to: 'creative-info.역할', carry: carryCompatibleValue },
+  ],
 }
 
 /**
@@ -631,14 +645,25 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   // 선택지 도메인이 교체된 필드는 v1 에서도 v2 와 **같은 값 조건부 판정**을 받는다
   // (SELECT_DOMAIN_MIGRATIONS). v1 은 라벨로 매칭하므로 새 템플릿 블록을 라벨로 찾아 둔다.
   const domainMigratedByLabel = new Map<string, Block>()
-  for (const { to } of SELECT_DOMAIN_MIGRATIONS[typeId] ?? []) {
+  const domainMigratedByKey = new Map<string, Block>()
+  for (const { from, to } of SELECT_DOMAIN_MIGRATIONS[typeId] ?? []) {
     const tb = extTemplateByKey.get(to)
-    if (tb) domainMigratedByLabel.set(tb.label, tb)
+    if (!tb) continue
+    domainMigratedByKey.set(from, tb)
+    domainMigratedByLabel.set(tb.label, tb)
+    // ⚠️ 목적지 라벨만 색인하면 **라벨이 바뀐 규칙에는 조회가 빗나간다.** 선행 유형은 선택지만
+    // 갈리고 라벨은 그대로여서 목적지 라벨 == 저장 라벨이었지만, 창작물은 '분야'→'유형 / 매체'로
+    // 라벨까지 갈렸다(FRT-267 Codex P2). 구 키에서 원래 라벨을 뽑아 함께 색인한다 — 안 하면
+    // 값이 새 목록에 그대로 있는데도 '기타'로 밀리고 required 칸은 빈 채 남아, 사용자가 바뀐 것도
+    // 없는 답을 다시 골라야 저장된다.
+    const sourceLabel = from.slice(from.indexOf('.') + 1)
+    if (sourceLabel) domainMigratedByLabel.set(sourceLabel, tb)
   }
   // 타입이 호환되지 않는 매칭은 키를 붙이지 않고 '기타' 로 보낸다(isInjectableInto).
   const keyedExt = savedExt.map(b => {
     // 도메인 교체 select 는 값이 새 목록에 남아 있을 때만 싣고, 그때 선택지를 템플릿 것으로 바꾼다.
-    const domainTb = domainMigratedByLabel.get(b.label)
+    const domainTb =
+      (b.key ? domainMigratedByKey.get(b.key) : undefined) ?? domainMigratedByLabel.get(b.label)
     const carried = domainTb ? carrySelectValue(domainTb, b.value) : null
     const injectable = (key: string | undefined) => {
       if (domainTb) return !!carried && key === domainTb.key
@@ -648,7 +673,9 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     /** 매칭이 성사된 블록에는 정규화한 값을 실어 옛 선택지 목록이 따라오지 않게 한다. */
     const matched = (block: Block): Block => (carried ? { ...block, value: carried } : block)
     if (b.key) {
-      const renamed = RENAMED_FIELD_KEYS[b.key]
+      // 도메인 교체 규칙도 개명과 같은 자리에서 키를 갈아준다 — 값이 새 목록에 남았을 때만
+      // `injectable` 이 통과하므로, 못 옮길 값은 여기서 키가 갈려도 곧바로 blocked 로 떨어진다.
+      const renamed = RENAMED_FIELD_KEYS[b.key] ?? domainMigratedByKey.get(b.key)?.key
       const keyed = renamed && !claimedKeys.has(renamed) ? { ...b, key: renamed } : b
       // 현재 템플릿이 그 키를 갖고 있는데 값을 못 실으면 매칭을 포기한다 — 저장 왕복 때 사라진다.
       const blocked = !!keyed.key && extTemplateKeys.has(keyed.key) && !injectable(keyed.key)
@@ -660,7 +687,8 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
         ? { block: matched({ ...b, key: current }), blocked: false }
         : { block: { ...b, key: undefined }, blocked: true }
     }
-    const alias = renamedExtKeys[b.label]
+    // 키 없는 v1 블록은 라벨이 유일한 단서다 — 개명 별칭이 없으면 도메인 교체 목적지를 쓴다.
+    const alias = renamedExtKeys[b.label] ?? domainTb?.key
     const usable = !!alias && !claimedKeys.has(alias) && injectable(alias)
     return { block: usable ? matched({ ...b, key: alias }) : { ...b, key: undefined }, blocked: false }
   })
