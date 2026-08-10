@@ -132,7 +132,11 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   resultRef.current = result;
 
   const handleSave = useCallback(async () => {
-    if (!result || !dirty || saving) return;
+    // FRT-238 — loading 은 id 가 이미 바뀌었지만 새 자기소개서 응답은 아직 안 온 창이다.
+    // 이 창에서 result/dirty 는 여전히 **이전** 문서 것인데 id 는 **다음** 문서라, 가드
+    // 없이 저장하면 이전 문서 내용을 다음 문서 id 로 PATCH 해버린다. 저장 버튼은 이 창에서
+    // 렌더되지 않아 안전하지만, 전역 Ctrl/Cmd+S 리스너는 이 창에서도 계속 살아있다.
+    if (!result || !dirty || saving || loading) return;
     setSaving(true);
     const snapshot = result;
     try {
@@ -171,7 +175,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     } finally {
       setSaving(false);
     }
-  }, [result, dirty, saving, id]);
+  }, [result, dirty, saving, loading, id]);
 
   const handleBack = useCallback(() => {
     if (dirty && result) {

@@ -1,6 +1,12 @@
 import { Suspense } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { CoverLetterResult } from "@/types/cover-letter";
@@ -333,5 +339,32 @@ describe("FRT-238 — 자기소개서 전환 중 늦게 도착한 응답", () =>
     pending[0].resolve(fixture("A의 자기소개서"));
     await flush();
     expect(shownBody()).toBe("B의 자기소개서");
+  });
+
+  it("전환 중 Ctrl+S 를 눌러도 옛 문서 내용이 새 id 로 저장되지 않는다", async () => {
+    // 읽기 경로는 가드가 닫았지만 **쓰기 경로**는 별개다. id 는 prop 이라 즉시 바뀌는 반면
+    // result/dirty 는 새 응답이 올 때까지 옛 문서 것이다. 저장 버튼은 이 창에 렌더되지
+    // 않지만 전역 Ctrl/Cmd+S 리스너는 살아 있어, 가드가 없으면 그 한 번의 키가
+    // **A 의 내용을 B 의 id 로** PATCH 한다.
+    const route = routeById();
+    const result = await renderId("A");
+    route.resolve("A", fixture("A의 자기소개서"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    expect(shownBody()).toBe("A의 자기소개서!");
+
+    await navigateTo(result, "B");
+    expect(loadingShown()).toBe(true);
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "s", metaKey: true });
+    });
+
+    expect(mockUpdateCoverLetter).not.toHaveBeenCalled();
   });
 });

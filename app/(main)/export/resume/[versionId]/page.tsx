@@ -225,7 +225,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
   );
 
   const handleSave = useCallback(async () => {
-    if (!resume || !dirty || saving) return;
+    // FRT-238 — loading 은 versionId 가 이미 바뀌었지만 새 버전의 응답은 아직 안 온 창이다.
+    // 이 창에서 resume/dirty 는 여전히 **이전** 버전 것인데 versionId 는 **다음** 버전이라,
+    // 가드 없이 저장하면 이전 버전 내용을 다음 버전 id 로 PATCH 해버린다. 저장 버튼은 이
+    // 창에서 렌더되지 않아 안전하지만, 전역 Ctrl/Cmd+S 리스너는 이 창에서도 계속 살아있다.
+    if (!resume || !dirty || saving || loading) return;
     setSaving(true);
     const snapshot = resume;
     // 서버로 보내는 건 snapshot 이고, 성공 시 initial 이 서버 응답으로 갈린다 —
@@ -285,7 +289,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
     } finally {
       setSaving(false);
     }
-  }, [resume, dirty, saving, versionId, initial, captureEditSaved]);
+  }, [resume, dirty, saving, loading, versionId, initial, captureEditSaved]);
 
   const handleRegenerate = useCallback(async () => {
     if (!resume || regenerating) return;

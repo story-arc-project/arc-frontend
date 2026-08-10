@@ -1,6 +1,13 @@
 import { Suspense } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { ResumeVersion } from "@/types/resume";
@@ -1053,5 +1060,29 @@ describe("FRT-238 — 버전 전환 중 늦게 도착한 응답", () => {
     pending[0].resolve(named("A유저"));
     await flush();
     expect(shownName()).toBe("B유저");
+  });
+
+  it("전환 중 Ctrl+S 를 눌러도 옛 버전 내용이 새 버전 id 로 저장되지 않는다", async () => {
+    // 읽기 경로는 가드가 닫았지만 **쓰기 경로**는 별개다. versionId 는 prop 이라 즉시
+    // 바뀌는 반면 resume/dirty 는 새 응답이 올 때까지 옛 버전 것이다. 저장 버튼은 이 창에
+    // 렌더되지 않지만 전역 Ctrl/Cmd+S 리스너는 살아 있어, 가드가 없으면 그 한 번의 키가
+    // **A 의 내용을 B 의 id 로** 서버에 덮어쓴다 — 이 PR 이 막으려던 바로 그 사고다.
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    route.resolve("A", named("A유저"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("이름"), "!");
+    expect(shownName()).toBe("A유저!");
+
+    await navigateTo(result, "B");
+    expect(loadingShown()).toBe(true);
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "s", metaKey: true });
+    });
+
+    expect(mockUpdateResume).not.toHaveBeenCalled();
   });
 });
