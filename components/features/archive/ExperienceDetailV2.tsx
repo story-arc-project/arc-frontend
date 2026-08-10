@@ -43,7 +43,10 @@ export default function ExperienceDetailV2({
   const sections = buildDetailSections(experience, template)
 
   return (
-    <div className="max-w-[640px] mx-auto px-5 py-6 md:px-12 md:py-10">
+    // 좌우 여백을 md 가 아니라 lg 부터 넓힌다 — 이 컴포넌트는 미리보기 패널에만 들어가는데,
+    // 패널 폭은 "뷰포트 − 고정 목록 360px" 이라 md 경계(768px) 바로 위에서 가장 좁다(416px).
+    // 거기서 좌우 48px 을 물리면 콘텐츠가 320px 로 눌려 제목이 두 줄로 쪼개진다.
+    <div className="max-w-[640px] mx-auto px-5 py-6 md:py-10 lg:px-12">
       {/* Header */}
       <div className="flex items-start justify-between mb-5 gap-4">
         <div className="flex flex-col gap-2">

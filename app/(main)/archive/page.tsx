@@ -2,13 +2,14 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { AnimatePresence, motion } from "framer-motion"
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { ArrowLeft, Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import LibraryDropdown from "@/components/features/archive/LibraryDropdown"
 import FilterBar from "@/components/features/archive/FilterBar"
 import ExperienceCard from "@/components/features/archive/ExperienceCard"
 import RightPanelV2 from "@/components/features/archive/RightPanelV2"
+import PreviewNav from "@/components/features/archive/PreviewNav"
 import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
 import { useExperiences } from "@/hooks/useExperiences"
 import { useLibraries } from "@/hooks/useLibraries"
@@ -19,18 +20,31 @@ import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
 import { useBasePath } from "@/lib/utils/use-base-path"
 import { parseArchiveContext, buildReturnTo } from "@/lib/utils/archive-context"
+import { getPeerId, type PeerDirection } from "@/lib/utils/peer-nav"
 
 type MobileView = "list" | "panel"
+
+// FRT-86 모션 상수. easing 은 이 화면의 기존 모바일 슬라이드와 같은 커브를 쓴다 —
+// 한 화면 안에서 두 가지 감속 곡선이 섞이지 않게 한다.
+const RAPID_NAV_MS = 150
+const PANEL_MOTION_DURATION = 0.2
+const MOBILE_SLIDE_DURATION = 0.22
+const MOTION_EASE = [0.22, 1, 0.36, 1] as const
 
 export default function ArchivePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const basePath = useBasePath()
+  // 시스템의 "동작 줄이기" 설정. 아직 판정 전이면 null 이므로 명시적으로 true 만 취한다.
+  const reduceMotion = useReducedMotion() === true
 
   // FRT-75: 목록이 메인, 미리보기는 카드 클릭 시에만 도킹된다. selectedId 가 곧
   // 미리보기 열림/닫힘 상태다(별도 mode 불필요). 진입 시엔 닫힘(자동선택 폐기).
   const [mobileView, setMobileView] = useState<MobileView>("list")
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // FRT-86: 직전 이동과 붙어 있는 "연속 넘김"이면 전환 모션·부드러운 스크롤을 생략한다.
+  // ref 가 아니라 state 인 것은 렌더와 effect 가 이 값을 읽기 때문이다(렌더 중 ref 읽기 회피).
+  const [isRapidPeerNav, setIsRapidPeerNav] = useState(false)
 
   const {
     experiences: apiExperiences,
@@ -196,9 +210,47 @@ export default function ArchivePage() {
     (id: string) => {
       setSelectedId(id)
       setMobileView("panel")
+      // 클릭으로 고른 것은 연속 넘김이 아니다 — 직전 j/k 연타의 판정을 물려받지 않게 되돌린다.
+      setIsRapidPeerNav(false)
       router.push(`${basePath}/archive?id=${id}`, { scroll: false })
     },
     [router, basePath]
+  )
+
+  // ── Peer navigation (FRT-86) ───────────────────────────────────────
+  // 이동 순서는 "화면에 보이는 목록"이 정본이다 — 라이브러리·검색·필터·정렬을 모두 통과한
+  // filteredExperiences 가 그 순서다. selectedExperience 는 필터 이전의 experiences 전체에서
+  // 찾으므로(아래 Derived) 선택 항목이 목록에서 이탈해도 패널은 열린 채 남고, 그때 getPeerId 가
+  // 양방향 null 을 돌려 이동만 멈춘다.
+  const filteredIds = useMemo(() => filteredExperiences.map(e => e.id), [filteredExperiences])
+  const prevPeerId = getPeerId(filteredIds, selectedId, "prev")
+  const nextPeerId = getPeerId(filteredIds, selectedId, "next")
+
+  // 직전 peer 이동 시각(이벤트 핸들러 안에서만 읽고 쓴다). 이번 이동이 "연속 넘김"인지는
+  // 이번 시각과 직전 시각의 간격으로만 알 수 있다 — 이동 직후의 effect 에서 재면 항상 0 이다.
+  const lastPeerNavAtRef = useRef(0)
+  const listScrollRef = useRef<HTMLDivElement | null>(null)
+  // md 아래에서는 목록 카드가 숨겨져 포커스를 받을 수 없다 → 풀스크린 미리보기가 대신 받는다.
+  const mobilePanelRef = useRef<HTMLDivElement | null>(null)
+  // 키보드로 넘겼을 때만 DOM 포커스를 새 카드로 옮긴다(아래 effect 가 소비).
+  const moveFocusOnSelectRef = useRef(false)
+
+  const handlePeerNavigate = useCallback(
+    (direction: PeerDirection, options?: { moveFocus?: boolean }) => {
+      const id = getPeerId(filteredIds, selectedId, direction)
+      if (!id) return
+      const now = Date.now()
+      setIsRapidPeerNav(now - lastPeerNavAtRef.current < RAPID_NAV_MS)
+      lastPeerNavAtRef.current = now
+      moveFocusOnSelectRef.current = options?.moveFocus ?? false
+      setSelectedId(id)
+      setMobileView("panel")
+      // push 가 아니라 replace — 카드 클릭(목록→상세)은 되돌아갈 지점이지만 peer 이동은
+      // 같은 화면 안에서의 이동이다. push 면 ↓ 연타 한 번에 히스토리가 기록 수만큼 쌓여
+      // 뒤로가기로 목록에 돌아가는 데 그만큼 눌러야 한다.
+      router.replace(`${basePath}/archive?id=${id}`, { scroll: false })
+    },
+    [filteredIds, selectedId, router, basePath],
   )
 
   // 미리보기 닫기(데스크톱 ✕·ESC, 모바일 목록으로). 선택 해제 + ?id 제거 → 풀폭 복귀.
@@ -208,27 +260,78 @@ export default function ArchivePage() {
     setSelectedId(null)
     setSyncedForParams(null)
     setMobileView("list")
+    setIsRapidPeerNav(false)
     router.push(`${basePath}/archive`, { scroll: false })
   }, [router, basePath])
 
-  // ESC 로 미리보기 닫기(데스크톱). 입력 요소 포커스 중엔 무시 — 라이브러리 이름
-  // 변경/검색 입력에서의 ESC 가 미리보기를 닫지 않도록 한다.
+  // 미리보기가 열린 동안의 키보드 조작: ESC 로 닫기, ↑/K·↓/J 로 이웃 기록 이동(FRT-86).
+  // 세 동작이 같은 가드(입력 포커스·팝오버 양보)를 공유하므로 리스너 하나로 묶는다.
   useEffect(() => {
     if (!selectedId) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return
+      // 브라우저·OS 단축키(⌘↓, Alt+↑ 등)를 가로채지 않는다.
+      if (e.metaKey || e.ctrlKey || e.altKey) return
       const t = e.target as HTMLElement | null
+      // 검색·라이브러리 이름 입력 중이면 전부 양보한다 — ESC 가 미리보기를 닫지 않아야 하고,
+      // "j"/"k" 는 그냥 글자로 입력돼야 한다.
       if (t && ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)) return
+      if (t?.isContentEditable) return
       // 팝오버/다이얼로그/메뉴(라이브러리 드롭다운·삭제 확인·중요도 선택 등)가 열려
-      // 있으면 그쪽이 ESC 를 먼저 소비하도록 양보한다 — 한 번의 ESC 로 미리보기까지 같이
-      // 닫혀 선택이 사라지는 것을 막는다. React 리렌더는 이벤트 디스패치 이후라 이 시점엔
-      // 해당 노드가 아직 DOM 에 남아 있다.
+      // 있으면 그쪽이 키를 먼저 소비하도록 양보한다 — 한 번의 ESC 로 미리보기까지 같이
+      // 닫혀 선택이 사라지거나, 메뉴 안에서의 ↑/↓ 가 기록을 넘겨버리는 것을 막는다.
+      // React 리렌더는 이벤트 디스패치 이후라 이 시점엔 해당 노드가 아직 DOM 에 남아 있다.
       if (document.querySelector('[data-archive-popover], [role="dialog"], [role="menu"]')) return
-      handleClosePreview()
+
+      if (e.key === "Escape") {
+        handleClosePreview()
+        return
+      }
+      // 대문자 J/K(Shift 조합)는 일부러 받지 않는다 — 목록 이동은 수식 없는 단타로 한정.
+      const direction: PeerDirection | null =
+        e.key === "ArrowUp" || e.key === "k" ? "prev"
+        : e.key === "ArrowDown" || e.key === "j" ? "next"
+        : null
+      if (!direction) return
+      // 화살표가 목록·페이지를 함께 스크롤하지 않도록 막는다(이동 후 스크롤은 아래 effect 담당).
+      e.preventDefault()
+      // 키보드 이동에서는 DOM 포커스도 새 카드로 옮긴다. 안 옮기면 처음 클릭했던 카드에
+      // :focus-visible 링이 그대로 남아, 선택(주황 테두리+accent bar)과 포커스가 서로 다른
+      // 카드를 가리킨다. 스크린리더가 따라오지 못하는 문제이기도 하다.
+      handlePeerNavigate(direction, { moveFocus: true })
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [selectedId, handleClosePreview])
+  }, [selectedId, handleClosePreview, handlePeerNavigate])
+
+  // 키보드로 넘어간 카드가 목록 뷰 밖이면 따라간다. 데스크톱 목록 컨테이너로 스코프를
+  // 한정하는 것이 핵심 — 데스크톱(hidden md:flex)과 모바일(md:hidden) 레이아웃이 항상 함께
+  // DOM 에 있어서 document 전역으로 찾으면 화면에 보이지도 않는 모바일 카드를 잡는다.
+  // (모바일은 패널이 풀스크린이라 목록 스크롤을 맞출 필요가 없다.)
+  useEffect(() => {
+    if (!selectedId) return
+    const shouldMoveFocus = moveFocusOnSelectRef.current
+    moveFocusOnSelectRef.current = false
+    const card = listScrollRef.current?.querySelector<HTMLElement>(
+      `[data-experience-id="${selectedId}"]`,
+    )
+
+    if (shouldMoveFocus) {
+      // 스크롤은 바로 아래에서 의도한 방식(부드럽게/즉시)으로 처리하므로 여기선 막는다.
+      card?.focus({ preventScroll: true })
+      // md 아래에서는 이 카드가 hidden md:flex 안에 있어 display:none 이다 — focus() 가
+      // 조용히 무시된다. CSS 를 추론하는 대신 "포커스가 실제로 옮겨갔는가"로 판정하고,
+      // 실패했으면 화면을 채우고 있는 미리보기 자체에 포커스를 준다(스크린리더가
+      // 새 기록의 제목부터 읽는다). 목록이 안 보이는 화면이라 카드로 옮길 이유도 없다.
+      if (document.activeElement !== card) {
+        mobilePanelRef.current?.focus({ preventScroll: true })
+      }
+    }
+
+    card?.scrollIntoView({
+      block: "nearest",
+      behavior: reduceMotion || isRapidPeerNav ? "auto" : "smooth",
+    })
+  }, [selectedId, reduceMotion, isRapidPeerNav])
 
   // 입력은 별도 라우트로 분리됐다(FRT-74). 새 경험/편집은 입력 전용 라우트로
   // 이동한다. 미저장 가드는 입력 뷰 셸(InputViewShell)이 담당한다.
@@ -592,6 +695,7 @@ export default function ArchivePage() {
         {/* Body: full-width list ↔ list + docked preview */}
         <div className="flex-1 flex overflow-hidden bg-surface">
           <div
+            ref={listScrollRef}
             className={
               isPreviewOpen
                 ? "w-[360px] min-w-[320px] max-w-[400px] shrink-0 border-r border-border overflow-y-auto"
@@ -605,8 +709,15 @@ export default function ArchivePage() {
 
           {isPreviewOpen && (
             <div className="flex-1 flex flex-col overflow-hidden bg-surface">
-              <div className="shrink-0 flex items-center justify-between px-4 h-11 border-b border-border">
-                <span className="text-caption text-text-tertiary">미리보기</span>
+              {/* FRT-86: 중복이던 "미리보기" 라벨 자리를 이전/다음 이동이 대신한다 —
+                  제목은 바로 아래 상세뷰가 이미 말하고 있다(FRT-87 의 헤더 정리 일부). */}
+              <div className="shrink-0 flex items-center justify-between pl-2 pr-4 h-11 border-b border-border">
+                <PreviewNav
+                  onPrev={() => handlePeerNavigate("prev")}
+                  onNext={() => handlePeerNavigate("next")}
+                  hasPrev={prevPeerId !== null}
+                  hasNext={nextPeerId !== null}
+                />
                 <button
                   type="button"
                   onClick={handleClosePreview}
@@ -616,7 +727,18 @@ export default function ArchivePage() {
                   <X size={18} />
                 </button>
               </div>
-              <div className="flex-1 overflow-hidden">
+              {/* key 를 콘텐츠에만 건다 — 헤더까지 감싸면 이동할 때마다 ‹ › 버튼이 재마운트돼 깜빡인다.
+                  입장(fade+slide)만 있고 exit 는 없다(UI-GUIDELINES: 사라지는 애니메이션 최소화). */}
+              <motion.div
+                key={selectedExperience.id}
+                className="flex-1 overflow-hidden"
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{
+                  duration: reduceMotion || isRapidPeerNav ? 0 : PANEL_MOTION_DURATION,
+                  ease: MOTION_EASE,
+                }}
+              >
                 <RightPanelV2
                   selectedExperience={selectedExperience}
                   onDelete={handleDelete}
@@ -624,7 +746,7 @@ export default function ArchivePage() {
                   onEdit={() => handleEditExperience(selectedExperience.id)}
                   onUpdateImportance={handleUpdateImportance}
                 />
-              </div>
+              </motion.div>
             </div>
           )}
         </div>
@@ -640,7 +762,10 @@ export default function ArchivePage() {
               initial={{ x: 0 }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              transition={{
+                duration: reduceMotion ? 0 : MOBILE_SLIDE_DURATION,
+                ease: MOTION_EASE,
+              }}
             >
               {/* Mobile control bar */}
               <div className="shrink-0 border-b border-border bg-surface px-4 py-2.5 flex flex-col gap-2.5">
@@ -669,9 +794,12 @@ export default function ArchivePage() {
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              transition={{
+                duration: reduceMotion ? 0 : MOBILE_SLIDE_DURATION,
+                ease: MOTION_EASE,
+              }}
             >
-              <div className="flex-shrink-0 flex items-center px-4 h-11 border-b border-border bg-surface">
+              <div className="flex-shrink-0 flex items-center justify-between pl-4 pr-2 h-11 border-b border-border bg-surface">
                 <button
                   onClick={handleClosePreview}
                   aria-label="목록으로 돌아가기"
@@ -680,8 +808,30 @@ export default function ArchivePage() {
                   <ArrowLeft size={16} />
                   <span>목록으로</span>
                 </button>
+                {/* 풀스크린 미리보기에서도 목록으로 되돌아가지 않고 이웃 기록으로 넘어간다. */}
+                <PreviewNav
+                  onPrev={() => handlePeerNavigate("prev")}
+                  onNext={() => handlePeerNavigate("next")}
+                  hasPrev={prevPeerId !== null}
+                  hasNext={nextPeerId !== null}
+                />
               </div>
-              <div className="flex-1 overflow-y-auto">
+              <motion.div
+                key={selectedId ?? "none"}
+                ref={mobilePanelRef}
+                // 키보드로 기록을 넘겼을 때 포커스를 받는 자리. 목록 카드가 숨겨진 화면이라
+                // 여기가 "새 기록"의 시작점이다. 프로그램 포커스라 링은 그리지 않는다 —
+                // 패널 내용이 통째로 바뀌는 것이 이미 시각적 신호다.
+                tabIndex={-1}
+                data-preview-panel="mobile"
+                className="flex-1 overflow-y-auto focus:outline-none"
+                initial={{ opacity: 0, x: 8 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{
+                  duration: reduceMotion || isRapidPeerNav ? 0 : PANEL_MOTION_DURATION,
+                  ease: MOTION_EASE,
+                }}
+              >
                 {selectedExperience && (
                   <RightPanelV2
                     selectedExperience={selectedExperience}
@@ -691,7 +841,7 @@ export default function ArchivePage() {
                     onUpdateImportance={handleUpdateImportance}
                   />
                 )}
-              </div>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
