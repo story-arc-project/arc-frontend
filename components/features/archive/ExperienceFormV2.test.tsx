@@ -771,4 +771,15 @@ describe("FRT-172 태그 입력 IME 조합 중 Enter", () => {
 
     expect(screen.getByRole("button", { name: "리더십 삭제" })).toBeInTheDocument()
   })
+
+  // WebKit(Safari·iOS)은 compositionend 를 keydown 보다 먼저 보내 조합 확정 Enter 가
+  // `isComposing: false` 로 도착한다. 조합 신호는 `keyCode 229` 에만 남는다.
+  it("WebKit 모양(isComposing false + keyCode 229)의 확정 Enter 도 태그를 커밋하지 않는다", async () => {
+    const user = userEvent.setup()
+    const input = await typeTag(user)
+
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229 })
+
+    expect(screen.queryByRole("button", { name: "리더십 삭제" })).toBeNull()
+  })
 })

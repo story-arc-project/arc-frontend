@@ -10,12 +10,17 @@ import { isImeComposing, onEnterCommit } from "./keyboard"
  * (ExperienceFormV2 태그 입력 · SingleSelectBlock 옵션 이름 편집) 나머지는 이 단위 테스트가 덮는다.
  */
 
-/** React KeyboardEvent 중 판정에 쓰이는 부분만 흉내 낸다. */
-function keyEvent(key: string, isComposing: boolean, preventDefault = vi.fn()) {
+/**
+ * React KeyboardEvent 중 판정에 쓰이는 부분만 흉내 낸다.
+ *
+ * `keyCode` 기본값 13 은 조합과 무관한 평범한 Enter 다. WebKit 만 조합 확정 Enter 를
+ * 229 로 보낸다(아래 describe 참고).
+ */
+function keyEvent(key: string, isComposing: boolean, preventDefault = vi.fn(), keyCode = 13) {
   return {
     key,
     preventDefault,
-    nativeEvent: { isComposing },
+    nativeEvent: { isComposing, keyCode },
   } as unknown as KeyboardEvent
 }
 
@@ -26,6 +31,10 @@ describe("isImeComposing", () => {
 
   it("조합 중이 아니면 false", () => {
     expect(isImeComposing(keyEvent("Enter", false))).toBe(false)
+  })
+
+  it("WebKit 처럼 isComposing 이 false 여도 keyCode 229 면 조합으로 본다", () => {
+    expect(isImeComposing(keyEvent("Enter", false, vi.fn(), 229))).toBe(true)
   })
 })
 
@@ -44,6 +53,14 @@ describe("onEnterCommit", () => {
     onEnterCommit(commit)(keyEvent("Enter", false, preventDefault))
     expect(commit).toHaveBeenCalledTimes(1)
     expect(preventDefault).toHaveBeenCalledTimes(1)
+  })
+
+  it("WebKit 의 조합 확정 Enter(isComposing false + keyCode 229)도 커밋하지 않는다", () => {
+    const commit = vi.fn()
+    const preventDefault = vi.fn()
+    onEnterCommit(commit)(keyEvent("Enter", false, preventDefault, 229))
+    expect(commit).not.toHaveBeenCalled()
+    expect(preventDefault).not.toHaveBeenCalled()
   })
 
   it("Enter 가 아닌 키는 커밋하지 않고 기본 동작도 막지 않는다", () => {
