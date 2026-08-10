@@ -2596,6 +2596,159 @@ describe("확정본 전면 교체 값 보존 (FRT-267 창작물)", () => {
       expect(v1.coreBlocks.find(b => b.label === "증빙 자료")).toBeDefined()
     })
 
+    /**
+     * ⚠️ **"비었다"를 버림 판정에 그대로 쓰면 안 된다.** `isBlockEmpty` 는 파일 블록을 업로드
+     * 신원(`fileName`/`fileId`/`url`)으로만 보는데, `FileBlock` 은 파일 없이도 설명·증빙 유형을
+     * 먼저 칠 수 있고 파일을 지워도 그 둘을 **의도적으로 남긴다**(handleDelete). 그 블록을 빈 것으로
+     * 보고 버리면 사용자가 입력한 메타데이터가 다음 저장에 영구 삭제된다(FRT-267 Codex P2).
+     */
+    it("파일 없이 설명·증빙 유형만 남은 코어 증빙은 v1 에서 버리지 않는다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              {
+                id: "ev",
+                type: "file",
+                label: "증빙 자료",
+                value: { type: "file", fileName: "", description: "전시 도록 사진", evidenceType: "전시 도록" },
+              },
+            ],
+            extensionBlocks: [],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      const kept = v1.coreBlocks.find(b => b.label === "증빙 자료")
+      expect(kept?.value).toEqual({
+        type: "file",
+        fileName: "",
+        description: "전시 도록 사진",
+        evidenceType: "전시 도록",
+      })
+    })
+
+    /** 같은 판정은 v2 orphan 안전망에도 걸려 있다 — 한쪽만 고치면 세대에 따라 결과가 갈린다. */
+    it("파일 없이 설명만 남은 orphan 증빙은 v2 에서도 '기타'로 보존된다", () => {
+      const content = legacyCreativeContent()
+      ;(content.fields as Record<string, BlockValue>)["cw-old.옛 증빙"] = {
+        type: "file",
+        fileName: "",
+        description: "도록 스캔본을 다시 올릴 것",
+        evidenceType: "",
+      }
+      const v2 = toExperienceV2(makeExperience({ type: "creative-work", content }))
+
+      expect(v2.customBlocks.find(b => b.key === "cw-old.옛 증빙")?.value).toEqual({
+        type: "file",
+        fileName: "",
+        description: "도록 스캔본을 다시 올릴 것",
+        evidenceType: "",
+      })
+    })
+
+    /**
+     * ⚠️ v2 는 코어 잔재를 확정본 칸으로 옮겨 권위 있는 칸을 하나로 만드는데, v1 은 그 이관이
+     * 통째로 빠져 있었다. "값 유실은 없다"는 것이 미룬 근거였지만 — 남는 두 칸이 바로 무음
+     * 오염이다. `pickValue` 가 정확 라벨인 코어를 먼저 골라, 사용자가 새 '역할'에 고쳐 써도
+     * 포트폴리오는 옛 코어 값을 계속 발행한다(FRT-267 Codex P2).
+     */
+    it("v1 코어 '내 역할/기여도'도 확정본 '역할'로 옮겨 칸을 하나로 만든다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              { id: "role", type: "textarea", label: "내 역할/기여도", value: textarea("기획·촬영·편집을 모두 맡았습니다.") },
+            ],
+            extensionBlocks: [],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      // 값은 확정본 칸으로 옮겨진다.
+      expect(v1.extensionBlocks.find(b => b.key === "creative-info.역할")?.value).toEqual(
+        text("기획·촬영·편집을 모두 맡았습니다."),
+      )
+      // 코어에는 값이 남지 않는다 — 남으면 발행이 옛 값으로 굳는다.
+      const coreRole = v1.coreBlocks.find(b => b.label === "내 역할/기여도")
+      expect(coreRole === undefined || isBlockEmpty(coreRole)).toBe(true)
+      // 옮긴 것이지 버린 것이 아니다.
+      expect(v1.customBlocks.find(b => b.label === "내 역할/기여도")).toBeUndefined()
+    })
+
+    /**
+     * ⚠️ 이관은 **목적지가 비었을 때만** 한다 — v2 `applyScopedMigrations` 와 같은 우선순위다
+     * (유형 섹션 쪽 값이 먼저 목적지를 차지하고, 코어 잔재는 빈자리에만 들어간다). 이 순서가
+     * 없으면 사용자가 확정본 칸에 새로 적은 답을 구 코어 값이 조용히 덮는다.
+     */
+    it("확정본 '역할'이 이미 차 있으면 코어 잔재가 그 값을 덮지 않는다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              { id: "role", type: "textarea", label: "내 역할/기여도", value: textarea("옛 코어 값") },
+            ],
+            extensionBlocks: [
+              { id: "newrole", key: "creative-info.역할", type: "text", label: "역할", value: text("팀 리더") },
+            ],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      expect(v1.extensionBlocks.find(b => b.key === "creative-info.역할")?.value).toEqual(text("팀 리더"))
+      // 옮기지 못한 코어 값은 버리지 않는다 — 화면에 남겨 사용자가 판단하게 한다.
+      expect(v1.coreBlocks.find(b => b.label === "내 역할/기여도")?.value).toEqual(textarea("옛 코어 값"))
+    })
+
+    /** 이관 경계는 v1 에서도 같다 — 여러 줄 값은 한 줄 칸으로 옮기지 않고 원본을 남긴다. */
+    it("v1 여러 줄 역할 값은 옮기지 않고 코어에 그대로 남긴다", () => {
+      const v1 = toExperienceV2(
+        makeExperience({
+          type: "creative-work",
+          content: {
+            title: "골목 기록 프로젝트",
+            summary: "",
+            status: "complete",
+            tags: [],
+            coreBlocks: [
+              {
+                id: "role",
+                type: "textarea",
+                label: "내 역할/기여도",
+                value: textarea("기획을 맡았습니다.\n\n촬영과 편집도 직접 했습니다."),
+              },
+            ],
+            extensionBlocks: [],
+            customBlocks: [],
+          },
+        }),
+      )
+
+      const moved = v1.extensionBlocks.find(b => b.key === "creative-info.역할")
+      expect(moved === undefined || isBlockEmpty(moved)).toBe(true)
+      expect(v1.coreBlocks.find(b => b.label === "내 역할/기여도")?.value).toEqual(
+        textarea("기획을 맡았습니다.\n\n촬영과 편집도 직접 했습니다."),
+      )
+    })
+
     for (const withKey of [false, true]) {
       const how = withKey ? "키가 있는" : "키가 없는"
 

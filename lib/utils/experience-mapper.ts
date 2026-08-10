@@ -18,7 +18,7 @@ import {
   getTemplateForType,
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
-import { uid, createGroupBlock, isBlockEmpty } from "@/lib/utils/block-utils"
+import { uid, cloneBlocks, createGroupBlock, isBlockDiscardable, isBlockEmpty } from "@/lib/utils/block-utils"
 import { normalizeHiddenKeys, parseHiddenKeys } from "@/lib/utils/hidden-fields"
 
 /**
@@ -344,13 +344,15 @@ const SELECT_DOMAIN_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigration
 }
 
 /**
- * 출발 키가 `core.*` 라 **전역 맵에 넣을 수 없는** 이관(v2 전용).
+ * 출발 키가 `core.*` 라 **전역 맵에 넣을 수 없는** 이관.
  *
  * `RENAMED_FIELD_KEYS` 에 `core.증빙 자료` 를 출발점으로 넣으면 그 키를 쓰는 다른 9유형까지
  * 함께 끌려간다. 유형 스코프라야 표현되는 이관이다(FRT-249, Codex P2).
  *
- * v1 은 대상이 아니다 — v1 코어 블록은 라벨 그대로 `coreBlocks` 에 남고 `CORE_EXCLUDE` 가
- * 적용되지 않아 화면에서 사라지지 않는다(그 간극은 FRT-246 이 다룬다).
+ * ⚠️ 이름은 `V2_` 로 남아 있지만 **v1 레코드도 같은 규칙을 탄다**(FRT-267 Codex P2). v1 은
+ * `fields` 맵이 없어 `applyScopedMigrations` 가 닿지 않으므로, v1 경로가 저장된 코어 배열을
+ * 직접 훑어 같은 이관을 수행한다(`toExperienceV2` 꼬리). 한쪽만 이관하면 같은 유형인데
+ * 레코드 세대에 따라 권위 있는 칸의 개수가 갈린다.
  */
 const V2_CORE_SCOPED_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigration[]>> = {
   // 개편 전 해외경험 폼은 코어 증빙(`isEvidenceBlock` 이라 dedup 을 안 타 '활동 증빙' 카드로
@@ -369,8 +371,8 @@ const V2_CORE_SCOPED_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigratio
   // 이관 후 코어는 비므로 `keepCoreOrExtended` 가 숨기고, 옮겨진 값은 '개인 작업'을 골라도
   // 화면에 남는다(`partitionByCondition` 은 **빈** 블록만 숨긴다). textarea→text 는
   // `isInjectableInto` 가 허용하고 문자열은 그대로 보존된다 — 위젯만 한 줄로 좁아진다.
-  // ⚠️ v1 레코드는 fields 맵이 없어 이 규칙이 닿지 않는다. 코어를 ext 로 잇는 v1 경로는
-  //    코드베이스에 없으므로, 그쪽은 두 칸이 남을 수 있다(값 유실은 없다).
+  // ⚠️ v1 레코드도 같은 이관을 받는다 — 한때 "v1 은 값 유실이 없으니 두 칸이 남아도 된다"고
+  //    미뤘지만, 남는 두 칸이 바로 위에 적은 무음 오염 그 자체였다(FRT-267 Codex P2).
   // ⚠️ 확정본 '역할'은 한 줄 `text` 다 — 여러 줄 값은 `carryIntoSingleLine` 이 걸러 구 코어 칸에
   //    남긴다. 옮기면 `<input>` 이 개행을 지워 문단이 사라진다(그때는 칸이 둘로 남지만, 화면에
   //    둘 다 보이므로 사용자가 판단할 수 있다 — 값이 뭉개지는 쪽이 훨씬 나쁘다).
@@ -547,7 +549,7 @@ function orphanFieldsToBlocks(
     if (!value || typeof value !== "object" || !("type" in value)) continue
     const label = key.includes(".") ? key.slice(key.indexOf(".") + 1) : key
     const block: Block = { id: uid(), key, type: value.type, label, value }
-    if (isBlockEmpty(block)) continue
+    if (isBlockDiscardable(block)) continue
     out.push(block)
   }
   return out
@@ -725,7 +727,41 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     // 빈 extended.* 항목이 흔한데, 그대로 custom 으로 올리면 '기타' 카드에 빈 레거시 필드가
     // 쌓이고 완료 저장이 이를 영구화한다(빈 group 만 정리, 빈 field custom 은 안 지움).
     if (matched) matchedExt.push(b)
-    else if (!isBlockEmpty(b)) orphanExt.push(b)
+    else if (!isBlockDiscardable(b)) orphanExt.push(b)
+  }
+
+  // v2 는 `applyScopedMigrations` 로 코어 잔재를 확정본 목적지로 옮기지만, v1 은 저장 배열을
+  // 그대로 통과시켜 그 이관이 통째로 빠져 있었다. "값이 사라지진 않으니 괜찮다"고 미뤄 뒀는데
+  // **틀린 근거였다 — 값 유실보다 나쁜 것이 무음 오염이다.** 코어 원본이 살아 있는 채로 폼이
+  // 확정본 칸을 materialize 하면 권위 있는 칸이 둘이 되고, 발행(`pickValue`)은 정확 라벨인 코어
+  // 쪽을 먼저 골라 **사용자가 새 칸에 고쳐 쓴 값 대신 옛 값을 내보낸다**(FRT-267 Codex P2).
+  // v2 에서 이미 고친 것과 같은 기전이다 — 한쪽만 고치면 레코드 세대에 따라 결과가 갈린다.
+  //
+  // 이관에 성공한 코어 블록은 **현재 템플릿에 그 라벨이 남아 있으면 빈 템플릿 블록으로 되돌리고**
+  // (v2 가 `delete fields[from]` 뒤 템플릿에서 다시 짜는 것과 같은 결과 — 빈 코어는 dedup 이 숨긴다),
+  // `CORE_EXCLUDE` 로 사라진 라벨이면 뺀다. 원본을 남기면 이관해 놓고 칸을 둘로 만드는 셈이다.
+  const coreTemplateByLabel = new Map(tmpl.commonCore.blocks.map(b => [b.label, b]))
+  /** 이관된 코어 블록 → 그 자리에 남길 빈 템플릿 블록(`undefined` 면 제거). */
+  const consolidatedCore = new Map<Block, Block | undefined>()
+  for (const { from, to, carry } of V2_CORE_SCOPED_MIGRATIONS[typeId] ?? []) {
+    const tb = extTemplateByKey.get(to)
+    if (!tb) continue
+    const fromLabel = from.slice(from.indexOf('.') + 1)
+    const source = savedCore.find(b => (b.key ? b.key === from : b.label === fromLabel))
+    if (!source || isBlockDiscardable(source)) continue
+    const carried = carry(tb, source.value)
+    if (!carried) continue
+    // 목적지가 이미 차 있으면 코어 잔재는 넣지 않는다(v2 와 같은 우선순위 — 유형 섹션 쪽이 먼저다).
+    const idx = matchedExt.findIndex(b => b.key === to)
+    if (idx >= 0 && !isBlockDiscardable(matchedExt[idx])) continue
+    // ⚠️ 값을 그냥 얹지 않고 `injectValue` 를 태운다 — v2 는 코어를 다시 짜며 이 함수를 거쳐
+    // text↔textarea 를 목적지 타입으로 **변환**하는데, v1 만 원본 타입을 그대로 실으면 같은
+    // 이관인데 저장된 값의 타입이 세대별로 갈린다(위젯이 textarea 로 렌더돼 확정본과 어긋난다).
+    const dest = injectValue(cloneBlocks([tb])[0], carried)
+    if (idx >= 0) matchedExt[idx] = dest
+    else matchedExt.push(dest)
+    const coreTpl = coreTemplateByLabel.get(source.label)
+    consolidatedCore.set(source, coreTpl ? cloneBlocks([coreTpl])[0] : undefined)
   }
 
   // v2 는 코어를 현재 템플릿에서 다시 짜므로 `CORE_EXCLUDE` 가 저절로 적용되지만, v1 은 저장된
@@ -734,10 +770,19 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   // 2카드 설계인 유형에 **쓸모없는 세 번째 카드**를 만든다 — 채울 것도 없는 카드라 진행도만 막는다.
   // (창작물만의 문제가 아니다 — 봉사·해외경험 등 `CORE_EXCLUDE` 를 쓰는 유형 전부가 같았다.)
   //
-  // ⚠️ **빈 것만 버린다.** 값이 든 코어 블록은 확정본이 그 칸을 뺐더라도 그대로 남긴다 — 사용자가
+  // ⚠️ **버릴 수 있는 것만 버린다.** 값이 든 코어 블록은 확정본이 그 칸을 뺐더라도 남긴다 — 사용자가
   // 적어 둔 것을 화면에서 지우는 쪽이 카드 하나 더 뜨는 것보다 훨씬 나쁘다(`orphanExt` 승격 기준과 같다).
-  const currentCoreLabels = new Set(tmpl.commonCore.blocks.map(b => b.label))
-  const liveCore = savedCore.filter(b => currentCoreLabels.has(b.label) || !isBlockEmpty(b))
+  // 판정에 `isBlockEmpty` 가 아니라 `isBlockDiscardable` 을 쓰는 이유가 여기 있다: 파일 없이 설명·
+  // 증빙 유형만 적어 둔 증빙 블록은 `isBlockEmpty` 로 **비어 있어서**, 그 기준으로 버리면 사용자가
+  // 입력한 메타데이터가 다음 저장에 영구 삭제된다(FRT-267 Codex P2).
+  const currentCoreLabels = new Set(coreTemplateByLabel.keys())
+  const liveCore = savedCore.flatMap(b => {
+    if (consolidatedCore.has(b)) {
+      const replacement = consolidatedCore.get(b)
+      return replacement ? [replacement] : []
+    }
+    return currentCoreLabels.has(b.label) || !isBlockDiscardable(b) ? [b] : []
+  })
 
   return {
     ...base,
