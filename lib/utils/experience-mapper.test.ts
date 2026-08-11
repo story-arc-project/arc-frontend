@@ -3455,6 +3455,30 @@ describe("toExperienceV2 v1 — 정의가 결측인 값 (FRT-200)", () => {
     expect((custom!.value as unknown as { options: unknown[] }).options).toEqual([])
   })
 
+  /**
+   * ⚠️ 배열마다 따로 보정하면 각 배열의 첫 블록이 **같은 폴백 id** 를 받는다. 폼은 core·extension
+   * 을 하나의 id 맵으로 합쳐 쓰므로, 한쪽을 고치면 다른 쪽이 엉뚱한 객체로 바뀐다.
+   */
+  it("v1 core·extension 블록의 보정 id 가 서로 겹치지 않는다", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          // ⚠️ id 를 **아예 못 살리는** 경우여야 폴백이 쓰인다. 숫자 id 는 글자로 살아나므로
+          //    그걸로 쓰면 폴백에 닿지 못해 검사가 공허하게 통과한다(실제로 그렇게 썼다가 잡았다).
+          coreBlocks: [
+            { type: "text", label: "코어", value: { type: "text", text: "가" } },
+          ],
+          extensionBlocks: [
+            { type: "text", label: "확장", value: { type: "text", text: "나" } },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const ids = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks].map(b => b.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
   it("열 정의를 잃은 v1 표는 템플릿 열을 되찾고 행은 지킨다", () => {
     const tplBlock = repeatableTemplateBlock()
     const v1 = toExperienceV2(

@@ -472,6 +472,15 @@ function isFilledText(s: unknown): boolean {
 
 const asText = (x: unknown): string => (typeof x === 'string' ? x : '')
 
+/**
+ * 식별자 전용 — 숫자로 저장된 id 는 **글자로 살린다**.
+ *
+ * ⚠️ `asText` 로 버리면 `id: 5` 는 새 id 를 받고 그걸 가리키던 `linkedProjectRowId: 5` 는
+ * 사라져, 런타임에선 멀쩡히 이어져 있던 링크가 **열었다 저장하는 것만으로 끊긴다**.
+ */
+const asIdText = (x: unknown): string =>
+  typeof x === 'string' ? x : typeof x === 'number' && Number.isFinite(x) ? String(x) : ''
+
 const asStrings = (x: unknown): string[] =>
   Array.isArray(x) ? x.filter((i): i is string => typeof i === 'string') : []
 
@@ -592,7 +601,8 @@ function repairColumns(raw: unknown): { columns: BlockColumnDef[]; renames: Map<
   const kept = new Set(oldKeys.filter((k, i) => k === keys[i]))
   const renames = new Map<string, string>()
   oldKeys.forEach((oldKey, i) => {
-    if (oldKey !== keys[i] && !kept.has(oldKey)) renames.set(oldKey, keys[i])
+    // 같은 옛 이름이 여럿이면 **첫 열이 그 셀을 갖는다** — 뒤엣것이 표를 덮어쓰면 소유자가 바뀐다.
+    if (oldKey !== keys[i] && !kept.has(oldKey) && !renames.has(oldKey)) renames.set(oldKey, keys[i])
   })
   return {
     columns: repaired.map((c, i) => (c.key === keys[i] ? c : { ...c, key: keys[i] })),
@@ -625,7 +635,8 @@ function repairExtraValue(x: unknown): string | string[] {
 function isIntactRow(r: Record<string, unknown>): boolean {
   if (!isFilledText(r.id) || !isPlainObject(r.cells)) return false
   if (!Object.values(r.cells).every(isIntactCell)) return false
-  if (!isOptText(r.linkedProjectRowId)) return false
+  if (r.linkedProjectRowId !== undefined && typeof r.linkedProjectRowId !== 'string') return false
+  if (r.id !== undefined && typeof r.id !== 'string') return false
   if (r.roleTags !== undefined && !allStrings(r.roleTags)) return false
   if (r.extraFields !== undefined) {
     if (!Array.isArray(r.extraFields)) return false
@@ -716,7 +727,7 @@ function repairRows(x: unknown, columnRenames?: Map<string, string>): BlockRow[]
   // 충돌하면 뒤에 번호를 붙인다 — 같은 입력이면 늘 같은 id 라야 렌더마다 행이 리마운트되지 않는다.
   // ⚠️ 저장분에 **이미 중복된 id** 가 있을 수 있다 — 행 하나씩 보면 둘 다 성해 보이지만
   // 쌍으로는 깨져 있다. 앞엣것을 두고 뒤엣것을 갈아 준다(앞뒤가 뒤집히면 안 되므로 순서대로).
-  const ids = dedupeNames(rows.map(r => asText(r.id)), i => `row-${i}`)
+  const ids = dedupeNames(rows.map(r => asIdText(r.id)), i => `row-${i}`)
   return rows.map((r, i) => {
     const id = ids[i]
     const cells: Record<string, CellValue> = {}
@@ -733,19 +744,25 @@ function repairRows(x: unknown, columnRenames?: Map<string, string>): BlockRow[]
       id,
       cells,
       // 스키마 밖 부가 값도 잎까지 맞춘다 — `rowHasContent` 가 `f.value` 를 직접 읽는다.
-      ...(r.linkedProjectRowId !== undefined ? { linkedProjectRowId: optText(r.linkedProjectRowId) } : {}),
+      // 링크도 id 와 **같은 방식**으로 살린다 — 한쪽만 글자로 바꾸면 그 링크가 끊긴다.
+      ...(r.linkedProjectRowId !== undefined
+        ? { linkedProjectRowId: asIdText(r.linkedProjectRowId) || undefined }
+        : {}),
       ...(r.roleTags !== undefined ? { roleTags: asStrings(r.roleTags) } : {}),
       ...(r.extraFields !== undefined
         ? {
-            extraFields: (Array.isArray(r.extraFields) ? r.extraFields : [])
-              .filter(isPlainObject)
-              .map(f => ({
+            // 부가 항목 `key` 도 수정·삭제 핸들러가 쓰는 이름표다 — 겹치면 둘이 함께 바뀐다.
+            extraFields: (() => {
+              const fs = (Array.isArray(r.extraFields) ? r.extraFields : []).filter(isPlainObject)
+              const fKeys = dedupeNames(fs.map(f => asText(f.key)), j => `extra-${j}`)
+              return fs.map((f, j) => ({
                 ...f,
-                key: asText(f.key),
+                key: fKeys[j],
                 label: asText(f.label),
                 blockType: typeof f.blockType === 'string' ? f.blockType : 'text',
                 value: repairExtraValue(f.value),
-              })),
+              }))
+            })(),
           }
         : {}),
     }
@@ -942,7 +959,10 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
 
   // ⚠️ `block.options` 는 값이 아니라 **블록 자신의 필드**인데 역시 저장분에서 온다.
   // `SingleSelectBlock` 과 `FileBlock` 이 이걸 직접 읽으므로(`.map`·`.includes`) 여기서 맞춘다.
-  const optionsBroken = block.options !== undefined && !allStrings(block.options)
+  // ⚠️ `null`·`undefined` 는 "빈 목록"이 아니라 **정의가 없다**는 뜻이다. `[]` 로 굳히면
+  // 나중 템플릿 복원이 "사용자가 다 지웠다"로 읽어(빈 배열은 truthy) 드롭다운이 사라진다.
+  const optionsBroken =
+    block.options !== undefined && block.options !== null && !allStrings(block.options)
   const options = optionsBroken ? asStrings(block.options) : block.options
 
   // ⚠️ 표시 문자열도 저장분에서 온다 — `TextBlock` 등이 `block.label` 을 React 자식으로 **그대로**
@@ -995,12 +1015,18 @@ export function normalizeBlockForRender(block: Block): Block {
   return { ...normalized, value: normalizeBlockValue(block.type, undefined, { options: block.options }) }
 }
 
-export function normalizeBlocks(blocks: Block[], defsOf?: (block: Block) => BlockDefs | undefined): Block[] {
+export function normalizeBlocks(
+  blocks: Block[],
+  defsOf?: (block: Block) => BlockDefs | undefined,
+  /** 폴백 id 의 이름공간. **배열마다 따로 보정하면 각 배열의 첫 블록이 같은 id 를 받는다** —
+   * 폼은 core·extension 을 한 id 맵으로 합쳐 쓰므로 한쪽을 고치면 다른 쪽이 바뀐다. */
+  idScope = 'blk',
+): Block[] {
   if (!Array.isArray(blocks)) return []
   const kept = blocks.filter(b => !!b && typeof b === 'object')
   // ⚠️ 블록 `id` 도 이름표다 — `BlockList` 의 수정·삭제가 id 로 블록을 찾으므로 겹치면 둘이
   // 함께 바뀌고 함께 지워진다(React key·드래그 식별자도 모호해진다). 행·열과 같은 규칙으로 간다.
-  const ids = dedupeNames(kept.map(b => asText(b.id)), i => `blk-${i}`)
+  const ids = dedupeNames(kept.map(b => asIdText(b.id)), i => `${idScope}-${i}`)
   const out = kept.map((b, i) => {
     const normalized = normalizeBlock(b, defsOf?.(b))
     return normalized.id === ids[i] ? normalized : { ...normalized, id: ids[i] }
@@ -1039,6 +1065,8 @@ export function isBlockDiscardable(block: Block): boolean {
   // 값·구 프론트가 배포된 상태)은 `isBlockEmpty` 에선 비어 있지만, 버리면 저장 왕복에서 그 키가
   // 통째로 사라진다 — 못 그린다는 이유로 남의 데이터를 지우는 셈이다.
   if (v && typeof v.type === 'string' && !isKnownBlockType(v.type)) return false
+  // 값에 판별자가 없어도 **블록 타입 자체가 미지**면 그건 새 스키마의 흔적이다 — 버리면 지운다.
+  if (!isKnownBlockType(block.type) && v && typeof v === 'object') return false
   // 그룹은 **자식이 곧 내용**이다. 자식 하나가 못 버릴 값이면 섹션째 버려선 안 된다 —
   // 완료 저장의 빈 섹션 정리가 이 판정을 쓰므로, 여기서 참이면 그 값이 영구히 사라진다.
   if (block.type === 'group' || v?.type === 'group') {

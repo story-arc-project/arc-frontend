@@ -804,6 +804,51 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
     expect(out.rows[0].cells.item).toBe("저장된 값")
   })
 
+  /** 깨진 key 가 여럿이어도 셀 소유권은 **첫 열**에 남아야 한다(뒤엣것이 표를 덮어쓰면 안 된다). */
+  it("깨진 열 key 가 중복이어도 셀은 첫 열에 남는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [
+        { key: 5, label: "A", blockType: "text" },
+        { key: 5, label: "B", blockType: "text" },
+      ],
+      rows: [{ id: "r1", cells: { "5": "저장된 값" } }],
+    }) as unknown as { columns: { key: string }[]; rows: { cells: Record<string, unknown> }[] }
+    expect(out.rows[0].cells[out.columns[0].key]).toBe("저장된 값")
+  })
+
+  it("행 부가 항목의 key 가 겹치면 결정적으로 갈아 준다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          extraFields: [
+            { label: "A", blockType: "text", value: "가" },
+            { label: "B", blockType: "text", value: "나" },
+          ],
+        },
+      ],
+    }) as unknown as { rows: { extraFields: { key: string }[] }[] }
+    const keys = out.rows[0].extraFields.map(f => f.key)
+    expect(new Set(keys).size).toBe(2)
+  })
+
+  /** 숫자 id 로 이어진 링크는 **양쪽을 같은 방식으로** 다뤄야 살아남는다. */
+  it("숫자 행 id 와 그걸 가리키는 링크를 함께 문자열로 맞춘다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        { id: 5, cells: { a: "대상" } },
+        { id: 6, cells: { a: "출처" }, linkedProjectRowId: 5 },
+      ],
+    }) as unknown as { rows: { id: string; linkedProjectRowId?: string }[] }
+    expect(out.rows[1].linkedProjectRowId).toBe(out.rows[0].id)
+  })
+
   /** 폴백 값을 만들 때 쓰는 선택지 목록도 저장분이다 — 위생을 거치지 않으면 그대로 실린다. */
   it("폴백 값을 만들 때도 선택지 목록을 걸러 낸다", () => {
     const out = normalizeBlockValue("checklist", null, {
@@ -907,6 +952,21 @@ describe("normalizeBlock/Blocks — 블록 자신의 필드 (FRT-200)", () => {
     expect(normalized.guide === undefined || typeof normalized.guide === "string").toBe(true)
   })
 
+  /**
+   * ⚠️ `null` 은 "빈 목록"이 아니라 **정의가 없다**는 뜻이다. `[]` 로 굳히면 나중 템플릿 복원이
+   * "사용자가 다 지웠다"로 읽어(빈 배열은 truthy) 증빙 드롭다운이 통째로 사라진다.
+   */
+  it("options 가 null 이면 빈 배열로 굳히지 않는다 (복원 여지를 남긴다)", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "file",
+      label: "증빙",
+      options: null as unknown as string[],
+      value: { type: "file", fileName: "", description: "", evidenceType: "" },
+    })
+    expect(Array.isArray(normalized.options)).toBe(false)
+  })
+
   it("children 이 배열이 아니거나 원소가 깨져 있어도 죽지 않는다", () => {
     const group = {
       id: "g1",
@@ -988,6 +1048,17 @@ describe("isBlockDiscardable — 모르는 타입 (FRT-200)", () => {
   it("아는 타입의 빈 값은 종전대로 버린다", () => {
     expect(isBlockDiscardable(blockWith({ type: "text", text: "" }))).toBe(true)
     expect(isBlockDiscardable(blockWith({ type: "text", text: "값" }))).toBe(false)
+  })
+
+  /** 값에 판별자가 없어도 **블록 타입 자체가 미지**면 그건 새 스키마의 흔적이다 — 버리면 안 된다. */
+  it("블록 타입이 미지이고 값이 불투명하면 버리지 않는다", () => {
+    const block = {
+      id: "b1",
+      type: "brand-new-in-v3",
+      label: "새 칸",
+      value: { payload: "미래 스키마" },
+    } as unknown as Block
+    expect(isBlockDiscardable(block)).toBe(false)
   })
 
   /** 그룹은 자식이 정보다 — 모르는 타입의 자식을 담은 섹션을 버리면 그 값이 통째로 사라진다. */
