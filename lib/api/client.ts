@@ -182,6 +182,19 @@ async function request<T>(
       return request<T>(path, options, refreshRoundsLeft - 1);
     }
 
+    // 여기까지 온 403 은 "내 액세스 토큰이 회전에 밀려났는데 **내 탭은 갱신한 적이 없다**"는
+    // 뜻이다 — 회전시킨 것은 다른 탭이다. 이때 갱신을 보내면 아직 교체되지 않았을 수 있는 **옛
+    // 리프레시 쿠키**를 싣게 되고, 서버는 그것을 재사용(=탈취)으로 보아 `remove_tokens` 로 쿠키를
+    // 지운다. 화면 하나가 안 뜬 대가로 로그인 상태 전체를 잃는 셈이다.
+    //
+    // 재전송이 갱신을 **지배한다**. 쿠키가 이미 교체돼 있으면 재전송이 성공하고(갱신도 성공했을
+    // 상황), 교체돼 있지 않으면 갱신은 반드시 재사용 탐지에 걸린다. 그러니 갱신할 이유가 없다 —
+    // 다시 보내 보고, 그래도 403 이면 세션을 건드리지 않고 그대로 던진다(아래 `!res.ok`).
+    // 위 세대 방송(`BroadcastChannel`)은 이 재전송 한 번마저 아껴 줄 뿐이다.
+    if (res.status === 403) {
+      return request<T>(path, options, refreshRoundsLeft - 1);
+    }
+
     const refresh = await tryRefresh();
     if (refresh === "ok") {
       return request<T>(path, options, refreshRoundsLeft - 1);
