@@ -759,7 +759,9 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       // 어학 기록. S·T·A·R 이 모두 원문에 있다 — 동기(번역기로는 뉘앙스가 사라짐)가 상황과
       // 과제를, 스터디 발표 18회가 행동을, 사흘→두 시간이 결과를 준다.
       title: "논문 독해 습관으로 한 편 읽는 시간 사흘 → 두 시간",
-      headline: "번역기를 거치지 않기로 하고 2년간 습관을 쌓아 논문 독해 시간을 1/12 로 줄임",
+      // ⚠️ 배수로 요약하지 않는다. 원문은 '사흘 → 두 시간' 뿐이고, 하루를 24시간으로 보면 1/36,
+      // 작업시간 8시간으로 보면 1/12 다 — 어느 쪽도 기록에 없는 전제다. 원문 표현 그대로 쓴다.
+      headline: "번역기를 거치지 않기로 하고 2년간 습관을 쌓아 논문 한 편 독해를 사흘에서 두 시간으로 줄임",
       situation:
         "머신러닝 논문이 대부분 영어라 읽는 속도가 곧 공부 속도인데, 번역기를 거치면 뉘앙스가 사라지던 상황",
       task: "번역기에 기대지 않고 원문으로 읽는 힘을 길러 논문을 읽는 속도 자체를 바꾸는 것",
@@ -1507,7 +1509,14 @@ export const mockKeywordResult: KeywordAnalysisResult = {
         { order: 2, experience: "DataWave 스터디장", period: "2024-03", isDated: true },
         { order: 3, experience: "미국 워싱턴대학교 교환학생", period: "2024-08", isDated: true },
         { order: 4, experience: "DataWave 학회장", period: "2025-03", isDated: true },
-        { order: 5, experience: "서울 심야 이동 인터랙티브 데이터 시각화", period: "2026-03", isDated: true },
+        // 시드 '수상일' 2025-11-22. 서사와 connectiveLogic 이 공모전을 경유점으로 쓰므로 시간축에도 둔다.
+        {
+          order: 5,
+          experience: "전국 대학생 데이터 분석 공모전 우수상",
+          period: "2025-11",
+          isDated: true,
+        },
+        { order: 6, experience: "서울 심야 이동 인터랙티브 데이터 시각화", period: "2026-03", isDated: true },
       ],
       narrative:
         "처음에는 스터디를 따라가는 것도 벅찼다. 이듬해 스터디장을 맡으면서 관점이 바뀌었다 — 사람들이 어디서 멈추는지 보이기 시작했고, 3주차에 이탈이 몰린다는 것을 확인한 뒤 과제를 필수와 선택으로 나눴다. 학회장이 된 해에는 모집이 안 되는 이유를 추측하지 않고 설문 62건으로 확인한 다음, 홍보가 아니라 내용을 고쳤다. 같은 태도가 마지막에는 시각화 작업으로 이어졌다. 공모전에서 다룬 데이터가 표 안에만 남는 게 아쉬워 팀을 꾸려 시각화를 시작했고, 데이터 처리와 프론트엔드 구현을 맡아 읽히지 않는 화면을 스스로 발견해 구조를 갈아엎은 뒤 전시까지 완성했다.",
@@ -1549,9 +1558,12 @@ export const mockKeywordResult: KeywordAnalysisResult = {
         growth: "학회장으로 온보딩 전체를 근거 기반으로 개편",
         destination: "관찰을 근거로 방식을 바꾸는 사람으로 자리 잡음",
       },
+      // 화면은 usedExperiences 와 connectiveLogic·narrative 를 각각 그린다 — 한쪽이 근거로 든
+      // 경험이 다른 쪽 출처 배지에 없으면, 같은 스토리라인이 "공모전에서 이어졌다"고 말하면서
+      // 공모전을 출처로 대지 않는 모순이 화면에 그대로 보인다.
       usedExperiences: {
         core: ["데이터 분석 학회 DataWave", "서울 심야 이동 인터랙티브 데이터 시각화"],
-        supporting: ["미국 워싱턴대학교 교환학생"],
+        supporting: ["미국 워싱턴대학교 교환학생", "전국 대학생 데이터 분석 공모전 우수상"],
       },
       keyQuotes: [
         {
