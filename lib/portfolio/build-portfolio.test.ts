@@ -810,6 +810,58 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
       expect(equivalentLabels("내 역할/기여도")).toContain("역할 / 기여도");
       expect(equivalentLabels("핵심 성과")).toContain("주요 발견 / 결과");
     });
+
+    /**
+     * 동의어 등록만으로는 **순서**를 보장하지 못한다 — orphan `core.내 역할/기여도`·`core.핵심 성과`
+     * 는 라벨이 코어와 정확히 같아 `pickValue`·`achievementText` 의 정확-라벨 우선 정렬에서 확정본
+     * 라벨을 이긴다. 기간에서 이미 겪고 `TYPE_PERIOD_KEY` 로 푼 것과 같은 함정이다(FRT-269 Codex P2).
+     *
+     * ⚠️ 이 픽스처는 매퍼 쪽 레거시 픽스처(코어 역할·성과는 dedup 때문에 **항상 비어 있다**)와
+     * 다른 것을 묻는다 — "그 전제가 깨져도 확정본이 이기는가"의 그물이다. 전제를 검증하는 곳과
+     * 전제가 깨진 경우를 막는 곳을 한 픽스처에 섞지 않는다.
+     */
+    const OLD_CORE_ROLE = { type: "textarea", text: "옛 코어에 남아 있던 역할" };
+    const OLD_CORE_ACHIEVEMENT = { type: "textarea", text: "옛 코어에 남아 있던 성과" };
+    const NEW_ROLE = { type: "single-select", selected: "제 1저자(주저자)" };
+    const NEW_FINDINGS = {
+      type: "repeatable-cell",
+      columns: [{ key: "item", label: "발견 / 결과", blockType: "text" }],
+      rows: [{ id: "r1", cells: { item: "SNS 사용 시간과 몰입도의 음의 상관 확인" } }],
+    };
+
+    it("코어 잔재가 있어도 새로 채운 확정본 역할·성과가 발행된다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "core.내 역할/기여도": OLD_CORE_ROLE,
+          "core.핵심 성과": OLD_CORE_ACHIEVEMENT,
+          "research-paper.역할 / 기여도": NEW_ROLE,
+          "research-content.주요 발견 / 결과": NEW_FINDINGS,
+        }),
+      );
+      expect(post.contribution).toBe("제 1저자(주저자)");
+      expect(post.achievement).toBe("SNS 사용 시간과 몰입도의 음의 상관 확인");
+    });
+
+    it("확정본 칸이 비면 옛 코어 값으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "core.내 역할/기여도": OLD_CORE_ROLE,
+          "core.핵심 성과": OLD_CORE_ACHIEVEMENT,
+        }),
+      );
+      expect(post.contribution).toBe("옛 코어에 남아 있던 역할");
+      expect(post.achievement).toBe("옛 코어에 남아 있던 성과");
+    });
+
+    /** 드리프트 가드 — 우선 조회에 쓰는 안정키가 실제 템플릿 것과 같은지 대조한다. */
+    it("역할·성과 우선 조회 키가 실제 템플릿 안정키와 일치한다", () => {
+      const byLabel = (label: string) =>
+        getTemplateForType("research")
+          .extensions.flatMap(s => s.blocks)
+          .find(b => b.label === label)?.key;
+      expect(byLabel("역할 / 기여도")).toBe("research-paper.역할 / 기여도");
+      expect(byLabel("주요 발견 / 결과")).toBe("research-content.주요 발견 / 결과");
+    });
   });
 
   /**

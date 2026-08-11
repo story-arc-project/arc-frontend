@@ -3084,5 +3084,57 @@ describe("확정본 전면 교체 값 보존 (FRT-269 연구논문)", () => {
         expect((preserved?.value as SingleSelectBlockValue).selected).toBe("주저자")
       })
     }
+
+    /**
+     * 확정본 ④ 가 정한 증빙 유형 4종(CORE_EVIDENCE_OPTIONS.research)은 **화면 메타데이터**라
+     * 저장값에 없다. v2 는 코어를 템플릿에서 다시 짜 저절로 받지만 v1 은 저장 배열을 그대로
+     * 통과시켜, 안 실어 주면 같은 유형인데 세대에 따라 드롭다운과 자유 입력으로 갈린다
+     * (FRT-269 Codex P2). 목록은 템플릿에서 뽑아 대조한다 — 테스트에 복제하지 않는다.
+     */
+    it("v1 코어 '증빙 자료'도 확정본 증빙 유형 선택지를 받는다", () => {
+      const v1 = loadV1({
+        coreBlocks: [
+          {
+            id: "ev",
+            type: "file",
+            label: "증빙 자료",
+            value: {
+              type: "file",
+              fileName: "연구참여확인서.pdf",
+              description: "",
+              evidenceType: "",
+            },
+          },
+        ],
+      })
+
+      const expected = getTemplateForType("research").commonCore.blocks.find(
+        b => b.label === "증빙 자료",
+      )?.options
+      expect(expected?.length).toBeGreaterThan(0)
+      expect(v1.coreBlocks.find(b => b.label === "증빙 자료")?.options).toEqual(expected)
+    })
+  })
+
+  /**
+   * 숨김 상태도 값과 함께 새 자리로 따라가야 한다 — 값만 옮기고 두고 오면 사용자가 치워 둔 칸이
+   * 개편 후 혼자 다시 나타나고, `normalizeHiddenKeys` 는 모르는 키를 버리지 않아 옛 키가 저장분에
+   * 영원히 남는다(FRT-210 Codex P2 가 순수 개명에서 세운 규칙). 확정본이 라벨과 선택지를 갈아
+   * `SELECT_DOMAIN_MIGRATIONS` 로 옮기는 '역할'도 **묻는 질문은 그대로**라 같은 규칙을 받는다
+   * (FRT-269 Codex P2).
+   */
+  it("숨겨 둔 구 '역할'의 숨김 상태가 확정본 '역할 / 기여도'로 따라간다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "research",
+        content: {
+          ...legacyResearchContent(),
+          hidden: ["research-info.역할"],
+        },
+      }),
+    )
+
+    expect(v2.hiddenKeys).toContain("research-paper.역할 / 기여도")
+    expect(v2.hiddenKeys).not.toContain("research-info.역할")
   })
 })

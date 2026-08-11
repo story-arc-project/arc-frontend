@@ -1644,6 +1644,14 @@ function researchExtensions(): TemplateSection[] {
         // ⚠️ 컬럼에 required 금지 — `isRequiredBlock` 은 컬럼 하나라도 required 면 표 전체를 필수로
         // 보고 `canHideBlock` 이 숨기지도 못한다. 확정본이 '(선택, 필드 삭제 가능)'으로 둔 칸이
         // 영영 삭제 불가·완료 불가가 된다(FRT-236).
+        //
+        // ⚠️ **알려진 미해결 격차**(FRT-269 Codex P2): required 를 안 붙여도 이 표는 아직 × 로
+        // 치울 수 없다 — `canHideBlock` 은 `file` 열을 가진 표를 통째로 제외한다(업로드 중 언마운트
+        // 시 고른 파일이 조용히 사라지는 것을 막는 불변식, hidden-fields.ts). 창작물 '작품 링크 /
+        // 파일'은 확정본이 삭제 가능 표기를 하지 않아 그 제외와 일치했지만, 여기서는 **확정본과
+        // 어긋난다.** 진행도는 막지 않는다 — 이 섹션엔 required 필드가 있어 `isCardComplete` 이
+        // 필수만으로 판정한다. 표의 열 단위 업로드 상태를 위로 흘리는 배선이 생겨야 풀리므로
+        // 후속(FRT-278)으로 분리한다.
         createRepeatableCell(
           '논문 파일 / 링크',
           [

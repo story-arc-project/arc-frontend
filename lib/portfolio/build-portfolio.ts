@@ -138,6 +138,32 @@ function typePeriodOf(typeId: ExperienceTypeId, blocks: Block[]): string {
   return periodOf(block.value);
 }
 
+// 역할·성과도 기간과 **같은 자리**다. 확정본 정렬로 코어 '내 역할/기여도'·'핵심 성과'를 뺀 유형은
+// 그 질문을 이어받은 자기 필드를 갖는데, 새 라벨이 코어와 정확히 같은 이름이 아니라
+// `pickValue`·`achievementText` 의 **정확-라벨 우선** 정렬에서 개편 전 레코드의 orphan `core.*` 가
+// 확정본 값을 이긴다 — 사용자가 새 칸을 고쳐도 포트폴리오는 옛 값을 계속 발행한다(FRT-269 Codex P2).
+//
+// 라벨이 아니라 유형별 **안정키**로 찾는 이유는 TYPE_PERIOD_KEY 와 같다 — 라벨로 훑으면 다른
+// 유형의 우연히 같은 이름인 커스텀·레거시 블록이 섞인다.
+//
+// ⚠️ 값을 새 칸으로 **이관**하는 처방(V2_CORE_SCOPED_MIGRATIONS)은 여기 쓸 수 없다. 확정본
+// '역할 / 기여도'는 5종 select 라 자유 서술 코어 값을 실으면 목록에 없는 답이 선택된 것처럼 보이고,
+// '주요 발견 / 결과'는 표라 한 덩이 문장을 행으로 쪼개는 해석이 필요하다. 값은 '기타' 카드에 그대로
+// 두고(사용자가 보고 직접 옮길 수 있다) **발행 우선순위만** 바로잡는다.
+const TYPE_CONTRIBUTION_KEY: Partial<Record<ExperienceTypeId, string>> = {
+  research: "research-paper.역할 / 기여도",
+};
+
+const TYPE_ACHIEVEMENT_KEY: Partial<Record<ExperienceTypeId, string>> = {
+  research: "research-content.주요 발견 / 결과",
+};
+
+/** 유형이 확정본 필드를 따로 가진 경우 그 값. 비어 있으면 undefined → 범용 조회로 폴백한다. */
+function typeFieldValue(key: string | undefined, blocks: Block[]): BlockValue | undefined {
+  if (!key) return undefined;
+  return blocks.find((b) => b.key === key && !isBlockEmpty(b))?.value;
+}
+
 // 성과 라벨 그룹(SEMANTIC_GROUPS.achievement)엔 성격이 다른 둘이 섞여 있다:
 //  - 동의어(핵심 성과·결과/성과·성과 등): 같은 질문의 **대안**. 하나만 고른다(core 우선).
 //  - 상호보완(학회 `단체 활동 / 성과`·`개인 활동 / 성과`): 동시에 채우는 별개 항목. 모두 합친다.
@@ -151,15 +177,16 @@ const COMPLEMENTARY_ACHIEVEMENT_LABELS = ["단체 활동 / 성과", "개인 활�
  * 호출측이 customBlocks 까지 넘기면, 폐기된 템플릿 필드(구 `extended.결과/성과`)가 orphan 으로
  * 보존된 경우에도 발행 시 성과가 소실되지 않는다.
  */
-function achievementText(blocks: Block[]): string {
+function achievementText(blocks: Block[], preferred?: BlockValue): string {
   const synonymLabels = equivalentLabels("핵심 성과").filter(
     (l) => !COMPLEMENTARY_ACHIEVEMENT_LABELS.includes(l),
   );
   const parts: string[] = [];
-  // 동의어: core 우선, 채워진 것 하나만.
+  // 동의어: core 우선, 채워진 것 하나만. 단 유형이 확정본 성과 필드를 따로 가지면(preferred)
+  // 그 값이 코어 잔재를 이긴다 — TYPE_ACHIEVEMENT_KEY 참조.
   const filledSynonyms = blocks.filter((b) => synonymLabels.includes(b.label) && !isBlockEmpty(b));
   const primary = filledSynonyms.find((b) => b.label === "핵심 성과") ?? filledSynonyms[0];
-  const primaryText = textOf(primary?.value);
+  const primaryText = textOf(preferred ?? primary?.value);
   if (primaryText) parts.push(primaryText);
   // 상호보완(학회): 채워진 것 모두.
   for (const b of blocks) {
@@ -193,7 +220,8 @@ export function experienceToPost(exp: Experience): PortfolioPost {
   const blocks = [...core, ...ev2.extensionBlocks, ...ev2.customBlocks].filter(
     (b) => b.type !== "group",
   );
-  const label = EXPERIENCE_TYPE_MAP[exp.type as ExperienceTypeId]?.label ?? "경험";
+  const typeId = exp.type as ExperienceTypeId;
+  const label = EXPERIENCE_TYPE_MAP[typeId]?.label ?? "경험";
   return {
     id: exp.id,
     title: ev2.title || textOf(findBlock(core, "경험명")?.value),
@@ -201,11 +229,14 @@ export function experienceToPost(exp: Experience): PortfolioPost {
     // `core.기간` 이 orphan 으로 custom 에 남아 있어(experience-mapper 안전망) 범용 조회가
     // 먼저 걸리면, 화면에서 볼 수도 고칠 수도 없는 옛 범위가 계속 발행되고 새로 채운 값이
     // 반영되지 않는다. 새 값이 비어 있을 때만 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다.
-    period: typePeriodOf(exp.type as ExperienceTypeId, blocks) || periodOf(pickValue(blocks, "기간")),
+    period: typePeriodOf(typeId, blocks) || periodOf(pickValue(blocks, "기간")),
     category: label,
     summary: ev2.summary || pickSummary(blocks),
-    contribution: contributionText(pickValue(blocks, "내 역할/기여도")),
-    achievement: achievementText(blocks),
+    // 기간과 같은 규칙 — 확정본 필드가 먼저, 비어 있을 때만 옛 값으로 폴백한다.
+    contribution: contributionText(
+      typeFieldValue(TYPE_CONTRIBUTION_KEY[typeId], blocks) ?? pickValue(blocks, "내 역할/기여도"),
+    ),
+    achievement: achievementText(blocks, typeFieldValue(TYPE_ACHIEVEMENT_KEY[typeId], blocks)),
     keywords: ev2.tags,
   };
 }
