@@ -86,14 +86,18 @@ async function runRefresh(): Promise<RefreshResult> {
 // 주었는지에 따라 복구 가능성이 갈린다.
 const ROTATED_OUT_CODE = "AUTH_REUSE_DETECTED";
 
-// 사용자가 비밀번호를 틀렸을 때의 401 (arc-backend `api/auth.py` 로그인·탈퇴 경로).
-// 액세스 토큰과 무관하므로 갱신해도 영원히 401 이고, 그 사이 탈퇴 DELETE 같은 요청이 되풀이
-// 전송되며 실패 횟수 집계까지 오염시킨다. 게다가 매 라운드의 회전이 다른 요청의 토큰을 죽인다.
+// 액세스 토큰과 **무관한** 401. 갱신해도 영원히 401 이고, 그 사이 원요청이 되풀이 전송된다 —
+// 탈퇴 DELETE 가 3번 나가고 실패 횟수 집계까지 오염되며, 매 라운드의 회전이 다른 요청의 토큰을
+// 죽인다. arc-backend `api/auth.py` 가 내는 401 을 전수 확인해 두 종류를 골랐다.
+// - `INVALID_CREDENTIALS`: 비밀번호 오답 (`/login`, `/account/password`)
+// - `SOCIAL_AUTH_FAILED`: 소셜 인증 실패 (`/social-login`, `/account/social`)
+// 나머지 401 은 전부 `AUTH_MISSING_COOKIES`·`AUTH_TOKEN_EXPIRED`·`AUTH_TOKEN_INVALID` 로,
+// 갱신이 정확히 그것을 고친다.
 //
 // 가려내는 **방향**이 중요하다. "갱신 가능한 코드만 허용"으로 좁히거나 `auth: false` 요청을
 // 통째로 제외하면 `/auth/me` 도 `auth: false` 라(`lib/api/auth-api.ts`) 세션 복원이 함께 죽는다.
 // 그래서 "고칠 수 없는 코드만 제외"로 둔다 — 코드가 없는 401 은 지금처럼 갱신한다.
-const WRONG_CREDENTIALS_CODE = "INVALID_CREDENTIALS";
+const UNRECOVERABLE_401_CODES = new Set(["INVALID_CREDENTIALS", "SOCIAL_AUTH_FAILED"]);
 
 // 갱신 경계를 걸친 요청에 줄 기회. 1 이면 갱신 직후의 재시도가 또 경계에 걸렸을 때 그 요청이
 // 영구히 실패한다 — 신고된 트레이스가 정확히 그 상태였다(refresh 200 뒤 401 넷이 그대로 죽고,
@@ -136,9 +140,11 @@ async function request<T>(
     // 갱신해도 달라지지 않는 응답은 여기서 갈라 그대로 던진다.
     // - 403 은 "내 액세스 토큰이 갱신에 밀려났다"일 때만 되살린다. 진짜 폐기(`AUTH_REVOKED`)나
     //   인가 실패는 대상이 아니다.
-    // - 401 은 반대로 **고칠 수 없는 것만** 뺀다 (`WRONG_CREDENTIALS_CODE` 주석 참조).
+    // - 401 은 반대로 **고칠 수 없는 것만** 뺀다 (`UNRECOVERABLE_401_CODES` 주석 참조).
     const unrecoverable =
-      res.status === 403 ? body.code !== ROTATED_OUT_CODE : body.code === WRONG_CREDENTIALS_CODE;
+      res.status === 403
+        ? body.code !== ROTATED_OUT_CODE
+        : UNRECOVERABLE_401_CODES.has(body.code ?? "");
     if (unrecoverable) {
       throw new ApiError(res.status, body.message ?? "오류가 발생했어요.", body.code);
     }

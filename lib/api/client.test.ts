@@ -445,6 +445,24 @@ describe("갱신으로 고칠 수 없는 401 가려내기", () => {
     expect(state.dataCalls).toBe(1)
   })
 
+  it("소셜 인증 실패 401 은 갱신하지 않고 즉시 던진다", async () => {
+    // `deleteAccountWithSocial` 은 **로그인된 사용자**가 설정에서 OAuth 재확인을 거쳐
+    // 콜백에서 부른다(`app/(auth)/callback/google/page.tsx:45`). 즉 리프레시 쿠키가 살아 있어
+    // 갱신이 매번 성공하고, 그 사이 **계정 삭제 DELETE 가 되풀이 전송된다**.
+    const state = stubRotatedOutServer([
+      jsonResponse({ message: "Social login failed.", code: "SOCIAL_AUTH_FAILED" }, 401),
+    ])
+
+    const err = await api.delete("/auth/account/social", { auth: false }).catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(401)
+    expect(err.code).toBe("SOCIAL_AUTH_FAILED")
+    expect(state.refreshCalls).toBe(0)
+    expect(state.dataCalls).toBe(1)
+  })
+
   it("만료 401 은 여전히 갱신해 되살린다", async () => {
     // 위 제외가 넓어지면 세션 복원이 죽는다 — 그 경계를 고정한다.
     const state = stubRotatedOutServer([
