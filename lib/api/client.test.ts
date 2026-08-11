@@ -480,3 +480,77 @@ describe("갱신으로 고칠 수 없는 401 가려내기", () => {
     expect(state.refreshCalls).toBe(1)
   })
 })
+
+/**
+ * 탭 사이에서도 물결이 끊기게 한다 (PR #247 리뷰 3차, FRT-279).
+ *
+ * 쿠키는 탭이 공유하지만 `refreshGeneration` 은 모듈 지역 변수라 탭마다 별개다. 그대로 두면
+ * 다른 탭이 방금 심어 준 **최신** 쿠키를 이 탭이 "낡았다"고 오해해 한 번 더 회전시키고, 그
+ * 회전이 저쪽 탭의 요청을 403 에 빠뜨린다 — 위 "되살리기가 새 회전을 만들지 않는다"와 똑같은
+ * 결함이 탭 경계를 넘은 판본이다.
+ *
+ * 방송이 403 보다 먼저 도착한다는 보장은 없으므로 **첫 한 번의 중복 회전까지 없애지는 못한다**.
+ * 없애는 것은 그 뒤의 왕복이다: 방송을 받은 탭은 세대가 올라가 있어 다음 403 에 갱신으로
+ * 응답하지 않는다. 근본 해소는 백엔드 회전 유예 창(BAC-64).
+ */
+describe("탭 간 갱신 세대 동기화", () => {
+  const CHANNEL = "arc-auth-refresh"
+
+  // 방송 전달은 매크로태스크다. 붙잡아 둔 응답을 풀기 전에 리스너가 돌 틈을 준다.
+  const deliverBroadcast = () => new Promise((resolve) => setTimeout(resolve, 10))
+
+  it("다른 탭이 갱신을 끝냈다는 방송이 오면 또 갱신하지 않고 그대로 다시 보낸다", async () => {
+    const otherTab = new BroadcastChannel(CHANNEL)
+    let refreshCalls = 0
+    let dataCalls = 0
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/auth/refresh")) {
+        refreshCalls += 1
+        return new Response(null, { status: 200 })
+      }
+      dataCalls += 1
+      if (dataCalls === 1) {
+        // 이 요청이 날아가 있는 **동안** 다른 탭의 갱신이 끝났다. 브라우저는 이미 새 쿠키를
+        // 들고 있으므로, 돌아온 403 에 필요한 것은 갱신이 아니라 재전송뿐이다.
+        otherTab.postMessage("refreshed")
+        await deliverBroadcast()
+        return rotatedOut()
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(refreshCalls).toBe(0)
+    expect(dataCalls).toBe(2)
+
+    otherTab.close()
+  })
+
+  it("이 탭이 갱신에 성공하면 다른 탭에 알린다", async () => {
+    // 나가는 반쪽. 이것이 없으면 위 수신 로직은 어느 탭에서도 발동하지 않는다.
+    const otherTab = new BroadcastChannel(CHANNEL)
+    const heard: unknown[] = []
+    otherTab.onmessage = (e: MessageEvent) => {
+      heard.push(e.data)
+    }
+
+    const state = stubRotatedOutServer([new Response(null, { status: 401 })])
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+
+    await deliverBroadcast()
+    expect(heard).toHaveLength(1)
+
+    otherTab.close()
+  })
+
+  it("방송이 없었다면 403 은 여전히 갱신을 부른다", async () => {
+    // 거울상: 수신 분기가 상시 참으로 굳으면 갱신이 영영 일어나지 않는다.
+    const state = stubRotatedOutServer([rotatedOut()])
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+  })
+})

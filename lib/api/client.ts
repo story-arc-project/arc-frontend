@@ -54,6 +54,29 @@ function tryRefresh(): Promise<RefreshResult> {
 // 브라우저는 그때 심어진 새 쿠키를 이미 들고 있다.
 let refreshGeneration = 0;
 
+// 쿠키는 탭이 공유하지만 위 세대는 모듈 지역 변수라 **탭마다 별개다**. 그대로 두면 다른 탭이
+// 방금 심어 준 최신 쿠키를 이 탭이 "낡았다"고 오해해 한 번 더 회전시키고, 그 회전이 저쪽 탭의
+// 요청을 403 에 빠뜨린다 — 바로 위에서 막은 물결이 탭 경계를 넘은 판본이다. 갱신 성공을
+// 방송해 세대를 맞추면 그 왕복이 끊긴다.
+//
+// 다만 방송이 403 보다 먼저 닿는다는 보장은 없으므로 **첫 한 번의 중복 회전까지 없애지는
+// 못한다**. 없애는 것은 그 뒤의 왕복이다. 경계 자체를 지우는 것은 백엔드 회전 유예 창(BAC-64).
+//
+// SSR 프리렌더는 Node 위에서 도는데 Node 에도 `BroadcastChannel` 이 있다 — 거기서 열면 열린
+// 채널이 빌드의 이벤트 루프를 붙잡을 수 있으므로 `window` 로 가른다.
+const refreshChannel =
+  typeof window !== "undefined" && typeof BroadcastChannel === "function"
+    ? new BroadcastChannel("arc-auth-refresh")
+    : null;
+
+if (refreshChannel) {
+  // 명세상 방송은 **발신자 자신에게는 돌아오지 않는다**. 그래서 갱신한 탭은 `runRefresh` 에서
+  // 직접 올리고, 여기서는 남의 갱신만 받는다.
+  refreshChannel.onmessage = () => {
+    refreshGeneration += 1;
+  };
+}
+
 async function runRefresh(): Promise<RefreshResult> {
   try {
     const res = await fetch(`${API_URL}/auth/refresh`, {
@@ -62,6 +85,7 @@ async function runRefresh(): Promise<RefreshResult> {
     });
     if (res.ok) {
       refreshGeneration += 1;
+      refreshChannel?.postMessage("refreshed");
       return "ok";
     }
     // 401/403 = refresh token 만료·무효 → 진짜 재인증 필요
