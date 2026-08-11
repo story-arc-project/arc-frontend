@@ -589,7 +589,9 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
         Array.isArray(v.rows) &&
         // 행 `id` 까지 물어야 한다 — 없으면 `repairRows` 를 건너뛴 채 렌더에 닿아
         // React key 가 겹치고 수정·삭제 핸들러가 엉뚱한 행을 잡는다.
-        v.rows.every(r => isPlainObject(r) && isIntactRow(r))
+        v.rows.every(r => isPlainObject(r) && isIntactRow(r)) &&
+        // 행 하나씩은 성해도 **쌍으로 깨질 수 있다** — 같은 id 두 개면 한쪽을 고칠 때 둘 다 바뀐다.
+        new Set(v.rows.map(r => (r as Record<string, unknown>).id)).size === v.rows.length
       )
     case 'table':
       return allStrings(v.columns) && Array.isArray(v.rows) && v.rows.every(allStrings)
@@ -614,14 +616,17 @@ function repairRows(x: unknown): BlockRow[] {
   // ⚠️ 이미 쓰이는 id 를 피한다. 겹치면 수정·삭제 핸들러가 행을 id 로 찾으므로 **하나를 고치면
   // 둘 다 바뀌고 하나를 지우면 둘 다 사라진다**(React key 도 중복된다). 인덱스에서 파생시키되
   // 충돌하면 뒤에 번호를 붙인다 — 같은 입력이면 늘 같은 id 라야 렌더마다 행이 리마운트되지 않는다.
-  const used = new Set(rows.map(r => asText(r.id)).filter(Boolean))
+  // ⚠️ 저장분에 **이미 중복된 id** 가 있을 수 있다 — 행 하나씩 보면 둘 다 성해 보이지만
+  // 쌍으로는 깨져 있다. 앞엣것을 두고 뒤엣것을 갈아 준다(앞뒤가 뒤집히면 안 되므로 순서대로).
+  const used = new Set<string>()
   return rows.map((r, i) => {
     let id = asText(r.id)
-    if (!id) {
-      id = `row-${i}`
-      for (let n = 1; used.has(id); n += 1) id = `row-${i}-${n}`
-      used.add(id)
+    if (!id || used.has(id)) {
+      const base = id || `row-${i}`
+      id = base
+      for (let n = 1; used.has(id); n += 1) id = `${base}-${n}`
     }
+    used.add(id)
     const cells: Record<string, CellValue> = {}
     if (isPlainObject(r.cells)) {
       for (const [k, c] of Object.entries(r.cells)) cells[k] = repairCell(c)
@@ -692,6 +697,15 @@ export function normalizeBlockValue(
    * 값에도 살릴 알맹이가 그대로 들어 있고, 애초에 그 값을 그리던 컨트롤도 `block.type` 으로
    * 골라져 있었다. 비우면 **열었다 저장하는 것만으로 사용자 입력이 영구히 지워진다.**
    */
+  // ⚠️ **모르는 판별자는 "깨진 것"이 아니라 "내가 모르는 것"일 수 있다** — 새 스키마가 쓴 값을
+  // 구 프론트가 여는 경우다. 블록 타입으로 갈아 끼우면 그 판별자가 지워진 채 저장되어,
+  // 열었다 저장하는 것만으로 새 스키마 값이 구 모양으로 굳는다. 그러니 **그대로 둔다.**
+  // 그리려면 모양이 필요하지만, 그건 저장되지 않는 렌더 관문(`normalizeBlockForRender`)의 몫이다.
+  if (typeof value.type === 'string' && !isKnownBlockType(value.type)) {
+    return value as unknown as BlockValue
+  }
+
+  // 판별자가 아예 없거나 문자열이 아니면 신호가 깨진 것이다 — 그때만 블록이 선언한 타입으로 살린다.
   const effective = isKnownBlockType(value.type)
     ? value.type
     : isKnownBlockType(fallbackType)
@@ -797,7 +811,8 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
   // ⚠️ **둘 다 아는 타입인데 서로 다르면** 렌더러가 죽는다 — 컨트롤은 `block.type` 으로 고르는데
   // 값은 다른 모양이라 `value.columns.length` 같은 접근이 그 자리에서 터진다. 블록이 선언한
   // 모양으로 맞춘다(매퍼의 `injectValue` 가 타입 불일치에 주입을 생략하는 것과 같은 결론).
-  if (isKnownBlockType(block.type) && value.type !== block.type) {
+  // 모르는 판별자는 위에서 이미 보존됐다 — 여기서 맞추는 건 **둘 다 아는데 다른** 경우뿐이다.
+  if (isKnownBlockType(block.type) && isKnownBlockType(value.type) && value.type !== block.type) {
     value = normalizeBlockValue(block.type, undefined, {
       options: block.options ?? defs?.options,
       columns: defs?.columns,
@@ -821,6 +836,20 @@ export interface BlockDefs {
  * `defsOf` 는 블록별 정의(선택지·열) 출처다 — v1 처럼 저장 블록이 정의를 잃었을 수 있고
  * 현재 템플릿이 그 정의를 아는 경우에 넘긴다.
  */
+/**
+ * **표시 전용** 보정 — 렌더 관문(`BlockRenderer`)만 쓴다.
+ *
+ * 저장 경로(`normalizeBlock`)는 모르는 판별자를 그대로 지킨다. 하지만 그리려면 컨트롤이 읽을
+ * 모양이 있어야 하므로, 여기서만 블록이 선언한 타입의 빈 값으로 바꿔 준다.
+ * **이 결과는 저장되지 않는다** — 그래서 새 스키마 값을 구 모양으로 굳히지 않는다.
+ */
+export function normalizeBlockForRender(block: Block): Block {
+  const normalized = normalizeBlock(block)
+  const v = normalized.value as BlockValue | null | undefined
+  if (!isKnownBlockType(block.type) || (v && v.type === block.type)) return normalized
+  return { ...normalized, value: normalizeBlockValue(block.type, undefined, { options: block.options }) }
+}
+
 export function normalizeBlocks(blocks: Block[], defsOf?: (block: Block) => BlockDefs | undefined): Block[] {
   if (!Array.isArray(blocks)) return []
   const out = blocks

@@ -742,7 +742,10 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   const defsOf = templateDefsResolver(exp.type, typeId)
   const savedCore = normalizeBlocks(content.coreBlocks ?? [], defsOf)
   const savedExt = normalizeBlocks(content.extensionBlocks ?? [], defsOf)
-  const savedCustom = normalizeBlocks(content.customBlocks ?? [], defsOf)
+  // ⚠️ 커스텀 블록에는 **정의를 넘기지 않는다.** 커스텀 라벨은 템플릿 신원이 아니라 사용자가
+  // 지은 이름이라, 우연히 같은 이름이라고 템플릿 선택지·열을 밀어 넣으면 매칭된 적도 없는
+  // 사용자의 칸이 조용히 바뀐다. 블록 자신이 든 정의만 쓴다.
+  const savedCustom = normalizeBlocks(content.customBlocks ?? [])
 
   if (!hasTemplate(exp.type)) {
     return { ...base, coreBlocks: savedCore, extensionBlocks: savedExt, customBlocks: savedCustom }

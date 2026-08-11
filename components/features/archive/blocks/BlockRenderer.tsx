@@ -1,7 +1,7 @@
 "use client"
 
 import type { Block, BlockValue, RepeatableCellBlockValue } from "@/types/archive"
-import { isFileCellValue, normalizeBlock } from "@/lib/utils/block-utils"
+import { isFileCellValue, normalizeBlockForRender } from "@/lib/utils/block-utils"
 import TextBlock from "./TextBlock"
 import TextareaBlock from "./TextareaBlock"
 import DateBlock from "./DateBlock"
@@ -49,9 +49,12 @@ export default function BlockRenderer({
    * 이 관문을 거치지 않고 `block.value` 를 직접 읽는 소비처가 따로 있다. 저장 값 정규화의
    * 정본은 매퍼이고, 여기는 그곳을 우회해 들어온 값을 막는 그물이다.
    *
-   * 값이 온전하면 `normalizeBlock` 이 **원본 참조를 그대로** 돌려주므로 리렌더가 늘지 않는다.
+   * 값이 온전하면 **원본 참조를 그대로** 돌려주므로 리렌더가 늘지 않는다.
+   *
+   * ⚠️ 표시 전용 보정(`...ForRender`)을 쓴다 — 이 코드가 모르는 판별자(새 스키마가 쓴 값)를
+   * 저장 경로에서 갈아 끼우면 구 프론트가 그 값을 굳혀 버리므로, 모양 맞추기는 여기서만 한다.
    */
-  const block = normalizeBlock(rawBlock)
+  const block = normalizeBlockForRender(rawBlock)
   const handleChange = (value: BlockValue) => onChange(block.id, value)
 
   const rendered = (() => {

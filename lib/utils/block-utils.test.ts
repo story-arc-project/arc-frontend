@@ -26,6 +26,7 @@ import {
   isBlockDiscardable,
   isBlockEmpty,
   normalizeBlock,
+  normalizeBlockForRender,
   normalizeBlockValue,
   validateRequiredBlocks,
 } from "@/lib/utils/block-utils"
@@ -541,11 +542,14 @@ describe("normalizeBlockValue (FRT-200)", () => {
   })
 
   /** 값이 든 `type` 을 이 코드가 모를 때도 같다 — 블록이 아는 타입으로 되살린다. */
-  it("이 코드가 모르는 type 이어도 블록 타입으로 되살려 알맹이를 지킨다", () => {
-    expect(normalizeBlockValue("text", { type: "brand-new-in-v3", text: "살아있는 값" })).toEqual({
-      type: "text",
-      text: "살아있는 값",
-    })
+  /**
+   * ⚠️ **모르는 `type` 은 "깨진 것"이 아니라 "내가 모르는 것"일 수 있다** — 새 스키마가 쓴 값을
+   * 구 프론트가 열면 그렇다. 블록 타입으로 갈아 끼우면 그 판별자가 지워진 채 저장되어,
+   * **열었다 저장하는 것만으로 새 스키마 값이 구 모양으로 굳는다.** 그대로 둔다.
+   */
+  it("이 코드가 모르는 type 은 갈아 끼우지 않고 그대로 둔다", () => {
+    const newer = { type: "brand-new-in-v3", text: "살아있는 값" }
+    expect(normalizeBlockValue("text", newer)).toBe(newer)
   })
 
   /**
@@ -656,6 +660,20 @@ describe("normalizeBlockValue (FRT-200)", () => {
    * 행 id 는 수정·삭제 핸들러가 행을 찾는 열쇠다. 결측을 인덱스로 채울 때 이미 그 이름을 쓰는
    * 행이 있으면 **둘이 같은 id 를 갖고**, 하나를 고치면 둘 다 바뀌고 하나를 지우면 둘 다 사라진다.
    */
+  /** 이미 저장된 두 행이 같은 id 를 들고 있으면 각 행은 성해 보여도 **쌍으로는 깨져 있다.** */
+  it("저장분에 이미 중복된 행 id 가 있으면 뒤엣것을 갈아 준다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        { id: "r1", cells: { a: "먼저" } },
+        { id: "r1", cells: { a: "나중" } },
+      ],
+    }) as unknown as { rows: { id: string; cells: Record<string, unknown> }[] }
+    expect(new Set(out.rows.map(r => r.id)).size).toBe(2)
+    expect(out.rows.map(r => r.cells.a)).toEqual(["먼저", "나중"]) // 값은 그대로
+  })
+
   it("행 id 를 인덱스로 채울 때 이미 쓰는 id 와 겹치지 않는다", () => {
     const out = normalizeBlockValue("repeatable-cell", {
       type: "repeatable-cell",
@@ -742,6 +760,22 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
  * `block.type` 으로 컨트롤을 고르므로 값이 그 모양이 아니면 그 자리에서 죽는다.
  */
 describe("normalizeBlock — 타입 불일치 (FRT-200)", () => {
+  /**
+   * ⚠️ **저장과 표시는 다른 질문이다.** 모르는 판별자는 저장 경로에선 그대로 지켜야 하지만
+   * (구 프론트가 새 스키마 값을 굳히면 안 된다), 그리려면 컨트롤이 읽을 모양이 필요하다.
+   * 그래서 갈아 끼우는 건 **렌더 관문에서만** 한다 — 그 결과는 저장되지 않는다.
+   */
+  it("모르는 판별자는 보정에선 지키고, 렌더 관문에서만 그릴 모양으로 바꾼다", () => {
+    const block: Block = {
+      id: "b1",
+      type: "text",
+      label: "칸",
+      value: { type: "brand-new-in-v3", text: "새 스키마" } as unknown as BlockValue,
+    }
+    expect(normalizeBlock(block).value).toBe(block.value) // 저장 경로: 그대로
+    expect(normalizeBlockForRender(block).value.type).toBe("text") // 표시 경로: 그릴 모양
+  })
+
   it("블록 타입과 값 타입이 어긋나면 블록 타입의 모양으로 맞춘다", () => {
     const normalized = normalizeBlock({
       id: "b1",

@@ -3425,6 +3425,36 @@ describe("toExperienceV2 v1 — 정의가 결측인 값 (FRT-200)", () => {
     return found
   }
 
+  /**
+   * ⚠️ **커스텀 라벨은 템플릿 신원이 아니다.** 사용자가 우연히 템플릿과 같은 이름으로 만든
+   * 칸에 템플릿 선택지를 밀어 넣으면, 매칭된 적도 없는데 사용자의 칸이 조용히 바뀐다.
+   */
+  it("커스텀 블록에는 라벨이 같아도 템플릿 정의를 넣지 않는다", () => {
+    const tmpl = getTemplateForType("career")
+    const all = [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)]
+    const tplSelect = all.find(b => b.type === "single-select" && (b.options?.length ?? 0) > 0)
+    if (!tplSelect) throw new Error("career 템플릿에 선택지 있는 single-select 가 없다 — 전제가 깨졌다")
+
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          customBlocks: [
+            {
+              id: "c1",
+              type: "single-select",
+              label: tplSelect.label, // 우연히 같은 라벨
+              value: { type: "single-select", selected: "내가 쓴 값" },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const custom = v1.customBlocks.find(b => b.label === tplSelect.label)
+    expect(custom).toBeDefined()
+    expect((custom!.value as unknown as { options: unknown[] }).options).toEqual([])
+  })
+
   it("열 정의를 잃은 v1 표는 템플릿 열을 되찾고 행은 지킨다", () => {
     const tplBlock = repeatableTemplateBlock()
     const v1 = toExperienceV2(
