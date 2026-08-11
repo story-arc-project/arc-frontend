@@ -28,6 +28,7 @@ import {
   normalizeBlock,
   normalizeBlockForRender,
   normalizeBlockValue,
+  normalizeBlocks,
   validateRequiredBlocks,
 } from "@/lib/utils/block-utils"
 import type { Block, BlockValue, CellValue, FileCellValue } from "@/types/archive"
@@ -745,6 +746,50 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
     expect(out.rows[0].cells.skills).toEqual(["협업"])
   })
 
+  /** 열 정의는 `key` 만이 아니라 **렌더러가 읽는 필드 전부**가 성해야 한다. */
+  it("열 정의의 라벨·선택지가 깨져 있으면 그것도 맞춘다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [
+        { key: "item", label: { broken: true }, blockType: "text" },
+        { key: "sel", label: "선택", blockType: "checklist", options: ["정상", { broken: true }] },
+      ],
+      rows: [],
+    }) as unknown as { columns: { key: string; label: unknown; options?: unknown }[] }
+    expect(typeof out.columns[0].label).toBe("string")
+    expect(out.columns[1].options).toEqual(["정상"])
+  })
+
+  /** 열 `key` 가 겹치면 둘이 같은 셀을 가리키고, 하나를 지우면 둘 다 사라진다. */
+  it("열 key 가 중복이면 뒤엣것을 갈아 준다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [
+        { key: "item", label: "A", blockType: "text" },
+        { key: "item", label: "B", blockType: "text" },
+      ],
+      rows: [],
+    }) as unknown as { columns: { key: string }[] }
+    expect(new Set(out.columns.map(c => c.key)).size).toBe(2)
+  })
+
+  /** 행 부가 항목도 `value` 만이 아니라 라벨까지 — 편집 모드가 `label.trim()` 을 부른다. */
+  it("행 부가 항목의 라벨이 깨져 있으면 그것도 맞춘다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          extraFields: [{ key: "k", label: { broken: true }, blockType: "text", value: "x" }],
+        },
+      ],
+    }) as unknown as { rows: { extraFields: { label: unknown; value: unknown }[] }[] }
+    expect(typeof out.rows[0].extraFields[0].label).toBe("string")
+    expect(out.rows[0].extraFields[0].value).toBe("x") // 값은 그대로
+  })
+
   it("되살릴 선택지 목록 자체가 깨져 있으면 그것도 걸러 낸다", () => {
     const out = normalizeBlockValue(
       "checklist",
@@ -759,6 +804,64 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
  * 블록이 선언한 타입과 값이 든 타입이 **둘 다 아는 타입인데 서로 다를 때**, 렌더러는
  * `block.type` 으로 컨트롤을 고르므로 값이 그 모양이 아니면 그 자리에서 죽는다.
  */
+/**
+ * 값(`block.value`)만이 아니라 **블록 자신의 필드**도 저장 JSONB 에서 온다 — `block.options` 는
+ * `SingleSelectBlock`·`FileBlock` 이 직접 읽고, `children`·`id` 는 목록·핸들러가 직접 쓴다.
+ */
+describe("normalizeBlock/Blocks — 블록 자신의 필드 (FRT-200)", () => {
+  it("블록 층위 options 가 깨져 있으면 블록에서도 맞춘다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "single-select",
+      label: "칸",
+      options: ["정상", { broken: true }] as unknown as string[],
+      value: { type: "single-select", options: [], selected: "" },
+    })
+    expect(normalized.options).toEqual(["정상"])
+
+    const notArray = normalizeBlock({
+      id: "b2",
+      type: "single-select",
+      label: "칸",
+      options: { broken: true } as unknown as string[],
+      value: { type: "single-select", options: [], selected: "" },
+    })
+    expect(Array.isArray(notArray.options)).toBe(true)
+  })
+
+  it("children 이 배열이 아니거나 원소가 깨져 있어도 죽지 않는다", () => {
+    const group = {
+      id: "g1",
+      type: "group",
+      label: "섹션",
+      value: { type: "group" },
+      children: { broken: true },
+    } as unknown as Block
+    expect(() => normalizeBlock(group)).not.toThrow()
+
+    const withNull = {
+      id: "g2",
+      type: "group",
+      label: "섹션",
+      value: { type: "group" },
+      children: [null, { id: "c1", type: "text", label: "칸", value: { type: "text", text: "값" } }],
+    } as unknown as Block
+    expect(() => normalizeBlock(withNull)).not.toThrow()
+    expect(normalizeBlock(withNull).children).toHaveLength(1)
+  })
+
+  /** 블록 id 는 목록의 수정·삭제 핸들러가 블록을 찾는 열쇠다 — 겹치면 둘이 함께 바뀐다. */
+  it("블록 id 가 없거나 겹치면 결정적으로 갈아 준다", () => {
+    const out = normalizeBlocks([
+      { id: "b1", type: "text", label: "A", value: { type: "text", text: "가" } },
+      { id: "b1", type: "text", label: "B", value: { type: "text", text: "나" } },
+      { type: "text", label: "C", value: { type: "text", text: "다" } } as unknown as Block,
+    ])
+    expect(new Set(out.map(b => b.id)).size).toBe(3)
+    expect(out.map(b => (b.value as { text: string }).text)).toEqual(["가", "나", "다"])
+  })
+})
+
 describe("normalizeBlock — 타입 불일치 (FRT-200)", () => {
   /**
    * ⚠️ **저장과 표시는 다른 질문이다.** 모르는 판별자는 저장 경로에선 그대로 지켜야 하지만

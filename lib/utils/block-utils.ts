@@ -525,6 +525,72 @@ function repairCell(c: unknown): CellValue {
   return ''
 }
 
+/**
+ * 열 정의는 `key` 만이 아니라 **렌더러가 읽는 필드 전부**가 성해야 한다 —
+ * `RepeatableCellBlock` 이 `col.label` 을 그대로 그리고 셀 컨트롤이 `col.options` 를 읽는다.
+ */
+function isIntactColumn(c: unknown): boolean {
+  if (!isPlainObject(c)) return false
+  return (
+    typeof c.key === 'string' &&
+    typeof c.label === 'string' &&
+    typeof c.blockType === 'string' &&
+    isOptText(c.placeholder) &&
+    isOptText(c.guide) &&
+    isOptText(c.variant) &&
+    (c.options === undefined || allStrings(c.options)) &&
+    (c.required === undefined || typeof c.required === 'boolean')
+  )
+}
+
+function repairColumn(c: Record<string, unknown>): BlockColumnDef {
+  return {
+    ...c,
+    key: asText(c.key),
+    label: asText(c.label),
+    blockType: (typeof c.blockType === 'string' ? c.blockType : 'text') as BlockColumnDef['blockType'],
+    placeholder: optText(c.placeholder),
+    guide: optText(c.guide),
+    variant: optText(c.variant) as BlockColumnDef['variant'],
+    ...(c.options !== undefined ? { options: asStrings(c.options) } : {}),
+    ...(c.required !== undefined ? { required: c.required === true } : {}),
+  } as BlockColumnDef
+}
+
+/**
+ * 이름표가 겹치면 그것으로 찾는 모든 조작이 두 개를 함께 잡는다 — 앞엣것을 두고 뒤엣것만 간다.
+ * `uid()` 가 아니라 **결정적 규칙**이라야 같은 입력에서 늘 같은 결과가 나온다.
+ */
+function dedupeNames(names: string[], fallback: (i: number) => string): string[] {
+  const used = new Set<string>()
+  return names.map((raw, i) => {
+    let name = raw
+    if (!name || used.has(name)) {
+      const base = name || fallback(i)
+      name = base
+      for (let n = 1; used.has(name); n += 1) name = `${base}-${n}`
+    }
+    used.add(name)
+    return name
+  })
+}
+
+function uniqueColumnKeys(columns: BlockColumnDef[]): BlockColumnDef[] {
+  const keys = dedupeNames(columns.map(c => c.key), i => `col-${i}`)
+  return columns.map((c, i) => (c.key === keys[i] ? c : { ...c, key: keys[i] }))
+}
+
+/** 행 부가 항목도 `value` 만이 아니라 라벨까지 — 편집 모드가 `label.trim()` 을 부른다. */
+function isIntactExtraField(f: unknown): boolean {
+  if (!isPlainObject(f)) return false
+  return (
+    typeof f.key === 'string' &&
+    typeof f.label === 'string' &&
+    typeof f.blockType === 'string' &&
+    isIntactCell(f.value)
+  )
+}
+
 /** 행에 붙는 스키마 밖 부가 값(FRT-76 링크·FRT-178 역할태그·FRT-145 행 항목)까지 본다. */
 function isIntactRow(r: Record<string, unknown>): boolean {
   if (!isFilledText(r.id) || !isPlainObject(r.cells)) return false
@@ -533,7 +599,7 @@ function isIntactRow(r: Record<string, unknown>): boolean {
   if (r.roleTags !== undefined && !allStrings(r.roleTags)) return false
   if (r.extraFields !== undefined) {
     if (!Array.isArray(r.extraFields)) return false
-    if (!r.extraFields.every(f => isPlainObject(f) && isIntactCell(f.value))) return false
+    if (!r.extraFields.every(isIntactExtraField)) return false
   }
   return true
 }
@@ -585,7 +651,9 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
     case 'repeatable-cell':
       return (
         Array.isArray(v.columns) &&
-        v.columns.every(c => isPlainObject(c) && typeof c.key === 'string') &&
+        v.columns.every(isIntactColumn) &&
+        // 열 하나씩 성해도 **key 가 겹치면** 둘이 같은 셀을 가리키고, 하나를 지우면 둘 다 사라진다.
+        new Set(v.columns.map(c => (c as Record<string, unknown>).key)).size === v.columns.length &&
         Array.isArray(v.rows) &&
         // 행 `id` 까지 물어야 한다 — 없으면 `repairRows` 를 건너뛴 채 렌더에 닿아
         // React key 가 겹치고 수정·삭제 핸들러가 엉뚱한 행을 잡는다.
@@ -618,15 +686,9 @@ function repairRows(x: unknown): BlockRow[] {
   // 충돌하면 뒤에 번호를 붙인다 — 같은 입력이면 늘 같은 id 라야 렌더마다 행이 리마운트되지 않는다.
   // ⚠️ 저장분에 **이미 중복된 id** 가 있을 수 있다 — 행 하나씩 보면 둘 다 성해 보이지만
   // 쌍으로는 깨져 있다. 앞엣것을 두고 뒤엣것을 갈아 준다(앞뒤가 뒤집히면 안 되므로 순서대로).
-  const used = new Set<string>()
+  const ids = dedupeNames(rows.map(r => asText(r.id)), i => `row-${i}`)
   return rows.map((r, i) => {
-    let id = asText(r.id)
-    if (!id || used.has(id)) {
-      const base = id || `row-${i}`
-      id = base
-      for (let n = 1; used.has(id); n += 1) id = `${base}-${n}`
-    }
-    used.add(id)
+    const id = ids[i]
     const cells: Record<string, CellValue> = {}
     if (isPlainObject(r.cells)) {
       for (const [k, c] of Object.entries(r.cells)) cells[k] = repairCell(c)
@@ -642,7 +704,13 @@ function repairRows(x: unknown): BlockRow[] {
         ? {
             extraFields: (Array.isArray(r.extraFields) ? r.extraFields : [])
               .filter(isPlainObject)
-              .map(f => ({ ...f, value: repairCell(f.value) })),
+              .map(f => ({
+                ...f,
+                key: asText(f.key),
+                label: asText(f.label),
+                blockType: typeof f.blockType === 'string' ? f.blockType : 'text',
+                value: repairCell(f.value),
+              })),
           }
         : {}),
     }
@@ -776,9 +844,10 @@ export function normalizeBlockValue(
         type: 'repeatable-cell',
         // 열 정의도 사용자가 친 값이 아니라 **템플릿이 주는 정의**다 — `options` 와 같은 근거로
         // 결측이면 되살린다. 열이 비면 표는 그릴 칸조차 없다. 배열이면 빈 배열도 존중한다.
-        // 열은 `key` 로 셀을 찾으므로 자리에 뜻이 없다 — 깨진 열은 걸러 낸다(표와 다른 점).
+        // 열은 `key` 로 셀을 찾으므로 자리에 뜻이 없다 — 객체가 아닌 열은 걸러 내고(표와 다른 점),
+        // 나머지는 필드 단위로 맞춘 뒤 겹친 key 를 결정적으로 갈아 준다.
         columns: Array.isArray(v.columns)
-          ? (v.columns.filter(c => isPlainObject(c) && typeof c.key === 'string') as BlockColumnDef[])
+          ? uniqueColumnKeys(v.columns.filter(isPlainObject).map(repairColumn))
           : (opts?.columns ?? []),
         rows: repairRows(v.rows),
       } as BlockValue
@@ -818,11 +887,26 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
       columns: defs?.columns,
     })
   }
-  const children = block.children?.map(c => normalizeBlock(c, defs))
-  const childrenChanged =
-    !!block.children && children!.some((c, i) => c !== block.children![i])
-  if (value === block.value && !childrenChanged) return block
-  return { ...block, value, ...(children ? { children } : {}) }
+  // ⚠️ 자식 목록도 저장 JSONB 다 — 배열이 아니면 `.map` 이 그 자리에서 죽고, 원소가 null 이면
+  // 재귀가 첫 프로퍼티 접근에서 죽는다. 배열 보정은 `normalizeBlocks` 와 같은 기준으로.
+  const children = block.children === undefined ? undefined : normalizeBlocks(
+    Array.isArray(block.children) ? block.children : [],
+    defs ? () => defs : undefined,
+  )
+  const childrenChanged = children !== block.children
+
+  // ⚠️ `block.options` 는 값이 아니라 **블록 자신의 필드**인데 역시 저장분에서 온다.
+  // `SingleSelectBlock` 과 `FileBlock` 이 이걸 직접 읽으므로(`.map`·`.includes`) 여기서 맞춘다.
+  const optionsBroken = block.options !== undefined && !allStrings(block.options)
+  const options = optionsBroken ? asStrings(block.options) : block.options
+
+  if (value === block.value && !childrenChanged && !optionsBroken) return block
+  return {
+    ...block,
+    value,
+    ...(optionsBroken ? { options } : {}),
+    ...(children ? { children } : {}),
+  }
 }
 
 export interface BlockDefs {
@@ -852,9 +936,14 @@ export function normalizeBlockForRender(block: Block): Block {
 
 export function normalizeBlocks(blocks: Block[], defsOf?: (block: Block) => BlockDefs | undefined): Block[] {
   if (!Array.isArray(blocks)) return []
-  const out = blocks
-    .filter(b => !!b && typeof b === 'object')
-    .map(b => normalizeBlock(b, defsOf?.(b)))
+  const kept = blocks.filter(b => !!b && typeof b === 'object')
+  // ⚠️ 블록 `id` 도 이름표다 — `BlockList` 의 수정·삭제가 id 로 블록을 찾으므로 겹치면 둘이
+  // 함께 바뀌고 함께 지워진다(React key·드래그 식별자도 모호해진다). 행·열과 같은 규칙으로 간다.
+  const ids = dedupeNames(kept.map(b => asText(b.id)), i => `blk-${i}`)
+  const out = kept.map((b, i) => {
+    const normalized = normalizeBlock(b, defsOf?.(b))
+    return normalized.id === ids[i] ? normalized : { ...normalized, id: ids[i] }
+  })
   return out.length === blocks.length && out.every((b, i) => b === blocks[i]) ? blocks : out
 }
 
