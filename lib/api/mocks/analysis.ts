@@ -711,6 +711,12 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
             reason: "상황과 같은 문장에서 파생돼 별도 근거로 보기 어렵습니다.",
             claimedQuote: "3주차부터 난이도가 급격히 올라 이탈이 몰렸습니다.",
           },
+          {
+            slot: "L",
+            label: "배움",
+            reason: "이 활동에 대한 회고가 원문에 따로 적혀 있지 않습니다.",
+            claimedQuote: "",
+          },
         ],
         // 슬롯 간 인용 중복도가 60% 를 넘었다 — 새로 쓴 게 아니라 입력을 재배치한 수준이라는 신호.
         restructuringOnly: true,
@@ -747,6 +753,84 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
         ],
         priorityFixes: ["'왜 문제였는지'와 '내가 맡은 일'을 다른 문장으로 나눠보세요."],
         derivedFieldNotes: ["배움(L) 삭제: 원문에 회고가 명시되지 않았습니다."],
+      },
+    },
+    {
+      // 어학 기록. 행동(18회 발표)과 결과(사흘→두 시간)가 원문에 있어 폐기 대상이 아니다 —
+      // 빠진 것은 출발점(S·T)뿐이라 수상 항목과 같은 모양의 C 등급으로 만들어진다.
+      title: "논문 독해 습관으로 한 편 읽는 시간 사흘 → 두 시간",
+      headline: "",
+      situation: "",
+      task: "",
+      action:
+        "학회 스터디에서 5학기 동안 매주 논문 한 편을 읽고 돌아가며 발표했고, 그중 18회를 직접 맡았습니다. 매일 초록 하나를 읽고 세 문장으로 요약하는 습관을 2년간 이어갔습니다.",
+      result:
+        "처음에는 한 편을 읽는 데 사흘이 걸렸지만 마지막 학기에는 초록과 그림만으로 핵심을 잡아 두 시간이면 정리할 수 있게 됐습니다.",
+      learning: "",
+      sourceQuotes: {
+        situation: "",
+        task: "",
+        action: "학회 스터디에서 5학기 동안 매주 논문 한 편을 읽고 돌아가며 발표했습니다. 제가 맡은 발표는 총 18회였습니다.",
+        result:
+          "처음에는 한 편을 읽는 데 사흘이 걸렸는데, 마지막 학기에는 초록과 그림만으로 핵심을 잡고 두 시간이면 정리할 수 있게 됐습니다.",
+        learning: "",
+      },
+      competencyEvidence: [
+        {
+          competency: "자기주도 학습",
+          why: "누가 시키지 않은 습관을 2년간 유지해 읽는 속도를 실제로 바꿨습니다.",
+        },
+      ],
+      evidenceStatus: {
+        supportedSlots: ["A", "R"],
+        unsupportedSlots: [
+          {
+            slot: "S",
+            label: "상황",
+            reason: "원문에서 '어떤 문제 상황이었는지'로 볼 문장을 찾지 못했습니다.",
+            claimedQuote: "",
+          },
+          {
+            slot: "T",
+            label: "과제",
+            reason: "원문에서 '내가 맡은 과제'로 볼 문장을 찾지 못했습니다.",
+            claimedQuote: "",
+          },
+          {
+            slot: "L",
+            label: "배움",
+            reason: "이 습관에 대한 회고가 원문에 따로 적혀 있지 않습니다.",
+            claimedQuote: "",
+          },
+        ],
+        restructuringOnly: false,
+        restructuringDetail: [],
+      },
+      qualityWarning: "",
+      quality: {
+        grade: "C",
+        score: "5/10",
+        verdict: "꾸준함이 수치로 남아 있어요. 왜 시작했는지만 채우면 이력서에 쓸 수 있어요.",
+        criteria: [
+          {
+            key: "result_quantified",
+            label: "결과 수치화",
+            passed: true,
+            detail: "사흘 → 두 시간, 발표 18회 수치 제시",
+            coaching: "",
+          },
+          {
+            key: "context_concise",
+            label: "Context 명확성",
+            passed: false,
+            detail: "이 습관을 시작하게 된 문제 상황이 서술되지 않음",
+            coaching: "번역기로는 왜 부족했는지 한 문장만 앞에 붙여보세요.",
+          },
+        ],
+        priorityFixes: ["번역기로는 왜 부족했는지 한 문장만 앞에 붙여보세요."],
+        derivedFieldNotes: [
+          "한 줄 성취문(headline) 삭제: 출발점이 비어 한 줄로 압축할 근거가 부족합니다.",
+        ],
       },
     },
     {
@@ -838,7 +922,7 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
     generated: true,
     reason: "",
     experienceBlockCount: 6,
-    starEligibleBlockCount: 4,
+    starEligibleBlockCount: 5,
     coaching: [],
     rejectedEntries: [
       {
@@ -848,28 +932,20 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
         coaching:
           "이 자격증을 실제로 써서 해결한 일이 있다면 그 사례를 따로 적어보세요. STAR 로 만들 수 있어요.",
       },
-      {
-        title: "영어 — 논문 독해와 실무 소통",
-        reason:
-          "점수와 활용 영역은 있지만, 그 능력으로 무엇을 해서 무엇이 달라졌는지에 해당하는 문장이 없습니다.",
-        unsupportedSlots: ["S", "T", "R"],
-        coaching:
-          "영어로 읽은 논문을 팀에 공유했거나 외국인과 협업한 장면이 있다면 그 한 건만 따로 적어보세요.",
-      },
     ],
     qualityReview: {
-      evaluated: 4,
-      gradeDistribution: { A: 2, B: 1, C: 1 },
+      evaluated: 5,
+      gradeDistribution: { A: 2, B: 1, C: 2 },
       portfolioVerdict:
-        "네 건 중 두 건은 그대로 써도 좋아요. 나머지 두 건도 버릴 게 아니라, 하나는 상황과 과제를 나누고 하나는 출발점을 채우면 같은 수준이 됩니다.",
+        "다섯 건 중 두 건은 그대로 써도 좋아요. 나머지도 버릴 게 아니라, 하나는 상황과 과제를 나누고 두 건은 출발점만 채우면 같은 수준이 됩니다.",
       // ⚠️ 이 수치는 위 resumeStarFormat[].quality.criteria 와 반드시 일치해야 한다.
       // 화면은 이 문장을 그대로 그리는데(analysis/comprehensive/[analysisId]/page.tsx), 사용자는
       // 같은 화면에서 항목별 기준을 펼쳐 볼 수 있다 — 어긋나면 데모가 스스로를 반박한다.
       // (실제로 '슬롯 분리성 2건 미달'로 적혀 있었으나 미달은 1건뿐이었다.)
       // seed.test.ts 의 "topFixes 수치가 항목별 기준과 일치한다" 가 이 정합성을 고정한다.
       topFixes: [
-        "Context 명확성 — 4건 중 1건에서 미달",
-        "슬롯 분리성 — 4건 중 1건에서 미달",
+        "Context 명확성 — 5건 중 2건에서 미달",
+        "슬롯 분리성 — 5건 중 1건에서 미달",
       ],
     },
   },
@@ -1003,15 +1079,14 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
         id: "cw-3",
         category: "활동_깊이",
         severity: "major",
-        title: "어학·자격증이 보유 사실에서 멈춤",
-        // ⚠️ 두 항목의 폐기 사유가 다르다(자격증=A·R 없음, 어학=S·T·R 없음). 뭉뚱그리면
-        // 어학에 이미 있는 '한 일'을 또 쓰라고 시키게 된다 — 시드에는 학습 습관·주요 경험이 있다.
+        title: "자격증이 보유 사실에서 멈춤",
+        // ⚠️ 어학은 여기서 빼야 한다. 행동(18회 발표)과 결과(사흘→두 시간)가 원문에 있어
+        // STAR 가 만들어졌다 — 함께 묶으면 이미 적은 근거를 또 쓰라고 시키게 된다.
         diagnosis:
-          "SQLD는 취득 사실만 있어 그 자격으로 무엇을 했는지가 없고, 영어는 반대로 한 일은 있는데 '어떤 문제에서 출발해 무엇이 달라졌는지'가 없습니다. 사유는 다르지만 둘 다 STAR 생성 단계에서 폐기됐습니다.",
-        evidence: "폐기 2건의 사유가 갈린다 — SQLD는 A·R 부재, 영어는 S·T·R 부재",
+          "SQLD는 취득 사실과 활용 계획만 있고 그 자격으로 무엇을 해서 무엇이 달라졌는지가 없습니다. 그래서 STAR 생성 단계에서 유일하게 폐기된 항목입니다.",
+        evidence: "폐기 1건(SQLD)의 사유가 A·R 근거 부재",
         impact: "이력서에서 자격 줄로만 남아 다른 경험만큼의 설득력을 갖지 못함",
-        priorityAction:
-          "영어는 이미 적은 논문 읽기 습관이 무엇을 바꿨는지(읽는 속도·발표 편수 등)를 한 줄 덧붙이고, SQLD는 그 자격을 실제로 쓴 일을 한 건 적으세요.",
+        priorityAction: "이 자격으로 실제 해결한 일을 한 건 적으세요 — 스터디 실습 문제를 직접 만든 일이 후보입니다.",
       },
       {
         id: "cw-4",
@@ -1034,9 +1109,8 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       },
       {
         item: "'영어 — 논문 독해와 실무 소통' 항목",
-        issue: "학습 습관과 주요 경험은 적혀 있는데, 그래서 무엇이 달라졌는지가 없음",
-        improvementHint:
-          "'번역기 없이 초록을 읽는 시간이 절반으로 줄었다'처럼 전후 변화를 한 줄 붙이면 근거가 됨",
+        issue: "행동과 결과는 또렷한데 왜 시작했는지가 없어 STAR 의 출발점이 빔",
+        improvementHint: "'번역기를 거치면 뉘앙스가 사라져 원문으로 읽어야 했다'처럼 계기를 한 줄 앞에 붙이면 완성됨",
       },
       {
         item: "'SQL 개발자 (SQLD)' 항목",
@@ -1239,7 +1313,7 @@ export const mockKeywordResult: KeywordAnalysisResult = {
   ],
   selectionCriteria: {
     summary:
-      "선택된 키워드('문제 해결', '자기주도성')와 관련된 행동·성과·역할 서술이 포함된 경험을 우선 선별했습니다. 근거가 얇은 2개 경험은 제외했습니다.",
+      "선택된 키워드('문제 해결', '자기주도성')와 관련된 행동·성과·역할 서술이 포함된 경험을 우선 선별했습니다. 아래 키워드별 표에는 근거가 또렷한 6건만 실었고, 흐름을 잇는 데만 쓰인 경험은 표 대신 아래 서사에 등장합니다.",
     criteria: [
       "단순 참여보다 구체적 행동과 결과가 있는 경험에 높은 가중치 부여",
       "원인 규명과 검증이 함께 서술된 경험 우선",
@@ -1395,7 +1469,7 @@ export const mockKeywordResult: KeywordAnalysisResult = {
         },
         {
           careerTitle: "서울 심야 이동 인터랙티브 데이터 시각화",
-          organization: "팀 작업 (3인) · 교내 전시",
+          organization: "팀 작업 (2~5명) · 교내 전시",
           period: "2026.03 - 2026.05",
           relevance: "high",
           relevanceSummary: "아쉬움을 스스로 과제로 삼아 시작하고 전시까지 완성한 사례",
@@ -1443,9 +1517,10 @@ export const mockKeywordResult: KeywordAnalysisResult = {
       timelineNote: null,
       chronologicalSequence: [
         { order: 1, experience: "데이터 분석 학회 DataWave 정회원", period: "2023-03", isDated: true },
-        { order: 2, experience: "DataWave 스터디장 · 학회장", period: "2024-03", isDated: true },
+        { order: 2, experience: "DataWave 스터디장", period: "2024-03", isDated: true },
         { order: 3, experience: "미국 워싱턴대학교 교환학생", period: "2024-08", isDated: true },
-        { order: 4, experience: "서울 심야 이동 인터랙티브 데이터 시각화", period: "2026-03", isDated: true },
+        { order: 4, experience: "DataWave 학회장", period: "2025-03", isDated: true },
+        { order: 5, experience: "서울 심야 이동 인터랙티브 데이터 시각화", period: "2026-03", isDated: true },
       ],
       narrative:
         "처음에는 스터디를 따라가는 것도 벅찼다. 이듬해 스터디장을 맡으면서 관점이 바뀌었다 — 사람들이 어디서 멈추는지 보이기 시작했고, 3주차에 이탈이 몰린다는 것을 확인한 뒤 과제를 필수와 선택으로 나눴다. 학회장이 된 해에는 모집이 안 되는 이유를 추측하지 않고 설문 62건으로 확인한 다음, 홍보가 아니라 내용을 고쳤다. 같은 태도가 마지막에는 시각화 작업으로 이어졌다. 공모전에서 다룬 데이터가 표 안에만 남는 게 아쉬워 팀을 꾸려 시각화를 시작했고, 데이터 처리와 프론트엔드 구현을 맡아 읽히지 않는 화면을 스스로 발견해 구조를 갈아엎은 뒤 전시까지 완성했다.",

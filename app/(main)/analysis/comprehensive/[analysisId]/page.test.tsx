@@ -308,9 +308,10 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
     getResult.mockResolvedValue(result({ hasResultBody: true }));
     render(<ComprehensiveDetailPage />);
 
+    // 같은 사유를 가진 항목이 둘 이상이라 여러 번 그려진다 — 사유가 보이는지만 본다.
     expect(
-      await screen.findByText("원문에서 '내가 맡은 과제'로 볼 문장을 찾지 못했습니다."),
-    ).toBeInTheDocument();
+      (await screen.findAllByText("원문에서 '내가 맡은 과제'로 볼 문장을 찾지 못했습니다.")).length,
+    ).toBeGreaterThan(0);
   });
 
   it("포트폴리오 전체 총평을 한 번 보여준다", async () => {
@@ -319,7 +320,7 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
 
     expect(
       await screen.findByText(
-        /네 건 중 두 건은 그대로 써도 좋아요/,
+        /다섯 건 중 두 건은 그대로 써도 좋아요/,
       ),
     ).toBeInTheDocument();
   });
