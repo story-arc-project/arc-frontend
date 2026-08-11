@@ -7,6 +7,7 @@ import type {
   CellValue,
   FileCellValue,
   ProjectLinkConfig,
+  SectionCategory,
 } from '@/types/archive'
 
 let _counter = 0
@@ -65,6 +66,17 @@ const KNOWN_BLOCK_TYPES: Record<BlockType, true> = {
   table: true,
   group: true,
 }
+
+/** 카드 배분이 `buckets[b.category ?? 'detail']` 로 찾으므로, 모르는 값이면 그 자리에서 죽는다. */
+const KNOWN_SECTION_CATEGORIES: Record<SectionCategory, true> = {
+  basic: true,
+  detail: true,
+  repeat: true,
+  evidence: true,
+}
+
+const isKnownCategory = (c: unknown): c is SectionCategory =>
+  typeof c === 'string' && Object.prototype.hasOwnProperty.call(KNOWN_SECTION_CATEGORIES, c)
 
 export function isKnownBlockType(t: unknown): t is BlockType {
   return typeof t === 'string' && Object.prototype.hasOwnProperty.call(KNOWN_BLOCK_TYPES, t)
@@ -972,6 +984,24 @@ export function normalizeBlockValue(
   }
 }
 
+/**
+ * 조건부 노출 조건을 살린다.
+ *
+ * ⚠️ **살릴 게 없는 연산자는 빈 배열로 두지 말고 뺀다.** `isConditionMet` 은 `equals` 가
+ * 있으면 그걸로만 판정하므로 `[]` 는 "조건 없음"이 아니라 **"아무것도 안 맞음"**이 되어
+ * 그 필드가 영원히 숨는다 — 값이 있어도 화면에서 사라진다.
+ */
+function repairCondition(cond: Record<string, unknown> | undefined): Block['visibleWhen'] {
+  if (!isPlainObject(cond) || typeof cond.key !== 'string') return undefined
+  const equals = cond.equals !== undefined ? asStrings(cond.equals) : undefined
+  const startsWith = cond.startsWith !== undefined ? asStrings(cond.startsWith) : undefined
+  return {
+    key: cond.key,
+    ...(equals?.length ? { equals } : {}),
+    ...(startsWith?.length ? { startsWith } : {}),
+  }
+}
+
 /** 블록 하나의 값을 보정한다. 값이 온전하면 **원본 블록 참조를 그대로** 돌려준다. */
 export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
   // 블록이 아는 정의를 함께 넘긴다 — 값에서 사라진 선택지·열을 되살릴 근거다.
@@ -1021,13 +1051,22 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
       (cond.equals !== undefined && !allStrings(cond.equals)) ||
       (cond.startsWith !== undefined && !allStrings(cond.startsWith)))
 
+  const categoryBroken = block.category !== undefined && !isKnownCategory(block.category)
+
   const stringsBroken =
     typeof block.label !== 'string' ||
     !isOptText(block.placeholder) ||
     !isOptText(block.guide) ||
     !isOptText(block.key)
 
-  if (value === block.value && !childrenChanged && !optionsBroken && !stringsBroken && !conditionBroken)
+  if (
+    value === block.value &&
+    !childrenChanged &&
+    !optionsBroken &&
+    !stringsBroken &&
+    !conditionBroken &&
+    !categoryBroken
+  )
     return block
   return {
     ...block,
@@ -1043,17 +1082,9 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
       : {}),
     ...(children ? { children } : {}),
     // 조건이 깨졌으면 **버린다** — 지어낸 조건으로 필드를 숨기면 값이 화면에서 사라진다.
-    ...(conditionBroken
-      ? {
-          visibleWhen: isPlainObject(cond) && typeof cond.key === 'string'
-            ? {
-                key: cond.key,
-                ...(cond.equals !== undefined ? { equals: asStrings(cond.equals) } : {}),
-                ...(cond.startsWith !== undefined ? { startsWith: asStrings(cond.startsWith) } : {}),
-              }
-            : undefined,
-        }
-      : {}),
+    ...(conditionBroken ? { visibleWhen: repairCondition(cond) } : {}),
+    // 모르는 `category` 는 뺀다 — 그래야 소비처의 기본값(`?? 'detail'`)이 다시 산다.
+    ...(categoryBroken ? { category: undefined } : {}),
   }
 }
 

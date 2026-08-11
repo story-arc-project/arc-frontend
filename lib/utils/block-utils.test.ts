@@ -1019,6 +1019,33 @@ describe("normalizeBlock/Blocks — 블록 자신의 필드 (FRT-200)", () => {
     expect(cond === undefined || Array.isArray(cond.equals) || cond.equals === undefined).toBe(true)
   })
 
+  /**
+   * ⚠️ 빈 배열은 "조건 없음"이 아니라 **"아무것도 안 맞음"**이다. `isConditionMet` 은
+   * `equals` 가 있으면 그걸로만 판정하므로, `[]` 로 두면 그 필드가 **영원히 숨는다**.
+   */
+  it("조건의 연산자가 살릴 게 없으면 빈 배열로 두지 않고 뺀다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      visibleWhen: { key: "core.경험명", equals: { broken: true } } as unknown as Block["visibleWhen"],
+      value: { type: "text", text: "" },
+    })
+    expect(normalized.visibleWhen?.equals).toBeUndefined()
+  })
+
+  /** `computeFormCards` 는 `buckets[b.category ?? "detail"]` 로 찾는다 — 모르는 값이면 죽는다. */
+  it("category 가 이 코드가 아는 값이 아니면 뺀다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      category: "bogus" as unknown as Block["category"],
+      value: { type: "text", text: "" },
+    })
+    expect(normalized.category).toBeUndefined()
+  })
+
   it("children 이 배열이 아니거나 원소가 깨져 있어도 죽지 않는다", () => {
     const group = {
       id: "g1",
