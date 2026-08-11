@@ -595,7 +595,9 @@ function isIntactColumn(c: unknown): boolean {
 function repairColumn(c: Record<string, unknown>): BlockColumnDef {
   return {
     ...c,
-    key: asText(c.key),
+    // ⚠️ 숫자 key 는 **글자로 살린다** — `5` 와 `"5"` 는 JSON 에서 같은 셀(`cells["5"]`)을
+    // 가리키므로, 버리면 그 셀의 주인이 뒤 열로 넘어간다(앞엣것이 이름을 지킨다는 규칙과 어긋남).
+    key: asIdText(c.key),
     label: asText(c.label),
     blockType: (typeof c.blockType === 'string' ? c.blockType : 'text') as BlockColumnDef['blockType'],
     placeholder: optText(c.placeholder),

@@ -852,6 +852,24 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
    * ⚠️ 열 `key` 를 갈면 **그 열이 가리키던 셀도 같이 옮겨야** 한다. 이름표만 바꾸면 값은
    * 옛 이름 아래 남고 렌더러는 새 이름으로 찾아 — 저장된 값이 화면에서 사라진다.
    */
+  /**
+   * ⚠️ 열 key `5` 와 `"5"` 는 JSON 에서 **같은 셀**(`cells["5"]`)을 가리킨다. 숫자 key 를
+   * 버리면 그 셀의 주인이 **뒤 열**로 넘어간다 — 앞엣것이 이름을 지킨다는 규칙과 어긋난다.
+   */
+  it("숫자 열 key 도 글자로 살려 앞 열이 셀을 지킨다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [
+        { key: 5, label: "앞 열", blockType: "text" },
+        { key: "5", label: "뒤 열", blockType: "text" },
+      ],
+      rows: [{ id: "r1", cells: { "5": "저장된 값" } }],
+    }) as unknown as { columns: { key: string }[]; rows: { cells: Record<string, unknown> }[] }
+    expect(out.columns[0].key).toBe("5")
+    expect(out.columns[1].key).not.toBe("5")
+    expect(out.rows[0].cells["5"]).toBe("저장된 값")
+  })
+
   /** 만들어 낸 열 key 가 **행에 이미 있는 셀 이름**과 겹치면 남의 값을 그 열이 그린다. */
   it("만들어 낸 열 key 는 행에 이미 있는 셀 이름을 피한다", () => {
     const out = normalizeBlockValue("repeatable-cell", {
