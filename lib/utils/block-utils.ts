@@ -44,6 +44,32 @@ function emptyValue(type: Exclude<BlockType, 'group'>, opts?: { options?: string
   }
 }
 
+/**
+ * 이 코드가 아는 블록 타입인가.
+ *
+ * ⚠️ **목록을 `Record<BlockType, true>` 로 적는 이유**: 새 타입이 union 에 추가되면 컴파일러가
+ * 여기 누락을 잡는다. 목록이 조용히 뒤처지면 새 타입 값이 "모르는 타입"으로 분류돼
+ * `isBlockDiscardable` 에서 버려진다 — 즉 새 스키마가 쓴 값을 구 프론트가 지운다.
+ */
+const KNOWN_BLOCK_TYPES: Record<BlockType, true> = {
+  text: true,
+  textarea: true,
+  checklist: true,
+  'single-select': true,
+  date: true,
+  period: true,
+  tags: true,
+  link: true,
+  file: true,
+  'repeatable-cell': true,
+  table: true,
+  group: true,
+}
+
+function isKnownBlockType(t: unknown): t is BlockType {
+  return typeof t === 'string' && Object.prototype.hasOwnProperty.call(KNOWN_BLOCK_TYPES, t)
+}
+
 // ─── Block factories ────────────────────────────────────────────
 
 export function createBlock(
@@ -533,10 +559,14 @@ function repairRows(x: unknown): BlockRow[] {
 export function normalizeBlockValue(
   fallbackType: BlockType,
   value: unknown,
-  opts?: { options?: string[] },
+  opts?: { options?: string[]; columns?: BlockColumnDef[] },
 ): BlockValue {
-  const empty = (): BlockValue =>
-    fallbackType === 'group' ? { type: 'group' } : emptyValue(fallbackType, opts)
+  const empty = (): BlockValue => {
+    if (fallbackType === 'group') return { type: 'group' }
+    // 런타임 값은 타입 선언을 지킬 의무가 없다 — 모르는 타입이면 `emptyValue` 는 undefined 를 준다.
+    if (!isKnownBlockType(fallbackType)) return { type: 'text', text: '' }
+    return emptyValue(fallbackType, opts)
+  }
 
   /**
    * 선택지는 사용자가 고른 값이 아니라 **블록이 소유한 목록**이다. 결측이면 블록이 아는
@@ -551,11 +581,28 @@ export function normalizeBlockValue(
   const optionsOf = (raw: unknown): string[] =>
     Array.isArray(raw) ? asStrings(raw) : (opts?.options ?? [])
 
-  if (!isPlainObject(value) || typeof value.type !== 'string') return empty()
-  if (isIntactBlockValue(value)) return value as unknown as BlockValue
+  if (!isPlainObject(value)) return empty()
 
-  const v = value
-  switch (v.type) {
+  /**
+   * 값이 든 `type` 이 깨졌거나 이 코드가 모르는 것이면 **블록이 선언한 타입**을 신호로 쓴다.
+   *
+   * ⚠️ 여기서 통째로 비우면 안 된다. `{start:'2023.01', end:'2023.12'}` 처럼 `type` 하나만 빠진
+   * 값에도 살릴 알맹이가 그대로 들어 있고, 애초에 그 값을 그리던 컨트롤도 `block.type` 으로
+   * 골라져 있었다. 비우면 **열었다 저장하는 것만으로 사용자 입력이 영구히 지워진다.**
+   */
+  const effective = isKnownBlockType(value.type)
+    ? value.type
+    : isKnownBlockType(fallbackType)
+      ? fallbackType
+      : undefined
+
+  // 값도 블록도 모르는 타입이면 복구할 근거가 없다 — 그래도 **지우지는 않는다**.
+  if (!effective) return value as unknown as BlockValue
+
+  if (effective === value.type && isIntactBlockValue(value)) return value as unknown as BlockValue
+
+  const v = effective === value.type ? value : { ...value, type: effective }
+  switch (effective) {
     case 'text':
     case 'textarea':
       return { ...v, type: v.type, text: asText(v.text) } as BlockValue
@@ -606,7 +653,11 @@ export function normalizeBlockValue(
       return {
         ...v,
         type: 'repeatable-cell',
-        columns: Array.isArray(v.columns) ? (v.columns as BlockColumnDef[]) : [],
+        // 열 정의도 사용자가 친 값이 아니라 **템플릿이 주는 정의**다 — `options` 와 같은 근거로
+        // 결측이면 되살린다. 열이 비면 표는 그릴 칸조차 없다. 배열이면 빈 배열도 존중한다.
+        columns: Array.isArray(v.columns)
+          ? (v.columns as BlockColumnDef[])
+          : (opts?.columns ?? []),
         rows: repairRows(v.rows),
       } as BlockValue
     case 'table':
@@ -668,6 +719,11 @@ export function hasResidualValue(block: Block): boolean {
  * 보면 실제 파일을 든 이관이 막힌다(`applyScopedMigrations` 는 계속 `isBlockEmpty` 를 쓴다).
  */
 export function isBlockDiscardable(block: Block): boolean {
+  const v = block.value as BlockValue | null | undefined
+  // ⚠️ **"그릴 게 없다"와 "버려도 된다"는 다른 질문이다.** 이 코드가 모르는 type(새 스키마가 쓴
+  // 값·구 프론트가 배포된 상태)은 `isBlockEmpty` 에선 비어 있지만, 버리면 저장 왕복에서 그 키가
+  // 통째로 사라진다 — 못 그린다는 이유로 남의 데이터를 지우는 셈이다.
+  if (v && typeof v.type === 'string' && !isKnownBlockType(v.type)) return false
   return isBlockEmpty(block) && !hasResidualValue(block)
 }
 

@@ -23,6 +23,7 @@ import {
   cellText,
   isFileCellValue,
   rowHasContent,
+  isBlockDiscardable,
   isBlockEmpty,
   normalizeBlock,
   normalizeBlockValue,
@@ -522,13 +523,40 @@ describe("normalizeBlockValue (FRT-200)", () => {
     expect(normalizeBlockValue("tags", "문자열이왔다")).toEqual({ type: "tags", tags: [] })
   })
 
-  it("type 이 없는 객체도 블록 타입 기준으로 복구한다", () => {
+  /**
+   * `type` 만 깨진 값은 **버릴 값이 아니다.** 블록이 선언한 타입이 곧 그 값을 그리던 컨트롤이라
+   * 복구 근거가 된다 — 여기서 빈 값으로 갈면 열었다 저장하는 것만으로 사용자 입력이 지워진다.
+   */
+  it("type 만 없고 알맹이는 멀쩡한 값은 블록 타입으로 되살린다 — 비우지 않는다", () => {
     expect(normalizeBlockValue("text", { text: "값은있는데 type 이 없다" })).toEqual({
       type: "text",
-      text: "",
+      text: "값은있는데 type 이 없다",
+    })
+    expect(normalizeBlockValue("period", { start: "2023.01", end: "2023.12" })).toEqual({
+      type: "period",
+      start: "2023.01",
+      end: "2023.12",
+      isCurrent: false,
     })
   })
 
+  /** 값이 든 `type` 을 이 코드가 모를 때도 같다 — 블록이 아는 타입으로 되살린다. */
+  it("이 코드가 모르는 type 이어도 블록 타입으로 되살려 알맹이를 지킨다", () => {
+    expect(normalizeBlockValue("text", { type: "brand-new-in-v3", text: "살아있는 값" })).toEqual({
+      type: "text",
+      text: "살아있는 값",
+    })
+  })
+
+  /**
+   * 값도 블록도 모르는 타입이면 복구할 근거가 없다. 그래도 **지우지는 않는다** —
+   * `emptyValue` 는 모르는 타입에서 `undefined` 를 주므로, 갈아치우면 값이 통째로 사라진다.
+   */
+  it("값도 블록도 모르는 타입이면 원본을 그대로 둔다 (undefined 를 만들지 않는다)", () => {
+    const alien = { type: "brand-new-in-v3", payload: "미래 스키마" }
+    const out = normalizeBlockValue("brand-new-in-v3" as BlockValue["type"], alien)
+    expect(out).toBe(alien)
+  })
   /** 살아 있는 값을 지우지 않는다 — 결측 필드만 채운다. */
   it("일부 필드만 깨졌으면 그 필드만 채우고 나머지는 보존한다", () => {
     expect(normalizeBlockValue("period", { type: "period", start: "2023.01", end: null })).toEqual({
@@ -605,6 +633,26 @@ describe("normalizeBlockValue (FRT-200)", () => {
 
   it("group 은 값이 없는 센티넬이라 그대로 둔다", () => {
     expect(normalizeBlockValue("group", null)).toEqual({ type: "group" })
+  })
+})
+
+/**
+ * "그릴 게 없다"와 "버려도 된다"는 **다른 질문이다** (FRT-200 리뷰). 모르는 타입은 그릴 수는
+ * 없지만, 버리면 저장 왕복에서 그 키가 통째로 사라진다 — 새 스키마가 쓴 값을 구 프론트가 지운다.
+ */
+describe("isBlockDiscardable — 모르는 타입 (FRT-200)", () => {
+  const blockWith = (value: unknown): Block =>
+    ({ id: "b1", type: "text", label: "칸", value }) as unknown as Block
+
+  it("이 코드가 모르는 type 의 값은 버리지 않는다", () => {
+    const block = blockWith({ type: "brand-new-in-v3", payload: "미래 스키마" })
+    expect(isBlockEmpty(block)).toBe(true) // 그릴 것은 없다
+    expect(isBlockDiscardable(block)).toBe(false) // 그렇다고 버려도 되는 건 아니다
+  })
+
+  it("아는 타입의 빈 값은 종전대로 버린다", () => {
+    expect(isBlockDiscardable(blockWith({ type: "text", text: "" }))).toBe(true)
+    expect(isBlockDiscardable(blockWith({ type: "text", text: "값" }))).toBe(false)
   })
 })
 

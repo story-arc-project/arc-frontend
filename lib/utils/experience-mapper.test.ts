@@ -3297,4 +3297,97 @@ describe("저장 왕복 — 손상된 값 정규화 (FRT-200)", () => {
     expect(custom).toBeDefined()
     expect(custom).toMatchObject({ entryType: "field", value: { type: "date", date: "" } })
   })
+
+  /**
+   * `type` 만 빠진 값은 **버릴 값이 아니다.** 블록이 선언한 타입이 복구 근거가 되는데,
+   * 빈 값으로 갈아치우면 열었다 저장하는 것만으로 살아 있던 입력이 영구히 사라진다.
+   */
+  it("type 만 빠진 템플릿 값도 알맹이가 살아남아 그대로 재저장된다", () => {
+    const periodKey = firstKeyOfType("period")
+    const exp = makeExperience({
+      content: makeV2Content({ [periodKey]: { start: "2023.01", end: "2023.12" } }),
+    })
+
+    const v2 = toExperienceV2(exp)
+    const block = v2.coreBlocks.find(b => b.key === periodKey)
+    expect(block?.value).toMatchObject({ type: "period", start: "2023.01", end: "2023.12" })
+
+    const content = toSavePayload(v2).content as { fields: Record<string, unknown> }
+    expect(content.fields[periodKey]).toMatchObject({ start: "2023.01", end: "2023.12" })
+  })
+
+  /**
+   * 열 정의(`columns`)도 선택지(`options`)와 같다 — 사용자가 친 값이 아니라 템플릿이 주는
+   * 정의다. 결측이라고 `[]` 로 두면 표에 그릴 칸이 하나도 없어 입력한 행을 볼 수도 고칠 수도 없다.
+   */
+  it("표 값이 열 정의를 잃어도 템플릿 열로 되살리고 행은 지킨다", () => {
+    const cellKey = firstKeyOfType("repeatable-cell")
+    const exp = makeExperience({
+      content: makeV2Content({
+        [cellKey]: {
+          type: "repeatable-cell",
+          columns: null,
+          rows: [{ id: "r1", cells: {} }],
+        } as unknown as BlockValue,
+      }),
+    })
+
+    const v2 = toExperienceV2(exp)
+    const block = [...v2.coreBlocks, ...v2.extensionBlocks]
+      .flatMap(b => [b, ...(b.children ?? [])])
+      .find(b => b.key === cellKey)
+    expect(block).toBeDefined()
+    const value = block!.value as unknown as { type: string; columns: unknown[]; rows: unknown[] }
+    expect(value.type).toBe("repeatable-cell")
+    expect(value.columns.length).toBeGreaterThan(0)
+    expect(value.rows).toHaveLength(1)
+  })
+
+  it("커스텀 필드도 type 만 빠지면 entry 의 타입으로 되살려 알맹이를 지킨다", () => {
+    const exp = makeExperience({
+      content: makeV2Content({}, [
+        {
+          key: "c1",
+          entryType: "field",
+          type: "period",
+          label: "직접 만든 기간",
+          value: { start: "2022.03", end: "" } as unknown as BlockValue,
+        },
+      ]),
+    })
+
+    const v2 = toExperienceV2(exp)
+    const block = v2.customBlocks.find(b => b.key === "c1")
+    expect(block?.value).toMatchObject({ type: "period", start: "2022.03" })
+  })
+})
+
+/**
+ * 새 스키마가 쓴 값을 **구 프론트가 지우면 안 된다.** orphan 안전망은 모르는 키를 보존하는데,
+ * 모르는 *타입*을 "비어 있음"으로 보고 버리면 그 안전망이 무력해진다 (FRT-200 리뷰).
+ */
+describe("toExperienceV2 — 이 코드가 모르는 타입 (FRT-200)", () => {
+  it("모르는 type 의 orphan 값을 버리지 않고 왕복에서 지킨다", () => {
+    const exp = makeExperience({
+      content: makeV2Content({
+        "future.신규칸": {
+          type: "brand-new-in-v3",
+          payload: "미래 스키마가 쓴 값",
+        } as unknown as BlockValue,
+      }),
+    })
+
+    const v2 = toExperienceV2(exp)
+    const block = [...v2.customBlocks, ...v2.extensionBlocks].find(b => b.key === "future.신규칸")
+    expect(block).toBeDefined()
+
+    const payload = toSavePayload(v2)
+    const content = payload.content as {
+      fields: Record<string, unknown>
+      custom: Array<{ key: string; value: unknown }>
+    }
+    const survived =
+      content.fields["future.신규칸"] ?? content.custom.find(c => c.key === "future.신규칸")?.value
+    expect(survived).toMatchObject({ type: "brand-new-in-v3", payload: "미래 스키마가 쓴 값" })
+  })
 })
