@@ -133,11 +133,15 @@ const TYPE_ACHIEVEMENT_KEY: Partial<Record<ExperienceTypeId, string>> = {
 };
 
 /**
- * 발행할 기여도. 코어(또는 role 동의어)가 먼저고, 비어 있을 때만 유형 전용 필드로 폴백한다 —
- * 사용자가 코어에 적은 값을 유형 필드가 덮어쓰면 안 된다.
+ * 발행할 기여도. **확정본 필드가 먼저**고, 비어 있을 때만 코어(또는 role 동의어)로 폴백한다.
+ *
+ * ⚠️ 순서가 반대면 안 된다 — `CORE_EXCLUDE.award` 가 코어 '내 역할/기여도' 를 뺐으므로
+ * 지금 화면에 그 칸은 없다. 개편 전 레코드에만 orphan 으로 보존돼 있어(experience-mapper),
+ * 코어를 먼저 보면 **사용자가 볼 수도 고칠 수도 없는 옛 값이 새로 채운 값을 이긴다.**
+ * `typePeriodOf` 가 기간에서 이미 같은 이유로 같은 순서를 쓴다.
  */
 function contributionOf(typeId: ExperienceTypeId, blocks: Block[]): string {
-  return textOf(pickValue(blocks, "내 역할/기여도")) || typeKeyText(TYPE_ROLE_KEY[typeId], blocks);
+  return typeKeyText(TYPE_ROLE_KEY[typeId], blocks) || textOf(pickValue(blocks, "내 역할/기여도"));
 }
 
 /** 유형 전용 안정키의 텍스트. 키가 없거나 값이 비면 빈 문자열. */
@@ -171,6 +175,10 @@ const COMPLEMENTARY_ACHIEVEMENT_LABELS = ["단체 활동 / 성과", "개인 활�
  * 보존된 경우에도 발행 시 성과가 소실되지 않는다.
  */
 function achievementText(typeId: ExperienceTypeId, blocks: Block[]): string {
+  // 확정본이 코어를 대체한 유형은 그 필드가 먼저다 — 코어는 개편 전 레코드의 orphan 뿐이라,
+  // 먼저 보면 화면에서 고칠 수 없는 옛 값이 새 값을 이긴다(contributionOf 와 같은 이유).
+  const typed = typeKeyText(TYPE_ACHIEVEMENT_KEY[typeId], blocks);
+  if (typed) return typed;
   const synonymLabels = equivalentLabels("핵심 성과").filter(
     (l) => !COMPLEMENTARY_ACHIEVEMENT_LABELS.includes(l),
   );
@@ -186,12 +194,6 @@ function achievementText(typeId: ExperienceTypeId, blocks: Block[]): string {
       const t = textOf(b.value);
       if (t) parts.push(t);
     }
-  }
-  // 동의어·상호보완이 모두 비었을 때만 유형 전용 필드로 폴백한다 — 사용자가 코어에 적은
-  // 값을 유형 필드가 덮어쓰지 않도록, 기간·역할과 같은 우선순위를 지킨다.
-  if (parts.length === 0) {
-    const typed = typeKeyText(TYPE_ACHIEVEMENT_KEY[typeId], blocks);
-    if (typed) parts.push(typed);
   }
   return parts.join("\n");
 }

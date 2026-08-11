@@ -533,7 +533,7 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       task:
         "판단이 갈리는 경계 사례를 유형별로 정리해 같은 문장이면 같은 레이블이 붙게 만들고, 개선 여부를 같은 표본으로 다시 확인해 수치로 증명하는 것",
       action:
-        "레이블러 4명의 불일치 사례 320건을 모아 6개 패턴으로 분류하고, 패턴마다 판단 기준과 예시 문장을 붙여 가이드라인을 개정했습니다. 의견이 갈린 '인용' 항목은 논쟁으로 정하지 않고 두 기준으로 각각 레이블링해 성능 차이를 잰 뒤 그 결과를 근거로 기준을 확정했습니다. 패턴별 판단 기준은 멘토와 사전에 합의한 뒤 적용했고 주 1회 진행 상황 공유에서 남은 이견을 좁혔으며, 개정본을 같은 표본에 다시 적용해 재측정했습니다.",
+        "레이블러 4명의 불일치 사례 320건을 모아 6개 패턴으로 분류하고, 패턴마다 판단 기준과 예시 문장을 붙여 가이드라인을 개정했습니다. 의견이 갈린 '인용' 항목은 논쟁으로 정하지 않고 두 기준으로 각각 레이블링해 성능 차이를 잰 뒤 그 결과를 근거로 기준을 확정했습니다. 실험 설계는 멘토와 사전에 합의한 뒤 실행했고, 개정 기간 내내 레이블러 4명의 일치도를 직접 관리했습니다. 개정본은 같은 표본에 다시 적용해 재측정했습니다.",
       result:
         "레이블러 간 일치도(Cohen's Kappa)가 0.61에서 0.78로 올랐고, 판단이 가장 많이 갈리던 풍자·인용 표현에서 불일치가 가장 크게 줄었습니다.",
       learning:
@@ -576,7 +576,7 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
             key: "action_dominant",
             label: "Action 비중",
             passed: true,
-            detail: "Action 이 전체의 40% (권장 40~50%)",
+            detail: "Action 이 전체의 41% (권장 40~50%)",
             coaching: "",
           },
           {
@@ -756,20 +756,21 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       },
     },
     {
-      // 어학 기록. 행동(18회 발표)과 결과(사흘→두 시간)가 원문에 있어 폐기 대상이 아니다 —
-      // 빠진 것은 출발점(S·T)뿐이라 수상 항목과 같은 모양의 C 등급으로 만들어진다.
+      // 어학 기록. S·T·A·R 이 모두 원문에 있다 — 동기(번역기로는 뉘앙스가 사라짐)가 상황과
+      // 과제를, 스터디 발표 18회가 행동을, 사흘→두 시간이 결과를 준다.
       title: "논문 독해 습관으로 한 편 읽는 시간 사흘 → 두 시간",
-      headline: "",
-      situation: "",
-      task: "",
+      headline: "번역기를 거치지 않기로 하고 2년간 습관을 쌓아 논문 독해 시간을 1/12 로 줄임",
+      situation:
+        "머신러닝 논문이 대부분 영어라 읽는 속도가 곧 공부 속도인데, 번역기를 거치면 뉘앙스가 사라지던 상황",
+      task: "번역기에 기대지 않고 원문으로 읽는 힘을 길러 논문을 읽는 속도 자체를 바꾸는 것",
       action:
         "학회 스터디에서 5학기 동안 매주 논문 한 편을 읽고 돌아가며 발표했고, 그중 18회를 직접 맡았습니다. 매일 초록 하나를 읽고 세 문장으로 요약하는 습관을 2년간 이어갔습니다.",
       result:
         "처음에는 한 편을 읽는 데 사흘이 걸렸지만 마지막 학기에는 초록과 그림만으로 핵심을 잡아 두 시간이면 정리할 수 있게 됐습니다.",
       learning: "",
       sourceQuotes: {
-        situation: "",
-        task: "",
+        situation: "머신러닝 논문이 대부분 영어라 읽는 속도가 곧 공부 속도였습니다.",
+        task: "번역기를 거치면 뉘앙스가 사라져서, 원문으로 읽는 힘을 기르는 걸 목표로 삼았습니다.",
         action: "학회 스터디에서 5학기 동안 매주 논문 한 편을 읽고 돌아가며 발표했습니다. 제가 맡은 발표는 총 18회였습니다.",
         result:
           "처음에는 한 편을 읽는 데 사흘이 걸렸는데, 마지막 학기에는 초록과 그림만으로 핵심을 잡고 두 시간이면 정리할 수 있게 됐습니다.",
@@ -782,20 +783,8 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
         },
       ],
       evidenceStatus: {
-        supportedSlots: ["A", "R"],
+        supportedSlots: ["S", "T", "A", "R"],
         unsupportedSlots: [
-          {
-            slot: "S",
-            label: "상황",
-            reason: "원문에서 '어떤 문제 상황이었는지'로 볼 문장을 찾지 못했습니다.",
-            claimedQuote: "",
-          },
-          {
-            slot: "T",
-            label: "과제",
-            reason: "원문에서 '내가 맡은 과제'로 볼 문장을 찾지 못했습니다.",
-            claimedQuote: "",
-          },
           {
             slot: "L",
             label: "배움",
@@ -808,9 +797,9 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       },
       qualityWarning: "",
       quality: {
-        grade: "C",
-        score: "5/10",
-        verdict: "꾸준함이 수치로 남아 있어요. 왜 시작했는지만 채우면 이력서에 쓸 수 있어요.",
+        grade: "B",
+        score: "8/10",
+        verdict: "혼자 쌓은 습관이 수치로 남아 있어요. 이력서의 자기주도성 항목에 그대로 쓸 수 있어요.",
         criteria: [
           {
             key: "result_quantified",
@@ -822,15 +811,13 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
           {
             key: "context_concise",
             label: "Context 명확성",
-            passed: false,
-            detail: "이 습관을 시작하게 된 문제 상황이 서술되지 않음",
-            coaching: "번역기로는 왜 부족했는지 한 문장만 앞에 붙여보세요.",
+            passed: true,
+            detail: "번역기의 한계에서 출발한 계기가 한 문장으로 제시됨",
+            coaching: "",
           },
         ],
-        priorityFixes: ["번역기로는 왜 부족했는지 한 문장만 앞에 붙여보세요."],
-        derivedFieldNotes: [
-          "한 줄 성취문(headline) 삭제: 출발점이 비어 한 줄로 압축할 근거가 부족합니다.",
-        ],
+        priorityFixes: [],
+        derivedFieldNotes: ["배움(L) 삭제: 이 습관에 대한 회고가 원문에 명시되지 않았습니다."],
       },
     },
     {
@@ -935,7 +922,7 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
     ],
     qualityReview: {
       evaluated: 5,
-      gradeDistribution: { A: 2, B: 1, C: 2 },
+      gradeDistribution: { A: 2, B: 2, C: 1 },
       portfolioVerdict:
         "다섯 건 중 두 건은 그대로 써도 좋아요. 나머지도 버릴 게 아니라, 하나는 상황과 과제를 나누고 두 건은 출발점만 채우면 같은 수준이 됩니다.",
       // ⚠️ 이 수치는 위 resumeStarFormat[].quality.criteria 와 반드시 일치해야 한다.
@@ -944,7 +931,7 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       // (실제로 '슬롯 분리성 2건 미달'로 적혀 있었으나 미달은 1건뿐이었다.)
       // seed.test.ts 의 "topFixes 수치가 항목별 기준과 일치한다" 가 이 정합성을 고정한다.
       topFixes: [
-        "Context 명확성 — 5건 중 2건에서 미달",
+        "Context 명확성 — 5건 중 1건에서 미달",
         "슬롯 분리성 — 5건 중 1건에서 미달",
       ],
     },
@@ -1582,7 +1569,7 @@ export const mockKeywordResult: KeywordAnalysisResult = {
   improvementGuide: {
     overallDirection: {
       currentProfileSummary:
-        "문제 해결은 원인-조치-검증이 모두 갖춰진 high 근거가 3건으로 충분합니다. 반면 자기주도성은 학회 안에서의 사례에 몰려 있어 맥락이 좁습니다.",
+        "문제 해결은 원인-조치-검증이 모두 갖춰진 high 근거가 3건으로 충분합니다. 자기주도성도 학회·창작물·어학 학습으로 맥락이 갈려 있는데, 셋 다 교내이거나 혼자 한 일이라 남이 검증한 흔적이 없습니다.",
       shortTerm:
         "이미 있는 사례에 '그 뒤에 무엇이 달라졌는지'를 한 줄씩 붙여 문제 해결 근거를 결과까지 연결하세요.",
       midTerm:
@@ -1615,9 +1602,9 @@ export const mockKeywordResult: KeywordAnalysisResult = {
     ],
     experienceExpansion: [
       {
-        gapDescription: "학회 밖에서 스스로 시작한 사례 부족",
+        gapDescription: "스스로 시작한 일은 있으나 교외에서 검증받은 사례가 없음",
         suggestedExperienceType: "외부 커뮤니티 활동 / 오픈 프로젝트",
-        whyHelpful: "주도성이 특정 조직의 역할 때문이 아니라 성향임을 보여줌",
+        whyHelpful: "이미 있는 주도성 근거에 남이 확인해 줬다는 축을 더함",
         examples: ["가짜연구소 스터디 개설", "공공데이터 분석 결과 공개 기고"],
         priority: "높음",
       },

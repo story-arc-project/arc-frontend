@@ -447,7 +447,7 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
     expect(experienceToPost(exp).achievement).toBe("심야 노선 3개 구간 제안");
   });
 
-  it("성과 동의어에 값이 있으면 그쪽이 이긴다", () => {
+  it("개편 전 레코드의 코어 성과가 남아 있어도 확정본 필드가 이긴다", () => {
     const exp = makeExp({
       type: "award",
       content: {
@@ -462,10 +462,10 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
         },
       } as unknown as Experience["content"],
     });
-    expect(experienceToPost(exp).achievement).toBe("코어 성과");
+    expect(experienceToPost(exp).achievement).toBe("심야 노선 3개 구간 제안");
   });
 
-  it("코어 '내 역할/기여도'에 값이 있으면 그쪽이 이긴다 — 폴백은 빈 자리만 채운다", () => {
+  it("개편 전 레코드의 코어 역할이 남아 있어도 확정본 필드가 이긴다", () => {
     const exp = makeExp({
       type: "award",
       content: {
@@ -480,7 +480,9 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
         },
       } as unknown as Experience["content"],
     });
-    expect(experienceToPost(exp).contribution).toBe("팀장으로 전체 조율");
+    // 코어는 CORE_EXCLUDE 로 화면에서 사라진 칸이다 — 옛 값이 새 값을 이기면 사용자가
+    // 고칠 수 없는 문구가 계속 발행된다.
+    expect(experienceToPost(exp).contribution).toBe("데이터 분석 · 발표");
   });
 
   /**
