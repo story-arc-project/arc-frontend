@@ -24,6 +24,7 @@ import {
   createGroupBlock,
   isBlockDiscardable,
   isBlockEmpty,
+  isKnownBlockType,
   normalizeBlockValue,
   normalizeBlocks,
   type BlockDefs,
@@ -95,6 +96,11 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
     options: block.options,
     columns: templateColumns,
   })
+  // ⚠️ **모르는 판별자는 불일치가 아니라 "내가 모르는 것"이다** — 새 스키마가 쓴 값이 템플릿이
+  // 아는 키에 실려 온 경우다. 여기서 템플릿 블록을 돌려주면 그 키는 소비된 것으로 처리돼
+  // 저장 때 템플릿 빈 값이 새 스키마 값을 덮는다. 그대로 실어 보내고, 그릴 모양은 저장되지 않는
+  // 렌더 관문(`normalizeBlockForRender`)이 맡는다.
+  if (!isKnownBlockType(safe.type)) return { ...block, value: safe }
   // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)면 주입을 생략해 위젯 렌더 깨짐을 막는다.
   // 단 text↔textarea 는 값 모양이 같아 변환해 싣는다.
   if (safe.type !== block.type) {

@@ -66,7 +66,7 @@ const KNOWN_BLOCK_TYPES: Record<BlockType, true> = {
   group: true,
 }
 
-function isKnownBlockType(t: unknown): t is BlockType {
+export function isKnownBlockType(t: unknown): t is BlockType {
   return typeof t === 'string' && Object.prototype.hasOwnProperty.call(KNOWN_BLOCK_TYPES, t)
 }
 
@@ -585,11 +585,14 @@ function repairColumns(raw: unknown): { columns: BlockColumnDef[]; renames: Map<
   const rawColumns = Array.isArray(raw) ? raw.filter(isPlainObject) : []
   const repaired = rawColumns.map(repairColumn)
   const keys = dedupeNames(repaired.map(c => c.key), i => `col-${i}`)
+  // 옛 이름은 **저장된 원본** 기준이다(문자열이 아닐 수 있고, 셀은 그 이름 아래 있다).
+  const oldKeys = rawColumns.map(r => (typeof r.key === 'string' ? r.key : String(r.key)))
+  // ⚠️ 중복이면 **앞엣것이 그 이름을 지킨다** — 셀도 앞 열에 남아야 하므로 그 이름은 옮기지
+  // 않는다. 표를 그대로 적용하면 하나뿐인 값이 뒤 열로 가서 소유자가 바뀐다.
+  const kept = new Set(oldKeys.filter((k, i) => k === keys[i]))
   const renames = new Map<string, string>()
-  rawColumns.forEach((r, i) => {
-    // 옛 이름은 **저장된 원본** 기준이다(문자열이 아닐 수 있고, 셀은 그 이름 아래 있다).
-    const oldKey = typeof r.key === 'string' ? r.key : String(r.key)
-    if (oldKey !== keys[i]) renames.set(oldKey, keys[i])
+  oldKeys.forEach((oldKey, i) => {
+    if (oldKey !== keys[i] && !kept.has(oldKey)) renames.set(oldKey, keys[i])
   })
   return {
     columns: repaired.map((c, i) => (c.key === keys[i] ? c : { ...c, key: keys[i] })),
@@ -766,11 +769,18 @@ export function normalizeBlockValue(
   value: unknown,
   opts?: { options?: string[]; columns?: BlockColumnDef[] },
 ): BlockValue {
+  // ⚠️ 되살릴 목록도 저장분(`block.options`·`e.options`)이라 **여기서 한 번** 위생을 거친다.
+  // 폴백 값을 만드는 `emptyValue` 에 원본을 그대로 넘기면 깨진 원소가 값 안에 그대로 실린다.
+  const safeOpts = opts && {
+    ...opts,
+    ...(opts.options !== undefined ? { options: asStrings(opts.options) } : {}),
+  }
+
   const empty = (): BlockValue => {
     if (fallbackType === 'group') return { type: 'group' }
     // 런타임 값은 타입 선언을 지킬 의무가 없다 — 모르는 타입이면 `emptyValue` 는 undefined 를 준다.
     if (!isKnownBlockType(fallbackType)) return { type: 'text', text: '' }
-    return emptyValue(fallbackType, opts)
+    return emptyValue(fallbackType, safeOpts)
   }
 
   /**

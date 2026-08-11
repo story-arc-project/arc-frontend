@@ -787,6 +787,31 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
     expect(out.rows[0].cells[key]).toBe("저장된 값")
   })
 
+  /**
+   * ⚠️ 중복 key 를 갈 때는 **앞엣것이 그 이름을 지킨다** — 셀도 앞 열에 남아야 한다.
+   * 옛→새 표를 그대로 적용하면 하나뿐인 값이 **뒤 열로 옮겨가** 소유자가 바뀐다.
+   */
+  it("중복 열 key 를 갈아도 셀은 이름을 지킨 앞 열에 남는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [
+        { key: "item", label: "A", blockType: "text" },
+        { key: "item", label: "B", blockType: "text" },
+      ],
+      rows: [{ id: "r1", cells: { item: "저장된 값" } }],
+    }) as unknown as { columns: { key: string }[]; rows: { cells: Record<string, unknown> }[] }
+    expect(out.columns[0].key).toBe("item")
+    expect(out.rows[0].cells.item).toBe("저장된 값")
+  })
+
+  /** 폴백 값을 만들 때 쓰는 선택지 목록도 저장분이다 — 위생을 거치지 않으면 그대로 실린다. */
+  it("폴백 값을 만들 때도 선택지 목록을 걸러 낸다", () => {
+    const out = normalizeBlockValue("checklist", null, {
+      options: ["정상", { broken: true }] as unknown as string[],
+    }) as unknown as { options: unknown[] }
+    expect(out.options).toEqual(["정상"])
+  })
+
   /** `RowExtraField.value` 는 문자열·문자열 배열만이다 — 파일 셀 객체는 그대로 그려지면 죽는다. */
   it("행 부가 항목에 파일 셀 객체가 들어 있으면 글자로 바꾼다", () => {
     const out = normalizeBlockValue("repeatable-cell", {

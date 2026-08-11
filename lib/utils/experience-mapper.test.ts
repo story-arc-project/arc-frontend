@@ -3491,6 +3491,26 @@ describe("toExperienceV2 v1 — 정의가 결측인 값 (FRT-200)", () => {
  * 모르는 *타입*을 "비어 있음"으로 보고 버리면 그 안전망이 무력해진다 (FRT-200 리뷰).
  */
 describe("toExperienceV2 — 이 코드가 모르는 타입 (FRT-200)", () => {
+  /**
+   * ⚠️ 템플릿이 **아는 키**에 모르는 판별자가 실려 오는 경우. 보정은 값을 지키도록 고쳤지만,
+   * 주입 단계가 타입 불일치로 보고 템플릿 기본값을 돌려주면 그 키는 소비된 것으로 처리돼
+   * 저장 때 새 스키마 값이 **템플릿 빈 값으로 덮인다.**
+   */
+  it("템플릿이 아는 키에 실린 모르는 판별자도 왕복에서 지킨다", () => {
+    const textKey = firstKeyOfType("text")
+    const exp = makeExperience({
+      content: makeV2Content({
+        [textKey]: { type: "brand-new-in-v3", payload: "미래 스키마" } as unknown as BlockValue,
+      }),
+    })
+
+    const content = toSavePayload(toExperienceV2(exp)).content as { fields: Record<string, unknown> }
+    expect(content.fields[textKey]).toMatchObject({
+      type: "brand-new-in-v3",
+      payload: "미래 스키마",
+    })
+  })
+
   it("모르는 type 의 orphan 값을 버리지 않고 왕복에서 지킨다", () => {
     const exp = makeExperience({
       content: makeV2Content({
