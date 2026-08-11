@@ -3138,3 +3138,163 @@ describe("확정본 전면 교체 값 보존 (FRT-269 연구논문)", () => {
     expect(v2.hiddenKeys).not.toContain("research-info.역할")
   })
 })
+
+// ─── FRT-200: 저장된 값이 타입이 약속한 모양대로 오지 않을 때 ──────────
+//
+// `content` 는 서버 JSONB 라 `Block.value` 가 non-nullable 로 선언돼 있어도 런타임엔 null·결측
+// 필드가 도착한다. 그 값이 매퍼를 그대로 통과해 판정·렌더에서 화면을 통째로 죽였다.
+//
+// ⚠️ 픽스처는 `as unknown as` 로 타입 안전망을 우회한다 — 타입이 허용하는 리터럴로만 쓰면
+// 컴파일러가 그 입력을 막아 결함을 재현하지 못하고, 통과하는 테스트가 그물이 아니게 된다.
+// ⚠️ 키는 하드코딩하지 않고 템플릿에서 읽는다 — 라벨이 바뀌면 테스트가 조용히 무의미해진다.
+
+/**
+ * 헤더 코어는 `fields` 가 아니라 `content.title`/`summary` 로 저장되므로 아래 헬퍼에서 제외한다
+ * — 이걸 고르면 왕복 검사가 `fields[key]` 에서 영원히 undefined 를 본다.
+ */
+const HEADER_KEYS = ["core.경험명", "core.한 줄 요약"]
+
+/** career 템플릿에서 그 타입의 첫 블록 키. 없으면 실패시킨다(빈 컬렉션 위양성 차단). */
+function firstKeyOfType(type: Block["type"]): string {
+  const tmpl = getTemplateForType("career")
+  const all = [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)]
+  // 제외 목록이 실제 템플릿과 어긋나면(라벨 개명 등) 조용히 헤더를 고르게 되므로 함께 잠근다.
+  for (const headerKey of HEADER_KEYS) {
+    if (!all.some(b => b.key === headerKey)) {
+      throw new Error(`career 템플릿에 헤더 키 ${headerKey} 가 없다 — 테스트 전제가 깨졌다`)
+    }
+  }
+  const found = all.find(b => b.type === type && b.key && !HEADER_KEYS.includes(b.key))?.key
+  if (!found) throw new Error(`career 템플릿에 ${type} 블록이 없다 — 테스트 전제가 깨졌다`)
+  return found
+}
+
+/** v2 저장 레코드. `fields`/`custom` 에 타입이 허용하지 않는 손상 값을 실을 수 있다. */
+function makeV2Content(fields: unknown, custom: unknown = []): Experience["content"] {
+  return {
+    schema_version: 2,
+    template_version: TEMPLATE_VERSION,
+    title: "회사",
+    summary: "요약",
+    status: "draft",
+    tags: [],
+    fields,
+    custom,
+  } as unknown as Experience["content"]
+}
+
+describe("toExperienceV2 — 손상된 저장 값 (FRT-200)", () => {
+  it("템플릿 필드 값이 통째로 null 이어도 경험을 연다", () => {
+    const periodKey = firstKeyOfType("period")
+    const exp = makeExperience({ content: makeV2Content({ [periodKey]: null }) })
+
+    expect(() => toExperienceV2(exp)).not.toThrow()
+    const v2 = toExperienceV2(exp)
+    // 값이 없으면 템플릿이 준 빈 값 그대로여야 한다 — 블록이 사라지면 안 된다.
+    const block = v2.coreBlocks.find(b => b.key === periodKey)
+    expect(block).toBeDefined()
+    expect(isBlockEmpty(block!)).toBe(true)
+  })
+
+  /**
+   * 핵심 단언. "죽지 않는다"만 물으면 **손상 값을 통째로 비우는 오구현도 통과한다** —
+   * 그 구현은 살아 있는 `start` 를 지운다. 살아남은 값을 함께 물어야 그물이 된다.
+   */
+  it("한쪽 필드만 깨진 템플릿 값은 살아 있는 쪽을 보존한다", () => {
+    const periodKey = firstKeyOfType("period")
+    const exp = makeExperience({
+      content: makeV2Content({ [periodKey]: { type: "period", start: "2023.01", end: null } }),
+    })
+
+    const v2 = toExperienceV2(exp)
+    const block = v2.coreBlocks.find(b => b.key === periodKey)
+    expect(block?.value).toMatchObject({ type: "period", start: "2023.01", end: "" })
+    expect(isBlockEmpty(block!)).toBe(false)
+  })
+
+  /**
+   * custom 은 **사용자가 만든 칸 자체가 정보**다. 형제 `orphanFieldsToBlocks` 처럼 버리면
+   * 값이 없다는 이유로 사용자가 만든 필드가 화면에서 사라진다. 존재·개수를 함께 단언하지
+   * 않으면 그 오구현이 통과한다.
+   */
+  it("커스텀 필드 값이 null 이어도 그 필드는 사라지지 않고 빈 값으로 복구된다", () => {
+    const exp = makeExperience({
+      content: makeV2Content({}, [
+        { key: "c1", entryType: "field", type: "date", label: "직접 만든 날짜", value: null },
+      ]),
+    })
+
+    expect(() => toExperienceV2(exp)).not.toThrow()
+    const v2 = toExperienceV2(exp)
+    expect(v2.customBlocks).toHaveLength(1)
+    expect(v2.customBlocks[0].label).toBe("직접 만든 날짜")
+    expect(v2.customBlocks[0].value).toEqual({ type: "date", date: "" })
+  })
+
+  /**
+   * 경계 고정. orphan 은 `value.type` 이 유일한 타입 신호라 그것이 없으면 복구할 근거가 없다 —
+   * custom 을 고쳤다고 orphan 까지 되살리면 안 된다(현행 드롭 유지).
+   */
+  it("템플릿이 안 쓰는 잔재 키의 값이 null 이면 지금처럼 버린다", () => {
+    const exp = makeExperience({ content: makeV2Content({ "구템플릿.사라진필드": null }) })
+
+    const v2 = toExperienceV2(exp)
+    expect(v2.customBlocks.find(b => b.key === "구템플릿.사라진필드")).toBeUndefined()
+  })
+
+  it("v1 레거시 저장 블록이 손상돼 있어도 경험을 열고 살아 있는 값을 지킨다", () => {
+    const exp = makeExperience({
+      content: {
+        coreBlocks: [
+          {
+            id: "b1",
+            key: "core.기간",
+            type: "period",
+            label: "기간",
+            value: { type: "period", start: "2022.03", end: null },
+          },
+          { id: "b2", type: "date", label: "깨진 날짜", value: null },
+        ],
+        extensionBlocks: [],
+        customBlocks: [],
+      } as unknown as Experience["content"],
+    })
+
+    expect(() => toExperienceV2(exp)).not.toThrow()
+    const v2 = toExperienceV2(exp)
+    const all = [...v2.coreBlocks, ...v2.extensionBlocks, ...v2.customBlocks]
+    const period = all.find(b => b.label === "기간")
+    expect(period?.value).toMatchObject({ type: "period", start: "2022.03", end: "" })
+  })
+})
+
+describe("저장 왕복 — 손상된 값 정규화 (FRT-200)", () => {
+  it("손상된 값은 빈 값으로 정규화돼 저장되고, 멀쩡한 값은 그대로 간다", () => {
+    const periodKey = firstKeyOfType("period")
+    const textKey = firstKeyOfType("text")
+    const exp = makeExperience({
+      content: makeV2Content(
+        {
+          [periodKey]: { type: "period", start: "2023.01", end: null },
+          [textKey]: { type: "text", text: "멀쩡한 값" },
+        },
+        [{ key: "c1", entryType: "field", type: "date", label: "직접 만든 날짜", value: null }],
+      ),
+    })
+
+    const payload = toSavePayload(toExperienceV2(exp))
+    const content = payload.content as {
+      fields: Record<string, unknown>
+      custom: Array<{ key: string; value: unknown }>
+    }
+    expect(content.fields[periodKey]).toMatchObject({
+      type: "period",
+      start: "2023.01",
+      end: "",
+    })
+    expect(content.fields[textKey]).toMatchObject({ type: "text", text: "멀쩡한 값" })
+    const custom = content.custom.find(c => c.key === "c1")
+    expect(custom).toBeDefined()
+    expect(custom).toMatchObject({ entryType: "field", value: { type: "date", date: "" } })
+  })
+})

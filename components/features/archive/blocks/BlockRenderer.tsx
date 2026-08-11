@@ -1,7 +1,7 @@
 "use client"
 
 import type { Block, BlockValue, RepeatableCellBlockValue } from "@/types/archive"
-import { isFileCellValue } from "@/lib/utils/block-utils"
+import { isFileCellValue, normalizeBlock } from "@/lib/utils/block-utils"
 import TextBlock from "./TextBlock"
 import TextareaBlock from "./TextareaBlock"
 import DateBlock from "./DateBlock"
@@ -34,12 +34,24 @@ interface BlockRendererProps {
 }
 
 export default function BlockRenderer({
-  block,
+  block: rawBlock,
   readOnly,
   hideSlot,
   onBusyChange,
   onChange,
 }: BlockRendererProps) {
+  /**
+   * 2차 방어 (FRT-200). 아래 13개 블록 컴포넌트는 모두 `block.value as XxxValue` 로 값을 단언한
+   * 뒤 프로퍼티를 역참조하므로, 값이 깨져 있으면 그 자리에서 화면이 죽는다. 여기가 그 컴포넌트들의
+   * **유일한 프로덕션 진입점**이라 관문 한 곳에서 막으면 13곳을 각각 고치지 않아도 된다.
+   *
+   * ⚠️ 이것이 매퍼(`toExperienceV2`)의 방어를 대신하지는 못한다 — 포트폴리오 빌드·목록 정렬처럼
+   * 이 관문을 거치지 않고 `block.value` 를 직접 읽는 소비처가 따로 있다. 저장 값 정규화의
+   * 정본은 매퍼이고, 여기는 그곳을 우회해 들어온 값을 막는 그물이다.
+   *
+   * 값이 온전하면 `normalizeBlock` 이 **원본 참조를 그대로** 돌려주므로 리렌더가 늘지 않는다.
+   */
+  const block = normalizeBlock(rawBlock)
   const handleChange = (value: BlockValue) => onChange(block.id, value)
 
   const rendered = (() => {

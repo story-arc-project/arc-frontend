@@ -18,7 +18,15 @@ import {
   getTemplateForType,
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
-import { uid, cloneBlocks, createGroupBlock, isBlockDiscardable, isBlockEmpty } from "@/lib/utils/block-utils"
+import {
+  uid,
+  cloneBlocks,
+  createGroupBlock,
+  isBlockDiscardable,
+  isBlockEmpty,
+  normalizeBlockValue,
+  normalizeBlocks,
+} from "@/lib/utils/block-utils"
 import { normalizeHiddenKeys, parseHiddenKeys } from "@/lib/utils/hidden-fields"
 
 /**
@@ -74,17 +82,26 @@ function textualCompatValue(block: Block, value: BlockValue): BlockValue | null 
 
 function injectValue(block: Block, value: BlockValue | undefined): Block {
   if (value === undefined) return block
+  // 저장 값이 통째로 깨졌으면(null·비객체·type 결측) 주입을 **생략**한다 (FRT-200).
+  // ⚠️ 여기서 빈 값으로 덮으면 안 된다 — 템플릿 블록의 value 는 드롭다운 `options` 같은
+  // 정의를 들고 있어서, 빈 값으로 갈면 선택지가 통째로 사라진다. 값이 없으면 정의를 지킨다.
+  if (!value || typeof value !== "object" || typeof (value as { type?: unknown }).type !== "string") {
+    return block
+  }
+  // 부속 필드만 빠진 값은 모양을 맞춰 싣는다 — 살아 있는 필드는 그대로 보존된다.
+  // 값이 온전하면 같은 참조가 돌아오므로 기존 동작은 그대로다.
+  const safe = normalizeBlockValue(block.type, value)
   // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)면 주입을 생략해 위젯 렌더 깨짐을 막는다.
   // 단 text↔textarea 는 값 모양이 같아 변환해 싣는다.
-  if (value.type !== block.type) {
-    const compat = textualCompatValue(block, value)
+  if (safe.type !== block.type) {
+    const compat = textualCompatValue(block, safe)
     return compat ? { ...block, value: compat } : block
   }
   // 컬럼을 손댄 레코드는 잠금을 풀어 열 관리 UI 를 돌려준다(FRT-104).
-  if (block.lockColumns && !columnsMatchTemplate(block.value, value)) {
-    return { ...block, value, lockColumns: false }
+  if (block.lockColumns && !columnsMatchTemplate(block.value, safe)) {
+    return { ...block, value: safe, lockColumns: false }
   }
-  return { ...block, value }
+  return { ...block, value: safe }
 }
 
 /**
@@ -139,7 +156,11 @@ function customEntriesToBlocks(entries: CustomEntry[], depth = 0): Block[] {
         key: e.key,
         type: e.type,
         label: e.label,
-        value: e.value,
+        // ⚠️ 형제 `orphanFieldsToBlocks` 의 가드를 복사하면 안 된다 (FRT-200). 그쪽은 값이
+        // 깨졌으면 블록을 통째로 버리는데, 여기서 그러면 **사용자가 직접 만든 칸이 사라진다** —
+        // custom 은 값이 아니라 필드의 존재 자체가 정보다. 게다가 여긴 `e.type` 이 값과 별도로
+        // 남아 있어 복구할 근거가 있다(orphan 은 `value.type` 이 유일한 타입 신호라 근거가 없다).
+        value: normalizeBlockValue(e.type, e.value),
         ...(e.required ? { required: true } : {}),
         ...(e.options ? { options: e.options } : {}),
       })
@@ -679,9 +700,12 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   }
 
   // ── v1 레거시: 저장된 블록 배열 통과 + 레지스트리 라벨매칭으로 안정키 주입 ──
-  const savedCore = content.coreBlocks ?? []
-  const savedExt = content.extensionBlocks ?? []
-  const savedCustom = content.customBlocks ?? []
+  // ⚠️ v1 은 저장 배열을 그대로 통과시키므로 손상 값이 무검증으로 들어온다 (FRT-200).
+  // 아래 이관·dedup 로직이 곧바로 `isBlockDiscardable`(=isBlockEmpty)을 부르므로,
+  // **여기서 즉시** 보정해야 한다 — 한 줄이라도 늦으면 그 판정에서 먼저 죽는다.
+  const savedCore = normalizeBlocks(content.coreBlocks ?? [])
+  const savedExt = normalizeBlocks(content.extensionBlocks ?? [])
+  const savedCustom = normalizeBlocks(content.customBlocks ?? [])
 
   if (!hasTemplate(exp.type)) {
     return { ...base, coreBlocks: savedCore, extensionBlocks: savedExt, customBlocks: savedCustom }

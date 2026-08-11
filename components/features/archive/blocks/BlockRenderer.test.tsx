@@ -149,3 +149,60 @@ describe("BlockRenderer 필수 표시", () => {
     expect(screen.queryByText("선택")).toBeNull()
   })
 })
+
+// ─── FRT-200: 손상된 저장 값이 화면을 죽이지 않는다 ──────────────────
+//
+// 블록 컴포넌트 13종은 모두 `block.value as XxxValue` 로 값을 단언한 뒤 프로퍼티를 역참조한다.
+// 값이 깨져 있으면 그 자리에서 렌더가 죽고, 상세/편집 화면이 통째로 에러 화면으로 대체된다.
+// 여기가 그 컴포넌트들의 유일한 진입점이라 관문 한 곳이 13종을 덮는다.
+//
+// ⚠️ 픽스처는 `as unknown as` 로 타입 안전망을 우회한다 — 타입이 허용하는 리터럴로만 쓰면
+// 컴파일러가 그 입력을 막아 결함을 재현하지 못한다.
+
+describe("손상된 저장 값 렌더 (FRT-200)", () => {
+  function broken(type: Block["type"], value: unknown): Block {
+    return { id: "b1", type, label: "손상된 칸", value: value as Block["value"] }
+  }
+
+  const CASES: [string, Block][] = [
+    ["date — 값 없음", broken("date", null)],
+    ["date — 날짜 결측", broken("date", { type: "date" })],
+    ["text — 값 없음", broken("text", null)],
+    ["textarea — 텍스트 결측", broken("textarea", { type: "textarea", text: null })],
+    ["period — 종료월 결측", broken("period", { type: "period", start: "2023.01", end: null })],
+    ["period — 값 없음", broken("period", null)],
+    ["checklist — 선택 배열 결측", broken("checklist", { type: "checklist", checked: null })],
+    ["single-select — 값 없음", broken("single-select", null)],
+    ["tags — 태그 배열 결측", broken("tags", { type: "tags", tags: null })],
+    ["link — url 결측", broken("link", { type: "link", url: null })],
+    ["file — 값 없음", broken("file", null)],
+    ["table — 행 결측", broken("table", { type: "table", columns: ["A"], rows: null })],
+    ["repeatable-cell — 값 없음", broken("repeatable-cell", null)],
+    ["repeatable-cell — 셀 없는 행", broken("repeatable-cell", { type: "repeatable-cell", columns: [], rows: [{ id: "r1" }] })],
+  ]
+
+  it.each(CASES)("%s — 편집 모드에서 죽지 않는다", (_label, block) => {
+    expect(() => render(<BlockRenderer block={block} onChange={() => {}} />)).not.toThrow()
+  })
+
+  it.each(CASES)("%s — 상세(readOnly) 모드에서 죽지 않는다", (_label, block) => {
+    expect(() =>
+      render(<BlockRenderer block={block} readOnly onChange={() => {}} />),
+    ).not.toThrow()
+  })
+
+  /**
+   * "죽지 않는다"만으로는 부족하다 — 살아 있는 값을 지워 버리는 구현도 통과하기 때문이다.
+   * 반만 깨진 값은 살아남은 쪽이 실제로 화면에 보여야 한다.
+   */
+  it("한쪽만 깨진 기간은 살아 있는 시작월을 화면에 그린다", () => {
+    render(
+      <BlockRenderer
+        block={broken("period", { type: "period", start: "2023.01", end: null })}
+        readOnly
+        onChange={() => {}}
+      />,
+    )
+    expect(screen.getByText(/2023\.01/)).toBeTruthy()
+  })
+})

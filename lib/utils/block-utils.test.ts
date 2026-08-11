@@ -24,9 +24,10 @@ import {
   isFileCellValue,
   rowHasContent,
   isBlockEmpty,
+  normalizeBlockValue,
   validateRequiredBlocks,
 } from "@/lib/utils/block-utils"
-import type { FileCellValue } from "@/types/archive"
+import type { Block, BlockValue, CellValue, FileCellValue } from "@/types/archive"
 
 describe("isBlockEmpty", () => {
   it("새로 만든 빈 블록은 모든 타입에서 empty 다", () => {
@@ -450,5 +451,171 @@ describe("rowHasContent — 파일 셀만 채운 행 (FRT-213)", () => {
     expect(
       rowHasContent({ id: "r1", cells: { 결과물: { type: "file", fileId: "", fileName: "" } } }),
     ).toBe(false)
+  })
+})
+
+// ─── FRT-200: 저장된 값이 타입이 약속한 모양대로 오지 않을 때 ──────────
+//
+// `Block.value` 는 non-nullable 로 선언돼 있지만 실제 값은 백엔드 JSONB 를 역직렬화한 것이라
+// 런타임에 null·결측 필드가 도착할 수 있다. 그 값이 판정·렌더까지 무검증으로 흘러 화면을
+// 통째로 죽였다(FRT-200).
+//
+// ⚠️ 픽스처는 반드시 `as unknown as` 로 타입 안전망을 우회한다. 타입이 허용하는 리터럴로만
+// 쓰면 컴파일러가 그 입력을 막아 **결함을 재현하지 못한다** — 통과하는 테스트가 그물이 아니다.
+
+/** 손상된 저장 값을 타입 검사 없이 블록에 싣는다 — 실제 JSONB 경로를 흉내낸다. */
+function withRawValue(block: Block, raw: unknown): Block {
+  return { ...block, value: raw as BlockValue }
+}
+
+describe("isBlockEmpty — 손상된 저장 값 (FRT-200)", () => {
+  it("value 가 통째로 없어도 죽지 않고 '비어 있다'로 판정한다", () => {
+    expect(() => isBlockEmpty(withRawValue(createDateField("d"), null))).not.toThrow()
+    expect(isBlockEmpty(withRawValue(createDateField("d"), null))).toBe(true)
+    expect(isBlockEmpty(withRawValue(createTextField("t"), undefined))).toBe(true)
+  })
+
+  it("type 은 있는데 문자열 필드가 null 이어도 죽지 않는다", () => {
+    expect(isBlockEmpty(withRawValue(createDateField("d"), { type: "date", date: null }))).toBe(true)
+    expect(isBlockEmpty(withRawValue(createTextField("t"), { type: "text" }))).toBe(true)
+    expect(
+      isBlockEmpty(withRawValue(createLinkField("l"), { type: "link", url: null })),
+    ).toBe(true)
+  })
+
+  it("배열 필드가 null 이어도 죽지 않는다", () => {
+    expect(
+      isBlockEmpty(withRawValue(createChecklistField("c", ["a"]), { type: "checklist", checked: null })),
+    ).toBe(true)
+    expect(isBlockEmpty(withRawValue(createTagsField("g"), { type: "tags", tags: null }))).toBe(true)
+  })
+
+  /**
+   * 이 단언이 이 묶음의 핵심이다. "죽지 않는다"만 확인하면 **손상 값을 통째로 빈 값으로
+   * 갈아치우는 오구현도 통과한다** — 그 구현은 살아 있는 `start` 를 지워 버린다.
+   * 살아남은 값이 실제로 판정에 반영되는지를 함께 물어야 그물이 된다.
+   */
+  it("한쪽 필드만 깨졌으면 살아 있는 쪽이 판정에 반영된다 — 통째 치환 오구현을 잡는다", () => {
+    const partial = withRawValue(createPeriodField("p"), {
+      type: "period",
+      start: "2023.01",
+      end: null,
+    })
+    expect(isBlockEmpty(partial)).toBe(false)
+  })
+
+  it("알 수 없는 type 은 '비어 있다'로 접는다", () => {
+    expect(isBlockEmpty(withRawValue(createTextField("t"), { type: "미래에생길타입" }))).toBe(true)
+  })
+})
+
+describe("normalizeBlockValue (FRT-200)", () => {
+  it("value 가 통째로 없으면 블록 타입 기준 빈 값으로 복구한다", () => {
+    expect(normalizeBlockValue("date", null)).toEqual({ type: "date", date: "" })
+    expect(normalizeBlockValue("period", undefined)).toEqual({
+      type: "period",
+      start: "",
+      end: "",
+      isCurrent: false,
+    })
+    expect(normalizeBlockValue("tags", "문자열이왔다")).toEqual({ type: "tags", tags: [] })
+  })
+
+  it("type 이 없는 객체도 블록 타입 기준으로 복구한다", () => {
+    expect(normalizeBlockValue("text", { text: "값은있는데 type 이 없다" })).toEqual({
+      type: "text",
+      text: "",
+    })
+  })
+
+  /** 살아 있는 값을 지우지 않는다 — 결측 필드만 채운다. */
+  it("일부 필드만 깨졌으면 그 필드만 채우고 나머지는 보존한다", () => {
+    expect(normalizeBlockValue("period", { type: "period", start: "2023.01", end: null })).toEqual({
+      type: "period",
+      start: "2023.01",
+      end: "",
+      isCurrent: false,
+    })
+    expect(
+      normalizeBlockValue("single-select", { type: "single-select", options: ["a"], selected: null }),
+    ).toEqual({ type: "single-select", options: ["a"], selected: "" })
+  })
+
+  /**
+   * 온전한 값은 **같은 참조**로 돌려준다. 렌더 관문(BlockRenderer)이 매 렌더 이 함수를 부르는데
+   * 정상 값마다 새 객체를 만들면 props 가 매번 바뀌어 불필요한 리렌더를 낳는다.
+   */
+  it("온전한 값은 새 객체를 만들지 않고 원본 참조를 그대로 돌려준다", () => {
+    const intact: BlockValue = { type: "date", date: "2024-03-01" }
+    expect(normalizeBlockValue("date", intact)).toBe(intact)
+
+    const rows: BlockValue = {
+      type: "repeatable-cell",
+      columns: [{ key: "item", label: "활동", blockType: "text" }],
+      rows: [{ id: "r1", cells: { item: "값" } }],
+    }
+    expect(normalizeBlockValue("repeatable-cell", rows)).toBe(rows)
+  })
+
+  /**
+   * 행에는 스키마에 없는 부가 필드(FRT-76 링크·FRT-178 역할태그·FRT-145 행 추가항목)가 붙는다.
+   * 보정하면서 행을 재구성하면 이것들이 조용히 사라진다 — 값 유실보다 나쁜 건 없다.
+   */
+  it("행을 보정해도 링크·역할태그·행 추가항목은 살아남는다", () => {
+    const normalized = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: null,
+      rows: [
+        {
+          id: "r1",
+          cells: { item: "값" },
+          linkedProjectRowId: "proj-1",
+          roleTags: ["팀장"],
+          extraFields: [{ key: "k", label: "메모", blockType: "text", value: "남긴 말" }],
+        },
+      ],
+    })
+    expect(normalized).toMatchObject({
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: { item: "값" },
+          linkedProjectRowId: "proj-1",
+          roleTags: ["팀장"],
+          extraFields: [{ key: "k", label: "메모", blockType: "text", value: "남긴 말" }],
+        },
+      ],
+    })
+  })
+
+  it("행이 배열이 아니거나 셀이 없어도 죽지 않는다", () => {
+    expect(normalizeBlockValue("repeatable-cell", { type: "repeatable-cell", rows: null })).toMatchObject({
+      rows: [],
+    })
+    const noCells = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: "r1" }],
+    })
+    expect(() => isBlockEmpty(withRawValue(createTextField("t"), noCells))).not.toThrow()
+  })
+
+  it("group 은 값이 없는 센티넬이라 그대로 둔다", () => {
+    expect(normalizeBlockValue("group", null)).toEqual({ type: "group" })
+  })
+})
+
+describe("행·셀 판정 — 손상된 값 (FRT-200)", () => {
+  it("cells 가 없는 행도 죽지 않는다", () => {
+    expect(() => rowHasContent({ id: "r1" } as unknown as Parameters<typeof rowHasContent>[0])).not.toThrow()
+    expect(rowHasContent({ id: "r1" } as unknown as Parameters<typeof rowHasContent>[0])).toBe(false)
+  })
+
+  it("null 셀은 빈 셀로 본다", () => {
+    expect(() => cellFilled(null as unknown as CellValue)).not.toThrow()
+    expect(cellFilled(null as unknown as CellValue)).toBe(false)
+    expect(cellText(null as unknown as CellValue)).toBe("")
   })
 })

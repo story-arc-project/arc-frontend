@@ -337,7 +337,8 @@ export function isFileCellValue(cell: CellValue | undefined): cell is FileCellVa
 // 반복 입력 셀 하나가 실제로 채워졌는지. block-utils 는 types 만 import 하는 leaf 라
 // 순환 걱정 없이 여기서 export 하고 form-cards·usePlaceholderRow 가 재사용한다(단일 출처).
 export function cellFilled(cell: CellValue | undefined): boolean {
-  if (cell === undefined) return false
+  // 저장된 셀은 null 로도 온다(FRT-200) — `undefined` 만 걸러내면 아래 `.trim()` 에서 죽는다.
+  if (cell === undefined || cell === null) return false
   // 파일은 업로드가 끝나야(fileId 확보) 채워진 것이다 — 이름만 있는 건 실패한 첨부다.
   if (isFileCellValue(cell)) return cell.fileId.trim() !== ''
   return Array.isArray(cell) ? cell.length > 0 : cell.trim() !== ""
@@ -354,7 +355,8 @@ export function cellFilled(cell: CellValue | undefined): boolean {
  * 이 함수는 파일을 모르는 제네릭 소비처가 최소한 안전하게 텍스트로 접을 때 쓴다.
  */
 export function cellText(cell: CellValue | undefined): string {
-  if (cell === undefined) return ""
+  // `cellFilled` 과 같은 이유로 null 도 함께 걸러낸다 — 두 함수의 기준이 어긋나면 안 된다(FRT-200).
+  if (cell === undefined || cell === null) return ""
   if (isFileCellValue(cell)) {
     // 첨부를 지우면 `{fileId:"", fileName:""}` 이 남는다 — 이걸 대체 문구로 접으면 없는 첨부가
     // 화면에 남고, 열 유형이 텍스트로 바뀌면 그 문구가 값으로 굳는다. `cellFilled` 과 같은
@@ -373,46 +375,56 @@ export function cellText(cell: CellValue | undefined): string {
  * 빈 판정을 하는 세 곳(isBlockEmpty · RepeatableCellBlock readOnly · 진행도)이 이 함수를 공유한다.
  */
 export function rowHasContent(row: BlockRow): boolean {
+  // 저장된 행에 `cells` 가 아예 없을 수 있다(FRT-200) — `Object.values(undefined)` 는 던진다.
+  if (!row || typeof row !== 'object') return false
+  const cells = row.cells && typeof row.cells === 'object' ? row.cells : {}
   return (
-    Object.values(row.cells).some(cellFilled) ||
+    Object.values(cells).some(cellFilled) ||
     (row.extraFields ?? []).some(f => cellFilled(f.value))
   )
 }
 
+/**
+ * ⚠️ **저장된 값은 타입이 약속한 모양대로 오지 않는다** (FRT-200).
+ * `Block.value` 는 non-nullable 로 선언돼 있지만 실제 값은 서버 JSONB 를 역직렬화한 것이라
+ * null 이거나 필드가 빠진 채 도착할 수 있다. 이 판정은 **모든 블록에 대해** 돌고
+ * 상세뷰·조건부노출·숨김·이관·포트폴리오가 공유하므로, 여기서 한 번 던지면 화면이 통째로 죽는다.
+ * 그래서 문자열은 `isFilledText`, 배열은 `Array.isArray` 로만 묻는다 — `.trim()` 을 직접 부르지 않는다.
+ */
 export function isBlockEmpty(block: Block): boolean {
-  const v = block.value
+  const v = block.value as BlockValue | null | undefined
+  if (!v || typeof v !== 'object') return true
   switch (v.type) {
     case 'text':
     case 'textarea':
-      return v.text.trim() === ''
+      return !isFilledText(v.text)
     case 'date':
-      return v.date.trim() === ''
+      return !isFilledText(v.date)
     case 'period':
-      return v.start.trim() === '' && v.end.trim() === ''
+      return !isFilledText(v.start) && !isFilledText(v.end)
     case 'single-select':
-      return v.selected.trim() === ''
+      return !isFilledText(v.selected)
     case 'checklist':
-      return v.checked.length === 0
+      return !Array.isArray(v.checked) || v.checked.length === 0
     case 'tags':
-      return v.tags.length === 0
+      return !Array.isArray(v.tags) || v.tags.length === 0
     case 'link':
-      return v.url.trim() === ''
+      return !isFilledText(v.url)
     case 'file':
-      return (
-        v.fileName.trim() === '' &&
-        (v.fileId?.trim() ?? '') === '' &&
-        (v.url?.trim() ?? '') === ''
-      )
+      return !isFilledText(v.fileName) && !isFilledText(v.fileId) && !isFilledText(v.url)
     case 'repeatable-cell':
       // 행이 없거나, 모든 행의 모든 셀이 비어 있으면 empty (FRT-122). 빈 행 하나(방금 '+ 추가'
       // 하거나 placeholder 에 한 글자 썼다 지운 실체화 행)를 non-empty 로 오판해 상세뷰·포트폴리오에
       // '—'만 있는 유령 섹션이 남던 문제를 판정 층위에서 고친다(value/rows 는 그대로 둔다 —
       // 행을 지우면 placeholder 리마운트로 포커스가 날아간다).
-      return !v.rows.some(rowHasContent)
+      return !Array.isArray(v.rows) || !v.rows.some(rowHasContent)
     case 'table':
-      return v.rows.length === 0
+      return !Array.isArray(v.rows) || v.rows.length === 0
     case 'group':
       return (block.children ?? []).every(c => isBlockEmpty(c))
+    default:
+      // 이 코드가 모르는 type(구 스키마 잔재·손상 값)은 그릴 것이 없다고 본다.
+      return true
   }
 }
 
@@ -424,6 +436,190 @@ export function isBlockEmpty(block: Block): boolean {
  */
 function isFilledText(s: unknown): boolean {
   return typeof s === 'string' && s.trim() !== ''
+}
+
+// ─── 손상된 저장 값 보정 (FRT-200) ───────────────────────────────
+
+const asText = (x: unknown): string => (typeof x === 'string' ? x : '')
+
+const asStrings = (x: unknown): string[] =>
+  Array.isArray(x) ? x.filter((i): i is string => typeof i === 'string') : []
+
+const isPlainObject = (x: unknown): x is Record<string, unknown> =>
+  !!x && typeof x === 'object' && !Array.isArray(x)
+
+/**
+ * 이 값이 자기 `type` 이 약속한 필드를 모두 갖췄는가.
+ *
+ * 갖췄으면 **원본을 그대로 쓴다** — 정상 값까지 새 객체로 만들면 렌더 관문(BlockRenderer)이
+ * 매 렌더 새 props 를 만들어 불필요한 리렌더를 낳는다.
+ */
+function isIntactBlockValue(v: Record<string, unknown>): boolean {
+  switch (v.type) {
+    case 'text':
+    case 'textarea':
+      return typeof v.text === 'string'
+    case 'date':
+      return typeof v.date === 'string'
+    case 'period':
+      return (
+        typeof v.start === 'string' && typeof v.end === 'string' && typeof v.isCurrent === 'boolean'
+      )
+    case 'single-select':
+      return Array.isArray(v.options) && typeof v.selected === 'string'
+    case 'checklist':
+      return Array.isArray(v.options) && Array.isArray(v.checked)
+    case 'tags':
+      return Array.isArray(v.tags)
+    case 'link':
+      return (
+        typeof v.url === 'string' &&
+        typeof v.title === 'string' &&
+        typeof v.description === 'string' &&
+        typeof v.linkType === 'string'
+      )
+    case 'file':
+      return (
+        typeof v.fileName === 'string' &&
+        typeof v.description === 'string' &&
+        typeof v.evidenceType === 'string'
+      )
+    case 'repeatable-cell':
+      return (
+        Array.isArray(v.columns) &&
+        Array.isArray(v.rows) &&
+        v.rows.every(r => isPlainObject(r) && isPlainObject(r.cells))
+      )
+    case 'table':
+      return Array.isArray(v.columns) && Array.isArray(v.rows) && v.rows.every(r => Array.isArray(r))
+    case 'group':
+      return true
+    default:
+      return false
+  }
+}
+
+/**
+ * 반복 입력 행 보정. **행을 재구성하지 않고 결측 키만 채운다** — 행에는 스키마 밖 부가 필드가
+ * 붙어 있고(`linkedProjectRowId` FRT-76 · `roleTags` FRT-178 · `extraFields` FRT-145),
+ * `{id, cells}` 만 다시 만들면 그것들이 조용히 사라진다.
+ *
+ * `id` 가 없으면 인덱스로 채운다 — `uid()` 를 쓰면 렌더마다 id 가 바뀌어 행이 리마운트되고
+ * 입력 포커스가 날아간다(이 함수는 렌더 관문에서도 돈다).
+ */
+function repairRows(x: unknown): BlockRow[] {
+  if (!Array.isArray(x)) return []
+  return x.filter(isPlainObject).map((r, i) => ({
+    ...r,
+    id: asText(r.id) || `row-${i}`,
+    cells: isPlainObject(r.cells) ? (r.cells as Record<string, CellValue>) : {},
+  })) as BlockRow[]
+}
+
+/**
+ * 저장된 값이 타입이 약속한 모양이 아닐 때 **화면이 죽지 않을 모양으로 되돌린다** (FRT-200).
+ *
+ * 두 가지 원칙이 있다.
+ *
+ * 1. **통째로 갈아치우지 않는다.** `{type:'period', start:'2023.01', end:null}` 을 빈 값으로
+ *    바꾸면 살아 있는 `start` 가 사라진다. `type` 신호가 살아 있으면 **결측 필드만** 채운다.
+ * 2. **`type` 신호가 없으면 복구할 근거도 없다.** 그때만 블록이 선언한 `fallbackType` 의
+ *    빈 값으로 되돌린다.
+ *
+ * 정상 값은 원본 참조를 그대로 돌려준다(위 `isIntactBlockValue` 참고).
+ */
+export function normalizeBlockValue(fallbackType: BlockType, value: unknown): BlockValue {
+  const empty = (): BlockValue =>
+    fallbackType === 'group' ? { type: 'group' } : emptyValue(fallbackType)
+
+  if (!isPlainObject(value) || typeof value.type !== 'string') return empty()
+  if (isIntactBlockValue(value)) return value as unknown as BlockValue
+
+  const v = value
+  switch (v.type) {
+    case 'text':
+    case 'textarea':
+      return { ...v, type: v.type, text: asText(v.text) } as BlockValue
+    case 'date':
+      return { ...v, type: 'date', date: asText(v.date) } as BlockValue
+    case 'period':
+      return {
+        ...v,
+        type: 'period',
+        start: asText(v.start),
+        end: asText(v.end),
+        isCurrent: v.isCurrent === true,
+      } as BlockValue
+    case 'single-select':
+      return {
+        ...v,
+        type: 'single-select',
+        options: asStrings(v.options),
+        selected: asText(v.selected),
+      } as BlockValue
+    case 'checklist':
+      return {
+        ...v,
+        type: 'checklist',
+        options: asStrings(v.options),
+        checked: asStrings(v.checked),
+      } as BlockValue
+    case 'tags':
+      return { ...v, type: 'tags', tags: asStrings(v.tags) } as BlockValue
+    case 'link':
+      return {
+        ...v,
+        type: 'link',
+        url: asText(v.url),
+        title: asText(v.title),
+        description: asText(v.description),
+        linkType: asText(v.linkType),
+      } as BlockValue
+    case 'file':
+      return {
+        ...v,
+        type: 'file',
+        fileName: asText(v.fileName),
+        description: asText(v.description),
+        evidenceType: asText(v.evidenceType),
+      } as BlockValue
+    case 'repeatable-cell':
+      return {
+        ...v,
+        type: 'repeatable-cell',
+        columns: Array.isArray(v.columns) ? (v.columns as BlockColumnDef[]) : [],
+        rows: repairRows(v.rows),
+      } as BlockValue
+    case 'table':
+      return {
+        ...v,
+        type: 'table',
+        columns: asStrings(v.columns),
+        rows: Array.isArray(v.rows) ? v.rows.map(asStrings) : [],
+      } as BlockValue
+    case 'group':
+      return { type: 'group' }
+    default:
+      // 이 코드가 모르는 type — 복구할 근거가 없으니 블록이 선언한 타입으로 되돌린다.
+      return empty()
+  }
+}
+
+/** 블록 하나의 값을 보정한다. 값이 온전하면 **원본 블록 참조를 그대로** 돌려준다. */
+export function normalizeBlock(block: Block): Block {
+  const value = normalizeBlockValue(block.type, block.value)
+  const children = block.children?.map(normalizeBlock)
+  const childrenChanged =
+    !!block.children && children!.some((c, i) => c !== block.children![i])
+  if (value === block.value && !childrenChanged) return block
+  return { ...block, value, ...(children ? { children } : {}) }
+}
+
+/** 블록 배열을 보정한다. 전부 온전하면 원본 배열 참조를 그대로 돌려준다. */
+export function normalizeBlocks(blocks: Block[]): Block[] {
+  if (!Array.isArray(blocks)) return []
+  const out = blocks.filter(b => !!b && typeof b === 'object').map(normalizeBlock)
+  return out.length === blocks.length && out.every((b, i) => b === blocks[i]) ? blocks : out
 }
 
 /**
