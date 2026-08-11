@@ -634,6 +634,55 @@ describe("normalizeBlockValue (FRT-200)", () => {
   it("group 은 값이 없는 센티넬이라 그대로 둔다", () => {
     expect(normalizeBlockValue("group", null)).toEqual({ type: "group" })
   })
+
+  /**
+   * ⚠️ **표의 셀·열은 위치가 곧 의미다.** 깨진 원소를 걸러 내면(`filter`) 뒤 원소가 앞으로
+   * 당겨져 **다른 열의 값이 된다** — 값 유실보다 나쁜 무음 오염이다. 자리에서 바꿔야 한다.
+   */
+  it("표는 깨진 셀·열을 걸러 내지 않고 그 자리에서 바꾼다 (열이 밀리면 안 된다)", () => {
+    const out = normalizeBlockValue("table", {
+      type: "table",
+      columns: ["A", null, "C"],
+      rows: [[null, "B값", "C값"]],
+    })
+    expect(out).toMatchObject({
+      type: "table",
+      columns: ["A", "", "C"],
+      rows: [["", "B값", "C값"]],
+    })
+  })
+
+  /**
+   * 행 id 는 수정·삭제 핸들러가 행을 찾는 열쇠다. 결측을 인덱스로 채울 때 이미 그 이름을 쓰는
+   * 행이 있으면 **둘이 같은 id 를 갖고**, 하나를 고치면 둘 다 바뀌고 하나를 지우면 둘 다 사라진다.
+   */
+  it("행 id 를 인덱스로 채울 때 이미 쓰는 id 와 겹치지 않는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: "row-1", cells: { a: "먼저" } }, { cells: { a: "나중" } }],
+    }) as unknown as { rows: { id: string }[] }
+    const ids = out.rows.map(r => r.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  /**
+   * ⚠️ **컨테이너가 배열이라고 원소가 성한 게 아니다.** `tags:[{}]` 를 온전하다고 통과시키면
+   * `TagsBlock` 이 객체를 React 자식으로 그리다 죽어, 이 PR 이 막으려던 바로 그 에러 화면이 뜬다.
+   */
+  it("배열 안에 문자열 아닌 원소가 있으면 온전하다고 보지 않고 걸러 낸다", () => {
+    expect(
+      normalizeBlockValue("tags", { type: "tags", tags: ["좋음", { broken: true }] }),
+    ).toMatchObject({ type: "tags", tags: ["좋음"] })
+
+    expect(
+      normalizeBlockValue("checklist", {
+        type: "checklist",
+        options: ["a", null],
+        checked: ["a", { broken: true }],
+      }),
+    ).toMatchObject({ type: "checklist", options: ["a"], checked: ["a"] })
+  })
 })
 
 /**

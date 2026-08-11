@@ -26,6 +26,7 @@ import {
   isBlockEmpty,
   normalizeBlockValue,
   normalizeBlocks,
+  type BlockDefs,
 } from "@/lib/utils/block-utils"
 import { normalizeHiddenKeys, parseHiddenKeys } from "@/lib/utils/hidden-fields"
 
@@ -121,6 +122,34 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
 export function mergeSavedIntoTemplate(templateBlock: Block, saved: Block): Block {
   const merged = injectValue(templateBlock, saved.value)
   return merged === templateBlock ? saved : merged
+}
+
+/**
+ * v1 저장 블록의 정의(선택지·열) 출처 — 현재 템플릿에서 **라벨로** 찾는다.
+ *
+ * v1 은 안정키가 없어 라벨이 유일한 연결고리다. 라벨이 안 걸리면 `undefined` 를 돌려
+ * 블록 자신이 든 정의만 쓰게 한다 — 없는 정의를 지어내지 않는다.
+ */
+function templateDefsResolver(
+  expType: string,
+  typeId: ExperienceTypeId,
+): ((block: Block) => BlockDefs | undefined) | undefined {
+  if (!hasTemplate(expType)) return undefined
+  const tmpl = getTemplateForType(typeId)
+  const byLabel = new Map<string, Block>()
+  for (const b of [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)]) {
+    for (const t of [b, ...(b.children ?? [])]) {
+      if (!byLabel.has(t.label)) byLabel.set(t.label, t)
+    }
+  }
+  return block => {
+    const match = byLabel.get(block.label)
+    if (!match || match.type !== block.type) return undefined
+    return {
+      options: match.options,
+      columns: match.value?.type === "repeatable-cell" ? match.value.columns : undefined,
+    }
+  }
 }
 
 /**
@@ -706,9 +735,14 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   // ⚠️ v1 은 저장 배열을 그대로 통과시키므로 손상 값이 무검증으로 들어온다 (FRT-200).
   // 아래 이관·dedup 로직이 곧바로 `isBlockDiscardable`(=isBlockEmpty)을 부르므로,
   // **여기서 즉시** 보정해야 한다 — 한 줄이라도 늦으면 그 판정에서 먼저 죽는다.
-  const savedCore = normalizeBlocks(content.coreBlocks ?? [])
-  const savedExt = normalizeBlocks(content.extensionBlocks ?? [])
-  const savedCustom = normalizeBlocks(content.customBlocks ?? [])
+  // ⚠️ 템플릿 정의를 함께 넘긴다. v1 은 템플릿 병합이 **나중에**(ExperienceFormV2 →
+  // mergeSavedIntoTemplate) 일어나는데, 여기서 결측 정의를 `[]` 로 굳혀 버리면 그 병합은
+  // 빈 배열을 "사용자가 다 지웠다"로 읽어 현재 템플릿의 선택지·열을 되살리지 못한다 —
+  // 값은 남는데 그릴 컨트롤이 없는 칸이 된다.
+  const defsOf = templateDefsResolver(exp.type, typeId)
+  const savedCore = normalizeBlocks(content.coreBlocks ?? [], defsOf)
+  const savedExt = normalizeBlocks(content.extensionBlocks ?? [], defsOf)
+  const savedCustom = normalizeBlocks(content.customBlocks ?? [], defsOf)
 
   if (!hasTemplate(exp.type)) {
     return { ...base, coreBlocks: savedCore, extensionBlocks: savedExt, customBlocks: savedCustom }

@@ -475,6 +475,19 @@ const asText = (x: unknown): string => (typeof x === 'string' ? x : '')
 const asStrings = (x: unknown): string[] =>
   Array.isArray(x) ? x.filter((i): i is string => typeof i === 'string') : []
 
+/**
+ * 자리를 지키며 문자열로 맞춘다.
+ *
+ * ⚠️ **표의 열·셀은 위치가 곧 의미다.** `asStrings` 처럼 걸러 내면 뒤 원소가 앞으로 당겨져
+ * **다른 열의 값이 된다** — 그대로 저장되므로 값 유실보다 나쁜 무음 오염이다.
+ * 반대로 태그·체크 목록은 자리에 뜻이 없으니 걸러 내는 쪽이 맞다.
+ */
+const asStringsInPlace = (x: unknown): string[] =>
+  Array.isArray(x) ? x.map(i => (typeof i === 'string' ? i : '')) : []
+
+const allStrings = (x: unknown): boolean =>
+  Array.isArray(x) && x.every(i => typeof i === 'string')
+
 const isPlainObject = (x: unknown): x is Record<string, unknown> =>
   !!x && typeof x === 'object' && !Array.isArray(x)
 
@@ -496,11 +509,11 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
         typeof v.start === 'string' && typeof v.end === 'string' && typeof v.isCurrent === 'boolean'
       )
     case 'single-select':
-      return Array.isArray(v.options) && typeof v.selected === 'string'
+      return allStrings(v.options) && typeof v.selected === 'string'
     case 'checklist':
-      return Array.isArray(v.options) && Array.isArray(v.checked)
+      return allStrings(v.options) && allStrings(v.checked)
     case 'tags':
-      return Array.isArray(v.tags)
+      return allStrings(v.tags)
     case 'link':
       return (
         typeof v.url === 'string' &&
@@ -517,11 +530,14 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
     case 'repeatable-cell':
       return (
         Array.isArray(v.columns) &&
+        v.columns.every(c => isPlainObject(c) && typeof c.key === 'string') &&
         Array.isArray(v.rows) &&
-        v.rows.every(r => isPlainObject(r) && isPlainObject(r.cells))
+        // 행 `id` 까지 물어야 한다 — 없으면 `repairRows` 를 건너뛴 채 렌더에 닿아
+        // React key 가 겹치고 수정·삭제 핸들러가 엉뚱한 행을 잡는다.
+        v.rows.every(r => isPlainObject(r) && isFilledText(r.id) && isPlainObject(r.cells))
       )
     case 'table':
-      return Array.isArray(v.columns) && Array.isArray(v.rows) && v.rows.every(r => Array.isArray(r))
+      return allStrings(v.columns) && Array.isArray(v.rows) && v.rows.every(allStrings)
     case 'group':
       return true
     default:
@@ -539,11 +555,24 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
  */
 function repairRows(x: unknown): BlockRow[] {
   if (!Array.isArray(x)) return []
-  return x.filter(isPlainObject).map((r, i) => ({
-    ...r,
-    id: asText(r.id) || `row-${i}`,
-    cells: isPlainObject(r.cells) ? (r.cells as Record<string, CellValue>) : {},
-  })) as BlockRow[]
+  const rows = x.filter(isPlainObject)
+  // ⚠️ 이미 쓰이는 id 를 피한다. 겹치면 수정·삭제 핸들러가 행을 id 로 찾으므로 **하나를 고치면
+  // 둘 다 바뀌고 하나를 지우면 둘 다 사라진다**(React key 도 중복된다). 인덱스에서 파생시키되
+  // 충돌하면 뒤에 번호를 붙인다 — 같은 입력이면 늘 같은 id 라야 렌더마다 행이 리마운트되지 않는다.
+  const used = new Set(rows.map(r => asText(r.id)).filter(Boolean))
+  return rows.map((r, i) => {
+    let id = asText(r.id)
+    if (!id) {
+      id = `row-${i}`
+      for (let n = 1; used.has(id); n += 1) id = `row-${i}-${n}`
+      used.add(id)
+    }
+    return {
+      ...r,
+      id,
+      cells: isPlainObject(r.cells) ? (r.cells as Record<string, CellValue>) : {},
+    }
+  }) as BlockRow[]
 }
 
 /**
@@ -657,8 +686,9 @@ export function normalizeBlockValue(
         type: 'repeatable-cell',
         // 열 정의도 사용자가 친 값이 아니라 **템플릿이 주는 정의**다 — `options` 와 같은 근거로
         // 결측이면 되살린다. 열이 비면 표는 그릴 칸조차 없다. 배열이면 빈 배열도 존중한다.
+        // 열은 `key` 로 셀을 찾으므로 자리에 뜻이 없다 — 깨진 열은 걸러 낸다(표와 다른 점).
         columns: Array.isArray(v.columns)
-          ? (v.columns as BlockColumnDef[])
+          ? (v.columns.filter(c => isPlainObject(c) && typeof c.key === 'string') as BlockColumnDef[])
           : (opts?.columns ?? []),
         rows: repairRows(v.rows),
       } as BlockValue
@@ -666,8 +696,8 @@ export function normalizeBlockValue(
       return {
         ...v,
         type: 'table',
-        columns: asStrings(v.columns),
-        rows: Array.isArray(v.rows) ? v.rows.map(asStrings) : [],
+        columns: asStringsInPlace(v.columns),
+        rows: Array.isArray(v.rows) ? v.rows.map(asStringsInPlace) : [],
       } as BlockValue
     case 'group':
       return { type: 'group' }
@@ -678,20 +708,39 @@ export function normalizeBlockValue(
 }
 
 /** 블록 하나의 값을 보정한다. 값이 온전하면 **원본 블록 참조를 그대로** 돌려준다. */
-export function normalizeBlock(block: Block): Block {
-  // 블록이 아는 선택지를 함께 넘긴다 — 값에서 사라진 목록을 되살릴 유일한 근거다.
-  const value = normalizeBlockValue(block.type, block.value, { options: block.options })
-  const children = block.children?.map(normalizeBlock)
+export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
+  // 블록이 아는 정의를 함께 넘긴다 — 값에서 사라진 선택지·열을 되살릴 근거다.
+  //
+  // ⚠️ **결측 정의를 근거 없이 `[]` 로 굳히면 그 뒤로는 못 되살린다.** 보정은 배열이면 빈
+  // 배열도 사용자의 선택으로 존중하므로, 나중에 템플릿과 병합하는 경로(v1)에서는 여기서
+  // 정의를 함께 넘겨야 "결측"과 "사용자가 다 지움"이 구분된 채로 남는다.
+  const value = normalizeBlockValue(block.type, block.value, {
+    options: block.options ?? defs?.options,
+    columns: defs?.columns,
+  })
+  const children = block.children?.map(c => normalizeBlock(c, defs))
   const childrenChanged =
     !!block.children && children!.some((c, i) => c !== block.children![i])
   if (value === block.value && !childrenChanged) return block
   return { ...block, value, ...(children ? { children } : {}) }
 }
 
-/** 블록 배열을 보정한다. 전부 온전하면 원본 배열 참조를 그대로 돌려준다. */
-export function normalizeBlocks(blocks: Block[]): Block[] {
+export interface BlockDefs {
+  options?: string[]
+  columns?: BlockColumnDef[]
+}
+
+/**
+ * 블록 배열을 보정한다. 전부 온전하면 원본 배열 참조를 그대로 돌려준다.
+ *
+ * `defsOf` 는 블록별 정의(선택지·열) 출처다 — v1 처럼 저장 블록이 정의를 잃었을 수 있고
+ * 현재 템플릿이 그 정의를 아는 경우에 넘긴다.
+ */
+export function normalizeBlocks(blocks: Block[], defsOf?: (block: Block) => BlockDefs | undefined): Block[] {
   if (!Array.isArray(blocks)) return []
-  const out = blocks.filter(b => !!b && typeof b === 'object').map(normalizeBlock)
+  const out = blocks
+    .filter(b => !!b && typeof b === 'object')
+    .map(b => normalizeBlock(b, defsOf?.(b)))
   return out.length === blocks.length && out.every((b, i) => b === blocks[i]) ? blocks : out
 }
 

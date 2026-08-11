@@ -10,6 +10,7 @@ import type {
 import type { Experience } from "@/types/experience"
 import { getTemplateForType, TEMPLATE_VERSION } from "@/lib/constants/templates-v2"
 import {
+  mergeSavedIntoTemplate,
   toExperienceV2,
   toSavePayload,
 } from "@/lib/utils/experience-mapper"
@@ -3359,6 +3360,51 @@ describe("저장 왕복 — 손상된 값 정규화 (FRT-200)", () => {
     const v2 = toExperienceV2(exp)
     const block = v2.customBlocks.find(b => b.key === "c1")
     expect(block?.value).toMatchObject({ type: "period", start: "2022.03" })
+  })
+})
+
+/**
+ * v1 은 템플릿 병합이 **나중에**(ExperienceFormV2 → mergeSavedIntoTemplate) 일어난다. 그래서
+ * 로드 시점 보정이 결측 정의를 `[]` 로 굳혀 버리면, 뒤이은 병합은 그 `[]` 를 "사용자가 다
+ * 지웠다"로 읽어 **현재 템플릿 정의를 되살리지 못한다**. 값은 남는데 그릴 컨트롤이 없다.
+ */
+describe("toExperienceV2 v1 — 정의가 결측인 값 (FRT-200)", () => {
+  function repeatableTemplateBlock(): Block {
+    const tmpl = getTemplateForType("career")
+    const all = [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)]
+    const found = all.find(b => b.type === "repeatable-cell")
+    if (!found) throw new Error("career 템플릿에 repeatable-cell 블록이 없다 — 테스트 전제가 깨졌다")
+    return found
+  }
+
+  it("열 정의를 잃은 v1 표는 템플릿 열을 되찾고 행은 지킨다", () => {
+    const tplBlock = repeatableTemplateBlock()
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          extensionBlocks: [
+            {
+              id: "b1",
+              type: "repeatable-cell",
+              label: tplBlock.label,
+              value: { type: "repeatable-cell", rows: [{ id: "r1", cells: { any: "값" } }] },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+
+    const saved = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks].find(
+      b => b.label === tplBlock.label,
+    )
+    expect(saved).toBeDefined()
+
+    // 병합 뒤 열이 살아 있어야 입력·조회 컨트롤이 생긴다.
+    const merged = mergeSavedIntoTemplate(tplBlock, saved!)
+    const value = merged.value as unknown as { columns: unknown[]; rows: unknown[] }
+    expect(value.columns.length).toBeGreaterThan(0)
+    expect(value.rows).toHaveLength(1)
   })
 })
 
