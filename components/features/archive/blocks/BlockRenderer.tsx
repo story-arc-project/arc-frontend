@@ -1,7 +1,7 @@
 "use client"
 
 import type { Block, BlockValue, RepeatableCellBlockValue } from "@/types/archive"
-import { isFileCellValue, normalizeBlockForRender } from "@/lib/utils/block-utils"
+import { isFileCellValue, isKnownBlockType, normalizeBlockForRender } from "@/lib/utils/block-utils"
 import TextBlock from "./TextBlock"
 import TextareaBlock from "./TextareaBlock"
 import DateBlock from "./DateBlock"
@@ -55,21 +55,29 @@ export default function BlockRenderer({
    * 저장 경로에서 갈아 끼우면 구 프론트가 그 값을 굳혀 버리므로, 모양 맞추기는 여기서만 한다.
    */
   const block = normalizeBlockForRender(rawBlock)
+  /**
+   * ⚠️ **모르는 판별자 위에는 편집 칸을 띄우지 않는다.** 위 보정은 "그릴 모양"을 만들어 줄 뿐이고,
+   * 그게 편집 가능하면 사용자의 첫 입력이 **보존해 둔 새 스키마 값을 덮는다** — 값을 지키려고
+   * 만든 폴백이 값을 지우는 통로가 된다. 읽기 전용으로 두면 그 값은 저장 왕복에서 그대로 산다.
+   */
+  const rawType = (rawBlock.value as { type?: unknown } | null | undefined)?.type
+  const opaque = typeof rawType === "string" && !isKnownBlockType(rawType)
+  const locked = readOnly || opaque
   const handleChange = (value: BlockValue) => onChange(block.id, value)
 
   const rendered = (() => {
     switch (block.type) {
       case "text":
-        return <TextBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        return <TextBlock block={block} readOnly={locked} onChange={handleChange} />
       case "textarea":
-        return <TextareaBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        return <TextareaBlock block={block} readOnly={locked} onChange={handleChange} />
       case "date":
-        return <DateBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        return <DateBlock block={block} readOnly={locked} onChange={handleChange} />
       case "period":
         return (
           <PeriodBlock
             block={block}
-            readOnly={readOnly}
+            readOnly={locked}
             reserveHideSlot={hideSlot}
             onChange={handleChange}
           />
@@ -79,20 +87,20 @@ export default function BlockRenderer({
         // (저장 options·템플릿 프리셋·checked 가 모두 빔) 옵션을 새로 만들 수 있는
         // ChecklistBlock 으로 폴백한다 — 판정은 렌더와 같은 계산을 써야 갈리지 않는다.
         return block.variant === "mood-tag" && moodTagOptions(block).length > 0
-          ? <MoodTagBlock block={block} readOnly={readOnly} onChange={handleChange} />
-          : <ChecklistBlock block={block} readOnly={readOnly} onChange={handleChange} />
+          ? <MoodTagBlock block={block} readOnly={locked} onChange={handleChange} />
+          : <ChecklistBlock block={block} readOnly={locked} onChange={handleChange} />
       }
       case "single-select":
-        return <SingleSelectBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        return <SingleSelectBlock block={block} readOnly={locked} onChange={handleChange} />
       case "tags":
-        return <TagsBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        return <TagsBlock block={block} readOnly={locked} onChange={handleChange} />
       case "link":
-        return <LinkBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        return <LinkBlock block={block} readOnly={locked} onChange={handleChange} />
       case "file":
         return (
           <FileBlock
             block={block}
-            readOnly={readOnly}
+            readOnly={locked}
             onBusyChange={onBusyChange}
             onChange={handleChange}
           />
@@ -101,7 +109,7 @@ export default function BlockRenderer({
         // role-history 는 접이식 역할 이력 패널(FRT-178). 역할명을 읽을 `role` 컬럼이 없으면
         // 이름을 하나도 만들어내지 못하므로 표형으로 폴백한다 — 판정은 렌더와 같은 계산을 쓴다.
         if (block.variant === "role-history" && hasRoleHistoryShape(block)) {
-          return <RoleHistoryBlock block={block} readOnly={readOnly} onChange={handleChange} />
+          return <RoleHistoryBlock block={block} readOnly={locked} onChange={handleChange} />
         }
         // outcome-list 는 개조식 불릿-행 UI(단일컬럼 전용). 사용자가 '열 추가'로 컬럼을
         // 늘린 레거시 값이면 데이터가 숨지 않도록 표형 RepeatableCellBlock 으로 폴백한다(FRT-97).
@@ -120,11 +128,11 @@ export default function BlockRenderer({
           (outcomeColumns[0] === undefined || OUTCOME_LIST_TYPES.has(outcomeColumns[0].blockType)) &&
           !outcomeValue.rows.some(row => Object.values(row.cells).some(isFileCellValue))
         return block.variant === "outcome-list" && outcomeShape
-          ? <OutcomeList block={block} readOnly={readOnly} onChange={handleChange} />
-          : <RepeatableCellBlock block={block} readOnly={readOnly} onChange={handleChange} />
+          ? <OutcomeList block={block} readOnly={locked} onChange={handleChange} />
+          : <RepeatableCellBlock block={block} readOnly={locked} onChange={handleChange} />
       }
       case "table":
-        return <TableBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        return <TableBlock block={block} readOnly={locked} onChange={handleChange} />
     }
   })()
 

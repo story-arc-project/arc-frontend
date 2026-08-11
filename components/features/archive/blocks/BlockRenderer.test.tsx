@@ -192,6 +192,21 @@ describe("손상된 저장 값 렌더 (FRT-200)", () => {
   })
 
   /**
+   * ⚠️ **모르는 판별자 위에 편집 가능한 칸을 띄우면 안 된다.** 렌더 관문은 그릴 모양을 만들어
+   * 주지만, 그게 편집 가능하면 사용자의 첫 입력이 **보존해 둔 새 스키마 값을 덮는다.**
+   * 값을 지키려고 만든 폴백이 값을 지우는 통로가 된다.
+   */
+  it("모르는 판별자의 값은 편집 모드에서도 읽기 전용으로 그린다", () => {
+    const { container } = render(
+      <BlockRenderer
+        block={broken("text", { type: "brand-new-in-v3", payload: "새 스키마" })}
+        onChange={() => {}}
+      />,
+    )
+    expect(container.querySelector("input, textarea, select")).toBeNull()
+  })
+
+  /**
    * "죽지 않는다"만으로는 부족하다 — 살아 있는 값을 지워 버리는 구현도 통과하기 때문이다.
    * 반만 깨진 값은 살아남은 쪽이 실제로 화면에 보여야 한다.
    */
