@@ -23,6 +23,7 @@ import {
   cloneBlocks,
   createGroupBlock,
   isBlockDiscardable,
+  dedupeBlockIdsAcross,
   isKnownBlockType,
   isValueOccupied,
   normalizeBlockValue,
@@ -143,13 +144,17 @@ function templateDefsResolver(
   if (!hasTemplate(expType)) return undefined
   const tmpl = getTemplateForType(typeId)
   const byLabel = new Map<string, Block>()
+  // ⚠️ **안정키가 살아 있으면 그게 더 확실한 신원이다** — 라벨은 개명으로 낡을 수 있고,
+  // 라벨만 보면 못 찾아 정의가 `[]` 로 굳는다(그 뒤 템플릿 병합이 되살리지 못한다).
+  const byKey = new Map<string, Block>()
   for (const b of [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)]) {
     for (const t of [b, ...(b.children ?? [])]) {
       if (!byLabel.has(t.label)) byLabel.set(t.label, t)
+      if (t.key && !byKey.has(t.key)) byKey.set(t.key, t)
     }
   }
   return block => {
-    const match = byLabel.get(block.label)
+    const match = (block.key ? byKey.get(block.key) : undefined) ?? byLabel.get(block.label)
     if (!match || match.type !== block.type) return undefined
     return {
       options: match.options,
@@ -748,12 +753,17 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   // 빈 배열을 "사용자가 다 지웠다"로 읽어 현재 템플릿의 선택지·열을 되살리지 못한다 —
   // 값은 남는데 그릴 컨트롤이 없는 칸이 된다.
   const defsOf = templateDefsResolver(exp.type, typeId)
-  const savedCore = normalizeBlocks(content.coreBlocks ?? [], defsOf, 'core')
-  const savedExt = normalizeBlocks(content.extensionBlocks ?? [], defsOf, 'ext')
   // ⚠️ 커스텀 블록에는 **정의를 넘기지 않는다.** 커스텀 라벨은 템플릿 신원이 아니라 사용자가
   // 지은 이름이라, 우연히 같은 이름이라고 템플릿 선택지·열을 밀어 넣으면 매칭된 적도 없는
   // 사용자의 칸이 조용히 바뀐다. 블록 자신이 든 정의만 쓴다.
-  const savedCustom = normalizeBlocks(content.customBlocks ?? [], undefined, 'custom')
+  //
+  // ⚠️ id 유일성은 **세 배열에 걸쳐** 물어야 한다 — 폼이 하나의 id 맵으로 합쳐 쓰므로
+  // 배열 안에서만 유일해선 부족하다(이미 같은 id 를 든 두 블록은 폴백도 안 쓴다).
+  const [savedCore, savedExt, savedCustom] = dedupeBlockIdsAcross([
+    normalizeBlocks(content.coreBlocks ?? [], defsOf, 'core'),
+    normalizeBlocks(content.extensionBlocks ?? [], defsOf, 'ext'),
+    normalizeBlocks(content.customBlocks ?? [], undefined, 'custom'),
+  ])
 
   if (!hasTemplate(exp.type)) {
     return { ...base, coreBlocks: savedCore, extensionBlocks: savedExt, customBlocks: savedCustom }

@@ -3479,6 +3479,49 @@ describe("toExperienceV2 v1 — 정의가 결측인 값 (FRT-200)", () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
+  /** 폴백을 안 쓰는 경우 — **이미 같은 id 를 든** 두 블록은 배열 안에서만 보면 둘 다 성해 보인다. */
+  it("core·extension 이 이미 같은 id 를 들고 있어도 갈라 준다", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          coreBlocks: [{ id: "same", type: "text", label: "코어", value: { type: "text", text: "가" } }],
+          extensionBlocks: [
+            { id: "same", type: "text", label: "확장", value: { type: "text", text: "나" } },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const ids = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks].map(b => b.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  /** 라벨이 낡았어도 **안정키가 살아 있으면** 그게 더 확실한 신원이다. */
+  it("라벨이 낡아도 안정키로 템플릿 열을 되찾는다", () => {
+    const tplBlock = repeatableTemplateBlock()
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          extensionBlocks: [
+            {
+              id: "b1",
+              key: tplBlock.key,
+              type: "repeatable-cell",
+              label: "옛 라벨(개명 전)",
+              value: { type: "repeatable-cell", rows: [{ id: "r1", cells: { any: "값" } }] },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const block = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks]
+      .flatMap(b => [b, ...(b.children ?? [])])
+      .find(b => b.key === tplBlock.key)
+    expect(block).toBeDefined()
+    expect((block!.value as unknown as { columns: unknown[] }).columns.length).toBeGreaterThan(0)
+  })
+
   it("열 정의를 잃은 v1 표는 템플릿 열을 되찾고 행은 지킨다", () => {
     const tplBlock = repeatableTemplateBlock()
     const v1 = toExperienceV2(

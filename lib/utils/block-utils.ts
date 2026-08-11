@@ -1103,6 +1103,24 @@ export interface BlockDefs {
  * 현재 템플릿이 그 정의를 아는 경우에 넘긴다.
  */
 /**
+ * 여러 블록 배열에 **걸쳐** id 를 유일하게 만든다.
+ *
+ * ⚠️ 배열 안에서만 보면 이미 같은 id 를 든 두 블록이 둘 다 성해 보인다. 폼은 core·extension 을
+ * **하나의 id 맵**으로 합쳐 쓰므로(`writeBackBlocks`), 한쪽을 고치면 다른 쪽이 같은 객체로 덮인다.
+ */
+export function dedupeBlockIdsAcross(groups: Block[][]): Block[][] {
+  const flat = groups.flat()
+  const ids = dedupeNames(flat.map(b => asIdText(b.id)), i => `blk-${i}`)
+  let i = 0
+  return groups.map(group =>
+    group.map(b => {
+      const id = ids[i++]
+      return b.id === id ? b : { ...b, id }
+    }),
+  )
+}
+
+/**
  * **표시 전용** 보정 — 렌더 관문(`BlockRenderer`)만 쓴다.
  *
  * 저장 경로(`normalizeBlock`)는 모르는 판별자를 그대로 지킨다. 하지만 그리려면 컨트롤이 읽을
