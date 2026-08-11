@@ -451,7 +451,9 @@ export function isBlockEmpty(block: Block): boolean {
     case 'group':
       return (block.children ?? []).every(c => isBlockEmpty(c))
     default:
-      // 이 코드가 모르는 type(구 스키마 잔재·손상 값)은 그릴 것이 없다고 본다.
+      // 이 코드가 모르는 type(구 스키마 잔재·새 스키마가 쓴 값)은 그릴 것이 없다고 본다.
+      // ⚠️ **"버려도 된다"는 뜻이 아니다.** 이 판정을 그대로 버림 근거로 쓰면 못 그린다는
+      // 이유로 남의 데이터를 지운다 — 그 경계는 `isBlockDiscardable` 이 따로 친다 (FRT-200).
       return true
   }
 }
