@@ -50,46 +50,73 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // 바뀌지 않는다 — dirty 판정용 initial 과 역할이 다르므로 따로 든다.
   const [original, setOriginal] = useState<CoverLetterResult | null>(null);
   const [initial, setInitial] = useState<CoverLetterResult | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("editor");
   const [saving, setSaving] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<CoverLetterDraft | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // 생성 시 입력한 글자수 제한은 출력 계약에 없다 — 서버가 안 준 문항만 로컬 저장분으로
-      // 채운다(서버 값이 정본). 없으면 상한 없이 글자수만 보여주는 현재 동작 그대로다.
-      const data = applyLimits(await getCoverLetter(id), readLimits(id));
-      setResult(data);
-      setInitial(data);
-      // 검증이 가리키는 본문은 **처음 받은 본문**이다. 저장이 성공하면 서버 본문이 편집본으로
-      // 바뀌는데, 그걸 기준으로 삼으면 사용자가 써넣은 문장이 "검증됨"으로 세탁된다.
-      writeBaselineIfAbsent(id, data);
-      setOriginal(applyBaseline(data, readBaseline(id)));
+  // FRT-238 — 레쥬메 상세와 같은 이유다. App Router 는 id 만 바뀌면 이 인스턴스를 재사용하므로
+  // 이전 자기소개서의 조회가 아직 날아다니는 채로 다음 조회가 시작된다.
+  //
+  // 세대(seq)까지 키에 넣는 건 되돌아오는 경로 때문이다 — A→B→A 로 돌아오면 id 만으로 만든
+  // 키가 이미 답을 받아둔 키와 같아져, 재조회 중인데도 옛 본문이 그대로 보인다. id 는 prop 이라
+  // setState 로 못 바꾸니 "지난 렌더와 달라졌는가"를 렌더 중에 비교해 커밋 전에 세대를 올린다.
+  const [seq, setSeq] = useState(0);
+  const [trackedId, setTrackedId] = useState(id);
+  if (id !== trackedId) {
+    setTrackedId(id);
+    setSeq((s) => s + 1);
+  }
 
-      const draft = readDraft(id);
-      if (draft && isDraftNewer(draft, data)) {
-        setPendingDraft(draft);
-      } else {
-        setPendingDraft(null);
-        // 서버 본문이 draft 보다 새로우면 그 draft 는 낡았다 — 남겨 두면 다음 진입 때마다
-        // 배너가 다시 뜬다. 이 정리는 되돌릴 수 없으므로, "판정 불가"를 여기로 흘려보내지
-        // 않는 책임은 isDraftNewer 쪽에 있다(서버 시각을 못 읽으면 true 로 보존).
-        if (draft) clearDraft(id);
-      }
-    } catch (err) {
-      setError(err as Error);
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
+  // 화면이 지금 답해야 할 질문과, 실제로 답을 받아둔 질문. 둘이 다르면 그 자체가 로딩이다.
+  const requestKey = `${id}:${seq}`;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const loading = loadedKey !== requestKey;
+
+  const handleRetry = useCallback(() => setSeq((s) => s + 1), []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    // 늦게 도착한 답이 무엇 하나라도 건드리면 id 와 본문이 어긋난다. 응답 이후의 갱신은
+    // 전부 이 가드 안에 둔다 — 절반만 가드하면 절반만 고쳐진 버그가 된다.
+    let ignore = false;
+
+    // 생성 시 입력한 글자수 제한은 출력 계약에 없다 — 서버가 안 준 문항만 로컬 저장분으로
+    // 채운다(서버 값이 정본). 없으면 상한 없이 글자수만 보여주는 현재 동작 그대로다.
+    getCoverLetter(id)
+      .then((raw) => {
+        if (ignore) return;
+        const data = applyLimits(raw, readLimits(id));
+        setResult(data);
+        setInitial(data);
+        // 성공은 지난 실패를 지운다 — 안 지우면 재시도가 성공해도 에러 화면이 남는다.
+        setError(null);
+        // 검증이 가리키는 본문은 **처음 받은 본문**이다. 저장이 성공하면 서버 본문이 편집본으로
+        // 바뀌는데, 그걸 기준으로 삼으면 사용자가 써넣은 문장이 "검증됨"으로 세탁된다.
+        writeBaselineIfAbsent(id, data);
+        setOriginal(applyBaseline(data, readBaseline(id)));
+
+        const draft = readDraft(id);
+        if (draft && isDraftNewer(draft, data)) {
+          setPendingDraft(draft);
+        } else {
+          setPendingDraft(null);
+          // 서버 본문이 draft 보다 새로우면 그 draft 는 낡았다 — 남겨 두면 다음 진입 때마다
+          // 배너가 다시 뜬다. 이 정리는 되돌릴 수 없으므로, "판정 불가"를 여기로 흘려보내지
+          // 않는 책임은 isDraftNewer 쪽에 있다(서버 시각을 못 읽으면 true 로 보존).
+          if (draft) clearDraft(id);
+        }
+        setLoadedKey(requestKey);
+      })
+      .catch((err) => {
+        if (ignore) return;
+        setError(err as Error);
+        setLoadedKey(requestKey);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [id, requestKey]);
 
   const dirtyRef = useRef(false);
   const resultRef = useRef<CoverLetterResult | null>(null);
@@ -105,7 +132,11 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   resultRef.current = result;
 
   const handleSave = useCallback(async () => {
-    if (!result || !dirty || saving) return;
+    // FRT-238 — loading 은 id 가 이미 바뀌었지만 새 자기소개서 응답은 아직 안 온 창이다.
+    // 이 창에서 result/dirty 는 여전히 **이전** 문서 것인데 id 는 **다음** 문서라, 가드
+    // 없이 저장하면 이전 문서 내용을 다음 문서 id 로 PATCH 해버린다. 저장 버튼은 이 창에서
+    // 렌더되지 않아 안전하지만, 전역 Ctrl/Cmd+S 리스너는 이 창에서도 계속 살아있다.
+    if (!result || !dirty || saving || loading) return;
     setSaving(true);
     const snapshot = result;
     try {
@@ -144,7 +175,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     } finally {
       setSaving(false);
     }
-  }, [result, dirty, saving, id]);
+  }, [result, dirty, saving, loading, id]);
 
   const handleBack = useCallback(() => {
     if (dirty && result) {
@@ -202,7 +233,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-2xl space-y-3 px-4 py-8">
+      <div className="mx-auto max-w-2xl space-y-3 px-4 py-8" aria-busy="true">
         {[0, 1, 2].map((i) => (
           <div
             key={i}
@@ -240,7 +271,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
             <Link href={`${basePath}/export`}>익스포트로 돌아가기</Link>
           </Button>
           {!isNotFound && (
-            <Button variant="primary" size="sm" onClick={load}>
+            <Button variant="primary" size="sm" onClick={handleRetry}>
               다시 시도
             </Button>
           )}

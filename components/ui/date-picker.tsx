@@ -1,5 +1,7 @@
 import { InputHTMLAttributes, forwardRef } from "react";
 
+import { RequiredDot } from "./required-dot";
+
 interface DatePickerProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
   label?: string;
   hint?: string;
@@ -11,7 +13,7 @@ interface DatePickerProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "t
 }
 
 export const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(
-  ({ label, hint, error, mode = "date", wrapperClassName = "", className = "", id, ...props }, ref) => {
+  ({ label, hint, error, mode = "date", wrapperClassName = "", className = "", id, required, ...props }, ref) => {
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
     const hintId = inputId ? `${inputId}-hint` : undefined;
     const errorId = inputId ? `${inputId}-error` : undefined;
@@ -22,12 +24,14 @@ export const DatePicker = forwardRef<HTMLInputElement, DatePickerProps>(
         {label && (
           <label htmlFor={inputId} className="text-field-label text-text-primary">
             {label}
+            {required && <RequiredDot />}
           </label>
         )}
         <input
           ref={ref}
           id={inputId}
           type={mode === "month" ? "month" : "date"}
+          required={required}
           aria-invalid={!!error}
           aria-describedby={describedBy}
           placeholder={mode === "month" ? "YYYY-MM" : "YYYY-MM-DD"}

@@ -21,7 +21,6 @@ import {
   deleteResume,
   getResume,
   getResumeList,
-  ResumeMutationUnsupportedError,
   updateResume,
 } from "./export-api";
 import { isEmptySection } from "@/types/resume";
@@ -482,74 +481,114 @@ describe("getResumeList — title/language/status 파싱 (FRT-123 계약 §2.4)"
   });
 });
 
+// ─── 저장 요청 본문 계약 ─────────────────────────────────────────────
+//
+// 서버(BAC-56)의 `ResumePatchRequest` 는 `{title?, result?}` 이고 pydantic 기본이
+// extra="ignore" 다. 맨 ResumeVersion 을 보내면 **거절당하지 않는다** — 두 필드 모두
+// 미지정으로 처리돼 아무것도 안 바뀐 채 200 과 **옛 본문**이 돌아오고, 언랩이 멀쩡히
+// 성공해 호출부는 옛 본문을 확정하고 draft 까지 지운 뒤 "저장됐어요"를 띄운다.
+// 실패가 아니라 **성공으로 위장된 유실**이라 상태코드 그물에는 안 걸린다 — 본문 모양을 박는다.
+describe("updateResume 요청 본문", () => {
+  const mockPatch = vi.mocked(api.patch);
+
+  it("본문을 result 로 감싸 보낸다", async () => {
+    mockPatch.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-b1", result: { meta: { language: "ko" } } },
+    });
+
+    const body = {
+      meta: { language: "ko" },
+      자기소개_요약: "고친 내용",
+    } as unknown as Parameters<typeof updateResume>[1];
+    await updateResume("res-b1", body);
+
+    expect(mockPatch).toHaveBeenCalledWith("/export/resume/res-b1", {
+      result: body,
+    });
+  });
+});
+
 // ─── 저장·삭제 실패 매핑 ─────────────────────────────────────────────
 //
-// 폴백 판정은 두 호출이 **서로 다른 상태 집합**을 봐야 한다. 하나로 묶으면 편집 저장을
-// 살리려고 넣은 422 가 삭제 버튼까지 숨긴다(RecentResumeList 의 setDeleteSupported(false)).
+// BAC-56 이 배포되면서 `PATCH`·`DELETE /export/resume/{id}` 가 둘 다 실재한다
+// (라이브 probe 401 = 존재). 그래서 **"미구현 폴백"이라는 개념 자체가 사라졌다** —
+// 어떤 실패든 있는 그대로 올려야 화면이 사유를 말할 수 있다. 특정 상태코드를 골라
+// 삼키면 그만큼 화면이 벙어리가 된다.
 describe("resume 뮤테이션 실패 매핑", () => {
   const mockPatch = vi.mocked(api.patch);
   const mockDelete = vi.mocked(api.delete);
 
-  it("updateResume: 422 를 폴백 신호로 본다 — 서버가 본문을 아직 못 받는다(FRT-148)", async () => {
-    mockPatch.mockRejectedValue(new ApiError(422, "Unprocessable Entity"));
+  it("updateResume: 422 는 진짜 검증 실패다 — 사유를 그대로 올린다", async () => {
+    mockPatch.mockRejectedValue(new ApiError(422, "제목은 100자를 넘을 수 없어요."));
 
-    await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
-      ResumeMutationUnsupportedError,
-    );
+    const err = await updateResume("res-1", {} as never).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).message).toContain("100자");
   });
 
+  // 생성이 아직 안 끝난 레쥬메를 저장하면 서버가 400 을 준다(`patch_resume` 의 유일한
+  // 400 분기). 상태코드를 삼키면 화면이 "왜 안 되는지"를 말할 수 없다.
+  it("updateResume: 400(생성 미완료)도 그대로 올린다", async () => {
+    mockPatch.mockRejectedValue(new ApiError(400, "Resume is not completed yet."));
+
+    const err = await updateResume("res-1", {} as never).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(400);
+  });
+
+  // 405/501 은 배포된 서버에서 나올 수 없다. 그래도 온다면(구 백엔드 롤백) 그건
+  // **저장 실패**이지 별도 안내가 필요한 특수 상태가 아니다 — 화면이 실패로 다루면
+  // 임시 저장은 그대로 남고 편집도 잃지 않는다.
   it.each([501, 405])(
-    "updateResume: %i 도 기존대로 폴백 신호다",
+    "updateResume: %i 도 더는 특별 취급하지 않는다 — ApiError 그대로 올린다",
     async (status) => {
       mockPatch.mockRejectedValue(new ApiError(status, "unsupported"));
 
-      await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
-        ResumeMutationUnsupportedError,
-      );
+      const err = await updateResume("res-1", {} as never).catch((e) => e);
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).status).toBe(status);
     },
   );
 
-  // 서버가 요청은 받아주면서(2xx) 본문 대신 {id, title} 만 돌려주는 경우 = 레쥬메 본문은
-  // 저장되지 않았다. 422 와 결과가 같으므로 판정도 같아야 임시 저장이 남는다.
-  it("updateResume: 2xx 인데 result 없는 응답도 폴백 신호로 본다", async () => {
+  // 배포된 PATCH 는 GET 과 같은 `ResumeData`(result 포함)를 돌려준다. 그런데도 본문이
+  // 없다면 응답이 계약을 벗어난 것이므로 **성공으로 위장하지 않는다** — 여기서 조용히
+  // 요청 본문을 되돌려주면 "저장됐어요"가 뜨고 임시 저장까지 지워져, 정작 서버엔 아무것도
+  // 안 남는 유실이 재현된다.
+  it("updateResume: 2xx 인데 result 가 없으면 성공으로 위장하지 않고 실패로 올린다", async () => {
     mockPatch.mockResolvedValue({
       status: "success",
       message: "ok",
       data: { id: "res-1", title: "제목" },
     });
 
-    await expect(updateResume("res-1", {} as never)).rejects.toBeInstanceOf(
-      ResumeMutationUnsupportedError,
-    );
+    await expect(updateResume("res-1", {} as never)).rejects.toThrow();
   });
 
-  it("updateResume: 그 밖의 실패는 그대로 올린다 — 폴백으로 삼키면 진짜 장애가 숨는다", async () => {
+  it("updateResume: 그 밖의 실패는 그대로 올린다", async () => {
     mockPatch.mockRejectedValue(new ApiError(500, "server error"));
 
     const err = await updateResume("res-1", {} as never).catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
-    expect(err).not.toBeInstanceOf(ResumeMutationUnsupportedError);
+    expect((err as ApiError).status).toBe(500);
   });
 
-  // DELETE 는 이미 서버에서 동작하고 body 가 없어 422 가 날 이유가 없다. 그런데도 422 를
-  // 폴백으로 매핑하면 "삭제 기능은 곧 제공될 예정" 안내가 뜨며 버튼이 사라진다 —
-  // 멀쩡한 기능을 없는 것으로 만든다.
-  it("deleteResume: 422 는 폴백 신호가 아니다 — 원래 에러 그대로 올린다", async () => {
+  it("deleteResume: 422 를 삼키지 않는다", async () => {
     mockDelete.mockRejectedValue(new ApiError(422, "Unprocessable Entity"));
 
     const err = await deleteResume("res-1").catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
-    expect(err).not.toBeInstanceOf(ResumeMutationUnsupportedError);
   });
 
   it.each([501, 405])(
-    "deleteResume: %i 은 기존대로 폴백 신호다",
+    "deleteResume: %i 도 ApiError 그대로 올린다 — 버튼을 숨기지 않는다",
     async (status) => {
       mockDelete.mockRejectedValue(new ApiError(status, "unsupported"));
 
-      await expect(deleteResume("res-1")).rejects.toBeInstanceOf(
-        ResumeMutationUnsupportedError,
-      );
+      const err = await deleteResume("res-1").catch((e) => e);
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as ApiError).status).toBe(status);
     },
   );
 });

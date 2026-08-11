@@ -2,7 +2,7 @@
 
 export function ResumeDetailSkeleton() {
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col" aria-busy="true">
       <div className="sticky top-[var(--gnb-h)] z-40 h-14 border-b border-border bg-surface/90 backdrop-blur-sm" />
       <div className="flex min-h-[calc(100dvh-var(--gnb-h)-3.5rem)] flex-col md:flex-row">
         <aside className="w-full border-b border-border p-6 md:w-2/5 md:border-b-0 md:border-r">

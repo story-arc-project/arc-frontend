@@ -61,7 +61,9 @@ export async function updateLibrary(
   },
 ): Promise<void> {
   if (isDemoMode()) return demo.updateLibrary(id, toLibraryUpsertPayload(payload));
-  await api.put<ApiSuccessResponse<LibraryIdData>>(
+  // 서버 계약은 PATCH 다(부분 병합). PUT 은 프론트가 잘못 부르던 시절 백엔드가
+  // 같은 핸들러에 덧붙여 준 별칭이라, 그쪽에 기대면 별칭이 정리될 때 다시 405 가 난다.
+  await api.patch<ApiSuccessResponse<LibraryIdData>>(
     `/libraries/${id}`,
     toLibraryUpsertPayload(payload),
   );

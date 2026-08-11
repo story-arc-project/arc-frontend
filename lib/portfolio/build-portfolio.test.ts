@@ -4,6 +4,8 @@ import type { Block } from "@/types/archive";
 import { SCHEMA_VERSION_V2 } from "@/types/archive";
 import type { PortfolioProfile } from "@/types/portfolio";
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper";
+import { getTemplateForType } from "@/lib/constants/templates-v2";
+import { equivalentLabels } from "@/lib/utils/form-cards";
 import { buildPortfolio, experienceToPost, isPublishableExperience } from "./build-portfolio";
 
 function blk(id: string, type: Block["type"], label: string, value: Block["value"]): Block {
@@ -356,5 +358,661 @@ describe("isPublishableExperience (명시적 옵트인)", () => {
     ["비공개", "비공개"],
   ])("기본 비공개 — %s 는 발행 불가", (_label, selected) => {
     expect(isPublishableExperience(withVisibility("x", selected))).toBe(false);
+  });
+});
+
+/**
+ * FRT-211 회귀(Codex P1) — 단일 날짜로 시점을 받는 유형의 발행 기간.
+ *
+ * 확정본 정렬로 수상경력·자격증은 코어 '기간'을 빼고(CORE_EXCLUDE) 각각 '수상일'·'취득일'
+ * 하나로 시점을 받는다. 그런데 발행 매퍼는 period 의미그룹(기간·활동 기간…)만 조회하고
+ * periodOf 는 date 값을 포맷하지 못해, **새로 만든 수상/자격증은 발행 시 날짜가 통째로 빈다**.
+ * (구 레코드는 폐기된 '기간'이 orphan 으로 custom 에 남아 있어 여전히 채워진다 — 신규만 해당.)
+ */
+describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
+  function dateOnlyExp(type: string, key: string, date: string): Experience {
+    return makeExp({
+      type,
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 창업 경진대회 대상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: { [key]: { type: "date", date } },
+      } as unknown as Experience["content"],
+    });
+  }
+
+  it("수상경력은 '수상일'을 발행 기간으로 쓴다", () => {
+    expect(experienceToPost(dateOnlyExp("award", "award-info.수상일", "2026-05-20")).period).toBe(
+      "2026.05",
+    );
+  });
+
+  it("자격증은 '취득일'을 발행 기간으로 쓴다", () => {
+    expect(
+      experienceToPost(dateOnlyExp("certification", "cert-info.취득일", "2025-11-03")).period,
+    ).toBe("2025.11");
+  });
+
+  it("날짜가 비어 있으면 기간도 빈다 — 없는 값을 지어내지 않는다", () => {
+    expect(experienceToPost(dateOnlyExp("award", "award-info.수상일", "")).period).toBe("");
+  });
+
+  /**
+   * FRT-211 후속(Codex P2) — 수상경력의 역할이 발행에서 사라지던 문제.
+   *
+   * 확정본은 팀 수상일 때만 '팀에서 내가 맡은 역할'을 보여준다. 이 라벨은 **의도적으로**
+   * `SEMANTIC_GROUPS.role` 밖에 있다(templates-v2.ts) — 그룹에 넣으면 `computeFormCards` 가
+   * 빈 코어 '내 역할/기여도' 를 항상 dedup 해 **개인 수상에서 역할 칸이 통째로 사라진다.**
+   * 그래서 라벨을 옮기는 대신 **발행 쪽에서만** 이 안정키를 폴백으로 읽는다.
+   * (화면엔 '데이터 분석 · 발표'가 보이는데 포트폴리오의 '내 역할' 섹션만 통째로 비던 상태)
+   */
+  it("팀 수상의 '팀에서 내가 맡은 역할'이 발행 기여도로 실린다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 데이터 분석 공모전 우수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "award-info.팀에서 내가 맡은 역할": { type: "text", text: "데이터 분석 · 발표" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).contribution).toBe("데이터 분석 · 발표");
+  });
+
+  /**
+   * 같은 부류(Codex P2 2라운드) — 수상경력은 확정본이 코어 '핵심 성과'를 빼고(CORE_EXCLUDE)
+   * '수상 내용 / 배경' 으로 대체했는데, 그 라벨이 `SEMANTIC_GROUPS.achievement` 밖이라
+   * 발행 시 성과가 통째로 버려졌다 — 화면엔 길게 적혀 있는데 포트폴리오만 빈 상태.
+   */
+  it("수상의 '수상 내용 / 배경'이 발행 성과로 실린다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "공모전 우수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "award-info.수상 내용 / 배경": { type: "textarea", text: "심야 노선 3개 구간 제안" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).achievement).toBe("심야 노선 3개 구간 제안");
+  });
+
+  it("개편 전 레코드의 코어 성과가 남아 있어도 확정본 필드가 이긴다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "공모전 우수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.핵심 성과": { type: "textarea", text: "코어 성과" },
+          "award-info.수상 내용 / 배경": { type: "textarea", text: "심야 노선 3개 구간 제안" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).achievement).toBe("심야 노선 3개 구간 제안");
+  });
+
+  it("개편 전 레코드의 코어 역할이 남아 있어도 확정본 필드가 이긴다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.내 역할/기여도": { type: "textarea", text: "팀장으로 전체 조율" },
+          "award-info.팀에서 내가 맡은 역할": { type: "text", text: "데이터 분석 · 발표" },
+        },
+      } as unknown as Experience["content"],
+    });
+    // 코어는 CORE_EXCLUDE 로 화면에서 사라진 칸이다 — 옛 값이 새 값을 이기면 사용자가
+    // 고칠 수 없는 문구가 계속 발행된다.
+    expect(experienceToPost(exp).contribution).toBe("데이터 분석 · 발표");
+  });
+
+  /**
+   * 해외경험(FRT-249)도 코어 '기간'을 빼고 확정본 ① 이 자기 '기간'을 갖는다. 수상·자격증과 달리
+   * 라벨이 코어와 같은 '기간'이라 범용 폴백만으로도 값이 잡히므로, 이 두 건은 TYPE_PERIOD_KEY
+   * 등록의 그물이 아니라 **발행 결과 자체**를 고정한다(등록을 지워도 통과한다 — 회귀 주입으로 확인).
+   */
+  function overseasExp(fields: Record<string, unknown>): Experience {
+    return makeExp({
+      type: "overseas",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "베를린 교환학생",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields,
+      } as unknown as Experience["content"],
+    });
+  }
+
+  it("해외경험은 확정본 ① 의 '기간'을 발행 기간으로 쓴다", () => {
+    const exp = overseasExp({
+      "overseas-program.기간": {
+        type: "period",
+        start: "2024-03",
+        end: "2024-08",
+        isCurrent: false,
+      },
+    });
+
+    expect(experienceToPost(exp).period).toBe("2024.03 – 2024.08");
+  });
+
+  /**
+   * 개편 전 레코드에는 폐기된 `core.기간` 이 orphan 으로 남을 수 있다(코어 기간이 채워진 예외
+   * 레코드). 사용자가 화면에서 보고 고치는 값은 확정본 ① 쪽이므로, 발행도 그쪽을 따라야 한다 —
+   * 옛 범위가 이기면 화면에서 볼 수도 고칠 수도 없는 기간이 계속 나간다(FRT-211 과 같은 결).
+   */
+  it("화면에서 못 고치는 orphan 코어 기간보다 확정본 ① 의 '기간'이 앞선다", () => {
+    const exp = overseasExp({
+      "core.기간": { type: "period", start: "2020-01", end: "2020-02", isCurrent: false },
+      "overseas-program.기간": {
+        type: "period",
+        start: "2024-03",
+        end: "2024-08",
+        isCurrent: false,
+      },
+    });
+
+    expect(experienceToPost(exp).period).toBe("2024.03 – 2024.08");
+  });
+
+  /** 대조군: 코어 '기간'을 쓰는 유형은 날짜 폴백이 끼어들지 않는다. */
+  it("'기간'을 쓰는 유형의 표기는 그대로다", () => {
+    expect(experienceToPost(makeExp()).period).toBe("2026.02 – 2026.05");
+  });
+
+  /**
+   * 폴백은 **유형별 안정키**로만 찾는다. 라벨로 훑으면 다른 유형의 커스텀/레거시 블록에
+   * 우연히 같은 이름이 있을 때 무관한 날짜가 발행 기간으로 나간다.
+   */
+  it("다른 유형에 같은 라벨의 느슨한 블록이 있어도 기간으로 쓰지 않는다", () => {
+    const exp = makeExp({
+      content: {
+        title: "주가 예측 프로젝트",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        coreBlocks: [blk("c1", "text", "경험명", { type: "text", text: "주가 예측 프로젝트" })],
+        extensionBlocks: [],
+        customBlocks: [blk("x1", "date", "수상일", { type: "date", date: "2026-05-20" })],
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("");
+  });
+
+  /**
+   * 개편 전에 만든 v2 수상 기록은 폐기된 `core.기간` 이 orphan 으로 custom 에 남는다.
+   * 그 값이 `수상일` 을 이기면, 사용자가 화면에서 볼 수도 고칠 수도 없는 옛 범위가 계속
+   * 발행되고 **새로 채운 수상일이 반영되지 않는다.** 확정본이 시점으로 정한 쪽이 이겨야 한다.
+   */
+  it("폐기된 '기간'이 남아 있어도 '수상일'을 먼저 쓴다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 창업 경진대회 대상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.기간": { type: "period", start: "2025-01-01", end: "2025-03-31", isCurrent: false },
+          "award-info.수상일": { type: "date", date: "2026-05-20" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("2026.05");
+  });
+
+  /** 다만 수상일이 아직 비어 있으면 옛 기간이라도 보여준다 — 있는 정보를 지우지 않는다. */
+  it("'수상일'이 비어 있으면 폐기된 '기간'으로 폴백한다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 창업 경진대회 대상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.기간": { type: "period", start: "2025-01-01", end: "2025-03-31", isCurrent: false },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("2025.01 – 2025.03");
+  });
+
+  /** 자격증에 '수상일'까지 섞여 있어도 자기 유형의 키('취득일')를 쓴다. */
+  it("자격증은 '수상일'이 섞여 있어도 '취득일'을 쓴다", () => {
+    const exp = makeExp({
+      type: "certification",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "정보처리기사",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "cert-info.취득일": { type: "date", date: "2025-11-03" },
+          "award-info.수상일": { type: "date", date: "2026-05-20" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).period).toBe("2025.11");
+  });
+
+  /**
+   * 드리프트 가드 — 발행 매퍼의 날짜 폴백은 템플릿 안정키를 **문자열로 베껴 적은 것**이라
+   * (`withSectionKeys` 가 `${sectionId}.${label}` 로 만든다), 라벨을 바꾸면 조용히 깨진다.
+   * 위 테스트들은 같은 문자열을 하드코딩하므로 양쪽이 함께 어긋나도 초록이다 —
+   * 여기서만 픽스처 키를 **실제 템플릿에서 뽑아** 쓴다. 라벨이 바뀌면 매퍼가 그 키를 못 찾아
+   * 기간이 비고 이 테스트가 먼저 빨개진다. `visibleWhen.key` 일치 가드와 같은 성격이다.
+   */
+  it.each([
+    ["award" as const, "수상일", "2026-05-20", "2026.05"],
+    ["certification" as const, "취득일", "2025-11-03", "2025.11"],
+  ])("%s 의 날짜 폴백 키가 실제 템플릿 안정키와 일치한다", (type, label, date, expected) => {
+    const key = getTemplateForType(type)
+      .extensions.flatMap(s => s.blocks)
+      .find(b => b.label === label)?.key;
+    expect(key).toBeTruthy();
+    expect(experienceToPost(dateOnlyExp(type, key as string, date)).period).toBe(expected);
+  });
+
+  /**
+   * 독서(FRT-236)는 시점을 **단일 날짜가 아니라 period 블록**(`독서 기간`)으로 받는다.
+   * 수상/자격증과 상황은 같다 — `CORE_EXCLUDE.reading` 이 코어 '기간'을 빼면서, 개편 전
+   * 레코드의 `core.기간` 은 orphan 으로 custom 에 남는다. 그 orphan 은 라벨이 정확히 '기간'
+   * 이라 `pickValue` 의 정확-라벨 우선 정렬에서 동의어 '독서 기간' 을 이긴다. 보정이 없으면
+   * **화면에서 볼 수도 고칠 수도 없는 옛 범위가 계속 발행된다**(Codex P2).
+   */
+  describe("독서는 '독서 기간'을 발행 기간으로 쓴다 (FRT-236)", () => {
+    function readingExp(fields: Record<string, unknown>): Experience {
+      return makeExp({
+        type: "reading",
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "사피엔스",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const READ_PERIOD = {
+      type: "period",
+      start: "2024-03-01",
+      end: "2024-05-31",
+      isCurrent: false,
+    };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '독서 기간'이 orphan 된 옛 core '기간'을 이긴다", () => {
+      const post = experienceToPost(
+        readingExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "book-info.독서 기간": READ_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.05");
+    });
+
+    it("'독서 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(readingExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("독서 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("reading")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "독서 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(readingExp({ [key as string]: READ_PERIOD })).period).toBe(
+        "2024.03 – 2024.05",
+      );
+    });
+  });
+
+  /**
+   * 독서의 '한 줄 감상'("이 책을 한 줄로 정리한다면?")은 곧 한 줄 요약이다. 코어 '한 줄 요약'
+   * 은 optional 이라 비워 두기 쉬운데, 폴백 목록에 없으면 발행물 요약이 통째로 빈다(Codex P2).
+   */
+  it("독서는 코어 '한 줄 요약'이 비면 '한 줄 감상'으로 폴백한다 (FRT-236)", () => {
+    const exp = makeExp({
+      type: "reading",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "사피엔스",
+        summary: "",
+        status: "complete",
+        tags: [],
+        fields: {
+          "book-info.한 줄 감상": {
+            type: "text",
+            text: "인류의 역사를 새로운 시각으로 바라보게 해준 책",
+          },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).summary).toBe("인류의 역사를 새로운 시각으로 바라보게 해준 책");
+  });
+
+  /**
+   * 창작물(FRT-267)도 `CORE_EXCLUDE` 로 코어 '기간'을 빼고 '작업 기간'으로 시점을 받는다.
+   * 여기에는 **구 `cw-info.제작 기간` 이라는 두 번째 orphan** 이 더 있다 — 확정본 개편으로 그
+   * 키도 화면에서 사라지므로, 새 '작업 기간'이 둘 다 이겨야 한다.
+   */
+  describe("창작물은 '작업 기간'을 발행 기간으로 쓴다 (FRT-267)", () => {
+    function creativeExp(fields: Record<string, unknown>): Experience {
+      return makeExp({
+        type: "creative-work",
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "골목의 기록",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const WORK_PERIOD = { type: "period", start: "2024-03-01", end: "2024-06-30", isCurrent: false };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+    const OLD_SECTION_PERIOD = {
+      type: "period",
+      start: "2020-05-01",
+      end: "2020-08-31",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '작업 기간'이 orphan 된 옛 기간 둘을 모두 이긴다", () => {
+      const post = experienceToPost(
+        creativeExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "cw-info.제작 기간": OLD_SECTION_PERIOD,
+          "creative-info.작업 기간": WORK_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.06");
+    });
+
+    it("'작업 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(creativeExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("창작물 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("creative-work")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "작업 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(creativeExp({ [key as string]: WORK_PERIOD })).period).toBe(
+        "2024.03 – 2024.06",
+      );
+    });
+  });
+
+  /**
+   * 연구논문(FRT-269)도 창작물과 같은 자리다 — `CORE_EXCLUDE` 로 코어 '기간'을 빼고 '연구 기간'으로
+   * 시점을 받으며, 구 `research-info.기간` 이라는 두 번째 orphan 이 더 있다. 새 라벨이 '연구 기간'
+   * 이라 코어와 정확히 같은 이름이 아니므로, `TYPE_PERIOD_KEY` 등록을 빠뜨리면 정확-라벨 우선
+   * 정렬 때문에 orphan `core.기간` 이 확정본 값을 이긴다.
+   */
+  describe("연구논문은 '연구 기간'을 발행 기간으로 쓴다 (FRT-269)", () => {
+    function researchExp(fields: Record<string, unknown>): Experience {
+      return makeExp({
+        type: "research",
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "SNS 사용과 학업 몰입도 연구",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const STUDY_PERIOD = { type: "period", start: "2024-03-01", end: "2024-08-31", isCurrent: false };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+    const OLD_SECTION_PERIOD = {
+      type: "period",
+      start: "2020-05-01",
+      end: "2020-08-31",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '연구 기간'이 orphan 된 옛 기간 둘을 모두 이긴다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "research-info.기간": OLD_SECTION_PERIOD,
+          "research-paper.연구 기간": STUDY_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.08");
+    });
+
+    it("'연구 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(researchExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("연구논문 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("research")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "연구 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(researchExp({ [key as string]: STUDY_PERIOD })).period).toBe(
+        "2024.03 – 2024.08",
+      );
+    });
+
+    /**
+     * `CORE_EXCLUDE` 로 코어를 빼면 그 자리를 이어받은 확정본 필드가 **동의어로 등록돼 있어야**
+     * 발행 경로가 값을 찾는다(FRT-269 리뷰). 코어를 빼는 것과 새 라벨을 SEMANTIC_GROUPS 에
+     * 넣는 것은 한 쌍이다 — 앞만 하면 폴백이던 코어까지 함께 사라져 발행물이 조용히 빈다.
+     * 픽스처가 아니라 **실제 템플릿**으로 돌린다(v2 fields 주입) — 라벨·타입 전제를 여기 적으면
+     * 템플릿이 바뀌어도 테스트만 계속 통과한다.
+     */
+    it("'역할 / 기여도'(select)를 고르면 발행물의 내 역할에 실린다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "research-paper.역할 / 기여도": {
+            type: "single-select",
+            selected: "제 1저자(주저자)",
+          },
+        }),
+      );
+      expect(post.contribution).toBe("제 1저자(주저자)");
+    });
+
+    it("'주요 발견 / 결과'(outcome-list)에 적은 행이 발행물의 핵심 성과에 실린다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "research-content.주요 발견 / 결과": {
+            type: "repeatable-cell",
+            columns: [{ key: "item", label: "발견 / 결과", blockType: "text" }],
+            rows: [
+              { id: "r1", cells: { item: "SNS 사용 시간과 몰입도의 음의 상관 확인" } },
+              { id: "r2", cells: { item: "알림 차단군에서 효과가 사라짐" } },
+            ],
+          },
+        }),
+      );
+      expect(post.achievement).toBe(
+        "SNS 사용 시간과 몰입도의 음의 상관 확인\n알림 차단군에서 효과가 사라짐",
+      );
+    });
+
+    /** 드리프트 가드 — 두 라벨을 실제 템플릿에서 뽑아 동의어 등록 여부를 대조한다. */
+    it("역할·성과를 이어받은 두 필드가 동의어 그룹에 등록돼 있다", () => {
+      const labels = getTemplateForType("research")
+        .extensions.flatMap(s => s.blocks)
+        .map(b => b.label);
+      expect(labels).toContain("역할 / 기여도");
+      expect(labels).toContain("주요 발견 / 결과");
+      expect(equivalentLabels("내 역할/기여도")).toContain("역할 / 기여도");
+      expect(equivalentLabels("핵심 성과")).toContain("주요 발견 / 결과");
+    });
+
+    /**
+     * 동의어 등록만으로는 **순서**를 보장하지 못한다 — orphan `core.내 역할/기여도`·`core.핵심 성과`
+     * 는 라벨이 코어와 정확히 같아 `pickValue`·`achievementText` 의 정확-라벨 우선 정렬에서 확정본
+     * 라벨을 이긴다. 기간에서 이미 겪고 `TYPE_PERIOD_KEY` 로 푼 것과 같은 함정이다(FRT-269 Codex P2).
+     *
+     * ⚠️ 이 픽스처는 매퍼 쪽 레거시 픽스처(코어 역할·성과는 dedup 때문에 **항상 비어 있다**)와
+     * 다른 것을 묻는다 — "그 전제가 깨져도 확정본이 이기는가"의 그물이다. 전제를 검증하는 곳과
+     * 전제가 깨진 경우를 막는 곳을 한 픽스처에 섞지 않는다.
+     */
+    const OLD_CORE_ROLE = { type: "textarea", text: "옛 코어에 남아 있던 역할" };
+    const OLD_CORE_ACHIEVEMENT = { type: "textarea", text: "옛 코어에 남아 있던 성과" };
+    const NEW_ROLE = { type: "single-select", selected: "제 1저자(주저자)" };
+    const NEW_FINDINGS = {
+      type: "repeatable-cell",
+      columns: [{ key: "item", label: "발견 / 결과", blockType: "text" }],
+      rows: [{ id: "r1", cells: { item: "SNS 사용 시간과 몰입도의 음의 상관 확인" } }],
+    };
+
+    it("코어 잔재가 있어도 새로 채운 확정본 역할·성과가 발행된다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "core.내 역할/기여도": OLD_CORE_ROLE,
+          "core.핵심 성과": OLD_CORE_ACHIEVEMENT,
+          "research-paper.역할 / 기여도": NEW_ROLE,
+          "research-content.주요 발견 / 결과": NEW_FINDINGS,
+        }),
+      );
+      expect(post.contribution).toBe("제 1저자(주저자)");
+      expect(post.achievement).toBe("SNS 사용 시간과 몰입도의 음의 상관 확인");
+    });
+
+    it("확정본 칸이 비면 옛 코어 값으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "core.내 역할/기여도": OLD_CORE_ROLE,
+          "core.핵심 성과": OLD_CORE_ACHIEVEMENT,
+        }),
+      );
+      expect(post.contribution).toBe("옛 코어에 남아 있던 역할");
+      expect(post.achievement).toBe("옛 코어에 남아 있던 성과");
+    });
+
+    /** 드리프트 가드 — 우선 조회에 쓰는 안정키가 실제 템플릿 것과 같은지 대조한다. */
+    it("역할·성과 우선 조회 키가 실제 템플릿 안정키와 일치한다", () => {
+      const byLabel = (label: string) =>
+        getTemplateForType("research")
+          .extensions.flatMap(s => s.blocks)
+          .find(b => b.label === label)?.key;
+      expect(byLabel("역할 / 기여도")).toBe("research-paper.역할 / 기여도");
+      expect(byLabel("주요 발견 / 결과")).toBe("research-content.주요 발견 / 결과");
+    });
+  });
+
+  /**
+   * 봉사(FRT-247)도 `CORE_EXCLUDE` 로 코어 '기간'을 빼고 '활동 기간'으로 시점을 받는다.
+   * 독서와 같은 자리에서 같은 함정을 밟는다 — orphan 된 `core.기간` 은 라벨이 정확히 '기간'
+   * 이라 `pickValue` 의 정확-라벨 우선 정렬에서 동의어 '활동 기간' 을 이긴다.
+   */
+  describe("봉사는 '활동 기간'을 발행 기간으로 쓴다 (FRT-247)", () => {
+    function volunteerExp(fields: Record<string, unknown>): Experience {
+      return makeExp({
+        type: "volunteer",
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "지역 학습 멘토링",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const VOL_PERIOD = { type: "period", start: "2024-03-01", end: "2024-12-31", isCurrent: false };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '활동 기간'이 orphan 된 옛 core '기간'을 이긴다", () => {
+      const post = experienceToPost(
+        volunteerExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "volunteer-info.활동 기간": VOL_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.12");
+    });
+
+    it("'활동 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(volunteerExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("봉사 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("volunteer")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "활동 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(volunteerExp({ [key as string]: VOL_PERIOD })).period).toBe(
+        "2024.03 – 2024.12",
+      );
+    });
+
+    /**
+     * `CORE_EXCLUDE.volunteer` 가 코어 '내 역할/기여도' 를 빼도, 확정본 '역할' 이
+     * SEMANTIC_GROUPS.role 동의어라 기여도 발행이 비지 않는다.
+     */
+    it("코어 역할을 빼도 확정본 '역할'이 기여도로 발행된다", () => {
+      const post = experienceToPost(
+        volunteerExp({ "volunteer-info.역할": { type: "text", text: "학습 멘토" } }),
+      );
+      expect(post.contribution).toBe("학습 멘토");
+    });
   });
 });

@@ -2,7 +2,9 @@
 
 import { useId, useState } from "react"
 import { Plus, Trash2, Pencil, Check, X } from "lucide-react"
+import { RequiredDot } from "@/components/ui/required-dot"
 import type { Block, SingleSelectBlockValue } from "@/types/archive"
+import { isImeComposing, onEnterCommit } from "@/lib/utils/keyboard"
 
 interface SingleSelectBlockProps {
   block: Block
@@ -27,6 +29,11 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
   }
 
   function removeOption(idx: number) {
+    // 마지막 하나는 남긴다(FRT-158). 옵션이 0개가 되면 위 폴백이 `block.options`(생성 시점의
+    // 템플릿 프리셋, 이후 갱신되지 않는 필드)로 되돌아가 방금 지운 목록이 그대로 되살아난다.
+    // 게다가 required 드롭다운은 고를 값이 사라져 저장도 진행도도 영원히 막힌다.
+    // 아래 버튼의 disabled 와 같은 조건인 이중 방어다 — 다른 호출처가 생겨도 0개가 되지 않는다.
+    if (options.length <= 1) return
     const removed = options[idx]
     const newOptions = options.filter((_, i) => i !== idx)
     onChange({
@@ -71,7 +78,10 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={selectId} className="text-field-label text-text-primary">{block.label}</label>
+      <label htmlFor={selectId} className="text-field-label text-text-primary">
+        {block.label}
+        {block.required && <RequiredDot />}
+      </label>
       {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
       <select
         id={selectId}
@@ -113,6 +123,8 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
                       value={editValue}
                       onChange={e => setEditValue(e.target.value)}
                       onKeyDown={e => {
+                        // 조합 중 Enter 는 확정용, Escape 는 조합 취소용이므로 편집을 끝내지 않는다.
+                        if (isImeComposing(e)) return
                         if (e.key === "Enter") commitEdit()
                         if (e.key === "Escape") setEditingIdx(null)
                       }}
@@ -149,7 +161,8 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
                     <button
                       type="button"
                       onClick={() => removeOption(idx)}
-                      className="p-1 text-text-tertiary hover:text-error transition-colors"
+                      disabled={options.length <= 1}
+                      className="p-1 text-text-tertiary hover:text-error transition-colors disabled:text-text-disabled disabled:hover:text-text-disabled disabled:cursor-not-allowed"
                       aria-label="옵션 삭제"
                     >
                       <Trash2 size={12} />
@@ -160,6 +173,12 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
             ))}
           </div>
 
+          {options.length <= 1 && (
+            <p className="text-caption text-text-tertiary mt-2">
+              옵션은 하나 이상 필요해요. 이름을 바꾸거나 새 옵션을 추가한 뒤 지울 수 있어요.
+            </p>
+          )}
+
           {/* Add new option */}
           <div className="flex gap-2 mt-2">
             <input
@@ -168,7 +187,7 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
               placeholder="새 옵션 추가..."
               value={newOption}
               onChange={e => setNewOption(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addOption() } }}
+              onKeyDown={onEnterCommit(addOption)}
             />
             <button
               type="button"

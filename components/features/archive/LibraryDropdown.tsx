@@ -6,6 +6,7 @@ import { ChevronDown, FolderOpen, Pencil, Plus, SlidersHorizontal, Trash2 } from
 import type { ExperienceV2, Library } from "@/types/archive"
 import { matchesFilter } from "@/hooks/useLibraryFilter"
 import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
+import { isImeComposing } from "@/lib/utils/keyboard"
 
 const LIBRARY_COLORS = [
   "#EF4444", "#F97316", "#EAB308", "#22C55E",
@@ -236,6 +237,8 @@ export default function LibraryDropdown({
                         onChange={e => setEditName(e.target.value)}
                         onBlur={() => finishRename(true)}
                         onKeyDown={e => {
+                          // 조합 중 Enter 는 확정용, Escape 는 조합 취소용이므로 이름 편집을 끝내지 않는다.
+                          if (isImeComposing(e)) return
                           if (e.key === "Enter") finishRename(true)
                           if (e.key === "Escape") finishRename(false)
                         }}

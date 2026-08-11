@@ -27,6 +27,7 @@ function makeExperienceV2(overrides: Partial<ExperienceV2> = {}): ExperienceV2 {
     coreBlocks: [],
     extensionBlocks: [],
     customBlocks: [],
+    hiddenKeys: [],
     createdAt: "2024-01-01T00:00:00Z",
     updatedAt: "2024-01-02T00:00:00Z",
     ...overrides,
@@ -75,10 +76,12 @@ describe("buildDetailSections", () => {
       makeExperienceV2({ coreBlocks: core, extensionBlocks: ext }),
       tmpl,
     )
+    // career 는 repeat 카드에 유형별 이름을 쓴다(SECTION_LABEL_OVERRIDES) — 입력 폼과 같은 이름이
+    // 상세뷰에도 나와야 한다(FRT-247).
     expect(sections.map(s => s.label)).toEqual([
       "기본 정보",
       "경험 상세",
-      "반복 기록",
+      "프로젝트 / 담당 업무 기록",
       "활동 증빙",
     ])
   })
@@ -106,7 +109,7 @@ describe("buildDetailSections", () => {
     expect(sections.map(s => s.label)).toEqual([
       "기본 정보",
       "경험 상세",
-      "반복 기록",
+      "프로젝트 / 담당 업무 기록",
       "활동 증빙",
     ])
   })
@@ -141,7 +144,7 @@ describe("buildDetailSections", () => {
       makeExperienceV2({ coreBlocks: core, extensionBlocks: blanked }),
       tmpl,
     )
-    expect(sections.find(s => s.label === "반복 기록")).toBeUndefined()
+    expect(sections.find(s => s.label === "프로젝트 / 담당 업무 기록")).toBeUndefined()
   })
 
   it("매칭되지 않는 확장 블록(레거시 라벨)은 '추가 입력' 없이 정식 섹션에 합류한다", () => {
@@ -175,7 +178,8 @@ describe("buildDetailSections", () => {
       tmpl,
     )
     expect(sections.find(s => s.label === "추가 입력")).toBeUndefined()
-    const detail = sections.find(s => s.label === "경험 상세")
+    // extracurricular 의 detail 카드 이름은 '활동 상세'(SECTION_LABEL_OVERRIDES).
+    const detail = sections.find(s => s.label === "활동 상세")
     expect(detail?.blocks).toContainEqual(legacy)
   })
 
@@ -189,6 +193,74 @@ describe("buildDetailSections", () => {
     const basicLabels = sections[0].blocks.map(b => b.label)
     expect(basicLabels).not.toContain("경험명")
     expect(basicLabels).not.toContain("한 줄 요약")
+  })
+})
+
+/**
+ * 상세뷰 카드 이름은 입력 폼과 같아야 한다. 폼은 ExperienceFormV2 가 SECTION_LABEL_OVERRIDES 를
+ * computeFormCards 에 넘겨 적용해 왔지만 상세뷰는 SECTION_CATEGORIES 의 일반 라벨을 직접
+ * 만들어 써서, 저장 전에는 '봉사 회고'로 보이던 카드가 저장 후엔 '경험 상세'가 됐다
+ * (FRT-247 Codex P2 — 오버라이드를 쓰는 10개 유형 공통).
+ */
+describe("buildDetailSections — 유형별 섹션 이름 (FRT-247)", () => {
+  it("봉사 확정본의 detail 카드는 상세뷰에서도 '봉사 회고'로 불린다", () => {
+    const tmpl = getTemplateForType("volunteer")
+    let ext = cloneBlocks(tmpl.extensions.flatMap(s => s.blocks))
+    ext = setVal(ext, "volunteer-info.봉사 활동명", text("OO복지관 학습 멘토링"))
+    ext = setVal(ext, "volunteer-reflection.배운 점", textarea("상대의 속도에 맞추게 됐다"))
+
+    const sections = buildDetailSections(
+      makeExperienceV2({ typeId: "volunteer", coreBlocks: [], extensionBlocks: ext }),
+      tmpl,
+    )
+
+    expect(sections.map(s => s.label)).toEqual(["기본 정보", "봉사 회고"])
+    expect(sections.find(s => s.label === "경험 상세")).toBeUndefined()
+  })
+
+  it("오버라이드가 없는 카테고리는 기본 라벨로 폴백한다", () => {
+    const tmpl = getTemplateForType("volunteer")
+    let ext = cloneBlocks(tmpl.extensions.flatMap(s => s.blocks))
+    ext = setVal(ext, "volunteer-info.봉사 활동명", text("OO복지관 학습 멘토링"))
+
+    const sections = buildDetailSections(
+      makeExperienceV2({ typeId: "volunteer", coreBlocks: [], extensionBlocks: ext }),
+      tmpl,
+    )
+
+    // 봉사는 basic 을 오버라이드하지 않는다 → 기본 라벨 유지.
+    expect(sections.map(s => s.label)).toEqual(["기본 정보"])
+  })
+
+  /**
+   * 해외경험(FRT-249)은 repeat 만 오버라이드한다 — detail 은 확정본 ② 의 이름이 기본 라벨과
+   * 같은 '경험 상세'라 오버라이드가 없는 것이 정상이다. 카드가 셋 다 뜨는 구성이라
+   * "오버라이드한 것만 바뀌고 나머지는 그대로"를 한 번에 증명할 수 있다.
+   */
+  it("해외경험의 repeat 카드는 상세뷰에서도 '활동별 상세 설명'으로 불린다", () => {
+    const tmpl = getTemplateForType("overseas")
+    let ext = cloneBlocks(tmpl.extensions.flatMap(s => s.blocks))
+    ext = setVal(ext, "overseas-program.국가 / 도시", text("독일 베를린"))
+    ext = setVal(ext, "overseas-reflection.기억에 남는 순간", textarea("근거 중심 논의에 놀랐다"))
+    ext = ext.map(b =>
+      b.key === "overseas-activities.활동별 상세 설명" && b.value.type === "repeatable-cell"
+        ? {
+            ...b,
+            value: {
+              ...b.value,
+              rows: [{ id: "r1", cells: { activity: "팀 프로젝트", detail: "마케팅 리서치" } }],
+            },
+          }
+        : b,
+    )
+
+    const sections = buildDetailSections(
+      makeExperienceV2({ typeId: "overseas", coreBlocks: [], extensionBlocks: ext }),
+      tmpl,
+    )
+
+    expect(sections.map(s => s.label)).toEqual(["기본 정보", "경험 상세", "활동별 상세 설명"])
+    expect(sections.find(s => s.label === "반복 기록")).toBeUndefined()
   })
 })
 

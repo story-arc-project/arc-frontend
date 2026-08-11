@@ -2,6 +2,7 @@
 
 import { isEmptySection, type Skills } from "@/types/resume";
 import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
+import { compactStrings } from "@/lib/export/resume-format";
 import { PreviewSection } from "./PreviewSection";
 
 interface Props {
@@ -9,8 +10,16 @@ interface Props {
   data: Skills;
 }
 
-function Group({ label, items }: { label: string; items: string[] }) {
-  const filtered = items.filter((s) => s && s.trim());
+// isEmptySection 은 기술및역량 **전체**가 비었는지만 본다 — 기술스택만 채워지고 툴이
+// 빠진 본문은 그 관문을 통과하므로, 갈래마다 스스로 배열 부재를 견뎌야 한다(FRT-157).
+function Group({
+  label,
+  items,
+}: {
+  label: string;
+  items: readonly string[] | null | undefined;
+}) {
+  const filtered = compactStrings(items);
   if (filtered.length === 0) return null;
   return (
     <div className="flex gap-3">

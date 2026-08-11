@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState } from "react"
@@ -9,12 +9,17 @@ vi.mock("@/lib/api/files-api", async () => {
   return { ...actual, getFileUrl: vi.fn(async () => ({ url: "https://files.example/dl", expiresAt: undefined })) }
 })
 
+vi.mock("@/lib/analytics", () => ({ capture: vi.fn() }))
+const { capture } = await import("@/lib/analytics")
+
 import RepeatableCellBlock from "./RepeatableCellBlock"
 import { isBlockEmpty } from "@/lib/utils/block-utils"
+import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
 afterEach(cleanup)
+beforeEach(() => vi.mocked(capture).mockClear())
 
 function makeBlock(rows: BlockRow[], opts?: { allowRowExtras?: boolean }): Block {
   return {
@@ -563,6 +568,40 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     expect(screen.getByText(new RegExp(stored.replace(/[.]/g, "\\.")))).toBeInTheDocument()
   })
 
+  /**
+   * 확정본이 month 로 정한 시점 컬럼(FRT-269). 컨트롤을 `type="month"` 로 좁혔으면 "못 읽는 값"
+   * 판정도 함께 좁혀야 한다 — 일까지 붙은 값은 `isRealDay` 기준으론 멀쩡하지만 월 입력이
+   * **통째로** 버리므로, 판정을 안 좁히면 값이 화면에서 사라진 채 안내도 없이 덮어쓰인다.
+   */
+  it("month 컬럼은 월 단위 입력으로 렌더된다", () => {
+    const columns = [{ key: "c", label: "칸", blockType: "date" as const, variant: "month" as const }]
+    render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: "2024-03" } }])} />)
+
+    expect(screen.getByLabelText("칸")).toHaveAttribute("type", "month")
+    expect(screen.queryByText(/이전 값/)).toBeNull()
+  })
+
+  it("month 컬럼이 못 읽는 일 단위 옛 값은 화면에 남고 안내가 붙는다", () => {
+    const columns = [{ key: "c", label: "칸", blockType: "date" as const, variant: "month" as const }]
+    render(
+      <Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: "2024-03-15" } }])} />,
+    )
+
+    expect(screen.getByText(/이전 값: 2024-03-15/)).toBeInTheDocument()
+    expect(screen.getByText(/값을 입력하면 이 값은 지워져요/)).toBeInTheDocument()
+  })
+
+  /** 대조군 — 같은 값이 기본(일 단위) date 컬럼에서는 온전히 읽히므로 안내가 붙지 않는다. */
+  it("같은 값이 기본 date 컬럼에서는 안내 없이 그대로 읽힌다", () => {
+    const columns = [{ key: "c", label: "칸", blockType: "date" as const }]
+    render(
+      <Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: "2024-03-15" } }])} />,
+    )
+
+    expect(screen.getByLabelText("칸")).toHaveAttribute("type", "date")
+    expect(screen.queryByText(/이전 값/)).toBeNull()
+  })
+
   // 위양성 가드 — 정상적으로 읽히는 값에까지 안내가 붙으면 표가 경고로 뒤덮인다.
   it.each([
     ["period" as const, "2023.03 ~ 2024.01"],
@@ -638,5 +677,128 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     )
 
     expect(screen.getByText(/발표자료 링크/)).toBeInTheDocument()
+  })
+})
+
+/**
+ * 역방향 연결 배지 (FRT-210). 링크의 진실은 소스 행의 `linkedProjectRowId` 한쪽에만 있어서
+ * 대상 행은 자기가 연결돼 생겼는지 모른다 — provider 가 역방향 조회를 공급하고 행은 그걸 읽는다.
+ */
+describe("RepeatableCellBlock — 역방향 연결 배지 (FRT-210)", () => {
+  function makeCtx(incoming: (rowId: string) => { sourceLabel: string } | null): ProjectLinkContextValue {
+    return {
+      createProjectRow: vi.fn(() => null),
+      getProjectRow: vi.fn(() => null),
+      getIncomingLink: vi.fn(incoming),
+      scrollToProjectRow: vi.fn(),
+    }
+  }
+
+  const rows: BlockRow[] = [
+    { id: "r1", cells: { name: "교환학생" } },
+    { id: "r2", cells: { name: "직접 적은 행" } },
+  ]
+
+  it("연결돼 생긴 행에 소스 블록 이름으로 배지가 뜬다", () => {
+    render(
+      <ProjectLinkProvider value={makeCtx(id => (id === "r1" ? { sourceLabel: "주요 경험" } : null))}>
+        <Harness block={makeBlock(rows)} />
+      </ProjectLinkProvider>,
+    )
+
+    expect(screen.getByText("주요 경험에서 연결됨")).toBeInTheDocument()
+    // 직접 만든 행에는 붙지 않는다 — 배지는 실제 링크에서만 파생된다.
+    expect(screen.getAllByText(/에서 연결됨/)).toHaveLength(1)
+  })
+
+  it("가리키는 소스 행이 없으면 배지가 없다", () => {
+    render(
+      <ProjectLinkProvider value={makeCtx(() => null)}>
+        <Harness block={makeBlock(rows)} />
+      </ProjectLinkProvider>,
+    )
+
+    expect(screen.queryByText(/에서 연결됨/)).not.toBeInTheDocument()
+  })
+
+  /** 상세뷰는 provider 가 없는 경로다 — 정방향 링크 UI 와 같은 규약으로 자동으로 숨어야 한다. */
+  it("provider 밖(상세뷰·스토리북)에서는 배지가 없다", () => {
+    render(<Harness block={makeBlock(rows)} />)
+
+    expect(screen.queryByText(/에서 연결됨/)).not.toBeInTheDocument()
+  })
+
+  it("읽기 전용 화면에는 배지가 없다", () => {
+    render(
+      <ProjectLinkProvider value={makeCtx(() => ({ sourceLabel: "주요 경험" }))}>
+        <Harness readOnly block={makeBlock(rows)} />
+      </ProjectLinkProvider>,
+    )
+
+    expect(screen.queryByText(/에서 연결됨/)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * 링크 열 (FRT-267 '작품 링크 / 파일'). 이 표가 대체한 `공개 링크`(LinkBlock)가 하던 두 가지를
+ * 셀에서도 해야 한다 — 조회에서 **열리는 링크**로 보이는 것과, URL 첨부를 **계측**하는 것.
+ * 둘 다 셀로 옮기며 조용히 빠졌던 자리다.
+ */
+describe("RepeatableCellBlock — 링크 열", () => {
+  function linkBlock(url: string): Block {
+    return {
+      id: "lb",
+      type: "repeatable-cell",
+      label: "작품 링크 / 파일",
+      value: {
+        type: "repeatable-cell",
+        columns: [
+          { key: "link", label: "링크", blockType: "link" },
+          { key: "desc", label: "설명", blockType: "text" },
+        ],
+        rows: [{ id: "r1", cells: { link: url, desc: "최종 결과물" } }],
+      },
+    }
+  }
+
+  it("조회 화면에서 링크 열은 새 탭으로 열리는 anchor 다", () => {
+    render(<Harness readOnly block={linkBlock("https://behance.net/my-work")} />)
+
+    const anchor = screen.getByRole("link", { name: /behance\.net\/my-work/ })
+    expect(anchor).toHaveAttribute("href", "https://behance.net/my-work")
+    expect(anchor).toHaveAttribute("target", "_blank")
+    // opener 를 넘기면 열린 페이지가 원본 탭을 조작할 수 있다.
+    expect(anchor).toHaveAttribute("rel", expect.stringContaining("noopener"))
+  })
+
+  /** 안전하지 않은 스킴은 anchor 로 만들지 않는다 — 값은 글자로 남아 사용자가 볼 수는 있다. */
+  it("javascript: 같은 위험한 스킴은 링크로 만들지 않는다", () => {
+    render(<Harness readOnly block={linkBlock("javascript:alert(1)")} />)
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument()
+    expect(screen.getByText("javascript:alert(1)")).toBeInTheDocument()
+  })
+
+  it("URL 을 입력하고 나가면 첨부 계측이 한 번 발화한다", async () => {
+    const user = userEvent.setup()
+    render(<Harness block={linkBlock("")} />)
+
+    const input = screen.getByLabelText("링크", { selector: "input" })
+    await user.type(input, "https://vimeo.com/123")
+    await user.tab()
+
+    expect(capture).toHaveBeenCalledWith("archive_attachment_added", { attachment_type: "url" })
+    expect(vi.mocked(capture).mock.calls.filter(c => c[0] === "archive_attachment_added")).toHaveLength(1)
+  })
+
+  /** 기존 링크를 focus 만 했다 나가는 것은 새 첨부가 아니다(LinkBlock 과 같은 위양성 방어). */
+  it("타이핑 없이 지나가기만 하면 계측하지 않는다", async () => {
+    const user = userEvent.setup()
+    render(<Harness block={linkBlock("https://vimeo.com/123")} />)
+
+    await user.click(screen.getByLabelText("링크", { selector: "input" }))
+    await user.tab()
+
+    expect(capture).not.toHaveBeenCalledWith("archive_attachment_added", expect.anything())
   })
 })

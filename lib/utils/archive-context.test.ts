@@ -47,6 +47,22 @@ describe("serializeArchiveContext", () => {
     })
     expect(qs).toBe("")
   })
+
+  it("태그는 구분자 없이 반복 파라미터로 싣는다", () => {
+    const qs = serializeArchiveContext({
+      libraryId: ALL_LIBRARY_ID,
+      filter: { tags: ["백엔드", "성장"] },
+    })
+    expect(new URLSearchParams(qs).getAll("tags")).toEqual(["백엔드", "성장"])
+  })
+
+  it("빈 태그 배열은 파라미터를 만들지 않는다", () => {
+    const qs = serializeArchiveContext({
+      libraryId: ALL_LIBRARY_ID,
+      filter: { sortBy: "updated", tags: [] },
+    })
+    expect(qs).toBe("")
+  })
 })
 
 describe("parseArchiveContext", () => {
@@ -87,6 +103,22 @@ describe("parseArchiveContext", () => {
     const ctx = parseArchiveContext(new URLSearchParams("type=__a__,__b__&status=__x__"))
     expect(ctx).toBeUndefined()
   })
+
+  it("반복 tags 파라미터를 태그 배열로 복원한다", () => {
+    const ctx = parseArchiveContext(new URLSearchParams("tags=백엔드&tags=성장"))
+    expect(ctx?.filter.tags).toEqual(["백엔드", "성장"])
+  })
+
+  it("빈 tags 값은 버린다", () => {
+    const ctx = parseArchiveContext(new URLSearchParams("tags=&tags=성장"))
+    expect(ctx?.filter.tags).toEqual(["성장"])
+  })
+
+  it("태그만 있어도 컨텍스트로 인정한다", () => {
+    const ctx = parseArchiveContext(new URLSearchParams("tags=성장"))
+    expect(ctx?.libraryId).toBe(ALL_LIBRARY_ID)
+    expect(ctx?.filter.tags).toEqual(["성장"])
+  })
 })
 
 describe("serialize ↔ parse round-trip", () => {
@@ -118,6 +150,24 @@ describe("serialize ↔ parse round-trip", () => {
     expect(qs).not.toContain("C&A") // 리터럴 & 가 그대로 새면 안 된다
     expect(parseArchiveContext(new URLSearchParams(qs))?.filter.search).toBe("C&A?B")
   })
+
+  it("쉼표가 포함된 태그를 하나의 태그로 왕복 보존한다(FRT-162)", () => {
+    // 태그 입력은 trim 만 하므로(TagsBlock·ExperienceFormV2 의 TagInput) "AI, ML" 같은 값이
+    // 실제로 만들어진다. 쉼표를 구분자로 재사용하면 이 태그가 왕복에서 "AI" + " ML" 로 갈라져
+    // 전혀 다른 필터가 복원된다(matchesFilter 의 태그 매칭은 정확 일치라 목록이 조용히 빈다).
+    const ctx: ArchiveContext = { libraryId: ALL_LIBRARY_ID, filter: { tags: ["AI, ML"] } }
+    const restored = parseArchiveContext(new URLSearchParams(serializeArchiveContext(ctx)))
+    expect(restored?.filter.tags).toEqual(["AI, ML"])
+  })
+
+  it("쉼표 태그와 일반 태그가 섞여도 개수와 순서를 보존한다", () => {
+    const ctx: ArchiveContext = {
+      libraryId: "lib-1",
+      filter: { tags: ["백엔드", "AI, ML", "성장"] },
+    }
+    const restored = parseArchiveContext(new URLSearchParams(serializeArchiveContext(ctx)))
+    expect(restored?.filter.tags).toEqual(["백엔드", "AI, ML", "성장"])
+  })
 })
 
 describe("buildReturnTo", () => {
@@ -144,6 +194,14 @@ describe("buildReturnTo", () => {
   it("/demo basePath를 그대로 내장한다", () => {
     const url = buildReturnTo("/demo", { libraryId: "lib-1", filter: DEFAULT_FILTER })
     expect(url).toBe("/demo/archive?lib=lib-1")
+  })
+
+  it("쉼표 태그를 실은 returnTo 가 safeReturnTo 를 통과하고 왕복에서 보존된다", () => {
+    // 왕복 전 구간(직렬화 → 경로 판정 → 복원)을 한 번에 지나는 통합 가드.
+    const url = buildReturnTo("", { libraryId: ALL_LIBRARY_ID, filter: { tags: ["AI, ML"] } })
+    expect(safeReturnTo(url, "", "/archive")).toBe(url)
+    const qs = url.split("?")[1]
+    expect(parseArchiveContext(new URLSearchParams(qs))?.filter.tags).toEqual(["AI, ML"])
   })
 })
 

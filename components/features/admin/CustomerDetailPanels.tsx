@@ -77,7 +77,7 @@ export function CustomerDetailHeader({
     <header className="mb-6">
       {/*
         목록 복귀는 검색어 없는 경로로 고정한다. 검색어(?q=)에는 고객 이메일이 실리므로 상세
-        URL 로 실어 나르면 FRT-16 이 좁혀둔 PII 노출면(Sentry 요청 URL·스팬·breadcrumb·Referer)이
+        URL 로 실어 나르면 FRT-16 이 좁혀둔 PII 노출면(브라우저 히스토리·Referer·외부 분석 전송)이
         다시 넓어진다. 검색 상태 보존은 브라우저 뒤로가기가 담당한다 — 목록의 행 클릭이 push 라
         히스토리에 검색어가 살아 있는 목록 URL 이 그대로 남는다.
       */}

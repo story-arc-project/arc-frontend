@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest"
 import { computeFormCards, isCardComplete, computeFormProgress } from "@/lib/utils/form-cards"
+import { partitionByCondition } from "@/lib/utils/conditional-fields"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks } from "@/lib/utils/block-utils"
 import type { FormCardSection, FormCardModel } from "@/lib/utils/form-cards"
 import type { Block } from "@/types/archive"
+import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
 
 function sectionsFor(typeId: Parameters<typeof getTemplateForType>[0]): { core: ReturnType<typeof cloneBlocks>; sections: FormCardSection[] } {
   const t = getTemplateForType(typeId)
@@ -37,13 +39,11 @@ describe("computeFormCards", () => {
     expect(evidence.blocks.some(b => b.label === "증빙 자료")).toBe(true)
   })
 
-  it("detail 카드만 optional + showOptionalBadge", () => {
+  it("detail 카드만 optional", () => {
     const { core, sections } = sectionsFor("career")
     const r = computeFormCards(core, sections)
     for (const c of r.cards) {
-      const expected = c.category === "detail"
-      expect(!!c.optional).toBe(expected)
-      expect(!!c.showOptionalBadge).toBe(expected)
+      expect(!!c.optional).toBe(c.category === "detail")
     }
   })
 
@@ -126,13 +126,149 @@ describe("computeFormCards", () => {
   })
 
   // detail 섹션을 정의하지 않은 유형은 지금도 범용 확장 카드로 폴백한다.
-  // (club 은 FRT-178 에서 자기 detail 섹션을 갖게 되어 더는 이 예시가 아니다.)
-  it("비-커스텀 유형(volunteer)은 범용 확장 필드(배경/목표·공개 설정)를 유지한다", () => {
-    const { core, sections } = sectionsFor("volunteer")
+  // (club 은 FRT-178, volunteer 는 FRT-247 에서 자기 detail 섹션을 갖게 되어 더는 예시가 아니다 —
+  //  확정본 정렬이 한 유형씩 들어올 때마다 이 예시를 옮겨 왔다.)
+  it("비-커스텀 유형(sports)은 범용 확장 필드(배경/목표·공개 설정)를 유지한다", () => {
+    const { core, sections } = sectionsFor("sports")
     const r = computeFormCards(core, sections)
     const all = r.cards.flatMap(c => c.blocks).map(b => b.label)
     expect(all).toContain("배경/목표")
     expect(all).toContain("공개 설정")
+  })
+
+  /**
+   * FRT-247: 봉사 확정본은 섹션이 둘이고 §7 도 "사이드 네비: 섹션 2개 앵커"로 못 박았다.
+   * core '증빙 자료'를 CORE_EXCLUDE 로 빼지 않으면 evidence 카드가 따로 생겨 3카드가 되고,
+   * 확정본이 ① 안에 둔 '봉사 확인서 첨부' 옆에 파일 입력칸이 한 벌 더 붙는다.
+   */
+  it("봉사: 확정본대로 2카드이고 detail 카드 이름이 '봉사 회고'다", () => {
+    const { core, sections } = sectionsFor("volunteer")
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES.volunteer)
+
+    expect(r.visibleCategories).toEqual(["basic", "detail"])
+    expect(r.cards.find(c => c.category === "detail")!.label).toBe("봉사 회고")
+
+    // 파일 입력칸은 ① 안의 '봉사 확인서 첨부' 하나뿐이다.
+    const fileBlocks = r.cards.flatMap(c => c.blocks).filter(b => b.type === "file")
+    expect(fileBlocks.map(b => b.label)).toEqual(["봉사 확인서 첨부"])
+  })
+
+  /**
+   * FRT-267: 창작물 확정본도 섹션이 둘이고 §7 이 "사이드 네비: 섹션 2개 앵커"로 못 박았다.
+   * core '증빙 자료'를 CORE_EXCLUDE 로 빼지 않으면 evidence 카드가 따로 생겨 3카드가 된다.
+   *
+   * ⚠️ 봉사와 달리 core '내 역할/기여도'는 남긴다 — 구 창작물 템플릿에 role 앵커가 없어 이 칸이
+   * 실제로 렌더됐고 값이 들어 있을 수 있기 때문이다. **비어 있으면** 확정본 '역할'이 앵커가 되어
+   * dedup 이 숨기고, 값이 있으면 남는다. 두 방향을 함께 고정한다.
+   */
+  it("창작물: 확정본대로 2카드이고 detail 카드 이름이 '작업 상세'다", () => {
+    const { core, sections } = sectionsFor("creative-work")
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES["creative-work"])
+
+    expect(r.visibleCategories).toEqual(["basic", "detail"])
+    expect(r.cards.find(c => c.category === "detail")!.label).toBe("작업 상세")
+
+    const all = r.cards.flatMap(c => c.blocks).map(b => b.label)
+    // detail 섹션이 생겼으므로 범용 확장 필드는 더 이상 붙지 않는다.
+    expect(all).not.toContain("배경/목표")
+    expect(all).not.toContain("배운 점")
+    // 빈 코어 '내 역할/기여도'는 확정본 '역할' 앵커에 밀려 숨는다.
+    expect(all).not.toContain("내 역할/기여도")
+    // 파일 입력칸은 ① 안의 '작품 링크 / 파일' 표뿐 — core '증빙 자료' 파일 블록이 남지 않는다.
+    expect(r.cards.flatMap(c => c.blocks).filter(b => b.type === "file")).toEqual([])
+  })
+
+  it("창작물: 값이 든 코어 '내 역할/기여도'는 dedup 에 지워지지 않는다", () => {
+    const { core, sections } = sectionsFor("creative-work")
+    const filledCore = core.map(b =>
+      b.label === "내 역할/기여도"
+        ? { ...b, value: { type: "textarea" as const, text: "기획·촬영·편집을 모두 맡았습니다." } }
+        : b,
+    )
+    const r = computeFormCards(filledCore, sections, SECTION_LABEL_OVERRIDES["creative-work"])
+
+    expect(r.cards.flatMap(c => c.blocks).map(b => b.label)).toContain("내 역할/기여도")
+    // 값이 살아나도 카드 수는 그대로 둘이다(코어는 detail 버킷으로 들어간다).
+    expect(r.visibleCategories).toEqual(["basic", "detail"])
+  })
+
+  /**
+   * FRT-267 리뷰 지적 — 위 두 테스트는 `computeFormCards` 만 본다. 실제 화면은 그 뒤에
+   * `partitionByCondition` 이 한 번 더 걸리므로, **둘을 함께 돌려야** 사용자가 보는 역할 칸이 나온다.
+   *
+   * ⚠️ 여기서 나오는 결론이 창작물의 의도된 동작이다: **'개인 작업'을 고르면 역할 칸이 하나도 없다.**
+   * `computeFormCards` 는 `visibleWhen` 을 보지 않고 템플릿 라벨을 전부 앵커로 삼으므로 확정본
+   * '역할'(SEMANTIC_GROUPS.role 동의어)이 빈 코어 '내 역할/기여도'를 항상 지우고, 그 '역할'은
+   * 조건 미충족이라 렌더되지 않는다. 확정본 §7 이 "'개인 작업' 외 선택 시 노출"로 정한 그대로다 —
+   * 혼자 한 작업에 역할을 묻지 않는 것이 확정본의 결정이고, 선행 5종(봉사·해외경험·독서·어학·자격증)은
+   * 아예 `CORE_EXCLUDE` 로 역할 칸을 없앴다.
+   *
+   * ⚠️ 그래도 **값은 어느 경로로도 잃지 않는다** — 아래 두 케이스가 그 방어선이다:
+   *  · 구 레코드의 코어 역할에 값이 있으면 dedup 이 못 지운다(`keepCoreOrExtended`)
+   *  · 팀에서 '역할'을 적고 '개인 작업'으로 되돌려도 `partitionByCondition` 은 빈 블록만 숨긴다
+   * 이 넷을 한 테스트에 묶는다. 어느 하나라도 뒤집히면(예: '역할' 라벨을 role 그룹 밖으로 바꾸거나
+   * `computeFormCards` 가 `visibleWhen` 을 보게 되면) 여기서 걸린다.
+   */
+  it("창작물: 개인/팀 값에 따라 화면에 남는 역할 칸이 갈리고, 값은 어느 쪽에서도 안 사라진다", () => {
+    const roleFieldsFor = (collab: string, coreRole = "") => {
+      const { core, sections } = sectionsFor("creative-work")
+      const withCore = core.map(b =>
+        b.label === "내 역할/기여도" && coreRole
+          ? { ...b, value: { type: "textarea" as const, text: coreRole } }
+          : b,
+      )
+      const withCollab = sections.map(s => ({
+        ...s,
+        blocks: s.blocks.map(b =>
+          b.label === "개인 / 팀" && collab
+            ? { ...b, value: { type: "single-select" as const, selected: collab, options: [] } }
+            : b,
+        ),
+      }))
+      const r = computeFormCards(withCore, withCollab, SECTION_LABEL_OVERRIDES["creative-work"])
+      const cardBlocks = r.cards.flatMap(c => c.blocks)
+      const allFlat = [...withCore, ...withCollab.flatMap(s => s.blocks)]
+      return partitionByCondition(cardBlocks, allFlat)
+        .visible.map(b => b.label)
+        .filter(l => l.includes("역할") || l.includes("기여"))
+    }
+
+    // 아직 안 고른 신규 기록 · '개인 작업' — 확정본대로 역할을 묻지 않는다.
+    expect(roleFieldsFor("")).toEqual([])
+    expect(roleFieldsFor("개인 작업")).toEqual([])
+    // 팀 작업 — 확정본 '역할' 하나만. 코어가 함께 나와 두 칸이 되면 안 된다.
+    expect(roleFieldsFor("팀 작업(2~5명)")).toEqual(["역할"])
+    // 구 레코드가 코어에 남긴 값은 '개인 작업'에서도 화면에 남는다(= 유실 없음).
+    expect(roleFieldsFor("개인 작업", "혼자 기획·촬영·편집")).toEqual(["내 역할/기여도"])
+  })
+
+  /**
+   * 위 마지막 방어선의 짝 — 팀에서 '역할'을 적은 뒤 '개인 작업'으로 되돌리는 경로.
+   * `partitionByCondition` 이 조건 미충족이어도 **빈 블록만** 숨기므로 적어 둔 값이 화면에 남는다
+   * (conditional-fields.ts 의 FRT-190 결론: 값 있는 필드를 숨기면 화면엔 없는데 저장 payload·
+   * AI 분석에는 남는 무음 잔존이 된다).
+   */
+  it("창작물: 팀에서 적은 '역할' 값은 '개인 작업'으로 되돌려도 화면에서 사라지지 않는다", () => {
+    const { core, sections } = sectionsFor("creative-work")
+    const edited = sections.map(s => ({
+      ...s,
+      blocks: s.blocks.map(b => {
+        if (b.label === "개인 / 팀") {
+          return { ...b, value: { type: "single-select" as const, selected: "개인 작업", options: [] } }
+        }
+        if (b.label === "역할") {
+          return { ...b, value: { type: "text" as const, text: "아트디렉터" } }
+        }
+        return b
+      }),
+    }))
+    const r = computeFormCards(core, edited, SECTION_LABEL_OVERRIDES["creative-work"])
+    const cardBlocks = r.cards.flatMap(c => c.blocks)
+    const allFlat = [...core, ...edited.flatMap(s => s.blocks)]
+    const { visible, hidden } = partitionByCondition(cardBlocks, allFlat)
+
+    expect(visible.map(b => b.label)).toContain("역할")
+    expect(hidden.map(b => b.label)).not.toContain("역할")
   })
 
   // ── FRT-178: 동아리가 확정본 4카드로 그려지는지 (문서 ①~④) ──
@@ -412,5 +548,42 @@ describe("isCardComplete / computeFormProgress", () => {
     const detail = r.cards.find(c => c.category === "detail")!
     fillBlock(detail, detail.blocks[0].label, "채움")
     expect(computeFormProgress(r.cards).done).toBe(1)
+  })
+
+  /**
+   * FRT-190 — 숨김은 진행도에도 반영돼야 한다.
+   *
+   * 필수 없는 카드(경험 상세·증빙)는 `blocks.some(채워짐)` 이라 **하나라도** 채워야 완료다.
+   * 사용자가 그 카드의 빈 선택 항목을 "해당 없음"으로 전부 치우면 채울 것이 하나도 안 남는데,
+   * 판정이 숨긴 블록을 계속 세면 그 카드는 **영원히 미완료**로 남아 진행도가 100% 에 못 간다.
+   * 되돌려서 자기에게 해당 없는 항목을 채워야만 바가 차는 셈이라, 숨김 기능과 정면으로 어긋난다.
+   */
+  it("선택 카드의 빈 항목을 전부 숨기면 그 카드는 완료로 센다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const detail = r.cards.find(c => c.category === "detail")!
+    const before = computeFormProgress(r.cards).done
+
+    const allKeys = detail.blocks.map(b => b.key).filter((k): k is string => !!k)
+    expect(allKeys.length).toBeGreaterThan(0) // 픽스처가 분기를 실제로 거치는지
+    expect(computeFormProgress(r.cards, allKeys).done).toBe(before + 1)
+  })
+
+  it("일부만 숨기면 여전히 미완료다 — 남은 칸은 채울 것이 있다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const detail = r.cards.find(c => c.category === "detail")!
+    const oneKey = detail.blocks.map(b => b.key).filter((k): k is string => !!k)[0]
+    expect(detail.blocks.length).toBeGreaterThan(1)
+    expect(computeFormProgress(r.cards, [oneKey]).done).toBe(0)
+  })
+
+  /** 필수가 남아 있으면 숨김과 무관하게 필수 기준 그대로다(필수는 애초에 숨길 수 없다). */
+  it("필수가 있는 카드는 숨김 목록이 있어도 필수를 채워야 완료다", () => {
+    const { core, sections } = sectionsFor("academic-society")
+    const r = computeFormCards(core, sections)
+    const basic = r.cards.find(c => c.category === "basic")!
+    const someKey = basic.blocks.map(b => b.key).filter((k): k is string => !!k)[0]
+    expect(computeFormProgress(r.cards, [someKey]).done).toBe(0)
   })
 })

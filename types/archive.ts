@@ -85,13 +85,16 @@ export interface BlockColumnDef {
    * 셀 렌더 모드 힌트 (FRT-178). 블록의 `variant` 와 같은 역할을 컬럼 층위에서 한다.
    * `'role-chip'` 은 옵션 없는 `checklist` 컬럼을 자유 태그 입력이 아니라 역할 칩으로 렌더한다 —
    * 선택지가 상수가 아니라 같은 폼의 '역할 이력' 값에서 파생되기 때문이다(RoleHistoryContext).
+   * `'month'` 는 `date` 컬럼을 일 단위가 아니라 **월 단위**로 받는다(FRT-269) — 확정본이 month 로
+   * 정한 시점 컬럼용이다. 블록 층위에는 `DatePicker mode` 가 있는데 셀에는 없어 생긴 구멍이고,
+   * `period` 컬럼은 시작~종료 **두 칸**이라 단일 시점을 담을 수 없다. 안 주면 기존대로 일 단위다.
    *
    * ⚠️ 블록 층위의 `variant` 와 달리 이건 `RepeatableCellBlockValue.columns` 안에 있어
    * **value(JSONB)에 함께 저장된다** — 저장된 레코드를 다시 열면 템플릿이 아니라 저장값의
    * columns 가 채택되므로(`injectValue`), 값을 읽는 쪽은 columns 에 `variant` 키가 실릴 수
    * 있음을 전제해야 한다. 렌더 힌트일 뿐이라 무시해도 무해하다.
    */
-  variant?: 'role-chip'
+  variant?: 'role-chip' | 'month'
 }
 
 /**
@@ -285,7 +288,36 @@ export interface Block {
    * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
    */
   allowRowExtras?: boolean
+  /**
+   * 조건부 노출 (FRT-211). 다른 블록(트리거)의 현재 값에 따라 이 필드를 보이거나 숨긴다 —
+   * 수상경력 확정본의 "'개인 / 팀'에서 '팀 수상'을 고르면 '팀에서 내가 맡은 역할'이 나타난다".
+   * `roleTags`·`lockColumns` 와 같은 규약이다: 템플릿 정의에만 존재하며 value(JSONB)에는
+   * 직렬화되지 않는다(로드 시 레지스트리에서 재공급).
+   *
+   * ⚠️ 사용자가 직접 치운 목록(`hiddenKeys`, FRT-190)과는 **다른 층**이다. 조건 미충족은 어디에도
+   * 저장되지 않는 순수 파생 상태이고, 조건으로 숨은 필드는 '숨긴 항목 N개' 되살리기 목록에
+   * 나타나지 않는다(사용자가 치운 것이 아니므로 되살릴 것도 없다).
+   */
+  visibleWhen?: VisibilityCondition
   value: BlockValue
+}
+
+/**
+ * 조건부 노출 트리거 조건 (FRT-211).
+ *
+ * 트리거는 라벨이 아니라 **안정키**로 가리킨다 — 같은 라벨이 여러 섹션에 존재할 수 있어
+ * 라벨로는 어느 블록이 트리거인지 확정되지 않는다.
+ *
+ * ⚠️ 안정키는 `withSectionKeys` 가 `${sectionId}.${label}` 로 만들므로 **라벨을 바꾸면 이 `key`
+ * 문자열도 함께 바꿔야 한다.** 잊으면 조건이 영원히 미충족이 되어 필드가 아예 안 보인다 —
+ * templates-v2.test.ts 의 "트리거 키가 실제 안정키와 일치한다" 테스트가 유일한 방어선이다.
+ *
+ * `equals` 는 정확히 일치, `startsWith` 는 접두어 일치. 둘 다 없으면 "트리거에 값이 있으면 노출".
+ */
+export interface VisibilityCondition {
+  key: string
+  equals?: string[]
+  startsWith?: string[]
 }
 
 /**
@@ -338,11 +370,30 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   Record<ExperienceTypeId, Partial<Record<SectionCategory, string>>>
 > = {
   'academic-society': { repeat: '프로젝트 기록' },
+  'award': { detail: '수상 과정과 배움', evidence: '상장 / 증빙' },
   'career': { repeat: '프로젝트 / 담당 업무 기록' },
   'certification': { detail: '취득 배경', evidence: '자격증 증빙' },
   'club': { detail: '활동 상세', repeat: '활동 / 이벤트 기록' },
   'education': { detail: '수업 상세', repeat: '프로젝트 / 과제 / 제작물 기록' },
   'extracurricular': { detail: '활동 상세', repeat: '미션 / 프로젝트 기록' },
+  'language': { detail: '어학 경험', repeat: '경험 상세 기록', evidence: '어학 자격증' },
+  // 독서 확정본은 3섹션이지만 화면은 고정 4카테고리로 접힌다. ③ '평가'(별점)를 evidence 에
+  // 두면 core '증빙 자료' 파일칸이 '평가' 카드에 딸려오므로 detail 에 합쳐 이름만 바꾼다.
+  'reading': { detail: '감상과 평가', repeat: '문장별 감상' },
+  // 봉사 확정본 ②. basic 은 오버라이드하지 않는다 — 확정본 ① '봉사 정보' 카드에는 헤더 코어
+  // (경험명·한 줄 요약)도 함께 들어가므로 기본 라벨 '기본 정보'가 맞다(선행 유형들과 동일).
+  'volunteer': { detail: '봉사 회고' },
+  // 해외경험은 detail 을 오버라이드하지 않는다 — 확정본 ② 의 이름이 기본 라벨과 같은 '경험 상세'다.
+  // basic 도 마찬가지로 코어(경험명·기간·한 줄 요약)가 함께 드는 카드라 '기본 정보'가 맞다.
+  'overseas': { repeat: '활동별 상세 설명' },
+  // 창작물 확정본 ② '작업 상세'. basic 은 오버라이드하지 않는다 — 확정본 ① '작품 정보' 카드에는
+  // 헤더 코어(경험명·한 줄 요약)와 코어 '내 역할/기여도'도 함께 들어가므로 기본 라벨이 맞다.
+  // 안내 문구(SECTION_DESCRIPTION_OVERRIDES)는 두지 않는다 — 확정본이 ② 에 섹션 안내를 달지
+  // 않았고, 없는 문구를 지어내는 대신 폼 기본 문구로 폴백한다(독서와 같은 처리).
+  'creative-work': { detail: '작업 상세' },
+  // 연구논문 확정본 ②③④(FRT-269). basic 은 오버라이드하지 않는다 — 확정본 ① 의 이름이 기본
+  // 라벨과 같은 '기본 정보'이고, 헤더 코어(경험명·한 줄 요약)도 함께 드는 카드다.
+  'research': { detail: '연구 내용', repeat: '게재 / 발표 이력', evidence: '연구 증빙' },
 }
 
 /**
@@ -353,6 +404,11 @@ export const SECTION_LABEL_OVERRIDES: Partial<
 export const SECTION_DESCRIPTION_OVERRIDES: Partial<
   Record<ExperienceTypeId, Partial<Record<SectionCategory, string>>>
 > = {
+  'award': {
+    detail:
+      '간단히만 적어도 괜찮아요. 이 중 하나만 채워도 이후 AI 분석과 자기소개서 문장 추천 품질이 크게 달라져요.',
+    evidence: '상장 사본, 트로피 사진, 관련 기사 등 수상을 증명할 자료를 첨부해주세요.',
+  },
   'certification': {
     detail:
       '전부 선택 항목이지만, 이 중 하나만 채워도 이후 AI 분석과 자기소개서·이력서 문장 추천의 품질이 크게 달라져요.',
@@ -375,6 +431,29 @@ export const SECTION_DESCRIPTION_OVERRIDES: Partial<
       "이 활동에서 수행한 미션, 프로젝트, 제작물 등을 단위별로 기록해주세요. 위 '주요 미션 / 프로젝트'에서 관련 항목을 프로젝트로 바로 연결할 수 있어요.",
     evidence:
       '수료증, 위촉장, 활동 확인서 등 이 활동을 공식적으로 증명할 수 있는 자료를 첨부해주세요.',
+  },
+  'language': {
+    detail:
+      '이 언어를 실제로 사용하거나 능력이 성장한 경험을 자유롭게 기록해주세요. 외국계 인턴, 해외 생활, 통역, 논문 작성, 스터디, 원서 강독 등 어떤 것이든 좋아요.',
+    repeat:
+      "위 '주요 경험'에서 눈에 띄는 항목이 있다면 이곳에서 단위별로 자세히 기록해주세요. 기억나는 것부터 하나씩 추가해도 좋아요.",
+    evidence: '보유한 어학 자격증이나 공인 시험 성적을 첨부해주세요.',
+  },
+  'reading': {
+    // 확정본 ② 의 empty state 원문은 "문장을 추가하면 여기에 나타나요"(자동 동기화 전제)다.
+    // 실제 구현은 행별 '감상 남기기' 버튼이므로 무엇을 눌러야 나타나는지로 맞췄다 — 안내가
+    // 일어나지 않는 일을 약속하면 사용자는 버튼을 못 찾는다.
+    repeat:
+      "위 '인상 깊었던 문장'에서 문장에 '감상 남기기'를 누르면 여기에 나타나요. 문장이 특별히 마음에 남았다면 그때 남겨보세요 — 굳이 모두 채울 필요는 없어요.",
+    // detail 은 override 하지 않는다 — 확정본에 대응 문구가 없어 지어내는 대신 폼 기본 문구로 폴백한다.
+  },
+  // 연구논문 확정본 ②③④ 의 '섹션 안내' 원문(FRT-269). ③ 은 이 카드 문구가 곧 안내라
+  // 표 블록에는 guide 를 따로 달지 않는다 — 같은 문장이 카드 제목 아래와 표 위에 두 번 뜬다.
+  'research': {
+    detail: '이 연구가 무엇에 대한 것이었는지, 어떻게 진행했는지 정리해주세요.',
+    repeat: '이 연구가 논문으로 게재되었거나 학회에서 발표된 이력을 기록해주세요.',
+    evidence:
+      '연구 참여 확인서, 상장, IRB 승인서 등 이 연구를 증명할 수 있는 자료를 첨부해주세요.',
   },
 }
 
@@ -437,6 +516,11 @@ export interface ExperienceV2 {
   coreBlocks: Block[]
   extensionBlocks: Block[]
   customBlocks: Block[]
+  /**
+   * 사용자가 숨긴 선택 필드의 안정키 (FRT-190). 빈 선택 필드만 들어간다 —
+   * 판정·정리는 `lib/utils/hidden-fields.ts` 한 곳에서 한다.
+   */
+  hiddenKeys: string[]
   createdAt: string
   updatedAt: string
 }
@@ -467,6 +551,11 @@ export interface ExperienceContentV2 {
   tags: string[]
   fields: Record<string, BlockValue>
   custom: CustomEntry[]
+  /**
+   * 사용자가 숨긴 선택 필드의 안정키 목록 (FRT-190). 옛 레코드엔 없으므로 optional 이며,
+   * 로드 시 `parseHiddenKeys` 가 배열·문자열 원소만 통과시킨다.
+   */
+  hidden?: string[]
 }
 
 // ─── Library (replaces Folder) ──────────────────────────────────

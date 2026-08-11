@@ -126,3 +126,492 @@ describe("401 → refresh 분기 (FRT-11 회귀 가드)", () => {
     expect(window.location.href).toBe("")
   })
 })
+
+/**
+ * 백엔드(`arc-backend app/src/api/auth.py`)의 refresh 토큰 **회전 + 재사용 탐지**를 흉내낸다.
+ *
+ * - 회전 성공 시 옛 토큰에 `next` 를 기록한다 → 그 토큰이 다시 오면 재사용(=탈취)으로 본다.
+ * - 재사용 응답은 403 인 동시에 `remove_tokens(response)` 로 **쿠키를 지운다**. 즉 먼저 성공한
+ *   refresh 가 방금 심어 둔 새 쿠키까지 함께 사라져, 이후 재시도로는 복구할 수 없다.
+ *
+ * `detectReuse: false` 는 회전하지 않는 관대한 서버 — 중복 발사 자체만 세고 싶을 때 쓴다.
+ */
+function stubRotatingServer(opts: { detectReuse: boolean }) {
+  const state = { accessValid: false, sessionAlive: true, refreshCalls: 0 }
+
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.includes("/auth/refresh")) {
+      state.refreshCalls += 1
+      if (!state.sessionAlive) return new Response(null, { status: 401 })
+      if (opts.detectReuse && state.refreshCalls > 1) {
+        state.sessionAlive = false
+        state.accessValid = false
+        return new Response(null, { status: 403 })
+      }
+      state.accessValid = true
+      return new Response(null, { status: 200 })
+    }
+    return state.accessValid
+      ? jsonResponse({ ok: true })
+      : new Response(null, { status: 401 })
+  })
+
+  return state
+}
+
+// 주의: client.ts 의 공유 refresh Promise 는 **모듈 스코프**라 이 파일의 테스트 전체가
+// 한 슬롯을 나눠 쓴다. 완료 시 비워지므로(`finally`) 요청을 await 로 완결시키는 한 안전하지만,
+// refresh 를 띄운 채 끝나는 테스트를 새로 넣으면 그 결과가 다음 테스트로 샌다.
+describe("병렬 401 → refresh 단일화 (FRT-209/FRT-253)", () => {
+  it("동시에 401 을 받은 요청들이 refresh 를 한 번만 보낸다", async () => {
+    const state = stubRotatingServer({ detectReuse: false })
+
+    await Promise.all([api.get("/a"), api.get("/b"), api.get("/c")])
+
+    expect(state.refreshCalls).toBe(1)
+  })
+
+  it("회전하는 서버에서도 병렬 요청이 세션을 죽이지 않는다", async () => {
+    // 신고된 버그 그 자체: 15분 자리를 비운 뒤 대시보드에 들어오면 GET 4개가 동시에 401 을
+    // 받고, 각자 쏜 refresh 중 뒤의 것들이 403 + 쿠키 삭제를 부른다.
+    const state = stubRotatingServer({ detectReuse: true })
+
+    const results = await Promise.all([
+      api.get<{ ok: boolean }>("/a"),
+      api.get<{ ok: boolean }>("/b"),
+      api.get<{ ok: boolean }>("/c"),
+    ])
+
+    expect(results).toEqual([{ ok: true }, { ok: true }, { ok: true }])
+    expect(state.refreshCalls).toBe(1)
+    expect(state.sessionAlive).toBe(true)
+    // 핵심: 유효한 세션이 로그아웃되지 않는다.
+    expect(window.location.href).toBe("")
+  })
+
+  it("refresh 가 401 이면 병렬 요청 전부가 같은 재인증 판정으로 수렴한다", async () => {
+    // 실패 결과도 공유해야 한다 — 각자 다시 쏘면 그것이 곧 중복 발사다.
+    const state = stubRotatingServer({ detectReuse: false })
+    state.sessionAlive = false
+
+    const errors = await Promise.all([
+      api.get("/a").catch((e: unknown) => e),
+      api.get("/b").catch((e: unknown) => e),
+      api.get("/c").catch((e: unknown) => e),
+    ])
+
+    for (const err of errors) {
+      expect(err).toBeInstanceOf(ApiError)
+      if (err instanceof ApiError) expect(err.status).toBe(401)
+    }
+    expect(state.refreshCalls).toBe(1)
+    expect(window.location.href).toBe("/login")
+  })
+
+  it("앞선 refresh 가 끝난 뒤 만료되면 새 refresh 를 다시 시작한다", async () => {
+    // 거울상: 공유 Promise 가 완료된 채로 눌러앉으면 다음 만료 때 갱신이 영영 되지 않는다.
+    const state = stubRotatingServer({ detectReuse: false })
+
+    await api.get("/a")
+    expect(state.refreshCalls).toBe(1)
+
+    state.accessValid = false // 액세스 토큰이 다시 만료됨
+    await api.get("/b")
+
+    expect(state.refreshCalls).toBe(2)
+  })
+})
+
+/**
+ * 백엔드의 **액세스 토큰 검증**(`arc-backend app/src/utils/auth.py: check_auth`)까지 흉내낸다.
+ *
+ * 액세스 토큰은 자기를 발급한 refresh 토큰의 jti 를 품는다
+ * (`utils/token.py: create_access_token(user_id, ref.jti)`). refresh 가 성공하면 옛 행에
+ * `next` 가 박히므로 **그 액세스 토큰도 같은 순간 죽는다** — 이후 그 토큰을 실은 요청은
+ * 401 이 아니라 **403 `AUTH_REUSE_DETECTED`** 로 거절된다. 유예 창은 없다.
+ *
+ * 위 `stubRotatingServer` 는 refresh 엔드포인트의 재사용 탐지만 모델링해 이 경로를 볼 수 없었고,
+ * 그래서 "갱신 경계를 걸친 요청이 죽는다"는 결함이 FRT-253 의 그물을 그대로 통과했다.
+ *
+ * 두 403 을 반드시 구별해야 한다:
+ * - `/auth/refresh` 의 403 은 `remove_tokens` 를 동반한다 → 쿠키가 사라져 복구 불가.
+ * - `check_auth` 의 403 은 `remove_tokens` 를 부르지 않는다 → **쿠키가 살아 있어** 갱신 후
+ *   다시 보내면 그대로 성공한다.
+ */
+function stubRotatedOutServer(script: Array<Response | "refresh-ok">) {
+  const state = { refreshCalls: 0, dataCalls: 0 }
+  const queue = [...script]
+
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.includes("/auth/refresh")) {
+      state.refreshCalls += 1
+      return new Response(null, { status: 200 })
+    }
+    state.dataCalls += 1
+    const next = queue.shift()
+    if (next === undefined || next === "refresh-ok") return jsonResponse({ ok: true })
+    return next
+  })
+
+  return state
+}
+
+function rotatedOut() {
+  return jsonResponse({ message: "Login required.", code: "AUTH_REUSE_DETECTED" }, 403)
+}
+
+describe("갱신에 밀려난 요청 되살리기 (FRT-209 재발)", () => {
+  it("403 AUTH_REUSE_DETECTED 를 받으면 다시 보내 성공시킨다", async () => {
+    // 신고된 증상 그 자체: refresh 200 뒤에 individual 403 이 뜨고, 그 화면은
+    // "경험 데이터를 불러오지 못했어요."로 끝났다. 쿠키는 살아 있으므로 되살릴 수 있다.
+    const state = stubRotatedOutServer([rotatedOut()])
+
+    const res = await api.get<{ ok: boolean }>("/individual")
+
+    expect(res).toEqual({ ok: true })
+    // 되살리는 수단은 **재전송**이다. 갱신을 보내면 옛 리프레시 쿠키가 실려 세션이 지워질 수
+    // 있다 — "남이 회전시킨 403 은 갱신하지 않는다" 참조.
+    expect(state.refreshCalls).toBe(0)
+    // 핵심: 유효한 세션이 에러 화면으로 끝나지 않는다.
+    expect(window.location.href).toBe("")
+  })
+
+  it("AUTH_REVOKED 403 은 갱신하지 않고 그대로 던진다", async () => {
+    // 진짜 폐기된 세션이다. 여기서 갱신을 시도하면 죽은 세션을 붙잡고 늘어지는 셈이고,
+    // 되살릴 수도 없다 — 되살리기는 '회전에 밀려남'에만 적용한다.
+    const state = stubRotatedOutServer([
+      jsonResponse({ message: "Login required.", code: "AUTH_REVOKED" }, 403),
+    ])
+
+    const err = await api.get("/x").catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(403)
+    expect(err.code).toBe("AUTH_REVOKED")
+    expect(state.refreshCalls).toBe(0)
+  })
+
+  it("인증과 무관한 403 은 갱신하지 않고 그대로 던진다", async () => {
+    const state = stubRotatedOutServer([
+      jsonResponse({ message: "권한이 없어요", code: "FORBIDDEN" }, 403),
+    ])
+
+    const err = await api.get("/x").catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(403)
+    expect(err.code).toBe("FORBIDDEN")
+    expect(state.refreshCalls).toBe(0)
+  })
+
+  it("갱신해도 403 이 계속되면 무한히 재시도하지 않는다", async () => {
+    // 거울상: 되살리기에 상한이 없으면 회전이 계속되는 서버에서 한 요청이 영원히 맴돈다.
+    const state = stubRotatedOutServer([rotatedOut(), rotatedOut(), rotatedOut(), rotatedOut()])
+
+    const err = await api.get("/x").catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(403)
+    expect(state.dataCalls).toBeLessThanOrEqual(3)
+  })
+
+  it("갱신 직후 재시도가 다시 401 이어도 한 번 더 갱신해 되살린다", async () => {
+    // 신고된 트레이스의 나머지 절반: refresh 200 뒤 재시도가 다시 401 을 받았고, 재시도
+    // 예산이 1회뿐이라 그 요청들은 영구히 실패했다(화면에는 에러 카드만 남는다).
+    // 실제로 두 번째 refresh 를 받은 요청 하나만 200 으로 돌아왔다.
+    const state = stubRotatedOutServer([
+      new Response(null, { status: 401 }),
+      new Response(null, { status: 401 }),
+    ])
+
+    const res = await api.get<{ ok: boolean }>("/experiences")
+
+    expect(res).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(2)
+    expect(window.location.href).toBe("")
+  })
+
+  it("동시에 쏜 요청 중 갱신 경계에 걸린 것도 함께 되살아난다", async () => {
+    // 대시보드는 GET 을 한꺼번에 쏘고, 그중 몇 개가 갱신 경계의 어느 쪽에 떨어지는지는
+    // 밀리초 타이밍이라 매번 다르다 — 신고자가 "될 때가 있고 안 될 때가 있다"고 한 이유다.
+    // 어느 쪽에 떨어지든 결과는 같아야 한다.
+    stubRotatedOutServer([
+      rotatedOut(), // 갱신에 밀려난 요청
+      jsonResponse({ ok: true }),
+      rotatedOut(), // 또 하나
+    ])
+
+    const results = await Promise.all([
+      api.get<{ ok: boolean }>("/individual"),
+      api.get<{ ok: boolean }>("/keyword"),
+      api.get<{ ok: boolean }>("/comprehensive"),
+    ])
+
+    expect(results).toEqual([{ ok: true }, { ok: true }, { ok: true }])
+    expect(window.location.href).toBe("")
+  })
+})
+
+/**
+ * 되살리기 자체가 새로운 회전 물결을 만들지 않아야 한다 (PR #247 리뷰).
+ *
+ * 갱신이 이미 끝난 **뒤**에 도착한 403 은 `inflightRefresh` 가 비어 있어 또 갱신을 시작한다.
+ * 그 갱신은 방금 심어진 새 토큰을 회전시키고, 그 토큰으로 재시도 중이던 다른 요청들을 통째로
+ * 403 에 빠뜨린다 — 신고 트레이스의 **두 번째 401/403 물결**이 정확히 이 모양이다.
+ * 예산을 늘리는 것은 그 물결을 흡수할 뿐이고, 여기서 막는 것이 원인을 없애는 쪽이다.
+ */
+describe("되살리기가 새 회전을 만들지 않는다", () => {
+  it("이미 끝난 갱신 뒤에 도착한 401 은 또 갱신하지 않고 그대로 다시 보낸다", async () => {
+    let refreshCalls = 0
+    let lateCalls = 0
+    let releaseLate: () => void = () => {}
+    const lateHeld = new Promise<void>((resolve) => {
+      releaseLate = resolve
+    })
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/auth/refresh")) {
+        refreshCalls += 1
+        return new Response(null, { status: 200 })
+      }
+      if (url.includes("/late")) {
+        lateCalls += 1
+        // 첫 응답만 붙잡아 둔다 — 앞선 요청의 갱신이 끝난 뒤에 401 이 도착하는 상황.
+        // **401 이어야 한다.** 403 은 세대와 무관하게 갱신을 보내지 않으므로, 403 으로 쓰면
+        // 이 테스트가 세대 판정을 전혀 검증하지 못한 채 통과한다.
+        if (lateCalls === 1) {
+          await lateHeld
+          return new Response(null, { status: 401 })
+        }
+        return jsonResponse({ ok: true })
+      }
+      // /early: 만료된 액세스 토큰 → 갱신을 한 번 일으키고 재시도에 성공한다.
+      return lateCalls === 0 ? new Response(null, { status: 401 }) : jsonResponse({ ok: true })
+    })
+
+    // 둘은 같은 시점에 나갔으므로 같은(옛) 토큰을 실었다.
+    const early = api.get<{ ok: boolean }>("/early")
+    const late = api.get<{ ok: boolean }>("/late")
+
+    await early
+    releaseLate()
+
+    expect(await late).toEqual({ ok: true })
+    // 핵심: 갱신은 한 번뿐. 두 번째가 나가면 그것이 다음 403 물결의 발원지가 된다.
+    expect(refreshCalls).toBe(1)
+    expect(window.location.href).toBe("")
+  })
+
+  it("갱신이 없었다면 401 은 여전히 갱신을 부른다", async () => {
+    // 거울상: 세대 판정이 상시 참으로 굳으면 갱신이 영영 일어나지 않는다.
+    const state = stubRotatedOutServer([new Response(null, { status: 401 })])
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+  })
+})
+
+/**
+ * 갱신으로 고칠 수 없는 401 을 갱신에 태우지 않는다 (PR #247 리뷰).
+ *
+ * 백엔드는 두 종류의 401 을 코드로 구별한다 (arc-backend `enums.py`).
+ * - `AUTH_TOKEN_EXPIRED` · `AUTH_TOKEN_INVALID` · `AUTH_MISSING_COOKIES` (`utils/auth.py`)
+ *   → 액세스 토큰 문제. 갱신하면 풀린다.
+ * - `INVALID_CREDENTIALS` (`api/auth.py:160/168/568`) → 사용자가 비밀번호를 틀린 것.
+ *   갱신해도 영원히 401 이고, 그 사이 탈퇴 DELETE 가 반복 전송되며 세션만 헛돌게 회전한다.
+ *
+ * 가려내는 방향이 중요하다. `auth:false` 요청을 통째로 제외하면 `/auth/me` 도 `auth:false` 라
+ * (`lib/api/auth-api.ts:19`) **세션 복원이 통째로 죽는다**. 그래서 "갱신 가능한 코드만 허용"이
+ * 아니라 "고칠 수 없는 코드만 제외"로 좁게 판정한다 — 코드가 없는 401 은 지금처럼 갱신한다.
+ */
+describe("갱신으로 고칠 수 없는 401 가려내기", () => {
+  it("비밀번호 오답 401 은 갱신하지 않고 즉시 던진다", async () => {
+    const state = stubRotatedOutServer([
+      jsonResponse(
+        { message: "The email or password is incorrect.", code: "INVALID_CREDENTIALS" },
+        401,
+      ),
+    ])
+
+    const err = await api
+      .delete("/auth/account/password", { auth: false })
+      .catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(401)
+    expect(err.code).toBe("INVALID_CREDENTIALS")
+    expect(state.refreshCalls).toBe(0)
+    // 핵심: 탈퇴 요청이 한 번만 나간다. 재전송은 실패 횟수 집계까지 오염시킨다.
+    expect(state.dataCalls).toBe(1)
+  })
+
+  it("소셜 인증 실패 401 은 갱신하지 않고 즉시 던진다", async () => {
+    // `deleteAccountWithSocial` 은 **로그인된 사용자**가 설정에서 OAuth 재확인을 거쳐
+    // 콜백에서 부른다(`app/(auth)/callback/google/page.tsx:45`). 즉 리프레시 쿠키가 살아 있어
+    // 갱신이 매번 성공하고, 그 사이 **계정 삭제 DELETE 가 되풀이 전송된다**.
+    const state = stubRotatedOutServer([
+      jsonResponse({ message: "Social login failed.", code: "SOCIAL_AUTH_FAILED" }, 401),
+    ])
+
+    const err = await api.delete("/auth/account/social", { auth: false }).catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(401)
+    expect(err.code).toBe("SOCIAL_AUTH_FAILED")
+    expect(state.refreshCalls).toBe(0)
+    expect(state.dataCalls).toBe(1)
+  })
+
+  it("만료 401 은 여전히 갱신해 되살린다", async () => {
+    // 위 제외가 넓어지면 세션 복원이 죽는다 — 그 경계를 고정한다.
+    const state = stubRotatedOutServer([
+      jsonResponse({ message: "Login required.", code: "AUTH_TOKEN_EXPIRED" }, 401),
+    ])
+
+    expect(await api.get<{ ok: boolean }>("/auth/me", { auth: false })).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+  })
+
+  it("코드 없는 401 도 여전히 갱신해 되살린다", async () => {
+    const state = stubRotatedOutServer([new Response(null, { status: 401 })])
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+  })
+})
+
+/**
+ * 남이 회전시킨 403 에는 **갱신을 보내지 않는다** (PR #247 리뷰 4차).
+ *
+ * `AUTH_REUSE_DETECTED` 인데 내 탭은 갱신한 적이 없다(세대 그대로) ⇒ 회전시킨 것은 다른 탭이다.
+ * 여기서 갱신하면 아직 교체되지 않았을 수 있는 **옛 리프레시 쿠키**를 보내는 셈이고, 서버는 그것을
+ * 재사용(=탈취)으로 보아 `remove_tokens` 로 쿠키를 지운다 — 에러 카드로 끝났을 일이 **로그아웃**이
+ * 된다. 되살리기를 넣은 이 PR 이 만들 수 있는 유일한 회귀이므로 여기서 닫는다.
+ *
+ * 재전송이 갱신을 **지배한다**:
+ * - 쿠키가 이미 교체돼 있으면 → 재전송이 성공한다 (갱신도 성공했을 상황).
+ * - 교체돼 있지 않으면 → 갱신은 **반드시** 재사용 탐지에 걸린다.
+ * 그러니 갱신할 이유가 없다. 방송(`BroadcastChannel`)은 이 재전송 한 번마저 아껴 줄 뿐이다.
+ */
+describe("남이 회전시킨 403 은 갱신하지 않는다", () => {
+  function stubStaleCookieServer(dataScript: Response[]) {
+    const state = { refreshCalls: 0, dataCalls: 0 }
+    const queue = [...dataScript]
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/auth/refresh")) {
+        state.refreshCalls += 1
+        // 옛 리프레시 쿠키를 보냈으므로 서버는 재사용으로 판정하고 쿠키를 지운다.
+        return jsonResponse({ message: "Login required.", code: "AUTH_REUSE_DETECTED" }, 403)
+      }
+      state.dataCalls += 1
+      return queue.shift() ?? jsonResponse({ ok: true })
+    })
+
+    return state
+  }
+
+  it("재전송으로 되살아난다 — 갱신은 보내지 않는다", async () => {
+    const state = stubStaleCookieServer([rotatedOut()])
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(0)
+    expect(state.dataCalls).toBe(2)
+  })
+
+  it("재전송도 403 이면 세션을 날리지 않고 그대로 던진다", async () => {
+    // 갱신을 보내면 서버가 쿠키를 지우고 /login 으로 튕긴다 — 화면 하나가 안 뜬 대가로
+    // 로그인 상태 전체를 잃는다. 던지고 마는 쪽이 사용자에게 훨씬 싸다.
+    const state = stubStaleCookieServer([rotatedOut(), rotatedOut(), rotatedOut()])
+
+    const err = await api.get("/x").catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(403)
+    expect(err.code).toBe("AUTH_REUSE_DETECTED")
+    expect(state.refreshCalls).toBe(0)
+    expect(window.location.href).toBe("")
+  })
+})
+
+/**
+ * 탭 사이에서도 물결이 끊기게 한다 (PR #247 리뷰 3차, FRT-279).
+ *
+ * 쿠키는 탭이 공유하지만 `refreshGeneration` 은 모듈 지역 변수라 탭마다 별개다. 그대로 두면
+ * 다른 탭이 방금 심어 준 **최신** 쿠키를 이 탭이 "낡았다"고 오해해 한 번 더 회전시키고, 그
+ * 회전이 저쪽 탭의 요청을 403 에 빠뜨린다 — 위 "되살리기가 새 회전을 만들지 않는다"와 똑같은
+ * 결함이 탭 경계를 넘은 판본이다.
+ *
+ * 방송이 403 보다 먼저 도착한다는 보장은 없으므로 **첫 한 번의 중복 회전까지 없애지는 못한다**.
+ * 없애는 것은 그 뒤의 왕복이다: 방송을 받은 탭은 세대가 올라가 있어 다음 403 에 갱신으로
+ * 응답하지 않는다. 근본 해소는 백엔드 회전 유예 창(BAC-64).
+ */
+describe("탭 간 갱신 세대 동기화", () => {
+  const CHANNEL = "arc-auth-refresh"
+
+  // 방송 전달은 매크로태스크다. 붙잡아 둔 응답을 풀기 전에 리스너가 돌 틈을 준다.
+  const deliverBroadcast = () => new Promise((resolve) => setTimeout(resolve, 10))
+
+  it("다른 탭이 갱신을 끝냈다는 방송이 오면 또 갱신하지 않고 그대로 다시 보낸다", async () => {
+    const otherTab = new BroadcastChannel(CHANNEL)
+    let refreshCalls = 0
+    let dataCalls = 0
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/auth/refresh")) {
+        refreshCalls += 1
+        return new Response(null, { status: 200 })
+      }
+      dataCalls += 1
+      if (dataCalls === 1) {
+        // 이 요청이 날아가 있는 **동안** 다른 탭의 갱신이 끝났다. 브라우저는 이미 새 쿠키를
+        // 들고 있으므로, 돌아온 401 에 필요한 것은 갱신이 아니라 재전송뿐이다.
+        // **401 이어야 한다.** 403 은 세대와 무관하게 갱신을 보내지 않으므로, 403 으로 쓰면
+        // 방송이 전달되지 않아도 통과해 이 테스트가 공허해진다.
+        otherTab.postMessage("refreshed")
+        await deliverBroadcast()
+        return new Response(null, { status: 401 })
+      }
+      return jsonResponse({ ok: true })
+    })
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(refreshCalls).toBe(0)
+    expect(dataCalls).toBe(2)
+
+    otherTab.close()
+  })
+
+  it("이 탭이 갱신에 성공하면 다른 탭에 알린다", async () => {
+    // 나가는 반쪽. 이것이 없으면 위 수신 로직은 어느 탭에서도 발동하지 않는다.
+    const otherTab = new BroadcastChannel(CHANNEL)
+    const heard: unknown[] = []
+    otherTab.onmessage = (e: MessageEvent) => {
+      heard.push(e.data)
+    }
+
+    const state = stubRotatedOutServer([new Response(null, { status: 401 })])
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+
+    await deliverBroadcast()
+    expect(heard).toHaveLength(1)
+
+    otherTab.close()
+  })
+
+  it("방송이 없었다면 401 은 여전히 갱신을 부른다", async () => {
+    // 거울상: 수신 분기가 상시 참으로 굳으면 갱신이 영영 일어나지 않는다.
+    const state = stubRotatedOutServer([new Response(null, { status: 401 })])
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+  })
+})

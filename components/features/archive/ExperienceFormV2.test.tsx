@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup } from "@testing-library/react"
+import { render, screen, cleanup, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import type { ExperienceV2 } from "@/types/archive"
@@ -33,6 +33,9 @@ async function selectType(user: ReturnType<typeof userEvent.setup>) {
 
 // vitest globals:false → testing-library 자동 cleanup 미등록이므로 수동 정리.
 afterEach(cleanup)
+// ⚠️ spy 해제를 테스트 본문 끝에 두면 **단언이 실패한 순간 실행되지 않아** 다음 테스트의
+// spy 가 그 위에 쌓인다(호출 수가 누적돼 무관한 테스트가 같이 무너진다). afterEach 로 뺀다.
+afterEach(() => vi.restoreAllMocks())
 
 describe("FRT-54 경험명 빈 값 저장 차단", () => {
   it("'완료' 클릭 시 title 이 비어 있으면 저장이 차단되고 에러가 표시된다", async () => {
@@ -82,6 +85,7 @@ describe("FRT-54 경험명 빈 값 저장 차단", () => {
       coreBlocks: [],
       extensionBlocks: [],
       customBlocks: [],
+      hiddenKeys: [],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -162,6 +166,7 @@ describe("FRT-52 편집 진입 직후 dirty 위양성 방지", () => {
       coreBlocks: [],
       extensionBlocks: [],
       customBlocks: [],
+      hiddenKeys: [],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
       ...overrides,
@@ -269,6 +274,7 @@ describe("FRT-78 사용자 섹션 정렬·loose 편집 (Codex P2)", () => {
           customBlocks: [
             { id: "loose-1", type: "text", label: "메모", value: { type: "text", text: "내용" } },
           ],
+          hiddenKeys: [],
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
         }}
@@ -407,6 +413,45 @@ describe("FRT-178 동아리 역할 태그 동기화", () => {
     expect(linked).toHaveAttribute("title", "봄 정기 공연")
   })
 
+  /**
+   * 역방향 배지 (FRT-210). 대상 행은 자기가 연결돼 생겼는지 모르므로 폼이 역인덱스를 공급한다 —
+   * 여기서 검증하는 건 그 인덱스가 **소스 블록의 라벨**을 실어 나른다는 것이다.
+   */
+  it("연결로 만든 기록 행에 어디서 왔는지 배지가 붙는다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectClub(user)
+
+    await user.type(
+      screen.getByPlaceholderText("예: 2024 봄 정기 공연 / 신입 부원 모집 캠페인 기획"),
+      "봄 정기 공연",
+    )
+    await user.click(screen.getByRole("button", { name: "프로젝트로 기록" }))
+
+    expect(screen.getByText("주요 활동 / 이벤트에서 연결됨")).toBeInTheDocument()
+  })
+
+  /**
+   * 진실이 소스 행 한쪽에만 있으니(linkedProjectRowId) 해제하면 역방향 배지도 같은 순간 사라져야
+   * 한다. 대상 행에 배지 상태를 따로 저장했다면 여기서 어긋난다 — 그래서 저장하지 않고 조회한다.
+   */
+  it("연결을 해제하면 기록 행의 배지도 사라진다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectClub(user)
+
+    await user.type(
+      screen.getByPlaceholderText("예: 2024 봄 정기 공연 / 신입 부원 모집 캠페인 기획"),
+      "봄 정기 공연",
+    )
+    await user.click(screen.getByRole("button", { name: "프로젝트로 기록" }))
+    expect(screen.getByText("주요 활동 / 이벤트에서 연결됨")).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole("button", { name: "프로젝트 연결 해제" })[0])
+
+    expect(screen.queryByText(/에서 연결됨/)).not.toBeInTheDocument()
+  })
+
   it("역할 행을 지우면 붙어 있던 태그도 사라진다", async () => {
     const user = userEvent.setup()
     renderForm()
@@ -420,5 +465,321 @@ describe("FRT-178 동아리 역할 태그 동기화", () => {
 
     await user.click(screen.getByRole("button", { name: "회장 삭제" }))
     expect(screen.queryByRole("button", { name: "회장 역할 태그 해제" })).toBeNull()
+  })
+})
+
+/**
+ * FRT-190 — 선택 필드 숨김.
+ *
+ * ⚠️ 이 통합 테스트가 중요한 이유: 숨김 대상 판정이 `block.key` 를 요구하는데, 키는 템플릿
+ * 조립 단계에서만 부여된다(`createBlock` 은 안 붙인다). 픽스처를 손으로 만든 테스트만 있으면
+ * "실제 폼에서는 × 가 하나도 안 뜨는" 상태를 통과시킬 수 있다 — 실제 템플릿으로 도달을 확인한다.
+ */
+describe("FRT-190 선택 필드 숨김", () => {
+  /** 대외활동 템플릿의 빈 선택 필드 하나를 고른다(라벨은 확정본 기준). */
+  const HIDABLE_LABEL = "지원 동기"
+
+  it("실제 폼의 빈 선택 필드에 × 가 뜬다 — 필수 필드에는 안 뜬다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectType(user)
+
+    expect(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`)).toBeInTheDocument()
+    expect(screen.queryByLabelText("경험명 숨기기")).not.toBeInTheDocument()
+  })
+
+  it("× 를 누르면 필드가 사라지고, 되살리기 토글로 되돌릴 수 있다", async () => {
+    const user = userEvent.setup()
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    expect(screen.queryByLabelText(`${HIDABLE_LABEL} 숨기기`)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: /숨긴 항목 1개/ }))
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 다시 보기`))
+
+    expect(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`)).toBeInTheDocument()
+    expect(screen.queryByText(/숨긴 항목/)).not.toBeInTheDocument()
+  })
+
+  it("숨긴 채 저장하면 hiddenKeys 에 안정키가 실린다", async () => {
+    const user = userEvent.setup()
+    const { onSave } = renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    await user.type(screen.getByLabelText(/경험명/), "교내 동아리")
+    await user.click(screen.getByRole("button", { name: "완료" }))
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    const saved = onSave.mock.calls[0][0] as ExperienceV2
+    expect(saved.hiddenKeys).toHaveLength(1)
+    expect(saved.hiddenKeys[0]).toContain(HIDABLE_LABEL)
+  })
+
+  /** 유형 그리드를 다시 열고 다른 유형을 고른다(유형 선택 후엔 '변경'을 눌러야 열린다). */
+  async function changeType(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+    await user.click(screen.getAllByRole("button", { name: "동아리/교내 단체" })[0])
+  }
+
+  it("유형을 바꾸면 숨김이 초기화된다 — 안정키가 유형 간에 겹치기 때문", async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, "confirm").mockReturnValue(true)
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    expect(screen.getByRole("button", { name: /숨긴 항목 1개/ })).toBeInTheDocument()
+
+    await changeType(user)
+
+    expect(screen.queryByText(/숨긴 항목/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * 숨김도 사용자가 한 작업이다. 유형 변경은 그걸 초기화하므로 확인 없이 버리면 안 된다.
+   * ⚠️ 미저장 경고(`onUnsavedChange`)는 `hiddenKeys.length > 0` 를 이미 보고 있어서,
+   * 여기서 안 보면 **"나가면 경고는 뜨는데 유형은 말없이 갈아엎는"** 어긋난 상태가 된다.
+   *
+   * 호출 **횟수**는 단언하지 않는다 — `onRequestChange` 는 '변경' 버튼과 유형 버튼 양쪽에서
+   * 불리므로 UI 구조가 바뀌면 같이 깨진다. 물어봤는가 / 안 물어봤는가만 본다.
+   */
+  it("숨김만 했어도 유형 변경 전에 확인을 묻는다", async () => {
+    const user = userEvent.setup()
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true)
+    renderForm()
+    await selectType(user)
+
+    // 값은 하나도 안 넣는다 — 숨김만으로 확인이 떠야 한다.
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+
+    expect(confirmSpy).toHaveBeenCalled()
+  })
+
+  it("확인을 취소하면 숨김이 그대로 남는다", async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, "confirm").mockReturnValue(false)
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByLabelText(`${HIDABLE_LABEL} 숨기기`))
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+
+    expect(screen.getByRole("button", { name: /숨긴 항목 1개/ })).toBeInTheDocument()
+  })
+
+  /** 대조군: 아무것도 안 건드렸으면 확인은 안 뜬다(모든 변경에 confirm 을 걸어버린 게 아님). */
+  it("아무 작업도 없으면 유형 변경에 확인이 안 뜬다", async () => {
+    const user = userEvent.setup()
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true)
+    renderForm()
+    await selectType(user)
+
+    await user.click(screen.getByRole("button", { name: /변경/ }))
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+  })
+
+  /**
+   * 값이 생긴 숨김 키는 화면에 되돌려 보여주면서(`resolveHiddenBlocks`) state 에는 남아 있었다.
+   * 그러면 **보이는 필드를 진행도가 없는 셈 치고**, 저장하면 다음 로드에서 (값이 다시 비는 순간)
+   * 조용히 사라진다. 폼이 `normalizeHiddenKeys` 를 거친 값 하나만 쓰는지 저장 payload 로 본다.
+   *
+   * 이 상태는 UI 조작으로 만들 수 없다 — 숨긴 필드는 화면에 없어 값을 넣을 방법이 없고,
+   * 다른 기기 편집·템플릿 개편으로 **서버가 그렇게 준 레코드**로만 도달한다. 그래서 edit 모드다.
+   */
+  describe("복귀한 숨김 키", () => {
+    const FILLED_KEY = "core.복귀 필드"
+    const EMPTY_KEY = "core.빈 필드"
+
+    function recordWith(hiddenKeys: string[]): ExperienceV2 {
+      return {
+        id: "exp-restore", userId: "u1", typeId: "extracurricular",
+        title: "교내 동아리", summary: "", status: "complete",
+        tags: [], importance: 3,
+        coreBlocks: [
+          {
+            id: "b-filled", key: FILLED_KEY, type: "text", label: "복귀 필드",
+            value: { type: "text", text: "다른 기기에서 채워진 값" },
+          },
+          {
+            id: "b-empty", key: EMPTY_KEY, type: "text", label: "빈 필드",
+            value: { type: "text", text: "" },
+          },
+        ],
+        extensionBlocks: [], customBlocks: [], hiddenKeys,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }
+    }
+
+    async function saveAndGet(hiddenKeys: string[]): Promise<ExperienceV2> {
+      const user = userEvent.setup()
+      const onSave = vi.fn()
+      render(
+        <ExperienceFormV2
+          mode="edit"
+          initialExperience={recordWith(hiddenKeys)}
+          onSave={onSave}
+          onCancel={() => {}}
+        />,
+      )
+      await user.click(screen.getByRole("button", { name: "완료" }))
+      expect(onSave).toHaveBeenCalledTimes(1)
+      return onSave.mock.calls[0][0] as ExperienceV2
+    }
+
+    it("값이 생긴 키는 저장에서 빠진다 — 안 빼면 값이 다시 비는 순간 사라진다", async () => {
+      const saved = await saveAndGet([FILLED_KEY])
+      expect(saved.hiddenKeys).not.toContain(FILLED_KEY)
+    })
+
+    /** 대조군: 여전히 비어 있는 키까지 같이 지워 버리면 숨김이 통째로 풀린다. */
+    it("여전히 빈 키는 그대로 남는다", async () => {
+      const saved = await saveAndGet([EMPTY_KEY])
+      expect(saved.hiddenKeys).toContain(EMPTY_KEY)
+    })
+  })
+})
+
+/**
+ * FRT-211 회귀(Codex P1) — 구 레코드를 편집할 때 새 템플릿 필드가 사라지는 문제.
+ *
+ * 편집 모드는 저장된 확장 블록을 템플릿 섹션에 재분배하는데, 매칭된 블록이 하나라도 있으면
+ * 그 섹션을 **매칭분으로 통째 교체**했다. schema v2 레코드는 `toExperienceV2` 가 현재 템플릿
+ * 전체를 재구성해 내려주므로 무해했지만, **v1 레거시 레코드**(schema_version 없이 저장된
+ * 블록 배열 그대로 — 데모 시드가 이 모양이다)는 살아남은 라벨만 매칭돼 나머지 새 필드가
+ * 화면에서 통째로 사라진다.
+ *
+ * 수상경력은 확정본 개편으로 구 라벨 중 `수상일` 하나만 살아남아, 구 레코드를 열면 ① 섹션에
+ * 필드가 1개만 뜨고 **필수 5개를 채울 방법이 없어 완료 저장이 영구 차단**된다.
+ * 매칭분으로 교체하지 말고 **템플릿 섹션에 병합**해야 한다(v2 는 결과가 동일 — 무회귀).
+ */
+describe("FRT-211 구 레코드 편집 시 새 템플릿 필드 병합", () => {
+  function legacyAward(): ExperienceV2 {
+    return {
+      id: "exp-award-v1",
+      userId: "u1",
+      typeId: "award",
+      title: "전국 대학생 창업 경진대회 대상",
+      summary: "",
+      status: "complete",
+      tags: [],
+      importance: undefined,
+      coreBlocks: [],
+      // v1 레거시 매칭 결과: 구 award 라벨 중 현재 템플릿과 겹치는 건 '수상일' 하나뿐이다.
+      extensionBlocks: [
+        {
+          id: "b-date",
+          type: "date",
+          label: "수상일",
+          key: "award-info.수상일",
+          value: { type: "date", date: "2026-05-20" },
+        },
+      ],
+      customBlocks: [],
+      hiddenKeys: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }
+  }
+
+  it("살아남은 필드 하나 때문에 나머지 확정본 필드가 사라지지 않는다", () => {
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={legacyAward()}
+        onSave={vi.fn()}
+        onCancel={() => {}}
+      />,
+    )
+
+    // ① 수상 정보의 필수 5종이 모두 렌더돼야 완료 저장이 가능하다.
+    for (const label of ["대회 / 프로그램명", "대회 유형", "수상 훈격", "주최 기관", "수상일"]) {
+      expect(screen.getByLabelText(new RegExp(`^${label}`)), label).toBeInTheDocument()
+    }
+  })
+
+  it("병합해도 저장돼 있던 값은 그대로 남는다", () => {
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={legacyAward()}
+        onSave={vi.fn()}
+        onCancel={() => {}}
+      />,
+    )
+
+    const dateInput = screen.getByLabelText(/^수상일/) as HTMLInputElement
+    expect(dateInput.value).toBe("2026-05-20")
+  })
+
+  /**
+   * 구 award 템플릿의 '수상일'은 optional 이었다(`createDateField('수상일')`). 저장 블록을
+   * 통째로 쓰면 그 낡은 메타데이터가 따라와 필수 표시가 사라지고, `isRequiredBlock` 기준
+   * 완료 판정이 **날짜가 비어도 카드를 완료로 본다**. 값만 현재 템플릿 정의에 실어야 한다.
+   */
+  it("값은 저장분을, 정의는 현재 템플릿을 쓴다", () => {
+    render(
+      <ExperienceFormV2
+        mode="edit"
+        initialExperience={legacyAward()}
+        onSave={vi.fn()}
+        onCancel={() => {}}
+      />,
+    )
+
+    const dateInput = screen.getByLabelText(/^수상일/) as HTMLInputElement
+    expect(dateInput.required).toBe(true)
+    expect(dateInput.value).toBe("2026-05-20")
+  })
+})
+
+/**
+ * FRT-172 — 한글 IME 로 태그를 치다 마지막 음절을 확정하려고 누른 Enter 가
+ * 조합이 끝나기 전에 태그를 커밋해선 안 된다. 조합 확정용 keydown 은 `isComposing: true` 로 온다.
+ *
+ * 두 케이스를 짝으로 둔다 — "커밋되지 않는다"만 두면 셀렉터가 틀려도 통과하므로,
+ * 같은 셀렉터로 "조합이 끝나면 커밋된다"까지 증명해야 그물이 된다.
+ */
+describe("FRT-172 태그 입력 IME 조합 중 Enter", () => {
+  async function typeTag(user: ReturnType<typeof userEvent.setup>) {
+    renderForm()
+    await selectType(user)
+    const input = screen.getByPlaceholderText("태그 입력 후 Enter")
+    await user.type(input, "리더십")
+    return input
+  }
+
+  it("조합 중 Enter 는 미완성 텍스트를 태그로 커밋하지 않는다", async () => {
+    const user = userEvent.setup()
+    const input = await typeTag(user)
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true })
+
+    expect(screen.queryByRole("button", { name: "리더십 삭제" })).toBeNull()
+  })
+
+  it("조합이 끝난 Enter 는 태그를 커밋한다", async () => {
+    const user = userEvent.setup()
+    const input = await typeTag(user)
+
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(screen.getByRole("button", { name: "리더십 삭제" })).toBeInTheDocument()
+  })
+
+  // WebKit(Safari·iOS)은 compositionend 를 keydown 보다 먼저 보내 조합 확정 Enter 가
+  // `isComposing: false` 로 도착한다. 조합 신호는 `keyCode 229` 에만 남는다.
+  it("WebKit 모양(isComposing false + keyCode 229)의 확정 Enter 도 태그를 커밋하지 않는다", async () => {
+    const user = userEvent.setup()
+    const input = await typeTag(user)
+
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229 })
+
+    expect(screen.queryByRole("button", { name: "리더십 삭제" })).toBeNull()
   })
 })

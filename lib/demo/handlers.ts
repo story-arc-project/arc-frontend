@@ -172,8 +172,7 @@ export async function createResume(params: {
 }
 
 export async function getResume(versionId: string): Promise<ResumeVersion> {
-  void versionId;
-  return delay(resumeStore.get());
+  return delay(resumeStore.get(versionId));
 }
 
 export async function getResumeList(): Promise<ResumeListItem[]> {
@@ -181,12 +180,16 @@ export async function getResumeList(): Promise<ResumeListItem[]> {
 }
 
 export async function updateResume(versionId: string, data: ResumeVersion): Promise<ResumeVersion> {
-  void versionId;
-  return delay(data);
+  // 데모에서는 저장이 성공한다 — 성공했다고 말했으면 **저장한 내용이 남아야 한다**:
+  // 되돌려주기만 하면 상세 화면이 임시 저장을 지우고 성공을 표시한 뒤, 목록에 갔다
+  // 다시 열 때 시드가 편집을 조용히 덮는다(FRT-151, 커버레터와 같은 결함이었다).
+  return delay(resumeStore.update(versionId, data));
 }
 
 export async function deleteResume(versionId: string): Promise<void> {
-  void versionId;
+  // 목록 화면은 삭제 성공 시 로컬 state 에서만 행을 지운다 — 스토어에 남겨두면 목록을
+  // 다시 부르는 순간 삭제한 레쥬메가 되살아난다.
+  resumeStore.remove(versionId);
   await delay(undefined);
 }
 

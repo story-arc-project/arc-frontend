@@ -71,6 +71,59 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   // 자격증 확정본은 취득일 하나로 시점을 받는다 — required 인 '기간'을 함께 두면 시작·종료를
   // 억지로 묻게 된다. 역할·성과도 확정본에 없다(② 취득 배경이 대신 묻는다).
   certification: ['기간', '내 역할/기여도', '핵심 성과'],
+  // 수상경력도 같은 이유로 '수상일' 하나로 시점을 받는다. 역할·성과도 확정본에 없다 —
+  // ① '수상 내용 / 배경'·'지원 동기'가 흡수했고, 팀에서의 역할은 조건부 필드가 따로 받는다.
+  award: ['기간', '내 역할/기여도', '핵심 성과'],
+  // 어학 확정본에는 전체 기간이 없다 — 언어 능력은 시작·종료가 뚜렷하지 않아 required 로 물으면
+  // 억지 입력이 되고 진행도까지 막힌다. 시점은 ③ 각 경험의 '기간'과 ④ '취득일'이 받는다.
+  // 역할·성과도 확정본에 없다(② 어학 경험과 ③ 경험 상세 기록이 그 질문을 흡수했다).
+  // '증빙 자료'를 빼는 이유는 다르다 — 어학의 증빙은 ④ '성적표 첨부'이고, 그건 시험명·점수·
+  // 취득일과 **한 카드**여야 의미가 산다(교육의 '성적 증빙'과 같은 처리). core 를 남기면
+  // 같은 카드에 파일 입력칸이 두 벌 생긴다.
+  language: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
+  // 독서 확정본은 ① '독서 기간'으로 시점을 받는다. 역할·성과는 아예 성립하지 않는 질문이다
+  // (책을 읽는 데 '내 역할'과 '핵심 성과'가 없다). 다만 **'증빙 자료'는 빼지 않는다** —
+  // 어학은 자체 '성적표 첨부'가 있어서 뺄 수 있었던 것이고, 독서 확정본에는 증빙 필드가
+  // 하나도 없어 core 까지 빼면 첨부 수단이 통째로 사라진다.
+  reading: ['기간', '내 역할/기여도', '핵심 성과'],
+  // 봉사 확정본은 ① 이 네 칸을 모두 자기 필드로 받는다 — '활동 기간'·'역할'(한 줄)·
+  // '봉사 확인서 첨부'(증빙 유형 드롭다운 포함). core 를 남기면 같은 질문을 두 번 하게 되고,
+  // 특히 '증빙 자료'는 evidence 카드를 따로 만들어 파일 입력칸이 두 벌이 된다(어학의 '성적표
+  // 첨부'와 같은 처리). '핵심 성과'는 확정본에 아예 없다 — ② 회고 네 질문이 그 자리를 대신한다.
+  volunteer: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
+  // 해외경험 확정본 ① 도 '기간'을 자기 필드로 갖는다. "코어가 그 자리를 채우니 빼지 말자"던 초안은
+  // 틀렸다(FRT-249, Codex P1) — 구 `overseas-info` 에도 '기간' 앵커가 있어 `computeFormCards` 의
+  // dedup 이 **비어 있는 코어 '기간' 블록을 화면에서 지웠고**(form-cards.ts, keepCoreOrExtended),
+  // 그래서 기존 레코드의 기간 값은 `core.기간` 이 아니라 `overseas-info.기간` 에 들어 있다.
+  // 코어를 남기면 화면에 뜨는 건 값이 없는 required 칸이라, 완료된 레코드를 다시 열면 기간이 비어
+  // 저장조차 막힌다. 선행 5유형과 같이 코어를 빼고 ① 이 자기 '기간'을 정의한다
+  // (값은 RENAMED_FIELD_KEYS 로 이관, 발행 시점은 TYPE_PERIOD_KEY 로 조회).
+  // 역할·성과는 확정본에 없고 — ② '주요 활동'과 '이 경험이 나에게 준 것'이 그 질문을 흡수했다 —
+  // '증빙 자료'는 확정본이 ① 안에 두었으므로 core 를 남기면 파일 입력칸이 두 벌이 된다.
+  overseas: ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
+  // 창작물 확정본(FRT-267) — **필드마다 따로 물어 선행 5종과 결론이 갈렸다.** 판정식은 FRT-249
+  // Codex P1 그대로: "구 템플릿 섹션에 동명(또는 SEMANTIC_GROUPS 동의어) 앵커가 있었나".
+  //  · '기간' — 구 `cw-info` 에 '제작 기간'(SEMANTIC_GROUPS.period 등재)이 있었다 → dedup 이 빈
+  //    코어를 화면에서 지워 왔으므로 값은 `core.기간` 이 아니라 `cw-info.제작 기간` 에 있다. 빼도
+  //    안전하고, 남기면 값 없는 required 칸이 떠 완료 저장이 막힌다.
+  //  · '핵심 성과' — 구 `cw-process` 에 '반응/성과'(SEMANTIC_GROUPS.achievement 등재)가 있었다. 같은 판정.
+  //  · '증빙 자료' — 확정본이 ① 안에 '작품 링크 / 파일'을 두었으므로 코어를 남기면 evidence 카드가
+  //    따로 생겨 3카드가 되고 첨부칸이 두 벌이 된다(봉사·어학과 같은 처리).
+  //  · ⚠️ '내 역할/기여도'는 **빼지 않는다.** 구 창작물 템플릿에는 role 동의어 앵커가 하나도 없어
+  //    이 코어 칸이 실제로 렌더됐고 값이 들어 있을 수 있다 — 빼면 그 값이 '기타'로 밀린다. 대신
+  //    확정본의 '역할'이 새 앵커가 되므로 dedup 이 빈 것만 숨긴다(충실성과 값 보존이 동시에 성립).
+  'creative-work': ['기간', '핵심 성과', '증빙 자료'],
+  // 연구논문 확정본(FRT-269) — 판정식은 FRT-249 Codex P1 그대로 "구 `research-info` 에 동명(또는
+  // SEMANTIC_GROUPS 동의어) 앵커가 있었나". 셋 다 있었으므로 `computeFormCards` 의 dedup 이 빈
+  // 코어를 화면에서 지워 왔고, 값은 코어가 아니라 유형 섹션 쪽에 들어 있다.
+  //  · '기간' — 구 `research-info.기간`(동명). 확정본 ① 이 '연구 기간'으로 자기 시점을 갖는다.
+  //  · '내 역할/기여도' — 구 '역할'·'내가 맡은 파트' 둘 다 SEMANTIC_GROUPS.role 등재.
+  //  · '핵심 성과' — 구 '성과'(tags)가 SEMANTIC_GROUPS.achievement 등재. 확정본 ② '주요 발견 /
+  //    결과'가 그 질문을 흡수했다.
+  //  · ⚠️ '증빙 자료'는 **빼지 않는다.** 확정본 ④ '연구 증빙'이 곧 코어 증빙 카드다(파일 +
+  //    '파일 설명' + '증빙 유형' 세 칸이 FileBlockValue 와 1:1) — 빼면 첨부 수단이 통째로 사라진다.
+  //    봉사·어학·해외는 유형 섹션이 자기 증빙 칸을 따로 가져서 뺐던 것이라 결론이 반대다.
+  research: ['기간', '내 역할/기여도', '핵심 성과'],
 }
 
 /**
@@ -80,6 +133,9 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
  */
 const CORE_EVIDENCE_OPTIONS: Partial<Record<ExperienceTypeId, string[]>> = {
   certification: ['합격증/자격증 사본', '성적표/점수 확인서', '발급 확인서', '기타'],
+  award: ['상장 원본/사본', '트로피·상패 사진', '관련 기사', '공식 발표 페이지 캡처', '기타'],
+  // 연구논문 확정본 ④ '연구 증빙'(FRT-269).
+  research: ['연구 참여 확인서', 'IRB 승인서', '우수 발표 인증서/상장', '기타'],
 }
 
 function buildCommonCore(typeId?: ExperienceTypeId): TemplateSection {
@@ -1072,6 +1128,35 @@ function careerExtensions(): TemplateSection[] {
   ]
 }
 
+/** 수상경력 ① '대회 유형' 6종 — 확정본 표기 그대로(FRT-211). */
+const AWARD_TYPE_OPTIONS = [
+  '공모전/경진대회',
+  '학술상/논문상',
+  '장학상',
+  '성적 우수상(학기별 우수 등)',
+  '대외 활동 시상',
+  '기타',
+] as const
+
+/** 수상경력 ① '개인 / 팀' 3종. '팀 수상' 접두어가 조건부 노출의 트리거다. */
+const AWARD_PARTICIPATION_OPTIONS = ['개인 수상', '팀 수상 (2~5명)', '팀 수상 (6명 이상)'] as const
+
+/** '팀에서 내가 맡은 역할'의 트리거 안정키 — `withSectionKeys` 가 만들 키를 미리 적은 것이다. */
+const AWARD_PARTICIPATION_KEY = 'award-info.개인 / 팀'
+
+// 수상경력 확정본(2026-08) — ① 수상 정보 · ② 수상 과정과 배움 · ③ 상장 / 증빙 (FRT-211).
+// 자격증(FRT-179)과 같은 이유로 '수상일' 하나로 시점을 받는다(CORE_EXCLUDE.award) — 시작·종료를
+// 억지로 묻지 않는다. core '내 역할/기여도'·'핵심 성과'도 확정본에 없다: ① '수상 내용 / 배경'과
+// '지원 동기'가 그 질문을 흡수했고, 팀에서의 역할은 아래 조건부 필드가 따로 받는다.
+//
+// ⚠️ 구 '수상명'(required)은 core '경험명'이 대신한다 — 확정본 ①은 대회명으로 시작하고 상의
+// 이름은 '수상 훈격'이 받는다. 구 '수상 구분'(드롭다운)→'수상 훈격'(자유 텍스트)은 타입까지 바뀌어
+// injectValue 의 타입 가드에 걸리므로 값이 자동 이관되지 않는다. 사라진 키의 값은 모두
+// orphanFieldsToBlocks 가 '기타' 카드로 보존한다(자격증과 동일 경로).
+//
+// ③ 은 '관련 링크'만 블록이다 — 파일·파일 설명·증빙 유형은 core '증빙 자료' FileBlock 하나가
+// 이미 함께 담는다(FileBlockValue.description/evidenceType). 블록 3개로 쪼개면 입력칸이 두 벌
+// 생긴다(FRT-179 최대 교훈). 선택지는 CORE_EVIDENCE_OPTIONS.award 가 공급한다.
 function awardExtensions(): TemplateSection[] {
   return [
     {
@@ -1079,19 +1164,87 @@ function awardExtensions(): TemplateSection[] {
       category: 'basic',
       label: '수상 정보',
       blocks: [
-        createTextField('수상명', { required: true }),
-        createTextField('주최/기관', { required: true }),
-        createDateField('수상일'),
-        createTextField('대회/프로그램명'),
-        createSelectField('수상 구분', ['대상', '최우수', '우수', '장려', '기타']),
-        createSelectField('참가 형태', ['개인', '팀']),
-        createTextField('팀명/팀원'),
-        createTextareaField('평가 기준/요구사항'),
-        createTextareaField('내 역할/기여', { required: true }),
-        createFileField('제출물/발표 자료'),
-        createFileField('수상 증빙'),
-        createTextareaField('핵심 성과'),
-        createTagsField('이 수상이 의미하는 역량'),
+        createTextField('대회 / 프로그램명', {
+          required: true,
+          guide: '이 상을 받은 대회나 프로그램의 이름을 적어주세요.',
+          placeholder: '예: 2024 전국 대학생 창업 경진대회',
+        }),
+        createSelectField('대회 유형', [...AWARD_TYPE_OPTIONS], {
+          required: true,
+          guide: '이 상의 성격을 선택해주세요.',
+        }),
+        createTextField('수상 훈격', {
+          required: true,
+          guide: '받은 상의 등급이나 이름을 적어주세요.',
+          placeholder: '예: 대상, 우수상, 최우수 논문상',
+        }),
+        createTextField('주최 기관', {
+          required: true,
+          guide: '이 상을 수여한 기관이나 단체를 적어주세요.',
+          placeholder: '예: OO부, OO협회, OO대학교',
+        }),
+        createDateField('수상일', {
+          required: true,
+          guide: '수상한 날짜를 선택해주세요.',
+        }),
+        createTextField('참가 규모 / 경쟁률', {
+          guide:
+            '총 참가자 수, 본선 진출 팀 수, 내가 받은 등수까지 함께 적으면 상의 무게가 명확히 전달돼요.',
+          placeholder: '예: 총 300팀 참가 중 1위, 경쟁률 30:1',
+        }),
+        createSelectField('개인 / 팀', [...AWARD_PARTICIPATION_OPTIONS], {
+          guide: '개인 수상인지 팀 수상인지 선택해주세요.',
+        }),
+        {
+          ...createTextField('팀에서 내가 맡은 역할', {
+            guide: '팀에서 내가 맡은 역할을 짧게 적어주세요.',
+            placeholder: '예: 팀장, 기획·발표 담당, 데이터 분석 담당',
+          }),
+          // 확정본 §7 — 값이 '팀 수상'으로 시작할 때만 노출. 선택지가 인원수로 갈리므로 접두어 판정이다.
+          visibleWhen: { key: AWARD_PARTICIPATION_KEY, startsWith: ['팀 수상'] },
+        },
+        createTextareaField('지원 동기', {
+          guide: '이 대회나 프로그램에 지원한 이유가 있었나요?',
+          placeholder:
+            '예: 창업 아이디어를 실제로 검증받아보고 싶었고, 심사위원 피드백을 통해 사업 모델을 다듬을 기회로 삼고자 지원했습니다.',
+        }),
+        createTextareaField('수상 내용 / 배경', {
+          guide: '어떤 프로젝트나 활동으로 수상했는지, 무엇이 인정받았는지 적어주세요.',
+          placeholder:
+            '예: 지역 소상공인 대상 AI 챗봇 서비스 아이디어로 수상. 심사위원으로부터 실용화 가능성과 시장 이해도에 대한 긍정 피드백을 받았습니다.',
+        }),
+        createTextField('상금 / 부상', {
+          guide: '상금이나 부상이 있었다면 적어주세요.',
+          placeholder: '예: 상금 500만원, 해외 연수 기회',
+        }),
+      ],
+    },
+    {
+      // 확정본이 "회고 서술 부담 최소화를 위해 필드 2개만 배치"라고 설계 의도를 명시했다 — 늘리지 말 것.
+      id: 'award-process',
+      category: 'detail',
+      label: '수상 과정과 배움',
+      blocks: [
+        createTextareaField('준비 과정', {
+          guide: '얼마나, 어떻게 준비했는지 짧게 적어주세요.',
+          placeholder: '예: 3개월간 팀원 4명과 매주 화요일 저녁 회의로 아이디어를 다듬었어요.',
+        }),
+        createTextareaField('기억에 남는 순간 / 배운 점', {
+          guide: '고비의 순간이든 뿌듯했던 순간이든, 이 경험에서 남은 게 있다면 짧게 적어주세요.',
+          placeholder:
+            '예: 본선 발표 이틀 전 데이터 수치 오류를 발견해 밤새 수정했어요. 위기 대응 감각이 확 늘었어요.',
+        }),
+      ],
+    },
+    {
+      id: 'award-evidence',
+      category: 'evidence',
+      label: '상장 / 증빙',
+      blocks: [
+        createLinkField('관련 링크', {
+          guide: '상장 원본이 없다면 이 수상과 관련된 기사나 공식 발표 페이지 링크를 남겨주세요.',
+          placeholder: '관련 링크 (기사, 공식 발표 페이지 등)',
+        }),
       ],
     },
   ]
@@ -1187,60 +1340,425 @@ function certificationExtensions(): TemplateSection[] {
   ]
 }
 
+/** 어학 ① '언어' 12종 — 확정본 표기·순서 그대로. 마지막 '기타'가 조건부 노출의 트리거다. */
+const LANGUAGE_OPTIONS = [
+  '영어',
+  '중국어',
+  '일본어',
+  '스페인어',
+  '독일어',
+  '프랑스어',
+  '러시아어',
+  '베트남어',
+  '아랍어',
+  '이탈리아어',
+  '포르투갈어',
+  '기타',
+] as const
+
+/** 어학 ① '전반적 수준' 6종 — 괄호 안 예시까지 확정본 표기 그대로다(선택 기준이 거기 있다). */
+const LANGUAGE_LEVEL_OPTIONS = [
+  '입문(인사·기초 표현)',
+  '초급(간단한 일상 대화)',
+  '중급(일상 회화·기본 업무 소통)',
+  '중상급(실무 소통·문서 이해)',
+  '고급(자유로운 업무 수행)',
+  '원어민 수준',
+] as const
+
+/**
+ * 어학 활용 영역 태그 9종. ① '가능한 활용 영역'과 ③ '어떤 언어 활동을 했나요?'가 **같은 선택지**를
+ * 쓴다(확정본 명시) — ①은 언어 전체의 가능 범위, ③은 그 경험에서 실제로 한 활동이라 질문은
+ * 다르지만 고르는 항목은 같다. 한 상수를 양쪽이 공유해 선택지가 갈라지지 않게 한다.
+ */
+const LANGUAGE_ACTIVITY_TAGS = [
+  '💬 일상 회화',
+  '💼 비즈니스 회화',
+  '📖 문서 독해',
+  '✍️ 문서 작성',
+  '🎓 학술 논문 독해',
+  '📝 학술 논문 작성',
+  '🎤 발표 / 프레젠테이션',
+  '🗣️ 통역 / 번역',
+  '🌍 원어민과 자유로운 소통',
+] as const
+
+/** 어학 ④ '성적표 첨부'의 증빙 유형 4종. 성적표가 맨 앞이다 — 어학 증빙의 대부분이 이것이다. */
+const LANGUAGE_EVIDENCE_OPTIONS = [
+  '성적표/점수 확인서',
+  '합격증/자격증 사본',
+  '발급 확인서',
+  '기타',
+] as const
+
+/** '언어 직접 입력'의 트리거 안정키 — `withSectionKeys` 가 만들 키를 미리 적은 것이다. */
+const LANGUAGE_KEY = 'lang-overview.언어'
+
+// 어학능력 확정본(2026-07) — ① 언어 개요 · ② 어학 경험 · ③ 경험 상세 기록 · ④ 어학 자격증.
+// 확정본의 방향은 "점수표가 아니라 경험"이다: 언어와 실전 활용 수준을 먼저 고르고, 이 언어를 쓴
+// 경험을 리스트업한 뒤, 그중 눈에 띄는 것만 ③에서 자세히 적고, 공인 성적은 ④에 붙인다.
+//
+// ⚠️ **섹션 id 를 구 `lang-info`/`lang-usage` 에서 전부 갈아치웠다.** 구 '언어'(text)가 확정본에선
+// 드롭다운이고 구 '유효기간'(text)은 date 인데, 섹션 id 를 유지하면 안정키가 그대로라 같은 키에
+// 타입만 다른 값이 남는다. 그러면 injectValue 는 타입 불일치로 값을 안 싣고(text↔textarea 만
+// 변환), 그 키는 consumedKeys 에 잡혀 orphanFieldsToBlocks 도 건너뛴다 — 값이 '기타' 카드에도
+// 없이 조용히 사라진다. id 를 바꾸면 구 키가 전부 orphan 안전망으로 흘러 보존된다(FRT-179 경로).
+// 같은 이유로 구 `lang-usage.활용 사례` 표(4컬럼)가 ③의 새 5컬럼 정의를 덮어쓰는 사고도 막힌다.
 function languageExtensions(): TemplateSection[] {
   return [
     {
-      id: 'lang-info',
+      id: 'lang-overview',
       category: 'basic',
-      label: '어학 정보',
+      label: '언어 개요',
       blocks: [
-        createTextField('언어', { required: true, placeholder: '영어' }),
-        createTextField('시험/인증명', { placeholder: 'TOEIC / OPIc / TOEFL 등' }),
-        createTextField('점수/등급'),
-        createDateField('응시일'),
-        createTextField('유효기간'),
-        createChecklistField('강점 영역', ['듣기', '읽기', '말하기', '쓰기']),
-        createPeriodField('학습 기간'),
-        createSelectField('학습 방식', ['학원', '독학', '회화', '첨삭', '스터디']),
+        createSelectField('언어', [...LANGUAGE_OPTIONS], {
+          required: true,
+          guide: '이 경험과 관련된 언어를 선택해주세요.',
+        }),
+        {
+          ...createTextField('언어 직접 입력', {
+            placeholder: '언어명을 직접 입력해주세요 (예: 태국어, 힌디어, 튀르키예어)',
+          }),
+          // 확정본 ① — '기타'를 골랐을 때만 노출. 선택지가 정확히 '기타' 하나라 equals 판정이다.
+          visibleWhen: { key: LANGUAGE_KEY, equals: ['기타'] },
+        },
+        createSelectField('전반적 수준', [...LANGUAGE_LEVEL_OPTIONS], {
+          required: true,
+          guide:
+            '이 언어의 전반적인 사용 수준을 선택해주세요. 공인 시험 점수와 별개로, 스스로 체감하는 실전 활용 수준을 기준으로 골라주세요.',
+        }),
+        createMoodTagField('가능한 활용 영역', [...LANGUAGE_ACTIVITY_TAGS], {
+          guide: '이 언어로 실제 할 수 있는 활동을 태그로 선택해주세요. 여러 개 가능해요.',
+        }),
       ],
     },
     {
-      id: 'lang-usage',
-      category: 'repeat',
-      label: '실제 활용 사례',
-      collapsed: true,
+      id: 'lang-experience',
+      category: 'detail',
+      label: '어학 경험',
       blocks: [
-        createRepeatableCell('활용 사례', [
-          { key: 'situation', label: '상황', blockType: 'text', required: true, placeholder: '발표/회의/여행/업무 등' },
-          { key: 'role', label: '내가 한 역할', blockType: 'textarea' },
-          { key: 'difficulty', label: '어려웠던 점과 해결', blockType: 'textarea' },
-          { key: 'result', label: '결과', blockType: 'textarea' },
-        ]),
+        createTextareaField('어학 학습 / 습득 동기', {
+          guide: '이 언어를 왜 학습하게 됐나요? 계기가 있다면 적어주세요.',
+          placeholder:
+            '예: 해외 커리어를 목표로 삼으면서 영어 실무 능력이 필수라고 판단했고, 대학교 2학년부터 본격적으로 학습을 시작했습니다.',
+        }),
+        createOutcomeList('주요 경험', {
+          guide:
+            '이 언어를 실제로 사용한 경험을 리스트업해주세요. 외국계 인턴, 통역, 해외 프로그램, 논문 작성, 원서 스터디 등 무엇이든.',
+          placeholder: '예: OO대학교 교환학생 6개월 / OO 외국계 인턴 3개월 / 학회 통역 3회',
+          itemLabel: '경험',
+          // 확정본 ② — 각 행의 '상세 기록'이 ③에 블록을 만들고 경험명을 채운 뒤 그리로 스크롤한다.
+          // titleColumnKey 는 반드시 명시한다(columns[0] 의존은 FRT-178 에서 깨진 전제).
+          link: { targetSectionId: 'lang-records', titleColumnKey: 'name', label: '상세 기록' },
+        }),
+        createTextareaField('학습 방법 / 노력', {
+          guide: '이 언어를 어떻게 학습했고, 어떤 노력을 기울였는지 적어주세요.',
+          placeholder:
+            '예: 1년간 원어민 튜터와 주 2회 화상 스피킹 진행 / 매일 영어 뉴스 요약 습관 / 대학 원서 강독 스터디 참여',
+        }),
+      ],
+    },
+    {
+      // 확정본이 "프로젝트/연구식 회고 프레임(STAR)이 아닌 슬림한 5필드"라고 설계 의도를 명시했다 —
+      // 부담을 줄여 실제 입력률을 높이는 것이 목적이므로 컬럼을 늘리지 말 것.
+      id: 'lang-records',
+      category: 'repeat',
+      label: '경험 상세 기록',
+      blocks: [
+        createRepeatableCell(
+          '경험 상세 기록',
+          [
+            {
+              key: 'name',
+              label: '경험명',
+              blockType: 'text',
+              required: true,
+              guide: '이 경험이 어떤 것이었는지 짧게 적어주세요.',
+              placeholder: '예: OO대학교 교환학생, OO 외국계 인턴, 국제학회 통역 자원봉사',
+            },
+            {
+              key: 'period',
+              label: '기간',
+              blockType: 'period',
+              guide: '이 경험이 진행된 기간을 선택해주세요.',
+            },
+            {
+              key: 'activities',
+              label: '어떤 언어 활동을 했나요?',
+              blockType: 'checklist',
+              options: [...LANGUAGE_ACTIVITY_TAGS],
+              guide: '이 경험에서 이 언어를 어떻게 사용했나요? 여러 개 가능해요.',
+            },
+            {
+              key: 'summary',
+              label: '어떤 경험이었는지 간단히',
+              blockType: 'textarea',
+              guide: '부담 없이 자유롭게 적어주세요. 기억나는 만큼만 적어도 괜찮아요.',
+              placeholder:
+                '예: 미국 시애틀에서 6개월간 교환학생으로 지내며 현지 학생들과 조별 과제를 진행했고, 학기말 팀 발표를 영어로 담당했어요.',
+            },
+            {
+              key: 'moment',
+              label: '인상 깊었던 순간',
+              blockType: 'textarea',
+              guide:
+                '이 경험에서 특별히 기억에 남는 장면이 있다면 적어주세요. 자랑스러웠던 순간도, 아찔했던 순간도 좋아요.',
+              placeholder: "예: 발표 후 현지 교수님이 '너가 유학생인 걸 몰랐다'고 하셔서 뿌듯했어요.",
+            },
+          ],
+          { allowRowExtras: true },
+        ),
+      ],
+    },
+    {
+      // 확정본 ④는 가이드라인이 전부 '—'다(무엇을 적는지 placeholder 로 충분한 항목들) —
+      // 없는 문구를 지어내지 않고 확정본 그대로 둔다. '성적표 첨부'만 안내가 있다.
+      id: 'lang-certificate',
+      category: 'evidence',
+      label: '어학 자격증',
+      blocks: [
+        createTextField('시험 / 자격증명', { placeholder: '예: TOEIC, TOEFL iBT, OPIc, HSK, JLPT' }),
+        createTextField('점수 / 등급', { placeholder: '예: 900점, IH, HSK 5급' }),
+        createDateField('취득일'),
+        createDateField('유효기간'),
+        createFileField('성적표 첨부', {
+          guide: '성적표, 점수 확인서, 자격증 사본 등',
+          options: [...LANGUAGE_EVIDENCE_OPTIONS],
+        }),
       ],
     },
   ]
 }
 
+/** 연구논문 ① '유형' — 확정본 9종. */
+const RESEARCH_TYPE_OPTIONS = [
+  '학부 논문/졸업 논문',
+  '학회 발표 논문',
+  '저널 게재 논문',
+  '학부생 연구 프로젝트(URP 등)',
+  '연구실 인턴/참여 연구',
+  '공동 연구',
+  '리뷰/서베이 페이퍼',
+  '학위 논문(석·박사)',
+  '기타',
+] as const
+
+/** 연구논문 ① '역할 / 기여도' — 확정본 5종. 구 '역할'(주저자/공저/연구원/RA/기타)의 후신이지만
+ *  선택지 도메인이 통째로 다시 짜였다 → 값 조건부 이관(`SELECT_DOMAIN_MIGRATIONS.research`). */
+const RESEARCH_ROLE_OPTIONS = [
+  '제 1저자(주저자)',
+  '공동 저자',
+  '연구 참여(데이터 수집·분석)',
+  '지도 하 단독 연구',
+  '기타',
+] as const
+
+/** 연구논문 ② '연구 성격' 이모지 태그 — 확정본 10종 고정 프리셋. */
+const RESEARCH_MOOD_TAGS = [
+  '📊 정량 연구',
+  '💬 정성 연구',
+  '🔬 실험 연구',
+  '📚 문헌 연구',
+  '🔍 사례 연구',
+  '🧮 데이터 분석',
+  '🤖 머신러닝/AI',
+  '🌐 융합/학제간',
+  '📝 이론 정립',
+  '🎯 응용/실용',
+] as const
+
+/** 연구논문 ③ 게재/발표 '유형' — 확정본 9종. */
+const RESEARCH_PUBLICATION_TYPE_OPTIONS = [
+  '국내 학술지 게재',
+  'SCI(E)/SSCI/A&HCI 등재',
+  '국내 학회 발표(구두)',
+  '국내 학회 발표(포스터)',
+  '국제 학회 발표(구두)',
+  '국제 학회 발표(포스터)',
+  '대학·기관 내부 발표',
+  '워킹 페이퍼/프리프린트',
+  '기타',
+] as const
+
+/** 연구논문 ③ '게재 상태' — 확정본 4종. */
+const RESEARCH_PUBLICATION_STATUS_OPTIONS = [
+  '투고 중',
+  '심사 중(Under Review)',
+  '게재 예정(Accepted)',
+  '게재 완료',
+] as const
+
+// 연구논문 — 확정본(연구논문_final, FRT-269). 구 `research-info` 13필드 한 덩어리를
+// `research-paper`/`research-content`/`research-publication` 3섹션으로 **전면 교체**한다.
+// 섹션 id 를 가는 것이 안전 장치다(FRT-210 이후 공통): 구 '역할'(주저자/공저/연구원/RA/기타)이
+// 확정본 '역할 / 기여도'(5종)로 선택지가 통째로 다시 짜였고, 구 '방법/설계'(textarea)의 자리를
+// 확정본은 '연구 방법론'(개조식 리스트)이 받는다. id 를 유지하면 앞은 새 목록에 없는 값이
+// 드롭다운에 박히고, 뒤는 injectValue 가 값을 못 싣고도 키가 consumedKeys 에 잡혀 orphan
+// 안전망까지 건너뛴다.
+//
+// 확정본 4섹션이 화면에서도 4카드다 — ④ '연구 증빙'은 core '증빙 자료'가 그대로 받는다
+// (확정본 ④ 세 칸이 파일·'파일 설명'·'증빙 유형'으로 `FileBlockValue` 와 1:1이다).
+// 그래서 `CORE_EXCLUDE.research` 는 '증빙 자료'를 **빼지 않는다** — 자격증·수상경력과 같은 처리이고,
+// 봉사·어학·해외처럼 유형 섹션이 자기 증빙 칸을 따로 갖는 경우와는 반대다.
 function researchExtensions(): TemplateSection[] {
   return [
     {
-      id: 'research-info',
+      // 블록 순서는 확정본 ① 표 그대로다. 코어 블록은 `computeFormCards` 가 뒤에 붙으므로,
+      // 확정본 순서를 지키려면 시점 필드를 코어에 맡기지 말고 이렇게 섹션이 소유해야 한다.
+      id: 'research-paper',
       category: 'basic',
-      label: '연구 정보',
+      label: '기본 정보',
       blocks: [
-        createTextField('연구 주제/논문 제목', { required: true }),
-        createTextField('소속/기관/랩'),
-        createPeriodField('기간', { required: true }),
-        createSelectField('역할', ['주저자', '공저', '연구원', 'RA', '기타']),
-        createTextareaField('연구 질문/가설'),
-        createTextareaField('방법/설계'),
-        createTextField('데이터/자료 출처'),
-        createTextareaField('내가 맡은 파트', { required: true }),
-        createTextareaField('결과 요약'),
-        createTagsField('성과'),
-        createLinkField('재현/공유 자료'),
-        createTextareaField('참고문헌/관련 읽을거리'),
-        createFileField('산출물'),
+        createTextField('연구 / 논문 제목', {
+          required: true,
+          guide: '연구 또는 논문의 정확한 제목을 적어주세요.',
+          placeholder: '예: 대학생의 SNS 사용 패턴이 학업 몰입도에 미치는 영향',
+        }),
+        createSelectField('유형', [...RESEARCH_TYPE_OPTIONS], {
+          required: true,
+          guide: '이 연구/논문의 유형을 선택해주세요.',
+        }),
+        createTextField('연구 분야', {
+          required: true,
+          guide:
+            '이 연구가 속한 학문 분야를 적어주세요. 여러 분야에 걸쳐 있다면 가장 대표적인 학문 분야 기준으로 적어주세요.',
+          placeholder: '예: 소비자 심리학, 머신러닝, 미시경제학',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createTextField('지도 교수', { placeholder: '예: OOO 교수' }),
+        createTextField('소속 기관 / 연구실', {
+          placeholder: '예: OO대학교 경영학과 소비자행동연구실',
+        }),
+        // month~month 는 코어 '기간' 과 같은 period 위젯이라 구 `research-info.기간` 값을
+        // 그대로 실을 수 있다(RENAMED_FIELD_KEYS).
+        createPeriodField('연구 기간', { required: true }),
+        createSelectField('역할 / 기여도', [...RESEARCH_ROLE_OPTIONS]),
+        createTextareaField('공저자 / 팀원', {
+          guide: '함께 연구를 진행한 공저자나 팀원을 적어주세요.',
+          placeholder: '예: OOO 교수 (지도), OOO (공동 1저자), OOO (데이터 분석)',
+        }),
+        // 확정본은 이 한 칸에서 'URL + 파일 첨부'를 함께 받는다. 블록 `file` 은 업로드 전용이고
+        // (`FileBlockValue.url` 은 사용자가 적는 링크가 아니라 만료되는 presigned 다운로드 URL),
+        // 블록 `link` 는 파일을 못 받는다 — 둘을 한 칸에 담는 위젯은 표뿐이라 창작물 '작품 링크 /
+        // 파일'과 같은 방식으로 받는다(FRT-213 이 셀 컬럼에 file·link 를 열어 둔 덕에 신규 위젯 불필요).
+        // ⚠️ 컬럼에 required 금지 — `isRequiredBlock` 은 컬럼 하나라도 required 면 표 전체를 필수로
+        // 보고 `canHideBlock` 이 숨기지도 못한다. 확정본이 '(선택, 필드 삭제 가능)'으로 둔 칸이
+        // 영영 삭제 불가·완료 불가가 된다(FRT-236).
+        //
+        // ⚠️ **알려진 미해결 격차**(FRT-269 Codex P2): required 를 안 붙여도 이 표는 아직 × 로
+        // 치울 수 없다 — `canHideBlock` 은 `file` 열을 가진 표를 통째로 제외한다(업로드 중 언마운트
+        // 시 고른 파일이 조용히 사라지는 것을 막는 불변식, hidden-fields.ts). 창작물 '작품 링크 /
+        // 파일'은 확정본이 삭제 가능 표기를 하지 않아 그 제외와 일치했지만, 여기서는 **확정본과
+        // 어긋난다.** 진행도는 막지 않는다 — 이 섹션엔 required 필드가 있어 `isCardComplete` 이
+        // 필수만으로 판정한다. 표의 열 단위 업로드 상태를 위로 흘리는 배선이 생겨야 풀리므로
+        // 후속(FRT-278)으로 분리한다.
+        createRepeatableCell(
+          '논문 파일 / 링크',
+          [
+            {
+              key: 'link',
+              label: '링크',
+              blockType: 'link',
+              placeholder: 'https:// (DOI, 학회 페이지, arXiv, RISS 등)',
+            },
+            { key: 'file', label: '파일', blockType: 'file', placeholder: '논문 PDF 첨부' },
+          ],
+          { guide: '논문 PDF나 DOI, 리포지토리 링크 등을 첨부해주세요.' },
+        ),
+      ],
+    },
+    {
+      // 확정본 ② 는 '필수' 섹션이지만 **여섯 칸 모두 (선택, 필드 삭제 가능)** 이다 — 확정본이
+      // 요구하는 것은 "이 카드를 지나가라"이지 특정 칸의 입력이 아니므로 required 를 두지 않는다.
+      id: 'research-content',
+      category: 'detail',
+      label: '연구 내용',
+      blocks: [
+        createTextareaField('연구 주제 / 배경', {
+          guide: '이 연구가 어떤 문제 의식에서 시작됐고, 왜 중요한지 적어주세요.',
+          placeholder:
+            '예: 대학생 SNS 사용량이 급증하는 가운데 학업 성과와의 관계에 대한 국내 실증 연구가 부족하다는 점에서 출발했습니다.',
+        }),
+        createTextareaField('초록 / 핵심 요약', {
+          guide: '연구의 목적·방법·결과를 간결하게 요약해주세요. 논문 초록을 그대로 붙여넣어도 좋아요.',
+          placeholder:
+            '예: 본 연구는 대학생 300명을 대상으로 설문 조사를 실시하여 SNS 사용 패턴과 학업 몰입도 간의 관계를 분석했다...',
+        }),
+        createOutcomeList('연구 방법론', {
+          guide: '사용한 연구 방법을 리스트업해주세요.',
+          placeholder: '예: 설문 조사 (300명), 회귀 분석, 심층 인터뷰 (8명)',
+          itemLabel: '방법',
+        }),
+        createOutcomeList('주요 발견 / 결과', {
+          guide: '연구를 통해 밝혀낸 주요 발견이나 결과를 리스트업해주세요.',
+          placeholder: '예: 3시간 이상 SNS 사용 시 몰입도 감소 확인',
+          itemLabel: '발견 / 결과',
+        }),
+        createMoodTagField('연구 성격', [...RESEARCH_MOOD_TAGS], {
+          guide: '이 연구의 방법론적·주제적 성격을 태그로 표현해주세요.',
+        }),
+        createTextareaField('평가 / 피드백', {
+          guide:
+            '지도 교수 코멘트, 학회 심사 총평, 동료 리뷰 등 이 연구에 대한 외부 평가를 자유롭게 적어주세요.',
+          placeholder:
+            '예: 지도 교수님으로부터 연구 설계의 타당성은 인정받았으나, 샘플 수 확대 필요성을 피드백 받아 후속 연구 방향을 조정했습니다.',
+        }),
+      ],
+    },
+    {
+      // 확정본 ③ "섹션 전체 선택, 블록 반복 추가 가능" — 하나의 연구가 학회 발표와 저널 게재로
+      // 여러 번 나가므로 이력이 건별이다. 섹션 라벨과 블록 라벨을 갈라 카드 제목이 겹치지 않게 한다
+      // (학회 '프로젝트 기록' 카드 안에 '프로젝트/연구활동' 표를 두는 것과 같은 결).
+      id: 'research-publication',
+      category: 'repeat',
+      label: '게재 / 발표 이력',
+      blocks: [
+        createRepeatableCell(
+          '게재 / 발표',
+          [
+            {
+              key: 'type',
+              label: '유형',
+              blockType: 'single-select',
+              options: [...RESEARCH_PUBLICATION_TYPE_OPTIONS],
+            },
+            {
+              key: 'venue',
+              label: '저널 / 학회명',
+              blockType: 'text',
+              placeholder: '예: 한국소비자학회 / Journal of Consumer Research',
+            },
+            // 확정본은 month 다 — 게재는 호(issue) 단위라 날짜를 지어내게 하면 안 된다.
+            { key: 'date', label: '게재 / 발표일', blockType: 'date', variant: 'month' },
+            {
+              key: 'place',
+              label: '발표 장소',
+              blockType: 'text',
+              placeholder: '예: 서울대학교 관악캠퍼스, 온라인, 미국 San Francisco',
+            },
+            {
+              key: 'status',
+              label: '게재 상태',
+              blockType: 'single-select',
+              options: [...RESEARCH_PUBLICATION_STATUS_OPTIONS],
+            },
+            {
+              key: 'citations',
+              label: '피인용 수',
+              blockType: 'text',
+              guide: 'Google Scholar, Semantic Scholar 등에서 확인한 피인용 수를 적어주세요.',
+              placeholder: '예: 5회 (2024년 기준)',
+            },
+            {
+              key: 'award',
+              label: '수상 내역',
+              blockType: 'text',
+              guide: '이 발표나 논문으로 받은 수상이 있다면 적어주세요.',
+              placeholder: '예: Best Paper Award, 우수 발표상, 포스터상',
+            },
+          ],
+          // guide 없음 — 확정본 ③ 의 섹션 안내는 카드 문구로 넣었다(SECTION_DESCRIPTION_OVERRIDES).
+        ),
       ],
     },
   ]
@@ -1319,93 +1837,418 @@ function teamProjectExtensions(): TemplateSection[] {
   ]
 }
 
+const VOLUNTEER_FIELD_OPTIONS = [
+  '교육/학습 지원',
+  '아동/청소년',
+  '노인/어르신',
+  '장애인',
+  '다문화/이주민',
+  '의료/보건',
+  '환경/동물',
+  '재난/재해 구호',
+  '지역사회/캠페인',
+  '해외 봉사',
+  '기타',
+] as const
+
+const VOLUNTEER_PARTICIPATION_OPTIONS = [
+  '정기 봉사(주기적)',
+  '단기/일회성',
+  '캠프/단기 집중',
+  '온라인/재택 봉사',
+  '해외 봉사',
+] as const
+
+const VOLUNTEER_EVIDENCE_OPTIONS = [
+  '봉사시간 인증서(1365 등)',
+  '봉사 확인서/수료증',
+  '활동 사진',
+  '기타',
+] as const
+
+// 봉사 — 확정본(봉사_final). 구 `vol-info` 1섹션을 `volunteer-*` 2섹션으로 **전면 교체**한다.
+// 섹션 id 를 가는 것이 이 작업의 안전 장치다(FRT-210·FRT-236 과 같은 이유): 구 '내 역할'(textarea)이
+// 확정본에선 한 줄 '역할'(text)이고 '기간'→'활동 기간' 처럼 라벨도 함께 갈리는데, id 를 유지하면
+// 라벨이 같은 칸의 안정키가 그대로라 injectValue 가 값을 못 싣고도 그 키가 consumedKeys 에 잡혀
+// orphan 안전망까지 건너뛴다 — 값이 '기타' 카드에도 없이 사라진다.
+//
+// 확정본 2섹션이 화면에서도 2카드다: 파일 첨부를 ① 안에 두고(확정본 배치) core '증빙 자료'를
+// CORE_EXCLUDE 로 빼, evidence 버킷이 비어 카드가 생기지 않는다. 확정본 §7 도 "사이드 네비:
+// 섹션 2개 앵커"로 못 박았다.
 function volunteerExtensions(): TemplateSection[] {
   return [
     {
-      id: 'vol-info',
+      id: 'volunteer-info',
       category: 'basic',
       label: '봉사 정보',
       blocks: [
-        createTextField('봉사활동명', { required: true }),
-        createTextField('기관/장소'),
-        createPeriodField('기간', { required: true }),
-        createTextField('총 시간'),
-        createSelectField('대상', ['아동', '노인', '동물', '환경', '기타']),
-        createSelectField('활동 형태', ['오프라인', '온라인', '기획', '현장']),
-        createTextareaField('내 역할', { required: true }),
-        createTextareaField('활동 내용'),
-        createTextareaField('임팩트/변화'),
-        createTextareaField('느낀 점/가치관 변화'),
-        createFileField('봉사 확인서'),
+        // 확정본 ① 에서 *(선택)* 표기가 없는 넷만 필수다.
+        createTextField('봉사 활동명', {
+          required: true,
+          guide: '참여한 봉사 활동의 이름을 적어주세요.',
+          placeholder: '예: OO아동복지센터 학습 멘토링, 지역 노인복지관 급식 봉사',
+        }),
+        createSelectField('봉사 분야', [...VOLUNTEER_FIELD_OPTIONS], {
+          required: true,
+          guide:
+            '이 봉사의 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
+        }),
+        createTextField('봉사 기관', {
+          required: true,
+          guide: '봉사 활동을 진행한 기관이나 단체를 적어주세요.',
+          placeholder: '예: OO구청, OO복지관, 대한적십자사',
+        }),
+        createPeriodField('활동 기간', {
+          required: true,
+          guide: '봉사 활동 기간을 선택해주세요.',
+        }),
+        createTextField('총 봉사시간', {
+          guide: '1365 등에 등록된 인증 시간이나 실제 봉사 시간을 적어주세요.',
+          placeholder: '예: 48시간',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createSelectField('참여 형태', [...VOLUNTEER_PARTICIPATION_OPTIONS]),
+        // 확정본은 한 줄 텍스트다(예: 학습 멘토, 팀장). 구 '내 역할' textarea 로 되돌리지 말 것 —
+        // core '내 역할/기여도' 를 뺀 자리를 이 칸이 대신한다.
+        createTextField('역할', {
+          guide: '봉사에서 맡은 역할이나 담당을 적어주세요.',
+          placeholder: '예: 학습 멘토, 팀장, 배식 담당',
+        }),
+        createFileField('봉사 확인서 첨부', {
+          guide: '봉사시간 인증서 등',
+          options: [...VOLUNTEER_EVIDENCE_OPTIONS],
+        }),
+      ],
+    },
+    {
+      // 확정본 설계 노트: 계기(왜 시작했나) → 내용(무엇을 했나) → 순간(어떤 장면이 남았나) →
+      // 배운 점(무엇을 얻었나). 시간 흐름과 회고 서사를 따르는 순서라 임의로 바꾸지 말 것.
+      // "섹션 전체 선택"이므로 required 를 하나도 두지 않는다.
+      id: 'volunteer-reflection',
+      category: 'detail',
+      label: '봉사 회고',
+      blocks: [
+        createTextareaField('시작하게 된 계기', {
+          guide: '이 봉사를 시작하게 된 계기나 이유가 있다면 적어주세요.',
+          placeholder:
+            '예: 교육 격차 문제에 관심이 있었고, 직접 도움을 줄 수 있는 활동을 찾다가 지역 학습 멘토링에 지원하게 됐습니다.',
+        }),
+        createTextareaField('봉사 내용', {
+          guide: '어떤 봉사를 어떻게 진행했는지 자유롭게 적어주세요.',
+          placeholder:
+            '예: 매주 토요일 2시간씩 초등학생 5명을 대상으로 수학·영어 학습을 도왔습니다. 특히 학습 부진 아동을 위한 개별 진도표를 만들어 관리했습니다.',
+        }),
+        createTextareaField('기억에 남는 순간', {
+          guide: '봉사 중 인상 깊었던 순간이나 만남을 적어주세요.',
+          placeholder:
+            '예: 처음에는 수업을 거부하던 아이가 3개월 후 스스로 문제를 풀어보겠다고 나서던 순간이 가장 기억에 남습니다.',
+        }),
+        createTextareaField('배운 점', {
+          guide: '이 봉사를 통해 얻은 관점, 태도, 배움을 적어주세요.',
+          placeholder:
+            '예: 도움을 주는 것보다 상대의 속도에 맞추는 것이 중요함을 배웠고, 이후 팀 프로젝트에서도 서두르지 않고 파트너의 페이스를 존중하게 됐습니다.',
+        }),
       ],
     },
   ]
 }
 
+/** 해외경험 확정본 ① '경험 유형' 9종. 구 5종(교환학생/연수/여행/해외 인턴/기타)과 도메인이 다르다. */
+const OVERSEAS_KIND_OPTIONS = [
+  '교환학생',
+  '어학연수',
+  '해외 인턴/취업',
+  '해외 봉사',
+  '단기 프로그램/캠프',
+  '여행/자유 탐방',
+  '워킹홀리데이',
+  '학회/컨퍼런스 참가',
+  '기타',
+] as const
+
+/** 해외경험 확정본 ① '참여 형태' 4종 — 누구와 갔는가를 묻는다(봉사의 '참여 형태'와 질문이 다르다). */
+const OVERSEAS_COMPANION_OPTIONS = ['혼자', '친구/지인과 함께', '가족과 함께', '단체/팀 프로그램'] as const
+
+/** 해외경험 확정본 ② '이 경험이 나에게 준 것' 10종 (이모지 알약 태그, 다중 선택). */
+const OVERSEAS_GAIN_TAGS = [
+  '🗣️ 언어 능력 향상',
+  '🌍 다양성 이해',
+  '🤝 이문화 소통',
+  '💪 독립성/자립심',
+  '🎓 학문적 시야 확장',
+  '💼 커리어 방향 확립',
+  '🧭 새로운 관점',
+  '🌐 글로벌 네트워크',
+  '🔥 도전 정신',
+  '💡 문제 해결력',
+] as const
+
+// 해외경험 — 프로토타입 확정본(2026-08, FRT-249). 섹션 id 를 `overseas-info`/`overseas-challenges`
+// 에서 전면 교체했다. 특히 '경험 유형'은 라벨도 타입도 그대로인 채 **선택지 도메인만 9종으로
+// 바뀌어**, 키를 유지하면 구 '연수'·'여행'·'해외 인턴' 이 새 드롭다운에 없는 값으로 박힌다
+// (FRT-247 봉사 '대상'·'활동 형태'와 같은 함정). 구 키를 orphan 안전망으로 흘려보내는 것이 답이다.
 function overseasExtensions(): TemplateSection[] {
   return [
     {
-      id: 'overseas-info',
+      // 확정본 ① 의 '경험명'·'한 줄 요약' 은 헤더 코어가 갖는다. '기간' 만은 여기서 정의한다 —
+      // 코어를 남기면 dedup 탓에 값 없는 required 칸이 뜬다(CORE_EXCLUDE 의 overseas 주석 참조).
+      // 블록 순서는 확정본 ① 표 그대로다: 경험 유형 → 국가 / 도시 → 주최 / 소속 기관 → 기간 →
+      // 사용 언어 → 참여 형태 → 증빙 자료. 코어 블록은 `computeFormCards` 가 뒤에 붙이므로,
+      // 확정본 순서를 지키려면 시점 필드를 코어에 맡기지 말고 이렇게 섹션이 소유해야 한다.
+      id: 'overseas-program',
       category: 'basic',
-      label: '해외 경험 정보',
+      label: '해외경험 정보',
       blocks: [
-        createSelectField('경험 유형', ['교환학생', '연수', '여행', '해외 인턴', '기타']),
-        createTextField('국가/도시', { required: true }),
+        createSelectField('경험 유형', [...OVERSEAS_KIND_OPTIONS], {
+          required: true,
+          guide:
+            '해외 경험의 유형을 선택해주세요. 여러 개 해당된다면 가장 대표되는 유형 기준으로 선택해주세요.',
+        }),
+        createTextField('국가 / 도시', {
+          required: true,
+          guide: '방문한 국가와 도시를 적어주세요.',
+          placeholder: '예: 미국 샌프란시스코, 독일 베를린',
+        }),
+        createTextField('주최 / 소속 기관', {
+          guide: '프로그램을 주최한 기관이나 현지에서 소속된 곳을 적어주세요.',
+          placeholder: '예: OO대학교, OO재단, OO 회사',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸. month~month 는 코어 '기간' 과 같은 period 위젯이라
+        // 구 `overseas-info.기간` 값을 그대로 실을 수 있다(RENAMED_FIELD_KEYS).
         createPeriodField('기간', { required: true }),
-        createTextareaField('목적'),
-        createTextareaField('활동 요약', { required: true }),
-        createTextField('언어 사용 수준'),
+        createTextField('사용 언어', {
+          guide:
+            '현지에서 주로 사용한 언어를 적어주세요. 이미 등록한 어학능력이 있다면 같은 언어명으로 적어주시면 좋아요.',
+          placeholder: '예: 영어, 독일어, 영어+한국어',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createSelectField('참여 형태', [...OVERSEAS_COMPANION_OPTIONS]),
+        createFileField('증빙 자료', {
+          guide: '수료증, 참가 확인서, 활동 사진 등 이 경험을 증명할 자료를 첨부해주세요.',
+          options: ['수료증/참가 확인서', '활동 사진', '기타'],
+        }),
       ],
     },
     {
-      id: 'overseas-challenges',
-      category: 'repeat',
-      label: '어려웠던 상황',
-      collapsed: true,
+      id: 'overseas-reflection',
+      category: 'detail',
+      label: '경험 상세',
       blocks: [
-        createRepeatableCell('어려웠던 상황', [
-          { key: 'situation', label: '상황', blockType: 'text', required: true },
-          { key: 'response', label: '내가 한 대응', blockType: 'textarea' },
-          { key: 'result', label: '결과', blockType: 'textarea' },
-          { key: 'lesson', label: '배운 점', blockType: 'textarea' },
-        ]),
-        createTextareaField('성과/산출물'),
-        createFileField('증빙'),
+        createOutcomeList('주요 활동', {
+          guide:
+            "현지에서 수행한 주요 활동이나 프로젝트를 리스트업해주세요. 특정 활동을 더 자세히 풀어 쓰고 싶다면 '상세 설명'을 눌러 아래 '활동별 상세 설명'에서 개별로 적을 수 있어요.",
+          placeholder: '예: 국제 마케팅 팀 프로젝트 참여',
+          itemLabel: '활동',
+          // 확정본 §7 의 '↻ 활동 동기화'(섹션 상단 일괄 버튼)를 새로 만들지 않고 독서(FRT-236)가
+          // 쓴 행별 링크를 재사용한다. 일괄 동기화는 활동을 지웠을 때 그 상세를 어떻게 할지
+          // 확정본이 명세하지 않아, 재동기화 때 상세가 조용히 사라질 수 있다.
+          // titleColumnKey 는 반드시 명시한다(columns[0] 의존은 FRT-178 에서 깨진 전제).
+          link: { targetSectionId: 'overseas-activities', titleColumnKey: 'activity', label: '상세 설명' },
+        }),
+        createMoodTagField('이 경험이 나에게 준 것', [...OVERSEAS_GAIN_TAGS], {
+          guide: '해외 경험을 통해 얻은 관점, 배움, 변화를 태그로 표현해주세요.',
+        }),
+        createTextareaField('기억에 남는 순간', {
+          guide: '가장 인상 깊었던 경험, 만남, 문화적 충격 등을 적어주세요.',
+          placeholder:
+            '예: 팀 프로젝트에서 독일 학생이 정확한 데이터 근거 없이는 어떤 주장도 하지 않는 태도를 보고, 이후 저도 근거 중심으로 논리를 세우는 습관이 생겼습니다.',
+        }),
+      ],
+    },
+    {
+      // 확정본은 이 카드를 ② 안의 동기화 카드로 그렸지만(§8 "섹션 2개 앵커"), 우리 구조에서는
+      // 반드시 별도 섹션이어야 한다 — `ExperienceFormV2.findProjectBlock` 이 대상 섹션의 **첫
+      // repeatable-cell** 을 집는데 OutcomeList 자체가 repeatable-cell 이라, 한 섹션에 두면
+      // '주요 활동' 이 자기 자신을 대상으로 삼는다. 독서 `book-info` → `book-quotes` 와 같은 구성.
+      id: 'overseas-activities',
+      category: 'repeat',
+      label: '활동별 상세 설명',
+      blocks: [
+        createRepeatableCell('활동별 상세 설명', [
+          {
+            // ⚠️ required 금지. `isRequiredBlock` 은 컬럼 하나라도 required 면 표 블록 전체를
+            // 필수로 보고, 그러면 활동을 안 적은 사용자는 이 카드를 영영 완료할 수 없는 데다
+            // `canHideBlock` 이 숨기지도 못한다(FRT-236 '문장별 감상'과 같은 자리).
+            key: 'activity',
+            label: '활동',
+            blockType: 'text',
+            guide: "위 '주요 활동'에서 기록한 항목이 여기에 채워져요.",
+          },
+          {
+            key: 'detail',
+            label: '상세 설명',
+            blockType: 'textarea',
+            guide: '이 활동에 대해 더 자세히 설명하고 싶다면 적어주세요.',
+          },
+        ], {
+          guide:
+            "위 '주요 활동'에서 항목을 추가한 뒤 '상세 설명'을 누르면 여기에 행이 생겨요. 굳이 모두 채울 필요는 없어요.",
+        }),
       ],
     },
   ]
 }
 
+/** 창작물 확정본 ① '유형 / 매체' 13종. 구 '분야' 7종(디자인/글/영상/음악/사진/일러스트/기타)과 도메인이 다르다. */
+const CREATIVE_MEDIUM_OPTIONS = [
+  '그래픽/디자인',
+  '브랜딩/아이덴티티',
+  '웹/앱 UI',
+  '영상/모션',
+  '사진',
+  '일러스트/그림',
+  '글/문학',
+  '음악/사운드',
+  '개발/프로젝트',
+  '제품/프로덕트',
+  '공간/건축',
+  '공연/퍼포먼스',
+  '기타',
+] as const
+
+/** 창작물 확정본 ① '개인 / 팀' 4종. '개인 작업' 외를 고르면 '역할' 칸이 나타난다. */
+const CREATIVE_COLLAB_OPTIONS = ['개인 작업', '팀 작업(2~5명)', '팀 작업(6명 이상)', '공동 프로젝트'] as const
+
+const CREATIVE_COLLAB_KEY = 'creative-info.개인 / 팀'
+
+/** 창작물 확정본 ② '작품 성격' 12종 (이모지 알약 태그, 다중 선택). */
+const CREATIVE_MOOD_TAGS = [
+  '🎨 실험적',
+  '💼 상업적',
+  '📖 서사적',
+  '🔍 리서치 기반',
+  '💡 컨셉 중심',
+  '🛠️ 기술 중심',
+  '🤝 협업 기반',
+  '🧪 프로토타입/실험작',
+  '🎯 특정 타겟 대상',
+  '🏆 공모전 출품작',
+  '📚 학술/졸업 작품',
+  '🌍 사회적 메시지',
+] as const
+
+// 창작물 — 확정본(창작물_final, FRT-267). 구 `cw-info`/`cw-process` 를 `creative-*` 로 **전면 교체**한다.
+// 섹션 id 를 가는 것이 이 작업의 안전 장치다(FRT-210 이후 공통): 구 '분야'(7종)는 확정본에서
+// '유형 / 매체'(13종)로 **선택지 도메인이 통째로 바뀌고**, 구 '제작 과정'(표)은 확정본에서 같은
+// 라벨의 textarea 다. id 를 유지하면 앞은 새 목록에 없는 값이 드롭다운에 박히고, 뒤는 injectValue 가
+// 값을 못 싣고도 키가 consumedKeys 에 잡혀 orphan 안전망까지 건너뛴다.
+//
+// 확정본 2섹션이 화면에서도 2카드다: 결과물 첨부를 ① 안에 두고(확정본 배치) core '증빙 자료'를
+// CORE_EXCLUDE 로 빼, evidence 버킷이 비어 카드가 생기지 않는다. 확정본 §7 도 "사이드 네비:
+// 섹션 2개 앵커"로 못 박았다.
 function creativeWorkExtensions(): TemplateSection[] {
   return [
     {
-      id: 'cw-info',
+      // 블록 순서는 확정본 ① 표 그대로다: 작품명 → 유형/매체 → 개인/팀 → ↳역할 → 작업 기간 →
+      // 공개/전시 이력 → 사용 툴/기술 → 작품 링크/파일. 코어 블록은 `computeFormCards` 가 뒤에
+      // 붙이므로, 확정본 순서를 지키려면 시점 필드를 코어에 맡기지 말고 이렇게 섹션이 소유해야 한다.
+      id: 'creative-info',
       category: 'basic',
       label: '작품 정보',
       blocks: [
-        createTextField('작품/작업물명', { required: true }),
-        createSelectField('분야', ['디자인', '글', '영상', '음악', '사진', '일러스트', '기타']),
-        createPeriodField('제작 기간'),
-        createTextField('한 줄 소개', { required: true }),
-        createTextareaField('의도/주제'),
-        createTagsField('사용 도구'),
+        createTextField('작품명 / 작업물명', {
+          required: true,
+          guide: '이 창작물이나 작업물의 이름을 적어주세요.',
+          placeholder: '예: 브랜드 리뉴얼 프로젝트, 단편 소설 〈OO〉, 개인 웹사이트',
+        }),
+        createSelectField('유형 / 매체', [...CREATIVE_MEDIUM_OPTIONS], {
+          required: true,
+          guide:
+            '이 작품의 유형을 선택해주세요. 여러 매체가 결합된 작업이라면 가장 대표되는 유형 기준으로 선택해주세요.',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createSelectField('개인 / 팀', [...CREATIVE_COLLAB_OPTIONS]),
+        {
+          ...createTextField('역할', {
+            guide: '이 작업에서 내가 맡은 역할을 적어주세요.',
+            placeholder: '예: 아트디렉터, 개발, 카피라이터',
+          }),
+          // 확정본 §7 — "'개인 작업' 외 선택 시 노출". `VisibilityCondition` 에 부정이 없어 양성
+          // 값을 열거한다. ⚠️ CREATIVE_COLLAB_OPTIONS 가 늘면 여기도 함께 늘려야 한다 — 빠뜨리면
+          // 그 값을 고른 사용자에게 이 칸이 영영 안 뜬다(파생으로 두어 어긋날 수 없게 했다).
+          visibleWhen: {
+            key: CREATIVE_COLLAB_KEY,
+            equals: CREATIVE_COLLAB_OPTIONS.filter(o => o !== '개인 작업'),
+          },
+          // ⚠️ required 금지 — 조건부 노출이라 '개인 작업'을 고르면 화면에 없는 칸이 완료 저장을
+          // 막는다(수상경력 '팀에서 내가 맡은 역할'과 같은 처리, FRT-211).
+          //
+          // ⚠️ 라벨 '역할'은 `SEMANTIC_GROUPS.role` 동의어다 — 수상경력이 '팀에서 내가 맡은 역할'로
+          // 그룹 밖에 있는 것과 **반대**이고, 그 차이가 화면을 가른다. `computeFormCards` 는
+          // `visibleWhen` 을 보지 않고 이 라벨을 앵커로 삼으므로 **빈 코어 '내 역할/기여도'가 항상
+          // dedup 된다** → '개인 작업'에서는 역할 칸이 하나도 남지 않는다. 확정본 §7 이 "'개인 작업'
+          // 외 선택 시 노출"로 정한 그대로이므로 의도된 결과지만, 값이 든 코어는 `keepCoreOrExtended`
+          // 가 남기므로 구 레코드는 잃지 않는다. 넷 다 form-cards.test.ts 가 고정한다 —
+          // 라벨을 role 그룹 밖으로 옮기면 팀 작업에서 역할 칸이 두 벌이 된다.
+        },
+        // 확정본이 가이드라인을 '—' 로 비운 칸. month~month 는 코어 '기간' 과 같은 period 위젯이라
+        // 구 `cw-info.제작 기간` 값을 그대로 실을 수 있다(RENAMED_FIELD_KEYS).
+        createPeriodField('작업 기간', { required: true }),
+        createOutcomeList('공개 / 전시 이력', {
+          guide: '이 작품이 전시되거나 공개된 곳이 있다면 채널별로 리스트업해주세요.',
+          placeholder: '예: 2024 학과 졸업전시',
+          itemLabel: '공개 / 전시',
+        }),
+        createTagsField('사용 툴 / 기술', {
+          guide: '사용한 도구, 소프트웨어, 기술을 태그로 추가해주세요.',
+        }),
+        // 확정본 '결과물 블록(artifact-blocks) — 다중 등록 가능'. FRT-213 이 셀 컬럼에 file·link 를
+        // 열어 둔 덕에(SUPPORTED_CELL_TYPES) 신규 위젯 없이 표로 받는다.
+        // ⚠️ 컬럼에 required 금지 — `isRequiredBlock` 은 컬럼 하나라도 required 면 표 전체를 필수로
+        // 보고 `canHideBlock` 이 숨기지도 못한다. 공개 링크가 없는 작업은 영영 완료 불가가 된다(FRT-236).
+        createRepeatableCell(
+          '작품 링크 / 파일',
+          [
+            { key: 'link', label: '링크', blockType: 'link', placeholder: 'Behance, Vimeo, GitHub, Notion 등' },
+            { key: 'file', label: '파일', blockType: 'file' },
+            {
+              key: 'desc',
+              label: '설명',
+              blockType: 'text',
+              placeholder: '설명 (예: 최종 결과물, 프로세스 스케치, 발표 자료)',
+            },
+          ],
+          {
+            guide:
+              '작품을 볼 수 있는 링크나 파일을 채널별로 첨부해주세요. 최종 결과물, 프로세스 문서, 발표 자료 등 여러 개 등록 가능해요.',
+          },
+        ),
       ],
     },
     {
-      id: 'cw-process',
-      category: 'repeat',
-      label: '제작 과정',
-      collapsed: true,
+      // "섹션 전체 선택"이므로 required 를 하나도 두지 않는다.
+      id: 'creative-detail',
+      category: 'detail',
+      label: '작업 상세',
       blocks: [
-        createRepeatableCell('제작 과정', [
-          { key: 'step', label: '단계명', blockType: 'text', required: true },
-          { key: 'work', label: '한 일', blockType: 'textarea' },
-          { key: 'decision', label: '고민/결정', blockType: 'textarea' },
-          { key: 'result', label: '결과', blockType: 'textarea' },
-        ]),
-        createLinkField('공개 링크'),
-        createTextareaField('반응/성과'),
-        createTextField('저작권/사용 범위'),
+        createTextareaField('작업 배경 / 컨셉', {
+          guide: '이 작품을 만든 배경, 컨셉, 의도를 자유롭게 설명해주세요.',
+          placeholder:
+            '예: 지방 소도시의 사라져가는 골목 문화를 기록하고 싶어서 시작한 프로젝트로, 사진과 인터뷰를 결합한 잡지 형식으로 구성했습니다.',
+        }),
+        // 구 `cw-process.제작 과정` 은 단계별 4컬럼 표였다. 확정본은 서술형 한 칸이고 라벨이 같아
+        // v1 라벨 매칭이 닿는 자리인데, repeatable-cell → textarea 는 `isInjectableInto` 가 막아
+        // 표 값이 '기타' 로 보존된다(FRT-210 Codex P1 의 방어선이 v1 에서도 유일하게 작동하는 경로).
+        createTextareaField('제작 과정', {
+          guide: '어떤 단계로 진행됐고, 내가 어떤 결정을 내렸는지 적어주세요.',
+          placeholder:
+            '예: 3주 리서치 → 2주 컨셉 스케치 → 4주 촬영·인터뷰 → 3주 편집·디자인. 초반 방향이 너무 감성적이라 판단되어 중반부터 다큐멘터리 톤으로 재조정했습니다.',
+        }),
+        createTextareaField('반응 / 피드백', {
+          guide:
+            '조회수·관람객 반응·피드백뿐 아니라, 실제 배포·서비스 반영·클라이언트 채택·재사용된 사례도 함께 적어주세요.',
+          placeholder:
+            '예: Behance 조회수 5,000회 / 학과 졸업전시 우수작 선정 / 지역 소상공인 3곳이 실제 리뉴얼 시안으로 채택하여 사용 중',
+        }),
+        createTextareaField('이 작업이 나에게 남긴 것', {
+          guide: '새로 익힌 기술이나 방법, 관점의 변화, 다음 작업에 이어갈 방향 — 무엇이든 좋아요.',
+          placeholder:
+            '예: 촬영보다 편집 단계에서 톤을 결정하는 감각을 처음 익혔고, 이후 작업할 때 촬영 전 편집 흐름을 먼저 스케치하는 습관이 생겼습니다.',
+        }),
+        // 확정본 설계 노트: 구 🌱 개인 프로젝트 태그는 ① '개인/팀' 과 중복이라 삭제됐다 — 되살리지 말 것.
+        createMoodTagField('작품 성격', [...CREATIVE_MOOD_TAGS], {
+          guide: '이 작품의 성격을 태그로 표현해주세요.',
+        }),
       ],
     },
   ]
@@ -1445,34 +2288,139 @@ function sportsExtensions(): TemplateSection[] {
   ]
 }
 
+const READING_GENRE_OPTIONS = [
+  '인문/철학',
+  '역사',
+  '사회/정치',
+  '경제/경영',
+  '자기계발',
+  '과학/기술',
+  '심리/뇌과학',
+  '예술/문화',
+  '소설/문학',
+  '에세이/시',
+  '전공/학술',
+  '기타',
+] as const
+
+/** 확정본 ③ 은 별점을 이모지+괄호 표기 그대로 적었다 — 표기를 바꾸면 저장된 선택값이 어긋난다. */
+const READING_RATING_OPTIONS = [
+  '⭐⭐⭐⭐⭐ (강력 추천)',
+  '⭐⭐⭐⭐ (추천)',
+  '⭐⭐⭐ (괜찮았음)',
+  '⭐⭐ (아쉬웠음)',
+  '⭐ (별로)',
+] as const
+
+// 독서 — 확정본(독서_final). 구 `reading-info`/`reading-apply` 를 `book-*` 로 **전면 교체**한다.
+// 섹션 id 를 가는 것이 이 작업의 안전 장치다(FRT-210 과 같은 이유): 구 '읽은 기간/완독일'(text)이
+// 확정본에선 period, 구 '인상 깊은 문장'(textarea)은 개조식 리스트라, id 를 유지하면 안정키가
+// 같아져 injectValue 는 값을 안 싣고 그 키는 consumedKeys 에 잡혀 orphan 안전망까지 건너뛴다 —
+// 값이 '기타' 카드에도 없이 사라진다.
+//
+// 확정본 3섹션이 화면에선 4카드가 된다: 폼은 고정 4카테고리로 접히고 core '증빙 자료'가 항상
+// evidence 버킷에 들어간다. 확정본 ③ '평가'를 evidence 에 두지 않는 이유는 그 때문이다 —
+// '평가' 라는 이름의 카드에 파일 첨부칸이 딸려온다. detail 에 합치고 라벨만 바꾼다.
 function readingExtensions(): TemplateSection[] {
   return [
     {
-      id: 'reading-info',
+      id: 'book-info',
       category: 'basic',
-      label: '독서 정보',
+      label: '도서 정보',
       blocks: [
-        createTextField('도서명', { required: true }),
-        createTextField('저자'),
-        createTextField('읽은 기간/완독일'),
-        createTextareaField('읽은 이유'),
-        createTextareaField('핵심 요약 (3줄)', { required: true }),
-        createTextareaField('인상 깊은 문장'),
+        createTextField('도서명', {
+          required: true,
+          guide: '읽은 책의 정확한 제목을 적어주세요.',
+          placeholder: '예: 사피엔스',
+        }),
+        // 확정본 ① 에서 '선택' 표기가 없는 셋(도서명·저자·독서 기간)만 필수다.
+        createTextField('저자', {
+          required: true,
+          guide: '저자의 이름을 적어주세요.',
+          placeholder: '예: 유발 하라리',
+        }),
+        createSelectField('장르 / 분야', [...READING_GENRE_OPTIONS], {
+          guide:
+            '이 책이 속한 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createTextField('페이지 수', { placeholder: '예: 512쪽' }),
+        createPeriodField('독서 기간', {
+          required: true,
+          guide: '이 책을 읽기 시작하고 끝낸 시기를 선택해주세요.',
+        }),
+        createTextareaField('독서 이유', {
+          guide: '이 책을 읽게 된 계기가 있다면 적어주세요.',
+          placeholder:
+            '예: 교양 수업에서 추천 도서로 언급되어 관심이 생겼고, 인류사를 새로운 관점에서 이해하고 싶어 읽기 시작했습니다.',
+        }),
+        createTextField('한 줄 감상', {
+          guide: '이 책을 한 줄로 정리한다면?',
+          placeholder: '예: 인류의 역사를 새로운 시각으로 바라보게 해준 책',
+        }),
+        createTextareaField('요약', {
+          guide: '책의 전체 내용을 자유롭게 요약해주세요.',
+          placeholder:
+            '예: 인류 진화의 큰 흐름을 인지혁명·농업혁명·과학혁명이라는 세 가지 축으로 재구성한 책',
+        }),
+        createOutcomeList('인상 깊었던 문장', {
+          // 확정본 원문은 "아래 감상 세부기록에서" 라고 코드에 없는 섹션명을 가리킨다 —
+          // 안내가 화면에 없는 것을 가리키면 그게 더 큰 혼선이라 실제 카드명으로 맞췄다(FRT-177).
+          guide:
+            "기억하고 싶은 문장이나 구절을 항목별로 정리해주세요. 아래 '문장별 감상'에서 문장마다 생각을 남길 수 있어요.",
+          placeholder: '예: 우리가 사는 세계는 대부분 상상의 산물이다',
+          itemLabel: '문장',
+          // 확정본의 '↻ 문장 동기화'(섹션 상단 일괄 버튼)를 새로 만들지 않고 어학능력(FRT-210)의
+          // '상세 기록' 링크를 재사용한다. 행마다 버튼이 붙는 대신, 확정본이 명세하지 않은 지점
+          // (문장을 지웠을 때 그 감상을 어떻게 하는가)에서 감상이 조용히 사라지지 않는다.
+          // titleColumnKey 는 반드시 명시한다(columns[0] 의존은 FRT-178 에서 깨진 전제).
+          link: { targetSectionId: 'book-quotes', titleColumnKey: 'quote', label: '감상 남기기' },
+        }),
       ],
     },
     {
-      id: 'reading-apply',
-      category: 'repeat',
-      label: '적용/실험',
-      collapsed: true,
+      id: 'book-reflection',
+      category: 'detail',
+      label: '감상과 평가',
       blocks: [
-        createRepeatableCell('적용/실험', [
-          { key: 'topic', label: '적용할 주제', blockType: 'text', required: true },
-          { key: 'action', label: '내가 한 행동', blockType: 'textarea' },
-          { key: 'result', label: '결과/느낀 점', blockType: 'textarea' },
+        // 확정본 설계 노트: 기존 '배운 점'·'생각의 변화' 2필드를 하나로 통합했다. 대학생이 둘을
+        // 명확히 구분해 쓰기 어려워 결국 하나만 채우던 문제를 없애는 것이 목적이므로 다시 쪼개지 말 것.
+        createTextareaField('이 책이 나에게 남긴 것', {
+          guide: '새롭게 알게 된 지식, 관점의 변화, 앞으로 남길 습관 — 무엇이든 좋아요.',
+          placeholder:
+            "예: 화폐가 물리적 실체가 아닌 사회적 합의로 유지된다는 관점을 처음 이해했고, 이후 '왜 사람들이 이것을 믿는가'를 먼저 묻는 습관이 생겼습니다.",
+        }),
+        // 확정본 ③ 은 이 칸의 가이드라인 자리에 선택지 목록만 적었다 — guide 를 지어내지 않는다.
+        createSelectField('별점', [...READING_RATING_OPTIONS]),
+      ],
+    },
+    {
+      // 확정본은 이 카드의 컬럼을 명세하지 않았다. "굳이 모두 채울 필요는 없어요" 라고 못 박은
+      // 만큼 입력 부담 최소화가 설계 의도이므로 2컬럼을 넘기지 말 것.
+      id: 'book-quotes',
+      category: 'repeat',
+      label: '문장별 감상',
+      blocks: [
+        createRepeatableCell('문장별 감상', [
+          {
+            // ⚠️ required 를 붙이지 말 것. `isRequiredBlock` 은 **컬럼 하나라도 required 면
+            // 표 블록 전체를 필수로** 보고, 그러면 문장을 하나도 안 적은 사용자는 이 카드를
+            // 영영 완료할 수 없는 데다(빈 표는 `isCardComplete` 를 못 채운다) 필수 블록은
+            // `canHideBlock` 이 숨기지도 못하게 해 치울 방법조차 없다. 확정본 ②는 "섹션 전체
+            // 선택"이고 카드 안내도 "굳이 모두 채울 필요는 없어요"다 — 진행도가 그 반대를
+            // 요구하면 안내가 거짓말이 된다.
+            key: 'quote',
+            label: '문장',
+            blockType: 'text',
+            guide: '위에서 기록한 문장이 여기에 채워져요.',
+          },
+          {
+            key: 'impression',
+            label: '이 문장에 대한 생각',
+            blockType: 'textarea',
+            guide: '이 문장이 왜 마음에 남았는지, 어떤 생각이 들었는지 적어주세요.',
+          },
         ]),
-        createLinkField('관련 자료'),
-        createTextField('추천 대상'),
       ],
     },
   ]
@@ -1585,8 +2533,26 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
 /**
  * 템플릿 스키마 버전. content.template_version 으로 저장되어 향후 필드 셋 변경 추적에 쓰인다.
  * (안정키 기반 additive 변경은 마이그레이션 불필요 — 키가 곧 정체성)
+ *
+ * 2 — 어학능력 확정본 정렬(FRT-210). 섹션 id 를 `lang-info`/`lang-usage` 에서 4개로 갈아치워
+ *     안정키가 통째로 바뀌었다. 아래 `withSectionKeys` 규약이 요구하는 bump 다.
+ * 3 — 독서 확정본 정렬(FRT-236). 같은 이유 — `reading-info`/`reading-apply` 를 `book-*` 3개로
+ *     갈아치웠다. 규약이 유형별 예외를 두지 않으므로 어학과 같은 대우를 한다.
+ * 4 — 봉사 확정본 정렬(FRT-247). 같은 이유 — `vol-info` 를 `volunteer-info`/`volunteer-reflection`
+ *     으로 갈아치웠다.
+ * 5 — 해외경험 확정본 정렬(FRT-249). 같은 이유 — `overseas-info`/`overseas-challenges` 를
+ *     `overseas-program`/`overseas-reflection`/`overseas-activities` 로 갈아치웠다.
+ * 6 — 창작물 확정본 정렬(FRT-267). 같은 이유 — `cw-info`/`cw-process` 를 `creative-info`/
+ *     `creative-detail` 로 갈아치웠다.
+ * 7 — 연구논문 확정본 정렬(FRT-269). 같은 이유 — `research-info` 를 `research-paper`/
+ *     `research-content`/`research-publication` 으로 갈아치웠다.
+ *
+ * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
+ * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
+ * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
+ * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 1
+export const TEMPLATE_VERSION = 7
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.

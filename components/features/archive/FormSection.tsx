@@ -12,7 +12,6 @@ interface FormSectionProps {
   description?: string
   optional?: boolean
   sectionId?: string
-  showOptionalBadge?: boolean
   defaultCollapsed?: boolean
   readOnly?: boolean
   allowAdd?: boolean
@@ -28,6 +27,15 @@ interface FormSectionProps {
   /** 섹션 카드 위/아래 이동(사용자 섹션 정렬, FRT-78). 경계에서는 undefined 로 비활성. */
   onMoveUp?: () => void
   onMoveDown?: () => void
+  /**
+   * 이 카드에서 숨겨진 선택 필드 (FRT-190). 카드 하단 '숨긴 항목 N개' 토글로 되살린다.
+   * 숨김 필터는 `computeFormCards` 가 아니라 이 렌더 층에서만 적용한다 — 카드 모델에서 빼면
+   * 마지막 필드를 숨긴 순간 `blocks.length === 0` 으로 카드가 통째로 사라져 되살리기 경로까지
+   * 같이 증발한다.
+   */
+  hiddenBlocks?: Block[]
+  onHide?: (block: Block) => void
+  onUnhide?: (block: Block) => void
   onChange: (blocks: Block[]) => void
 }
 
@@ -38,7 +46,6 @@ export default function FormSection({
   description,
   optional,
   sectionId,
-  showOptionalBadge,
   defaultCollapsed = false,
   readOnly,
   allowAdd,
@@ -50,9 +57,13 @@ export default function FormSection({
   onDelete,
   onMoveUp,
   onMoveDown,
+  hiddenBlocks,
+  onHide,
+  onUnhide,
   onChange,
 }: FormSectionProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  const [hiddenOpen, setHiddenOpen] = useState(false)
 
   if (variant === "card") {
     return (
@@ -131,8 +142,41 @@ export default function FormSection({
           allowReorder={allowReorder}
           allowDelete={allowDelete}
           allowEdit={allowEdit}
-          showOptionalBadge={showOptionalBadge}
+          onHide={readOnly ? undefined : onHide}
         />
+        {!readOnly && hiddenBlocks && hiddenBlocks.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-border">
+            <button
+              type="button"
+              onClick={() => setHiddenOpen(o => !o)}
+              aria-expanded={hiddenOpen}
+              className="flex items-center gap-1.5 text-body-sm text-text-tertiary hover:text-text-secondary transition-colors"
+            >
+              <ChevronDown
+                size={14}
+                className={`transition-transform duration-200 ${hiddenOpen ? "" : "-rotate-90"}`}
+              />
+              숨긴 항목 {hiddenBlocks.length}개
+            </button>
+            {hiddenOpen && (
+              <ul className="mt-2 flex flex-col gap-1">
+                {hiddenBlocks.map(b => (
+                  <li key={b.id} className="flex items-center justify-between gap-2 py-1">
+                    <span className="text-body-sm text-text-tertiary truncate">{b.label}</span>
+                    <button
+                      type="button"
+                      onClick={() => onUnhide?.(b)}
+                      aria-label={`${b.label} 다시 보기`}
+                      className="text-body-sm text-text-secondary hover:text-brand transition-colors shrink-0"
+                    >
+                      다시 보기
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </section>
     )
   }

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { X } from "lucide-react"
 import type { Block, ChecklistBlockValue } from "@/types/archive"
+import { onEnterCommit } from "@/lib/utils/keyboard"
 
 interface ChecklistBlockProps {
   block: Block
@@ -94,7 +95,7 @@ export default function ChecklistBlock({ block, readOnly, onChange }: ChecklistB
           placeholder="항목 추가..."
           value={newOption}
           onChange={e => setNewOption(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addOption() } }}
+          onKeyDown={onEnterCommit(addOption)}
         />
         <button
           type="button"

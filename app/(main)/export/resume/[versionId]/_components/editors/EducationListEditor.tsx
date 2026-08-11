@@ -44,7 +44,11 @@ function GpaInput({
         }
       }}
       onBlur={() => {
-        const num = raw === null || raw === "" ? null : parseFloat(raw);
+        // raw 가 null 이면 이 칸을 한 번도 타이핑하지 않았다는 뜻이다(FRT-224). 그때도
+        // 값을 계산해 써버리면 포커스만 스쳐도 저장돼 있던 학점이 null 로 지워진다.
+        // 편집하지 않았으면 부모 값을 그대로 둔다 — 아무것도 쓰지 않는 것이 정답이다.
+        if (raw === null) return;
+        const num = raw === "" ? null : parseFloat(raw);
         const finalVal = num !== null && Number.isFinite(num) ? num : null;
         onChange(finalVal);
         setRaw(null);

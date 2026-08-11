@@ -23,11 +23,23 @@ const OUTCOME_LIST_TYPES = new Set<string>(["text", "textarea"])
 interface BlockRendererProps {
   block: Block
   readOnly?: boolean
-  showOptionalBadge?: boolean
+  /**
+   * 이 블록에 숨김 × 가 붙는지(FRT-190). × 는 블록 우상단에 절대배치되므로, 같은 자리에
+   * 컨트롤을 두는 렌더러(기간의 월/일 토글)는 그만큼 자리를 비켜야 클릭이 안 뺏긴다.
+   */
+  hideSlot?: boolean
+  /** 첨부 업로드가 진행 중인지 상위에 알린다 — 그동안 × 를 감춰 파일 유실을 막는다(FRT-190). */
+  onBusyChange?: (busy: boolean) => void
   onChange: (blockId: string, value: BlockValue) => void
 }
 
-export default function BlockRenderer({ block, readOnly, showOptionalBadge, onChange }: BlockRendererProps) {
+export default function BlockRenderer({
+  block,
+  readOnly,
+  hideSlot,
+  onBusyChange,
+  onChange,
+}: BlockRendererProps) {
   const handleChange = (value: BlockValue) => onChange(block.id, value)
 
   const rendered = (() => {
@@ -39,7 +51,14 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
       case "date":
         return <DateBlock block={block} readOnly={readOnly} onChange={handleChange} />
       case "period":
-        return <PeriodBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        return (
+          <PeriodBlock
+            block={block}
+            readOnly={readOnly}
+            reserveHideSlot={hideSlot}
+            onChange={handleChange}
+          />
+        )
       case "checklist": {
         // mood-tag 는 고정 프리셋 알약 UI(FRT-177). 그릴 태그를 하나도 못 구했을 때만
         // (저장 options·템플릿 프리셋·checked 가 모두 빔) 옵션을 새로 만들 수 있는
@@ -55,7 +74,14 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
       case "link":
         return <LinkBlock block={block} readOnly={readOnly} onChange={handleChange} />
       case "file":
-        return <FileBlock block={block} readOnly={readOnly} onChange={handleChange} />
+        return (
+          <FileBlock
+            block={block}
+            readOnly={readOnly}
+            onBusyChange={onBusyChange}
+            onChange={handleChange}
+          />
+        )
       case "repeatable-cell": {
         // role-history 는 접이식 역할 이력 패널(FRT-178). 역할명을 읽을 `role` 컬럼이 없으면
         // 이름을 하나도 만들어내지 못하므로 표형으로 폴백한다 — 판정은 렌더와 같은 계산을 쓴다.
@@ -87,15 +113,8 @@ export default function BlockRenderer({ block, readOnly, showOptionalBadge, onCh
     }
   })()
 
-  if (showOptionalBadge && !block.required && !readOnly) {
-    return (
-      <div className="relative">
-        <span className="absolute -top-2 right-0 z-10 text-caption text-text-tertiary bg-surface border border-border rounded-full px-2 py-0.5">
-          선택
-        </span>
-        {rendered}
-      </div>
-    )
-  }
+  // FRT-190: '선택' 뱃지는 없앴다. 표시를 다수(선택)가 아니라 소수(필수)에 붙이는 쪽으로 뒤집어
+  // 라벨 옆 주황 점(`RequiredDot`)으로 그린다 — 뱃지는 `absolute` 오버레이라 블록 우상단의
+  // `N개 항목`(RepeatableCellBlock) 과 겹쳤고, 경험 상세 카드에만 붙어 신호도 일관되지 않았다.
   return rendered ?? null
 }

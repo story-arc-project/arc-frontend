@@ -6,6 +6,7 @@ import { Dialog } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import type { BlockType, BlockColumnDef } from "@/types/archive"
 import { uid } from "@/lib/utils/block-utils"
+import { onEnterCommit } from "@/lib/utils/keyboard"
 
 export interface BlockEditConfig {
   label: string
@@ -70,18 +71,24 @@ export default function BlockEditModal({
     }
   }
 
+  const needsOptions = blockType === "single-select" || blockType === "checklist"
+  // 단일선택은 옵션이 0개가 되면 고를 값이 없는 드롭다운이 된다 → 마지막 하나는 남긴다(FRT-158).
+  // 체크리스트는 인라인 편집기와 마찬가지로 0개를 허용한다.
+  const lockLastOption = blockType === "single-select" && options.length <= 1
+
   const handleConfirm = () => {
     if (!label.trim()) return
     onConfirm({
       label: label.trim(),
       placeholder: placeholder.trim() || undefined,
-      options: options.length > 0 ? options : undefined,
+      // 빈 배열도 그대로 넘긴다 — `undefined` 로 접으면 BlockList 가 "옵션을 안 건드렸다"로 읽어
+      // 사용자가 지운 옵션이 되살아난다(FRT-158 형제 결함).
+      options: needsOptions ? options : undefined,
       columns: columns.length > 0 ? columns : undefined,
       tableColumns: tableColumns.length > 0 ? tableColumns : undefined,
     })
   }
 
-  const needsOptions = blockType === "single-select" || blockType === "checklist"
   const needsColumns = blockType === "repeatable-cell"
   const needsTableCols = blockType === "table"
   const needsPlaceholder = blockType === "text" || blockType === "textarea"
@@ -136,7 +143,8 @@ export default function BlockEditModal({
                   <button
                     type="button"
                     onClick={() => setOptions(options.filter((_, i) => i !== idx))}
-                    className="p-1 text-text-tertiary hover:text-error transition-colors"
+                    disabled={lockLastOption}
+                    className="p-1 text-text-tertiary hover:text-error transition-colors disabled:text-text-disabled disabled:hover:text-text-disabled disabled:cursor-not-allowed"
                     aria-label="옵션 삭제"
                   >
                     <Trash2 size={12} />
@@ -144,6 +152,11 @@ export default function BlockEditModal({
                 </div>
               ))}
             </div>
+            {lockLastOption && (
+              <p className="text-caption text-text-tertiary">
+                옵션은 하나 이상 필요해요. 새 옵션을 추가하면 지울 수 있어요.
+              </p>
+            )}
             <div className="flex gap-2">
               <input
                 type="text"
@@ -151,16 +164,13 @@ export default function BlockEditModal({
                 placeholder="옵션 추가..."
                 value={newOption}
                 onChange={e => setNewOption(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    const t = newOption.trim()
-                    if (t && !options.includes(t)) {
-                      setOptions([...options, t])
-                      setNewOption("")
-                    }
+                onKeyDown={onEnterCommit(() => {
+                  const t = newOption.trim()
+                  if (t && !options.includes(t)) {
+                    setOptions([...options, t])
+                    setNewOption("")
                   }
-                }}
+                })}
               />
               <button
                 type="button"
@@ -219,16 +229,13 @@ export default function BlockEditModal({
                 placeholder="열 이름 추가..."
                 value={newColLabel}
                 onChange={e => setNewColLabel(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    const t = newColLabel.trim()
-                    if (t) {
-                      setColumns([...columns, { key: uid("col"), label: t, blockType: "text" }])
-                      setNewColLabel("")
-                    }
+                onKeyDown={onEnterCommit(() => {
+                  const t = newColLabel.trim()
+                  if (t) {
+                    setColumns([...columns, { key: uid("col"), label: t, blockType: "text" }])
+                    setNewColLabel("")
                   }
-                }}
+                })}
               />
               <button
                 type="button"
@@ -276,16 +283,13 @@ export default function BlockEditModal({
                 placeholder="열 이름 추가..."
                 value={newTableCol}
                 onChange={e => setNewTableCol(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    const t = newTableCol.trim()
-                    if (t && !tableColumns.includes(t)) {
-                      setTableColumns([...tableColumns, t])
-                      setNewTableCol("")
-                    }
+                onKeyDown={onEnterCommit(() => {
+                  const t = newTableCol.trim()
+                  if (t && !tableColumns.includes(t)) {
+                    setTableColumns([...tableColumns, t])
+                    setNewTableCol("")
                   }
-                }}
+                })}
               />
               <button
                 type="button"

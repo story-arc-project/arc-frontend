@@ -18,6 +18,15 @@ import VideoPreview from "./file/VideoPreview"
 interface FileBlockProps {
   block: Block
   readOnly?: boolean
+  /**
+   * 업로드가 진행 중인지 상위에 알린다(FRT-190).
+   *
+   * 업로드 중에는 블록 값이 아직 비어 있어 숨김 × 가 그대로 보이는데, 그때 숨기면 이 컴포넌트가
+   * 언마운트되며 요청이 abort 되고 늦게 온 결과도 버려져 **고른 파일이 조용히 사라진다**.
+   * 업로드 상태는 값이 아니라 여기 훅에만 있으므로, 순수 판정(`canHideBlock`)이 아니라
+   * 이 신호로 그 순간에만 × 를 감춘다.
+   */
+  onBusyChange?: (busy: boolean) => void
   onChange: (value: FileBlockValue) => void
 }
 
@@ -74,7 +83,7 @@ function pickPreview({
   )
 }
 
-export default function FileBlock({ block, readOnly, onChange }: FileBlockProps) {
+export default function FileBlock({ block, readOnly, onBusyChange, onChange }: FileBlockProps) {
   const val = block.value as FileBlockValue
   const { state, progress, error, start, cancel, reset } = useFileUpload()
   const [fetched, setFetched] = useState<{ id: string; url: string } | null>(null)
@@ -88,6 +97,14 @@ export default function FileBlock({ block, readOnly, onChange }: FileBlockProps)
       mountedRef.current = false
     }
   }, [])
+
+  // 업로드가 끝나거나 이 블록이 사라지면 반드시 false 로 돌려놓는다 — 안 그러면 상위가
+  // '업로드 중'으로 굳은 채 남아 숨김 버튼이 영영 돌아오지 않는다.
+  const busy = state === "uploading"
+  useEffect(() => {
+    onBusyChange?.(busy)
+    return () => onBusyChange?.(false)
+  }, [busy, onBusyChange])
 
   const resolvedUrl =
     fetched && fetched.id === val.fileId ? fetched.url : val.url

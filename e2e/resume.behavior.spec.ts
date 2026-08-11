@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { stubApi } from "./fixtures/stub-api";
 
@@ -73,7 +73,11 @@ test.describe("FRT-43 레쥬메 생성·편집 동작", () => {
       (m) => m.method === "PATCH" && m.path === `/export/resume/${newId}`,
     );
     expect(updates).toHaveLength(1);
-    expect(updates[0].body).toMatchObject({ 자기소개_요약: "E2E 갱신 자기소개 요약" });
+    // 본문은 `result` 로 감싸 보낸다(BAC-56 `ResumePatchRequest{title?, result?}`).
+    // 맨 본문을 보내면 서버가 거절하는 대신 **아무것도 저장하지 않은 채** 성공을 돌려준다.
+    expect(updates[0].body).toMatchObject({
+      result: { 자기소개_요약: "E2E 갱신 자기소개 요약" },
+    });
 
     // ── 상세 반영(리로드) ────────────────────────────────────────────────────
     await page.reload();
@@ -127,35 +131,37 @@ test.describe("FRT-112 레쥬메 내보내기", () => {
 });
 
 /**
- * FRT-148 — 서버가 편집 본문을 아직 못 받을 때(PATCH 422) 임시 저장으로 버티는 동작.
+ * FRT-148 — 저장이 실패해도 임시 저장으로 편집을 붙드는 동작.
  *
  * 이때 화면에 낡은 복원 배너가 떠 있으면 배너 하나가 편집을 두 번 잃게 만든다:
  * '복원'이 화면에 없는 옛 스냅샷을 되돌리면서 방금 쓴 최신 임시 저장까지 지운다.
- * 폴백이 새 임시 저장을 쓰면 배너는 내려가야 한다.
+ * 폴백이 새 임시 저장을 쓰면 배너는 내려가야 한다. 이건 실패 사유와 무관하게 같다.
+ *
+ * ⚠️ **안내 문구는 사유마다 달라야 한다.** 예전엔 422 도 "곧 제공될 예정이에요"로 묶여
+ * 있었는데, 백엔드(BAC-56)가 PATCH 를 배포한 뒤로 422 는 "저장 경로가 없다"가 아니라
+ * **제목 길이 초과 같은 진짜 검증 실패**를 뜻한다. 그걸 미구현 안내로도, "잠시 후 다시
+ * 시도해주세요"로도 뭉개면 사용자는 자기가 고칠 수 있는 것을 못 고친 채 재시도만 반복한다.
  */
-test.describe("FRT-148 저장 폴백과 복원 배너", () => {
+test.describe("FRT-148 저장 실패와 복원 배너", () => {
   const DRAFT_KEY = "arc:resume-draft:resume-e2e-1";
 
-  test("422 폴백이 임시 저장을 갱신하면 낡은 복원 배너가 사라진다", async ({
-    page,
-  }) => {
-    await stubApi(page, { authed: true, scenario: "data" });
-
-    // 서버가 아직 본문을 받지 못하는 상태를 그대로 재현한다(ResumePatchRequest = title 필수).
-    // stubApi 뒤에 등록해야 이 라우트가 먼저 매칭된다.
+  /** PATCH 만 골라 실패시킨다. stubApi 뒤에 등록해야 이 라우트가 먼저 매칭된다. */
+  async function failPatchWith(page: Page, status: number, message: string) {
     await page.route("**/export/resume/resume-e2e-1", async (route) => {
       if (route.request().method() !== "PATCH") {
         await route.fallback();
         return;
       }
       await route.fulfill({
-        status: 422,
+        status,
         contentType: "application/json",
-        body: JSON.stringify({ status: "error", message: "Unprocessable Entity" }),
+        body: JSON.stringify({ status: "error", message }),
       });
     });
+  }
 
-    // Arrange: 시드 레쥬메(generated_at 2026-03-10)보다 새 임시 저장을 심어 배너를 띄운다.
+  /** 시드 레쥬메(generated_at 2026-03-10)보다 새 임시 저장을 심어 배너를 띄운다. */
+  async function seedStaleDraft(page: Page) {
     await page.addInitScript(
       ([key, draft]) => window.localStorage.setItem(key, draft),
       [
@@ -175,23 +181,20 @@ test.describe("FRT-148 저장 폴백과 복원 배너", () => {
         }),
       ] as const,
     );
+  }
 
-    await page.goto("/export/resume/resume-e2e-1");
-    const banner = page.getByText("저장하지 못한 편집 내용이 있어요");
-    await expect(banner).toBeVisible();
-
-    // Act: 배너를 무시한 채 서버본을 고치고 저장한다 → 422 → 임시 저장 폴백.
+  /** 배너를 무시한 채 서버본을 고치고 저장한다. */
+  async function editAndSave(page: Page) {
     await page.getByRole("button", { name: "자기소개", exact: true }).click();
     await page
       .getByPlaceholder("간단한 자기소개를 적어주세요.")
       .fill("폴백으로 남는 편집 내용");
     await page.getByRole("button", { name: "저장", exact: true }).click();
-    await expect(
-      page.getByText("편집 저장 기능은 곧 제공될 예정이에요", { exact: false }),
-    ).toBeVisible();
+  }
 
-    // Assert: 배너는 내려가고, localStorage 에는 방금 편집한 내용이 남는다.
-    await expect(banner).toHaveCount(0);
+  /** 배너는 내려가고, localStorage 에는 방금 편집한 내용이 남아야 한다. */
+  async function expectEditKept(page: Page) {
+    await expect(page.getByText("저장하지 못한 편집 내용이 있어요")).toHaveCount(0);
     const stored = await page.evaluate(
       (k) => window.localStorage.getItem(k),
       DRAFT_KEY,
@@ -200,6 +203,74 @@ test.describe("FRT-148 저장 폴백과 복원 배너", () => {
     expect(JSON.parse(stored as string).data.자기소개_요약).toBe(
       "폴백으로 남는 편집 내용",
     );
+  }
+
+  test("서버가 저장을 거절해도(501) 임시 저장이 갱신되며 낡은 복원 배너가 사라진다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    // 구 백엔드로 롤백된 상태를 재현한다 — 배포된 서버에는 PATCH 가 실재한다(FRT-111).
+    await failPatchWith(page, 501, "Not Implemented");
+    await seedStaleDraft(page);
+
+    await page.goto("/export/resume/resume-e2e-1");
+    await expect(page.getByText("저장하지 못한 편집 내용이 있어요")).toBeVisible();
+
+    await editAndSave(page);
+
+    // 더는 "곧 제공될 예정"으로 안내하지 않는다 — 기능은 있고, 이건 그냥 저장 실패다.
+    await expect(
+      page.getByText("편집 저장 기능은 곧 제공될 예정이에요", { exact: false }),
+    ).toHaveCount(0);
+    await expect(page.getByText("저장에 실패했어요", { exact: false })).toBeVisible();
+    // 안내가 무엇이든 편집은 붙들어야 한다 — 여기가 이 테스트의 본론이다.
+    await expectEditKept(page);
+  });
+
+  // 생성이 아직 안 끝난 레쥬메를 저장하면 서버가 400 과 **영문** 메시지를 준다.
+  // 사유를 그대로 보여주는 관용구가 여기서는 읽히지 않는 문장을 띄운다.
+  test("400 은 서버 영문 메시지 대신 생성 중이라는 한글 안내를 보여준다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    await failPatchWith(page, 400, "Resume is not completed yet.");
+    await seedStaleDraft(page);
+
+    await page.goto("/export/resume/resume-e2e-1");
+    await editAndSave(page);
+
+    await expect(
+      page.getByText("아직 레쥬메를 만드는 중이에요", { exact: false }),
+    ).toBeVisible();
+    await expect(page.getByText("Resume is not completed yet.")).toHaveCount(0);
+    await expectEditKept(page);
+  });
+
+  test("422 는 서버가 준 사유를 그대로 보여준다 — 미구현 안내로도 재시도 안내로도 뭉개지 않는다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    // 저장 경로는 있고, 입력이 규칙을 어긴 상태다.
+    await failPatchWith(page, 422, "제목은 100자를 넘을 수 없어요.");
+    await seedStaleDraft(page);
+
+    await page.goto("/export/resume/resume-e2e-1");
+    await expect(page.getByText("저장하지 못한 편집 내용이 있어요")).toBeVisible();
+
+    await editAndSave(page);
+
+    // 사용자는 무엇을 고쳐야 하는지 화면에서 읽을 수 있어야 한다.
+    await expect(
+      page.getByText("제목은 100자를 넘을 수 없어요.", { exact: false }),
+    ).toBeVisible();
+    // 둘 다 거짓 안내다 — 기능은 있고(미구현 아님), 다시 시도해도 같은 결과다.
+    await expect(
+      page.getByText("편집 저장 기능은 곧 제공될 예정이에요", { exact: false }),
+    ).toHaveCount(0);
+    await expect(page.getByText("잠시 후 다시 시도해주세요")).toHaveCount(0);
+
+    // 사유를 말해주더라도 편집은 여전히 붙들어야 한다.
+    await expectEditKept(page);
   });
 });
 

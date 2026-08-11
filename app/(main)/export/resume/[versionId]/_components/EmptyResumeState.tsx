@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Inbox } from "lucide-react";
+import { useBasePath } from "@/lib/utils/use-base-path";
 import { Button } from "@/components/ui";
 
 interface Props {
@@ -9,6 +10,9 @@ interface Props {
 }
 
 export function EmptyResumeState({ onContinueAnyway }: Props) {
+  // 파싱 경고 배너와 같은 분기에서 나란히 뜬다 — 데모에서 실제 서비스로 나가면 안 된다.
+  const basePath = useBasePath();
+
   return (
     <div className="flex min-h-[calc(100dvh-var(--gnb-h))] flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-tertiary text-text-tertiary">
@@ -22,7 +26,7 @@ export function EmptyResumeState({ onContinueAnyway }: Props) {
       </p>
       <div className="mt-3 flex gap-2">
         <Button asChild variant="primary" size="sm">
-          <Link href="/archive">경험 기록하러 가기</Link>
+          <Link href={`${basePath}/archive`}>경험 기록하러 가기</Link>
         </Button>
         {onContinueAnyway && (
           <Button variant="ghost" size="sm" onClick={onContinueAnyway}>

@@ -10,8 +10,8 @@ export const DEMO_PORTFOLIO_ID = "demo-portfolio-1";
 // 강점/headline 은 데모 분석 결과(소프트스킬)와 결을 맞춘 정적 큐레이션 값이다.
 export const DEMO_PORTFOLIO_PROFILE: PortfolioProfile = {
   name: "김서윤",
-  headline: "AI·ML과 데이터 분석을 두 축으로 성장하는 예비 개발자",
-  strengthTags: ["문제 해결", "데이터 기반 의사결정", "자기주도성", "실험 재현성"],
+  headline: "기준을 세우고 숫자를 의심하는 데이터 분석 지망생",
+  strengthTags: ["문제 해결", "데이터 품질", "자기주도성", "실험 재현성"],
 };
 
 export const seedPortfolio: Portfolio = buildPortfolio(

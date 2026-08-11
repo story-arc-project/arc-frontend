@@ -163,6 +163,18 @@ export const synergyPriorityLabel: Record<SynergyPriority, string> = {
 // verified_jobs[], expired_jobs[], missing_info_warning
 // (v2.0: strength_diagnosis 신설, valid_job_recommendations 는 후처리로 verified/expired 분리,
 //  additional_recommendations 항목은 문자열이 아니라 검증 필드가 붙은 객체다.)
+//
+// v3.1 (comprehensive_field_spec_v3.1, AI TF 2026-07-29 확정) 추가분 — FRT-208:
+//   star_analysis_status{...}, recommendation_notices[],
+//   resume_star_format[] 항목에 headline·L·*_source_quote·competency_evidence[]·
+//   evidence_status{...}·quality_warning·quality{...},
+//   clubs_and_societies[].url_note
+// v3.1 이 삭제한 필드(search_query, search_verified, expired_jobs[], verified_jobs[].is_valid)는
+// 타입에서 **빼지 않는다** — 백엔드가 아직 v2.0 을 내보내고 있어 제거하면 즉시 회귀다.
+// 화면은 schema_version 으로 분기하지 않고 **필드 존재 여부로만** 그린다(계약 §3.5 주석 참고):
+// v3.1 명세엔 schema_version 키 자체가 없어 버전 분기를 신뢰할 수 없다.
+// 노출하지 않기로 한 v3.1 필드(guard_version, verification_audit, rejected_by_guard)는
+// 타입에도 넣지 않는다 — 특히 guard_version 은 hasResultBody 판정을 오염시킨다(analysis-api.ts).
 
 export interface KeywordClustering {
   personalityTendency: string[];
@@ -207,6 +219,11 @@ export interface ClubSociety {
   url: string | null;
   searchQuery: string;
   searchVerified: boolean;
+  /**
+   * v3.1 신설. url 이 null 일 때만 온다("직접 확인하십시오: {검색어}").
+   * 지금은 링크 검증에 실패하면 화면에서 링크가 조용히 사라질 뿐이라, 이 안내가 그 자리를 채운다.
+   */
+  urlNote: string;
 }
 
 export interface ProjectContest {
@@ -299,6 +316,135 @@ export interface JobRecommendation {
   isValid?: boolean;
 }
 
+// ── v3.1 STAR: 근거 결속 + 품질 채점 (FRT-208) ──────────────
+// v2.0 은 데이터가 부족해도 예시 문구로 STAR 를 채웠다. v3.1 은 근거가 없으면 슬롯을 null 로
+// 비우고, A·R 근거가 둘 다 없으면 항목 자체를 폐기하며, 아무것도 못 만들면 배열을 통째로 비운다.
+// 그래서 "왜 없는지"가 star_analysis_status 로 따로 온다 — 배열만 보면 화면이 이유를 말할 수 없다.
+
+export type StarQualityGrade = "A" | "B" | "C" | "D";
+
+/** 등급 라벨. 압박을 주지 않는 톤(CLAUDE.md 제품 원칙) — 등급 문자는 배지로 따로 보인다. */
+export const starQualityGradeLabel: Record<StarQualityGrade, string> = {
+  A: "충분해요",
+  B: "괜찮아요",
+  C: "다듬으면 좋아요",
+  D: "보완이 필요해요",
+};
+
+export interface StarCompetencyEvidence {
+  competency: string;
+  why: string;
+}
+
+export interface StarUnsupportedSlot {
+  /** 슬롯 키 (S·T·A·R·L). */
+  slot: string;
+  label: string;
+  reason: string;
+  /** 근거로 주장됐으나 원문 대조에 실패한 인용문. 없을 수 있다. */
+  claimedQuote: string;
+}
+
+export interface StarEvidenceStatus {
+  /** 원문 근거를 확보한 슬롯 (예: ["S","A","R"]). */
+  supportedSlots: string[];
+  unsupportedSlots: StarUnsupportedSlot[];
+  /** 슬롯 간 인용 중복도가 60% 이상 — 새로 쓴 게 아니라 입력을 재배치한 수준이라는 신호. */
+  restructuringOnly: boolean;
+  /** 어느 슬롯 쌍이 얼마나 겹치는지 (예: ["S↔T (82% 중복)"]). */
+  restructuringDetail: string[];
+}
+
+export interface StarQualityCriterion {
+  /** 루브릭 ID (action_dominant·context_concise 등 10종). enum 강제 대신 원문 유지. */
+  key: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+  /** passed=false 일 때만 온다. */
+  coaching: string;
+}
+
+export interface StarQuality {
+  /**
+   * 10개 루브릭 통과율 기준 등급. **모르는 값은 null** — 임의로 낮게 잡으면 사용자에게
+   * 부당한 평가가 된다(약점 severity 가 major 로 올려 잡는 것과 반대 방향이다).
+   */
+  grade: StarQualityGrade | null;
+  /** "7/10" 형식. */
+  score: string;
+  verdict: string;
+  criteria: StarQualityCriterion[];
+  /** 미달 기준의 coaching 상위 3개. */
+  priorityFixes: string[];
+  /** headline·L 이 삭제된 경우의 사유. */
+  derivedFieldNotes: string[];
+}
+
+/** 슬롯별 원문 근거 인용. 값이 없으면 빈 문자열. */
+export interface StarSourceQuotes {
+  situation: string;
+  task: string;
+  action: string;
+  result: string;
+  learning: string;
+}
+
+/**
+ * 종합분석 STAR 항목. v2.0(title + S/T/A/R)과 v3.1(headline·L·근거·품질) 이중호환 —
+ * v3.1 필드가 없으면 전부 빈 값이라 화면이 v2.0 과 동일하게 그려진다.
+ * 개별분석의 star_format 은 이 확장 대상이 아니라 IndividualStarFormat 그대로다.
+ */
+export interface ComprehensiveStarFormat extends IndividualStarFormat {
+  /** 이력서용 한 줄 성취문. 원문에 없는 수치가 섞이면 백엔드가 삭제해 빈 값으로 온다. */
+  headline: string;
+  /** L — 배움·회고(STARR). 원문에 배움이 명시된 경우에만 온다(추측성 회고는 백엔드가 삭제). */
+  learning: string;
+  sourceQuotes: StarSourceQuotes;
+  competencyEvidence: StarCompetencyEvidence[];
+  evidenceStatus: StarEvidenceStatus;
+  /** restructuringOnly=true 일 때만 온다. */
+  qualityWarning: string;
+  quality: StarQuality;
+}
+
+export interface StarRejectedEntry {
+  title: string;
+  reason: string;
+  unsupportedSlots: string[];
+  coaching: string;
+}
+
+export interface StarQualityReview {
+  evaluated: number;
+  /** 등급별 개수 (예: {"A":1,"D":1}). */
+  gradeDistribution: Record<string, number>;
+  portfolioVerdict: string;
+  topFixes: string[];
+}
+
+export interface StarAnalysisStatus {
+  /**
+   * 응답에 star_analysis_status 가 **실제로 왔는지**. v2.0 응답엔 이 섹션이 아예 없어
+   * generated 가 방어 파싱 기본값 false 로 떨어지는데, 그걸 "만들지 못했다"로 읽으면
+   * v2.0 사용자에게 이유가 빈 안내가 뜬다 — 부재와 미생성은 다른 사건이다(FRT-169 교훈).
+   */
+  present: boolean;
+  generated: boolean;
+  /** 미생성 사유. generated=false 일 때 채워진다. */
+  reason: string;
+  /** 원문에서 식별한 경험 단위 개수. */
+  experienceBlockCount: number;
+  /** 5개 신호(분량·행동동사·수치·기간·역할) 중 4개 이상을 충족한 블록 수. */
+  starEligibleBlockCount: number;
+  /** 어떻게 적으면 STAR 가 가능해지는지. 미생성 시 채워진다. */
+  coaching: string[];
+  /** 근거 결속에 실패해 폐기된 항목. */
+  rejectedEntries: StarRejectedEntry[];
+  /** 포트폴리오 전체 품질 총평. 생성된 항목이 없으면 null. */
+  qualityReview: StarQualityReview | null;
+}
+
 export interface ComprehensiveAnalysisResult {
   id: string;
   status: AnalysisStatus;
@@ -319,15 +465,29 @@ export interface ComprehensiveAnalysisResult {
   experienceInsights: ExperienceInsights;
   synergyCombinations: SynergyCombination[];
   additionalRecommendations: AdditionalRecommendations;
-  resumeStarFormat: IndividualStarFormat[];
+  resumeStarFormat: ComprehensiveStarFormat[];
+  /**
+   * v3.1 신설. STAR 를 만들었는지·못 만들었다면 왜인지. 배열이 비었을 때 화면이
+   * 침묵하지 않게 하는 유일한 근거다(v2.0 응답에선 present=false).
+   */
+  starAnalysisStatus: StarAnalysisStatus;
   actionPlan: IndividualActionPlan;
   /** v2.0 신설. critical_diagnosis 보다 먼저 노출한다(앵커링 저항, 계약/프롬프트). */
   strengthDiagnosis: StrengthDiagnosis;
   criticalDiagnosis: CriticalDiagnosis;
   /** 마감 유효 채용 공고 (verified_jobs). */
   verifiedJobs: JobRecommendation[];
-  /** 마감 지난 채용 공고 (expired_jobs). 화면에서 약화 표기한다. */
+  /**
+   * 마감 지난 채용 공고 (expired_jobs). 화면에서 약화 표기한다.
+   * v3.1 은 마감 공고를 생성 단계에서 걸러 이 배열이 늘 비지만, v2.0 백엔드가 아직
+   * 보내고 있으므로 제거하지 않는다.
+   */
   expiredJobs: JobRecommendation[];
+  /**
+   * v3.1 신설. 추천 카테고리가 빈 이유("확실한 항목이 없어 넣지 않았다" 등).
+   * 지금은 빈 카테고리가 조용히 사라져 사용자가 이유를 알 수 없다.
+   */
+  recommendationNotices: string[];
   missingInfoWarning: string;
 }
 

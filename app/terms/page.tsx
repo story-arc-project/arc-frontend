@@ -13,5 +13,7 @@ export default async function TermsPage() {
     join(process.cwd(), "docs/legal/terms-of-service.draft.md"),
     "utf8",
   );
-  return <LegalDocument markdown={markdown} />;
+  return (
+    <LegalDocument markdown={markdown} crossLink={{ href: "/privacy", label: "개인정보 처리방침" }} />
+  );
 }

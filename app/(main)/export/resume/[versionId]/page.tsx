@@ -11,7 +11,6 @@ import { ApiError } from "@/lib/api/client";
 import {
   createResume,
   getResume,
-  ResumeMutationUnsupportedError,
   updateResume,
 } from "@/lib/api/export-api";
 import { capture, type ResumeSaveOutcome } from "@/lib/analytics";
@@ -54,7 +53,6 @@ export default function ResumeDetailPage({ params }: PageProps) {
 
   const [resume, setResume] = useState<ResumeVersion | null>(null);
   const [initial, setInitial] = useState<ResumeVersion | null>(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("editor");
   const [saving, setSaving] = useState(false);
@@ -72,41 +70,74 @@ export default function ResumeDetailPage({ params }: PageProps) {
   // 한 번의 이탈이 두 건으로 잡힌다. 먼저 쏜 쪽이 이 플래그로 뒤쪽을 막는다.
   const exitDraftFiredRef = useRef(false);
 
-  const load = useCallback(async () => {
+  // FRT-238 — App Router 는 versionId 만 바뀌면 이 인스턴스를 재사용한다. 그래서 이전 버전의
+  // 조회가 아직 날아다니는 채로 다음 조회가 시작되고, 늦게 도착한 쪽이 화면을 덮으면 **보고 있는
+  // 버전과 실린 내용이 어긋난 채로 저장**된다.
+  //
+  // 세대(seq)까지 키에 넣는 건 **되돌아오는 경로** 때문이다. versionId 만으로 키를 만들면
+  // A→B→A 로 돌아왔을 때 그 키가 이미 답을 받아둔 키와 같아져, 재조회 중인데도 옛 내용이
+  // 그대로 보인다. versionId 는 prop 이라 setState 로 못 바꾸므로 "지난 렌더와 달라졌는가"를
+  // 렌더 중에 비교해 커밋 전에 세대를 올린다 — 한 번 쓴 키는 다시 쓰이지 않는다.
+  const [seq, setSeq] = useState(0);
+  const [trackedVersionId, setTrackedVersionId] = useState(versionId);
+  if (versionId !== trackedVersionId) {
+    setTrackedVersionId(versionId);
+    setSeq((s) => s + 1);
+  }
+
+  // 화면이 지금 답해야 할 질문과, 실제로 답을 받아둔 질문. 둘이 다르면 그 자체가 로딩이다 —
+  // 별도 플래그를 두지 않으므로 "로딩만 꺼지고 내용은 옛것"인 어긋난 중간 상태가 아예 없다.
+  const requestKey = `${versionId}:${seq}`;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const loading = loadedKey !== requestKey;
+
+  const handleRetry = useCallback(() => setSeq((s) => s + 1), []);
+
+  useEffect(() => {
+    // 늦게 도착한 답이 무엇 하나라도 건드리면 버전과 내용이 어긋나므로, 응답 이후의 갱신은
+    // 전부 이 가드 안에 둔다. 절반만 가드하면 절반만 고쳐진 버그가 된다.
+    let ignore = false;
+
     // 새 버전 로드(재생성으로 이동해 온 경우 포함) 시 재생성 UI 상태를 초기화한다.
-    // App Router가 versionId만 바뀔 때 동일 인스턴스를 재사용해도 '다시 만들기'
-    // 버튼/다이얼로그가 잔존(영구 비활성)하지 않도록 여기서 리셋한다.
+    // 동일 인스턴스가 재사용돼도 '다시 만들기' 버튼/다이얼로그가 잔존(영구 비활성)하지
+    // 않도록 여기서 리셋한다.
     setRegenerating(false);
     setRegenerateOpen(false);
-    setLoading(true);
-    setError(null);
     // 다른 버전을 열면 그 버전의 초안은 아직 손대지 않은 상태다.
     editedFiredRef.current = false;
     exitDraftFiredRef.current = false;
-    try {
-      const data = await getResume(versionId);
-      setResume(data);
-      setInitial(data);
-      reserveClientIds(data);
 
-      const draft = readDraft(versionId);
-      if (draft && isDraftNewer(draft, data)) {
-        reserveClientIds(draft.data);
-        setPendingDraft(draft);
-      } else {
-        setPendingDraft(null);
-        if (draft) clearDraft(versionId);
-      }
-    } catch (err) {
-      setError(err as Error);
-    } finally {
-      setLoading(false);
-    }
-  }, [versionId]);
+    getResume(versionId)
+      .then((data) => {
+        if (ignore) return;
+        setResume(data);
+        setInitial(data);
+        // 성공은 지난 실패를 지운다 — 안 지우면 재시도가 성공해도 에러 화면이 남는다.
+        setError(null);
+        reserveClientIds(data);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+        const draft = readDraft(versionId);
+        if (draft && isDraftNewer(draft, data)) {
+          reserveClientIds(draft.data);
+          setPendingDraft(draft);
+        } else {
+          setPendingDraft(null);
+          // draft 삭제는 되돌릴 수 없다. 버려질 응답이 낡은 시점의 판정으로 사용자의
+          // 임시저장분을 지우지 않도록, 이 정리도 반드시 가드 뒤에 있어야 한다.
+          if (draft) clearDraft(versionId);
+        }
+        setLoadedKey(requestKey);
+      })
+      .catch((err) => {
+        if (ignore) return;
+        setError(err as Error);
+        setLoadedKey(requestKey);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [versionId, requestKey]);
 
   const dirtyRef = useRef(false);
   const resumeRef = useRef<ResumeVersion | null>(null);
@@ -194,7 +225,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
   );
 
   const handleSave = useCallback(async () => {
-    if (!resume || !dirty || saving) return;
+    // FRT-238 — loading 은 versionId 가 이미 바뀌었지만 새 버전의 응답은 아직 안 온 창이다.
+    // 이 창에서 resume/dirty 는 여전히 **이전** 버전 것인데 versionId 는 **다음** 버전이라,
+    // 가드 없이 저장하면 이전 버전 내용을 다음 버전 id 로 PATCH 해버린다. 저장 버튼은 이
+    // 창에서 렌더되지 않아 안전하지만, 전역 Ctrl/Cmd+S 리스너는 이 창에서도 계속 살아있다.
+    if (!resume || !dirty || saving || loading) return;
     setSaving(true);
     const snapshot = resume;
     // 서버로 보내는 건 snapshot 이고, 성공 시 initial 이 서버 응답으로 갈린다 —
@@ -213,45 +248,48 @@ export default function ResumeDetailPage({ params }: PageProps) {
       toast.success("저장됐어요");
       captureEditSaved("server", true, sections);
     } catch (err) {
-      if (err instanceof ResumeMutationUnsupportedError) {
-        // Persist the freshest state — never overwrite a newer draft with a stale snapshot.
-        const latest = resumeRef.current ?? snapshot;
-        const saved = writeDraft(versionId, latest);
-        if (saved) {
-          setInitial(snapshot);
-          // 방금 쓴 임시 저장이 곧 지금 편집 중인 내용이다. 배너를 그대로 두면 '복원'이
-          // 화면에 없는 낡은 스냅샷(pendingDraft)을 되돌리면서 clearDraft 로 방금 쓴
-          // 최신 임시 저장까지 지운다 — 배너 하나가 편집을 두 번 잃게 만든다.
-          setPendingDraft(null);
-          toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
-        } else {
-          toast.error("임시 저장도 실패했어요. 페이지를 닫지 마세요.");
-        }
-        // 사용자에게는 "저장했어요"로 보이지만 서버엔 아무것도 안 남은 갈래다(FRT-111 대기).
-        // server 와 뭉치면 관리자가 보는 '저장 건수'가 통째로 거짓이 된다.
-        // 섹션은 **실제로 보관된 값(latest)** 기준이다 — 요청이 도는 동안 이어서 고친
-        // 섹션이 draft 에는 들어갔는데 지표에서만 빠지면 보관된 편집을 과소 보고한다.
-        captureEditSaved(
-          "unsupported",
-          saved,
-          changedResumeSections(initial, latest),
-        );
-      } else {
-        // 서버 장애·오프라인도 편집을 잃을 이유는 아니다. 언마운트 핸들러에만 기대면
-        // 탭을 그대로 닫았을 때(cleanup 미실행) 고친 내용이 통째로 사라진다.
-        // dirty 는 그대로 두어 다음 저장/이탈 경로가 계속 살아 있게 한다.
-        const latest = resumeRef.current ?? snapshot;
-        const saved = writeDraft(versionId, latest);
-        if (saved) {
-          setPendingDraft(null);
-        }
-        toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
-        captureEditSaved("failed", saved, changedResumeSections(initial, latest));
+      // 실패는 갈래가 하나다. 서버에 PATCH 가 실재하는 지금(FRT-111) "아직 저장을 못
+      // 받는다"는 상태는 없고, 어떤 실패든 **서버엔 안 남았다**는 같은 사실을 뜻한다.
+      // 서버 장애·오프라인도 편집을 잃을 이유는 아니다. 언마운트 핸들러에만 기대면
+      // 탭을 그대로 닫았을 때(cleanup 미실행) 고친 내용이 통째로 사라진다.
+      // dirty 는 그대로 두어 다음 저장/이탈 경로가 계속 살아 있게 한다.
+      const latest = resumeRef.current ?? snapshot;
+      const saved = writeDraft(versionId, latest);
+      if (saved) {
+        // 방금 쓴 임시 저장이 곧 지금 편집 중인 내용이다. 배너를 그대로 두면 '복원'이
+        // 화면에 없는 낡은 스냅샷(pendingDraft)을 되돌리면서 clearDraft 로 방금 쓴
+        // 최신 임시 저장까지 지운다 — 배너 하나가 편집을 두 번 잃게 만든다.
+        setPendingDraft(null);
       }
+      // 4xx 는 다시 시도해도 같은 결과다 — 제목 길이 초과 같은 검증 실패(422)는 입력을
+      // 고쳐야 통과한다. "잠시 후 다시 시도해주세요"로 뭉개면 사용자는 고칠 수 있는 것을
+      // 못 고친 채 재시도만 반복한다. 서버가 준 사유를 그대로 보여준다(ProfileEditForm
+      // 과 같은 관용구). 5xx·네트워크 장애는 실제로 잠시 후면 되므로 그대로 둔다.
+      //
+      // 단 400 은 서버 메시지를 그대로 쓰지 않는다. 이 코드를 내는 분기는 "생성이 아직
+      // 안 끝났다" 하나뿐인데(`patch_resume`) 메시지가 영문이라 읽히지 않는다 —
+      // 사유를 보여주는 규칙보다 **읽히는 것**이 먼저다.
+      const reason = !(err instanceof ApiError)
+        ? null
+        : err.status === 400
+          ? "아직 레쥬메를 만드는 중이에요. 완성되면 저장할 수 있어요."
+          : err.status > 400 && err.status < 500
+            ? err.message
+            : null;
+      const detail = reason ?? "저장에 실패했어요. 잠시 후 다시 시도해주세요.";
+      // 서버도 로컬도 못 남긴 = 편집 유실 직전. 그렇다고 사유를 빼면 안 된다 — 사유가
+      // 곧 탈출구다(제목 길이 초과라면 고쳐서 바로 저장하면 위기 자체가 사라진다).
+      // 둘 다 말한다: 무엇이 잘못됐는지, 그리고 지금 닫으면 잃는다는 것.
+      toast.error(
+        saved ? detail : `${detail} 임시 저장도 안 됐으니 페이지를 닫지 마세요.`,
+      );
+      // 섹션은 **실제로 보관된 값(latest)** 기준이다 — 요청이 도는 동안 이어서 고친
+      // 섹션이 draft 에는 들어갔는데 지표에서만 빠지면 보관된 편집을 과소 보고한다.
+      captureEditSaved("failed", saved, changedResumeSections(initial, latest));
     } finally {
       setSaving(false);
     }
-  }, [resume, dirty, saving, versionId, initial, captureEditSaved]);
+  }, [resume, dirty, saving, loading, versionId, initial, captureEditSaved]);
 
   const handleRegenerate = useCallback(async () => {
     if (!resume || regenerating) return;
@@ -476,7 +514,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
             <Link href={`${basePath}/export`}>익스포트로 돌아가기</Link>
           </Button>
           {!isNotFound && (
-            <Button variant="primary" size="sm" onClick={load}>
+            <Button variant="primary" size="sm" onClick={handleRetry}>
               다시 시도
             </Button>
           )}

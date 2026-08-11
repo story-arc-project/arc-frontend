@@ -1,16 +1,23 @@
 import type { Block, BlockColumnDef, CellValue, SectionCategory } from "@/types/archive"
 import { SECTION_CATEGORIES } from "@/types/archive"
-import { cellFilled, cellText, isBlockEmpty, rowHasContent } from "@/lib/utils/block-utils"
+import { cellFilled, cellText, isBlockEmpty, isRequiredBlock, rowHasContent } from "@/lib/utils/block-utils"
 import { isRealMonth, parsePeriodString, truncateToMonth } from "@/lib/utils/period-format"
 
 // 같은 그룹의 라벨은 같은 질문으로 간주 — core/type/extended 간 중복 필드를 숨긴다.
 const SEMANTIC_GROUPS: Record<string, string[]> = {
-  period: ["기간", "재직기간", "근무 기간", "활동 기간", "읽은 기간/완독일", "제작 기간", "준비 기간", "학습 기간"],
-  role: ["내 역할/기여도", "내 역할/기여", "내 역할", "내가 맡은 파트", "직책/역할", "역할/직책", "역할 / 직책", "역할", "직무 / 포지션", "참여 역할 / 포지션"],
-  achievement: ["핵심 성과", "핵심 성과 기록", "결과/성과", "성과", "성과/산출물", "반응/성과", "변화/성과", "임팩트/변화", "단체 활동 / 성과", "개인 활동 / 성과", "나의 담당 업무 / 주요 성과", "주요 성과"],
+  // 구 라벨("읽은 기간/완독일")은 확정본 개편 후에도 남긴다 — 구 레코드의 값은 orphan 블록으로
+  // 보존되고 build-portfolio 가 아직 그 라벨로 동의어 폴백 조회를 한다(FRT-236).
+  period: ["기간", "재직기간", "근무 기간", "활동 기간", "읽은 기간/완독일", "독서 기간", "제작 기간", "작업 기간", "준비 기간", "학습 기간"],
+  // 확정본으로 코어를 뺀 유형(CORE_EXCLUDE)은 그 자리를 이어받은 새 라벨을 **반드시 여기 등록**한다.
+  // 코어를 빼는 것과 새 라벨을 동의어로 넣는 것은 한 쌍이다 — 앞만 하면 폴백이던 코어까지 함께
+  // 사라져 발행 경로(build-portfolio)가 값을 못 찾고 포트폴리오가 조용히 빈다(FRT-269 리뷰).
+  role: ["내 역할/기여도", "내 역할/기여", "내 역할", "내가 맡은 파트", "직책/역할", "역할/직책", "역할 / 직책", "역할", "직무 / 포지션", "참여 역할 / 포지션", "역할 / 기여도"],
+  achievement: ["핵심 성과", "핵심 성과 기록", "결과/성과", "성과", "성과/산출물", "반응/성과", "반응 / 피드백", "변화/성과", "임팩트/변화", "단체 활동 / 성과", "개인 활동 / 성과", "나의 담당 업무 / 주요 성과", "주요 성과", "주요 발견 / 결과"],
   team: ["협업/팀", "팀/조직", "팀 구성", "협업 방식", "협업/커뮤니케이션 방식", "협업 / 팀원"],
-  motivation: ["지원 동기", "참여 동기", "수강 동기", "읽은 이유", "목표/만들고 싶었던 이유"],
-  evidence: ["증빙 자료", "증빙", "활동 인증서", "활동 인증서/수료 증빙", "수상 증빙", "자격증 증빙", "봉사 확인서", "꾸준함 증거"],
+  motivation: ["지원 동기", "참여 동기", "수강 동기", "읽은 이유", "독서 이유", "목표/만들고 싶었던 이유"],
+  // 구 라벨("봉사 확인서")은 확정본 개편 후에도 남긴다 — 구 레코드의 값이 orphan 블록으로
+  // 보존되므로 동의어 관계가 끊기면 안 된다(FRT-247, 독서의 '읽은 기간/완독일'과 같은 이유).
+  evidence: ["증빙 자료", "증빙", "활동 인증서", "활동 인증서/수료 증빙", "수상 증빙", "자격증 증빙", "봉사 확인서", "봉사 확인서 첨부", "꾸준함 증거"],
   lesson: ["배운 점", "느낀 점/가치관 변화", "성장 / 변화"],
 }
 
@@ -53,7 +60,6 @@ export interface FormCardModel {
   label: string
   blocks: Block[]
   optional?: boolean
-  showOptionalBadge?: boolean
 }
 export interface FormCardsResult {
   titleBlock?: Block
@@ -118,7 +124,6 @@ export function computeFormCards(
       label: labelOverrides?.[id] ?? label,
       blocks,
       optional: id === "detail" || undefined,
-      showOptionalBadge: id === "detail" || undefined,
     })
   }
 
@@ -175,31 +180,29 @@ function isBlockFilledForProgress(block: Block): boolean {
 }
 
 /**
- * 진행도 판정용 "필수 블록". block.required 뿐 아니라, 블록 자체는 optional 이어도
- * 필수 컬럼을 가진 repeatable-cell(예: 학회 프로젝트 기록·수업 기록)도 필수로 본다.
- * 이렇게 하지 않으면 optional 형제 필드만 채워도 카드가 완료로 오판된다.
- */
-function isRequiredBlock(block: Block): boolean {
-  if (block.required) return true
-  if (block.value.type === "repeatable-cell") {
-    return block.value.columns.some(c => c.required)
-  }
-  return false
-}
-
-/**
  * 카드(섹션) 하나가 "채워졌는지" 판정한다 — 진행도 바 카운트 기준.
  * 필수 항목이 있으면 그 필수를 모두 채워야 완료, 필수가 없는 섹션(예: 경험 상세·증빙)은
  * 하나라도 채우면 완료로 본다. (선택 입력이 많아 "모든 항목"을 기준으로 하면 바가 거의 안 오름.)
+ *
+ * `hiddenKeys` 를 주면 사용자가 "해당 없음"으로 치운 항목(FRT-190)을 빼고 센다. 안 빼면 필수
+ * 없는 카드에서 **치울수록 완료가 멀어지는** 모순이 난다 — `some(채워짐)` 기준이라 빈 선택 항목을
+ * 전부 숨긴 카드는 채울 것이 하나도 안 남는데 영원히 미완료로 남는다.
+ * (필수 항목은 애초에 숨길 수 없으므로 필수 기준 카드는 이 인자에 영향받지 않는다.)
  */
-export function isCardComplete(card: FormCardModel): boolean {
-  const required = card.blocks.filter(isRequiredBlock)
-  return required.length > 0
-    ? required.every(isBlockFilledForProgress)
-    : card.blocks.some(isBlockFilledForProgress)
+export function isCardComplete(card: FormCardModel, hiddenKeys: string[] = []): boolean {
+  const hidden = new Set(hiddenKeys)
+  const blocks = hidden.size === 0 ? card.blocks : card.blocks.filter(b => !b.key || !hidden.has(b.key))
+  const required = blocks.filter(isRequiredBlock)
+  if (required.length > 0) return required.every(isBlockFilledForProgress)
+  // 치울 것을 다 치워 남은 칸이 없으면 이 카드에서 할 일은 끝났다.
+  if (blocks.length === 0) return true
+  return blocks.some(isBlockFilledForProgress)
 }
 
 /** 표시된 고정 카드들의 진행도(완료 카드 수 / 전체 카드 수). 사용자 추가 섹션은 제외. */
-export function computeFormProgress(cards: FormCardModel[]): { done: number; total: number } {
-  return { total: cards.length, done: cards.filter(isCardComplete).length }
+export function computeFormProgress(
+  cards: FormCardModel[],
+  hiddenKeys: string[] = []
+): { done: number; total: number } {
+  return { total: cards.length, done: cards.filter(c => isCardComplete(c, hiddenKeys)).length }
 }

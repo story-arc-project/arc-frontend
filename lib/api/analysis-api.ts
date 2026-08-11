@@ -27,6 +27,16 @@ import type {
   Strength,
   StrengthDiagnosis,
   JobRecommendation,
+  ComprehensiveStarFormat,
+  StarAnalysisStatus,
+  StarCompetencyEvidence,
+  StarEvidenceStatus,
+  StarQuality,
+  StarQualityCriterion,
+  StarQualityGrade,
+  StarQualityReview,
+  StarRejectedEntry,
+  StarUnsupportedSlot,
   KeywordAnalysisResult,
   KeywordDefinition,
   ComplianceCriterion,
@@ -156,6 +166,11 @@ const KNOWN_SCHEMA_VERSIONS = new Set([
   // 없지만 매퍼가 부재를 빈 구조로 안전 처리하므로 렌더된다.
   "comprehensive/1.0",
   "comprehensive/2.0",
+  // v3.1(FRT-208)은 명세에 schema_version 키 자체가 없어 백엔드가 무엇을 붙일지 미정이다.
+  // 붙이지 않으면 부재로 통과하고, 붙인다면 이 두 값 중 하나일 것으로 보고 미리 연다 —
+  // 화이트리스트에 없으면 상세가 통째로 안내로 빠지기 때문이다(PR #196 이 2.0 에서 겪은 실패).
+  "comprehensive/3.0",
+  "comprehensive/3.1",
   "resume/1.0",
 ]);
 
@@ -373,6 +388,150 @@ function mapStarFormat(dto: unknown): IndividualStarFormat {
   };
 }
 
+// ── 종합분석 STAR v3.1 (FRT-208) ────────────────────────────
+// v2.0 은 title + S/T/A/R 뿐이었다. v3.1 은 슬롯마다 원문 근거를 묶고 10개 루브릭으로 채점한다.
+// mapStarFormat 은 개별분석과 공유하므로(mapIndividualDetail) 그대로 넓히지 않고,
+// 종합 전용 매퍼가 그것을 재사용하며 v3.1 필드만 덧붙인다.
+
+/** 모르는 등급은 null — 임의로 낮게 잡으면 사용자에게 부당한 평가가 된다(severity 폴백과 반대). */
+function asStarGrade(value: unknown): StarQualityGrade | null {
+  return value === "A" || value === "B" || value === "C" || value === "D" ? value : null;
+}
+
+function mapStarCompetencyEvidence(dto: unknown): StarCompetencyEvidence {
+  const r = asRecord(dto);
+  return { competency: asString(r.competency), why: asString(r.why) };
+}
+
+function mapStarUnsupportedSlot(dto: unknown): StarUnsupportedSlot {
+  const r = asRecord(dto);
+  return {
+    slot: asString(r.slot),
+    label: asString(r.label),
+    reason: asString(r.reason),
+    claimedQuote: asString(r.claimedQuote ?? r.claimed_quote),
+  };
+}
+
+function mapStarEvidenceStatus(dto: unknown): StarEvidenceStatus {
+  const r = asRecord(dto);
+  return {
+    supportedSlots: asStringArray(r.supportedSlots ?? r.supported_slots),
+    unsupportedSlots: asArray(r.unsupportedSlots ?? r.unsupported_slots).map(
+      mapStarUnsupportedSlot,
+    ),
+    restructuringOnly: asBoolean(r.restructuringOnly ?? r.restructuring_only),
+    restructuringDetail: asStringArray(r.restructuringDetail ?? r.restructuring_detail),
+  };
+}
+
+function mapStarQualityCriterion(dto: unknown): StarQualityCriterion {
+  const r = asRecord(dto);
+  return {
+    key: asString(r.key),
+    label: asString(r.label),
+    passed: asBoolean(r.passed),
+    detail: asString(r.detail),
+    coaching: asString(r.coaching),
+  };
+}
+
+function mapStarQuality(dto: unknown): StarQuality {
+  const r = asRecord(dto);
+  return {
+    grade: asStarGrade(r.grade),
+    score: asString(r.score),
+    verdict: asString(r.verdict),
+    criteria: asArray(r.criteria).map(mapStarQualityCriterion),
+    priorityFixes: asStringArray(r.priorityFixes ?? r.priority_fixes),
+    derivedFieldNotes: asStringArray(r.derivedFieldNotes ?? r.derived_field_notes),
+  };
+}
+
+function mapComprehensiveStarFormat(dto: unknown): ComprehensiveStarFormat {
+  const r = asRecord(dto);
+  return {
+    ...mapStarFormat(dto),
+    headline: asString(r.headline),
+    learning: asString(r.learning ?? r.L ?? r.l),
+    sourceQuotes: {
+      situation: asString(r.situationSourceQuote ?? r.S_source_quote ?? r.s_source_quote),
+      task: asString(r.taskSourceQuote ?? r.T_source_quote ?? r.t_source_quote),
+      action: asString(r.actionSourceQuote ?? r.A_source_quote ?? r.a_source_quote),
+      result: asString(r.resultSourceQuote ?? r.R_source_quote ?? r.r_source_quote),
+      learning: asString(r.learningSourceQuote ?? r.L_source_quote ?? r.l_source_quote),
+    },
+    competencyEvidence: asArray(r.competencyEvidence ?? r.competency_evidence).map(
+      mapStarCompetencyEvidence,
+    ),
+    evidenceStatus: mapStarEvidenceStatus(r.evidenceStatus ?? r.evidence_status),
+    qualityWarning: asString(r.qualityWarning ?? r.quality_warning),
+    quality: mapStarQuality(r.quality),
+  };
+}
+
+function mapStarRejectedEntry(dto: unknown): StarRejectedEntry {
+  const r = asRecord(dto);
+  return {
+    title: asString(r.title),
+    reason: asString(r.reason),
+    unsupportedSlots: asStringArray(r.unsupportedSlots ?? r.unsupported_slots),
+    coaching: asString(r.coaching),
+  };
+}
+
+/** 등급별 개수 맵({"A":1,"D":1}). 숫자가 아닌 값은 버린다. */
+function asGradeDistribution(value: unknown): Record<string, number> {
+  const r = asRecord(value);
+  const out: Record<string, number> = {};
+  for (const [key, count] of Object.entries(r)) {
+    if (typeof count === "number" && Number.isFinite(count)) out[key] = count;
+  }
+  return out;
+}
+
+function mapStarQualityReview(dto: unknown): StarQualityReview {
+  const r = asRecord(dto);
+  return {
+    evaluated: asNumber(r.evaluated),
+    gradeDistribution: asGradeDistribution(r.gradeDistribution ?? r.grade_distribution),
+    portfolioVerdict: asString(r.portfolioVerdict ?? r.portfolio_verdict),
+    topFixes: asStringArray(r.topFixes ?? r.top_fixes),
+  };
+}
+
+/**
+ * star_analysis_status — "STAR 가 왜 없는지"의 유일한 근거다.
+ *
+ * `present` 로 **부재와 미생성을 구분**한다: v2.0 응답엔 이 섹션이 아예 없어 generated 가
+ * 방어 파싱 기본값 false 로 떨어지는데, 그걸 "만들지 못했다"로 읽으면 v2.0 사용자에게
+ * 이유가 빈 안내가 뜬다(FRT-169 의 "없는 탭이 생긴다"와 같은 실수).
+ * 판정 기준은 asRecord 와 같다 — 배열은 레코드가 아니다.
+ */
+function mapStarAnalysisStatus(dto: unknown): StarAnalysisStatus {
+  const present = !!dto && typeof dto === "object" && !Array.isArray(dto);
+  const r = asRecord(dto);
+  const reviewRaw = r.qualityReview ?? r.quality_review;
+  return {
+    present,
+    generated: asBoolean(r.generated),
+    reason: asString(r.reason),
+    experienceBlockCount: asNumber(r.experienceBlockCount ?? r.experience_block_count),
+    starEligibleBlockCount: asNumber(
+      r.starEligibleBlockCount ?? r.star_eligible_block_count,
+    ),
+    coaching: asStringArray(r.coaching),
+    rejectedEntries: asArray(r.rejectedEntries ?? r.rejected_entries).map(
+      mapStarRejectedEntry,
+    ),
+    // 생성된 항목이 없으면 백엔드가 아예 안 보낸다 — 빈 객체로 뭉개지 않고 null 로 둔다.
+    qualityReview:
+      reviewRaw && typeof reviewRaw === "object" && !Array.isArray(reviewRaw)
+        ? mapStarQualityReview(reviewRaw)
+        : null,
+  };
+}
+
 /**
  * action_plan 키는 백엔드 표기에 따라 short_term/mid_term/long_term 또는 한글 키일 수 있다.
  */
@@ -489,6 +648,8 @@ function mapClubSociety(dto: unknown): ClubSociety {
     url: asNullableString(r.url),
     searchQuery: asString(r.searchQuery ?? r.search_query),
     searchVerified: asBoolean(r.searchVerified ?? r.search_verified),
+    // v3.1: url 이 null 일 때만 온다. 지금은 링크가 조용히 사라질 뿐이라 그 자리를 채운다.
+    urlNote: asString(r.urlNote ?? r.url_note),
   };
 }
 
@@ -612,7 +773,10 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
     },
     resumeStarFormat: asArray(
       body.resumeStarFormat ?? body.resume_star_format,
-    ).map(mapStarFormat),
+    ).map(mapComprehensiveStarFormat),
+    starAnalysisStatus: mapStarAnalysisStatus(
+      body.starAnalysisStatus ?? body.star_analysis_status,
+    ),
     actionPlan: mapActionPlan(body.actionPlan ?? body.action_plan),
     strengthDiagnosis: mapStrengthDiagnosis(
       body.strengthDiagnosis ?? body.strength_diagnosis,
@@ -635,6 +799,9 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
         body.validJobRecommendations ?? body.valid_job_recommendations,
     ).map(mapJobRecommendation),
     expiredJobs: asArray(body.expiredJobs ?? body.expired_jobs).map(mapJobRecommendation),
+    recommendationNotices: asStringArray(
+      body.recommendationNotices ?? body.recommendation_notices,
+    ),
     missingInfoWarning: asString(body.missingInfoWarning ?? body.missing_info_warning),
   };
 
@@ -648,6 +815,24 @@ function mapComprehensiveDetail(dto: unknown): ComprehensiveAnalysisResult {
       status: "",
       isBookmarked: false,
       experiences: [],
+      // star_analysis_status 는 v3.1 이면 **늘 온다**. 그대로 넘기면 hasAnyContent 가 숫자를
+      // 컨텐츠로 치므로(Number.isFinite(0) === true) experience_block_count:0 하나 때문에
+      // 본문이 텅 빈 결과가 "본문 있음"이 되어 상태 안내(FRT-134)가 영영 뜨지 않는다.
+      // 그릴 말이 실제로 있는 필드만 남긴다 — 카운트·present·generated 는 뺀다.
+      // qualityReview 도 마찬가지다: evaluated(number)·gradeDistribution 은 화면에 그리지
+      // 않는데 그대로 넘기면 evaluated:0 하나로 같은 오판이 재현된다 — 화면이 실제로
+      // 그리는 portfolioVerdict·topFixes 만 남긴다.
+      starAnalysisStatus: {
+        reason: detail.starAnalysisStatus.reason,
+        coaching: detail.starAnalysisStatus.coaching,
+        rejectedEntries: detail.starAnalysisStatus.rejectedEntries,
+        qualityReview: detail.starAnalysisStatus.qualityReview
+          ? {
+              portfolioVerdict: detail.starAnalysisStatus.qualityReview.portfolioVerdict,
+              topFixes: detail.starAnalysisStatus.qualityReview.topFixes,
+            }
+          : null,
+      },
     }),
   };
 }

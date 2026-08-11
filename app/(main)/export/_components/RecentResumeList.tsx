@@ -6,14 +6,11 @@ import { FileText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
-import {
-  deleteResume,
-  getResumeList,
-  ResumeMutationUnsupportedError,
-} from "@/lib/api/export-api";
+import { deleteResume, getResumeList } from "@/lib/api/export-api";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { formatDateTime, formatRelativeTime } from "@/lib/utils/date-utils";
 import type { ResumeListItem } from "@/types/resume";
+import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 
 interface RecentResumeListProps {
   onCreateClick: () => void;
@@ -35,8 +32,8 @@ export function RecentResumeList({
   const basePath = useBasePath();
   const [items, setItems] = useState<ResumeListItem[] | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const [deleteSupported, setDeleteSupported] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -54,23 +51,21 @@ export function RecentResumeList({
   }, [load, reloadToken]);
 
   const handleDelete = async (versionId: string) => {
-    if (!window.confirm("이 레쥬메를 삭제할까요?")) return;
     setDeletingId(versionId);
     try {
       await deleteResume(versionId);
       setItems((prev) => (prev ?? []).filter((r) => r.version_id !== versionId));
       toast.success("레쥬메를 삭제했어요");
     } catch (err) {
-      if (err instanceof ResumeMutationUnsupportedError) {
-        setDeleteSupported(false);
-        toast("삭제 기능은 곧 제공될 예정이에요", "info");
-      } else if (err instanceof ApiError && err.status === 404) {
+      if (err instanceof ApiError && err.status === 404) {
         setItems((prev) => (prev ?? []).filter((r) => r.version_id !== versionId));
       } else {
         toast.error("삭제에 실패했어요");
       }
     } finally {
       setDeletingId(null);
+      // 성공·실패·삭제 미지원(버튼 자체가 사라지는 경로) 어디로 빠져도 다이얼로그를 닫는다.
+      setPendingDeleteId(null);
     }
   };
 
@@ -123,6 +118,7 @@ export function RecentResumeList({
   }
 
   return (
+    <>
     <ul className="flex flex-col gap-2">
       {items.map((item) => {
         // status 가 없으면(구 백엔드) 기존처럼 이동 가능. 있으면 completed 만 이동 허용 —
@@ -151,8 +147,10 @@ export function RecentResumeList({
                 )}
               </div>
             </div>
+            {/* 서버가 제목을 주지 않는 레쥬메는 라벨이 길어 truncate 로 잘린다 —
+                만든 시각을 숨기면 모바일에서 어느 것이 방금 만든 건지 알 수 없다(FRT-126). */}
             {item.created_at && (
-              <span className="text-caption text-text-tertiary shrink-0 hidden sm:inline">
+              <span className="text-caption text-text-tertiary shrink-0">
                 {formatRelativeTime(item.created_at)}
               </span>
             )}
@@ -179,21 +177,30 @@ export function RecentResumeList({
                 {rowContent}
               </div>
             )}
-            {deleteSupported && (
-              <button
-                type="button"
-                onClick={() => handleDelete(item.version_id)}
-                disabled={deletingId === item.version_id}
-                className="text-text-tertiary hover:text-error transition-colors p-1.5 rounded-md disabled:opacity-40"
-                aria-label="레쥬메 삭제"
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setPendingDeleteId(item.version_id)}
+              disabled={deletingId === item.version_id}
+              className="text-text-tertiary hover:text-error transition-colors p-1.5 rounded-md disabled:opacity-40"
+              aria-label="레쥬메 삭제"
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         </li>
         );
       })}
     </ul>
+    <DeleteConfirmDialog
+      open={pendingDeleteId !== null}
+      title="이 레쥬메를 삭제할까요?"
+      description="삭제하면 되돌릴 수 없어요."
+      deleting={deletingId !== null}
+      onClose={() => setPendingDeleteId(null)}
+      onConfirm={() => {
+        if (pendingDeleteId) handleDelete(pendingDeleteId);
+      }}
+    />
+    </>
   );
 }

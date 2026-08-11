@@ -416,6 +416,59 @@ export function isBlockEmpty(block: Block): boolean {
   }
 }
 
+/**
+ * ⚠️ **저장된 값은 타입이 약속한 모양대로 오지 않는다.** `injectValue`(experience-mapper) 는
+ * `content.fields[key]` 를 `{...block, value}` 로 통째로 싣는데 `content` 는 서버 JSONB 라,
+ * 부속 필드가 빠진 채 저장된 구 레코드가 그대로 블록 값이 된다. 이 판정은 모든 블록에 대해
+ * 돌므로 여기서 `undefined.trim()` 이 나면 화면이 통째로 터진다.
+ */
+function isFilledText(s: unknown): boolean {
+  return typeof s === 'string' && s.trim() !== ''
+}
+
+/**
+ * `isBlockEmpty` 가 안 세는 부속 값이 남아 있는지.
+ *
+ * `isBlockEmpty` 는 링크를 `url`, 파일을 업로드 신원(`fileName`/`fileId`/`url`)으로만 판정한다 —
+ * "상세뷰에 그릴 게 있는가"를 묻는 기준이라 그 자체로는 옳다. 그런데 두 블록 모두 **주 값 없이
+ * 부속 값을 먼저 칠 수 있고**(LinkBlock 의 제목·유형·설명, FileBlock 의 설명·증빙 유형),
+ * `FileBlock` 은 파일을 지워도 설명·증빙 유형을 **의도적으로 남긴다**(handleDelete).
+ */
+export function hasResidualValue(block: Block): boolean {
+  const v = block.value
+  if (v.type === 'link') return [v.title, v.description, v.linkType].some(isFilledText)
+  if (v.type === 'file') return [v.description, v.evidenceType].some(isFilledText)
+  return false
+}
+
+/**
+ * **"버려도 되는 블록인가"** — 로드·이관 과정에서 블록을 통째로 떨어뜨릴지 묻는 자리 전용.
+ *
+ * `isBlockEmpty` 하나로 물으면 안 된다. 그건 "그릴 게 있는가"이지 "사용자가 친 게 있는가"가
+ * 아니다 — 파일 없이 설명·증빙 유형만 적어 둔 증빙 블록은 `isBlockEmpty` 로 **비어 있고**,
+ * 그 판정으로 버리면 사용자가 입력한 메타데이터가 다음 저장에 영구 삭제된다(FRT-267 Codex P2).
+ *
+ * ⚠️ **"목적지가 찼는가"에는 쓰지 말 것.** 그건 다른 질문이다 — 설명만 있는 목적지를 '찼다'로
+ * 보면 실제 파일을 든 이관이 막힌다(`applyScopedMigrations` 는 계속 `isBlockEmpty` 를 쓴다).
+ */
+export function isBlockDiscardable(block: Block): boolean {
+  return isBlockEmpty(block) && !hasResidualValue(block)
+}
+
+/**
+ * 블록이 "필수"인지 — `block.required` 뿐 아니라 **필수 컬럼을 가진 표**도 필수로 본다.
+ * 표의 필수는 블록이 아니라 컬럼에 붙는 경우가 많고(18유형 중 13개), 블록 층위만 보면
+ * 진행도 바는 필수로 세는데 숨김 UI 는 선택으로 보는 식으로 기준이 갈린다.
+ * 진행도(`isCardComplete`)와 숨김(`canHideBlock`)이 이 판정을 공유한다.
+ */
+export function isRequiredBlock(block: Block): boolean {
+  if (block.required) return true
+  if (block.value.type === 'repeatable-cell') {
+    return block.value.columns.some(c => c.required)
+  }
+  return false
+}
+
 export function validateRequiredBlocks(blocks: Block[]): string[] {
   const errors: string[] = []
   for (const block of blocks) {

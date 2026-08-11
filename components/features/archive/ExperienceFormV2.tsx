@@ -19,6 +19,7 @@ import type {
 } from "@/types/archive"
 import { SECTION_DESCRIPTION_OVERRIDES, SECTION_LABEL_OVERRIDES } from "@/types/archive"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
+import { mergeSavedIntoTemplate } from "@/lib/utils/experience-mapper"
 import {
   cloneBlocks,
   createEmptyRow,
@@ -33,6 +34,9 @@ import {
 } from "@/lib/utils/block-utils"
 import { capture } from "@/lib/analytics"
 import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
+import { normalizeHiddenKeys, resolveHiddenBlocks } from "@/lib/utils/hidden-fields"
+import { conditionHiddenKeys, partitionByCondition } from "@/lib/utils/conditional-fields"
+import { onEnterCommit } from "@/lib/utils/keyboard"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
 import { RoleHistoryProvider, type RoleHistoryContextValue } from "@/contexts/RoleHistoryContext"
 
@@ -106,6 +110,38 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   )
   const [typeError, setTypeError] = useState(false)
   const [titleError, setTitleError] = useState(false)
+  /** 사용자가 숨긴 선택 필드의 안정키 (FRT-190). */
+  const [hiddenKeys, setHiddenKeys] = useState<string[]>(initialExperience?.hiddenKeys ?? [])
+
+  /**
+   * 실제로 숨김이 적용되는 키 — **이 값 하나만 쓴다**(렌더·진행도·저장·미저장 경고 전부).
+   *
+   * `hiddenKeys` 를 그대로 쓰면 안 된다. `resolveHiddenBlocks` 는 숨김 키라도 값이 생겼거나
+   * 필수가 된 블록을 **되돌려 보여주는데**(다른 기기 편집·템플릿 개편), state 에는 그 키가 남는다.
+   * 그 상태로 진행도에 넘기면 화면에 보이는 필드를 없는 셈 치고, 저장하면 다음 로드에서
+   * (값이 다시 비는 순간) 조용히 사라진다. `normalizeHiddenKeys` 가 `canHideBlock` 이라는
+   * 같은 잣대로 걸러 주므로, 소비처마다 판정 사본을 두지 않고 여기서 한 번만 맞춘다.
+   */
+  /**
+   * 조건부 노출(FRT-211) 판정용 전체 블록 — 트리거가 다른 카드로 분배돼도 찾을 수 있어야 한다.
+   * `computeFormCards` 가 템플릿 섹션을 4카드로 재구성하므로 카드 안 블록만 보면 트리거를 놓친다.
+   */
+  const allBlocksFlat = useMemo(
+    () => [...coreBlocks, ...extensionSections.flatMap(s => s.blocks)],
+    [coreBlocks, extensionSections]
+  )
+
+  const effectiveHiddenKeys = useMemo(
+    () => normalizeHiddenKeys(allBlocksFlat, hiddenKeys),
+    [allBlocksFlat, hiddenKeys]
+  )
+
+  /**
+   * 조건 미충족으로 화면에서 빠진 필드의 안정키 — **진행도 계산에만** `effectiveHiddenKeys` 와
+   * 합쳐 쓴다. 저장(`hiddenKeys`)에는 절대 섞지 않는다: 조건 미충족은 트리거 값에서 매번 다시
+   * 계산되는 파생 상태라 영속화할 것이 없고, 저장하면 사용자가 치운 것과 구분되지 않는다.
+   */
+  const conditionKeys = useMemo(() => conditionHiddenKeys(allBlocksFlat), [allBlocksFlat])
 
   // Load template when type changes
   useEffect(() => {
@@ -115,6 +151,10 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
 
     if (mode === "new" || !initialExperience) {
       setCoreBlocks(cloneBlocks(tmpl.commonCore.blocks))
+      // 유형을 바꾸면 숨김도 리셋한다 — 안정키(`${sectionId}.${label}`)는 유형 간에 겹치므로
+      // (`basic.기간` 등) 그대로 두면 새 유형에서 사용자가 숨긴 적 없는 필드가 사라진다.
+      // 블록을 템플릿으로 되돌리는 이 자리에 함께 둬야 둘이 어긋나지 않는다.
+      setHiddenKeys([])
       setExtensionSections(
         tmpl.extensions.map(ext => ({
           id: ext.id,
@@ -140,27 +180,34 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       if (extensionSections.length === 0) {
         const savedBlocks = initialExperience.extensionBlocks
         // Distribute saved extension blocks across template sections.
-        // schema v2: 안정키로 매칭(라벨 충돌 무관) → 화면순서=저장순서 보장.
-        // 키 없는 레거시 블록만 라벨 폴백.
+        // schema v2: 안정키로 매칭(라벨 충돌 무관). 키 없는 레거시 블록만 라벨 폴백.
+        //
+        // ⚠️ 매칭분으로 섹션을 **교체하지 않고 템플릿에 병합**한다(FRT-211, Codex P1).
+        // v2 레코드는 toExperienceV2 가 현재 템플릿 전체를 재구성해 내려주므로 교체든 병합이든
+        // 결과가 같지만, v1 레거시 레코드(저장된 블록 배열 그대로 — 데모 시드가 이 모양)는
+        // 살아남은 라벨만 들어 있어 교체하면 **나머지 새 필드가 화면에서 통째로 사라진다**.
+        // 수상경력은 확정본 개편으로 구 라벨 중 '수상일' 하나만 살아남아, 그 한 칸 때문에
+        // 필수 5개를 채울 방법이 없어져 완료 저장이 영구 차단됐다.
+        // 매칭된 블록은 **정의는 템플릿, 값은 저장분**으로 병합한다(mergeSavedIntoTemplate).
+        // 통째로 쓰면 구 템플릿의 required·guide 가 따라와 필수 표시가 사라진다(Codex P2).
+        const savedByKey = new Map<string, Block>()
+        const savedByLabel = new Map<string, Block>()
+        for (const b of savedBlocks) {
+          if (b.key) savedByKey.set(b.key, b)
+          else if (!savedByLabel.has(b.label)) savedByLabel.set(b.label, b)
+        }
         setExtensionSections(
-          tmpl.extensions.map(ext => {
-            const templateKeys = new Set(
-              ext.blocks.map(b => b.key).filter((k): k is string => !!k)
-            )
-            const templateLabels = new Set(ext.blocks.map(b => b.label))
-            const matchedBlocks = savedBlocks.filter(b =>
-              b.key ? templateKeys.has(b.key) : templateLabels.has(b.label)
-            )
-            return {
-              id: ext.id,
-              label: ext.label,
-              category: ext.category,
-              collapsed: ext.collapsed,
-              blocks: matchedBlocks.length > 0
-                ? matchedBlocks
-                : cloneBlocks(ext.blocks),
-            }
-          })
+          tmpl.extensions.map(ext => ({
+            id: ext.id,
+            label: ext.label,
+            category: ext.category,
+            collapsed: ext.collapsed,
+            blocks: ext.blocks.map(tb => {
+              const saved = (tb.key ? savedByKey.get(tb.key) : undefined) ?? savedByLabel.get(tb.label)
+              const [tplBlock] = cloneBlocks([tb])
+              return saved ? mergeSavedIntoTemplate(tplBlock, saved) : tplBlock
+            }),
+          }))
         )
       }
     }
@@ -185,6 +232,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         hasBlockData(extensionBlocks) ||
         customBlocks.length > 0 ||
         tags.length > 0 ||
+        effectiveHiddenKeys.length > 0 ||
         importanceChanged
       onUnsavedChange?.(hasData)
       return
@@ -201,6 +249,9 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       custom: customBlocks,
       tags,
       importance: importance ?? null,
+      // 숨김만 바꾸고 나가도 미저장 경고가 떠야 한다 — 빠뜨리면 숨김이 조용히 사라진다.
+      // 저장 payload 와 같은 값(정규화된 키)을 봐야 "저장했는데 계속 dirty" 가 안 생긴다.
+      hidden: effectiveHiddenKeys,
     })
     if (dirtyBaselineRef.current === null) {
       dirtyBaselineRef.current = snapshot
@@ -208,7 +259,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       return
     }
     onUnsavedChange?.(snapshot !== dirtyBaselineRef.current)
-  }, [coreBlocks, extensionSections, customBlocks, tags, importance, mode, template, initialExperience, onUnsavedChange])
+  }, [coreBlocks, extensionSections, customBlocks, tags, importance, effectiveHiddenKeys, mode, template, initialExperience, onUnsavedChange])
 
   const handleTypeSelect = useCallback((id: ExperienceTypeId) => {
     setTypeId(id)
@@ -225,10 +276,28 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       hasBlockData(coreBlocks) ||
       hasBlockData(extensionBlocks) ||
       customBlocks.length > 0 ||
-      tags.length > 0
+      tags.length > 0 ||
+      // 숨김도 사용자가 한 작업이다 — 유형을 바꾸면 초기화되므로(안정키가 유형 간에 겹쳐
+      // 그대로 두면 숨긴 적 없는 필드가 사라진다) 확인 없이 버리면 안 된다. 미저장 판정
+      // (`effectiveHiddenKeys.length > 0`)과 기준이 갈리면 "경고는 뜨는데 확인은 안 뜨는" 상태가 된다.
+      effectiveHiddenKeys.length > 0
     if (!hasData) return true
     return window.confirm("경험 유형을 바꾸면 입력한 내용이 초기화될 수 있어요. 계속할까요?")
-  }, [coreBlocks, extensionSections, customBlocks, tags])
+  }, [coreBlocks, extensionSections, customBlocks, tags, effectiveHiddenKeys])
+
+  // ── 선택 필드 숨김 (FRT-190) ──────────────────────────────────────
+  // 안정키만 담는다 — 블록 인스턴스를 담으면 값이 바뀔 때마다 stale 참조가 된다.
+  const handleHideBlock = useCallback((block: Block) => {
+    const key = block.key
+    if (!key) return
+    setHiddenKeys(prev => (prev.includes(key) ? prev : [...prev, key]))
+  }, [])
+
+  const handleUnhideBlock = useCallback((block: Block) => {
+    const key = block.key
+    if (!key) return
+    setHiddenKeys(prev => prev.filter(k => k !== key))
+  }, [])
 
   // ── Computed form cards ──────────────────────────────────────────
   const formCards = useMemo(
@@ -267,6 +336,25 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     },
     [extensionSections],
   )
+
+  /**
+   * 역방향 인덱스 `대상 행 id → 소스 OutcomeList 블록 라벨` (FRT-210).
+   *
+   * 링크의 진실은 소스 행의 `linkedProjectRowId` 한쪽에만 있어(대상 행엔 아무 표시도 없다)
+   * "나를 가리키는 행이 있는가"는 훑어야만 알 수 있다. 훑기를 **폼에서 한 번만** 하고 각 행은
+   * Map 조회만 하게 한다 — 행마다 훑으면 O(행 수 × 블록 수)가 된다.
+   * `allBlocksFlat` 은 조건부 노출·숨김 정규화가 이미 쓰는 같은 목록이라 새 비용이 아니다.
+   */
+  const incomingProjectLinks = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const block of allBlocksFlat) {
+      if (block.variant !== "outcome-list" || block.value.type !== "repeatable-cell") continue
+      for (const row of block.value.rows) {
+        if (row.linkedProjectRowId) map.set(row.linkedProjectRowId, block.label)
+      }
+    }
+    return map
+  }, [allBlocksFlat])
 
   const projectLink = useMemo<ProjectLinkContextValue>(() => ({
     createProjectRow(targetSectionId, titleColumnKey, text) {
@@ -309,6 +397,10 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       const title = cellText(row.cells[titleColumnKey])
       return { title }
     },
+    getIncomingLink(rowId) {
+      const sourceLabel = incomingProjectLinks.get(rowId)
+      return sourceLabel ? { sourceLabel } : null
+    },
     scrollToProjectRow(projectRowId) {
       if (typeof document === "undefined") return
       // 새 행 DOM 이 커밋된 뒤로 미룬다(생성 직후 호출되므로).
@@ -317,7 +409,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         el?.scrollIntoView?.({ behavior: "smooth", block: "center" })
       })
     },
-  }), [findProjectBlock])
+  }), [findProjectBlock, incomingProjectLinks])
 
   // ── FRT-178: 역할 이력 → 역할 태그 파생·동기화 (RoleHistoryContext provider) ──
   // 태그 선택지가 상수가 아니라 형제 블록('역할 이력')의 값에서 나온다. 블록은 형제를 모르므로
@@ -427,6 +519,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       coreBlocks,
       extensionBlocks: allExtensionBlocks,
       customBlocks,
+      hiddenKeys: effectiveHiddenKeys,
       createdAt: initialExperience?.createdAt ?? now,
       updatedAt: now,
     }
@@ -463,9 +556,13 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   // ── Progress callback (고정 카드 완료 수/전체) ──────────────────────────────────────
   // onVisibleSectionsChange 는 구조(섹션 목록)만 emit 하므로, 값 입력마다 갱신되는
   // 진행도는 별도 채널로 흘린다. formCards 는 블록 값 변화에 따라 재계산된다.
+  // 숨긴 항목은 진행도에서도 빠져야 한다 — 안 빼면 "해당 없음"으로 치울수록 바가 안 차고,
+  // 되돌려서 자기와 무관한 항목을 채워야만 100% 가 되는 모순이 난다(FRT-190).
+  // 조건 미충족으로 화면에 없는 필드도 같은 이유로 빠진다 — 보이지도 않는 칸 때문에 필수 없는
+  // 카드가 영원히 미완료로 남는다(FRT-211).
   const progress = useMemo(
-    () => computeFormProgress(formCards?.cards ?? []),
-    [formCards]
+    () => computeFormProgress(formCards?.cards ?? [], [...effectiveHiddenKeys, ...conditionKeys]),
+    [formCards, effectiveHiddenKeys, conditionKeys]
   )
   const onProgressChangeRef = useRef(onProgressChange)
   useEffect(() => {
@@ -564,19 +661,32 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         <ProjectLinkProvider value={projectLink}>
         <RoleHistoryProvider value={roleHistory}>
         <div className="flex flex-col gap-5 archive-input-14">
-          {formCards.cards.map(card => (
-            <FormSection
-              key={card.category}
-              variant="card"
-              sectionId={card.category}
-              label={card.label}
-              blocks={card.blocks}
-              optional={card.optional}
-              showOptionalBadge={card.showOptionalBadge}
-              description={sectionDescription(typeId, card.category)}
-              onChange={writeBackBlocks}
-            />
-          ))}
+          {formCards.cards.map(card => {
+            // 숨김은 카드 모델이 아니라 이 렌더 층에서 가른다 — 카드 자체와 하단 되살리기
+            // 토글은 남겨야 마지막 필드를 숨겨도 되돌릴 길이 사라지지 않는다.
+            //
+            // 조건부 노출(FRT-211)을 **먼저** 거른다. 두 필터는 층이 다르다 — 조건 미충족은
+            // `hidden`(되살리기 토글 목록)으로 넘기지 않는다. 사용자가 치운 적이 없으니 되살릴
+            // 것도 없고, 목록에 뜨면 자기가 하지 않은 일을 되돌리라는 버튼이 생긴다.
+            // 걸러진 블록의 값은 `writeBackBlocks` 가 id 기준으로 병합하므로 state 에 그대로 남는다.
+            const { visible: shown } = partitionByCondition(card.blocks, allBlocksFlat)
+            const { visible, hidden } = resolveHiddenBlocks(shown, effectiveHiddenKeys)
+            return (
+              <FormSection
+                key={card.category}
+                variant="card"
+                sectionId={card.category}
+                label={card.label}
+                blocks={visible}
+                hiddenBlocks={hidden}
+                onHide={handleHideBlock}
+                onUnhide={handleUnhideBlock}
+                optional={card.optional}
+                description={sectionDescription(typeId, card.category)}
+                onChange={writeBackBlocks}
+              />
+            )
+          })}
 
           {/* 사용자 섹션 (FRT-78) — 최상위 블록, 고정 카드와 동일 시각. 헤더 위/아래로 카드 정렬. */}
           {userSections.map((section, i) => (
@@ -692,7 +802,7 @@ function TagInput({ inputId, tags, onChange }: { inputId?: string; tags: string[
           placeholder="태그 입력 후 Enter"
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); add() } }}
+          onKeyDown={onEnterCommit(add)}
         />
       </div>
     </div>

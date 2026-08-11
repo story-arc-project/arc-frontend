@@ -4,6 +4,7 @@ import { Search, X, SlidersHorizontal, BookmarkPlus } from "lucide-react"
 import { useState } from "react"
 import type { LibraryFilter, SortBy, ExperienceTypeId, ExperienceStatus } from "@/types/archive"
 import { EXPERIENCE_TYPES, TYPE_CATEGORIES } from "@/lib/constants/templates-v2"
+import { isImeComposing } from "@/lib/utils/keyboard"
 
 interface FilterBarProps {
   filter: LibraryFilter
@@ -144,7 +145,12 @@ export default function FilterBar({
                     type="text"
                     value={saveName}
                     onChange={e => setSaveName(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setShowSaveInput(false) }}
+                    onKeyDown={e => {
+                      // 조합 중 Enter 는 확정용, Escape 는 조합 취소용이므로 저장/취소를 트리거하지 않는다.
+                      if (isImeComposing(e)) return
+                      if (e.key === "Enter") handleSave()
+                      if (e.key === "Escape") setShowSaveInput(false)
+                    }}
                     placeholder="라이브러리 이름"
                     className="h-7 w-24 rounded-md border border-border bg-surface-secondary px-2 text-caption text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
                     autoFocus

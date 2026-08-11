@@ -27,9 +27,13 @@ vi.mock("@/lib/analytics", async (importOriginal) => {
 });
 
 // 목록은 `?started=` 로 "방금 만든 분석"을 받는다(FRT-176). 기본은 빈 파라미터.
+// usePathname 은 useBasePath 가 데모를 판별하는 유일한 입력이다 — 훅을 통째로 mock 하면
+// "데모 URL 에서 실제로 /demo 가 나오는가"를 못 본다(FRT-161·FRT-232).
+const mockUsePathname = vi.fn(() => "/analysis/comprehensive");
 vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParams,
   useRouter: () => ({ replace }),
+  usePathname: () => mockUsePathname(),
 }));
 
 vi.mock("@/components/ui/toast", () => ({ toast: vi.fn() }));
@@ -64,6 +68,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
   searchParams = new URLSearchParams();
+  mockUsePathname.mockReturnValue("/analysis/comprehensive");
 });
 
 afterEach(() => {
@@ -121,6 +126,11 @@ describe("종합 분석 목록 — 재시도 폴링과 로컬 변경 (FRT-108)",
     render(<ComprehensiveAnalysisPage />);
     await flush();
     expect(screen.getByText("분석 b")).toBeInTheDocument();
+    // 목록 항목 제목은 리스트 항목 제목 토큰이어야 한다. font-medium(500)이 남으면
+    // .text-title 의 600 을 덮어써 절반만 고친 상태가 되므로 함께 단언한다 (FRT-127).
+    expect(screen.getByText("분석 b")).toHaveClass("text-title");
+    expect(screen.getByText("분석 b")).not.toHaveClass("text-body-sm");
+    expect(screen.getByText("분석 b")).not.toHaveClass("font-medium");
 
     // 재시도를 눌러 폴링을 켠다.
     await click(screen.getByRole("button", { name: "다시 시도" }));
@@ -398,5 +408,58 @@ describe("지켜보던 분석을 지우면 표시부터 거둔다 (code-review �
     await flush();
 
     expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+// 데모는 둘러보기만 한다 — 만들기·지우기는 mock 위에서 화면만 바꾸고 재조회하면 되살아난다.
+// 되돌아올 성공을 보여주느니 버튼을 내보내지 않는다(FRT-232).
+describe("데모 모드 — 둘러보기만 남긴다 (FRT-232)", () => {
+  it("'새 종합 분석' 버튼이 헤더에서 사라진다", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis/comprehensive");
+    getList.mockResolvedValue([snap("c1", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(screen.queryByRole("link", { name: "새 종합 분석" })).toBeNull();
+  });
+
+  it("빈 목록에서도 생성 CTA 가 없다", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis/comprehensive");
+    getList.mockResolvedValue([]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(screen.queryByRole("link", { name: /새 종합 분석/ })).toBeNull();
+  });
+
+  it("삭제·즐겨찾기 버튼이 없고, 상세 링크는 데모 안에 머문다", async () => {
+    mockUsePathname.mockReturnValue("/demo/analysis/comprehensive");
+    getList.mockResolvedValue([snap("c1", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(screen.queryByRole("button", { name: "삭제" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "즐겨찾기" })).toBeNull();
+    expect(screen.getByRole("link", { name: /분석 c1/ })).toHaveAttribute(
+      "href",
+      "/demo/analysis/comprehensive/c1",
+    );
+  });
+
+  it("일반 모드는 그대로다 (거울상 — 데모 분기가 본계약을 먹지 않았는지)", async () => {
+    getList.mockResolvedValue([snap("c1", "completed")]);
+
+    render(<ComprehensiveAnalysisPage />);
+    await flush();
+
+    expect(screen.getByRole("link", { name: "새 종합 분석" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "삭제" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /분석 c1/ })).toHaveAttribute(
+      "href",
+      "/analysis/comprehensive/c1",
+    );
   });
 });

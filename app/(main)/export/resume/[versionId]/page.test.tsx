@@ -1,6 +1,13 @@
 import { Suspense } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { ResumeVersion } from "@/types/resume";
@@ -45,8 +52,6 @@ vi.mock("@/components/ui/toast", () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
 }));
 
-// ResumeMutationUnsupportedError 는 **실물**이어야 한다 — 페이지가 instanceof 로 갈래를
-// 가르므로 가짜 클래스를 끼우면 저장 실패가 전부 "그 외 오류"로 흘러 테스트가 거짓이 된다.
 vi.mock("@/lib/api/export-api", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/lib/api/export-api")>();
@@ -70,7 +75,9 @@ vi.mock("@/lib/export/resume-docx", () => ({
   renderResumeDocx: (...args: unknown[]) => mockRenderDocx(...args),
 }));
 
-import { ResumeMutationUnsupportedError } from "@/lib/api/export-api";
+import { toast } from "@/components/ui/toast";
+import { ApiError } from "@/lib/api/client";
+import { writeDraft } from "./_components/resume-draft";
 import ResumeDetailPage from "./page";
 
 function resumeFixture(overrides: Partial<ResumeVersion> = {}): ResumeVersion {
@@ -134,6 +141,9 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks 는 mockReturnValueOnce 큐를 비우지 않는다 — 경합 테스트가 남긴 큐가
+  // 다음 테스트로 새면 "왜 이 응답이 오지"를 한참 쫓게 된다.
+  mockGetResume.mockReset();
   window.localStorage.clear();
   window.print = vi.fn();
   mockGetResume.mockResolvedValue(resumeFixture());
@@ -266,26 +276,29 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     );
   });
 
-  // 이 갈래가 지금 실제로 도는 경로다(FRT-111 계약 진행 중). 사용자에게는
-  // "곧 제공될 예정이에요"가 뜨고 서버엔 아무것도 안 남는다 — outcome 없이 뭉치면
-  // 관리자가 보는 '저장 건수'가 통째로 거짓이 된다.
-  it("백엔드가 아직 저장을 못 받으면 outcome='unsupported'", async () => {
-    const user = userEvent.setup();
-    mockUpdateResume.mockRejectedValue(new ResumeMutationUnsupportedError(501));
-    await renderLoaded();
+  // 서버에 PATCH 가 실재하므로(FRT-111) 405/501 은 배포 상태에서 나올 수 없다. 그래도
+  // 온다면(구 백엔드 롤백) 그건 **저장 실패**일 뿐 별도 갈래가 아니다 — 편집은 임시
+  // 저장으로 붙들고, 지표에는 서버에 안 남았다는 사실이 failed 로 정직하게 남는다.
+  it.each([405, 501])(
+    "%i 도 outcome='failed' 로 남고 편집은 임시 저장된다",
+    async (status) => {
+      const user = userEvent.setup();
+      mockUpdateResume.mockRejectedValue(new ApiError(status, "unsupported"));
+      await renderLoaded();
 
-    await user.type(screen.getByLabelText("이름"), "!");
-    await user.click(screen.getByRole("button", { name: "저장" }));
+      await user.type(screen.getByLabelText("이름"), "!");
+      await user.click(screen.getByRole("button", { name: "저장" }));
 
-    await waitFor(() =>
-      expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
-        outcome: "unsupported",
-        persisted: true,
-        sections: ["personal_info"],
-        section_count: 1,
-      }),
-    );
-  });
+      await waitFor(() =>
+        expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
+          outcome: "failed",
+          persisted: true,
+          sections: ["personal_info"],
+          section_count: 1,
+        }),
+      );
+    },
+  );
 
   it("그 외 오류는 outcome='failed'", async () => {
     const user = userEvent.setup();
@@ -303,10 +316,68 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     );
   });
 
+  // 4xx 는 다시 시도해도 같은 결과다. BAC-56 이 PATCH 를 배포한 뒤로 422 는 "저장 경로가
+  // 없다"가 아니라 **입력이 규칙을 어겼다**는 뜻인데, "잠시 후 다시 시도해주세요"로 뭉개면
+  // 사용자는 자기가 고칠 수 있는 것을 못 고친 채 재시도만 반복한다.
+  it("4xx 는 서버가 준 사유를 그대로 안내한다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockRejectedValue(
+      new ApiError(422, "제목은 100자를 넘을 수 없어요."),
+    );
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("제목은 100자를 넘을 수 없어요."),
+    );
+  });
+
+  // 400 은 예외다 — 서버가 이 코드를 내는 분기는 "아직 생성이 안 끝난 레쥬메"
+  // 하나뿐인데(`patch_resume`), 그 메시지가 영문("Resume is not completed yet.")이라
+  // 그대로 띄우면 사용자가 읽지 못한다. 사유를 보여주는 규칙보다 **읽히는 것**이 먼저다.
+  it("400 은 서버 영문 메시지 대신 생성 중이라는 한글 안내를 보여준다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockRejectedValue(
+      new ApiError(400, "Resume is not completed yet."),
+    );
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "아직 레쥬메를 만드는 중이에요. 완성되면 저장할 수 있어요.",
+      ),
+    );
+    expect(toast.error).not.toHaveBeenCalledWith(
+      "Resume is not completed yet.",
+    );
+  });
+
+  // 반대쪽도 지켜야 한다 — 5xx·네트워크 장애는 실제로 잠시 후면 된다. 사유("오류가
+  // 발생했어요")를 앞세우면 사용자는 재시도라는 **유효한 다음 행동**을 잃는다.
+  it("5xx 는 재시도 안내를 유지한다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockRejectedValue(new ApiError(503, "오류가 발생했어요."));
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "저장에 실패했어요. 잠시 후 다시 시도해주세요.",
+      ),
+    );
+  });
+
   // 서버도 로컬도 못 남긴 = **편집 유실**. outcome 만으로는 이 최악의 경우가 안 보인다.
   it("임시저장까지 실패하면 draft_saved=false 로 유실을 드러낸다", async () => {
     const user = userEvent.setup();
-    mockUpdateResume.mockRejectedValue(new ResumeMutationUnsupportedError(501));
+    mockUpdateResume.mockRejectedValue(new ApiError(500, "server error"));
     const setItem = vi
       .spyOn(Storage.prototype, "setItem")
       .mockImplementation(() => {
@@ -322,11 +393,39 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
         expect(mockCapture).toHaveBeenCalledWith(
           "resume_edit_saved",
           expect.objectContaining({
-            outcome: "unsupported",
+            outcome: "failed",
             persisted: false,
           }),
         ),
       );
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  // 임시 저장까지 실패하면 편집 유실 직전이다. 그렇다고 사유를 빼면 안 된다 —
+  // 제목 길이 초과라면 **고쳐서 바로 저장하는 것**이 이 위기의 탈출구이기 때문이다.
+  // 둘 중 하나만 말하면 사용자는 나갈 길을 모르거나, 나갈 길이 급한 줄을 모른다.
+  it("임시 저장까지 실패해도 서버가 준 사유는 사라지지 않는다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockRejectedValue(
+      new ApiError(422, "제목은 100자를 넘을 수 없어요."),
+    );
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(() => {
+        throw new Error("quota");
+      });
+    try {
+      await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      await user.click(screen.getByRole("button", { name: "저장" }));
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalled());
+      const message = vi.mocked(toast.error).mock.calls.at(-1)?.[0] as string;
+      expect(message).toContain("제목은 100자를 넘을 수 없어요.");
+      expect(message).toContain("페이지를 닫지 마세요");
     } finally {
       setItem.mockRestore();
     }
@@ -355,12 +454,12 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     );
 
     await act(async () => {
-      rejectSave(new ResumeMutationUnsupportedError(501));
+      rejectSave(new ApiError(500, "server error"));
     });
 
     await waitFor(() =>
       expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
-        outcome: "unsupported",
+        outcome: "failed",
         persisted: true,
         sections: ["personal_info", "summary"],
         section_count: 2,
@@ -668,5 +767,322 @@ describe("영문 읽기 전용 — 보완 안내", () => {
     expect(
       screen.getByRole("button", { name: "빈 레쥬메 편집하기" }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * FRT-238 — 버전을 빠르게 갈아탈 때 늦게 도착한 이전 요청의 응답.
+ *
+ * App Router 는 versionId 만 바뀌면 같은 컴포넌트 인스턴스를 재사용한다. 그래서 A 의 조회가
+ * 아직 날아다니는 채로 B 의 조회가 시작될 수 있고, A 가 뒤늦게 도착하면 B 화면이 A 의
+ * 내용으로 바뀐다 — 그 상태로 저장하면 **B 의 id 로 A 의 본문이 서버에 실린다.**
+ *
+ * 응답 순서는 코드 순서가 아니라 resolve 를 부르는 순서로 뒤집는다.
+ */
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+/**
+ * 조회를 versionId 별로 붙잡아 둔다. 같은 id 로 두 번 부르면 **각각 다른** 응답을 쥔다 —
+ * "돌아왔을 때 캐시가 번쩍이는가"를 보려면 두 번째 방문이 따로 기다려야 하기 때문이다.
+ */
+function routeByVersion() {
+  const calls = new Map<string, Deferred<ResumeVersion>[]>();
+  mockGetResume.mockReset();
+  mockGetResume.mockImplementation((versionId: string) => {
+    const d = deferred<ResumeVersion>();
+    const list = calls.get(versionId) ?? [];
+    list.push(d);
+    calls.set(versionId, list);
+    return d.promise;
+  });
+  const at = (versionId: string, nth: number) => {
+    const list = calls.get(versionId);
+    if (!list?.[nth]) {
+      throw new Error(
+        `${versionId} 의 ${nth}번째 조회가 아직 없다 (실제 ${list?.length ?? 0}회)`,
+      );
+    }
+    return list[nth];
+  };
+  return {
+    resolve: (versionId: string, data: ResumeVersion, nth = 0) =>
+      at(versionId, nth).resolve(data),
+    reject: (versionId: string, reason: unknown, nth = 0) =>
+      at(versionId, nth).reject(reason),
+  };
+}
+
+function paramsFor(versionId: string) {
+  return Promise.resolve({ versionId });
+}
+
+/** 로드 완료를 기다리지 않는다 — 진행 중인 상태 자체가 검증 대상이다. */
+async function renderVersion(versionId: string) {
+  let result!: ReturnType<typeof render>;
+  await act(async () => {
+    result = render(
+      <Suspense fallback={null}>
+        <ResumeDetailPage params={paramsFor(versionId)} />
+      </Suspense>,
+    );
+  });
+  return result;
+}
+
+/**
+ * key 를 바꾸지 않는 rerender 여야 한다. key 를 갈면 언마운트-재마운트라
+ * "같은 인스턴스가 재사용된다"는 이 버그의 전제 자체가 사라진다.
+ */
+async function navigateTo(
+  result: ReturnType<typeof render>,
+  versionId: string,
+) {
+  await act(async () => {
+    result.rerender(
+      <Suspense fallback={null}>
+        <ResumeDetailPage params={paramsFor(versionId)} />
+      </Suspense>,
+    );
+  });
+}
+
+async function flush() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+function named(
+  name: string,
+  overrides: Partial<ResumeVersion> = {},
+): ResumeVersion {
+  return resumeFixture({
+    인적사항: {
+      이름: name,
+      영문명: null,
+      생년월일: null,
+      이메일: null,
+      전화번호: null,
+      주소: null,
+      링크: [],
+    },
+    ...overrides,
+  });
+}
+
+/** 지금 화면에 실린 레쥬메가 누구 것인지 — 편집기가 없으면 null. */
+function shownName(): string | null {
+  const input = screen.queryByLabelText("이름");
+  return input ? (input as HTMLInputElement).value : null;
+}
+
+function loadingShown(): boolean {
+  return document.querySelector('[aria-busy="true"]') !== null;
+}
+
+describe("FRT-238 — 버전 전환 중 늦게 도착한 응답", () => {
+  it("A→B 로 옮긴 뒤 늦게 도착한 A 응답이 B 화면을 덮지 않는다", async () => {
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    await navigateTo(result, "B");
+
+    route.resolve("B", named("B유저"));
+    await flush();
+    expect(shownName()).toBe("B유저");
+
+    route.resolve("A", named("A유저"));
+    await flush();
+    expect(shownName()).toBe("B유저");
+  });
+
+  it("B 를 기다리는 동안 늦은 A 응답이 로딩을 꺼버리지 않는다", async () => {
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    await navigateTo(result, "B");
+
+    route.resolve("A", named("A유저"));
+    await flush();
+
+    expect(shownName()).toBeNull();
+    expect(loadingShown()).toBe(true);
+  });
+
+  it("늦게 도착한 A 의 실패가 B 화면을 에러로 바꾸지 않는다", async () => {
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    await navigateTo(result, "B");
+
+    route.resolve("B", named("B유저"));
+    await flush();
+
+    route.reject("A", new Error("late failure"));
+    await flush();
+
+    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+    expect(shownName()).toBe("B유저");
+  });
+
+  it("A→B→A 로 되돌아오면 캐시된 옛 내용이 아니라 로딩을 보여준다", async () => {
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    route.resolve("A", named("A유저"));
+    await flush();
+    expect(shownName()).toBe("A유저");
+
+    await navigateTo(result, "B");
+    await navigateTo(result, "A");
+
+    expect(loadingShown()).toBe(true);
+    expect(shownName()).toBeNull();
+  });
+
+  it("늦게 도착한 A 응답은 A 의 임시저장을 지우지 않는다", async () => {
+    // 서버 본문이 draft 보다 새로우므로, 가드가 없으면 이 응답이 draft 를 지운다.
+    // localStorage 삭제는 되돌릴 수 없다 — 여기서 새면 사용자가 쓰던 초안이 사라진다.
+    writeDraft("A", resumeFixture());
+    const serverNewerThanDraft = named("A유저", {
+      meta: {
+        language: "ko",
+        format: "json",
+        generated_at: "2099-01-01T00:00:00Z",
+        source_chars: 100,
+      },
+    });
+
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    await navigateTo(result, "B");
+    route.resolve("B", named("B유저"));
+    await flush();
+
+    route.resolve("A", serverNewerThanDraft);
+    await flush();
+
+    expect(window.localStorage.getItem("arc:resume-draft:A")).not.toBeNull();
+  });
+
+  it("에러 화면의 '다시 시도'는 지금 보고 있는 버전으로 다시 읽는다", async () => {
+    mockGetResume.mockReset();
+    mockGetResume
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(named("재시도됨"));
+
+    await renderVersion("B");
+    await screen.findByText("레쥬메를 불러오지 못했어요");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+
+    expect(await screen.findByLabelText("이름")).toHaveValue("재시도됨");
+    expect(mockGetResume).toHaveBeenCalledTimes(2);
+    expect(mockGetResume).toHaveBeenLastCalledWith("B");
+  });
+
+  it("실패 후 다시 시도가 성공하면 에러 화면이 사라진다", async () => {
+    mockGetResume.mockReset();
+    mockGetResume
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce(named("복구됨"));
+
+    await renderVersion("A");
+    await screen.findByText("레쥬메를 불러오지 못했어요");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+
+    expect(await screen.findByLabelText("이름")).toHaveValue("복구됨");
+    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+  });
+
+  it("'다시 시도'를 누른 직후에는 옛 실패 화면이 아니라 로딩을 보여준다", async () => {
+    const pending: Deferred<ResumeVersion>[] = [];
+    mockGetResume.mockReset();
+    mockGetResume.mockImplementationOnce(() =>
+      Promise.reject(new Error("boom")),
+    );
+    mockGetResume.mockImplementation(() => {
+      const d = deferred<ResumeVersion>();
+      pending.push(d);
+      return d.promise;
+    });
+
+    await renderVersion("A");
+    await screen.findByText("레쥬메를 불러오지 못했어요");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+
+    // 재조회를 시작한 순간 화면은 지난 실패가 아니라 지금 기다리는 중임을 보여야 한다.
+    expect(loadingShown()).toBe(true);
+    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+    expect(pending).toHaveLength(1);
+  });
+
+  it("재시도 응답이 늦어 그 사이 다른 버전으로 옮기면, 늦은 응답이 새 버전을 덮지 않는다", async () => {
+    const pending: Deferred<ResumeVersion>[] = [];
+    mockGetResume.mockReset();
+    mockGetResume.mockImplementationOnce(() =>
+      Promise.reject(new Error("boom")),
+    );
+    mockGetResume.mockImplementation(() => {
+      const d = deferred<ResumeVersion>();
+      pending.push(d);
+      return d.promise;
+    });
+
+    const result = await renderVersion("A");
+    await screen.findByText("레쥬메를 불러오지 못했어요");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    await navigateTo(result, "B");
+
+    // pending[0] = A 의 재시도, pending[1] = B 의 첫 조회
+    pending[1].resolve(named("B유저"));
+    await flush();
+    expect(shownName()).toBe("B유저");
+
+    pending[0].resolve(named("A유저"));
+    await flush();
+    expect(shownName()).toBe("B유저");
+  });
+
+  it("전환 중 Ctrl+S 를 눌러도 옛 버전 내용이 새 버전 id 로 저장되지 않는다", async () => {
+    // 읽기 경로는 가드가 닫았지만 **쓰기 경로**는 별개다. versionId 는 prop 이라 즉시
+    // 바뀌는 반면 resume/dirty 는 새 응답이 올 때까지 옛 버전 것이다. 저장 버튼은 이 창에
+    // 렌더되지 않지만 전역 Ctrl/Cmd+S 리스너는 살아 있어, 가드가 없으면 그 한 번의 키가
+    // **A 의 내용을 B 의 id 로** 서버에 덮어쓴다 — 이 PR 이 막으려던 바로 그 사고다.
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    route.resolve("A", named("A유저"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("이름"), "!");
+    expect(shownName()).toBe("A유저!");
+
+    await navigateTo(result, "B");
+    expect(loadingShown()).toBe(true);
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "s", metaKey: true });
+    });
+
+    expect(mockUpdateResume).not.toHaveBeenCalled();
   });
 });

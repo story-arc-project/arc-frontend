@@ -273,7 +273,16 @@ function routeStateful(
       return version ? RESPOND_OK(success(version)) : { kind: "notfound" };
     }
     if (method === "PATCH") {
-      const updated = store.resume.update(id, body as ResumeVersion);
+      // 실계약(BAC-56): 본문은 `{title?, result?}` 다. `result` 가 없으면 서버는 거절하지
+      // 않고 **아무것도 안 바꾼 채** 200 과 옛 본문을 돌려준다(pydantic 기본 extra="ignore").
+      // 스텁이 맨 본문을 그대로 저장해 주면 계약을 어긴 요청도 통과해 e2e 가 초록이 된다 —
+      // 그 관대함이 "성공했다고 말하며 편집을 버리는" 유실을 여태 못 잡았다.
+      const current = store.resume.getVersion(id);
+      if (!current) return { kind: "notfound" };
+      const patched = (body ?? {}) as { result?: ResumeVersion };
+      const updated = patched.result
+        ? store.resume.update(id, patched.result)
+        : current;
       return updated ? RESPOND_OK(success(updated)) : { kind: "notfound" };
     }
     if (method === "DELETE") {
