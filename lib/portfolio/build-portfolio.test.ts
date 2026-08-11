@@ -400,6 +400,50 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
   });
 
   /**
+   * FRT-211 후속(Codex P2) — 수상경력의 역할이 발행에서 사라지던 문제.
+   *
+   * 확정본은 팀 수상일 때만 '팀에서 내가 맡은 역할'을 보여준다. 이 라벨은 **의도적으로**
+   * `SEMANTIC_GROUPS.role` 밖에 있다(templates-v2.ts) — 그룹에 넣으면 `computeFormCards` 가
+   * 빈 코어 '내 역할/기여도' 를 항상 dedup 해 **개인 수상에서 역할 칸이 통째로 사라진다.**
+   * 그래서 라벨을 옮기는 대신 **발행 쪽에서만** 이 안정키를 폴백으로 읽는다.
+   * (화면엔 '데이터 분석 · 발표'가 보이는데 포트폴리오의 '내 역할' 섹션만 통째로 비던 상태)
+   */
+  it("팀 수상의 '팀에서 내가 맡은 역할'이 발행 기여도로 실린다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 데이터 분석 공모전 우수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "award-info.팀에서 내가 맡은 역할": { type: "text", text: "데이터 분석 · 발표" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).contribution).toBe("데이터 분석 · 발표");
+  });
+
+  it("코어 '내 역할/기여도'에 값이 있으면 그쪽이 이긴다 — 폴백은 빈 자리만 채운다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.내 역할/기여도": { type: "textarea", text: "팀장으로 전체 조율" },
+          "award-info.팀에서 내가 맡은 역할": { type: "text", text: "데이터 분석 · 발표" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).contribution).toBe("팀장으로 전체 조율");
+  });
+
+  /**
    * 해외경험(FRT-249)도 코어 '기간'을 빼고 확정본 ① 이 자기 '기간'을 갖는다. 수상·자격증과 달리
    * 라벨이 코어와 같은 '기간'이라 범용 폴백만으로도 값이 잡히므로, 이 두 건은 TYPE_PERIOD_KEY
    * 등록의 그물이 아니라 **발행 결과 자체**를 고정한다(등록을 지워도 통과한다 — 회귀 주입으로 확인).

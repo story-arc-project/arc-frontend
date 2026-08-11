@@ -72,7 +72,9 @@ export const mockAnalysisHomeSummary: AnalysisHomeSummary = {
       title: "데이터 분석 직무 종합 분석",
       status: "completed",
       createdAt: "2026-06-07T12:00:00Z",
-      experienceCount: 3,
+      // ⚠️ 같은 id 를 mockComprehensiveList 도 들고 있다 — 건수가 다르면 홈과 목록에서
+      // 같은 분석이 다른 크기로 보인다. seed.test.ts 가 두 값을 대조한다.
+      experienceCount: 6,
       isBookmarked: true,
     },
     {
@@ -302,7 +304,10 @@ export const mockIndividualAnalysisResult: IndividualAnalysisResult = {
         "개정한 가이드라인의 이후 사용 범위",
       ],
       rewriteSuggestion:
-        "'레이블러 4명의 불일치 사례 320건을 6개 패턴으로 분류하고 패턴별 판단 기준과 예시를 붙여 가이드라인을 개정했습니다. 재측정 결과 Cohen's Kappa가 0.61에서 0.78로 올랐고, 같은 데이터로 학습한 모델의 F1도 함께 개선됐습니다.'",
+        // ⚠️ 모델 성능 비교는 바로 위 weaknesses·missingElements 가 "아직 없다"고 진단한 값이다.
+        // 그런데도 이 예시 문구가 F1 개선을 단정하면, 사용자가 그대로 복사해 없는 성과를 쓰게 된다.
+        // 채울 자리는 남기되 수치는 비운다.
+        "'레이블러 4명의 불일치 사례 320건을 6개 패턴으로 분류하고 패턴별 판단 기준과 예시를 붙여 가이드라인을 개정했습니다. 재측정 결과 Cohen's Kappa가 0.61에서 0.78로 올랐습니다.' — 여기에 개정 전후 데이터로 학습한 모델의 지표 차이를 한 줄 덧붙이면 완성됩니다.",
     },
     synergyRecommendations: [
       {
@@ -997,11 +1002,14 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
         category: "활동_깊이",
         severity: "major",
         title: "어학·자격증이 보유 사실에서 멈춤",
+        // ⚠️ 두 항목의 폐기 사유가 다르다(자격증=A·R 없음, 어학=S·T·R 없음). 뭉뚱그리면
+        // 어학에 이미 있는 '한 일'을 또 쓰라고 시키게 된다 — 시드에는 학습 습관·주요 경험이 있다.
         diagnosis:
-          "영어는 점수와 활용 영역만, SQLD는 취득 사실만 적혀 있습니다. 두 항목 모두 그 능력으로 무엇을 해서 무엇이 달라졌는지에 해당하는 문장이 없어 STAR 생성 단계에서 폐기됐습니다.",
-        evidence: "STAR 폐기 2건이 모두 이 두 항목이며, 사유는 A·R 근거 부재",
+          "SQLD는 취득 사실만 있어 그 자격으로 무엇을 했는지가 없고, 영어는 반대로 한 일은 있는데 '어떤 문제에서 출발해 무엇이 달라졌는지'가 없습니다. 사유는 다르지만 둘 다 STAR 생성 단계에서 폐기됐습니다.",
+        evidence: "폐기 2건의 사유가 갈린다 — SQLD는 A·R 부재, 영어는 S·T·R 부재",
         impact: "이력서에서 자격 줄로만 남아 다른 경험만큼의 설득력을 갖지 못함",
-        priorityAction: "영어로 읽은 논문을 팀에 공유한 장면 한 건을 사례로 적으세요.",
+        priorityAction:
+          "영어는 이미 적은 논문 읽기 습관이 무엇을 바꿨는지(읽는 속도·발표 편수 등)를 한 줄 덧붙이고, SQLD는 그 자격을 실제로 쓴 일을 한 건 적으세요.",
       },
       {
         id: "cw-4",
@@ -1433,12 +1441,12 @@ export const mockKeywordResult: KeywordAnalysisResult = {
       timelineNote: null,
       chronologicalSequence: [
         { order: 1, experience: "데이터 분석 학회 DataWave 정회원", period: "2023-03", isDated: true },
-        { order: 2, experience: "미국 워싱턴대학교 교환학생", period: "2024-08", isDated: true },
-        { order: 3, experience: "DataWave 스터디장 · 학회장", period: "2024-03", isDated: true },
+        { order: 2, experience: "DataWave 스터디장 · 학회장", period: "2024-03", isDated: true },
+        { order: 3, experience: "미국 워싱턴대학교 교환학생", period: "2024-08", isDated: true },
         { order: 4, experience: "서울 심야 이동 인터랙티브 데이터 시각화", period: "2026-03", isDated: true },
       ],
       narrative:
-        "처음에는 스터디를 따라가는 것도 벅찼다. 이듬해 스터디장을 맡으면서 관점이 바뀌었다 — 사람들이 어디서 멈추는지 보이기 시작했고, 3주차에 이탈이 몰린다는 것을 확인한 뒤 과제를 필수와 선택으로 나눴다. 학회장이 된 해에는 모집이 안 되는 이유를 추측하지 않고 설문 62건으로 확인한 다음, 홍보가 아니라 내용을 고쳤다. 같은 태도가 마지막에는 개인 작업으로 이어졌다. 공모전에서 다룬 데이터가 표 안에만 남는 게 아쉬워 시각화를 시작했고, 읽히지 않는 화면을 스스로 발견해 구조를 갈아엎은 뒤 전시까지 완성했다.",
+        "처음에는 스터디를 따라가는 것도 벅찼다. 이듬해 스터디장을 맡으면서 관점이 바뀌었다 — 사람들이 어디서 멈추는지 보이기 시작했고, 3주차에 이탈이 몰린다는 것을 확인한 뒤 과제를 필수와 선택으로 나눴다. 학회장이 된 해에는 모집이 안 되는 이유를 추측하지 않고 설문 62건으로 확인한 다음, 홍보가 아니라 내용을 고쳤다. 같은 태도가 마지막에는 시각화 작업으로 이어졌다. 공모전에서 다룬 데이터가 표 안에만 남는 게 아쉬워 팀을 꾸려 시각화를 시작했고, 데이터 처리와 프론트엔드 구현을 맡아 읽히지 않는 화면을 스스로 발견해 구조를 갈아엎은 뒤 전시까지 완성했다.",
       turningPoints: [
         {
           experience: "DataWave 스터디장",
@@ -1465,7 +1473,8 @@ export const mockKeywordResult: KeywordAnalysisResult = {
           fromExperience: "전국 대학생 데이터 분석 공모전",
           toExperience: "서울 심야 이동 인터랙티브 데이터 시각화",
           relationType: "확장",
-          connection: "공모전에서 다룬 데이터를 전달 방식의 문제로 다시 붙잡아 개인 작업으로 이어갔다",
+          connection:
+            "공모전에서 다룬 데이터를 전달 방식의 문제로 다시 붙잡아, 팀 작업 안에서 데이터 처리와 프론트엔드 구현을 맡아 이어갔다",
           temporalNote: "공모전 종료 4개월 뒤 착수",
         },
       ],

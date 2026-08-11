@@ -114,6 +114,30 @@ const TYPE_PERIOD_KEY: Partial<Record<ExperienceTypeId, string>> = {
   "creative-work": "creative-info.작업 기간",
 };
 
+// 확정본이 역할을 자기 필드로 받는 유형의 **안정키**. 라벨이 `SEMANTIC_GROUPS.role` 밖에 있어
+// 범용 조회(`내 역할/기여도`)로는 잡히지 않는 것만 등록한다.
+//
+// ⚠️ 해법을 "라벨을 role 그룹에 추가"로 잡으면 안 된다. 수상경력의 '팀에서 내가 맡은 역할'이
+// 그룹 밖에 있는 것은 의도된 설계다(templates-v2.ts) — 그룹에 넣는 순간 `computeFormCards` 가
+// 빈 코어 '내 역할/기여도' 를 앵커로 보고 항상 dedup 해, 조건부라 화면에 없는 개인 수상에서는
+// **역할 칸이 하나도 남지 않는다.** 입력 화면의 규칙은 그대로 두고 발행 쪽에서만 폴백한다.
+const TYPE_ROLE_KEY: Partial<Record<ExperienceTypeId, string>> = {
+  award: "award-info.팀에서 내가 맡은 역할",
+};
+
+/**
+ * 발행할 기여도. 코어(또는 role 동의어)가 먼저고, 비어 있을 때만 유형 전용 필드로 폴백한다 —
+ * 사용자가 코어에 적은 값을 유형 필드가 덮어쓰면 안 된다.
+ */
+function contributionOf(typeId: ExperienceTypeId, blocks: Block[]): string {
+  const generic = textOf(pickValue(blocks, "내 역할/기여도"));
+  if (generic) return generic;
+  const key = TYPE_ROLE_KEY[typeId];
+  if (!key) return "";
+  const block = blocks.find((b) => b.key === key && !isBlockEmpty(b));
+  return block ? textOf(block.value) : "";
+}
+
 /** 코어 '기간'이 없는 유형의 시점. 값이 없으면 빈 문자열 — 없는 날짜를 지어내지 않는다. */
 function typePeriodOf(typeId: ExperienceTypeId, blocks: Block[]): string {
   const key = TYPE_PERIOD_KEY[typeId];
@@ -190,7 +214,7 @@ export function experienceToPost(exp: Experience): PortfolioPost {
     period: typePeriodOf(exp.type as ExperienceTypeId, blocks) || periodOf(pickValue(blocks, "기간")),
     category: label,
     summary: ev2.summary || pickSummary(blocks),
-    contribution: textOf(pickValue(blocks, "내 역할/기여도")),
+    contribution: contributionOf(exp.type as ExperienceTypeId, blocks),
     achievement: achievementText(blocks),
     keywords: ev2.tags,
   };

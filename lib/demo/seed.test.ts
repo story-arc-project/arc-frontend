@@ -368,6 +368,36 @@ describe("분석 mock — 시드 결속", () => {
     expect(checked, "Action 비중 기준을 가진 항목이 없어 검사가 공허하다").toBeGreaterThan(0);
   });
 
+  it("같은 분석 id 의 경험 수가 홈·목록에서 일치한다", () => {
+    // 홈 요약과 목록이 같은 분석을 다른 크기로 보여주면, 사용자는 분석이 바뀐 줄로 읽는다.
+    const byId = new Map(mockComprehensiveList.map(a => [a.id, a.experienceCount]));
+    let checked = 0;
+    for (const home of mockAnalysisHomeSummary.recentComprehensive) {
+      const listed = byId.get(home.id);
+      if (listed === undefined) continue;
+      checked += 1;
+      expect(home.experienceCount, `${home.id}: 홈과 목록의 경험 수가 다르다`).toBe(listed);
+    }
+    expect(checked, "홈·목록에 겹치는 분석이 없어 검사가 공허하다").toBeGreaterThan(0);
+  });
+
+  it("'시간순 확인됨' 타임라인이 실제로 시간순이다", () => {
+    // 화면은 배열 순서 그대로 그린다 — 정렬되지 않은 채 '시간순'이라 적히면 데모가 자기를 반박한다.
+    for (const line of mockKeywordResult.storylines) {
+      const seq = (line as { chronologicalSequence?: { order: number; period: string }[] })
+        .chronologicalSequence;
+      if (!seq?.length) continue;
+      const dated = seq.filter(s => /^\d{4}-\d{2}/.test(s.period));
+      expect(dated.length, "날짜 있는 항목이 없어 검사가 공허하다").toBeGreaterThan(1);
+      for (let i = 1; i < dated.length; i += 1) {
+        expect(
+          dated[i].period >= dated[i - 1].period,
+          `타임라인이 시간순이 아니다: ${dated[i - 1].period} → ${dated[i].period}`,
+        ).toBe(true);
+      }
+    }
+  });
+
   it("자기소개서의 '근거 없는 주장' 이 정말 시드에 근거가 없다", () => {
     // 이 예시는 하이라이트·배너 두 경로를 보여주기 위한 의도된 설계다. 경험을 고치다
     // 우연히 근거가 생기면 예시가 성립하지 않는다.
