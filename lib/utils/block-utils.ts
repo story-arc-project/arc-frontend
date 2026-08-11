@@ -368,6 +368,8 @@ export function cellFilled(cell: CellValue | undefined): boolean {
   // 파일은 업로드가 끝나야(fileId 확보) 채워진 것이다 — 이름만 있는 건 실패한 첨부다.
   // ⚠️ `isFileCellValue` 는 `type` 만 보고 통과시키므로 `fileId` 가 문자열이라는 보장이 없다 —
   // 셀 **안쪽**도 깨진 채 저장될 수 있어 `.trim()` 을 직접 부르면 안 된다(FRT-200 리뷰).
+  // 불투명 셀(모르는 판별자)은 **내용이 있다**고 본다 — 비었다고 보면 버림 판정에서 사라진다.
+  if (isOpaqueCell(cell)) return true
   if (isFileCellValue(cell)) return isFilledText(cell.fileId)
   return Array.isArray(cell) ? cell.length > 0 : isFilledText(cell)
 }
@@ -406,9 +408,12 @@ export function rowHasContent(row: BlockRow): boolean {
   // 저장된 행에 `cells` 가 아예 없을 수 있다(FRT-200) — `Object.values(undefined)` 는 던진다.
   if (!row || typeof row !== 'object') return false
   const cells = row.cells && typeof row.cells === 'object' ? row.cells : {}
+  // ⚠️ 이 판정은 **보정 전 원본**에도 돈다(`orphanFieldsToBlocks` 가 날것을 넘긴다) — 컬렉션이
+  // 배열이 아니거나 원소가 null 이면 여기서 던지고, 정규화가 손쓸 새도 없이 화면이 죽는다.
+  const extras = Array.isArray(row.extraFields) ? row.extraFields : []
   return (
     Object.values(cells).some(cellFilled) ||
-    (row.extraFields ?? []).some(f => cellFilled(f.value))
+    extras.some(f => !!f && typeof f === 'object' && cellFilled((f as { value?: CellValue }).value))
   )
 }
 
@@ -502,6 +507,28 @@ const optText = (x: unknown): string | undefined => (typeof x === 'string' ? x :
 const isOptText = (x: unknown): boolean => x === undefined || typeof x === 'string'
 const isOptNumber = (x: unknown): boolean => x === undefined || typeof x === 'number'
 
+/** 셀에 올 수 있는 유형(표·반복·그룹은 셀이 될 수 없다). */
+const isKnownCellType = (t: unknown): boolean =>
+  isKnownBlockType(t) && t !== 'repeatable-cell' && t !== 'table' && t !== 'group'
+
+/**
+ * 이 코드가 모르는 판별자를 든 셀 — **새 스키마가 쓴 잎 값**일 수 있다.
+ * 열 유형까지 미지일 때만 그대로 둔다(그리는 컨트롤이 없으니 객체가 화면에 닿지 않는다).
+ */
+const isOpaqueCell = (c: unknown): boolean =>
+  isPlainObject(c) && typeof c.type === 'string' && !isKnownBlockType(c.type)
+
+/** 값이 불투명해도 그대로 둘 열(= 이 코드가 유형을 모르는 열)의 key 집합. */
+function opaqueCellKeys(columns: unknown): Set<string> {
+  if (!Array.isArray(columns)) return new Set()
+  return new Set(
+    columns
+      .filter(isPlainObject)
+      .filter(c => !isKnownCellType(c.blockType))
+      .map(c => (typeof c.key === 'string' ? c.key : String(c.key))),
+  )
+}
+
 /**
  * 셀 하나가 이 코드가 그릴 수 있는 모양인가 (문자열 · 문자열 배열 · 파일 셀).
  *
@@ -518,7 +545,8 @@ function isIntactCell(c: unknown): boolean {
   return false
 }
 
-function repairCell(c: unknown): CellValue {
+function repairCell(c: unknown, allowOpaque = false): CellValue {
+  if (allowOpaque && isOpaqueCell(c)) return c as CellValue
   if (typeof c === 'string') return c
   if (Array.isArray(c)) return asStrings(c)
   if (isPlainObject(c) && c.type === 'file') {
@@ -632,15 +660,23 @@ function repairExtraValue(x: unknown): string | string[] {
 }
 
 /** 행에 붙는 스키마 밖 부가 값(FRT-76 링크·FRT-178 역할태그·FRT-145 행 항목)까지 본다. */
-function isIntactRow(r: Record<string, unknown>): boolean {
+function isIntactRow(r: Record<string, unknown>, opaqueKeys: Set<string> = new Set()): boolean {
   if (!isFilledText(r.id) || !isPlainObject(r.cells)) return false
-  if (!Object.values(r.cells).every(isIntactCell)) return false
+  if (
+    !Object.entries(r.cells).every(
+      ([k, c]) => isIntactCell(c) || (opaqueKeys.has(k) && isOpaqueCell(c)),
+    )
+  )
+    return false
   if (r.linkedProjectRowId !== undefined && typeof r.linkedProjectRowId !== 'string') return false
   if (r.id !== undefined && typeof r.id !== 'string') return false
   if (r.roleTags !== undefined && !allStrings(r.roleTags)) return false
   if (r.extraFields !== undefined) {
     if (!Array.isArray(r.extraFields)) return false
     if (!r.extraFields.every(isIntactExtraField)) return false
+    // 항목 하나씩 성해도 **key 가 겹치면** 수정·삭제가 둘을 함께 잡는다.
+    const ks = r.extraFields.map(f => (f as Record<string, unknown>).key)
+    if (new Set(ks).size !== ks.length) return false
   }
   return true
 }
@@ -698,7 +734,7 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
         Array.isArray(v.rows) &&
         // 행 `id` 까지 물어야 한다 — 없으면 `repairRows` 를 건너뛴 채 렌더에 닿아
         // React key 가 겹치고 수정·삭제 핸들러가 엉뚱한 행을 잡는다.
-        v.rows.every(r => isPlainObject(r) && isIntactRow(r)) &&
+        v.rows.every(r => isPlainObject(r) && isIntactRow(r, opaqueCellKeys(v.columns))) &&
         // 행 하나씩은 성해도 **쌍으로 깨질 수 있다** — 같은 id 두 개면 한쪽을 고칠 때 둘 다 바뀐다.
         new Set(v.rows.map(r => (r as Record<string, unknown>).id)).size === v.rows.length
       )
@@ -719,7 +755,11 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
  * `id` 가 없으면 인덱스로 채운다 — `uid()` 를 쓰면 렌더마다 id 가 바뀌어 행이 리마운트되고
  * 입력 포커스가 날아간다(이 함수는 렌더 관문에서도 돈다).
  */
-function repairRows(x: unknown, columnRenames?: Map<string, string>): BlockRow[] {
+function repairRows(
+  x: unknown,
+  columnRenames?: Map<string, string>,
+  opaqueKeys: Set<string> = new Set(),
+): BlockRow[] {
   if (!Array.isArray(x)) return []
   const rows = x.filter(isPlainObject)
   // ⚠️ 이미 쓰이는 id 를 피한다. 겹치면 수정·삭제 핸들러가 행을 id 로 찾으므로 **하나를 고치면
@@ -736,7 +776,7 @@ function repairRows(x: unknown, columnRenames?: Map<string, string>): BlockRow[]
         // 열 key 가 갈렸으면 셀도 새 이름으로 옮긴다. 새 이름에 이미 값이 있으면 그쪽을 존중한다.
         const renamed = columnRenames?.get(k)
         const key = renamed !== undefined && !(renamed in r.cells) ? renamed : k
-        cells[key] = repairCell(c)
+        cells[key] = repairCell(c, opaqueKeys.has(key))
       }
     }
     return {
@@ -908,10 +948,14 @@ export function normalizeBlockValue(
         // key 가 바뀌면 **그 열이 쓰던 셀도 같이 옮긴다** — 이름표만 갈면 값은 옛 이름 아래
         // 남고 렌더러는 새 이름으로 찾아, 저장된 값이 화면에서 사라진다.
         ...(Array.isArray(v.columns)
-          ? (({ columns, renames }) => ({ columns, rows: repairRows(v.rows, renames) }))(
-              repairColumns(v.columns),
-            )
-          : { columns: opts?.columns ?? [], rows: repairRows(v.rows) }),
+          ? (({ columns, renames }) => ({
+              columns,
+              rows: repairRows(v.rows, renames, opaqueCellKeys(columns)),
+            }))(repairColumns(v.columns))
+          : {
+              columns: opts?.columns ?? [],
+              rows: repairRows(v.rows, undefined, opaqueCellKeys(opts?.columns)),
+            }),
       } as BlockValue
     case 'table':
       return {

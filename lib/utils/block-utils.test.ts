@@ -817,6 +817,42 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
     expect(out.rows[0].cells[out.columns[0].key]).toBe("저장된 값")
   })
 
+  /**
+   * ⚠️ 열이 **이 코드가 모르는 유형**이면 그 칸의 값도 모르는 게 당연하다 — 빈 문자열로 갈면
+   * 열었다 저장하는 것만으로 새 스키마가 쓴 잎 값이 사라진다. 그리는 컨트롤도 없으니 안전하다.
+   */
+  it("모르는 유형의 열에 실린 불투명 셀은 그대로 지킨다", () => {
+    const cell = { type: "rating-v3", value: 5 }
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "score", label: "평점", blockType: "rating-v3" }],
+      // ⚠️ `id` 를 일부러 비워 **보정 경로를 지나게** 한다. 온전한 값으로 쓰면 fast-path 로
+      //    빠져 `repairCell` 에 닿지도 않고 통과한다(실제로 그렇게 썼다가 잡았다).
+      rows: [{ cells: { score: cell } }],
+    }) as unknown as { rows: Parameters<typeof rowHasContent>[0][] }
+    expect((out.rows[0] as unknown as { cells: Record<string, unknown> }).cells.score).toEqual(cell)
+    // 그 행은 "비어 있음"이 아니어야 한다 — 비었다고 보면 버림 판정에서 사라진다.
+    expect(rowHasContent(out.rows[0])).toBe(true)
+  })
+
+  it("부가 항목 key 가 성했더라도 서로 겹치면 갈아 준다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          extraFields: [
+            { key: "k", label: "A", blockType: "text", value: "가" },
+            { key: "k", label: "B", blockType: "text", value: "나" },
+          ],
+        },
+      ],
+    }) as unknown as { rows: { extraFields: { key: string }[] }[] }
+    expect(new Set(out.rows[0].extraFields.map(f => f.key)).size).toBe(2)
+  })
+
   it("행 부가 항목의 key 가 겹치면 결정적으로 갈아 준다", () => {
     const out = normalizeBlockValue("repeatable-cell", {
       type: "repeatable-cell",
@@ -1079,6 +1115,19 @@ describe("isBlockDiscardable — 모르는 타입 (FRT-200)", () => {
 })
 
 describe("행·셀 판정 — 손상된 값 (FRT-200)", () => {
+  /**
+   * ⚠️ 이 판정은 **보정 전 원본**에도 돈다 — `orphanFieldsToBlocks` 가 소비 안 된 필드 값을
+   * 날것으로 `isBlockDiscardable` 에 넘긴다. 여기서 던지면 정규화가 손쓸 새도 없이 화면이 죽는다.
+   */
+  it("부가 항목이 배열이 아니거나 원소가 깨져 있어도 던지지 않는다", () => {
+    const notArray = { id: "r1", cells: {}, extraFields: { broken: true } }
+    const withNull = { id: "r2", cells: {}, extraFields: [null] }
+    type Row = Parameters<typeof rowHasContent>[0]
+    expect(() => rowHasContent(notArray as unknown as Row)).not.toThrow()
+    expect(() => rowHasContent(withNull as unknown as Row)).not.toThrow()
+    expect(rowHasContent(withNull as unknown as Row)).toBe(false)
+  })
+
   it("cells 가 없는 행도 죽지 않는다", () => {
     expect(() => rowHasContent({ id: "r1" } as unknown as Parameters<typeof rowHasContent>[0])).not.toThrow()
     expect(rowHasContent({ id: "r1" } as unknown as Parameters<typeof rowHasContent>[0])).toBe(false)
