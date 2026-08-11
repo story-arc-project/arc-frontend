@@ -425,6 +425,46 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
     expect(experienceToPost(exp).contribution).toBe("데이터 분석 · 발표");
   });
 
+  /**
+   * 같은 부류(Codex P2 2라운드) — 수상경력은 확정본이 코어 '핵심 성과'를 빼고(CORE_EXCLUDE)
+   * '수상 내용 / 배경' 으로 대체했는데, 그 라벨이 `SEMANTIC_GROUPS.achievement` 밖이라
+   * 발행 시 성과가 통째로 버려졌다 — 화면엔 길게 적혀 있는데 포트폴리오만 빈 상태.
+   */
+  it("수상의 '수상 내용 / 배경'이 발행 성과로 실린다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "공모전 우수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "award-info.수상 내용 / 배경": { type: "textarea", text: "심야 노선 3개 구간 제안" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).achievement).toBe("심야 노선 3개 구간 제안");
+  });
+
+  it("성과 동의어에 값이 있으면 그쪽이 이긴다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "공모전 우수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.핵심 성과": { type: "textarea", text: "코어 성과" },
+          "award-info.수상 내용 / 배경": { type: "textarea", text: "심야 노선 3개 구간 제안" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).achievement).toBe("코어 성과");
+  });
+
   it("코어 '내 역할/기여도'에 값이 있으면 그쪽이 이긴다 — 폴백은 빈 자리만 채운다", () => {
     const exp = makeExp({
       type: "award",

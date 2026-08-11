@@ -456,12 +456,14 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       applicableRoles: ["데이터 분석가", "데이터 엔지니어", "ML 엔지니어"],
     },
     {
-      combinationTitle: "3년 역할 성장 + 온보딩 설계",
-      items: ["데이터 분석 학회 DataWave", "네이버 부스트캠프 AI Tech 6기"],
+      // ⚠️ 조합에 쓰는 경험은 이 분석이 실제로 받은 것(experiences)이어야 한다. 밖의 경험을
+      // 근거로 들면 상세 화면이 분석에 없는 항목을 인용하는 꼴이 된다.
+      combinationTitle: "영어 논문 독해 + 주간 논문 리뷰",
+      items: ["영어 — 논문 독해와 실무 소통", "자연어처리 연구실 학부 연구생"],
       synergyReason:
-        "정회원에서 학회장까지 3년간 같은 조직에 머물며 역할을 넓힌 이력과, 외부 교육과정을 완주한 이력이 함께 놓이면 '오래 남아 조직을 바꾸는 사람'과 '새 환경에서도 완주하는 사람'을 동시에 증명합니다.",
-      expectedEffect: "장기 근속 가능성과 학습 속도를 한 번에 설명",
-      applicableRoles: ["데이터 분석가", "주니어 리서처"],
+        "매일 초록 하나를 읽고 세 문장으로 요약하는 2년치 습관이, 연구실 주간 세미나에서 논문 6편을 맡아 발표한 이력과 이어집니다. 읽는 힘이 혼자 쌓인 게 아니라 팀에 전달되는 형태로 쓰였다는 근거가 됩니다.",
+      expectedEffect: "최신 연구를 따라가고 팀에 옮길 수 있는 사람으로 읽힘",
+      applicableRoles: ["주니어 리서처", "ML 엔지니어"],
     },
   ],
   additionalRecommendations: {
@@ -682,9 +684,9 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       task:
         "이탈이 몰리는 구간을 특정해, 진도를 다 따라오지 못하는 사람도 최소한의 분량만으로 완주할 수 있도록 커리큘럼 구조를 바꾸는 것",
       action:
-        "데이터 분석이 처음인 학회원 12명을 대상으로 8주 커리큘럼을 설계하고 매주 실습 문제를 직접 만들었습니다. 과제를 제출하지 못한 사람에게는 개별로 막힌 지점을 물어 다음 주 난이도를 조정했고, 과제를 '필수 3문제 + 선택 3문제'로 나눠 최소 진도만 따라와도 완주할 수 있는 구조로 바꿨습니다.",
+        "데이터 분석이 처음인 학회원 17명을 대상으로 8주 커리큘럼을 설계하고 매주 실습 문제를 직접 만들었습니다. 과제를 제출하지 못한 사람에게는 개별로 막힌 지점을 물어 다음 주 난이도를 조정했고, 과제를 '필수 3문제 + 선택 3문제'로 나눠 최소 진도만 따라와도 완주할 수 있는 구조로 바꿨습니다.",
       result:
-        "이전 학기 중도 이탈률 40%에서 12%로 낮췄고, 수료자 12명 중 5명이 다음 학기 공모전 팀에 합류해 스터디가 다음 활동으로 이어지는 경로가 생겼습니다.",
+        "이전 학기 중도 이탈률 40%에서 12%로 낮췄고, 수료자 15명 중 5명이 다음 학기 공모전 팀에 합류해 스터디가 다음 활동으로 이어지는 경로가 생겼습니다.",
       learning: "",
       sourceQuotes: {
         situation: "3주차부터 난이도가 급격히 올라 이탈이 몰렸습니다.",
@@ -750,15 +752,17 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
     {
       title: "심야 노선 후보 구간 3곳 제안으로 공모전 우수상",
       headline: "",
-      situation:
-        "심야 버스 노선이 실제 수요와 맞는지 검증된 적이 없어, 기존 노선 기준 외에는 구간을 판단할 근거가 없던 상황",
-      task:
-        "대중교통 데이터와 상권 데이터를 결합해 심야 시간대에 수요가 실제로 몰리는 구간을 찾아내고, 그 근거를 심사위원이 납득할 형태로 제시하는 것",
+      // ⚠️ S·T 는 **비워 둔다.** 아래 evidenceStatus 가 두 슬롯을 근거 없음으로 보고하는데
+      // 본문을 채우면, v3.1 이 "근거 없으면 슬롯을 비운다"고 정한 것과 어긋나고 화면은 그
+      // 지어낸 문장을 그대로 써도 되는 STAR 로 먼저 보여준다(경고는 접힌 채로 아래에 있다).
+      situation: "",
+      task: "",
       action:
         "승하차 데이터와 상권 매출 데이터를 결합·정제하고 시간대별 수요 밀도를 분석했습니다. 본선 사흘 전 기준 시간대가 잘못 설정된 것을 발견해 결과를 다시 뽑았고, 제안 구간 하나가 바뀐 것에 맞춰 발표 자료를 고쳐 다시 준비했습니다.",
       result:
         "기존 노선과 다른 3개 구간을 제안해 187팀 중 우수상(2위)을 받았고, 심사위원으로부터 근거의 구체성과 정책 적용 가능성에서 높은 평가를 받았습니다.",
-      learning: "",
+      learning:
+        "숫자를 의심하는 습관. 본선 사흘 전 기준 시간대 오류를 스스로 발견해 결과를 다시 뽑은 경험에서 얻었습니다.",
       sourceQuotes: {
         situation: "",
         task: "",
@@ -766,7 +770,7 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
           "대중교통 승하차 데이터와 상권 매출 데이터를 결합해 '심야 버스 노선이 실제로 필요한 구간'을 찾는 분석으로 수상했습니다.",
         result:
           "기존 노선 기준과 다른 3개 구간을 제안했고, 심사위원으로부터 근거의 구체성과 정책 적용 가능성에서 높은 평가를 받았습니다.",
-        learning: "",
+        learning: "숫자를 의심하는 습관이 그때 생겼습니다.",
       },
       competencyEvidence: [
         {
@@ -775,7 +779,7 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
         },
       ],
       evidenceStatus: {
-        supportedSlots: ["A", "R"],
+        supportedSlots: ["A", "R", "L"],
         unsupportedSlots: [
           {
             slot: "S",
@@ -816,18 +820,15 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
           {
             key: "action_dominant",
             label: "Action 비중",
-            passed: false,
-            detail: "Action 이 전체의 36% (권장 40~50%)",
-            coaching: "데이터를 어떤 순서로 결합하고 무엇을 기준으로 판단했는지 더 적어보세요.",
+            passed: true,
+            detail: "Action 이 전체의 47% (권장 40~50%)",
+            coaching: "",
           },
         ],
-        priorityFixes: [
-          "왜 이 분석이 필요했는지 한 문장만 앞에 붙여보세요.",
-          "데이터를 어떤 순서로 결합하고 무엇을 기준으로 판단했는지 더 적어보세요.",
-        ],
+        priorityFixes: ["왜 이 분석이 필요했는지 한 문장만 앞에 붙여보세요."],
+        // 배움(L)은 원문(`award-process.기억에 남는 순간 / 배운 점`)에 있으므로 삭제 사유를 적지 않는다.
         derivedFieldNotes: [
           "한 줄 성취문(headline) 삭제: 원문에 없는 수치가 섞여 생성이 취소됐습니다.",
-          "배움(L) 삭제: 원문에 회고가 명시되지 않았습니다.",
         ],
       },
     },
@@ -868,7 +869,6 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       // seed.test.ts 의 "topFixes 수치가 항목별 기준과 일치한다" 가 이 정합성을 고정한다.
       topFixes: [
         "Context 명확성 — 4건 중 1건에서 미달",
-        "Action 비중 — 4건 중 1건에서 미달",
         "슬롯 분리성 — 4건 중 1건에서 미달",
       ],
     },
@@ -991,9 +991,11 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
         category: "스킬_보유",
         severity: "major",
         title: "통계적 검증 방법이 드러나지 않음",
+        // ⚠️ 원문이 말한 것은 '결합·정제 후 시간대별 수요 밀도 분석'까지다. 상관분석처럼
+        // 하지 않은 기법을 전제하면, 하지도 않은 일을 근거로 약점을 지적하게 된다.
         diagnosis:
-          "수요 밀도·상관관계를 다뤘다고 했지만 어떤 방법으로 유의성을 확인했는지는 적혀 있지 않습니다.",
-        evidence: "분석 서술에 사용한 통계 기법이 명시되지 않음",
+          "데이터를 결합해 시간대별 수요 밀도를 봤다고만 적혀 있고, 그 밀도 차이가 우연이 아니라고 볼 근거를 무엇으로 확인했는지는 나오지 않습니다.",
+        evidence: "분석 서술이 '결합·정제 후 수요 밀도 분석'에서 끝나고 사용한 기법이 없음",
         impact: "데이터 분석 직무 기술 면접에서 근거를 대기 어려울 수 있음",
         priorityAction: "사용한 검정·모델과 그 선택 이유를 한 줄씩 명시",
       },
@@ -1032,9 +1034,9 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       },
       {
         item: "'영어 — 논문 독해와 실무 소통' 항목",
-        issue: "점수와 활용 영역은 있으나 그 영어로 수행한 일이 한 건도 없음",
+        issue: "학습 습관과 주요 경험은 적혀 있는데, 그래서 무엇이 달라졌는지가 없음",
         improvementHint:
-          "'주간 세미나에서 영어 논문 6편을 발표했다'처럼 이미 한 일과 연결하면 근거가 생김",
+          "'번역기 없이 초록을 읽는 시간이 절반으로 줄었다'처럼 전후 변화를 한 줄 붙이면 근거가 됨",
       },
       {
         item: "'SQL 개발자 (SQLD)' 항목",

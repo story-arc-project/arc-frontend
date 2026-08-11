@@ -125,14 +125,23 @@ const TYPE_ROLE_KEY: Partial<Record<ExperienceTypeId, string>> = {
   award: "award-info.팀에서 내가 맡은 역할",
 };
 
+// 성과도 같은 구조다. 수상경력은 확정본이 코어 '핵심 성과'를 빼고(CORE_EXCLUDE) '수상 내용 /
+// 배경' 으로 대체했는데, 그 라벨은 `SEMANTIC_GROUPS.achievement` 밖이라 범용 조회에 안 걸린다
+// → 화면엔 길게 적힌 성과가 발행물에서만 통째로 사라졌다.
+const TYPE_ACHIEVEMENT_KEY: Partial<Record<ExperienceTypeId, string>> = {
+  award: "award-info.수상 내용 / 배경",
+};
+
 /**
  * 발행할 기여도. 코어(또는 role 동의어)가 먼저고, 비어 있을 때만 유형 전용 필드로 폴백한다 —
  * 사용자가 코어에 적은 값을 유형 필드가 덮어쓰면 안 된다.
  */
 function contributionOf(typeId: ExperienceTypeId, blocks: Block[]): string {
-  const generic = textOf(pickValue(blocks, "내 역할/기여도"));
-  if (generic) return generic;
-  const key = TYPE_ROLE_KEY[typeId];
+  return textOf(pickValue(blocks, "내 역할/기여도")) || typeKeyText(TYPE_ROLE_KEY[typeId], blocks);
+}
+
+/** 유형 전용 안정키의 텍스트. 키가 없거나 값이 비면 빈 문자열. */
+function typeKeyText(key: string | undefined, blocks: Block[]): string {
   if (!key) return "";
   const block = blocks.find((b) => b.key === key && !isBlockEmpty(b));
   return block ? textOf(block.value) : "";
@@ -161,7 +170,7 @@ const COMPLEMENTARY_ACHIEVEMENT_LABELS = ["단체 활동 / 성과", "개인 활�
  * 호출측이 customBlocks 까지 넘기면, 폐기된 템플릿 필드(구 `extended.결과/성과`)가 orphan 으로
  * 보존된 경우에도 발행 시 성과가 소실되지 않는다.
  */
-function achievementText(blocks: Block[]): string {
+function achievementText(typeId: ExperienceTypeId, blocks: Block[]): string {
   const synonymLabels = equivalentLabels("핵심 성과").filter(
     (l) => !COMPLEMENTARY_ACHIEVEMENT_LABELS.includes(l),
   );
@@ -177,6 +186,12 @@ function achievementText(blocks: Block[]): string {
       const t = textOf(b.value);
       if (t) parts.push(t);
     }
+  }
+  // 동의어·상호보완이 모두 비었을 때만 유형 전용 필드로 폴백한다 — 사용자가 코어에 적은
+  // 값을 유형 필드가 덮어쓰지 않도록, 기간·역할과 같은 우선순위를 지킨다.
+  if (parts.length === 0) {
+    const typed = typeKeyText(TYPE_ACHIEVEMENT_KEY[typeId], blocks);
+    if (typed) parts.push(typed);
   }
   return parts.join("\n");
 }
@@ -215,7 +230,7 @@ export function experienceToPost(exp: Experience): PortfolioPost {
     category: label,
     summary: ev2.summary || pickSummary(blocks),
     contribution: contributionOf(exp.type as ExperienceTypeId, blocks),
-    achievement: achievementText(blocks),
+    achievement: achievementText(exp.type as ExperienceTypeId, blocks),
     keywords: ev2.tags,
   };
 }
