@@ -686,6 +686,77 @@ describe("normalizeBlockValue (FRT-200)", () => {
 })
 
 /**
+ * ⚠️ **컨테이너를 막았다고 잎이 막힌 게 아니다** (FRT-200 리뷰 3라운드). 값 하나가 몇 겹인지
+ * 세지 않고 방어를 넣으면 매 라운드 한 겹씩 남는다 — 블록 → 셀 → 배열 원소 → 셀 안의 배열.
+ */
+describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
+  it("파일의 선택 메타데이터가 깨져도 렌더가 부를 수 있는 모양으로 만든다", () => {
+    const out = normalizeBlockValue("file", {
+      type: "file",
+      fileName: "증빙.pdf",
+      description: "",
+      evidenceType: "",
+      mimeType: { broken: true },
+      url: 12,
+    }) as unknown as { fileName: string; mimeType?: unknown; url?: unknown }
+    expect(out.fileName).toBe("증빙.pdf") // 살아 있는 값은 지킨다
+    expect(typeof out.mimeType === "string" || out.mimeType === undefined).toBe(true)
+    expect(typeof out.url === "string" || out.url === undefined).toBe(true)
+  })
+
+  /**
+   * ⚠️ 셀을 채워 두면 `rowHasContent` 의 `||` 가 앞에서 끝나 **부가 항목에 닿지도 않는다**
+   * (실제로 그렇게 써서 위양성으로 통과했다). 셀을 비워 두 번째 항을 반드시 평가하게 한다.
+   */
+  it("행의 부가 항목이 깨져도 행 판정이 죽지 않는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "item", label: "활동", blockType: "text" }],
+      rows: [{ id: "r1", cells: {}, extraFields: [null], roleTags: [{ x: 1 }] }],
+    }) as unknown as { rows: Parameters<typeof rowHasContent>[0][] }
+    expect(() => rowHasContent(out.rows[0])).not.toThrow()
+    expect(rowHasContent(out.rows[0])).toBe(false)
+  })
+
+  it("셀 안의 배열에 문자열 아닌 원소가 있으면 걸러 낸다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "skills", label: "역량", blockType: "tags" }],
+      rows: [{ id: "r1", cells: { skills: ["협업", { broken: true }] } }],
+    }) as unknown as { rows: { cells: { skills: unknown } }[] }
+    expect(out.rows[0].cells.skills).toEqual(["협업"])
+  })
+
+  it("되살릴 선택지 목록 자체가 깨져 있으면 그것도 걸러 낸다", () => {
+    const out = normalizeBlockValue(
+      "checklist",
+      { type: "checklist", checked: [] },
+      { options: ["정상", { broken: true }] as unknown as string[] },
+    ) as unknown as { options: unknown[] }
+    expect(out.options).toEqual(["정상"])
+  })
+})
+
+/**
+ * 블록이 선언한 타입과 값이 든 타입이 **둘 다 아는 타입인데 서로 다를 때**, 렌더러는
+ * `block.type` 으로 컨트롤을 고르므로 값이 그 모양이 아니면 그 자리에서 죽는다.
+ */
+describe("normalizeBlock — 타입 불일치 (FRT-200)", () => {
+  it("블록 타입과 값 타입이 어긋나면 블록 타입의 모양으로 맞춘다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "repeatable-cell",
+      label: "성과",
+      value: { type: "text", text: "엉뚱한 값" } as unknown as BlockValue,
+    })
+    const value = normalized.value as unknown as { type: string; columns: unknown[]; rows: unknown[] }
+    expect(value.type).toBe("repeatable-cell")
+    expect(Array.isArray(value.columns)).toBe(true)
+    expect(Array.isArray(value.rows)).toBe(true)
+  })
+})
+
+/**
  * "그릴 게 없다"와 "버려도 된다"는 **다른 질문이다** (FRT-200 리뷰). 모르는 타입은 그릴 수는
  * 없지만, 버리면 저장 왕복에서 그 키가 통째로 사라진다 — 새 스키마가 쓴 값을 구 프론트가 지운다.
  */
@@ -702,6 +773,22 @@ describe("isBlockDiscardable — 모르는 타입 (FRT-200)", () => {
   it("아는 타입의 빈 값은 종전대로 버린다", () => {
     expect(isBlockDiscardable(blockWith({ type: "text", text: "" }))).toBe(true)
     expect(isBlockDiscardable(blockWith({ type: "text", text: "값" }))).toBe(false)
+  })
+
+  /** 그룹은 자식이 정보다 — 모르는 타입의 자식을 담은 섹션을 버리면 그 값이 통째로 사라진다. */
+  it("모르는 타입의 자식을 담은 group 은 버리지 않는다", () => {
+    const group: Block = {
+      id: "g1",
+      type: "group",
+      label: "사용자 섹션",
+      value: { type: "group" },
+      children: [
+        { id: "c1", type: "text", label: "빈 칸", value: { type: "text", text: "" } },
+        blockWith({ type: "brand-new-in-v3", payload: "미래 스키마" }),
+      ],
+    }
+    expect(isBlockEmpty(group)).toBe(true) // 그릴 것은 없다
+    expect(isBlockDiscardable(group)).toBe(false) // 그렇다고 섹션째 지우면 안 된다
   })
 })
 

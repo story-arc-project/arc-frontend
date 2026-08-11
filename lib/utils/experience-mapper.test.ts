@@ -3364,6 +3364,54 @@ describe("저장 왕복 — 손상된 값 정규화 (FRT-200)", () => {
 })
 
 /**
+ * 완료 저장의 "빈 섹션 정리"는 **삭제** 결정이다. 이 코드가 모르는 타입의 자식은 그리지 못할
+ * 뿐인데 섹션째 지우면 그 값이 영구히 사라진다 (FRT-200 리뷰).
+ */
+describe("toSavePayload — 모르는 타입을 담은 사용자 섹션 (FRT-200)", () => {
+  it("완료 저장의 빈 섹션 정리가 모르는 타입의 자식을 담은 섹션을 지우지 않는다", () => {
+    const group: Block = {
+      id: "g1",
+      key: "custom.사용자 섹션",
+      type: "group",
+      label: "사용자 섹션",
+      value: { type: "group" },
+      children: [
+        {
+          id: "c1",
+          key: "custom.신규칸",
+          type: "text",
+          label: "신규 칸",
+          value: { type: "brand-new-in-v3", payload: "미래 스키마" } as unknown as BlockValue,
+        },
+      ],
+    }
+    const payload = toSavePayload(
+      makeExperienceV2({ status: "complete", customBlocks: [group] }),
+    )
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom.find(c => c.label === "사용자 섹션")).toBeDefined()
+  })
+
+  it("정말로 빈 사용자 섹션은 종전대로 완료 저장에서 정리된다", () => {
+    const group: Block = {
+      id: "g2",
+      key: "custom.빈 섹션",
+      type: "group",
+      label: "빈 섹션",
+      value: { type: "group" },
+      children: [
+        { id: "c2", key: "custom.빈칸", type: "text", label: "빈 칸", value: { type: "text", text: "" } },
+      ],
+    }
+    const payload = toSavePayload(
+      makeExperienceV2({ status: "complete", customBlocks: [group] }),
+    )
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom.find(c => c.label === "빈 섹션")).toBeUndefined()
+  })
+})
+
+/**
  * v1 은 템플릿 병합이 **나중에**(ExperienceFormV2 → mergeSavedIntoTemplate) 일어난다. 그래서
  * 로드 시점 보정이 결측 정의를 `[]` 로 굳혀 버리면, 뒤이은 병합은 그 `[]` 를 "사용자가 다
  * 지웠다"로 읽어 **현재 템플릿 정의를 되살리지 못한다**. 값은 남는데 그릴 컨트롤이 없다.

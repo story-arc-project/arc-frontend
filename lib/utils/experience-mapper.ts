@@ -921,9 +921,12 @@ export function toSavePayload(exp: ExperienceV2): ExperienceSavePayload {
     else custom.push(blockToCustomEntry(b)) // 키 없는(사용자 추가) 블록은 custom 으로 보존
   }
   // 완료 저장 시 완전히 빈 사용자 섹션(group)은 정리한다. 초안은 보존(돌아와 채울 수 있게).
+  // ⚠️ 판정은 `isBlockEmpty` 가 아니라 `isBlockDiscardable` 이다 — 이건 **삭제** 결정이고,
+  // "그릴 게 없다"와 "버려도 된다"는 다른 질문이다. 이 코드가 모르는 타입의 자식을 담은
+  // 섹션은 그리지 못할 뿐이지, 지우면 그 값이 영구히 사라진다 (FRT-200 리뷰).
   const customSource =
     exp.status === "complete"
-      ? exp.customBlocks.filter(b => !(b.type === "group" && isBlockEmpty(b)))
+      ? exp.customBlocks.filter(b => !(b.type === "group" && isBlockDiscardable(b)))
       : exp.customBlocks
   for (const b of customSource) {
     custom.push(blockToCustomEntry(b))

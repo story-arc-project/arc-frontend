@@ -488,6 +488,56 @@ const asStringsInPlace = (x: unknown): string[] =>
 const allStrings = (x: unknown): boolean =>
   Array.isArray(x) && x.every(i => typeof i === 'string')
 
+/** 선택 필드는 "문자열이거나 아예 없거나" — 깨진 값은 키째 지운다(빈 문자열도 값이므로). */
+const optText = (x: unknown): string | undefined => (typeof x === 'string' ? x : undefined)
+const isOptText = (x: unknown): boolean => x === undefined || typeof x === 'string'
+const isOptNumber = (x: unknown): boolean => x === undefined || typeof x === 'number'
+
+/**
+ * 셀 하나가 이 코드가 그릴 수 있는 모양인가 (문자열 · 문자열 배열 · 파일 셀).
+ *
+ * ⚠️ 배열은 **원소까지** 본다 — `TagsCellInput`·`RoleChips` 가 원소를 React 자식으로 그리므로
+ * 객체가 하나만 섞여도 그 자리에서 화면이 죽는다.
+ */
+function isIntactCell(c: unknown): boolean {
+  if (typeof c === 'string') return true
+  if (Array.isArray(c)) return allStrings(c)
+  if (isFileCellValue(c as CellValue)) {
+    const f = c as Record<string, unknown>
+    return typeof f.fileId === 'string' && typeof f.fileName === 'string' && isOptText(f.mimeType) && isOptNumber(f.size)
+  }
+  return false
+}
+
+function repairCell(c: unknown): CellValue {
+  if (typeof c === 'string') return c
+  if (Array.isArray(c)) return asStrings(c)
+  if (isPlainObject(c) && c.type === 'file') {
+    return {
+      ...c,
+      type: 'file',
+      fileId: asText(c.fileId),
+      fileName: asText(c.fileName),
+      mimeType: optText(c.mimeType),
+      size: typeof c.size === 'number' ? c.size : undefined,
+    } as CellValue
+  }
+  return ''
+}
+
+/** 행에 붙는 스키마 밖 부가 값(FRT-76 링크·FRT-178 역할태그·FRT-145 행 항목)까지 본다. */
+function isIntactRow(r: Record<string, unknown>): boolean {
+  if (!isFilledText(r.id) || !isPlainObject(r.cells)) return false
+  if (!Object.values(r.cells).every(isIntactCell)) return false
+  if (!isOptText(r.linkedProjectRowId)) return false
+  if (r.roleTags !== undefined && !allStrings(r.roleTags)) return false
+  if (r.extraFields !== undefined) {
+    if (!Array.isArray(r.extraFields)) return false
+    if (!r.extraFields.every(f => isPlainObject(f) && isIntactCell(f.value))) return false
+  }
+  return true
+}
+
 const isPlainObject = (x: unknown): x is Record<string, unknown> =>
   !!x && typeof x === 'object' && !Array.isArray(x)
 
@@ -525,7 +575,12 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
       return (
         typeof v.fileName === 'string' &&
         typeof v.description === 'string' &&
-        typeof v.evidenceType === 'string'
+        typeof v.evidenceType === 'string' &&
+        // 선택 메타데이터도 봐야 한다 — `FileBlock` 이 `mimeType` 에 `.startsWith` 를 부른다.
+        isOptText(v.fileId) &&
+        isOptText(v.mimeType) &&
+        isOptText(v.url) &&
+        isOptNumber(v.size)
       )
     case 'repeatable-cell':
       return (
@@ -534,7 +589,7 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
         Array.isArray(v.rows) &&
         // 행 `id` 까지 물어야 한다 — 없으면 `repairRows` 를 건너뛴 채 렌더에 닿아
         // React key 가 겹치고 수정·삭제 핸들러가 엉뚱한 행을 잡는다.
-        v.rows.every(r => isPlainObject(r) && isFilledText(r.id) && isPlainObject(r.cells))
+        v.rows.every(r => isPlainObject(r) && isIntactRow(r))
       )
     case 'table':
       return allStrings(v.columns) && Array.isArray(v.rows) && v.rows.every(allStrings)
@@ -567,10 +622,24 @@ function repairRows(x: unknown): BlockRow[] {
       for (let n = 1; used.has(id); n += 1) id = `row-${i}-${n}`
       used.add(id)
     }
+    const cells: Record<string, CellValue> = {}
+    if (isPlainObject(r.cells)) {
+      for (const [k, c] of Object.entries(r.cells)) cells[k] = repairCell(c)
+    }
     return {
       ...r,
       id,
-      cells: isPlainObject(r.cells) ? (r.cells as Record<string, CellValue>) : {},
+      cells,
+      // 스키마 밖 부가 값도 잎까지 맞춘다 — `rowHasContent` 가 `f.value` 를 직접 읽는다.
+      ...(r.linkedProjectRowId !== undefined ? { linkedProjectRowId: optText(r.linkedProjectRowId) } : {}),
+      ...(r.roleTags !== undefined ? { roleTags: asStrings(r.roleTags) } : {}),
+      ...(r.extraFields !== undefined
+        ? {
+            extraFields: (Array.isArray(r.extraFields) ? r.extraFields : [])
+              .filter(isPlainObject)
+              .map(f => ({ ...f, value: repairCell(f.value) })),
+          }
+        : {}),
     }
   }) as BlockRow[]
 }
@@ -609,8 +678,10 @@ export function normalizeBlockValue(
    * 정당하게 `[]` 로 저장되는데(ChecklistBlock 의 `removeOption`), 그걸 되살리면 지운 항목이
    * 부활한다 — 값 유실보다 나쁜 게 무음 오염이다. 되살리는 건 키가 아예 깨진 경우뿐이다.
    */
+  // ⚠️ 되살릴 목록도 저장분에서 온다(`e.options`·`block.options`) — 그것 역시 깨져 있을 수
+  // 있으므로 값 배열과 **같은 위생**을 거쳐야 한다. 안 그러면 `ChecklistBlock` 이 객체를 그린다.
   const optionsOf = (raw: unknown): string[] =>
-    Array.isArray(raw) ? asStrings(raw) : (opts?.options ?? [])
+    Array.isArray(raw) ? asStrings(raw) : asStrings(opts?.options)
 
   if (!isPlainObject(value)) return empty()
 
@@ -679,6 +750,11 @@ export function normalizeBlockValue(
         fileName: asText(v.fileName),
         description: asText(v.description),
         evidenceType: asText(v.evidenceType),
+        // 선택 메타데이터는 `...v` 로 흘러들어오면 깨진 채 렌더에 닿는다(`mimeType.startsWith`).
+        fileId: optText(v.fileId),
+        mimeType: optText(v.mimeType),
+        url: optText(v.url),
+        size: typeof v.size === 'number' ? v.size : undefined,
       } as BlockValue
     case 'repeatable-cell':
       return {
@@ -714,10 +790,19 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
   // ⚠️ **결측 정의를 근거 없이 `[]` 로 굳히면 그 뒤로는 못 되살린다.** 보정은 배열이면 빈
   // 배열도 사용자의 선택으로 존중하므로, 나중에 템플릿과 병합하는 경로(v1)에서는 여기서
   // 정의를 함께 넘겨야 "결측"과 "사용자가 다 지움"이 구분된 채로 남는다.
-  const value = normalizeBlockValue(block.type, block.value, {
+  let value = normalizeBlockValue(block.type, block.value, {
     options: block.options ?? defs?.options,
     columns: defs?.columns,
   })
+  // ⚠️ **둘 다 아는 타입인데 서로 다르면** 렌더러가 죽는다 — 컨트롤은 `block.type` 으로 고르는데
+  // 값은 다른 모양이라 `value.columns.length` 같은 접근이 그 자리에서 터진다. 블록이 선언한
+  // 모양으로 맞춘다(매퍼의 `injectValue` 가 타입 불일치에 주입을 생략하는 것과 같은 결론).
+  if (isKnownBlockType(block.type) && value.type !== block.type) {
+    value = normalizeBlockValue(block.type, undefined, {
+      options: block.options ?? defs?.options,
+      columns: defs?.columns,
+    })
+  }
   const children = block.children?.map(c => normalizeBlock(c, defs))
   const childrenChanged =
     !!block.children && children!.some((c, i) => c !== block.children![i])
@@ -775,6 +860,11 @@ export function isBlockDiscardable(block: Block): boolean {
   // 값·구 프론트가 배포된 상태)은 `isBlockEmpty` 에선 비어 있지만, 버리면 저장 왕복에서 그 키가
   // 통째로 사라진다 — 못 그린다는 이유로 남의 데이터를 지우는 셈이다.
   if (v && typeof v.type === 'string' && !isKnownBlockType(v.type)) return false
+  // 그룹은 **자식이 곧 내용**이다. 자식 하나가 못 버릴 값이면 섹션째 버려선 안 된다 —
+  // 완료 저장의 빈 섹션 정리가 이 판정을 쓰므로, 여기서 참이면 그 값이 영구히 사라진다.
+  if (block.type === 'group' || v?.type === 'group') {
+    return (block.children ?? []).every(c => isBlockDiscardable(c))
+  }
   return isBlockEmpty(block) && !hasResidualValue(block)
 }
 
