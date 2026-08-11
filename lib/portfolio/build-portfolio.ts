@@ -150,12 +150,23 @@ function typePeriodOf(typeId: ExperienceTypeId, blocks: Block[]): string {
 // '역할 / 기여도'는 5종 select 라 자유 서술 코어 값을 실으면 목록에 없는 답이 선택된 것처럼 보이고,
 // '주요 발견 / 결과'는 표라 한 덩이 문장을 행으로 쪼개는 해석이 필요하다. 값은 '기타' 카드에 그대로
 // 두고(사용자가 보고 직접 옮길 수 있다) **발행 우선순위만** 바로잡는다.
+//
+// ⚠️ 해법을 "라벨을 `SEMANTIC_GROUPS` 에 추가"로 잡으면 안 된다. 수상경력의 '팀에서 내가 맡은
+// 역할'이 role 그룹 밖에 있는 것은 의도된 설계다(templates-v2.ts) — 그룹에 넣는 순간
+// `computeFormCards` 가 빈 코어 '내 역할/기여도' 를 앵커로 보고 항상 dedup 해, 조건부라 화면에
+// 없는 개인 수상에서는 **역할 칸이 하나도 남지 않는다.** 입력 화면의 규칙은 그대로 두고 발행
+// 쪽에서만 폴백한다.
 const TYPE_CONTRIBUTION_KEY: Partial<Record<ExperienceTypeId, string>> = {
   research: "research-paper.역할 / 기여도",
+  award: "award-info.팀에서 내가 맡은 역할",
 };
 
+// 수상경력은 확정본이 코어 '핵심 성과'를 빼고(CORE_EXCLUDE) '수상 내용 / 배경' 으로 대체했는데,
+// 그 라벨은 `SEMANTIC_GROUPS.achievement` 밖이라 범용 조회에 안 걸린다 → 화면엔 길게 적힌 성과가
+// 발행물에서만 통째로 사라졌다(FRT-211 확정본 + 데모 정렬에서 발견).
 const TYPE_ACHIEVEMENT_KEY: Partial<Record<ExperienceTypeId, string>> = {
   research: "research-content.주요 발견 / 결과",
+  award: "award-info.수상 내용 / 배경",
 };
 
 /** 유형이 확정본 필드를 따로 가진 경우 그 값. 비어 있으면 undefined → 범용 조회로 폴백한다. */

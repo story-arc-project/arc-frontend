@@ -401,6 +401,92 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
   });
 
   /**
+   * FRT-211 후속(Codex P2) — 수상경력의 역할이 발행에서 사라지던 문제.
+   *
+   * 확정본은 팀 수상일 때만 '팀에서 내가 맡은 역할'을 보여준다. 이 라벨은 **의도적으로**
+   * `SEMANTIC_GROUPS.role` 밖에 있다(templates-v2.ts) — 그룹에 넣으면 `computeFormCards` 가
+   * 빈 코어 '내 역할/기여도' 를 항상 dedup 해 **개인 수상에서 역할 칸이 통째로 사라진다.**
+   * 그래서 라벨을 옮기는 대신 **발행 쪽에서만** 이 안정키를 폴백으로 읽는다.
+   * (화면엔 '데이터 분석 · 발표'가 보이는데 포트폴리오의 '내 역할' 섹션만 통째로 비던 상태)
+   */
+  it("팀 수상의 '팀에서 내가 맡은 역할'이 발행 기여도로 실린다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "전국 대학생 데이터 분석 공모전 우수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "award-info.팀에서 내가 맡은 역할": { type: "text", text: "데이터 분석 · 발표" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).contribution).toBe("데이터 분석 · 발표");
+  });
+
+  /**
+   * 같은 부류(Codex P2 2라운드) — 수상경력은 확정본이 코어 '핵심 성과'를 빼고(CORE_EXCLUDE)
+   * '수상 내용 / 배경' 으로 대체했는데, 그 라벨이 `SEMANTIC_GROUPS.achievement` 밖이라
+   * 발행 시 성과가 통째로 버려졌다 — 화면엔 길게 적혀 있는데 포트폴리오만 빈 상태.
+   */
+  it("수상의 '수상 내용 / 배경'이 발행 성과로 실린다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "공모전 우수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "award-info.수상 내용 / 배경": { type: "textarea", text: "심야 노선 3개 구간 제안" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).achievement).toBe("심야 노선 3개 구간 제안");
+  });
+
+  it("개편 전 레코드의 코어 성과가 남아 있어도 확정본 필드가 이긴다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "공모전 우수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.핵심 성과": { type: "textarea", text: "코어 성과" },
+          "award-info.수상 내용 / 배경": { type: "textarea", text: "심야 노선 3개 구간 제안" },
+        },
+      } as unknown as Experience["content"],
+    });
+    expect(experienceToPost(exp).achievement).toBe("심야 노선 3개 구간 제안");
+  });
+
+  it("개편 전 레코드의 코어 역할이 남아 있어도 확정본 필드가 이긴다", () => {
+    const exp = makeExp({
+      type: "award",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "수상",
+        summary: "요약",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.내 역할/기여도": { type: "textarea", text: "팀장으로 전체 조율" },
+          "award-info.팀에서 내가 맡은 역할": { type: "text", text: "데이터 분석 · 발표" },
+        },
+      } as unknown as Experience["content"],
+    });
+    // 코어는 CORE_EXCLUDE 로 화면에서 사라진 칸이다 — 옛 값이 새 값을 이기면 사용자가
+    // 고칠 수 없는 문구가 계속 발행된다.
+    expect(experienceToPost(exp).contribution).toBe("데이터 분석 · 발표");
+  });
+
+  /**
    * 해외경험(FRT-249)도 코어 '기간'을 빼고 확정본 ① 이 자기 '기간'을 갖는다. 수상·자격증과 달리
    * 라벨이 코어와 같은 '기간'이라 범용 폴백만으로도 값이 잡히므로, 이 두 건은 TYPE_PERIOD_KEY
    * 등록의 그물이 아니라 **발행 결과 자체**를 고정한다(등록을 지워도 통과한다 — 회귀 주입으로 확인).

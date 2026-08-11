@@ -25,13 +25,13 @@ test("데모 e-포트폴리오: 생성 → 인덱스 → 상세 → 다음 경�
   await expect(page.getByRole("link", { name: "아카이브" })).toHaveCount(0);
 
   // 4. 첫 경험 카드 진입 → 상세 글
-  await page.getByRole("link", { name: /주가 예측 프로젝트/ }).first().click();
-  await expect(page).toHaveURL(/\/demo\/portfolio\/demo-portfolio-1\/exp-v2-1$/);
+  await page.getByRole("link", { name: /자연어처리 연구실 학부 연구생/ }).first().click();
+  await expect(page).toHaveURL(/\/demo\/portfolio\/demo-portfolio-1\/exp-demo-career$/);
   await expect(page.getByText("전체 포트폴리오로")).toBeVisible();
 
   // 5. 다음 경험으로 이동
   await page.getByRole("link", { name: /다음 경험/ }).click();
-  await expect(page).toHaveURL(/\/demo\/portfolio\/demo-portfolio-1\/exp-v2-2$/);
+  await expect(page).toHaveURL(/\/demo\/portfolio\/demo-portfolio-1\/exp-demo-extracurricular$/);
 
   // 6. 전체 포트폴리오로 복귀
   await page.getByRole("link", { name: "전체 포트폴리오로" }).click();
@@ -45,6 +45,6 @@ test("알 수 없는 포트폴리오 id 는 시드 대신 not-found 로 fail-clo
   await expect(page.getByRole("heading", { name: "김서윤" })).toHaveCount(0);
 
   // 상세: 임의 id + 임의 postId 도 동일하게 not-found.
-  await page.goto("/demo/portfolio/not-real/exp-v2-1");
+  await page.goto("/demo/portfolio/not-real/exp-demo-career");
   await expect(page.getByRole("heading", { name: "포트폴리오를 찾을 수 없어요" })).toBeVisible();
 });
