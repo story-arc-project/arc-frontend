@@ -90,7 +90,7 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
   }
   // 부속 필드만 빠진 값은 모양을 맞춰 싣는다 — 살아 있는 필드는 그대로 보존된다.
   // 값이 온전하면 같은 참조가 돌아오므로 기존 동작은 그대로다.
-  const safe = normalizeBlockValue(block.type, value)
+  const safe = normalizeBlockValue(block.type, value, { options: block.options })
   // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)면 주입을 생략해 위젯 렌더 깨짐을 막는다.
   // 단 text↔textarea 는 값 모양이 같아 변환해 싣는다.
   if (safe.type !== block.type) {
@@ -160,7 +160,7 @@ function customEntriesToBlocks(entries: CustomEntry[], depth = 0): Block[] {
         // 깨졌으면 블록을 통째로 버리는데, 여기서 그러면 **사용자가 직접 만든 칸이 사라진다** —
         // custom 은 값이 아니라 필드의 존재 자체가 정보다. 게다가 여긴 `e.type` 이 값과 별도로
         // 남아 있어 복구할 근거가 있다(orphan 은 `value.type` 이 유일한 타입 신호라 근거가 없다).
-        value: normalizeBlockValue(e.type, e.value),
+        value: normalizeBlockValue(e.type, e.value, { options: e.options }),
         ...(e.required ? { required: true } : {}),
         ...(e.options ? { options: e.options } : {}),
       })

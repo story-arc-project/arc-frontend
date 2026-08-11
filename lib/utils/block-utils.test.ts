@@ -24,6 +24,7 @@ import {
   isFileCellValue,
   rowHasContent,
   isBlockEmpty,
+  normalizeBlock,
   normalizeBlockValue,
   validateRequiredBlocks,
 } from "@/lib/utils/block-utils"
@@ -617,5 +618,75 @@ describe("행·셀 판정 — 손상된 값 (FRT-200)", () => {
     expect(() => cellFilled(null as unknown as CellValue)).not.toThrow()
     expect(cellFilled(null as unknown as CellValue)).toBe(false)
     expect(cellText(null as unknown as CellValue)).toBe("")
+  })
+
+  /**
+   * 셀 **안쪽**도 깨진다. `isFileCellValue` 는 `type` 만 보고 통과시키므로 `fileId` 가 없으면
+   * 그 다음 줄 `cell.fileId.trim()` 에서 죽는다 — 블록 층위만 막고 셀 층위를 빠뜨린 자리다.
+   */
+  it("파일 셀의 fileId·fileName 이 결측이어도 죽지 않는다", () => {
+    const brokenId = { type: "file", fileId: null, fileName: "보고서.pdf" } as unknown as CellValue
+    expect(() => cellFilled(brokenId)).not.toThrow()
+    expect(cellFilled(brokenId)).toBe(false)
+    expect(() => cellText(brokenId)).not.toThrow()
+    expect(cellText(brokenId)).toBe("")
+
+    const brokenName = { type: "file", fileId: "f-1" } as unknown as CellValue
+    expect(cellFilled(brokenName)).toBe(true)
+    // 파일명이 없어도 첨부했다는 사실은 남긴다(기존 대체 문구 규칙과 같은 기준).
+    expect(cellText(brokenName)).toBe("첨부파일")
+  })
+
+  it("파일 셀이 깨진 행도 판정이 죽지 않는다", () => {
+    const row = {
+      id: "r1",
+      cells: { 결과물: { type: "file", fileId: null, fileName: "x" } },
+    } as unknown as Parameters<typeof rowHasContent>[0]
+    expect(() => rowHasContent(row)).not.toThrow()
+    expect(rowHasContent(row)).toBe(false)
+  })
+})
+
+describe("normalizeBlock — 템플릿 선택지 되살리기 (FRT-200)", () => {
+  /**
+   * `options` 는 사용자가 고른 값이 아니라 **템플릿이 주는 선택지**다. 결측이라고 `[]` 로 두면
+   * `ChecklistBlock` 은 `val.options` 를 그대로 그리므로(형제 `SingleSelectBlock` 과 달리
+   * `block.options` 폴백이 없다) 체크박스가 하나도 없는 칸이 되어, 이미 고른 값을 **끌 수도
+   * 없다.** 블록이 선택지를 알고 있으면 그것으로 되살린다.
+   */
+  it("checklist 선택지가 결측이면 블록이 아는 선택지로 되살리고 고른 값은 지킨다", () => {
+    const block = createChecklistField("분위기", ["뿌듯함", "아쉬움"])
+    const normalized = normalizeBlock({
+      ...block,
+      value: { type: "checklist", checked: ["뿌듯함"] } as unknown as BlockValue,
+    })
+    expect(normalized.value).toMatchObject({
+      type: "checklist",
+      options: ["뿌듯함", "아쉬움"],
+      checked: ["뿌듯함"],
+    })
+  })
+
+  it("single-select 도 같은 기준으로 선택지를 되살린다", () => {
+    const block = createSelectField("근무 형태", ["정규직", "인턴"])
+    const normalized = normalizeBlock({
+      ...block,
+      value: { type: "single-select", selected: "인턴" } as unknown as BlockValue,
+    })
+    expect(normalized.value).toMatchObject({
+      type: "single-select",
+      options: ["정규직", "인턴"],
+      selected: "인턴",
+    })
+  })
+
+  it("블록도 선택지를 모르면 빈 목록으로 둔다 — 없는 선택지를 지어내지 않는다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "checklist",
+      label: "선택지 없는 칸",
+      value: { type: "checklist", checked: ["직접 쓴 값"] } as unknown as BlockValue,
+    })
+    expect(normalized.value).toMatchObject({ options: [], checked: ["직접 쓴 값"] })
   })
 })

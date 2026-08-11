@@ -340,8 +340,10 @@ export function cellFilled(cell: CellValue | undefined): boolean {
   // 저장된 셀은 null 로도 온다(FRT-200) — `undefined` 만 걸러내면 아래 `.trim()` 에서 죽는다.
   if (cell === undefined || cell === null) return false
   // 파일은 업로드가 끝나야(fileId 확보) 채워진 것이다 — 이름만 있는 건 실패한 첨부다.
-  if (isFileCellValue(cell)) return cell.fileId.trim() !== ''
-  return Array.isArray(cell) ? cell.length > 0 : cell.trim() !== ""
+  // ⚠️ `isFileCellValue` 는 `type` 만 보고 통과시키므로 `fileId` 가 문자열이라는 보장이 없다 —
+  // 셀 **안쪽**도 깨진 채 저장될 수 있어 `.trim()` 을 직접 부르면 안 된다(FRT-200 리뷰).
+  if (isFileCellValue(cell)) return isFilledText(cell.fileId)
+  return Array.isArray(cell) ? cell.length > 0 : isFilledText(cell)
 }
 
 /**
@@ -360,12 +362,12 @@ export function cellText(cell: CellValue | undefined): string {
   if (isFileCellValue(cell)) {
     // 첨부를 지우면 `{fileId:"", fileName:""}` 이 남는다 — 이걸 대체 문구로 접으면 없는 첨부가
     // 화면에 남고, 열 유형이 텍스트로 바뀌면 그 문구가 값으로 굳는다. `cellFilled` 과 같은
-    // 기준(fileId)으로 판정해 두 함수가 어긋나지 않게 한다.
-    if (!cell.fileId.trim()) return ""
+    // 기준(fileId)으로 판정해 두 함수가 어긋나지 않게 한다(결측 방어도 같은 기준, FRT-200).
+    if (!isFilledText(cell.fileId)) return ""
     // 파일명이 비면 첨부했다는 사실 자체가 화면에서 사라진다 — 대체 문구로 흔적을 남긴다.
-    return cell.fileName.trim() || "첨부파일"
+    return isFilledText(cell.fileName) ? cell.fileName.trim() : "첨부파일"
   }
-  return Array.isArray(cell) ? cell.join(", ") : cell
+  return Array.isArray(cell) ? cell.join(", ") : typeof cell === "string" ? cell : ""
 }
 
 /**
@@ -528,9 +530,26 @@ function repairRows(x: unknown): BlockRow[] {
  *
  * 정상 값은 원본 참조를 그대로 돌려준다(위 `isIntactBlockValue` 참고).
  */
-export function normalizeBlockValue(fallbackType: BlockType, value: unknown): BlockValue {
+export function normalizeBlockValue(
+  fallbackType: BlockType,
+  value: unknown,
+  opts?: { options?: string[] },
+): BlockValue {
   const empty = (): BlockValue =>
-    fallbackType === 'group' ? { type: 'group' } : emptyValue(fallbackType)
+    fallbackType === 'group' ? { type: 'group' } : emptyValue(fallbackType, opts)
+
+  /**
+   * 선택지는 사용자가 고른 값이 아니라 **블록이 소유한 목록**이다. 결측이면 블록이 아는
+   * 목록으로 되살린다 — `ChecklistBlock` 은 `val.options` 를 그대로 그리므로(형제
+   * `SingleSelectBlock` 과 달리 `block.options` 폴백이 없다) 빈 목록으로 두면 체크박스가
+   * 하나도 없는 칸이 되어 **이미 고른 값을 끌 수조차 없다**.
+   *
+   * ⚠️ **배열이면 빈 배열이어도 그대로 존중한다.** 사용자가 선택지를 전부 지운 상태가
+   * 정당하게 `[]` 로 저장되는데(ChecklistBlock 의 `removeOption`), 그걸 되살리면 지운 항목이
+   * 부활한다 — 값 유실보다 나쁜 게 무음 오염이다. 되살리는 건 키가 아예 깨진 경우뿐이다.
+   */
+  const optionsOf = (raw: unknown): string[] =>
+    Array.isArray(raw) ? asStrings(raw) : (opts?.options ?? [])
 
   if (!isPlainObject(value) || typeof value.type !== 'string') return empty()
   if (isIntactBlockValue(value)) return value as unknown as BlockValue
@@ -554,14 +573,14 @@ export function normalizeBlockValue(fallbackType: BlockType, value: unknown): Bl
       return {
         ...v,
         type: 'single-select',
-        options: asStrings(v.options),
+        options: optionsOf(v.options),
         selected: asText(v.selected),
       } as BlockValue
     case 'checklist':
       return {
         ...v,
         type: 'checklist',
-        options: asStrings(v.options),
+        options: optionsOf(v.options),
         checked: asStrings(v.checked),
       } as BlockValue
     case 'tags':
@@ -607,7 +626,8 @@ export function normalizeBlockValue(fallbackType: BlockType, value: unknown): Bl
 
 /** 블록 하나의 값을 보정한다. 값이 온전하면 **원본 블록 참조를 그대로** 돌려준다. */
 export function normalizeBlock(block: Block): Block {
-  const value = normalizeBlockValue(block.type, block.value)
+  // 블록이 아는 선택지를 함께 넘긴다 — 값에서 사라진 목록을 되살릴 유일한 근거다.
+  const value = normalizeBlockValue(block.type, block.value, { options: block.options })
   const children = block.children?.map(normalizeBlock)
   const childrenChanged =
     !!block.children && children!.some((c, i) => c !== block.children![i])
