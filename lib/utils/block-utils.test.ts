@@ -690,6 +690,21 @@ describe("normalizeBlockValue (FRT-200)", () => {
     expect(new Set(out.rows.map(r => r.id)).size).toBe(2)
   })
 
+  /** 중복 보정이 만드는 이름도 **저장된 이름을 피해야** 한다(`x`,`x`,`x-1` → 진짜 `x-1` 이 밀리면 안 됨). */
+  it("중복 보정이 만든 이름이 저장된 이름을 빼앗지 않는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        { id: "x", cells: { a: "첫째" } },
+        { id: "x", cells: { a: "중복" } },
+        { id: "x-1", cells: { a: "진짜 x-1" } },
+      ],
+    }) as unknown as { rows: { id: string; cells: Record<string, unknown> }[] }
+    expect(out.rows.find(r => r.cells.a === "진짜 x-1")?.id).toBe("x-1")
+    expect(new Set(out.rows.map(r => r.id)).size).toBe(3)
+  })
+
   it("행 id 를 인덱스로 채울 때 이미 쓰는 id 와 겹치지 않는다", () => {
     const out = normalizeBlockValue("repeatable-cell", {
       type: "repeatable-cell",
@@ -1121,6 +1136,20 @@ describe("normalizeBlock — 타입 불일치 (FRT-200)", () => {
     }
     expect(normalizeBlock(block).value).toBe(block.value) // 저장 경로: 그대로
     expect(normalizeBlockForRender(block).value.type).toBe("text") // 표시 경로: 그릴 모양
+  })
+
+  /**
+   * ⚠️ text ↔ textarea 는 **저장 모양이 같다** — 매퍼(`injectValue`)도 호환으로 본다.
+   * 그런데 불일치라고 빈 값으로 갈면 열었다 저장하는 것만으로 글이 사라진다.
+   */
+  it("text ↔ textarea 불일치는 글을 지키며 판별자만 바꾼다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      value: { type: "textarea", text: "살아 있어야 할 글" } as unknown as BlockValue,
+    })
+    expect(normalized.value).toMatchObject({ type: "text", text: "살아 있어야 할 글" })
   })
 
   it("블록 타입과 값 타입이 어긋나면 블록 타입의 모양으로 맞춘다", () => {

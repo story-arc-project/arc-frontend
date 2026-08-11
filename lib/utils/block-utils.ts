@@ -623,8 +623,10 @@ function dedupeNames(names: string[], fallback: (i: number) => string): string[]
       for (let n = 1; used.has(name) || reserved.has(name); n += 1) name = `${base}-${n}`
     } else if (used.has(name)) {
       // 저장분끼리 겹치면 앞엣것이 그 이름을 지키고 뒤엣것만 간다.
+      // ⚠️ 여기서 만드는 이름도 **저장된 이름을 피해야** 한다 — `x`,`x`,`x-1` 에서 중복이
+      // `x-1` 을 가져가면 진짜 `x-1` 이 밀리고 그걸 가리키던 링크가 중복 행을 가리킨다.
       const base = name
-      for (let n = 1; used.has(name); n += 1) name = `${base}-${n}`
+      for (let n = 1; used.has(name) || reserved.has(name); n += 1) name = `${base}-${n}`
     }
     used.add(name)
     return name
@@ -1025,10 +1027,17 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
   // 모양으로 맞춘다(매퍼의 `injectValue` 가 타입 불일치에 주입을 생략하는 것과 같은 결론).
   // 모르는 판별자는 위에서 이미 보존됐다 — 여기서 맞추는 건 **둘 다 아는데 다른** 경우뿐이다.
   if (isKnownBlockType(block.type) && isKnownBlockType(value.type) && value.type !== block.type) {
+    // ⚠️ text ↔ textarea 는 **저장 모양이 같다**(매퍼의 `injectValue` 도 호환으로 본다) —
+    // 불일치라고 비우면 열었다 저장하는 것만으로 글이 사라진다. 판별자만 바꿔 싣는다.
+    const textual = new Set(['text', 'textarea'])
+    if (textual.has(block.type) && textual.has(value.type)) {
+      value = { ...value, type: block.type } as BlockValue
+    } else {
     value = normalizeBlockValue(block.type, undefined, {
       options: block.options ?? defs?.options,
       columns: defs?.columns,
     })
+    }
   }
   // ⚠️ 자식 목록도 저장 JSONB 다 — 배열이 아니면 `.map` 이 그 자리에서 죽고, 원소가 null 이면
   // 재귀가 첫 프로퍼티 접근에서 죽는다. 배열 보정은 `normalizeBlocks` 와 같은 기준으로.
