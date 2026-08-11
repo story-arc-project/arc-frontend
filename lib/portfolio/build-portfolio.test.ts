@@ -5,6 +5,7 @@ import { SCHEMA_VERSION_V2 } from "@/types/archive";
 import type { PortfolioProfile } from "@/types/portfolio";
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper";
 import { getTemplateForType } from "@/lib/constants/templates-v2";
+import { equivalentLabels } from "@/lib/utils/form-cards";
 import { buildPortfolio, experienceToPost, isPublishableExperience } from "./build-portfolio";
 
 function blk(id: string, type: Block["type"], label: string, value: Block["value"]): Block {
@@ -697,6 +698,169 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
       expect(experienceToPost(creativeExp({ [key as string]: WORK_PERIOD })).period).toBe(
         "2024.03 – 2024.06",
       );
+    });
+  });
+
+  /**
+   * 연구논문(FRT-269)도 창작물과 같은 자리다 — `CORE_EXCLUDE` 로 코어 '기간'을 빼고 '연구 기간'으로
+   * 시점을 받으며, 구 `research-info.기간` 이라는 두 번째 orphan 이 더 있다. 새 라벨이 '연구 기간'
+   * 이라 코어와 정확히 같은 이름이 아니므로, `TYPE_PERIOD_KEY` 등록을 빠뜨리면 정확-라벨 우선
+   * 정렬 때문에 orphan `core.기간` 이 확정본 값을 이긴다.
+   */
+  describe("연구논문은 '연구 기간'을 발행 기간으로 쓴다 (FRT-269)", () => {
+    function researchExp(fields: Record<string, unknown>): Experience {
+      return makeExp({
+        type: "research",
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "SNS 사용과 학업 몰입도 연구",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const STUDY_PERIOD = { type: "period", start: "2024-03-01", end: "2024-08-31", isCurrent: false };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+    const OLD_SECTION_PERIOD = {
+      type: "period",
+      start: "2020-05-01",
+      end: "2020-08-31",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '연구 기간'이 orphan 된 옛 기간 둘을 모두 이긴다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "research-info.기간": OLD_SECTION_PERIOD,
+          "research-paper.연구 기간": STUDY_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.08");
+    });
+
+    it("'연구 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(researchExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("연구논문 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("research")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "연구 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(researchExp({ [key as string]: STUDY_PERIOD })).period).toBe(
+        "2024.03 – 2024.08",
+      );
+    });
+
+    /**
+     * `CORE_EXCLUDE` 로 코어를 빼면 그 자리를 이어받은 확정본 필드가 **동의어로 등록돼 있어야**
+     * 발행 경로가 값을 찾는다(FRT-269 리뷰). 코어를 빼는 것과 새 라벨을 SEMANTIC_GROUPS 에
+     * 넣는 것은 한 쌍이다 — 앞만 하면 폴백이던 코어까지 함께 사라져 발행물이 조용히 빈다.
+     * 픽스처가 아니라 **실제 템플릿**으로 돌린다(v2 fields 주입) — 라벨·타입 전제를 여기 적으면
+     * 템플릿이 바뀌어도 테스트만 계속 통과한다.
+     */
+    it("'역할 / 기여도'(select)를 고르면 발행물의 내 역할에 실린다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "research-paper.역할 / 기여도": {
+            type: "single-select",
+            selected: "제 1저자(주저자)",
+          },
+        }),
+      );
+      expect(post.contribution).toBe("제 1저자(주저자)");
+    });
+
+    it("'주요 발견 / 결과'(outcome-list)에 적은 행이 발행물의 핵심 성과에 실린다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "research-content.주요 발견 / 결과": {
+            type: "repeatable-cell",
+            columns: [{ key: "item", label: "발견 / 결과", blockType: "text" }],
+            rows: [
+              { id: "r1", cells: { item: "SNS 사용 시간과 몰입도의 음의 상관 확인" } },
+              { id: "r2", cells: { item: "알림 차단군에서 효과가 사라짐" } },
+            ],
+          },
+        }),
+      );
+      expect(post.achievement).toBe(
+        "SNS 사용 시간과 몰입도의 음의 상관 확인\n알림 차단군에서 효과가 사라짐",
+      );
+    });
+
+    /** 드리프트 가드 — 두 라벨을 실제 템플릿에서 뽑아 동의어 등록 여부를 대조한다. */
+    it("역할·성과를 이어받은 두 필드가 동의어 그룹에 등록돼 있다", () => {
+      const labels = getTemplateForType("research")
+        .extensions.flatMap(s => s.blocks)
+        .map(b => b.label);
+      expect(labels).toContain("역할 / 기여도");
+      expect(labels).toContain("주요 발견 / 결과");
+      expect(equivalentLabels("내 역할/기여도")).toContain("역할 / 기여도");
+      expect(equivalentLabels("핵심 성과")).toContain("주요 발견 / 결과");
+    });
+
+    /**
+     * 동의어 등록만으로는 **순서**를 보장하지 못한다 — orphan `core.내 역할/기여도`·`core.핵심 성과`
+     * 는 라벨이 코어와 정확히 같아 `pickValue`·`achievementText` 의 정확-라벨 우선 정렬에서 확정본
+     * 라벨을 이긴다. 기간에서 이미 겪고 `TYPE_PERIOD_KEY` 로 푼 것과 같은 함정이다(FRT-269 Codex P2).
+     *
+     * ⚠️ 이 픽스처는 매퍼 쪽 레거시 픽스처(코어 역할·성과는 dedup 때문에 **항상 비어 있다**)와
+     * 다른 것을 묻는다 — "그 전제가 깨져도 확정본이 이기는가"의 그물이다. 전제를 검증하는 곳과
+     * 전제가 깨진 경우를 막는 곳을 한 픽스처에 섞지 않는다.
+     */
+    const OLD_CORE_ROLE = { type: "textarea", text: "옛 코어에 남아 있던 역할" };
+    const OLD_CORE_ACHIEVEMENT = { type: "textarea", text: "옛 코어에 남아 있던 성과" };
+    const NEW_ROLE = { type: "single-select", selected: "제 1저자(주저자)" };
+    const NEW_FINDINGS = {
+      type: "repeatable-cell",
+      columns: [{ key: "item", label: "발견 / 결과", blockType: "text" }],
+      rows: [{ id: "r1", cells: { item: "SNS 사용 시간과 몰입도의 음의 상관 확인" } }],
+    };
+
+    it("코어 잔재가 있어도 새로 채운 확정본 역할·성과가 발행된다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "core.내 역할/기여도": OLD_CORE_ROLE,
+          "core.핵심 성과": OLD_CORE_ACHIEVEMENT,
+          "research-paper.역할 / 기여도": NEW_ROLE,
+          "research-content.주요 발견 / 결과": NEW_FINDINGS,
+        }),
+      );
+      expect(post.contribution).toBe("제 1저자(주저자)");
+      expect(post.achievement).toBe("SNS 사용 시간과 몰입도의 음의 상관 확인");
+    });
+
+    it("확정본 칸이 비면 옛 코어 값으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(
+        researchExp({
+          "core.내 역할/기여도": OLD_CORE_ROLE,
+          "core.핵심 성과": OLD_CORE_ACHIEVEMENT,
+        }),
+      );
+      expect(post.contribution).toBe("옛 코어에 남아 있던 역할");
+      expect(post.achievement).toBe("옛 코어에 남아 있던 성과");
+    });
+
+    /** 드리프트 가드 — 우선 조회에 쓰는 안정키가 실제 템플릿 것과 같은지 대조한다. */
+    it("역할·성과 우선 조회 키가 실제 템플릿 안정키와 일치한다", () => {
+      const byLabel = (label: string) =>
+        getTemplateForType("research")
+          .extensions.flatMap(s => s.blocks)
+          .find(b => b.label === label)?.key;
+      expect(byLabel("역할 / 기여도")).toBe("research-paper.역할 / 기여도");
+      expect(byLabel("주요 발견 / 결과")).toBe("research-content.주요 발견 / 결과");
     });
   });
 

@@ -568,6 +568,40 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     expect(screen.getByText(new RegExp(stored.replace(/[.]/g, "\\.")))).toBeInTheDocument()
   })
 
+  /**
+   * 확정본이 month 로 정한 시점 컬럼(FRT-269). 컨트롤을 `type="month"` 로 좁혔으면 "못 읽는 값"
+   * 판정도 함께 좁혀야 한다 — 일까지 붙은 값은 `isRealDay` 기준으론 멀쩡하지만 월 입력이
+   * **통째로** 버리므로, 판정을 안 좁히면 값이 화면에서 사라진 채 안내도 없이 덮어쓰인다.
+   */
+  it("month 컬럼은 월 단위 입력으로 렌더된다", () => {
+    const columns = [{ key: "c", label: "칸", blockType: "date" as const, variant: "month" as const }]
+    render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: "2024-03" } }])} />)
+
+    expect(screen.getByLabelText("칸")).toHaveAttribute("type", "month")
+    expect(screen.queryByText(/이전 값/)).toBeNull()
+  })
+
+  it("month 컬럼이 못 읽는 일 단위 옛 값은 화면에 남고 안내가 붙는다", () => {
+    const columns = [{ key: "c", label: "칸", blockType: "date" as const, variant: "month" as const }]
+    render(
+      <Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: "2024-03-15" } }])} />,
+    )
+
+    expect(screen.getByText(/이전 값: 2024-03-15/)).toBeInTheDocument()
+    expect(screen.getByText(/값을 입력하면 이 값은 지워져요/)).toBeInTheDocument()
+  })
+
+  /** 대조군 — 같은 값이 기본(일 단위) date 컬럼에서는 온전히 읽히므로 안내가 붙지 않는다. */
+  it("같은 값이 기본 date 컬럼에서는 안내 없이 그대로 읽힌다", () => {
+    const columns = [{ key: "c", label: "칸", blockType: "date" as const }]
+    render(
+      <Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: "2024-03-15" } }])} />,
+    )
+
+    expect(screen.getByLabelText("칸")).toHaveAttribute("type", "date")
+    expect(screen.queryByText(/이전 값/)).toBeNull()
+  })
+
   // 위양성 가드 — 정상적으로 읽히는 값에까지 안내가 붙으면 표가 경고로 뒤덮인다.
   it.each([
     ["period" as const, "2023.03 ~ 2024.01"],

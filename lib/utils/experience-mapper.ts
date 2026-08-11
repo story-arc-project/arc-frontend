@@ -283,6 +283,27 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   // 확정본 '반응 / 피드백' 가이드가 조회수·반응·채택 사례를 묶어 물어 구 '반응/성과'와 같은 질문이다
   // (SEMANTIC_GROUPS.achievement 도 이미 둘을 동의어로 묶고 있다).
   'cw-process.반응/성과': 'creative-detail.반응 / 피드백',
+  // 연구논문 확정본(FRT-269) — 구 `research-info` 13필드 중 **질문도 타입도 같은 셋만** 옮긴다.
+  // 나머지는 옮기지 않고 orphan '기타' 카드에 남겨 사용자가 직접 판단하게 둔다:
+  //  · '역할'(주저자/공저/연구원/RA)→'역할 / 기여도'(5종) 은 **같은 질문인데 선택지가 통째로 다시
+  //    짜였다.** 값 조건부로 옮겨야 하므로 `SELECT_DOMAIN_MIGRATIONS` 가 맡는다.
+  //  · '연구 질문/가설'→'연구 주제 / 배경' 은 **묻는 것이 다르다**(무엇을 검증하려 했나 ≠ 왜
+  //    시작했나). 확정본 가이드가 "어떤 문제 의식에서 시작됐고, 왜 중요한지"라 배경을 묻는다.
+  //  · '결과 요약'→'초록 / 핵심 요약' 도 다르다 — 확정본 초록은 목적·방법·결과 **전체**의 요약이라
+  //    결과만 적힌 옛 답을 실으면 초록 칸이 채워진 것처럼 보인다(FRT-211 의 '개명 vs 대체').
+  //  · '방법/설계'(textarea)→'연구 방법론'(개조식)·'재현/공유 자료'(link)→'논문 파일 /
+  //    링크'(repeatable-cell)·'성과'(tags) 는 타입이 달라 injectValue 가 못 싣는다.
+  //  · '내가 맡은 파트'(textarea)→'역할 / 기여도'(select) 도 타입이 다르고, 문단으로 적은 답을
+  //    드롭다운 한 칸이 대신할 수 없다.
+  //  · '데이터/자료 출처'·'참고문헌/관련 읽을거리'·'산출물' 은 확정본에 대응 칸이 없다.
+  //
+  // ⚠️ 구 `core.증빙 자료` 는 이관 대상이 아니다 — 확정본 ④ 가 곧 그 코어 증빙 카드라
+  //    `CORE_EXCLUDE.research` 가 빼지 않는다. 키가 그대로이므로 옮길 것 자체가 없다.
+  'research-info.연구 주제/논문 제목': 'research-paper.연구 / 논문 제목',
+  'research-info.소속/기관/랩': 'research-paper.소속 기관 / 연구실',
+  // 목적지 `research-paper.연구 기간` 은 이번에 새로 생긴 키라 항상 비어 있어
+  // `applyRenamedKeys` 의 "목적지가 차 있으면 진다" 규칙에 걸리지 않는다.
+  'research-info.기간': 'research-paper.연구 기간',
 }
 
 /**
@@ -338,6 +359,21 @@ const SELECT_DOMAIN_MIGRATIONS: Partial<Record<ExperienceTypeId, ScopedMigration
     {
       from: 'cw-info.분야',
       to: 'creative-info.유형 / 매체',
+      carry: carrySelectValue,
+    },
+  ],
+  // 연구논문 확정본(FRT-269): '역할' 5종(주저자/공저/연구원/RA/기타) → '역할 / 기여도' 5종.
+  // 새 목록에 **그대로** 남은 답은 '기타' 하나뿐이다 — '주저자'→'제 1저자(주저자)'·'공저'→'공동
+  // 저자' 는 이름이 바뀌었고, '연구원'·'RA' 는 확정본이 '연구 참여(데이터 수집·분석)'로 역할의
+  // 성격을 묻는 쪽으로 바꿔 신분과 1:1이 아니다. 어느 쪽이든 좁히면 답이 둔갑하므로 옮기지 않고
+  // 사용자가 원본을 보고 직접 고르게 둔다.
+  //
+  // 창작물 '분야'와 같은 예외 적용이다 — 라벨이 '역할'→'역할 / 기여도'로 바뀌었지만 묻는 것은
+  // 그대로다(이 연구에서 내가 무엇이었나). 판정 기준은 라벨이 아니라 **질문**이다(FRT-211).
+  research: [
+    {
+      from: 'research-info.역할',
+      to: 'research-paper.역할 / 기여도',
       carry: carrySelectValue,
     },
   ],
@@ -460,11 +496,22 @@ function applyScopedMigrations(
  * 템플릿 개편 후 혼자 다시 나타난다 — 게다가 `normalizeHiddenKeys` 는 모르는 키를 버리지 않아
  * 옛 키가 저장분에 영원히 남는다(FRT-210, Codex P2).
  */
-function applyRenamedHiddenKeys(keys: string[]): string[] {
+function applyRenamedHiddenKeys(keys: string[], typeId: ExperienceTypeId): string[] {
+  // 순수 개명뿐 아니라 **유형 스코프 이관도 같은 자리 옮김**이다 — 확정본이 라벨과 선택지를 갈았어도
+  // 묻는 질문은 그대로라(FRT-211 의 '개명 vs 대체') 사용자가 치워 둔 칸은 치워진 채로 있어야 한다.
+  // 값 이관은 값 조건부지만 숨김 이관은 무조건이어도 안전하다 — 숨김은 빈 칸에만 허용되고
+  // (`canHideBlock`), 목적지에 값이 생기면 `resolveHiddenBlocks` 가 자동으로 되돌려 보여준다.
+  const scoped = new Map<string, string>()
+  for (const { from, to } of [
+    ...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []),
+    ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? []),
+  ]) {
+    scoped.set(from, to)
+  }
   const out: string[] = []
   const seen = new Set<string>()
   for (const key of keys) {
-    const mapped = RENAMED_FIELD_KEYS[key] ?? key
+    const mapped = RENAMED_FIELD_KEYS[key] ?? scoped.get(key) ?? key
     if (seen.has(mapped)) continue
     seen.add(mapped)
     out.push(mapped)
@@ -587,7 +634,7 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     tags: content.tags ?? [],
     // 숨김 키는 v2 에서만 쓰지만, v1 레거시도 같은 모양(빈 배열)으로 내려 소비처가 분기하지 않게 한다.
     // 개명된 키는 값과 함께 숨김 상태도 따라가야 한다(applyRenamedHiddenKeys).
-    hiddenKeys: applyRenamedHiddenKeys(parseHiddenKeys(content.hidden)),
+    hiddenKeys: applyRenamedHiddenKeys(parseHiddenKeys(content.hidden), typeId),
     importance: isImportanceLevel(exp.importance) ? exp.importance : undefined,
     createdAt: exp.created_at,
     updatedAt: exp.updated_at,
@@ -786,7 +833,15 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
 
   return {
     ...base,
-    coreBlocks: liveCore.map(b => (b.key ? b : { ...b, key: coreKeyByLabel[b.label] })),
+    coreBlocks: liveCore.map(b => {
+      const keyed = b.key ? b : { ...b, key: coreKeyByLabel[b.label] }
+      // 확정본이 증빙 유형 선택지를 정한 유형(CORE_EVIDENCE_OPTIONS)은 코어 '증빙 자료' 블록이
+      // `options` 를 들고 있어야 `FileBlock` 이 드롭다운을 그린다. v2 는 코어를 템플릿에서 다시 짜
+      // 저절로 받지만 v1 은 저장 배열을 그대로 통과시켜 **같은 유형인데 세대에 따라 드롭다운과
+      // 자유 입력으로 갈린다**(FRT-269 Codex P2). 저장값이 아니라 화면 메타데이터라 덮어도 안전하다.
+      const options = coreTemplateByLabel.get(keyed.label)?.options
+      return options && !keyed.options ? { ...keyed, options } : keyed
+    }),
     extensionBlocks: matchedExt,
     customBlocks: [...savedCustom, ...orphanExt],
   }
