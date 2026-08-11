@@ -697,6 +697,9 @@ function repairExtraValue(x: unknown): string | string[] {
   if (typeof x === 'string') return x
   if (Array.isArray(x)) return asStrings(x)
   if (isPlainObject(x) && x.type === 'file') return asText(x.fileName)
+  // ⚠️ 모르는 판별자는 **새 스키마가 쓴 잎**일 수 있다 — 저장 경로에서 낮추면 열었다 저장하는
+  // 것만으로 사라진다. 그리기 위한 낮춤은 저장되지 않는 렌더 관문이 맡는다.
+  if (isOpaqueCell(x)) return x as unknown as string
   return ''
 }
 
@@ -1024,7 +1027,9 @@ export function normalizeBlockValue(
  * 그 필드가 영원히 숨는다 — 값이 있어도 화면에서 사라진다.
  */
 function repairCondition(cond: Record<string, unknown> | undefined): Block['visibleWhen'] {
-  if (!isPlainObject(cond) || typeof cond.key !== 'string') return undefined
+  if (!isPlainObject(cond) || typeof cond.key !== 'string' || !isFilledText(cond.key)) {
+    return undefined
+  }
   const equals = cond.equals !== undefined ? asStrings(cond.equals) : undefined
   const startsWith = cond.startsWith !== undefined ? asStrings(cond.startsWith) : undefined
   return {
@@ -1036,6 +1041,13 @@ function repairCondition(cond: Record<string, unknown> | undefined): Block['visi
 
 /** 블록 하나의 값을 보정한다. 값이 온전하면 **원본 블록 참조를 그대로** 돌려준다. */
 export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
+  // ⚠️ 블록 타입이 깨졌는데 **값이 신원을 알려 주면** 그걸로 되살린다 — 안 그러면 렌더러가
+  // `block.type` 으로 분기해 아무것도 안 그리고, 저장은 깨진 타입을 계속 실어 나른다.
+  // 모르는 *문자열* 타입은 새 스키마의 흔적이라 그대로 둔다(위 보존 규칙과 같은 경계).
+  if (typeof block.type !== 'string') {
+    const fromValue = (block.value as { type?: unknown } | null | undefined)?.type
+    if (isKnownBlockType(fromValue)) block = { ...block, type: fromValue }
+  }
   // 블록이 아는 정의를 함께 넘긴다 — 값에서 사라진 선택지·열을 되살릴 근거다.
   //
   // ⚠️ **결측 정의를 근거 없이 `[]` 로 굳히면 그 뒤로는 못 되살린다.** 보정은 배열이면 빈
@@ -1086,7 +1098,8 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
   const conditionBroken =
     cond !== undefined &&
     (!isPlainObject(cond) ||
-      typeof cond.key !== 'string' ||
+      // 빈 키는 "조건 없음"이 아니다 — 맞는 트리거를 못 찾아 그 칸이 영원히 숨는다.
+      !isFilledText(cond.key) ||
       // ⚠️ 길이 0 도 깨진 것으로 본다 — 배열이라고 성한 게 아니다. `isConditionMet` 은
       // 연산자가 있으면 그걸로만 판정하므로 `[]` 는 "아무것도 안 맞음"이 되어 필드가 영원히 숨는다.
       (cond.equals !== undefined && (!allStrings(cond.equals) || (cond.equals as unknown[]).length === 0)) ||
@@ -1210,15 +1223,20 @@ export function dedupeBlockIdsAcross(groups: Block[][]): Block[][] {
  */
 export function hasOpaqueLeaf(value: unknown): boolean {
   if (!isPlainObject(value) || value.type !== 'repeatable-cell') return false
-  const opaque = opaqueCellKeys(value.columns)
-  if (opaque.size === 0) return false
   if (!Array.isArray(value.rows)) return false
-  return value.rows.some(
-    r =>
-      isPlainObject(r) &&
+  const opaque = opaqueCellKeys(value.columns)
+  return value.rows.some(r => {
+    if (!isPlainObject(r)) return false
+    const cellHit =
+      opaque.size > 0 &&
       isPlainObject(r.cells) &&
-      Object.entries(r.cells).some(([k, c]) => opaque.has(k) && isOpaqueCell(c)),
-  )
+      Object.entries(r.cells).some(([k, c]) => opaque.has(k) && isOpaqueCell(c))
+    // 행 부가 항목도 센다 — 읽기 렌더러가 `f.value` 를 그대로 그리므로 더 위험하다.
+    const extraHit =
+      Array.isArray(r.extraFields) &&
+      r.extraFields.some(f => isPlainObject(f) && isOpaqueCell(f.value))
+    return cellHit || extraHit
+  })
 }
 
 /**
@@ -1228,8 +1246,32 @@ export function hasOpaqueLeaf(value: unknown): boolean {
  * 모양이 있어야 하므로, 여기서만 블록이 선언한 타입의 빈 값으로 바꿔 준다.
  * **이 결과는 저장되지 않는다** — 그래서 새 스키마 값을 구 모양으로 굳히지 않는다.
  */
+/**
+ * **표시 전용** — 부가 항목의 불투명 값(새 스키마의 잎)을 그릴 수 있는 글자로 낮춘다.
+ *
+ * ⚠️ 읽기 렌더러가 `f.value` 를 React 자식으로 **그대로** 그리므로 객체가 닿으면 죽는다.
+ * 저장 경로는 그 값을 지키고(`repairExtraValue`), 낮추는 건 여기서만 한다.
+ */
+function lowerOpaqueExtras(block: Block): Block {
+  const v = block.value as unknown as Record<string, unknown> | null | undefined
+  if (!isPlainObject(v) || v.type !== 'repeatable-cell' || !Array.isArray(v.rows)) return block
+  let changed = false
+  const rows = v.rows.map(r => {
+    if (!isPlainObject(r) || !Array.isArray(r.extraFields)) return r
+    if (!r.extraFields.some(f => isPlainObject(f) && isOpaqueCell(f.value))) return r
+    changed = true
+    return {
+      ...r,
+      extraFields: r.extraFields.map(f =>
+        isPlainObject(f) && isOpaqueCell(f.value) ? { ...f, value: '' } : f,
+      ),
+    }
+  })
+  return changed ? ({ ...block, value: { ...v, rows } } as unknown as Block) : block
+}
+
 export function normalizeBlockForRender(block: Block): Block {
-  const normalized = normalizeBlock(block)
+  const normalized = lowerOpaqueExtras(normalizeBlock(block))
   const v = normalized.value as BlockValue | null | undefined
   if (!isKnownBlockType(block.type) || (v && v.type === block.type)) return normalized
   return { ...normalized, value: normalizeBlockValue(block.type, undefined, { options: block.options }) }

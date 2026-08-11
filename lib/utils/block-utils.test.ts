@@ -959,6 +959,39 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
     expect(new Set(out.rows[0].extraFields.map(f => f.key)).size).toBe(2)
   })
 
+  /**
+   * ⚠️ 부가 항목의 값도 **새 스키마가 쓴 잎**일 수 있다. 저장 경로에서 `""` 로 낮추면 열었다
+   * 저장하는 것만으로 사라진다 — 그리기 위한 낮춤은 저장되지 않는 렌더 관문의 몫이다.
+   */
+  it("모르는 판별자의 부가 항목 값은 저장 경로에서 지키고 렌더 관문에서만 낮춘다", () => {
+    const raw = {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          extraFields: [
+            { key: "k", label: "평점", blockType: "rating-v3", value: { type: "rating-v3", value: 5 } },
+          ],
+        },
+      ],
+    }
+    const stored = normalizeBlockValue("repeatable-cell", raw) as unknown as {
+      rows: { extraFields: { value: unknown }[] }[]
+    }
+    expect(stored.rows[0].extraFields[0].value).toMatchObject({ type: "rating-v3", value: 5 })
+
+    const forRender = normalizeBlockForRender({
+      id: "b1",
+      type: "repeatable-cell",
+      label: "표",
+      value: raw as unknown as BlockValue,
+    }).value as unknown as { rows: { extraFields: { value: unknown }[] }[] }
+    const shown = forRender.rows[0].extraFields[0].value
+    expect(typeof shown === "string" || Array.isArray(shown)).toBe(true)
+  })
+
   it("행 부가 항목의 key 가 겹치면 결정적으로 갈아 준다", () => {
     const out = normalizeBlockValue("repeatable-cell", {
       type: "repeatable-cell",
@@ -1186,6 +1219,30 @@ describe("normalizeBlock/Blocks — 블록 자신의 필드 (FRT-200)", () => {
       value: { type: "text", text: "" },
     })
     expect(normalized.category).toBeUndefined()
+  })
+
+  /** 빈 트리거 키는 "조건 없음"이 아니다 — 맞는 트리거를 못 찾아 그 칸이 영원히 숨는다. */
+  it("visibleWhen.key 가 비어 있으면 조건을 버린다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      visibleWhen: { key: "   " },
+      value: { type: "text", text: "" },
+    })
+    expect(normalized.visibleWhen).toBeUndefined()
+  })
+
+  /** 값이 신원을 알려 주면 그걸로 블록 타입을 되살린다 — 안 그러면 렌더러가 아무것도 안 그린다. */
+  it("블록 타입이 깨졌어도 값의 판별자로 되살린다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: null as unknown as Block["type"],
+      label: "칸",
+      value: { type: "text", text: "살아 있는 글" },
+    })
+    expect(normalized.type).toBe("text")
+    expect(normalized.value).toMatchObject({ type: "text", text: "살아 있는 글" })
   })
 
   /** `OutcomeList` 는 `linkConfig.label` 을 React 자식으로 그대로 그린다 — 객체면 그 자리에서 죽는다. */
