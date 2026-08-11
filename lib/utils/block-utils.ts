@@ -575,9 +575,26 @@ function dedupeNames(names: string[], fallback: (i: number) => string): string[]
   })
 }
 
-function uniqueColumnKeys(columns: BlockColumnDef[]): BlockColumnDef[] {
-  const keys = dedupeNames(columns.map(c => c.key), i => `col-${i}`)
-  return columns.map((c, i) => (c.key === keys[i] ? c : { ...c, key: keys[i] }))
+/**
+ * 열 key 를 유일하게 만들고, **바뀐 key 의 옛 이름 → 새 이름** 표를 함께 돌려준다.
+ *
+ * ⚠️ 이름표만 갈면 값은 옛 이름 아래 남고 렌더러는 새 이름으로 찾는다 — 저장된 값이 화면에서
+ * 사라진다. 셀도 같이 옮겨야 한다.
+ */
+function repairColumns(raw: unknown): { columns: BlockColumnDef[]; renames: Map<string, string> } {
+  const rawColumns = Array.isArray(raw) ? raw.filter(isPlainObject) : []
+  const repaired = rawColumns.map(repairColumn)
+  const keys = dedupeNames(repaired.map(c => c.key), i => `col-${i}`)
+  const renames = new Map<string, string>()
+  rawColumns.forEach((r, i) => {
+    // 옛 이름은 **저장된 원본** 기준이다(문자열이 아닐 수 있고, 셀은 그 이름 아래 있다).
+    const oldKey = typeof r.key === 'string' ? r.key : String(r.key)
+    if (oldKey !== keys[i]) renames.set(oldKey, keys[i])
+  })
+  return {
+    columns: repaired.map((c, i) => (c.key === keys[i] ? c : { ...c, key: keys[i] })),
+    renames,
+  }
 }
 
 /** 행 부가 항목도 `value` 만이 아니라 라벨까지 — 편집 모드가 `label.trim()` 을 부른다. */
@@ -587,8 +604,18 @@ function isIntactExtraField(f: unknown): boolean {
     typeof f.key === 'string' &&
     typeof f.label === 'string' &&
     typeof f.blockType === 'string' &&
-    isIntactCell(f.value)
+    // ⚠️ `RowExtraField.value` 는 **문자열·문자열 배열만**이다(파일 셀은 스키마 밖).
+    // `isIntactCell` 로 물으면 파일 셀 객체가 통과해 읽기 렌더러가 객체를 그대로 그리다 죽는다.
+    (typeof f.value === 'string' || allStrings(f.value))
   )
+}
+
+/** 부가 항목 값은 문자열·문자열 배열로만 — 구조화 셀이 섞여 있으면 글자로 낮춘다. */
+function repairExtraValue(x: unknown): string | string[] {
+  if (typeof x === 'string') return x
+  if (Array.isArray(x)) return asStrings(x)
+  if (isPlainObject(x) && x.type === 'file') return asText(x.fileName)
+  return ''
 }
 
 /** 행에 붙는 스키마 밖 부가 값(FRT-76 링크·FRT-178 역할태그·FRT-145 행 항목)까지 본다. */
@@ -678,7 +705,7 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
  * `id` 가 없으면 인덱스로 채운다 — `uid()` 를 쓰면 렌더마다 id 가 바뀌어 행이 리마운트되고
  * 입력 포커스가 날아간다(이 함수는 렌더 관문에서도 돈다).
  */
-function repairRows(x: unknown): BlockRow[] {
+function repairRows(x: unknown, columnRenames?: Map<string, string>): BlockRow[] {
   if (!Array.isArray(x)) return []
   const rows = x.filter(isPlainObject)
   // ⚠️ 이미 쓰이는 id 를 피한다. 겹치면 수정·삭제 핸들러가 행을 id 로 찾으므로 **하나를 고치면
@@ -691,7 +718,12 @@ function repairRows(x: unknown): BlockRow[] {
     const id = ids[i]
     const cells: Record<string, CellValue> = {}
     if (isPlainObject(r.cells)) {
-      for (const [k, c] of Object.entries(r.cells)) cells[k] = repairCell(c)
+      for (const [k, c] of Object.entries(r.cells)) {
+        // 열 key 가 갈렸으면 셀도 새 이름으로 옮긴다. 새 이름에 이미 값이 있으면 그쪽을 존중한다.
+        const renamed = columnRenames?.get(k)
+        const key = renamed !== undefined && !(renamed in r.cells) ? renamed : k
+        cells[key] = repairCell(c)
+      }
     }
     return {
       ...r,
@@ -709,7 +741,7 @@ function repairRows(x: unknown): BlockRow[] {
                 key: asText(f.key),
                 label: asText(f.label),
                 blockType: typeof f.blockType === 'string' ? f.blockType : 'text',
-                value: repairCell(f.value),
+                value: repairExtraValue(f.value),
               })),
           }
         : {}),
@@ -846,10 +878,13 @@ export function normalizeBlockValue(
         // 결측이면 되살린다. 열이 비면 표는 그릴 칸조차 없다. 배열이면 빈 배열도 존중한다.
         // 열은 `key` 로 셀을 찾으므로 자리에 뜻이 없다 — 객체가 아닌 열은 걸러 내고(표와 다른 점),
         // 나머지는 필드 단위로 맞춘 뒤 겹친 key 를 결정적으로 갈아 준다.
-        columns: Array.isArray(v.columns)
-          ? uniqueColumnKeys(v.columns.filter(isPlainObject).map(repairColumn))
-          : (opts?.columns ?? []),
-        rows: repairRows(v.rows),
+        // key 가 바뀌면 **그 열이 쓰던 셀도 같이 옮긴다** — 이름표만 갈면 값은 옛 이름 아래
+        // 남고 렌더러는 새 이름으로 찾아, 저장된 값이 화면에서 사라진다.
+        ...(Array.isArray(v.columns)
+          ? (({ columns, renames }) => ({ columns, rows: repairRows(v.rows, renames) }))(
+              repairColumns(v.columns),
+            )
+          : { columns: opts?.columns ?? [], rows: repairRows(v.rows) }),
       } as BlockValue
     case 'table':
       return {
@@ -900,11 +935,27 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
   const optionsBroken = block.options !== undefined && !allStrings(block.options)
   const options = optionsBroken ? asStrings(block.options) : block.options
 
-  if (value === block.value && !childrenChanged && !optionsBroken) return block
+  // ⚠️ 표시 문자열도 저장분에서 온다 — `TextBlock` 등이 `block.label` 을 React 자식으로 **그대로**
+  // 그리므로, 객체가 실려 오면 값이 아무리 성해도 그 자리에서 화면이 죽는다.
+  const stringsBroken =
+    typeof block.label !== 'string' ||
+    !isOptText(block.placeholder) ||
+    !isOptText(block.guide) ||
+    !isOptText(block.key)
+
+  if (value === block.value && !childrenChanged && !optionsBroken && !stringsBroken) return block
   return {
     ...block,
     value,
     ...(optionsBroken ? { options } : {}),
+    ...(stringsBroken
+      ? {
+          label: asText(block.label),
+          placeholder: optText(block.placeholder),
+          guide: optText(block.guide),
+          key: optText(block.key),
+        }
+      : {}),
     ...(children ? { children } : {}),
   }
 }

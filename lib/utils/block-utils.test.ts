@@ -773,6 +773,44 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
     expect(new Set(out.columns.map(c => c.key)).size).toBe(2)
   })
 
+  /**
+   * ⚠️ 열 `key` 를 갈면 **그 열이 가리키던 셀도 같이 옮겨야** 한다. 이름표만 바꾸면 값은
+   * 옛 이름 아래 남고 렌더러는 새 이름으로 찾아 — 저장된 값이 화면에서 사라진다.
+   */
+  it("열 key 를 갈면 그 열이 쓰던 셀도 함께 옮긴다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: 5, label: "숫자키", blockType: "text" }],
+      rows: [{ id: "r1", cells: { "5": "저장된 값" } }],
+    }) as unknown as { columns: { key: string }[]; rows: { cells: Record<string, unknown> }[] }
+    const key = out.columns[0].key
+    expect(out.rows[0].cells[key]).toBe("저장된 값")
+  })
+
+  /** `RowExtraField.value` 는 문자열·문자열 배열만이다 — 파일 셀 객체는 그대로 그려지면 죽는다. */
+  it("행 부가 항목에 파일 셀 객체가 들어 있으면 글자로 바꾼다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          extraFields: [
+            {
+              key: "k",
+              label: "증빙",
+              blockType: "text",
+              value: { type: "file", fileId: "f1", fileName: "증빙.pdf" },
+            },
+          ],
+        },
+      ],
+    }) as unknown as { rows: { extraFields: { value: unknown }[] }[] }
+    const value = out.rows[0].extraFields[0].value
+    expect(typeof value === "string" || Array.isArray(value)).toBe(true)
+  })
+
   /** 행 부가 항목도 `value` 만이 아니라 라벨까지 — 편집 모드가 `label.trim()` 을 부른다. */
   it("행 부가 항목의 라벨이 깨져 있으면 그것도 맞춘다", () => {
     const out = normalizeBlockValue("repeatable-cell", {
@@ -827,6 +865,21 @@ describe("normalizeBlock/Blocks — 블록 자신의 필드 (FRT-200)", () => {
       value: { type: "single-select", options: [], selected: "" },
     })
     expect(Array.isArray(notArray.options)).toBe(true)
+  })
+
+  /** `TextBlock:17` 은 `block.label` 을 React 자식으로 그대로 그린다 — 객체면 그 자리에서 죽는다. */
+  it("블록 층위 표시 문자열이 깨져 있으면 블록에서도 맞춘다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: { broken: true } as unknown as string,
+      placeholder: { broken: true } as unknown as string,
+      guide: { broken: true } as unknown as string,
+      value: { type: "text", text: "값" },
+    })
+    expect(typeof normalized.label).toBe("string")
+    expect(normalized.placeholder === undefined || typeof normalized.placeholder === "string").toBe(true)
+    expect(normalized.guide === undefined || typeof normalized.guide === "string").toBe(true)
   })
 
   it("children 이 배열이 아니거나 원소가 깨져 있어도 죽지 않는다", () => {
