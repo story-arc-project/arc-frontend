@@ -344,6 +344,30 @@ describe("분석 mock — 시드 결속", () => {
     }
   });
 
+  it("'Action 비중' 판정이 실제 본문 비중과 일치한다", () => {
+    // 이 기준은 본문 길이에서 계산되는 값이라, 본문을 손보면 함께 틀어진다.
+    // 화면은 detail 문구와 통과 배지를 나란히 보여주므로 어긋나면 곧바로 눈에 띈다.
+    const BAND = { min: 40, max: 50 };
+    let checked = 0;
+    for (const e of mockComprehensiveResult.resumeStarFormat) {
+      const c = e.quality?.criteria.find(x => x.key === "action_dominant");
+      if (!c) continue;
+      checked += 1;
+      const total = [e.situation, e.task, e.action, e.result, e.learning].reduce(
+        (n, s) => n + s.length,
+        0,
+      );
+      const pct = Math.round((e.action.length / total) * 100);
+      const claimed = /(\d+)%/.exec(c.detail);
+      expect(claimed, `'${e.title}': detail 에 퍼센트가 없다`).not.toBeNull();
+      expect(Number(claimed?.[1]), `'${e.title}': Action 비중 수치가 본문과 다르다`).toBe(pct);
+      expect(c.passed, `'${e.title}': ${pct}% 인데 통과 판정이 어긋난다`).toBe(
+        pct >= BAND.min && pct <= BAND.max,
+      );
+    }
+    expect(checked, "Action 비중 기준을 가진 항목이 없어 검사가 공허하다").toBeGreaterThan(0);
+  });
+
   it("자기소개서의 '근거 없는 주장' 이 정말 시드에 근거가 없다", () => {
     // 이 예시는 하이라이트·배너 두 경로를 보여주기 위한 의도된 설계다. 경험을 고치다
     // 우연히 근거가 생기면 예시가 성립하지 않는다.

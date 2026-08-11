@@ -258,7 +258,7 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
     // 배움(L)은 원문에 명시된 경우에만 오므로, 값이 있을 때만 칸이 생긴다.
     // 라벨은 근거 인용 쪽에도 쓰이므로 값으로 확인한다.
     expect(
-      screen.getByText("모델을 바꾸는 것보다 판단 기준을 다시 세우는 편이 점수를 올렸다는 것"),
+      screen.getByText(/모델 구조를 바꾸는 것보다 판단 기준을 다시 세우는 편이 점수를 올렸다는 것/),
     ).toBeInTheDocument();
   });
 
@@ -266,7 +266,8 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
     getResult.mockResolvedValue(result({ hasResultBody: true }));
     render(<ComprehensiveDetailPage />);
 
-    expect(await screen.findByText("9/10")).toBeInTheDocument();
+    // A 등급이 2건이라 같은 점수·배지가 여러 번 그려진다 — 존재 여부만 본다.
+    expect((await screen.findAllByText("9/10")).length).toBeGreaterThan(0);
     expect(
       screen.getByText("행동과 결과가 원문 근거로 잘 묶여 있어 그대로 써도 좋아요."),
     ).toBeInTheDocument();
@@ -274,7 +275,7 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
       screen.getByText("'왜 문제였는지'와 '내가 맡은 일'을 다른 문장으로 나눠보세요."),
     ).toBeInTheDocument();
     // 등급 문자는 배지로 보인다.
-    expect(screen.getByText(/충분해요/)).toBeInTheDocument();
+    expect(screen.getAllByText(/충분해요/).length).toBeGreaterThan(0);
   });
 
   it("입력을 재배치한 수준이면 그 사실을 알려준다", async () => {
@@ -318,7 +319,7 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
 
     expect(
       await screen.findByText(
-        "한 건은 그대로 써도 좋고, 두 건은 출발점만 채우면 크게 좋아져요.",
+        /네 건 중 두 건은 그대로 써도 좋아요/,
       ),
     ).toBeInTheDocument();
   });
@@ -330,12 +331,12 @@ describe("종합 분석 상세 — v3.1 STAR (FRT-208)", () => {
     render(<ComprehensiveDetailPage />);
 
     await screen.findByRole("heading", { name: "자소서용 STAR" });
-    expect(screen.getAllByText("SQL 개발자 (SQLD)")).toHaveLength(1);
+    // 제목은 분석 대상 목록·시너지 조합에도 나오므로, 폐기 안내가 한 번만 그려지는지로 본다.
     expect(
-      screen.getByText(
+      screen.getAllByText(
         "이 자격증을 실제로 써서 해결한 일이 있다면 그 사례를 따로 적어보세요. STAR 로 만들 수 있어요.",
       ),
-    ).toBeInTheDocument();
+    ).toHaveLength(1);
   });
 
   it("총평 문장이 없어도 우선 개선점은 보여준다", async () => {
