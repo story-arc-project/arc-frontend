@@ -610,10 +610,14 @@ function repairColumn(c: Record<string, unknown>): BlockColumnDef {
  * 이름표가 겹치면 그것으로 찾는 모든 조작이 두 개를 함께 잡는다 — 앞엣것을 두고 뒤엣것만 간다.
  * `uid()` 가 아니라 **결정적 규칙**이라야 같은 입력에서 늘 같은 결과가 나온다.
  */
-function dedupeNames(names: string[], fallback: (i: number) => string): string[] {
+function dedupeNames(
+  names: string[],
+  fallback: (i: number) => string,
+  extraReserved: Set<string> = new Set(),
+): string[] {
   // ⚠️ **저장된 이름을 먼저 예약한다.** 결측 항목이 앞에 있다고 폴백이 `row-0` 을 가져가면,
   // 뒤에 있는 **진짜 `row-0`** 이 밀려나고 그걸 가리키던 링크가 엉뚱한 행을 가리킨다.
-  const reserved = new Set(names.filter(Boolean))
+  const reserved = new Set([...names.filter(Boolean), ...extraReserved])
   const used = new Set<string>()
   return names.map((raw, i) => {
     let name = raw
@@ -639,10 +643,24 @@ function dedupeNames(names: string[], fallback: (i: number) => string): string[]
  * ⚠️ 이름표만 갈면 값은 옛 이름 아래 남고 렌더러는 새 이름으로 찾는다 — 저장된 값이 화면에서
  * 사라진다. 셀도 같이 옮겨야 한다.
  */
-function repairColumns(raw: unknown): { columns: BlockColumnDef[]; renames: Map<string, string> } {
+/** 행들이 쓰고 있는 모든 셀 이름. 만들어 낼 열 key 가 이걸 피해야 남의 값을 안 가리킨다. */
+function allCellKeys(rows: unknown): Set<string> {
+  if (!Array.isArray(rows)) return new Set()
+  const out = new Set<string>()
+  for (const r of rows) {
+    if (isPlainObject(r) && isPlainObject(r.cells)) Object.keys(r.cells).forEach(k => out.add(k))
+  }
+  return out
+}
+
+function repairColumns(
+  raw: unknown,
+  /** 행이 이미 쓰고 있는 셀 이름 — 만들어 낸 열 key 가 **남의 값을 가리키면 안 된다**. */
+  cellKeys: Set<string> = new Set(),
+): { columns: BlockColumnDef[]; renames: Map<string, string> } {
   const rawColumns = Array.isArray(raw) ? raw.filter(isPlainObject) : []
   const repaired = rawColumns.map(repairColumn)
-  const keys = dedupeNames(repaired.map(c => c.key), i => `col-${i}`)
+  const keys = dedupeNames(repaired.map(c => c.key), i => `col-${i}`, cellKeys)
   // 옛 이름은 **저장된 원본** 기준이다(문자열이 아닐 수 있고, 셀은 그 이름 아래 있다).
   const oldKeys = rawColumns.map(r => (typeof r.key === 'string' ? r.key : String(r.key)))
   // ⚠️ 중복이면 **앞엣것이 그 이름을 지킨다** — 셀도 앞 열에 남아야 하므로 그 이름은 옮기지
@@ -789,14 +807,6 @@ function repairRows(
   // ⚠️ 저장분에 **이미 중복된 id** 가 있을 수 있다 — 행 하나씩 보면 둘 다 성해 보이지만
   // 쌍으로는 깨져 있다. 앞엣것을 두고 뒤엣것을 갈아 준다(앞뒤가 뒤집히면 안 되므로 순서대로).
   const ids = dedupeNames(rows.map(r => asIdText(r.id)), i => `row-${i}`)
-  // ⚠️ `"5"` 와 `5` 는 **서로 다른 행**이다(`row.id === linked` 비교가 타입까지 본다). 글자로
-  // 합치면서 충돌하면 한쪽이 개명되는데, 링크를 같이 옮기지 않으면 **다른 행으로 갈아탄다**.
-  // 그래서 타입까지 붙인 키로 옛→새 표를 만든다.
-  const idKey = (x: unknown): string => `${typeof x}:${String(x)}`
-  const linkTargets = new Map<string, string>()
-  rows.forEach((r, i) => {
-    if (r.id !== undefined && !linkTargets.has(idKey(r.id))) linkTargets.set(idKey(r.id), ids[i])
-  })
   return rows.map((r, i) => {
     const id = ids[i]
     const cells: Record<string, CellValue> = {}
@@ -814,12 +824,11 @@ function repairRows(
       cells,
       // 스키마 밖 부가 값도 잎까지 맞춘다 — `rowHasContent` 가 `f.value` 를 직접 읽는다.
       // 링크도 id 와 **같은 방식**으로 살린다 — 한쪽만 글자로 바꾸면 그 링크가 끊긴다.
+      // ⚠️ 링크는 **다른 블록**에서 해석된다(`getProjectRow` 는 `targetSectionId` 의 블록에서
+      // 찾는다) — 그래서 이 블록의 행 표로 참조를 개명하면 엉뚱한 데를 가리킨다. 여기서 할 일은
+      // 양쪽이 **같은 규칙으로** 글자가 되게 하는 것뿐이다.
       ...(r.linkedProjectRowId !== undefined
-        ? {
-            linkedProjectRowId:
-              linkTargets.get(idKey(r.linkedProjectRowId)) ??
-              (asIdText(r.linkedProjectRowId) || undefined),
-          }
+        ? { linkedProjectRowId: asIdText(r.linkedProjectRowId) || undefined }
         : {}),
       ...(r.roleTags !== undefined ? { roleTags: asStrings(r.roleTags) } : {}),
       ...(r.extraFields !== undefined
@@ -984,7 +993,7 @@ export function normalizeBlockValue(
           ? (({ columns, renames }) => ({
               columns,
               rows: repairRows(v.rows, renames, opaqueCellKeys(columns)),
-            }))(repairColumns(v.columns))
+            }))(repairColumns(v.columns, allCellKeys(v.rows)))
           : {
               columns: opts?.columns ?? [],
               rows: repairRows(v.rows, undefined, opaqueCellKeys(opts?.columns)),

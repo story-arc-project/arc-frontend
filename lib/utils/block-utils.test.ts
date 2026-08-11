@@ -691,23 +691,48 @@ describe("normalizeBlockValue (FRT-200)", () => {
   })
 
   /**
-   * ⚠️ `"5"` 와 `5` 는 **서로 다른 행**이다(`row.id === linked` 비교가 타입까지 본다).
-   * 글자로 합치면서 링크를 같이 옮기지 않으면 **링크가 다른 행으로 갈아탄다**.
+   * ⚠️ 링크는 **다른 블록**에서 해석된다(`getProjectRow` 는 `targetSectionId` 의 블록에서
+   * `r.id === projectRowId` 로 찾는다). 그래서 참조를 **같은 블록의 행 표**로 옮기면 안 된다 —
+   * 여기서 할 일은 양쪽이 **같은 규칙으로** 글자가 되게 하는 것뿐이다.
    */
-  it("문자·숫자 id 가 섞여 충돌해도 링크는 원래 행을 가리킨다", () => {
-    const out = normalizeBlockValue("repeatable-cell", {
+  it("링크 참조와 대상 행 id 가 같은 규칙으로 글자가 된다", () => {
+    const source = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: "r1", cells: {}, linkedProjectRowId: 5 }],
+    }) as unknown as { rows: { linkedProjectRowId?: string }[] }
+
+    const target = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: 5, cells: { a: "대상 행" } }],
+    }) as unknown as { rows: { id: string }[] }
+
+    expect(source.rows[0].linkedProjectRowId).toBe(target.rows[0].id)
+  })
+
+  /**
+   * ⚠️ 같은 블록에 우연히 같은 id 의 행이 있어도 **참조를 그쪽으로 옮기면 안 된다** —
+   * 그 참조는 다른 블록의 행을 가리킨다. 소스-로컬 표로 개명하면 링크가 엉뚱한 데로 간다.
+   */
+  it("같은 블록에 같은 id 행이 있어도 링크를 그쪽으로 끌어오지 않는다", () => {
+    const source = normalizeBlockValue("repeatable-cell", {
       type: "repeatable-cell",
       columns: [],
       rows: [
         { id: "5", cells: { a: "문자 행" } },
-        { id: 5, cells: { a: "숫자 행" } },
+        { id: 5, cells: { a: "숫자 행" } }, // 충돌로 개명된다
         { id: "r3", cells: {}, linkedProjectRowId: 5 },
       ],
-    }) as unknown as {
-      rows: { id: string; cells: Record<string, unknown>; linkedProjectRowId?: string }[]
-    }
-    const numeric = out.rows.find(r => r.cells.a === "숫자 행")
-    expect(out.rows[2].linkedProjectRowId).toBe(numeric?.id)
+    }) as unknown as { rows: { id: string; linkedProjectRowId?: string }[] }
+
+    const target = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: 5, cells: { a: "대상 행" } }],
+    }) as unknown as { rows: { id: string }[] }
+
+    expect(source.rows[2].linkedProjectRowId).toBe(target.rows[0].id)
   })
 
   /** 중복 보정이 만드는 이름도 **저장된 이름을 피해야** 한다(`x`,`x`,`x-1` → 진짜 `x-1` 이 밀리면 안 됨). */
@@ -827,6 +852,19 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
    * ⚠️ 열 `key` 를 갈면 **그 열이 가리키던 셀도 같이 옮겨야** 한다. 이름표만 바꾸면 값은
    * 옛 이름 아래 남고 렌더러는 새 이름으로 찾아 — 저장된 값이 화면에서 사라진다.
    */
+  /** 만들어 낸 열 key 가 **행에 이미 있는 셀 이름**과 겹치면 남의 값을 그 열이 그린다. */
+  it("만들어 낸 열 key 는 행에 이미 있는 셀 이름을 피한다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: 5, label: "숫자키", blockType: "text" }],
+      rows: [{ id: "r1", cells: { "5": "이 열의 값", "col-0": "남의 값" } }],
+    }) as unknown as { columns: { key: string }[]; rows: { cells: Record<string, unknown> }[] }
+    const key = out.columns[0].key
+    expect(key).not.toBe("col-0")
+    expect(out.rows[0].cells[key]).toBe("이 열의 값")
+    expect(out.rows[0].cells["col-0"]).toBe("남의 값")
+  })
+
   it("열 key 를 갈면 그 열이 쓰던 셀도 함께 옮긴다", () => {
     const out = normalizeBlockValue("repeatable-cell", {
       type: "repeatable-cell",
