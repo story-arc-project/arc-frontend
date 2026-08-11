@@ -244,7 +244,17 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // Otherwise the unmount handler may have just persisted a fresher draft we must keep.
       if (resumeRef.current === snapshot) {
         clearDraft(versionId);
+      } else if (resumeRef.current) {
+        // 요청이 도는 동안 이어 고쳤다 — 서버에 없는 건 그 편집뿐이다. 여기서 아무것도
+        // 안 하면 **지난 세션의 낡은 draft 가 저장소에 그대로 남고**, 탭을 그냥 닫으면
+        // (cleanup 미실행) 다음 진입 때 그것이 "서버보다 최신"으로 판정돼 배너로 되살아나
+        // 방금 저장한 내용을 되돌린다. 최신본으로 덮어 그 창을 닫는다.
+        writeDraft(versionId, resumeRef.current);
       }
+      // 저장에 성공한 순간 pendingDraft 는 서버 최신본보다 낡았다. 배너를 남겨 두면
+      // '복원'이 방금 저장한 내용을 그 낡은 스냅샷으로 덮고 clearDraft 까지 불러 되돌릴
+      // 길도 없앤다 — 실패 갈래에서만 막아 둔 것을 성공 갈래에서도 막는다(FRT-191).
+      setPendingDraft(null);
       toast.success("저장됐어요");
       captureEditSaved("server", true, sections);
     } catch (err) {

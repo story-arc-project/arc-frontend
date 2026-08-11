@@ -147,7 +147,18 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       // 사용자가 써넣은 문장이 검증된 것처럼 보인다(codex P1). 재검증 시점을 정의하는 건
       // 서버 계약(BAC-62)의 몫이고, 그때 이 자리에서 기준선을 갱신하면 된다.
       setResult((cur) => (cur === snapshot ? updated : cur));
-      if (resultRef.current === snapshot) clearDraft(id);
+      if (resultRef.current === snapshot) {
+        clearDraft(id);
+      } else if (resultRef.current) {
+        // 요청이 도는 동안 이어 고쳤다 — 서버에 없는 건 그 편집뿐이다. 여기서 아무것도
+        // 안 하면 낡은 draft 가 저장소에 남아, 탭을 그냥 닫은 뒤 다음 진입 때 배너로
+        // 되살아나 방금 저장한 내용을 되돌린다(FRT-191).
+        writeDraft(id, resultRef.current);
+      }
+      // 저장에 성공한 순간 pendingDraft 는 서버 최신본보다 낡았다. 배너를 남겨 두면
+      // '복원'이 방금 저장한 내용을 그 낡은 스냅샷으로 덮는다 — 실패 갈래에서만 막아
+      // 둔 것을 성공 갈래에서도 막는다(FRT-191).
+      setPendingDraft(null);
       toast.success("저장됐어요");
     } catch (err) {
       // 서버에 저장 경로가 없다(BAC-62 미착수). 편집을 잃을 이유는 아니므로 **항상** 로컬에

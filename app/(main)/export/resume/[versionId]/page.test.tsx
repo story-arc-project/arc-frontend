@@ -1086,3 +1086,99 @@ describe("FRT-238 — 버전 전환 중 늦게 도착한 응답", () => {
     expect(mockUpdateResume).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * FRT-191 — 저장에 **성공**해도 남던 복원 배너.
+ *
+ * 실패 갈래에는 "배너 하나가 편집을 두 번 잃게 만든다"는 이유까지 달린 `setPendingDraft(null)`
+ * 이 있는데 성공 갈래에만 빠져 있었다. 배너가 남으면 '복원'이 방금 서버에 저장한 내용을 지난
+ * 세션의 낡은 스냅샷으로 덮고, `clearDraft` 까지 불러 되돌릴 길도 없앤다.
+ */
+describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
+  const OLD_DRAFT_SUMMARY = "지난 세션에 고친 문장";
+
+  function seedOlderDraft() {
+    window.localStorage.setItem(
+      "arc:resume-draft:v1",
+      JSON.stringify({
+        data: resumeFixture({ 자기소개_요약: OLD_DRAFT_SUMMARY }),
+        // meta.generated_at(2026-07-21) 보다 뒤여야 복원 배너가 뜬다.
+        updated_at: "2026-07-22T00:00:00Z",
+      }),
+    );
+  }
+
+  function storedDraft(): { data: ResumeVersion } | null {
+    const raw = window.localStorage.getItem("arc:resume-draft:v1");
+    return raw ? (JSON.parse(raw) as { data: ResumeVersion }) : null;
+  }
+
+  it("저장에 성공하면 복원 배너가 사라진다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockImplementation(async (_id, data) => data);
+    seedOlderDraft();
+    await renderLoaded();
+
+    // 배너가 실재하는 상태에서 출발했음을 먼저 못박는다 — 이게 없으면 "원래 안 떴다"와
+    // "저장이 지웠다"가 구별되지 않아 단언이 공허하게 통과한다.
+    expect(screen.getByRole("button", { name: "복원" })).toBeTruthy();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "복원" })).toBeNull(),
+    );
+  });
+
+  it("저장에 성공하면 옛 임시저장은 저장소에도 남지 않는다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockImplementation(async (_id, data) => data);
+    seedOlderDraft();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(storedDraft()).toBeNull();
+  });
+
+  // 배너를 지우는 것만으로는 부족하다. 저장이 도는 동안 이어 고치면 `clearDraft` 가
+  // 건너뛰어져 **낡은 draft 가 저장소에 그대로 남는다** — 그 뒤 탭을 그냥 닫으면(cleanup
+  // 미실행) 다음 진입 때 그 옛 draft 가 다시 배너로 떠 같은 되돌림 사고가 재현된다.
+  it("저장 중에 이어 고치면 옛 draft 가 아니라 그 최신본이 임시 저장에 남는다", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (value: ResumeVersion) => void;
+    mockUpdateResume.mockImplementation(
+      () =>
+        new Promise<ResumeVersion>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    seedOlderDraft();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // 요청이 도는 동안 이어서 고친다 — 서버가 받아간 스냅샷에는 이 편집이 없다.
+    await user.click(screen.getByRole("button", { name: /자기소개/ }));
+    await user.type(
+      screen.getByPlaceholderText("간단한 자기소개를 적어주세요."),
+      "x",
+    );
+
+    await act(async () => {
+      resolveSave(resumeFixture({ 인적사항: { ...resumeFixture().인적사항, 이름: "김서윤!" } }));
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "복원" })).toBeNull(),
+    );
+    const draft = storedDraft();
+    // 지난 세션 문장이 그대로면 옛 draft 가 살아남은 것 — 다음 진입에서 배너로 되살아난다.
+    expect(draft?.data.자기소개_요약).not.toBe(OLD_DRAFT_SUMMARY);
+    expect(draft?.data.자기소개_요약).toBe("AI 가 쓴 초안 문장입니다.x");
+  });
+});
