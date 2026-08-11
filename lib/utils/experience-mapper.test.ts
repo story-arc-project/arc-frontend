@@ -3535,6 +3535,45 @@ describe("toExperienceV2 — 이 코드가 모르는 타입 (FRT-200)", () => {
     })
   })
 
+  /**
+   * ⚠️ 이관은 **덮어쓰기 결정**이다. 목적지에 이미 새 스키마가 쓴 값이 있으면 "비어 있다"고
+   * 보고 레거시 값으로 덮어선 안 된다 — 다음 저장에서 그 값이 영구히 사라진다.
+   */
+  it("이관 목적지에 모르는 판별자의 값이 있으면 덮어쓰지 않는다", () => {
+    // ⚠️ **실제 이관 쌍**을 써야 한다. 원본 키가 없으면 이관 자체가 안 돌아 검사가
+    //    공허하게 통과한다(실제로 그렇게 썼다가 잡았다).
+    const exp = makeExperience({
+      type: "overseas",
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "제목",
+        summary: "요약",
+        status: "draft",
+        tags: [],
+        fields: {
+          "core.증빙 자료": {
+            type: "file",
+            fileName: "옛 증빙.pdf",
+            description: "",
+            evidenceType: "",
+          },
+          "overseas-program.증빙 자료": {
+            type: "brand-new-in-v3",
+            payload: "새 스키마가 쓴 값",
+          },
+        },
+        custom: [],
+      } as unknown as Experience["content"],
+    })
+
+    const content = toSavePayload(toExperienceV2(exp)).content as { fields: Record<string, unknown> }
+    expect(content.fields["overseas-program.증빙 자료"]).toMatchObject({
+      type: "brand-new-in-v3",
+      payload: "새 스키마가 쓴 값",
+    })
+  })
+
   it("모르는 type 의 orphan 값을 버리지 않고 왕복에서 지킨다", () => {
     const exp = makeExperience({
       content: makeV2Content({

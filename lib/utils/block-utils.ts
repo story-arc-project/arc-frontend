@@ -1011,13 +1011,24 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
 
   // ⚠️ 표시 문자열도 저장분에서 온다 — `TextBlock` 등이 `block.label` 을 React 자식으로 **그대로**
   // 그리므로, 객체가 실려 오면 값이 아무리 성해도 그 자리에서 화면이 죽는다.
+  // ⚠️ 조건부 노출 메타데이터도 저장분이다 — `isConditionMet` 이 `equals?.includes(...)` 를
+  // 부르므로 배열이 아니면 그 자리에서 죽고, 폼은 **렌더 전에** 그 판정을 돈다.
+  const cond = block.visibleWhen as Record<string, unknown> | undefined
+  const conditionBroken =
+    cond !== undefined &&
+    (!isPlainObject(cond) ||
+      typeof cond.key !== 'string' ||
+      (cond.equals !== undefined && !allStrings(cond.equals)) ||
+      (cond.startsWith !== undefined && !allStrings(cond.startsWith)))
+
   const stringsBroken =
     typeof block.label !== 'string' ||
     !isOptText(block.placeholder) ||
     !isOptText(block.guide) ||
     !isOptText(block.key)
 
-  if (value === block.value && !childrenChanged && !optionsBroken && !stringsBroken) return block
+  if (value === block.value && !childrenChanged && !optionsBroken && !stringsBroken && !conditionBroken)
+    return block
   return {
     ...block,
     value,
@@ -1031,6 +1042,18 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
         }
       : {}),
     ...(children ? { children } : {}),
+    // 조건이 깨졌으면 **버린다** — 지어낸 조건으로 필드를 숨기면 값이 화면에서 사라진다.
+    ...(conditionBroken
+      ? {
+          visibleWhen: isPlainObject(cond) && typeof cond.key === 'string'
+            ? {
+                key: cond.key,
+                ...(cond.equals !== undefined ? { equals: asStrings(cond.equals) } : {}),
+                ...(cond.startsWith !== undefined ? { startsWith: asStrings(cond.startsWith) } : {}),
+              }
+            : undefined,
+        }
+      : {}),
   }
 }
 
@@ -1103,6 +1126,17 @@ export function hasResidualValue(block: Block): boolean {
  * ⚠️ **"목적지가 찼는가"에는 쓰지 말 것.** 그건 다른 질문이다 — 설명만 있는 목적지를 '찼다'로
  * 보면 실제 파일을 든 이관이 막힌다(`applyScopedMigrations` 는 계속 `isBlockEmpty` 를 쓴다).
  */
+/**
+ * 이 값이 그 자리를 **차지하고 있는가** — 이관·개명이 덮어써도 되는지 묻는 술어.
+ *
+ * ⚠️ `!isBlockEmpty(...)` 로 물으면 안 된다. 모르는 판별자는 "그릴 게 없다"(=empty)지만
+ * **덮어쓰면 새 스키마가 쓴 값이 영구히 사라진다.** 여기서도 "그리기"와 "덮어쓰기"는 다른 질문이다.
+ */
+export function isValueOccupied(value: BlockValue | null | undefined): boolean {
+  if (!value || typeof value !== 'object') return false
+  return !isBlockDiscardable({ id: '', type: value.type, label: '', value })
+}
+
 export function isBlockDiscardable(block: Block): boolean {
   const v = block.value as BlockValue | null | undefined
   // ⚠️ **"그릴 게 없다"와 "버려도 된다"는 다른 질문이다.** 이 코드가 모르는 type(새 스키마가 쓴

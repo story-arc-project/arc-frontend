@@ -1003,6 +1003,22 @@ describe("normalizeBlock/Blocks — 블록 자신의 필드 (FRT-200)", () => {
     expect(Array.isArray(normalized.options)).toBe(false)
   })
 
+  /**
+   * ⚠️ 조건부 노출 메타데이터도 저장분이다 — `isConditionMet` 이 `condition.equals?.includes(...)`
+   * 를 부르므로 배열이 아니면 그 자리에서 죽고, 폼은 렌더 전에 그 판정을 돈다.
+   */
+  it("visibleWhen 이 깨져 있으면 조건을 버리거나 모양을 맞춘다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      visibleWhen: { key: "core.경험명", equals: {} } as unknown as Block["visibleWhen"],
+      value: { type: "text", text: "" },
+    })
+    const cond = normalized.visibleWhen
+    expect(cond === undefined || Array.isArray(cond.equals) || cond.equals === undefined).toBe(true)
+  })
+
   it("children 이 배열이 아니거나 원소가 깨져 있어도 죽지 않는다", () => {
     const group = {
       id: "g1",

@@ -23,8 +23,8 @@ import {
   cloneBlocks,
   createGroupBlock,
   isBlockDiscardable,
-  isBlockEmpty,
   isKnownBlockType,
+  isValueOccupied,
   normalizeBlockValue,
   normalizeBlocks,
   type BlockDefs,
@@ -540,8 +540,9 @@ function applyScopedMigrations(
     const carried = carry(templateByKey.get(to), legacy)
     if (!carried) continue
     const current = out[to]
-    const currentFilled =
-      current && !isBlockEmpty({ id: '', type: current.type, label: '', value: current })
+    // ⚠️ 이관은 **덮어쓰기 결정**이다 — `isBlockEmpty` 로 물으면 모르는 판별자의 값이
+    // "비어 있음"으로 분류돼 레거시 값에 덮이고, 다음 저장에서 영구히 사라진다.
+    const currentFilled = current && isValueOccupied(current)
     if (currentFilled) continue
     if (out === fields) out = { ...fields }
     delete out[from]
@@ -608,8 +609,9 @@ function applyRenamedKeys(fields: Record<string, BlockValue>): Record<string, Bl
     if (out === fields) out = { ...fields }
     delete out[oldKey]
     const current = out[newKey]
-    const currentFilled =
-      current && !isBlockEmpty({ id: '', type: current.type, label: '', value: current })
+    // ⚠️ 이관은 **덮어쓰기 결정**이다 — `isBlockEmpty` 로 물으면 모르는 판별자의 값이
+    // "비어 있음"으로 분류돼 레거시 값에 덮이고, 다음 저장에서 영구히 사라진다.
+    const currentFilled = current && isValueOccupied(current)
     if (!currentFilled) out[newKey] = legacy
   }
   return out
