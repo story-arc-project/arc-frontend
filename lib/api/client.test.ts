@@ -352,3 +352,113 @@ describe("갱신에 밀려난 요청 되살리기 (FRT-209 재발)", () => {
     expect(window.location.href).toBe("")
   })
 })
+
+/**
+ * 되살리기 자체가 새로운 회전 물결을 만들지 않아야 한다 (PR #247 리뷰).
+ *
+ * 갱신이 이미 끝난 **뒤**에 도착한 403 은 `inflightRefresh` 가 비어 있어 또 갱신을 시작한다.
+ * 그 갱신은 방금 심어진 새 토큰을 회전시키고, 그 토큰으로 재시도 중이던 다른 요청들을 통째로
+ * 403 에 빠뜨린다 — 신고 트레이스의 **두 번째 401/403 물결**이 정확히 이 모양이다.
+ * 예산을 늘리는 것은 그 물결을 흡수할 뿐이고, 여기서 막는 것이 원인을 없애는 쪽이다.
+ */
+describe("되살리기가 새 회전을 만들지 않는다", () => {
+  it("이미 끝난 갱신 뒤에 도착한 403 은 또 갱신하지 않고 그대로 다시 보낸다", async () => {
+    let refreshCalls = 0
+    let lateCalls = 0
+    let releaseLate: () => void = () => {}
+    const lateHeld = new Promise<void>((resolve) => {
+      releaseLate = resolve
+    })
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.includes("/auth/refresh")) {
+        refreshCalls += 1
+        return new Response(null, { status: 200 })
+      }
+      if (url.includes("/late")) {
+        lateCalls += 1
+        // 첫 응답만 붙잡아 둔다 — 앞선 요청의 갱신이 끝난 뒤에 403 이 도착하는 상황.
+        if (lateCalls === 1) {
+          await lateHeld
+          return jsonResponse({ message: "Login required.", code: "AUTH_REUSE_DETECTED" }, 403)
+        }
+        return jsonResponse({ ok: true })
+      }
+      // /early: 만료된 액세스 토큰 → 갱신을 한 번 일으키고 재시도에 성공한다.
+      return lateCalls === 0 ? new Response(null, { status: 401 }) : jsonResponse({ ok: true })
+    })
+
+    // 둘은 같은 시점에 나갔으므로 같은(옛) 토큰을 실었다.
+    const early = api.get<{ ok: boolean }>("/early")
+    const late = api.get<{ ok: boolean }>("/late")
+
+    await early
+    releaseLate()
+
+    expect(await late).toEqual({ ok: true })
+    // 핵심: 갱신은 한 번뿐. 두 번째가 나가면 그것이 다음 403 물결의 발원지가 된다.
+    expect(refreshCalls).toBe(1)
+    expect(window.location.href).toBe("")
+  })
+
+  it("갱신이 없었다면 403 은 여전히 갱신을 부른다", async () => {
+    // 거울상: 세대가 그대로면 내 토큰은 남이 회전시킨 것이므로 갱신이 유일한 길이다.
+    const state = stubRotatedOutServer([rotatedOut()])
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+  })
+})
+
+/**
+ * 갱신으로 고칠 수 없는 401 을 갱신에 태우지 않는다 (PR #247 리뷰).
+ *
+ * 백엔드는 두 종류의 401 을 코드로 구별한다 (arc-backend `enums.py`).
+ * - `AUTH_TOKEN_EXPIRED` · `AUTH_TOKEN_INVALID` · `AUTH_MISSING_COOKIES` (`utils/auth.py`)
+ *   → 액세스 토큰 문제. 갱신하면 풀린다.
+ * - `INVALID_CREDENTIALS` (`api/auth.py:160/168/568`) → 사용자가 비밀번호를 틀린 것.
+ *   갱신해도 영원히 401 이고, 그 사이 탈퇴 DELETE 가 반복 전송되며 세션만 헛돌게 회전한다.
+ *
+ * 가려내는 방향이 중요하다. `auth:false` 요청을 통째로 제외하면 `/auth/me` 도 `auth:false` 라
+ * (`lib/api/auth-api.ts:19`) **세션 복원이 통째로 죽는다**. 그래서 "갱신 가능한 코드만 허용"이
+ * 아니라 "고칠 수 없는 코드만 제외"로 좁게 판정한다 — 코드가 없는 401 은 지금처럼 갱신한다.
+ */
+describe("갱신으로 고칠 수 없는 401 가려내기", () => {
+  it("비밀번호 오답 401 은 갱신하지 않고 즉시 던진다", async () => {
+    const state = stubRotatedOutServer([
+      jsonResponse(
+        { message: "The email or password is incorrect.", code: "INVALID_CREDENTIALS" },
+        401,
+      ),
+    ])
+
+    const err = await api
+      .delete("/auth/account/password", { auth: false })
+      .catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(401)
+    expect(err.code).toBe("INVALID_CREDENTIALS")
+    expect(state.refreshCalls).toBe(0)
+    // 핵심: 탈퇴 요청이 한 번만 나간다. 재전송은 실패 횟수 집계까지 오염시킨다.
+    expect(state.dataCalls).toBe(1)
+  })
+
+  it("만료 401 은 여전히 갱신해 되살린다", async () => {
+    // 위 제외가 넓어지면 세션 복원이 죽는다 — 그 경계를 고정한다.
+    const state = stubRotatedOutServer([
+      jsonResponse({ message: "Login required.", code: "AUTH_TOKEN_EXPIRED" }, 401),
+    ])
+
+    expect(await api.get<{ ok: boolean }>("/auth/me", { auth: false })).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+  })
+
+  it("코드 없는 401 도 여전히 갱신해 되살린다", async () => {
+    const state = stubRotatedOutServer([new Response(null, { status: 401 })])
+
+    expect(await api.get<{ ok: boolean }>("/x")).toEqual({ ok: true })
+    expect(state.refreshCalls).toBe(1)
+  })
+})

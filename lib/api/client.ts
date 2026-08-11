@@ -49,13 +49,21 @@ function tryRefresh(): Promise<RefreshResult> {
   return inflightRefresh;
 }
 
+// 갱신이 성공할 때마다 오른다. 요청은 **보내기 직전의 값**을 기억해 두었다가 401/403 을 받은
+// 순간 다시 읽는다. 값이 달라져 있으면 "내가 나간 뒤에 이미 누군가 갱신을 끝냈다"는 뜻이고,
+// 브라우저는 그때 심어진 새 쿠키를 이미 들고 있다.
+let refreshGeneration = 0;
+
 async function runRefresh(): Promise<RefreshResult> {
   try {
     const res = await fetch(`${API_URL}/auth/refresh`, {
       method: "POST",
       credentials: "include",
     });
-    if (res.ok) return "ok";
+    if (res.ok) {
+      refreshGeneration += 1;
+      return "ok";
+    }
     // 401/403 = refresh token 만료·무효 → 진짜 재인증 필요
     if (res.status === 401 || res.status === 403) return "unauthorized";
     // 그 외(5xx 등) = 일시 장애 → 세션을 끊지 않고 에러로 surface
@@ -78,6 +86,15 @@ async function runRefresh(): Promise<RefreshResult> {
 // 주었는지에 따라 복구 가능성이 갈린다.
 const ROTATED_OUT_CODE = "AUTH_REUSE_DETECTED";
 
+// 사용자가 비밀번호를 틀렸을 때의 401 (arc-backend `api/auth.py` 로그인·탈퇴 경로).
+// 액세스 토큰과 무관하므로 갱신해도 영원히 401 이고, 그 사이 탈퇴 DELETE 같은 요청이 되풀이
+// 전송되며 실패 횟수 집계까지 오염시킨다. 게다가 매 라운드의 회전이 다른 요청의 토큰을 죽인다.
+//
+// 가려내는 **방향**이 중요하다. "갱신 가능한 코드만 허용"으로 좁히거나 `auth: false` 요청을
+// 통째로 제외하면 `/auth/me` 도 `auth: false` 라(`lib/api/auth-api.ts`) 세션 복원이 함께 죽는다.
+// 그래서 "고칠 수 없는 코드만 제외"로 둔다 — 코드가 없는 401 은 지금처럼 갱신한다.
+const WRONG_CREDENTIALS_CODE = "INVALID_CREDENTIALS";
+
 // 갱신 경계를 걸친 요청에 줄 기회. 1 이면 갱신 직후의 재시도가 또 경계에 걸렸을 때 그 요청이
 // 영구히 실패한다 — 신고된 트레이스가 정확히 그 상태였다(refresh 200 뒤 401 넷이 그대로 죽고,
 // 두 번째 갱신을 받은 하나만 200 으로 돌아왔다). 상한이 없으면 회전이 잦은 서버에서 한 요청이
@@ -96,6 +113,9 @@ async function request<T>(
   logRequest(method, path, isFormData ? "[FormData]" : fetchOptions.body);
   const start = performance.now();
 
+  // 이 요청이 어느 세대의 쿠키를 싣고 나갔는지. 반드시 fetch **앞에서** 읽는다.
+  const generationAtSend = refreshGeneration;
+
   const res = await fetch(`${API_URL}${path}`, {
     ...fetchOptions,
     credentials: "include",
@@ -107,17 +127,29 @@ async function request<T>(
   logResponse(method, path, res.status, Math.round(performance.now() - start));
 
   if ((res.status === 401 || res.status === 403) && refreshRoundsLeft > 0) {
-    // 403 은 "내 액세스 토큰이 갱신에 밀려났다"일 때만 되살린다. 진짜 폐기(`AUTH_REVOKED`)나
-    // 인가 실패는 갱신해도 달라지지 않으므로 여기서 갈라 그대로 던진다. 본문은 한 번만 읽을 수
-    // 있으니 파싱한 값을 그대로 써서 던진다.
-    if (res.status === 403) {
-      const body = (await res.json().catch(() => ({}))) as {
-        message?: string;
-        code?: string;
-      };
-      if (body.code !== ROTATED_OUT_CODE) {
-        throw new ApiError(res.status, body.message ?? "오류가 발생했어요.", body.code);
-      }
+    // 본문은 한 번만 읽을 수 있으니 여기서 한 번 파싱해 판정과 throw 에 함께 쓴다.
+    const body = (await res.json().catch(() => ({}))) as {
+      message?: string;
+      code?: string;
+    };
+
+    // 갱신해도 달라지지 않는 응답은 여기서 갈라 그대로 던진다.
+    // - 403 은 "내 액세스 토큰이 갱신에 밀려났다"일 때만 되살린다. 진짜 폐기(`AUTH_REVOKED`)나
+    //   인가 실패는 대상이 아니다.
+    // - 401 은 반대로 **고칠 수 없는 것만** 뺀다 (`WRONG_CREDENTIALS_CODE` 주석 참조).
+    const unrecoverable =
+      res.status === 403 ? body.code !== ROTATED_OUT_CODE : body.code === WRONG_CREDENTIALS_CODE;
+    if (unrecoverable) {
+      throw new ApiError(res.status, body.message ?? "오류가 발생했어요.", body.code);
+    }
+
+    // 내가 나간 뒤에 이미 갱신이 끝나 있었다면 **또 갱신하지 않는다**. 여기서 갱신하면 방금
+    // 심어진 새 토큰까지 회전시켜, 그 토큰으로 재시도 중이던 다른 요청들을 통째로 403 에
+    // 빠뜨린다 — 신고 트레이스의 두 번째 401/403 물결이 이렇게 만들어진다. 되살리기가 스스로
+    // 다음 물결을 낳는 셈이다. 브라우저는 이미 새 쿠키를 들고 있으니 그대로 다시 보내면 된다.
+    // (갱신이 아직 진행 중이라면 세대는 그대로이므로 아래 `tryRefresh` 가 그것에 합류한다.)
+    if (refreshGeneration !== generationAtSend) {
+      return request<T>(path, options, refreshRoundsLeft - 1);
     }
 
     const refresh = await tryRefresh();
