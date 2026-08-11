@@ -789,6 +789,14 @@ function repairRows(
   // ⚠️ 저장분에 **이미 중복된 id** 가 있을 수 있다 — 행 하나씩 보면 둘 다 성해 보이지만
   // 쌍으로는 깨져 있다. 앞엣것을 두고 뒤엣것을 갈아 준다(앞뒤가 뒤집히면 안 되므로 순서대로).
   const ids = dedupeNames(rows.map(r => asIdText(r.id)), i => `row-${i}`)
+  // ⚠️ `"5"` 와 `5` 는 **서로 다른 행**이다(`row.id === linked` 비교가 타입까지 본다). 글자로
+  // 합치면서 충돌하면 한쪽이 개명되는데, 링크를 같이 옮기지 않으면 **다른 행으로 갈아탄다**.
+  // 그래서 타입까지 붙인 키로 옛→새 표를 만든다.
+  const idKey = (x: unknown): string => `${typeof x}:${String(x)}`
+  const linkTargets = new Map<string, string>()
+  rows.forEach((r, i) => {
+    if (r.id !== undefined && !linkTargets.has(idKey(r.id))) linkTargets.set(idKey(r.id), ids[i])
+  })
   return rows.map((r, i) => {
     const id = ids[i]
     const cells: Record<string, CellValue> = {}
@@ -807,7 +815,11 @@ function repairRows(
       // 스키마 밖 부가 값도 잎까지 맞춘다 — `rowHasContent` 가 `f.value` 를 직접 읽는다.
       // 링크도 id 와 **같은 방식**으로 살린다 — 한쪽만 글자로 바꾸면 그 링크가 끊긴다.
       ...(r.linkedProjectRowId !== undefined
-        ? { linkedProjectRowId: asIdText(r.linkedProjectRowId) || undefined }
+        ? {
+            linkedProjectRowId:
+              linkTargets.get(idKey(r.linkedProjectRowId)) ??
+              (asIdText(r.linkedProjectRowId) || undefined),
+          }
         : {}),
       ...(r.roleTags !== undefined ? { roleTags: asStrings(r.roleTags) } : {}),
       ...(r.extraFields !== undefined
@@ -1072,6 +1084,22 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
 
   const categoryBroken = block.category !== undefined && !isKnownCategory(block.category)
 
+  // ⚠️ `required` 는 표시가 아니라 **폼 의미**를 바꾼다(진행도·숨김 가능 여부). 객체나
+  // `"false"` 같은 truthy 쓰레기가 통과하면 그 칸이 영원히 필수가 된다. 참일 때만 참으로 둔다.
+  const BOOL_KEYS = ['required', 'collapsed', 'lockColumns', 'allowRowExtras'] as const
+  const boolsBroken = BOOL_KEYS.some(k => {
+    const raw = (block as unknown as Record<string, unknown>)[k]
+    return raw !== undefined && typeof raw !== 'boolean'
+  })
+  const repairedBools = boolsBroken
+    ? Object.fromEntries(
+        BOOL_KEYS.map(k => {
+          const raw = (block as unknown as Record<string, unknown>)[k]
+          return [k, raw === true ? true : raw === false ? false : undefined]
+        }),
+      )
+    : undefined
+
   const stringsBroken =
     typeof block.label !== 'string' ||
     !isOptText(block.placeholder) ||
@@ -1084,7 +1112,8 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
     !optionsBroken &&
     !stringsBroken &&
     !conditionBroken &&
-    !categoryBroken
+    !categoryBroken &&
+    !boolsBroken
   )
     return block
   return {
@@ -1104,6 +1133,7 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
     ...(conditionBroken ? { visibleWhen: repairCondition(cond) } : {}),
     // 모르는 `category` 는 뺀다 — 그래야 소비처의 기본값(`?? 'detail'`)이 다시 산다.
     ...(categoryBroken ? { category: undefined } : {}),
+    ...(repairedBools ?? {}),
   }
 }
 
@@ -1207,7 +1237,10 @@ export function isValueOccupied(value: BlockValue | null | undefined): boolean {
   // ⚠️ `isBlockDiscardable` 을 쓰면 **부속 값만 남은 목적지**(파일 없이 설명만 적힌 증빙)가
   // "차지됨"이 된다. 개명은 원본을 먼저 지우므로 그러면 실제 첨부가 옮겨지지도 보존되지도
   // 않고 사라진다 — 여기서 묻는 것은 "그릴 내용이 있는가"다.
-  return !isBlockEmpty({ id: '', type: value.type, label: '', value })
+  // ⚠️ **정규화와 같은 눈으로 봐야 한다.** 원소가 전부 깨진 배열은 길이만 보면 채워진 것
+  // 같지만 정규화하면 빈 배열이 된다 — 그 사이에 레거시 원본은 이미 지워진다.
+  const safe = normalizeBlockValue(value.type, value)
+  return !isBlockEmpty({ id: '', type: safe.type, label: '', value: safe })
 }
 
 export function isBlockDiscardable(block: Block): boolean {

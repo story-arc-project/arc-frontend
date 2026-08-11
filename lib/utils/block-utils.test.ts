@@ -690,6 +690,26 @@ describe("normalizeBlockValue (FRT-200)", () => {
     expect(new Set(out.rows.map(r => r.id)).size).toBe(2)
   })
 
+  /**
+   * ⚠️ `"5"` 와 `5` 는 **서로 다른 행**이다(`row.id === linked` 비교가 타입까지 본다).
+   * 글자로 합치면서 링크를 같이 옮기지 않으면 **링크가 다른 행으로 갈아탄다**.
+   */
+  it("문자·숫자 id 가 섞여 충돌해도 링크는 원래 행을 가리킨다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        { id: "5", cells: { a: "문자 행" } },
+        { id: 5, cells: { a: "숫자 행" } },
+        { id: "r3", cells: {}, linkedProjectRowId: 5 },
+      ],
+    }) as unknown as {
+      rows: { id: string; cells: Record<string, unknown>; linkedProjectRowId?: string }[]
+    }
+    const numeric = out.rows.find(r => r.cells.a === "숫자 행")
+    expect(out.rows[2].linkedProjectRowId).toBe(numeric?.id)
+  })
+
   /** 중복 보정이 만드는 이름도 **저장된 이름을 피해야** 한다(`x`,`x`,`x-1` → 진짜 `x-1` 이 밀리면 안 됨). */
   it("중복 보정이 만든 이름이 저장된 이름을 빼앗지 않는다", () => {
     const out = normalizeBlockValue("repeatable-cell", {
@@ -1074,6 +1094,30 @@ describe("normalizeBlock/Blocks — 블록 자신의 필드 (FRT-200)", () => {
       value: { type: "text", text: "" },
     })
     expect(normalized.visibleWhen?.equals).toBeUndefined()
+  })
+
+  /**
+   * ⚠️ `required` 는 표시가 아니라 **폼 의미**를 바꾼다 — 진행도 판정·숨김 가능 여부가 달라진다.
+   * 객체나 `"false"` 같은 truthy 쓰레기가 그대로 통과하면 그 칸이 영원히 필수가 된다.
+   */
+  it("required 가 boolean 이 아니면 참으로 읽히지 않게 정리한다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      required: { broken: true } as unknown as boolean,
+      value: { type: "text", text: "" },
+    })
+    expect(normalized.required).toBeUndefined()
+
+    const real = normalizeBlock({
+      id: "b2",
+      type: "text",
+      label: "칸",
+      required: true,
+      value: { type: "text", text: "" },
+    })
+    expect(real.required).toBe(true) // 진짜 필수는 그대로
   })
 
   /** `computeFormCards` 는 `buckets[b.category ?? "detail"]` 로 찾는다 — 모르는 값이면 죽는다. */

@@ -3689,6 +3689,32 @@ describe("toExperienceV2 — 이 코드가 모르는 타입 (FRT-200)", () => {
     expect(survived).toBe(true)
   })
 
+  /**
+   * ⚠️ **"차지됨" 판정도 정규화와 같은 눈으로 봐야 한다.** 원소가 전부 깨진 배열은 길이만 보면
+   * 채워진 것 같지만 정규화하면 빈 배열이 된다 — 그 사이에 레거시 원본은 이미 지워진다.
+   */
+  it("목적지 배열의 원소가 전부 깨졌으면 레거시 값이 살아남는다", () => {
+    const exp = makeExperience({
+      type: "creative-work",
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "제목",
+        summary: "요약",
+        status: "draft",
+        tags: [],
+        fields: {
+          "cw-info.사용 도구": { type: "tags", tags: ["피그마", "블렌더"] },
+          "creative-info.사용 툴 / 기술": { type: "tags", tags: [{}] },
+        },
+        custom: [],
+      } as unknown as Experience["content"],
+    })
+
+    const payload = toSavePayload(toExperienceV2(exp))
+    expect(JSON.stringify(payload.content)).toContain("피그마")
+  })
+
   it("모르는 type 의 orphan 값을 버리지 않고 왕복에서 지킨다", () => {
     const exp = makeExperience({
       content: makeV2Content({
