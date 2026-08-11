@@ -1034,6 +1034,18 @@ describe("normalizeBlock/Blocks — 블록 자신의 필드 (FRT-200)", () => {
     expect(normalized.visibleWhen?.equals).toBeUndefined()
   })
 
+  /** 저장분에 **이미** `equals: []` 인 경우도 같다 — 배열이라고 성한 게 아니다. */
+  it("저장분에 이미 빈 연산자가 있어도 뺀다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      visibleWhen: { key: "core.경험명", equals: [] },
+      value: { type: "text", text: "" },
+    })
+    expect(normalized.visibleWhen?.equals).toBeUndefined()
+  })
+
   /** `computeFormCards` 는 `buckets[b.category ?? "detail"]` 로 찾는다 — 모르는 값이면 죽는다. */
   it("category 가 이 코드가 아는 값이 아니면 뺀다", () => {
     const normalized = normalizeBlock({
@@ -1122,6 +1134,16 @@ describe("isBlockDiscardable — 모르는 타입 (FRT-200)", () => {
     const block = blockWith({ type: "brand-new-in-v3", payload: "미래 스키마" })
     expect(isBlockEmpty(block)).toBe(true) // 그릴 것은 없다
     expect(isBlockDiscardable(block)).toBe(false) // 그렇다고 버려도 되는 건 아니다
+  })
+
+  /**
+   * ⚠️ **판별자가 "모르는 문자열"인 것과 "아예 없는" 것은 다르다.** 앞은 새 스키마의 흔적이라
+   * 지켜야 하지만, 뒤는 그냥 손상이라 이관·개명이 덮어쓸 수 있어야 한다 — 안 그러면 목적지가
+   * "차지됨"으로 오판돼 **레거시 원본이 지워진 채 아무것도 안 남는다**.
+   */
+  it("판별자가 아예 없는 값은 보존 대상이 아니다", () => {
+    const noDiscriminator = { id: "b1", type: undefined, label: "", value: {} } as unknown as Block
+    expect(isBlockDiscardable(noDiscriminator)).toBe(true)
   })
 
   it("아는 타입의 빈 값은 종전대로 버린다", () => {

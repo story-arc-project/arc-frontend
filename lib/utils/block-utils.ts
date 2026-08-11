@@ -1048,8 +1048,11 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
     cond !== undefined &&
     (!isPlainObject(cond) ||
       typeof cond.key !== 'string' ||
-      (cond.equals !== undefined && !allStrings(cond.equals)) ||
-      (cond.startsWith !== undefined && !allStrings(cond.startsWith)))
+      // ⚠️ 길이 0 도 깨진 것으로 본다 — 배열이라고 성한 게 아니다. `isConditionMet` 은
+      // 연산자가 있으면 그걸로만 판정하므로 `[]` 는 "아무것도 안 맞음"이 되어 필드가 영원히 숨는다.
+      (cond.equals !== undefined && (!allStrings(cond.equals) || (cond.equals as unknown[]).length === 0)) ||
+      (cond.startsWith !== undefined &&
+        (!allStrings(cond.startsWith) || (cond.startsWith as unknown[]).length === 0)))
 
   const categoryBroken = block.category !== undefined && !isKnownCategory(block.category)
 
@@ -1175,7 +1178,11 @@ export function isBlockDiscardable(block: Block): boolean {
   // 통째로 사라진다 — 못 그린다는 이유로 남의 데이터를 지우는 셈이다.
   if (v && typeof v.type === 'string' && !isKnownBlockType(v.type)) return false
   // 값에 판별자가 없어도 **블록 타입 자체가 미지**면 그건 새 스키마의 흔적이다 — 버리면 지운다.
-  if (!isKnownBlockType(block.type) && v && typeof v === 'object') return false
+  // ⚠️ **"모르는 문자열"과 "아예 없음"은 다르다.** 앞은 새 스키마의 흔적이라 지켜야 하지만,
+  // 뒤는 그냥 손상이라 이관·개명이 덮어쓸 수 있어야 한다 — 목적지를 "차지됨"으로 오판하면
+  // 레거시 원본이 지워진 채 아무것도 안 남는다.
+  if (typeof block.type === 'string' && !isKnownBlockType(block.type) && v && typeof v === 'object')
+    return false
   // 그룹은 **자식이 곧 내용**이다. 자식 하나가 못 버릴 값이면 섹션째 버려선 안 된다 —
   // 완료 저장의 빈 섹션 정리가 이 판정을 쓰므로, 여기서 참이면 그 값이 영구히 사라진다.
   if (block.type === 'group' || v?.type === 'group') {
