@@ -113,6 +113,17 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   //    이 코어 칸이 실제로 렌더됐고 값이 들어 있을 수 있다 — 빼면 그 값이 '기타'로 밀린다. 대신
   //    확정본의 '역할'이 새 앵커가 되므로 dedup 이 빈 것만 숨긴다(충실성과 값 보존이 동시에 성립).
   'creative-work': ['기간', '핵심 성과', '증빙 자료'],
+  // 연구논문 확정본(FRT-269) — 판정식은 FRT-249 Codex P1 그대로 "구 `research-info` 에 동명(또는
+  // SEMANTIC_GROUPS 동의어) 앵커가 있었나". 셋 다 있었으므로 `computeFormCards` 의 dedup 이 빈
+  // 코어를 화면에서 지워 왔고, 값은 코어가 아니라 유형 섹션 쪽에 들어 있다.
+  //  · '기간' — 구 `research-info.기간`(동명). 확정본 ① 이 '연구 기간'으로 자기 시점을 갖는다.
+  //  · '내 역할/기여도' — 구 '역할'·'내가 맡은 파트' 둘 다 SEMANTIC_GROUPS.role 등재.
+  //  · '핵심 성과' — 구 '성과'(tags)가 SEMANTIC_GROUPS.achievement 등재. 확정본 ② '주요 발견 /
+  //    결과'가 그 질문을 흡수했다.
+  //  · ⚠️ '증빙 자료'는 **빼지 않는다.** 확정본 ④ '연구 증빙'이 곧 코어 증빙 카드다(파일 +
+  //    '파일 설명' + '증빙 유형' 세 칸이 FileBlockValue 와 1:1) — 빼면 첨부 수단이 통째로 사라진다.
+  //    봉사·어학·해외는 유형 섹션이 자기 증빙 칸을 따로 가져서 뺐던 것이라 결론이 반대다.
+  research: ['기간', '내 역할/기여도', '핵심 성과'],
 }
 
 /**
@@ -123,6 +134,8 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
 const CORE_EVIDENCE_OPTIONS: Partial<Record<ExperienceTypeId, string[]>> = {
   certification: ['합격증/자격증 사본', '성적표/점수 확인서', '발급 확인서', '기타'],
   award: ['상장 원본/사본', '트로피·상패 사진', '관련 기사', '공식 발표 페이지 캡처', '기타'],
+  // 연구논문 확정본 ④ '연구 증빙'(FRT-269).
+  research: ['연구 참여 확인서', 'IRB 승인서', '우수 발표 인증서/상장', '기타'],
 }
 
 function buildCommonCore(typeId?: ExperienceTypeId): TemplateSection {
@@ -1517,26 +1530,235 @@ function languageExtensions(): TemplateSection[] {
   ]
 }
 
+/** 연구논문 ① '유형' — 확정본 9종. */
+const RESEARCH_TYPE_OPTIONS = [
+  '학부 논문/졸업 논문',
+  '학회 발표 논문',
+  '저널 게재 논문',
+  '학부생 연구 프로젝트(URP 등)',
+  '연구실 인턴/참여 연구',
+  '공동 연구',
+  '리뷰/서베이 페이퍼',
+  '학위 논문(석·박사)',
+  '기타',
+] as const
+
+/** 연구논문 ① '역할 / 기여도' — 확정본 5종. 구 '역할'(주저자/공저/연구원/RA/기타)의 후신이지만
+ *  선택지 도메인이 통째로 다시 짜였다 → 값 조건부 이관(`SELECT_DOMAIN_MIGRATIONS.research`). */
+const RESEARCH_ROLE_OPTIONS = [
+  '제 1저자(주저자)',
+  '공동 저자',
+  '연구 참여(데이터 수집·분석)',
+  '지도 하 단독 연구',
+  '기타',
+] as const
+
+/** 연구논문 ② '연구 성격' 이모지 태그 — 확정본 10종 고정 프리셋. */
+const RESEARCH_MOOD_TAGS = [
+  '📊 정량 연구',
+  '💬 정성 연구',
+  '🔬 실험 연구',
+  '📚 문헌 연구',
+  '🔍 사례 연구',
+  '🧮 데이터 분석',
+  '🤖 머신러닝/AI',
+  '🌐 융합/학제간',
+  '📝 이론 정립',
+  '🎯 응용/실용',
+] as const
+
+/** 연구논문 ③ 게재/발표 '유형' — 확정본 9종. */
+const RESEARCH_PUBLICATION_TYPE_OPTIONS = [
+  '국내 학술지 게재',
+  'SCI(E)/SSCI/A&HCI 등재',
+  '국내 학회 발표(구두)',
+  '국내 학회 발표(포스터)',
+  '국제 학회 발표(구두)',
+  '국제 학회 발표(포스터)',
+  '대학·기관 내부 발표',
+  '워킹 페이퍼/프리프린트',
+  '기타',
+] as const
+
+/** 연구논문 ③ '게재 상태' — 확정본 4종. */
+const RESEARCH_PUBLICATION_STATUS_OPTIONS = [
+  '투고 중',
+  '심사 중(Under Review)',
+  '게재 예정(Accepted)',
+  '게재 완료',
+] as const
+
+// 연구논문 — 확정본(연구논문_final, FRT-269). 구 `research-info` 13필드 한 덩어리를
+// `research-paper`/`research-content`/`research-publication` 3섹션으로 **전면 교체**한다.
+// 섹션 id 를 가는 것이 안전 장치다(FRT-210 이후 공통): 구 '역할'(주저자/공저/연구원/RA/기타)이
+// 확정본 '역할 / 기여도'(5종)로 선택지가 통째로 다시 짜였고, 구 '방법/설계'(textarea)의 자리를
+// 확정본은 '연구 방법론'(개조식 리스트)이 받는다. id 를 유지하면 앞은 새 목록에 없는 값이
+// 드롭다운에 박히고, 뒤는 injectValue 가 값을 못 싣고도 키가 consumedKeys 에 잡혀 orphan
+// 안전망까지 건너뛴다.
+//
+// 확정본 4섹션이 화면에서도 4카드다 — ④ '연구 증빙'은 core '증빙 자료'가 그대로 받는다
+// (확정본 ④ 세 칸이 파일·'파일 설명'·'증빙 유형'으로 `FileBlockValue` 와 1:1이다).
+// 그래서 `CORE_EXCLUDE.research` 는 '증빙 자료'를 **빼지 않는다** — 자격증·수상경력과 같은 처리이고,
+// 봉사·어학·해외처럼 유형 섹션이 자기 증빙 칸을 따로 갖는 경우와는 반대다.
 function researchExtensions(): TemplateSection[] {
   return [
     {
-      id: 'research-info',
+      // 블록 순서는 확정본 ① 표 그대로다. 코어 블록은 `computeFormCards` 가 뒤에 붙으므로,
+      // 확정본 순서를 지키려면 시점 필드를 코어에 맡기지 말고 이렇게 섹션이 소유해야 한다.
+      id: 'research-paper',
       category: 'basic',
-      label: '연구 정보',
+      label: '기본 정보',
       blocks: [
-        createTextField('연구 주제/논문 제목', { required: true }),
-        createTextField('소속/기관/랩'),
-        createPeriodField('기간', { required: true }),
-        createSelectField('역할', ['주저자', '공저', '연구원', 'RA', '기타']),
-        createTextareaField('연구 질문/가설'),
-        createTextareaField('방법/설계'),
-        createTextField('데이터/자료 출처'),
-        createTextareaField('내가 맡은 파트', { required: true }),
-        createTextareaField('결과 요약'),
-        createTagsField('성과'),
-        createLinkField('재현/공유 자료'),
-        createTextareaField('참고문헌/관련 읽을거리'),
-        createFileField('산출물'),
+        createTextField('연구 / 논문 제목', {
+          required: true,
+          guide: '연구 또는 논문의 정확한 제목을 적어주세요.',
+          placeholder: '예: 대학생의 SNS 사용 패턴이 학업 몰입도에 미치는 영향',
+        }),
+        createSelectField('유형', [...RESEARCH_TYPE_OPTIONS], {
+          required: true,
+          guide: '이 연구/논문의 유형을 선택해주세요.',
+        }),
+        createTextField('연구 분야', {
+          required: true,
+          guide:
+            '이 연구가 속한 학문 분야를 적어주세요. 여러 분야에 걸쳐 있다면 가장 대표적인 학문 분야 기준으로 적어주세요.',
+          placeholder: '예: 소비자 심리학, 머신러닝, 미시경제학',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createTextField('지도 교수', { placeholder: '예: OOO 교수' }),
+        createTextField('소속 기관 / 연구실', {
+          placeholder: '예: OO대학교 경영학과 소비자행동연구실',
+        }),
+        // month~month 는 코어 '기간' 과 같은 period 위젯이라 구 `research-info.기간` 값을
+        // 그대로 실을 수 있다(RENAMED_FIELD_KEYS).
+        createPeriodField('연구 기간', { required: true }),
+        createSelectField('역할 / 기여도', [...RESEARCH_ROLE_OPTIONS]),
+        createTextareaField('공저자 / 팀원', {
+          guide: '함께 연구를 진행한 공저자나 팀원을 적어주세요.',
+          placeholder: '예: OOO 교수 (지도), OOO (공동 1저자), OOO (데이터 분석)',
+        }),
+        // 확정본은 이 한 칸에서 'URL + 파일 첨부'를 함께 받는다. 블록 `file` 은 업로드 전용이고
+        // (`FileBlockValue.url` 은 사용자가 적는 링크가 아니라 만료되는 presigned 다운로드 URL),
+        // 블록 `link` 는 파일을 못 받는다 — 둘을 한 칸에 담는 위젯은 표뿐이라 창작물 '작품 링크 /
+        // 파일'과 같은 방식으로 받는다(FRT-213 이 셀 컬럼에 file·link 를 열어 둔 덕에 신규 위젯 불필요).
+        // ⚠️ 컬럼에 required 금지 — `isRequiredBlock` 은 컬럼 하나라도 required 면 표 전체를 필수로
+        // 보고 `canHideBlock` 이 숨기지도 못한다. 확정본이 '(선택, 필드 삭제 가능)'으로 둔 칸이
+        // 영영 삭제 불가·완료 불가가 된다(FRT-236).
+        //
+        // ⚠️ **알려진 미해결 격차**(FRT-269 Codex P2): required 를 안 붙여도 이 표는 아직 × 로
+        // 치울 수 없다 — `canHideBlock` 은 `file` 열을 가진 표를 통째로 제외한다(업로드 중 언마운트
+        // 시 고른 파일이 조용히 사라지는 것을 막는 불변식, hidden-fields.ts). 창작물 '작품 링크 /
+        // 파일'은 확정본이 삭제 가능 표기를 하지 않아 그 제외와 일치했지만, 여기서는 **확정본과
+        // 어긋난다.** 진행도는 막지 않는다 — 이 섹션엔 required 필드가 있어 `isCardComplete` 이
+        // 필수만으로 판정한다. 표의 열 단위 업로드 상태를 위로 흘리는 배선이 생겨야 풀리므로
+        // 후속(FRT-278)으로 분리한다.
+        createRepeatableCell(
+          '논문 파일 / 링크',
+          [
+            {
+              key: 'link',
+              label: '링크',
+              blockType: 'link',
+              placeholder: 'https:// (DOI, 학회 페이지, arXiv, RISS 등)',
+            },
+            { key: 'file', label: '파일', blockType: 'file', placeholder: '논문 PDF 첨부' },
+          ],
+          { guide: '논문 PDF나 DOI, 리포지토리 링크 등을 첨부해주세요.' },
+        ),
+      ],
+    },
+    {
+      // 확정본 ② 는 '필수' 섹션이지만 **여섯 칸 모두 (선택, 필드 삭제 가능)** 이다 — 확정본이
+      // 요구하는 것은 "이 카드를 지나가라"이지 특정 칸의 입력이 아니므로 required 를 두지 않는다.
+      id: 'research-content',
+      category: 'detail',
+      label: '연구 내용',
+      blocks: [
+        createTextareaField('연구 주제 / 배경', {
+          guide: '이 연구가 어떤 문제 의식에서 시작됐고, 왜 중요한지 적어주세요.',
+          placeholder:
+            '예: 대학생 SNS 사용량이 급증하는 가운데 학업 성과와의 관계에 대한 국내 실증 연구가 부족하다는 점에서 출발했습니다.',
+        }),
+        createTextareaField('초록 / 핵심 요약', {
+          guide: '연구의 목적·방법·결과를 간결하게 요약해주세요. 논문 초록을 그대로 붙여넣어도 좋아요.',
+          placeholder:
+            '예: 본 연구는 대학생 300명을 대상으로 설문 조사를 실시하여 SNS 사용 패턴과 학업 몰입도 간의 관계를 분석했다...',
+        }),
+        createOutcomeList('연구 방법론', {
+          guide: '사용한 연구 방법을 리스트업해주세요.',
+          placeholder: '예: 설문 조사 (300명), 회귀 분석, 심층 인터뷰 (8명)',
+          itemLabel: '방법',
+        }),
+        createOutcomeList('주요 발견 / 결과', {
+          guide: '연구를 통해 밝혀낸 주요 발견이나 결과를 리스트업해주세요.',
+          placeholder: '예: 3시간 이상 SNS 사용 시 몰입도 감소 확인',
+          itemLabel: '발견 / 결과',
+        }),
+        createMoodTagField('연구 성격', [...RESEARCH_MOOD_TAGS], {
+          guide: '이 연구의 방법론적·주제적 성격을 태그로 표현해주세요.',
+        }),
+        createTextareaField('평가 / 피드백', {
+          guide:
+            '지도 교수 코멘트, 학회 심사 총평, 동료 리뷰 등 이 연구에 대한 외부 평가를 자유롭게 적어주세요.',
+          placeholder:
+            '예: 지도 교수님으로부터 연구 설계의 타당성은 인정받았으나, 샘플 수 확대 필요성을 피드백 받아 후속 연구 방향을 조정했습니다.',
+        }),
+      ],
+    },
+    {
+      // 확정본 ③ "섹션 전체 선택, 블록 반복 추가 가능" — 하나의 연구가 학회 발표와 저널 게재로
+      // 여러 번 나가므로 이력이 건별이다. 섹션 라벨과 블록 라벨을 갈라 카드 제목이 겹치지 않게 한다
+      // (학회 '프로젝트 기록' 카드 안에 '프로젝트/연구활동' 표를 두는 것과 같은 결).
+      id: 'research-publication',
+      category: 'repeat',
+      label: '게재 / 발표 이력',
+      blocks: [
+        createRepeatableCell(
+          '게재 / 발표',
+          [
+            {
+              key: 'type',
+              label: '유형',
+              blockType: 'single-select',
+              options: [...RESEARCH_PUBLICATION_TYPE_OPTIONS],
+            },
+            {
+              key: 'venue',
+              label: '저널 / 학회명',
+              blockType: 'text',
+              placeholder: '예: 한국소비자학회 / Journal of Consumer Research',
+            },
+            // 확정본은 month 다 — 게재는 호(issue) 단위라 날짜를 지어내게 하면 안 된다.
+            { key: 'date', label: '게재 / 발표일', blockType: 'date', variant: 'month' },
+            {
+              key: 'place',
+              label: '발표 장소',
+              blockType: 'text',
+              placeholder: '예: 서울대학교 관악캠퍼스, 온라인, 미국 San Francisco',
+            },
+            {
+              key: 'status',
+              label: '게재 상태',
+              blockType: 'single-select',
+              options: [...RESEARCH_PUBLICATION_STATUS_OPTIONS],
+            },
+            {
+              key: 'citations',
+              label: '피인용 수',
+              blockType: 'text',
+              guide: 'Google Scholar, Semantic Scholar 등에서 확인한 피인용 수를 적어주세요.',
+              placeholder: '예: 5회 (2024년 기준)',
+            },
+            {
+              key: 'award',
+              label: '수상 내역',
+              blockType: 'text',
+              guide: '이 발표나 논문으로 받은 수상이 있다면 적어주세요.',
+              placeholder: '예: Best Paper Award, 우수 발표상, 포스터상',
+            },
+          ],
+          // guide 없음 — 확정본 ③ 의 섹션 안내는 카드 문구로 넣었다(SECTION_DESCRIPTION_OVERRIDES).
+        ),
       ],
     },
   ]
@@ -2322,13 +2544,15 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
  *     `overseas-program`/`overseas-reflection`/`overseas-activities` 로 갈아치웠다.
  * 6 — 창작물 확정본 정렬(FRT-267). 같은 이유 — `cw-info`/`cw-process` 를 `creative-info`/
  *     `creative-detail` 로 갈아치웠다.
+ * 7 — 연구논문 확정본 정렬(FRT-269). 같은 이유 — `research-info` 를 `research-paper`/
+ *     `research-content`/`research-publication` 으로 갈아치웠다.
  *
  * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
  * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
  * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
  * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 6
+export const TEMPLATE_VERSION = 7
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.

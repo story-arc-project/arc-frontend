@@ -671,7 +671,17 @@ function hiddenCellValue(column: BlockColumnDef, text: string): HiddenCellValue 
         : null
     }
     case "date":
-      return isRealDay(text) ? null : { text, note: DROPS_ALL }
+      // ⚠️ month 변형은 `<input type="month">` 라 일까지 붙은 값("2024-03-15")을 **통째로** 버린다
+      // — `isRealDay` 로 판정하면 "온전히 읽음"으로 새어, 값이 화면에 없는데 안내도 없이 다음
+      // 입력에 덮어쓰인다(FRT-269). 컨트롤을 좁힐 때 판정도 함께 좁혀야 하는 자리다.
+      // 일부만 그리는 기간 셀과 달리 여기선 아무것도 안 남으므로 DROPS_DAY 가 아니라 DROPS_ALL 이다.
+      return column.variant === "month"
+        ? isRealMonth(text)
+          ? null
+          : { text, note: DROPS_ALL }
+        : isRealDay(text)
+          ? null
+          : { text, note: DROPS_ALL }
     case "single-select":
       return (column.options ?? []).includes(text) ? null : { text, note: DROPS_ALL }
     default:
@@ -766,7 +776,8 @@ function CellInput({
     case "date":
       return (
         <input
-          type="date"
+          // 확정본이 month 로 정한 시점 컬럼은 일까지 묻지 않는다(FRT-269). 기본은 그대로 일 단위다.
+          type={column.variant === "month" ? "month" : "date"}
           aria-label={ariaLabel}
           className="h-9 w-full rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
           value={strVal}
