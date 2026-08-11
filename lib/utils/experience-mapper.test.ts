@@ -3738,6 +3738,20 @@ describe("toExperienceV2 — 이 코드가 모르는 타입 (FRT-200)", () => {
     expect(JSON.stringify(payload.content)).toContain("피그마")
   })
 
+  /**
+   * ⚠️ v2 템플릿 키에 **다른 아는 타입**이 실려 온 경우. 주입을 생략하면 그 키는 소비된 것으로
+   * 처리돼 orphan 으로도 안 남고, 저장 때 템플릿 빈 값이 그 자리를 덮는다.
+   */
+  it("템플릿 키에 다른 아는 타입이 실려 있어도 왕복에서 값이 산다", () => {
+    const textKey = firstKeyOfType("text")
+    const exp = makeExperience({
+      content: makeV2Content({
+        [textKey]: { type: "date", date: "2026-08-11" } as unknown as BlockValue,
+      }),
+    })
+    expect(JSON.stringify(toSavePayload(toExperienceV2(exp)).content)).toContain("2026-08-11")
+  })
+
   it("모르는 type 의 orphan 값을 버리지 않고 왕복에서 지킨다", () => {
     const exp = makeExperience({
       content: makeV2Content({

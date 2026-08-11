@@ -207,6 +207,24 @@ describe("손상된 저장 값 렌더 (FRT-200)", () => {
   })
 
   /**
+   * ⚠️ 블록 타입은 아는 것이어도 **안쪽에 모르는 값**이 있으면 그 표는 편집 가능하면 안 된다 —
+   * 셀 컨트롤이 불투명 객체를 빈 글자로 접어 그리고, 첫 입력이 그 값을 덮는다.
+   */
+  it("모르는 열 유형의 불투명 셀을 담은 표는 편집 칸을 열지 않는다", () => {
+    const { container } = render(
+      <BlockRenderer
+        block={broken("repeatable-cell", {
+          type: "repeatable-cell",
+          columns: [{ key: "score", label: "평점", blockType: "rating-v3" }],
+          rows: [{ id: "r1", cells: { score: { type: "rating-v3", value: 5 } } }],
+        })}
+        onChange={() => {}}
+      />,
+    )
+    expect(container.querySelector("input, textarea, select")).toBeNull()
+  })
+
+  /**
    * "죽지 않는다"만으로는 부족하다 — 살아 있는 값을 지워 버리는 구현도 통과하기 때문이다.
    * 반만 깨진 값은 살아남은 쪽이 실제로 화면에 보여야 한다.
    */

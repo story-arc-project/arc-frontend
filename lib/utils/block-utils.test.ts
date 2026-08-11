@@ -1188,6 +1188,20 @@ describe("normalizeBlock/Blocks — 블록 자신의 필드 (FRT-200)", () => {
     expect(normalized.category).toBeUndefined()
   })
 
+  /** `OutcomeList` 는 `linkConfig.label` 을 React 자식으로 그대로 그린다 — 객체면 그 자리에서 죽는다. */
+  it("linkConfig 가 깨져 있으면 설정을 버리거나 모양을 맞춘다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "repeatable-cell",
+      label: "성과",
+      variant: "outcome-list",
+      linkConfig: { label: {} } as unknown as Block["linkConfig"],
+      value: { type: "repeatable-cell", columns: [], rows: [] },
+    })
+    const cfg = normalized.linkConfig
+    expect(cfg === undefined || typeof cfg.label === "string" || cfg.label === undefined).toBe(true)
+  })
+
   it("children 이 배열이 아니거나 원소가 깨져 있어도 죽지 않는다", () => {
     const group = {
       id: "g1",

@@ -102,11 +102,14 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
   // 저장 때 템플릿 빈 값이 새 스키마 값을 덮는다. 그대로 실어 보내고, 그릴 모양은 저장되지 않는
   // 렌더 관문(`normalizeBlockForRender`)이 맡는다.
   if (!isKnownBlockType(safe.type)) return { ...block, value: safe }
-  // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)면 주입을 생략해 위젯 렌더 깨짐을 막는다.
-  // 단 text↔textarea 는 값 모양이 같아 변환해 싣는다.
+  // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)여도 **값은 싣는다.**
+  // ⚠️ 예전엔 주입을 생략해 위젯 렌더 깨짐을 막았는데, 그러면 그 키가 소비된 것으로 처리돼
+  // orphan 으로도 안 남고 **저장 때 템플릿 빈 값이 그 자리를 덮는다.** 렌더 깨짐은 이제
+  // 렌더 관문이 모양을 맞추고 **읽기 전용**으로 그려 막으므로, 여기서 값을 버릴 이유가 없다.
+  // 단 text↔textarea 는 값 모양이 같아 판별자를 바꿔 싣는다(무손실).
   if (safe.type !== block.type) {
     const compat = textualCompatValue(block, safe)
-    return compat ? { ...block, value: compat } : block
+    return { ...block, value: compat ?? safe }
   }
   // 컬럼을 손댄 레코드는 잠금을 풀어 열 관리 UI 를 돌려준다(FRT-104).
   if (block.lockColumns && !columnsMatchTemplate(block.value, safe)) {

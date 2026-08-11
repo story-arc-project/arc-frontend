@@ -1095,6 +1095,15 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
 
   const categoryBroken = block.category !== undefined && !isKnownCategory(block.category)
 
+  // ⚠️ `OutcomeList` 는 `linkConfig.label` 을 React 자식으로 **그대로** 그린다 — 객체면 죽는다.
+  const link = block.linkConfig as Record<string, unknown> | undefined
+  const linkBroken =
+    link !== undefined &&
+    (!isPlainObject(link) ||
+      typeof link.targetSectionId !== 'string' ||
+      typeof link.titleColumnKey !== 'string' ||
+      !isOptText(link.label))
+
   // ⚠️ `required` 는 표시가 아니라 **폼 의미**를 바꾼다(진행도·숨김 가능 여부). 객체나
   // `"false"` 같은 truthy 쓰레기가 통과하면 그 칸이 영원히 필수가 된다. 참일 때만 참으로 둔다.
   const BOOL_KEYS = ['required', 'collapsed', 'lockColumns', 'allowRowExtras'] as const
@@ -1124,7 +1133,8 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
     !stringsBroken &&
     !conditionBroken &&
     !categoryBroken &&
-    !boolsBroken
+    !boolsBroken &&
+    !linkBroken
   )
     return block
   return {
@@ -1145,6 +1155,21 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
     // 모르는 `category` 는 뺀다 — 그래야 소비처의 기본값(`?? 'detail'`)이 다시 산다.
     ...(categoryBroken ? { category: undefined } : {}),
     ...(repairedBools ?? {}),
+    // 설정이 깨졌으면 **버린다** — 지어낸 링크 설정은 없는 대상 섹션을 가리킨다.
+    ...(linkBroken
+      ? {
+          linkConfig:
+            isPlainObject(link) &&
+            typeof link.targetSectionId === 'string' &&
+            typeof link.titleColumnKey === 'string'
+              ? {
+                  targetSectionId: link.targetSectionId,
+                  titleColumnKey: link.titleColumnKey,
+                  ...(link.label !== undefined ? { label: asText(link.label) } : {}),
+                }
+              : undefined,
+        }
+      : {}),
   }
 }
 
@@ -1174,6 +1199,25 @@ export function dedupeBlockIdsAcross(groups: Block[][]): Block[][] {
       const id = ids[i++]
       return b.id === id ? b : { ...b, id }
     }),
+  )
+}
+
+/**
+ * 이 값 **안쪽**에 이 코드가 모르는 잎이 있는가 — 모르는 열 유형의 불투명 셀 같은 것.
+ *
+ * ⚠️ 블록 타입이 아는 것이어도 안쪽이 모르는 값이면 편집 칸을 열면 안 된다. 셀 컨트롤이
+ * 불투명 객체를 빈 글자로 접어 그리고, 첫 입력이 **보존해 둔 값을 덮는다**.
+ */
+export function hasOpaqueLeaf(value: unknown): boolean {
+  if (!isPlainObject(value) || value.type !== 'repeatable-cell') return false
+  const opaque = opaqueCellKeys(value.columns)
+  if (opaque.size === 0) return false
+  if (!Array.isArray(value.rows)) return false
+  return value.rows.some(
+    r =>
+      isPlainObject(r) &&
+      isPlainObject(r.cells) &&
+      Object.entries(r.cells).some(([k, c]) => opaque.has(k) && isOpaqueCell(c)),
   )
 }
 

@@ -1,7 +1,12 @@
 "use client"
 
 import type { Block, BlockValue, RepeatableCellBlockValue } from "@/types/archive"
-import { isFileCellValue, isKnownBlockType, normalizeBlockForRender } from "@/lib/utils/block-utils"
+import {
+  hasOpaqueLeaf,
+  isFileCellValue,
+  isKnownBlockType,
+  normalizeBlockForRender,
+} from "@/lib/utils/block-utils"
 import TextBlock from "./TextBlock"
 import TextareaBlock from "./TextareaBlock"
 import DateBlock from "./DateBlock"
@@ -63,7 +68,10 @@ export default function BlockRenderer({
   // 판별자가 미지이거나 **블록 타입과 어긋나면** 그 값은 이 컨트롤이 다룰 수 있는 값이 아니다.
   const rawType = (rawBlock.value as { type?: unknown } | null | undefined)?.type
   const unrenderable =
-    typeof rawType === "string" && (!isKnownBlockType(rawType) || rawType !== rawBlock.type)
+    (typeof rawType === "string" && (!isKnownBlockType(rawType) || rawType !== rawBlock.type)) ||
+    // ⚠️ 블록 타입은 아는 것이어도 **안쪽에 모르는 값**이 있을 수 있다 — 모르는 열 유형의
+    // 불투명 셀은 셀 컨트롤이 빈 글자로 접어 그리고 첫 입력이 그 값을 덮는다.
+    hasOpaqueLeaf(rawBlock.value)
   const locked = readOnly || unrenderable
   const handleChange = (value: BlockValue) => onChange(block.id, value)
 
