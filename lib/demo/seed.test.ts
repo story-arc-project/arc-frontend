@@ -7,13 +7,18 @@
 
 import { describe, it, expect } from "vitest";
 
-import { getTemplateForType, TEMPLATE_VERSION } from "@/lib/constants/templates-v2";
+import { TEMPLATE_VERSION } from "@/lib/constants/templates-v2";
 import { toExperienceV2 } from "@/lib/utils/experience-mapper";
 import { SCHEMA_VERSION_V2 } from "@/types/archive";
-import type { Block, BlockValue, ExperienceTypeId } from "@/types/archive";
+import type { BlockValue, ExperienceTypeId } from "@/types/archive";
 import { isBlockEmpty } from "@/lib/utils/block-utils";
 
-import { seedCoverLetter, seedExperiences, seedLibraryMembership } from "./seed";
+import {
+  seedCoverLetter,
+  seedExperiences,
+  seedLibraryMembership,
+  templateBlocksByKey,
+} from "./seed";
 import {
   mockAnalysisHomeSummary,
   mockComprehensiveList,
@@ -51,14 +56,13 @@ function fieldsOf(exp: (typeof seedExperiences)[number]): Record<string, BlockVa
   return fields ?? {};
 }
 
-/** 템플릿(코어 + 확장)이 소비하는 안정키 → 블록. */
-function templateBlocks(typeId: ExperienceTypeId): Map<string, Block> {
-  const tmpl = getTemplateForType(typeId);
-  const out = new Map<string, Block>();
-  for (const b of tmpl.commonCore.blocks) if (b.key) out.set(b.key, b);
-  for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) out.set(b.key, b);
-  return out;
-}
+/**
+ * 템플릿 소비 규칙은 시드(`seed.ts`)와 **같은 함수**를 쓴다.
+ *
+ * 여기서 다시 구현하면 규칙이 바뀔 때 시드만 따라가고 그물은 옛 규칙에 머문다 —
+ * 이 파일이 막으려는 드리프트가 정작 이 파일에서 나는 셈이 된다.
+ */
+const templateBlocks = templateBlocksByKey;
 
 describe("데모 시드 — 확정본 입력항목 정렬", () => {
   it("모든 경험이 스키마 v2 로 저장돼 있다", () => {
@@ -309,6 +313,34 @@ describe("분석 mock — 시드 결속", () => {
           expect(known?.has(id), `'${group.keyword}' 에 없는 기준 id ${id}`).toBe(true);
         }
       }
+    }
+  });
+
+  it("topFixes 수치가 항목별 기준과 일치한다", () => {
+    // 총평의 'N건 중 M건에서 미달' 은 사람이 손으로 적는 집계인데, 사용자는 같은 화면에서
+    // 항목별 기준을 펼쳐 원본을 볼 수 있다. 집계만 옛 값으로 남으면 데모가 스스로를 반박한다.
+    const review = mockComprehensiveResult.starAnalysisStatus.qualityReview;
+    const entries = mockComprehensiveResult.resumeStarFormat;
+    expect(review, "qualityReview 가 없으면 아래 집계 검사가 공허해진다").toBeTruthy();
+    if (!review) return;
+    expect(entries.length, "STAR 항목이 없으면 아래 집계 검사가 공허해진다").toBeGreaterThan(0);
+    expect(review.topFixes.length, "topFixes 가 비면 검사가 공허해진다").toBeGreaterThan(0);
+    expect(review.evaluated, "evaluated 가 실제 항목 수와 다르다").toBe(entries.length);
+
+    for (const fix of review.topFixes) {
+      const m = /^(.+?) — (\d+)건 중 (\d+)건에서 미달$/.exec(fix);
+      expect(m, `topFixes 문구 형식이 다르다: ${fix}`).not.toBeNull();
+      if (!m) continue;
+      const [, label, total, failed] = m;
+
+      const withCriterion = entries.filter(e => e.quality?.criteria.some(c => c.label === label));
+      expect(withCriterion.length, `'${label}' 기준을 가진 항목이 없다`).toBeGreaterThan(0);
+
+      const actualFailed = withCriterion.filter(e =>
+        e.quality?.criteria.some(c => c.label === label && !c.passed),
+      ).length;
+      expect(Number(failed), `'${label}' 미달 건수가 항목별 기준과 다르다`).toBe(actualFailed);
+      expect(Number(total), `'${label}' 모수가 평가 건수와 다르다`).toBe(review.evaluated);
     }
   });
 

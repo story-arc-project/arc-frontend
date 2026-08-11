@@ -689,7 +689,16 @@ export const mockComprehensiveResult: ComprehensiveAnalysisResult = {
       evaluated: 3,
       gradeDistribution: { A: 1, B: 1, C: 1 },
       portfolioVerdict: "한 건은 그대로 써도 좋고, 두 건은 출발점만 채우면 크게 좋아져요.",
-      topFixes: ["슬롯 분리성 — 3건 중 2건에서 미달", "Context 명확성 — 3건 중 1건에서 미달"],
+      // ⚠️ 이 수치는 위 resumeStarFormat[].quality.criteria 와 반드시 일치해야 한다.
+      // 화면은 이 문장을 그대로 그리는데(analysis/comprehensive/[analysisId]/page.tsx), 사용자는
+      // 같은 화면에서 항목별 기준을 펼쳐 볼 수 있다 — 어긋나면 데모가 스스로를 반박한다.
+      // (실제로 '슬롯 분리성 2건 미달'로 적혀 있었으나 미달은 1건뿐이었다.)
+      // seed.test.ts 의 "topFixes 수치가 항목별 기준과 일치한다" 가 이 정합성을 고정한다.
+      topFixes: [
+        "Context 명확성 — 3건 중 1건에서 미달",
+        "Action 비중 — 3건 중 1건에서 미달",
+        "슬롯 분리성 — 3건 중 1건에서 미달",
+      ],
     },
   },
   actionPlan: {

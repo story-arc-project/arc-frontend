@@ -37,8 +37,13 @@ const DEMO_USER_ID = "demo-user";
 // 전부 템플릿에서 읽어 온다. 그래서 확정본이 바뀌면 여기서 예외가 나고, 선택지에 없는 값을
 // 적으면 그 자리에서 걸린다 — 조용한 빈 칸으로 새어나가지 않는다.
 
-/** 템플릿(코어 + 확장)이 소비하는 안정키 → 블록. */
-function templateBlocksByKey(typeId: ExperienceTypeId): Map<string, Block> {
+/**
+ * 템플릿(코어 + 확장)이 소비하는 안정키 → 블록.
+ *
+ * `seed.test.ts` 도 같은 규칙으로 시드를 검사해야 하므로 export 한다 — 테스트가 이 규칙을
+ * 따로 구현하면, 규칙이 바뀔 때 시드만 고쳐지고 그물은 옛 규칙에 머물러 드리프트를 놓친다.
+ */
+export function templateBlocksByKey(typeId: ExperienceTypeId): Map<string, Block> {
   const tmpl = getTemplateForType(typeId);
   const out = new Map<string, Block>();
   for (const b of tmpl.commonCore.blocks) if (b.key) out.set(b.key, b);
