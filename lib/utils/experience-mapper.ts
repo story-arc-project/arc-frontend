@@ -154,7 +154,11 @@ function templateDefsResolver(
     }
   }
   return block => {
-    const match = (block.key ? byKey.get(block.key) : undefined) ?? byLabel.get(block.label)
+    // ⚠️ 키가 **엉뚱한 유형**을 가리키면 거기서 멈추지 말고 라벨로 되짚는다 — 손상된 키 하나가
+    // 라벨로 확정되는 정의까지 못 찾게 만들면, 정의가 `[]` 로 굳어 셀을 볼 수도 고칠 수도 없다.
+    const byKeyMatch = block.key ? byKey.get(block.key) : undefined
+    const match =
+      byKeyMatch && byKeyMatch.type === block.type ? byKeyMatch : byLabel.get(block.label)
     if (!match || match.type !== block.type) return undefined
     return {
       options: match.options,

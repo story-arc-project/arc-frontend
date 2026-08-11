@@ -3522,6 +3522,32 @@ describe("toExperienceV2 v1 — 정의가 결측인 값 (FRT-200)", () => {
     expect((block!.value as unknown as { columns: unknown[] }).columns.length).toBeGreaterThan(0)
   })
 
+  /** 키가 **엉뚱한 유형**을 가리키면 거기서 멈추지 말고 라벨로 되짚어야 한다. */
+  it("키가 다른 유형을 가리키면 라벨로 되짚어 템플릿 열을 되찾는다", () => {
+    const tplBlock = repeatableTemplateBlock()
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          extensionBlocks: [
+            {
+              id: "b1",
+              key: firstKeyOfType("text"), // 손상된 키 — 다른 유형의 템플릿 필드를 가리킨다
+              type: "repeatable-cell",
+              label: tplBlock.label, // 라벨은 정확하다
+              value: { type: "repeatable-cell", rows: [{ id: "r1", cells: { any: "값" } }] },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const block = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks]
+      .flatMap(b => [b, ...(b.children ?? [])])
+      .find(b => b.label === tplBlock.label && b.type === "repeatable-cell")
+    expect(block).toBeDefined()
+    expect((block!.value as unknown as { columns: unknown[] }).columns.length).toBeGreaterThan(0)
+  })
+
   it("열 정의를 잃은 v1 표는 템플릿 열을 되찾고 행은 지킨다", () => {
     const tplBlock = repeatableTemplateBlock()
     const v1 = toExperienceV2(
@@ -3615,6 +3641,52 @@ describe("toExperienceV2 — 이 코드가 모르는 타입 (FRT-200)", () => {
       type: "brand-new-in-v3",
       payload: "새 스키마가 쓴 값",
     })
+  })
+
+  /**
+   * ⚠️ **"부속 값만 남은 목적지"는 차지된 게 아니다.** 이관은 원본을 먼저 지우므로, 여기서
+   * "차지됨"으로 오판하면 실제 첨부가 옮겨지지도 보존되지도 않고 사라진다.
+   */
+  it("목적지에 설명만 남아 있으면 실제 첨부 이관을 막지 않는다", () => {
+    const exp = makeExperience({
+      type: "overseas",
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "제목",
+        summary: "요약",
+        status: "draft",
+        tags: [],
+        fields: {
+          // ⚠️ **개명 경로**(원본을 먼저 지운다)를 써야 한다 — scoped migration 은 건너뛸 때
+          //    원본을 남겨 orphan 으로 살아나므로 검사가 공허하게 통과한다(그렇게 썼다가 잡았다).
+          "overseas-challenges.증빙": {
+            type: "file",
+            fileName: "진짜 첨부.pdf",
+            fileId: "f1",
+            description: "",
+            evidenceType: "",
+          },
+          "overseas-program.증빙 자료": {
+            type: "file",
+            fileName: "",
+            description: "설명만 적어 둠",
+            evidenceType: "",
+          },
+        },
+        custom: [],
+      } as unknown as Experience["content"],
+    })
+
+    const content = toSavePayload(toExperienceV2(exp)).content as {
+      fields: Record<string, unknown>
+      custom: Array<{ key?: string; value?: unknown }>
+    }
+    const dest = content.fields["overseas-program.증빙 자료"]
+    const survived =
+      JSON.stringify(dest).includes("진짜 첨부.pdf") ||
+      JSON.stringify(content.custom).includes("진짜 첨부.pdf")
+    expect(survived).toBe(true)
   })
 
   it("모르는 type 의 orphan 값을 버리지 않고 왕복에서 지킨다", () => {

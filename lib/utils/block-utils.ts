@@ -611,12 +611,19 @@ function repairColumn(c: Record<string, unknown>): BlockColumnDef {
  * `uid()` 가 아니라 **결정적 규칙**이라야 같은 입력에서 늘 같은 결과가 나온다.
  */
 function dedupeNames(names: string[], fallback: (i: number) => string): string[] {
+  // ⚠️ **저장된 이름을 먼저 예약한다.** 결측 항목이 앞에 있다고 폴백이 `row-0` 을 가져가면,
+  // 뒤에 있는 **진짜 `row-0`** 이 밀려나고 그걸 가리키던 링크가 엉뚱한 행을 가리킨다.
+  const reserved = new Set(names.filter(Boolean))
   const used = new Set<string>()
   return names.map((raw, i) => {
     let name = raw
-    if (!name || used.has(name)) {
-      const base = name || fallback(i)
+    if (!name) {
+      const base = fallback(i)
       name = base
+      for (let n = 1; used.has(name) || reserved.has(name); n += 1) name = `${base}-${n}`
+    } else if (used.has(name)) {
+      // 저장분끼리 겹치면 앞엣것이 그 이름을 지키고 뒤엣것만 간다.
+      const base = name
       for (let n = 1; used.has(name); n += 1) name = `${base}-${n}`
     }
     used.add(name)
@@ -1186,7 +1193,12 @@ export function hasResidualValue(block: Block): boolean {
  */
 export function isValueOccupied(value: BlockValue | null | undefined): boolean {
   if (!value || typeof value !== 'object') return false
-  return !isBlockDiscardable({ id: '', type: value.type, label: '', value })
+  // 모르는 판별자는 지킨다(새 스키마가 쓴 값).
+  if (typeof value.type === 'string' && !isKnownBlockType(value.type)) return true
+  // ⚠️ `isBlockDiscardable` 을 쓰면 **부속 값만 남은 목적지**(파일 없이 설명만 적힌 증빙)가
+  // "차지됨"이 된다. 개명은 원본을 먼저 지우므로 그러면 실제 첨부가 옮겨지지도 보존되지도
+  // 않고 사라진다 — 여기서 묻는 것은 "그릴 내용이 있는가"다.
+  return !isBlockEmpty({ id: '', type: value.type, label: '', value })
 }
 
 export function isBlockDiscardable(block: Block): boolean {

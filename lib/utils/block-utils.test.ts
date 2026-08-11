@@ -675,6 +675,21 @@ describe("normalizeBlockValue (FRT-200)", () => {
     expect(out.rows.map(r => r.cells.a)).toEqual(["먼저", "나중"]) // 값은 그대로
   })
 
+  /**
+   * ⚠️ **폴백이 저장된 이름을 빼앗으면 안 된다.** 결측 행이 먼저 나와 `row-0` 을 가져가면,
+   * 진짜 `row-0` 이 `row-0-1` 로 밀리고 그걸 가리키던 링크가 **엉뚱한 행을 가리킨다**.
+   */
+  it("폴백 id 는 저장된 id 를 빼앗지 않는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ cells: { a: "id 없는 행" } }, { id: "row-0", cells: { a: "진짜 row-0" } }],
+    }) as unknown as { rows: { id: string; cells: Record<string, unknown> }[] }
+    const real = out.rows.find(r => r.cells.a === "진짜 row-0")
+    expect(real?.id).toBe("row-0")
+    expect(new Set(out.rows.map(r => r.id)).size).toBe(2)
+  })
+
   it("행 id 를 인덱스로 채울 때 이미 쓰는 id 와 겹치지 않는다", () => {
     const out = normalizeBlockValue("repeatable-cell", {
       type: "repeatable-cell",
