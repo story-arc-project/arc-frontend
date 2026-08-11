@@ -1045,22 +1045,22 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
     options: block.options ?? defs?.options,
     columns: defs?.columns,
   })
-  // ⚠️ **둘 다 아는 타입인데 서로 다르면** 렌더러가 죽는다 — 컨트롤은 `block.type` 으로 고르는데
-  // 값은 다른 모양이라 `value.columns.length` 같은 접근이 그 자리에서 터진다. 블록이 선언한
-  // 모양으로 맞춘다(매퍼의 `injectValue` 가 타입 불일치에 주입을 생략하는 것과 같은 결론).
-  // 모르는 판별자는 위에서 이미 보존됐다 — 여기서 맞추는 건 **둘 다 아는데 다른** 경우뿐이다.
-  if (isKnownBlockType(block.type) && isKnownBlockType(value.type) && value.type !== block.type) {
-    // ⚠️ text ↔ textarea 는 **저장 모양이 같다**(매퍼의 `injectValue` 도 호환으로 본다) —
-    // 불일치라고 비우면 열었다 저장하는 것만으로 글이 사라진다. 판별자만 바꿔 싣는다.
-    const textual = new Set(['text', 'textarea'])
-    if (textual.has(block.type) && textual.has(value.type)) {
-      value = { ...value, type: block.type } as BlockValue
-    } else {
-    value = normalizeBlockValue(block.type, undefined, {
-      options: block.options ?? defs?.options,
-      columns: defs?.columns,
-    })
-    }
+  // ⚠️ **타입이 어긋나도 저장 경로에서는 값을 비우지 않는다.** 아는 타입끼리 어긋난 값도
+  // 복구 가능한 정보이고, 여기서 갈아치우면 열었다 저장하는 것만으로 사라진다(v1 은 이
+  // 정규화가 "커스텀으로 보존할지" 결정보다 **먼저** 돈다). 그릴 모양을 만드는 일은 저장되지
+  // 않는 렌더 관문(`normalizeBlockForRender`)이 맡고, 거기선 읽기 전용으로 그린다.
+  //
+  // 예외는 text ↔ textarea 하나뿐이다 — 저장 모양이 같아 무손실이고, 매퍼의 `injectValue`
+  // (`textualCompatValue`)가 이미 호환으로 결론 내린 쌍이다.
+  const textual = new Set(['text', 'textarea'])
+  if (
+    isKnownBlockType(block.type) &&
+    isKnownBlockType(value.type) &&
+    value.type !== block.type &&
+    textual.has(block.type) &&
+    textual.has(value.type)
+  ) {
+    value = { ...value, type: block.type } as BlockValue
   }
   // ⚠️ 자식 목록도 저장 JSONB 다 — 배열이 아니면 `.map` 이 그 자리에서 죽고, 원소가 null 이면
   // 재귀가 첫 프로퍼티 접근에서 죽는다. 배열 보정은 `normalizeBlocks` 와 같은 기준으로.

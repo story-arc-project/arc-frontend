@@ -60,9 +60,11 @@ export default function BlockRenderer({
    * 그게 편집 가능하면 사용자의 첫 입력이 **보존해 둔 새 스키마 값을 덮는다** — 값을 지키려고
    * 만든 폴백이 값을 지우는 통로가 된다. 읽기 전용으로 두면 그 값은 저장 왕복에서 그대로 산다.
    */
+  // 판별자가 미지이거나 **블록 타입과 어긋나면** 그 값은 이 컨트롤이 다룰 수 있는 값이 아니다.
   const rawType = (rawBlock.value as { type?: unknown } | null | undefined)?.type
-  const opaque = typeof rawType === "string" && !isKnownBlockType(rawType)
-  const locked = readOnly || opaque
+  const unrenderable =
+    typeof rawType === "string" && (!isKnownBlockType(rawType) || rawType !== rawBlock.type)
+  const locked = readOnly || unrenderable
   const handleChange = (value: BlockValue) => onChange(block.id, value)
 
   const rendered = (() => {

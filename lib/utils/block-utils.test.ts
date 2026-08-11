@@ -1252,17 +1252,28 @@ describe("normalizeBlock — 타입 불일치 (FRT-200)", () => {
     expect(normalized.value).toMatchObject({ type: "text", text: "살아 있어야 할 글" })
   })
 
-  it("블록 타입과 값 타입이 어긋나면 블록 타입의 모양으로 맞춘다", () => {
-    const normalized = normalizeBlock({
+  /**
+   * ⚠️ 아는 타입끼리 어긋나도 **저장 경로에서는 비우지 않는다** — 복구 가능한 정보이고,
+   * v1 은 이 정규화가 "커스텀으로 보존할지" 결정보다 먼저 돌아 그대로 사라진다.
+   * 그릴 모양은 저장되지 않는 렌더 관문이 만든다.
+   */
+  it("타입이 어긋나도 저장 경로는 값을 지키고, 렌더 관문만 모양을 맞춘다", () => {
+    const block: Block = {
       id: "b1",
       type: "repeatable-cell",
       label: "성과",
       value: { type: "text", text: "엉뚱한 값" } as unknown as BlockValue,
-    })
-    const value = normalized.value as unknown as { type: string; columns: unknown[]; rows: unknown[] }
-    expect(value.type).toBe("repeatable-cell")
-    expect(Array.isArray(value.columns)).toBe(true)
-    expect(Array.isArray(value.rows)).toBe(true)
+    }
+    expect(normalizeBlock(block).value).toMatchObject({ type: "text", text: "엉뚱한 값" })
+
+    const forRender = normalizeBlockForRender(block).value as unknown as {
+      type: string
+      columns: unknown[]
+      rows: unknown[]
+    }
+    expect(forRender.type).toBe("repeatable-cell")
+    expect(Array.isArray(forRender.columns)).toBe(true)
+    expect(Array.isArray(forRender.rows)).toBe(true)
   })
 })
 

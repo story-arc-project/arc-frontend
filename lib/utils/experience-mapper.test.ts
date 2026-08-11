@@ -3548,6 +3548,29 @@ describe("toExperienceV2 v1 — 정의가 결측인 값 (FRT-200)", () => {
     expect((block!.value as unknown as { columns: unknown[] }).columns.length).toBeGreaterThan(0)
   })
 
+  /**
+   * ⚠️ 아는 타입끼리 어긋나도 **값은 복구 가능한 정보**다. 저장 경로에서 비우면 열었다
+   * 저장하는 것만으로 사라진다 — 모양 맞추기는 저장되지 않는 렌더 관문의 몫이다.
+   */
+  it("v1 블록 타입과 값 타입이 어긋나도 값이 저장 왕복에서 살아남는다", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          extensionBlocks: [
+            {
+              id: "b1",
+              type: "text",
+              label: "어긋난 칸",
+              value: { type: "date", date: "2026-08-11" },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    expect(JSON.stringify(toSavePayload(v1).content)).toContain("2026-08-11")
+  })
+
   it("열 정의를 잃은 v1 표는 템플릿 열을 되찾고 행은 지킨다", () => {
     const tplBlock = repeatableTemplateBlock()
     const v1 = toExperienceV2(
