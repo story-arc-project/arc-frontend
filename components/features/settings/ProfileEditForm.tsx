@@ -22,7 +22,12 @@ import { updateProfile } from "@/lib/api/auth-api";
 import { ApiError } from "@/lib/api/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { Profile } from "@/types/auth";
-import { buildProfilePatch, type ProfileFormState } from "./profile-patch";
+import {
+  buildProfilePatch,
+  partitionByOptions,
+  type PreservedOptionValues,
+  type ProfileFormState,
+} from "./profile-patch";
 
 interface ProfileEditFormProps {
   profile: Profile | null;
@@ -34,27 +39,35 @@ function toAffiliation(affiliation: string | undefined): AffiliationStatus | "" 
   return match ? match.value : "";
 }
 
-/** profile(읽기 응답) → 폼 비교 스냅샷. 옵션 외 값은 걸러 폼이 표시 가능한 값만 남긴다. */
-function toFormState(profile: Profile | null): ProfileFormState {
+/**
+ * profile(읽기 응답) → 폼 비교 스냅샷 + 보존 대상.
+ * 옵션 외 값은 칩으로 그릴 수 없어 폼에서 걸러내되, 그대로 버리면 저장 시
+ * 서버에서 영구 삭제되므로(FRT-260) preserved 로 따로 들고 있다가 다시 합친다.
+ */
+function toFormState(profile: Profile | null): {
+  form: ProfileFormState;
+  preserved: PreservedOptionValues;
+} {
+  const worry = partitionByOptions(profile?.worry ?? [], Q1_OPTIONS);
+  const interest = partitionByOptions(profile?.interest ?? [], INTEREST_OPTIONS);
   return {
-    name: profile?.name ?? "",
-    birth: profile?.birth ?? "",
-    phone: (profile?.phone ?? "").replace(/\D/g, ""),
-    affiliation: toAffiliation(profile?.affiliation),
-    school: profile?.school ?? "",
-    department: profile?.department ?? "",
-    worry: (profile?.worry ?? []).filter((w) =>
-      (Q1_OPTIONS as readonly string[]).includes(w)
-    ),
-    interest: (profile?.interest ?? []).filter((i) =>
-      (INTEREST_OPTIONS as readonly string[]).includes(i)
-    ),
+    form: {
+      name: profile?.name ?? "",
+      birth: profile?.birth ?? "",
+      phone: (profile?.phone ?? "").replace(/\D/g, ""),
+      affiliation: toAffiliation(profile?.affiliation),
+      school: profile?.school ?? "",
+      department: profile?.department ?? "",
+      worry: worry.known,
+      interest: interest.known,
+    },
+    preserved: { worry: worry.unknown, interest: interest.unknown },
   };
 }
 
 export function ProfileEditForm({ profile }: ProfileEditFormProps) {
   const { refetch } = useAuth();
-  const initial = useMemo(() => toFormState(profile), [profile]);
+  const { form: initial, preserved } = useMemo(() => toFormState(profile), [profile]);
 
   const [name, setName] = useState(initial.name);
   const [birth, setBirth] = useState(initial.birth);
@@ -91,7 +104,7 @@ export function ProfileEditForm({ profile }: ProfileEditFormProps) {
     worry,
     interest,
   };
-  const patch = buildProfilePatch(initial, current);
+  const patch = buildProfilePatch(initial, current, preserved);
   const isDirty = Object.keys(patch).length > 0;
 
   function toggle(list: string[], setList: (v: string[]) => void, value: string) {
