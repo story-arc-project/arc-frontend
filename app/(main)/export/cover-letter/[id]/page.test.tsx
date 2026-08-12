@@ -368,3 +368,187 @@ describe("FRT-238 — 자기소개서 전환 중 늦게 도착한 응답", () =>
     expect(mockUpdateCoverLetter).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * FRT-191 — 저장에 **성공**해도 남던 복원 배너. 레쥬메 상세와 같은 결함이 여기에도 복제돼
+ * 있었다: 실패 갈래에만 `setPendingDraft(null)` 이 있고 성공 갈래에는 없었다.
+ *
+ * 이 화면은 플래그가 꺼져 있어 브라우저로 확인할 수 없다 — 이 테스트가 유일한 증거다.
+ */
+describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
+  const OLD_DRAFT_BODY = "지난 세션에 고친 본문";
+
+  /** 서버 created_at(2026-07-21)보다 뒤인 draft — 복원 배너가 뜬다. */
+  function seedOlderDraft(id: string) {
+    window.localStorage.setItem(
+      `arc:cover-letter-draft:${id}`,
+      JSON.stringify({
+        data: fixture(OLD_DRAFT_BODY),
+        updated_at: "2026-07-22T00:00:00Z",
+      }),
+    );
+  }
+
+  function storedDraft(id: string): { data: CoverLetterResult } | null {
+    const raw = window.localStorage.getItem(`arc:cover-letter-draft:${id}`);
+    return raw ? (JSON.parse(raw) as { data: CoverLetterResult }) : null;
+  }
+
+  it("저장에 성공하면 복원 배너가 사라진다", async () => {
+    const route = routeById();
+    seedOlderDraft("A");
+    mockUpdateCoverLetter.mockImplementation(async (_id, data) => data);
+    await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+
+    // 배너가 실재하는 상태에서 출발했음을 먼저 못박는다 — 없으면 단언이 공허하게 통과한다.
+    expect(screen.getByRole("button", { name: "복원" })).toBeTruthy();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    await flush();
+
+    expect(screen.queryByRole("button", { name: "복원" })).toBeNull();
+    expect(storedDraft("A")).toBeNull();
+  });
+
+  // 저장이 도는 동안 이어 고쳐도 낡은 draft 가 저장소에 남으면 안 된다 — 탭을 그냥 닫으면
+  // 다음 진입 때 그것이 배너로 되살아나 방금 저장한 내용을 되돌린다. 이어 고친 편집은 화면과
+  // dirty 에 살아 있어 이탈 경로가 남기므로 여기서 draft 를 새로 만들지 않는다.
+  it("저장 중에 이어 고쳐도 옛 draft 는 저장소에 남지 않는다", async () => {
+    const route = routeById();
+    seedOlderDraft("A");
+    const save = deferred<CoverLetterResult>();
+    mockUpdateCoverLetter.mockImplementation(() => save.promise);
+    await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    const box = screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" });
+    await user.type(box, "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // 요청이 도는 동안 이어서 고친다 — 서버가 받아간 스냅샷에는 이 편집이 없다.
+    await user.type(box, "?");
+
+    await act(async () => {
+      save.resolve(fixture("서버 본문!"));
+    });
+    await flush();
+
+    expect(screen.queryByRole("button", { name: "복원" })).toBeNull();
+    expect(storedDraft("A")).toBeNull();
+  });
+
+  // 저장 응답이 도는 동안 다른 문서로 옮기면, 클로저의 id 는 **이전** 문서인데 resultRef 는
+  // 이미 **다음** 문서 본문이다(같은 인스턴스 재사용 — FRT-238). 그 조합으로 임시 저장을
+  // 쓰면 남의 본문이 이전 문서의 키에 심겨, 다음 진입 때 배너가 그것을 덮어쓴다.
+  it("저장 도중 다른 문서로 옮기면 그 문서 본문이 이전 문서의 임시 저장에 심기지 않는다", async () => {
+    const route = routeById();
+    const save = deferred<CoverLetterResult>();
+    mockUpdateCoverLetter.mockImplementation(() => save.promise);
+    const result = await renderId("A");
+    route.resolve("A", fixture("에이 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // B 로 옮긴다 — 이 전환의 cleanup 이 A 의 편집을 A 의 키에 이미 남긴다.
+    await navigateTo(result, "B");
+    route.resolve("B", fixture("비 본문"));
+    await flush();
+
+    // 이제서야 A 의 저장 응답이 도착한다.
+    await act(async () => {
+      save.resolve(fixture("에이 본문!"));
+    });
+    await flush();
+
+    expect(shownBody()).toBe("비 본문");
+    expect(storedDraft("A")?.data.answers[0].cover_letter).toBe("에이 본문!");
+  });
+
+  // id 만 보는 가드로는 A→B→A 왕복이 안 잡힌다. 돌아오면 id 는 다시 같아지지만 그 사이
+  // 재조회가 끼어들어 resultRef 는 **저장 전** 본문으로 되돌아가 있고, 그걸 이어 고친
+  // 편집으로 오인해 쓰면 전환 때 남긴 올바른 draft 를 낡은 본문으로 덮는다.
+  it("저장 도중 A→B→A 로 돌아와도 재조회한 저장 전 본문이 임시 저장을 덮지 않는다", async () => {
+    const route = routeById();
+    const save = deferred<CoverLetterResult>();
+    mockUpdateCoverLetter.mockImplementation(() => save.promise);
+    const result = await renderId("A");
+    route.resolve("A", fixture("에이 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // A→B→A. 떠나던 순간의 cleanup 이 A 의 편집을 A 의 키에 남긴다.
+    await navigateTo(result, "B");
+    route.resolve("B", fixture("비 본문"));
+    await flush();
+    await navigateTo(result, "A");
+    // 두 번째 A 조회는 저장이 아직 안 끝나 **저장 전** 본문을 준다.
+    route.resolve("A", fixture("에이 본문"), 1);
+    await flush();
+
+    await act(async () => {
+      save.resolve(fixture("에이 본문!"));
+    });
+    await flush();
+
+    expect(storedDraft("A")?.data.answers[0].cover_letter).toBe("에이 본문!");
+    expect(screen.queryByRole("button", { name: "복원" })).toBeTruthy();
+  });
+
+  // 언마운트는 seq 를 올리지 않아 다시 들어온 새 인스턴스의 키(seq 0)와 겹친다. 그 틈으로
+  // 늦게 끝난 옛 저장이 가드를 통과하면, 새 인스턴스가 복원하라고 띄워 둔 임시 저장을 지운다.
+  it("언마운트 뒤 늦게 끝난 저장은 새 인스턴스가 띄운 임시 저장을 지우지 않는다", async () => {
+    const route = routeById();
+    const save = deferred<CoverLetterResult>();
+    mockUpdateCoverLetter.mockImplementation(() => save.promise);
+    const first = await renderId("A");
+    route.resolve("A", fixture("에이 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // 완전한 이탈 — 언마운트 cleanup 이 A 의 편집을 A 키에 남긴다.
+    first.unmount();
+
+    // 같은 문서로 다시 들어온다(새 인스턴스, seq 는 0 부터).
+    await renderId("A");
+    route.resolve("A", fixture("에이 본문"), 1);
+    await flush();
+
+    // 새 인스턴스는 그 임시 저장을 복원 후보로 띄운 상태다.
+    expect(screen.getByRole("button", { name: "복원" })).toBeTruthy();
+    expect(storedDraft("A")?.data.answers[0].cover_letter).toBe("에이 본문!");
+
+    await act(async () => {
+      save.resolve(fixture("에이 본문!"));
+    });
+    await flush();
+
+    expect(storedDraft("A")?.data.answers[0].cover_letter).toBe("에이 본문!");
+  });
+});

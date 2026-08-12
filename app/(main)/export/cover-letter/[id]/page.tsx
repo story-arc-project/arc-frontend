@@ -120,6 +120,15 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
 
   const dirtyRef = useRef(false);
   const resultRef = useRef<CoverLetterResult | null>(null);
+  // 이 인스턴스가 **지금** 답하고 있는 질문. 비동기 저장의 클로저는 시작 당시의 것을 쥐고
+  // 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave). id 가 아니라 requestKey 인 것은
+  // A→B→A 때문이다 — 돌아오면 id 는 같아지지만 그 사이 재조회가 끼어들어 resultRef 는
+  // **저장 전** 본문으로 되돌아가 있다. 세대까지 봐야 그 왕복이 잡힌다.
+  //
+  // 언마운트하면 null 이 된다(아래 effect) — 언마운트는 seq 를 올리지 않아 같은 문서로 다시
+  // 들어온 **새 인스턴스**의 키(seq 0)와 겹치고, 그 틈으로 늦게 끝난 옛 저장이 새 인스턴스가
+  // 복원하라고 띄워 둔 draft 를 지운다.
+  const requestKeyRef = useRef<string | null>(requestKey);
 
   const dirty = useMemo(() => {
     if (!result || !initial) return false;
@@ -130,6 +139,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // 핸들러가 최신 값을 본다(레쥬메 상세와 같은 이유).
   dirtyRef.current = dirty;
   resultRef.current = result;
+  // requestKeyRef 는 여기서 갱신하지 않는다 — 아래 effect(커밋 단계)에서만 움직인다.
 
   const handleSave = useCallback(async () => {
     // FRT-238 — loading 은 id 가 이미 바뀌었지만 새 자기소개서 응답은 아직 안 온 창이다.
@@ -147,7 +157,26 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       // 사용자가 써넣은 문장이 검증된 것처럼 보인다(codex P1). 재검증 시점을 정의하는 건
       // 서버 계약(BAC-62)의 몫이고, 그때 이 자리에서 기준선을 갱신하면 된다.
       setResult((cur) => (cur === snapshot ? updated : cur));
-      if (resultRef.current === snapshot) clearDraft(id);
+      // 응답이 도는 동안 화면이 이 요청을 떠났을 수 있다. 그때 아래 정리를 그대로 실행하면
+      // **지금 화면이 쓰고 있는 draft 를 지운다** — 배너는 남고 되돌릴 내용만 사라진다.
+      // App Router 는 id 만 바뀌면 이 인스턴스를 재사용하고(FRT-238), 언마운트해도 seq 는
+      // 0 부터 다시 시작하므로 "떠났다"를 id 만으로는 알 수 없다.
+      //
+      // 그래서 판정은 id 가 아니라 **requestKey**(문서 + 세대)다. A→B→A 로 돌아오면 id 는
+      // 다시 같아지지만 그 사이 재조회가 끼어들어 화면은 저장 전 본문을 들고 있다.
+      //
+      // 이 문서의 편집분은 화면이 떠나던 순간의 cleanup 이 이미 같은 키에 남겼다. 떠난
+      // 뒤에는 아무것도 하지 않는다 — pendingDraft 도 지금은 다음 요청의 배너다.
+      if (requestKeyRef.current === requestKey) {
+        // 규칙은 하나다 — **저장에 성공하면 이 문서의 draft 는 없다.** 이어 고친 편집을
+        // 여기서 draft 로 갈아끼우면, 사용자가 그 편집을 되돌려도 draft 는 남아(dirty 가
+        // false 로 돌아가 이탈 경로들이 손대지 않는다) 다음 진입 때 지운 편집을 되살리라고
+        // 권한다. 그 편집은 화면과 dirty 에 살아 있어 나가기·언마운트 cleanup 이 남긴다.
+        clearDraft(id);
+        // 배너도 같은 이유로 지운다 — 그 스냅샷은 서버 최신본보다 낡았고, 남겨 두면 '복원'이
+        // 방금 저장한 내용을 그것으로 덮는다(FRT-191).
+        setPendingDraft(null);
+      }
       toast.success("저장됐어요");
     } catch (err) {
       // 서버에 저장 경로가 없다(BAC-62 미착수). 편집을 잃을 이유는 아니므로 **항상** 로컬에
@@ -175,7 +204,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     } finally {
       setSaving(false);
     }
-  }, [result, dirty, saving, loading, id]);
+  }, [result, dirty, saving, loading, id, requestKey]);
 
   const handleBack = useCallback(() => {
     if (dirty && result) {
@@ -199,6 +228,20 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     clearDraft(id);
     setPendingDraft(null);
   }, [id]);
+
+  // 화면이 **실제로** 답하고 있는 요청을 새긴다. 렌더 중에 쓰지 않는 이유는 커밋되지 않는
+  // 렌더가 있기 때문이다 — 다른 문서로 가던 전환이 취소되면 화면은 이 문서에 남는데 키만
+  // 그쪽으로 바뀌고, 그 상태로 저장이 끝나면 가드가 "떠났다"고 오판해 낡은 draft 와 배너를
+  // 남긴다(FRT-191 이 되살아난다). cleanup 이 곧 무효화다 — 언마운트면 null 로 남아, 같은
+  // 문서로 다시 들어온 새 인스턴스의 키와 겹치지 않는다. 아래 draft 보관 effect 보다 먼저
+  // 선언해 cleanup 도 먼저 돌게 둔다.
+  useEffect(() => {
+    const ref = requestKeyRef;
+    ref.current = requestKey;
+    return () => {
+      ref.current = null;
+    };
+  }, [requestKey]);
 
   // 클라이언트 이동(언마운트)에도 편집을 남긴다.
   useEffect(() => {

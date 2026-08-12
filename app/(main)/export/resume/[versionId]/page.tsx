@@ -142,6 +142,16 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const dirtyRef = useRef(false);
   const resumeRef = useRef<ResumeVersion | null>(null);
   const initialRef = useRef<ResumeVersion | null>(null);
+  // 이 인스턴스가 **지금** 답하고 있는 질문. 비동기 저장의 클로저는 시작 당시의 것을 쥐고
+  // 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave). versionId 가 아니라 requestKey 인
+  // 것은 A→B→A 때문이다 — 돌아오면 versionId 는 같아지지만 그 사이 재조회가 끼어들어
+  // resumeRef 는 **저장 전** 본문으로 되돌아가 있다. 세대까지 봐야 그 왕복이 잡힌다.
+  //
+  // 언마운트하면 null 이 된다(아래 effect) — 언마운트는 seq 를 올리지 않으므로, 같은
+  // 레쥬메로 다시 들어온 **새 인스턴스**의 키(seq 가 0 부터 다시 시작)와 겹친다. 그 상태로
+  // 늦게 끝난 옛 저장이 가드를 통과하면, 새 인스턴스가 **복원하라고 띄워 둔 draft 를 지운다**
+  // — 배너는 화면에 남아 있는데 되돌릴 내용은 사라진 상태가 된다.
+  const requestKeyRef = useRef<string | null>(requestKey);
 
   // FRT-147 — 영문 레쥬메는 읽기·내보내기 전용이다(매핑이 단방향이라 저장하면 영문 전용
   // 값이 사라진다). 편집 UI 를 숨기는 것만으로 막으면 그 바깥에서 setResume 을 부르는
@@ -160,6 +170,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   dirtyRef.current = dirty;
   resumeRef.current = resume;
   initialRef.current = initial;
+  // requestKeyRef 는 여기서 갱신하지 않는다 — 아래 effect(커밋 단계)에서만 움직인다.
 
   // 저장의 결말들(서버 저장·백엔드 미수용·그 외 오류·저장 없이 이탈)이 사용자에겐 거의
   // 같아 보이지만 데이터로는 전혀 다른 사실이다. 한 곳에서 같은 모양으로 싣는다(FRT-114).
@@ -240,10 +251,31 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const updated = await updateResume(versionId, snapshot);
       setInitial(updated);
       setResume((current) => (current === snapshot ? updated : current));
-      // Only clear the draft when no newer edits arrived during save.
-      // Otherwise the unmount handler may have just persisted a fresher draft we must keep.
-      if (resumeRef.current === snapshot) {
+      // 응답이 도는 동안 화면이 이 요청을 떠났을 수 있다. 그때 아래 정리를 그대로 실행하면
+      // **지금 화면이 쓰고 있는 draft 를 지운다** — 배너는 남고 되돌릴 내용만 사라진다.
+      // App Router 는 versionId 만 바뀌면 이 인스턴스를 재사용하고(FRT-238), 언마운트해도
+      // seq 는 0 부터 다시 시작하므로 "떠났다"를 id 만으로는 알 수 없다.
+      //
+      // 그래서 판정은 versionId 가 아니라 **requestKey**(버전 + 세대)다. A→B→A 로 돌아오면
+      // versionId 는 다시 같아지지만 그 사이 재조회가 끼어들어 화면은 **저장 전** 본문을 들고
+      // 있고, 그때 저장소에 있는 draft 는 이 저장이 지울 것이 아니다.
+      //
+      // 이 버전의 편집분은 화면이 떠나던 순간의 cleanup 이 이미 같은 키에 남겼다. 떠난
+      // 뒤에는 **아무것도 하지 않는 것**이 옳다 — pendingDraft 도 지금은 다음 요청의 배너다.
+      if (requestKeyRef.current === requestKey) {
+        // 규칙은 하나다 — **저장에 성공하면 이 버전의 draft 는 없다.**
+        //
+        // 요청이 도는 동안 이어 고쳤더라도 여기서 그 최신본으로 "갈아끼우지" 않는다. 그렇게
+        // 만든 draft 는 그 자체가 다음 사고의 씨앗이다: 사용자가 그 편집을 곧바로 되돌려도
+        // draft 는 저장소에 남아(dirty 가 false 로 돌아가 이탈 경로들이 손대지 않는다) 다음
+        // 진입 때 **지운 편집을 되살리라고 권한다**. 이어 고친 편집은 화면과 dirty 에 그대로
+        // 살아 있어 나가기·언마운트 cleanup·Ctrl+S 가 남긴다 — 저장 시점의 스냅샷을 하나 더
+        // 만들 이유가 없다.
         clearDraft(versionId);
+        // 배너도 같은 이유로 지운다. 그 스냅샷은 서버 최신본보다 낡았고, 남겨 두면 '복원'이
+        // 방금 저장한 내용을 그것으로 덮고 clearDraft 까지 불러 되돌릴 길도 없앤다 — 실패
+        // 갈래에서만 막아 둔 것을 성공 갈래에서도 막는다(FRT-191).
+        setPendingDraft(null);
       }
       toast.success("저장됐어요");
       captureEditSaved("server", true, sections);
@@ -289,7 +321,16 @@ export default function ResumeDetailPage({ params }: PageProps) {
     } finally {
       setSaving(false);
     }
-  }, [resume, dirty, saving, loading, versionId, initial, captureEditSaved]);
+  }, [
+    resume,
+    dirty,
+    saving,
+    loading,
+    versionId,
+    requestKey,
+    initial,
+    captureEditSaved,
+  ]);
 
   const handleRegenerate = useCallback(async () => {
     if (!resume || regenerating) return;
@@ -426,6 +467,23 @@ export default function ResumeDetailPage({ params }: PageProps) {
     clearDraft(versionId);
     setPendingDraft(null);
   }, [versionId]);
+
+  // 화면이 **실제로** 답하고 있는 요청을 새긴다. 다른 ref 들과 달리 렌더 중에 쓰지 않는 이유는
+  // 커밋되지 않는 렌더가 있기 때문이다 — 다른 버전으로 가던 전환이 중간에 취소되면 화면은 이
+  // 버전에 남는데 렌더 중 갱신한 키만 그 버전으로 바뀐다. 그 상태로 저장이 끝나면 가드가
+  // "떠났다"고 오판해 낡은 draft 와 배너를 그대로 두고, 저장에 성공했는데도 '복원'이 그것을
+  // 되돌릴 수 있다 — FRT-191 그 자체가 되살아난다. 커밋된 렌더만 이 키를 움직인다.
+  //
+  // cleanup 이 곧 무효화다. 버전이 바뀌면 다음 effect 가 새 키를 새기고, **언마운트면 null 로
+  // 남는다** — 언마운트는 seq 를 올리지 않아 같은 레쥬메로 다시 들어온 새 인스턴스의 키와
+  // 겹치기 때문이다. 아래 draft 보관 effect 보다 먼저 선언해 cleanup 도 먼저 돌게 둔다.
+  useEffect(() => {
+    const ref = requestKeyRef;
+    ref.current = requestKey;
+    return () => {
+      ref.current = null;
+    };
+  }, [requestKey]);
 
   // Persist draft on any client-side navigation (unmount)
   useEffect(() => {
