@@ -485,6 +485,22 @@ function isFilledText(s: unknown): boolean {
   return typeof s === 'string' && s.trim() !== ''
 }
 
+/**
+ * 이 코드가 모르는 **이름**을 든 판별자 — 새 스키마가 쓴 값일 수 있으니 지켜야 한다.
+ *
+ * ⚠️ **빈 문자열은 여기 들어오지 않는다.** `''`·공백은 아무 신원도 싣고 있지 않으므로
+ * "내가 모르는 것"이 아니라 그냥 손상이다. 미지로 치면 저장은 지키고 렌더는 잠가서,
+ * 사용자가 쓴 글자가 **보이지도 고쳐지지도 않는 칸**이 된다 — 지키는 게 아니라 가두는 것이다.
+ * 신호가 없을 때는 대체 신호(`block.type`)로 되살린다.
+ *
+ * ⚠️ 셀·부가 항목(`isOpaqueCell`)은 **일부러 이 술어를 쓰지 않는다.** 그 경로에는 되살릴
+ * 대체 신호(열 유형)가 인자로 오지 않아, 미지에서 빼는 순간 `repairCell` 이 곧장 `''` 로
+ * 낮춘다. **복구 신호가 없는 자리에서 "신호 없음"은 보존이지 삭제가 아니다.**
+ */
+function isOpaqueType(t: unknown): boolean {
+  return isFilledText(t) && !isKnownBlockType(t)
+}
+
 // ─── 손상된 저장 값 보정 (FRT-200) ───────────────────────────────
 
 const asText = (x: unknown): string => (typeof x === 'string' ? x : '')
@@ -915,11 +931,11 @@ export function normalizeBlockValue(
   // 구 프론트가 여는 경우다. 블록 타입으로 갈아 끼우면 그 판별자가 지워진 채 저장되어,
   // 열었다 저장하는 것만으로 새 스키마 값이 구 모양으로 굳는다. 그러니 **그대로 둔다.**
   // 그리려면 모양이 필요하지만, 그건 저장되지 않는 렌더 관문(`normalizeBlockForRender`)의 몫이다.
-  if (typeof value.type === 'string' && !isKnownBlockType(value.type)) {
+  if (isOpaqueType(value.type)) {
     return value as unknown as BlockValue
   }
 
-  // 판별자가 아예 없거나 문자열이 아니면 신호가 깨진 것이다 — 그때만 블록이 선언한 타입으로 살린다.
+  // 판별자가 없거나·문자열이 아니거나·비어 있으면 신호가 깨진 것이다 — 그때만 블록이 선언한 타입으로 살린다.
   const effective = isKnownBlockType(value.type)
     ? value.type
     : isKnownBlockType(fallbackType)
@@ -1043,8 +1059,10 @@ function repairCondition(cond: Record<string, unknown> | undefined): Block['visi
 export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
   // ⚠️ 블록 타입이 깨졌는데 **값이 신원을 알려 주면** 그걸로 되살린다 — 안 그러면 렌더러가
   // `block.type` 으로 분기해 아무것도 안 그리고, 저장은 깨진 타입을 계속 실어 나른다.
-  // 모르는 *문자열* 타입은 새 스키마의 흔적이라 그대로 둔다(위 보존 규칙과 같은 경계).
-  if (typeof block.type !== 'string') {
+  // 모르는 *이름*의 타입은 새 스키마의 흔적이라 그대로 둔다(위 보존 규칙과 같은 경계).
+  // ⚠️ **빈 문자열은 "모르는 이름"이 아니라 신호 없음이다** — 여기서 걸러내지 않으면 그 블록은
+  // 렌더 switch 의 어느 갈래에도 안 걸려 영원히 아무것도 안 그려진다.
+  if (!isFilledText(block.type)) {
     const fromValue = (block.value as { type?: unknown } | null | undefined)?.type
     if (isKnownBlockType(fromValue)) block = { ...block, type: fromValue }
   }
@@ -1221,7 +1239,7 @@ export function dedupeBlockIdsAcross(groups: Block[][]): Block[][] {
  * ⚠️ 블록 타입이 아는 것이어도 안쪽이 모르는 값이면 편집 칸을 열면 안 된다. 셀 컨트롤이
  * 불투명 객체를 빈 글자로 접어 그리고, 첫 입력이 **보존해 둔 값을 덮는다**.
  */
-export function hasOpaqueLeaf(value: unknown): boolean {
+function hasOpaqueLeaf(value: unknown): boolean {
   if (!isPlainObject(value) || value.type !== 'repeatable-cell') return false
   if (!Array.isArray(value.rows)) return false
   const opaque = opaqueCellKeys(value.columns)
@@ -1268,6 +1286,23 @@ function lowerOpaqueExtras(block: Block): Block {
     }
   })
   return changed ? ({ ...block, value: { ...v, rows } } as unknown as Block) : block
+}
+
+/**
+ * 이 값 위에 **편집 경로를 열면 안 되는가.**
+ *
+ * ⚠️ 입력 칸(`BlockRenderer`)과 그 바깥의 연필(`BlockList`)이 **같은 술어로 물어야 한다.**
+ * 한쪽만 잠그면 다른 쪽이 열린 채 남고, 그 통로로 들어간 첫 입력이 보존해 둔 값을 덮는다.
+ * 실제로 입력 칸만 잠갔더니 연필은 살아 있었고, 눌리면 `getEditConfig` 가 불투명 값을
+ * 모달에 그대로 넘겨 `.join()` 에서 화면이 통째로 죽었다.
+ */
+export function isUnrenderableBlock(block: Block): boolean {
+  const t = (block.value as { type?: unknown } | null | undefined)?.type
+  // 이름이 있는 미지 판별자이거나, 아는 것끼리 어긋난 값 — 이 컨트롤이 다룰 수 있는 값이 아니다.
+  // (빈 판별자는 여기 안 걸린다 — `normalizeBlock` 이 블록 타입으로 되살리므로 편집 가능하다.)
+  if (isOpaqueType(t) || (isFilledText(t) && t !== block.type)) return true
+  // 블록 타입은 아는 것이어도 **안쪽에 모르는 잎**이 있을 수 있다.
+  return hasOpaqueLeaf(block.value)
 }
 
 export function normalizeBlockForRender(block: Block): Block {

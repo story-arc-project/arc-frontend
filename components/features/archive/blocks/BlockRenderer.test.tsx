@@ -207,6 +207,24 @@ describe("손상된 저장 값 렌더 (FRT-200)", () => {
   })
 
   /**
+   * ⚠️ **빈 판별자는 위 규칙의 반대편이다.** `'brand-new-in-v3'` 는 신원을 싣고 있어 지켜야
+   * 하지만, `''` 는 아무것도 싣고 있지 않은 손상이다. 잠가 두면 사용자는 자기가 쓴 글자가
+   * 보이지도 고쳐지지도 않는 칸을 마주한다 — 지키는 게 아니라 가두는 것이다.
+   */
+  it("빈 판별자의 값은 블록 타입으로 되살려 편집 가능하게 그린다", () => {
+    const { container } = render(
+      <BlockRenderer
+        block={broken("text", { type: "", text: "저장된 값" })}
+        onChange={() => {}}
+      />,
+    )
+    const input = container.querySelector("input")
+    expect(input).not.toBeNull()
+    expect((input as HTMLInputElement).value).toBe("저장된 값")
+    expect((input as HTMLInputElement).readOnly).toBe(false)
+  })
+
+  /**
    * ⚠️ 블록 타입은 아는 것이어도 **안쪽에 모르는 값**이 있으면 그 표는 편집 가능하면 안 된다 —
    * 셀 컨트롤이 불투명 객체를 빈 글자로 접어 그리고, 첫 입력이 그 값을 덮는다.
    */

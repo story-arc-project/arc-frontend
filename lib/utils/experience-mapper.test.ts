@@ -169,6 +169,31 @@ describe("toExperienceV2", () => {
     expect(v2.coreBlocks.find(b => b.key === "core.핵심 성과")?.value.type).toBe("textarea")
   })
 
+  /**
+   * ⚠️ **처방이 매퍼까지 닿는지 가정하지 말고 재라.** `injectValue` 는 판별자가 미지면 값을
+   * 그대로 실어 보내는데(새 스키마 보존), 빈 판별자까지 미지로 세면 그 글자는 잠긴 빈 칸이
+   * 되어 사용자가 영원히 못 고친다. `normalizeBlockValue` 를 **먼저** 부르므로 거기서
+   * 되살아나야 이 경로가 함께 낫는다 — 그 사실 자체를 못으로 박는다.
+   */
+  it("v2: 판별자가 빈 값도 템플릿 타입으로 되살려 글자를 지킨다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "T",
+          summary: "",
+          status: "draft",
+          tags: [],
+          fields: { "core.핵심 성과": { type: "", text: "저장된 값" } },
+          custom: [],
+        },
+      }),
+    )
+    const block = v2.coreBlocks.find(b => b.key === "core.핵심 성과")
+    expect(block?.value).toEqual({ type: "textarea", text: "저장된 값" })
+  })
+
   it("v1 레거시: 저장된 블록 배열에 레지스트리 라벨매칭으로 안정키를 주입한다", () => {
     const v2 = toExperienceV2(
       makeExperience({

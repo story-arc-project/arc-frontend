@@ -2,9 +2,8 @@
 
 import type { Block, BlockValue, RepeatableCellBlockValue } from "@/types/archive"
 import {
-  hasOpaqueLeaf,
   isFileCellValue,
-  isKnownBlockType,
+  isUnrenderableBlock,
   normalizeBlockForRender,
 } from "@/lib/utils/block-utils"
 import TextBlock from "./TextBlock"
@@ -66,13 +65,9 @@ export default function BlockRenderer({
    * 만든 폴백이 값을 지우는 통로가 된다. 읽기 전용으로 두면 그 값은 저장 왕복에서 그대로 산다.
    */
   // 판별자가 미지이거나 **블록 타입과 어긋나면** 그 값은 이 컨트롤이 다룰 수 있는 값이 아니다.
-  const rawType = (rawBlock.value as { type?: unknown } | null | undefined)?.type
-  const unrenderable =
-    (typeof rawType === "string" && (!isKnownBlockType(rawType) || rawType !== rawBlock.type)) ||
-    // ⚠️ 블록 타입은 아는 것이어도 **안쪽에 모르는 값**이 있을 수 있다 — 모르는 열 유형의
-    // 불투명 셀은 셀 컨트롤이 빈 글자로 접어 그리고 첫 입력이 그 값을 덮는다.
-    hasOpaqueLeaf(rawBlock.value)
-  const locked = readOnly || unrenderable
+  // ⚠️ 판정은 `isUnrenderableBlock` 하나로 모은다 — 바깥 연필(`BlockList`)이 같은 술어로
+  // 물어야 편집 경로가 한쪽만 열린 채 남지 않는다.
+  const locked = readOnly || isUnrenderableBlock(rawBlock)
   const handleChange = (value: BlockValue) => onChange(block.id, value)
 
   const rendered = (() => {

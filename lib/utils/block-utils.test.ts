@@ -25,6 +25,8 @@ import {
   rowHasContent,
   isBlockDiscardable,
   isBlockEmpty,
+  isUnrenderableBlock,
+  isValueOccupied,
   normalizeBlock,
   normalizeBlockForRender,
   normalizeBlockValue,
@@ -1498,5 +1500,145 @@ describe("normalizeBlock — 템플릿 선택지 되살리기 (FRT-200)", () => 
       value: { type: "checklist", checked: ["직접 쓴 값"] } as unknown as BlockValue,
     })
     expect(normalized.value).toMatchObject({ options: [], checked: ["직접 쓴 값"] })
+  })
+})
+
+/**
+ * **빈 판별자는 "내가 모르는 것"이 아니라 "신호가 없는 것"이다.**
+ *
+ * 모르는 *이름*(`'rating-v3'`)은 새 스키마의 흔적이라 지켜야 하지만, 빈 문자열은 아무 신원도
+ * 싣고 있지 않다 — 손상이다. 그래서 **대체 신호가 있으면 그것으로 복구하고, 없으면 그대로 둔다.**
+ * 어느 갈래에서도 지우지 않는다는 것이 이 무리의 불변식이다.
+ */
+describe("빈 판별자 — 신호 없음은 미지가 아니다", () => {
+  it("값의 판별자가 비어 있으면 블록 타입으로 되살려 글자를 지킨다", () => {
+    const value = normalizeBlockValue("text", {
+      type: "",
+      text: "저장된 값",
+    } as unknown as BlockValue)
+    // 그대로 두면 렌더 관문이 "미지"로 보아 **잠긴 빈 칸**을 그린다 — 글자가 보이지도 고쳐지지도 않는다.
+    expect(value).toEqual({ type: "text", text: "저장된 값" })
+  })
+
+  it("공백뿐인 판별자도 같다 — 트림하면 비는 문자열은 신원이 아니다", () => {
+    const value = normalizeBlockValue("textarea", {
+      type: "   ",
+      text: "긴 글",
+    } as unknown as BlockValue)
+    expect(value).toEqual({ type: "textarea", text: "긴 글" })
+  })
+
+  it("블록 타입이 비어 있으면 값의 판별자로 되살린다 — 아니면 아무것도 안 그려진다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "" as unknown as Block["type"],
+      label: "판별자 잃은 칸",
+      value: { type: "text", text: "저장된 값" },
+    })
+    expect(normalized.type).toBe("text")
+    expect(normalized.value).toEqual({ type: "text", text: "저장된 값" })
+  })
+
+  it("양쪽 다 신호가 없으면 복구할 근거가 없다 — 그래도 지우지 않는다", () => {
+    const value = normalizeBlockValue("" as unknown as Block["type"], {
+      type: "",
+      text: "저장된 값",
+    } as unknown as BlockValue)
+    expect(value).toMatchObject({ text: "저장된 값" })
+  })
+
+  it("이름이 있는 미지 판별자는 여전히 그대로 지킨다 — 새 스키마의 흔적이다", () => {
+    const value = normalizeBlockValue("text", {
+      type: "rating-v3",
+      score: 4,
+    } as unknown as BlockValue)
+    expect(value).toEqual({ type: "rating-v3", score: 4 })
+  })
+})
+
+/**
+ * ⚠️ **여기는 고치는 곳이 아니다.** 아래 셋은 "빈 판별자도 손상이니 똑같이 처리하라"는 지적이
+ * 반드시 다시 올 자리인데, 그 처방을 여기에 적용하면 **값이 지워진다.** 위 무리와 갈리는 이유는
+ * 하나다 — **복구에 쓸 대체 신호가 이 경로에는 오지 않는다.**
+ * 지우는 쪽 판정에서 신호 없음은 곧 보존이다.
+ */
+describe("빈 판별자 — 복구 신호가 없는 경로는 건드리지 않는다", () => {
+  it("셀은 낮추면 곧 삭제다 — 빈 판별자를 든 셀도 저장 경로에서 지킨다", () => {
+    // `repairCell` 에는 열 유형이 인자로 오지 않아 되살릴 목표가 없다. 불투명에서 빼면
+    // 곧장 `''` 로 낮아진다 — 열었다 저장하는 것만으로 사용자 입력이 사라진다.
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "repeatable-cell",
+      label: "로그",
+      value: {
+        type: "repeatable-cell",
+        columns: [{ key: "c1", label: "점수", blockType: "rating-v3" }],
+        rows: [{ id: "r1", cells: { c1: { type: "", text: "저장된 값" } } }],
+      } as unknown as BlockValue,
+    })
+    const rows = (normalized.value as unknown as { rows: { cells: Record<string, unknown> }[] }).rows
+    expect(rows[0].cells.c1).toEqual({ type: "", text: "저장된 값" })
+  })
+
+  it("자리를 차지했는지 물을 때는 블록 타입이 없다 — 해석 못 하는 값은 차지된 것으로 센다", () => {
+    // 여기서 false 를 내면 이관·개명이 이 자리를 덮어쓰고, 개명은 원본을 먼저 지운다.
+    expect(isValueOccupied({ type: "", text: "저장된 값" } as unknown as BlockValue)).toBe(true)
+  })
+
+  it("버려도 되는지 물을 때도 마찬가지 — 못 그린다는 이유로 남의 값을 지우지 않는다", () => {
+    expect(
+      isBlockDiscardable({
+        id: "b1",
+        type: "text",
+        label: "칸",
+        value: { type: "", text: "저장된 값" } as unknown as BlockValue,
+      }),
+    ).toBe(false)
+  })
+})
+
+describe("isUnrenderableBlock — 편집을 열면 안 되는 블록", () => {
+  it("이름이 있는 미지 판별자는 편집을 막는다", () => {
+    expect(
+      isUnrenderableBlock({
+        id: "b1",
+        type: "checklist",
+        label: "칸",
+        value: { type: "rating-v3", options: {} } as unknown as BlockValue,
+      }),
+    ).toBe(true)
+  })
+
+  it("아는 타입끼리 어긋나도 막는다 — 그 컨트롤이 다룰 수 있는 값이 아니다", () => {
+    expect(
+      isUnrenderableBlock({
+        id: "b1",
+        type: "text",
+        label: "칸",
+        value: { type: "date", date: "2023-01-01" } as unknown as BlockValue,
+      }),
+    ).toBe(true)
+  })
+
+  it("빈 판별자는 막지 않는다 — 블록 타입으로 되살아나 편집 가능한 값이 된다", () => {
+    expect(
+      isUnrenderableBlock({
+        id: "b1",
+        type: "text",
+        label: "칸",
+        value: { type: "", text: "저장된 값" } as unknown as BlockValue,
+      }),
+    ).toBe(false)
+  })
+
+  it("성한 값은 막지 않는다", () => {
+    expect(
+      isUnrenderableBlock({
+        id: "b1",
+        type: "text",
+        label: "칸",
+        value: { type: "text", text: "저장된 값" },
+      }),
+    ).toBe(false)
   })
 })
