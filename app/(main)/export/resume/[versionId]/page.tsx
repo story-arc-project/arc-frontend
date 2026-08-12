@@ -170,7 +170,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   dirtyRef.current = dirty;
   resumeRef.current = resume;
   initialRef.current = initial;
-  requestKeyRef.current = requestKey;
+  // requestKeyRef 는 여기서 갱신하지 않는다 — 아래 effect(커밋 단계)에서만 움직인다.
 
   // 저장의 결말들(서버 저장·백엔드 미수용·그 외 오류·저장 없이 이탈)이 사용자에겐 거의
   // 같아 보이지만 데이터로는 전혀 다른 사실이다. 한 곳에서 같은 모양으로 싣는다(FRT-114).
@@ -470,14 +470,22 @@ export default function ResumeDetailPage({ params }: PageProps) {
     setPendingDraft(null);
   }, [versionId]);
 
-  // 언마운트한 인스턴스는 더 이상 어떤 요청도 대표하지 않는다. deps 를 비워 **진짜 언마운트
-  // 에서만** 무효화한다 — versionId 변경 cleanup 에 넣으면 렌더에서 막 갱신한 새 키를 지운다.
+  // 화면이 **실제로** 답하고 있는 요청을 새긴다. 다른 ref 들과 달리 렌더 중에 쓰지 않는 이유는
+  // 커밋되지 않는 렌더가 있기 때문이다 — 다른 버전으로 가던 전환이 중간에 취소되면 화면은 이
+  // 버전에 남는데 렌더 중 갱신한 키만 그 버전으로 바뀐다. 그 상태로 저장이 끝나면 가드가
+  // "떠났다"고 오판해 낡은 draft 와 배너를 그대로 두고, 저장에 성공했는데도 '복원'이 그것을
+  // 되돌릴 수 있다 — FRT-191 그 자체가 되살아난다. 커밋된 렌더만 이 키를 움직인다.
+  //
+  // cleanup 이 곧 무효화다. 버전이 바뀌면 다음 effect 가 새 키를 새기고, **언마운트면 null 로
+  // 남는다** — 언마운트는 seq 를 올리지 않아 같은 레쥬메로 다시 들어온 새 인스턴스의 키와
+  // 겹치기 때문이다. 아래 draft 보관 effect 보다 먼저 선언해 cleanup 도 먼저 돌게 둔다.
   useEffect(() => {
     const ref = requestKeyRef;
+    ref.current = requestKey;
     return () => {
       ref.current = null;
     };
-  }, []);
+  }, [requestKey]);
 
   // Persist draft on any client-side navigation (unmount)
   useEffect(() => {

@@ -139,7 +139,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // 핸들러가 최신 값을 본다(레쥬메 상세와 같은 이유).
   dirtyRef.current = dirty;
   resultRef.current = result;
-  requestKeyRef.current = requestKey;
+  // requestKeyRef 는 여기서 갱신하지 않는다 — 아래 effect(커밋 단계)에서만 움직인다.
 
   const handleSave = useCallback(async () => {
     // FRT-238 — loading 은 id 가 이미 바뀌었지만 새 자기소개서 응답은 아직 안 온 창이다.
@@ -229,14 +229,19 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     setPendingDraft(null);
   }, [id]);
 
-  // 언마운트한 인스턴스는 더 이상 어떤 요청도 대표하지 않는다. deps 를 비워 진짜 언마운트
-  // 에서만 무효화한다 — id 변경 cleanup 에 넣으면 렌더에서 막 갱신한 새 키를 지운다.
+  // 화면이 **실제로** 답하고 있는 요청을 새긴다. 렌더 중에 쓰지 않는 이유는 커밋되지 않는
+  // 렌더가 있기 때문이다 — 다른 문서로 가던 전환이 취소되면 화면은 이 문서에 남는데 키만
+  // 그쪽으로 바뀌고, 그 상태로 저장이 끝나면 가드가 "떠났다"고 오판해 낡은 draft 와 배너를
+  // 남긴다(FRT-191 이 되살아난다). cleanup 이 곧 무효화다 — 언마운트면 null 로 남아, 같은
+  // 문서로 다시 들어온 새 인스턴스의 키와 겹치지 않는다. 아래 draft 보관 effect 보다 먼저
+  // 선언해 cleanup 도 먼저 돌게 둔다.
   useEffect(() => {
     const ref = requestKeyRef;
+    ref.current = requestKey;
     return () => {
       ref.current = null;
     };
-  }, []);
+  }, [requestKey]);
 
   // 클라이언트 이동(언마운트)에도 편집을 남긴다.
   useEffect(() => {
