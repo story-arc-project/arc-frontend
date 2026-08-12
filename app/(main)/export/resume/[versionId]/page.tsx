@@ -251,19 +251,17 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const updated = await updateResume(versionId, snapshot);
       setInitial(updated);
       setResume((current) => (current === snapshot ? updated : current));
-      // 응답이 도는 동안 화면이 이 요청을 떠났을 수 있다. App Router 는 versionId 만 바뀌면
-      // 이 인스턴스를 재사용하므로(FRT-238) 그때 resumeRef 는 **다른** 내용인데 클로저의
-      // versionId 는 이 버전이다 — 그 조합으로 저장소를 건드리면 남의 본문이 이 버전의
-      // draft 로 심긴다(다음 진입 때 배너로 그 본문을 이 버전에 덮어쓴다).
+      // 응답이 도는 동안 화면이 이 요청을 떠났을 수 있다. 그때 아래 정리를 그대로 실행하면
+      // **지금 화면이 쓰고 있는 draft 를 지운다** — 배너는 남고 되돌릴 내용만 사라진다.
+      // App Router 는 versionId 만 바뀌면 이 인스턴스를 재사용하고(FRT-238), 언마운트해도
+      // seq 는 0 부터 다시 시작하므로 "떠났다"를 id 만으로는 알 수 없다.
       //
-      // 판정은 versionId 가 아니라 **requestKey** 로 한다. A→B→A 로 돌아오면 versionId 는
-      // 다시 같아지지만 그 사이 재조회가 끼어들어 resumeRef 는 저장 전 본문으로 되돌아가
-      // 있고, 그걸 "이어 고친 편집"으로 오인해 쓰면 전환 때 남긴 **올바른 draft 를 낡은
-      // 본문으로 덮는다**. 세대까지 보면 그 왕복이 잡힌다.
+      // 그래서 판정은 versionId 가 아니라 **requestKey**(버전 + 세대)다. A→B→A 로 돌아오면
+      // versionId 는 다시 같아지지만 그 사이 재조회가 끼어들어 화면은 **저장 전** 본문을 들고
+      // 있고, 그때 저장소에 있는 draft 는 이 저장이 지울 것이 아니다.
       //
-      // 이 버전의 편집분은 화면이 떠나던 순간의 cleanup 이 이미 같은 키에 남겼으니, 떠난
-      // 뒤에는 **아무것도 하지 않는 것**이 옳다. pendingDraft 도 마찬가지다 — 지금 그
-      // 상태는 이 요청이 아니라 다음 요청의 배너다.
+      // 이 버전의 편집분은 화면이 떠나던 순간의 cleanup 이 이미 같은 키에 남겼다. 떠난
+      // 뒤에는 **아무것도 하지 않는 것**이 옳다 — pendingDraft 도 지금은 다음 요청의 배너다.
       if (requestKeyRef.current === requestKey) {
         // 규칙은 하나다 — **저장에 성공하면 이 버전의 draft 는 없다.**
         //
