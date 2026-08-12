@@ -445,4 +445,65 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
     const draft = storedDraft("A");
     expect(draft?.data.answers[0].cover_letter).toBe("서버 본문!?");
   });
+
+  // 저장 응답이 도는 동안 다른 문서로 옮기면, 클로저의 id 는 **이전** 문서인데 resultRef 는
+  // 이미 **다음** 문서 본문이다(같은 인스턴스 재사용 — FRT-238). 그 조합으로 임시 저장을
+  // 쓰면 남의 본문이 이전 문서의 키에 심겨, 다음 진입 때 배너가 그것을 덮어쓴다.
+  it("저장 도중 다른 문서로 옮기면 그 문서 본문이 이전 문서의 임시 저장에 심기지 않는다", async () => {
+    const route = routeById();
+    const save = deferred<CoverLetterResult>();
+    mockUpdateCoverLetter.mockImplementation(() => save.promise);
+    const result = await renderId("A");
+    route.resolve("A", fixture("에이 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // B 로 옮긴다 — 이 전환의 cleanup 이 A 의 편집을 A 의 키에 이미 남긴다.
+    await navigateTo(result, "B");
+    route.resolve("B", fixture("비 본문"));
+    await flush();
+
+    // 이제서야 A 의 저장 응답이 도착한다.
+    await act(async () => {
+      save.resolve(fixture("에이 본문!"));
+    });
+    await flush();
+
+    expect(shownBody()).toBe("비 본문");
+    expect(storedDraft("A")?.data.answers[0].cover_letter).toBe("에이 본문!");
+  });
+
+  // 저장 중 고쳤다가 되돌리면 객체는 새것이지만 내용은 방금 보낸 것과 같다. 식별자로만
+  // 가르면 새 draft 가 남아, 되돌릴 게 없는데 다음 진입에서 배너가 다시 뜬다.
+  it("저장 중 고쳤다가 되돌리면 임시 저장을 새로 남기지 않는다", async () => {
+    const route = routeById();
+    seedOlderDraft("A");
+    const save = deferred<CoverLetterResult>();
+    mockUpdateCoverLetter.mockImplementation(() => save.promise);
+    await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    const box = screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" });
+    await user.type(box, "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // 요청이 도는 동안 고쳤다가 그대로 되돌린다.
+    await user.type(box, "?{Backspace}");
+
+    await act(async () => {
+      save.resolve(fixture("서버 본문!"));
+    });
+    await flush();
+
+    expect(screen.queryByRole("button", { name: "복원" })).toBeNull();
+    expect(storedDraft("A")).toBeNull();
+  });
 });

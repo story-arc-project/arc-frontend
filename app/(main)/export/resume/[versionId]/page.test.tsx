@@ -1181,4 +1181,79 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
     expect(draft?.data.자기소개_요약).not.toBe(OLD_DRAFT_SUMMARY);
     expect(draft?.data.자기소개_요약).toBe("AI 가 쓴 초안 문장입니다.x");
   });
+
+  function draftName(versionId: string): string | null {
+    const raw = window.localStorage.getItem(`arc:resume-draft:${versionId}`);
+    if (!raw) return null;
+    return (JSON.parse(raw) as { data: ResumeVersion }).data.인적사항.이름;
+  }
+
+  // 저장 응답이 도는 동안 다른 버전으로 옮기면, 클로저의 versionId 는 **이전** 버전인데
+  // resumeRef 는 이미 **다음** 버전 내용이다(같은 인스턴스를 재사용하므로 — FRT-238).
+  // 그 조합으로 임시 저장을 쓰면 남의 본문이 이전 버전의 키에 심겨, 다음 진입 때 배너가
+  // 그 본문을 이 버전에 덮어쓴다 — FRT-191 이 막으려던 사고가 더 나쁜 모양으로 돌아온다.
+  it("저장 도중 다른 버전으로 옮기면 그 버전 내용이 이전 버전의 임시 저장에 심기지 않는다", async () => {
+    const user = userEvent.setup();
+    const route = routeByVersion();
+    let resolveSave!: (value: ResumeVersion) => void;
+    mockUpdateResume.mockImplementation(
+      () =>
+        new Promise<ResumeVersion>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    const result = await renderVersion("A");
+    route.resolve("A", named("에이"));
+    await flush();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // B 로 옮긴다 — 이 전환의 cleanup 이 A 의 편집을 A 의 키에 이미 남긴다.
+    await navigateTo(result, "B");
+    route.resolve("B", named("비"));
+    await flush();
+
+    // 이제서야 A 의 PATCH 응답이 도착한다.
+    await act(async () => {
+      resolveSave(named("에이!"));
+    });
+    await flush();
+
+    expect(shownName()).toBe("비");
+    // A 의 임시 저장은 전환 시점에 남긴 A 의 편집 그대로여야 한다.
+    expect(draftName("A")).toBe("에이!");
+  });
+
+  // 저장 중 고쳤다가 되돌리면 객체는 새것이지만 내용은 방금 보낸 것과 같다. 식별자로만
+  // 가르면 여기서 새 draft 를 써, 되돌릴 게 없는데 그 timestamp 때문에 다음 진입에서
+  // "서버보다 최신"으로 판정돼 배너가 다시 뜬다.
+  it("저장 중 고쳤다가 되돌리면 임시 저장을 새로 남기지 않는다", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (value: ResumeVersion) => void;
+    mockUpdateResume.mockImplementation(
+      () =>
+        new Promise<ResumeVersion>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    seedOlderDraft();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // 요청이 도는 동안 고쳤다가 그대로 되돌린다.
+    await user.type(screen.getByLabelText("이름"), "x{Backspace}");
+
+    await act(async () => {
+      resolveSave(resumeFixture());
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "복원" })).toBeNull(),
+    );
+    expect(storedDraft()).toBeNull();
+  });
 });
