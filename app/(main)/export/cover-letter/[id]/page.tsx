@@ -124,7 +124,11 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave). id 가 아니라 requestKey 인 것은
   // A→B→A 때문이다 — 돌아오면 id 는 같아지지만 그 사이 재조회가 끼어들어 resultRef 는
   // **저장 전** 본문으로 되돌아가 있다. 세대까지 봐야 그 왕복이 잡힌다.
-  const requestKeyRef = useRef(requestKey);
+  //
+  // 언마운트하면 null 이 된다(아래 effect) — 언마운트는 seq 를 올리지 않아 같은 문서로 다시
+  // 들어온 **새 인스턴스**의 키(seq 0)와 겹치고, 그 틈으로 늦게 끝난 옛 저장이 새 인스턴스가
+  // 복원하라고 띄워 둔 draft 를 지운다.
+  const requestKeyRef = useRef<string | null>(requestKey);
 
   const dirty = useMemo(() => {
     if (!result || !initial) return false;
@@ -164,21 +168,13 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       // 이 문서의 편집분은 화면이 떠나던 순간의 cleanup 이 이미 같은 키에 남겼으니, 떠난
       // 뒤에는 아무것도 하지 않는다. pendingDraft 도 지금은 다음 요청의 배너다.
       if (requestKeyRef.current === requestKey) {
-        const latest = resultRef.current;
-        // 식별자가 아니라 **내용**으로 가른다. 저장이 도는 동안 고쳤다가 되돌리면 객체는
-        // 새것이지만 내용은 방금 보낸 것과 같다 — 그때 draft 를 쓰면 그 timestamp 때문에
-        // 다음 진입에서 "서버보다 최신"으로 판정돼, 되돌릴 게 없는데 배너가 다시 뜬다.
-        if (latest && JSON.stringify(latest) !== JSON.stringify(snapshot)) {
-          // 요청이 도는 동안 이어 고쳤다 — 서버에 없는 건 그 편집뿐이다. 여기서 아무것도
-          // 안 하면 낡은 draft 가 저장소에 남아, 탭을 그냥 닫은 뒤 다음 진입 때 배너로
-          // 되살아나 방금 저장한 내용을 되돌린다(FRT-191).
-          writeDraft(id, latest);
-        } else {
-          clearDraft(id);
-        }
-        // 저장에 성공한 순간 pendingDraft 는 서버 최신본보다 낡았다. 배너를 남겨 두면
-        // '복원'이 방금 저장한 내용을 그 낡은 스냅샷으로 덮는다 — 실패 갈래에서만 막아
-        // 둔 것을 성공 갈래에서도 막는다(FRT-191).
+        // 규칙은 하나다 — **저장에 성공하면 이 문서의 draft 는 없다.** 이어 고친 편집을
+        // 여기서 draft 로 갈아끼우면, 사용자가 그 편집을 되돌려도 draft 는 남아(dirty 가
+        // false 로 돌아가 이탈 경로들이 손대지 않는다) 다음 진입 때 지운 편집을 되살리라고
+        // 권한다. 그 편집은 화면과 dirty 에 살아 있어 나가기·언마운트 cleanup 이 남긴다.
+        clearDraft(id);
+        // 배너도 같은 이유로 지운다 — 그 스냅샷은 서버 최신본보다 낡았고, 남겨 두면 '복원'이
+        // 방금 저장한 내용을 그것으로 덮는다(FRT-191).
         setPendingDraft(null);
       }
       toast.success("저장됐어요");
@@ -232,6 +228,15 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     clearDraft(id);
     setPendingDraft(null);
   }, [id]);
+
+  // 언마운트한 인스턴스는 더 이상 어떤 요청도 대표하지 않는다. deps 를 비워 진짜 언마운트
+  // 에서만 무효화한다 — id 변경 cleanup 에 넣으면 렌더에서 막 갱신한 새 키를 지운다.
+  useEffect(() => {
+    const ref = requestKeyRef;
+    return () => {
+      ref.current = null;
+    };
+  }, []);
 
   // 클라이언트 이동(언마운트)에도 편집을 남긴다.
   useEffect(() => {

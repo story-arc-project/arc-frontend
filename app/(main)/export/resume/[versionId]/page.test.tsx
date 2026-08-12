@@ -1144,10 +1144,11 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
     expect(storedDraft()).toBeNull();
   });
 
-  // 배너를 지우는 것만으로는 부족하다. 저장이 도는 동안 이어 고치면 `clearDraft` 가
-  // 건너뛰어져 **낡은 draft 가 저장소에 그대로 남는다** — 그 뒤 탭을 그냥 닫으면(cleanup
-  // 미실행) 다음 진입 때 그 옛 draft 가 다시 배너로 떠 같은 되돌림 사고가 재현된다.
-  it("저장 중에 이어 고치면 옛 draft 가 아니라 그 최신본이 임시 저장에 남는다", async () => {
+  // 배너를 지우는 것만으로는 부족하다. 저장이 도는 동안 이어 고쳐도 **낡은 draft 가 저장소에
+  // 남으면 안 된다** — 그 뒤 탭을 그냥 닫으면(cleanup 미실행) 다음 진입 때 그 옛 draft 가
+  // 다시 배너로 떠 같은 되돌림 사고가 재현된다. 이어 고친 편집은 화면과 dirty 에 살아 있어
+  // 이탈 경로들이 남기므로, 여기서 draft 를 새로 만들지 않는다.
+  it("저장 중에 이어 고쳐도 옛 draft 는 저장소에 남지 않는다", async () => {
     const user = userEvent.setup();
     let resolveSave!: (value: ResumeVersion) => void;
     mockUpdateResume.mockImplementation(
@@ -1176,10 +1177,8 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "복원" })).toBeNull(),
     );
-    const draft = storedDraft();
-    // 지난 세션 문장이 그대로면 옛 draft 가 살아남은 것 — 다음 진입에서 배너로 되살아난다.
-    expect(draft?.data.자기소개_요약).not.toBe(OLD_DRAFT_SUMMARY);
-    expect(draft?.data.자기소개_요약).toBe("AI 가 쓴 초안 문장입니다.x");
+    // 지난 세션 문장이 남아 있으면 다음 진입에서 배너로 되살아나 방금 저장한 내용을 되돌린다.
+    expect(storedDraft()).toBeNull();
   });
 
   function draftName(versionId: string): string | null {
@@ -1268,11 +1267,13 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
     expect(screen.queryByRole("button", { name: "복원" })).toBeTruthy();
   });
 
-  // 저장 중 고쳤다가 되돌리면 객체는 새것이지만 내용은 방금 보낸 것과 같다. 식별자로만
-  // 가르면 여기서 새 draft 를 써, 되돌릴 게 없는데 그 timestamp 때문에 다음 진입에서
-  // "서버보다 최신"으로 판정돼 배너가 다시 뜬다.
-  it("저장 중 고쳤다가 되돌리면 임시 저장을 새로 남기지 않는다", async () => {
+  // 언마운트는 seq 를 올리지 않는다 — 같은 레쥬메로 다시 들어오면 **새 인스턴스**의 키가
+  // seq 0 부터 시작해 옛 인스턴스의 키와 겹친다. 그 상태로 늦게 끝난 옛 저장이 가드를
+  // 통과하면, 새 인스턴스가 **복원하라고 띄워 둔 임시 저장을 지워버린다** — 배너는 화면에
+  // 남아 있는데 되돌릴 내용은 사라진 상태가 된다.
+  it("언마운트 뒤 늦게 끝난 저장은 새 인스턴스가 띄운 임시 저장을 지우지 않는다", async () => {
     const user = userEvent.setup();
+    const route = routeByVersion();
     let resolveSave!: (value: ResumeVersion) => void;
     mockUpdateResume.mockImplementation(
       () =>
@@ -1280,22 +1281,33 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
           resolveSave = resolve;
         }),
     );
-    seedOlderDraft();
-    await renderLoaded();
+
+    const first = await renderVersion("A");
+    route.resolve("A", named("에이"));
+    await flush();
 
     await user.type(screen.getByLabelText("이름"), "!");
     await user.click(screen.getByRole("button", { name: "저장" }));
 
-    // 요청이 도는 동안 고쳤다가 그대로 되돌린다.
-    await user.type(screen.getByLabelText("이름"), "x{Backspace}");
+    // 완전한 이탈 — 언마운트 cleanup 이 A 의 편집을 A 키에 남긴다.
+    first.unmount();
 
+    // 같은 레쥬메로 다시 들어온다(새 인스턴스, seq 는 0 부터).
+    await renderVersion("A");
+    route.resolve("A", named("에이"), 1);
+    await flush();
+
+    // 새 인스턴스는 그 임시 저장을 "복원하시겠어요"로 띄운 상태다.
+    expect(screen.getByRole("button", { name: "복원" })).toBeTruthy();
+    expect(draftName("A")).toBe("에이!");
+
+    // 이제서야 옛 인스턴스의 저장이 끝난다.
     await act(async () => {
-      resolveSave(resumeFixture());
+      resolveSave(named("에이!"));
     });
+    await flush();
 
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "복원" })).toBeNull(),
-    );
-    expect(storedDraft()).toBeNull();
+    // 배너가 가리키는 임시 저장이 사라지면 되돌릴 길이 없어진다.
+    expect(draftName("A")).toBe("에이!");
   });
 });

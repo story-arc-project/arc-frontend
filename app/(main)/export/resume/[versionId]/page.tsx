@@ -146,7 +146,12 @@ export default function ResumeDetailPage({ params }: PageProps) {
   // 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave). versionId 가 아니라 requestKey 인
   // 것은 A→B→A 때문이다 — 돌아오면 versionId 는 같아지지만 그 사이 재조회가 끼어들어
   // resumeRef 는 **저장 전** 본문으로 되돌아가 있다. 세대까지 봐야 그 왕복이 잡힌다.
-  const requestKeyRef = useRef(requestKey);
+  //
+  // 언마운트하면 null 이 된다(아래 effect) — 언마운트는 seq 를 올리지 않으므로, 같은
+  // 레쥬메로 다시 들어온 **새 인스턴스**의 키(seq 가 0 부터 다시 시작)와 겹친다. 그 상태로
+  // 늦게 끝난 옛 저장이 가드를 통과하면, 새 인스턴스가 **복원하라고 띄워 둔 draft 를 지운다**
+  // — 배너는 화면에 남아 있는데 되돌릴 내용은 사라진 상태가 된다.
+  const requestKeyRef = useRef<string | null>(requestKey);
 
   // FRT-147 — 영문 레쥬메는 읽기·내보내기 전용이다(매핑이 단방향이라 저장하면 영문 전용
   // 값이 사라진다). 편집 UI 를 숨기는 것만으로 막으면 그 바깥에서 setResume 을 부르는
@@ -260,22 +265,18 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // 뒤에는 **아무것도 하지 않는 것**이 옳다. pendingDraft 도 마찬가지다 — 지금 그
       // 상태는 이 요청이 아니라 다음 요청의 배너다.
       if (requestKeyRef.current === requestKey) {
-        const latest = resumeRef.current;
-        // 식별자가 아니라 **내용**으로 가른다. 저장이 도는 동안 고쳤다가 되돌리면 객체는
-        // 새것이지만 내용은 방금 보낸 것과 같다 — 그때 draft 를 쓰면 그 timestamp 때문에
-        // 다음 진입에서 "서버보다 최신"으로 판정돼, 되돌릴 게 없는데 배너가 다시 뜬다.
-        if (latest && JSON.stringify(latest) !== JSON.stringify(snapshot)) {
-          // 요청이 도는 동안 이어 고쳤다 — 서버에 없는 건 그 편집뿐이다. 여기서 아무것도
-          // 안 하면 **지난 세션의 낡은 draft 가 저장소에 그대로 남고**, 탭을 그냥 닫으면
-          // (cleanup 미실행) 다음 진입 때 그것이 "서버보다 최신"으로 판정돼 배너로 되살아나
-          // 방금 저장한 내용을 되돌린다. 최신본으로 덮어 그 창을 닫는다.
-          writeDraft(versionId, latest);
-        } else {
-          clearDraft(versionId);
-        }
-        // 저장에 성공한 순간 pendingDraft 는 서버 최신본보다 낡았다. 배너를 남겨 두면
-        // '복원'이 방금 저장한 내용을 그 낡은 스냅샷으로 덮고 clearDraft 까지 불러 되돌릴
-        // 길도 없앤다 — 실패 갈래에서만 막아 둔 것을 성공 갈래에서도 막는다(FRT-191).
+        // 규칙은 하나다 — **저장에 성공하면 이 버전의 draft 는 없다.**
+        //
+        // 요청이 도는 동안 이어 고쳤더라도 여기서 그 최신본으로 "갈아끼우지" 않는다. 그렇게
+        // 만든 draft 는 그 자체가 다음 사고의 씨앗이다: 사용자가 그 편집을 곧바로 되돌려도
+        // draft 는 저장소에 남아(dirty 가 false 로 돌아가 이탈 경로들이 손대지 않는다) 다음
+        // 진입 때 **지운 편집을 되살리라고 권한다**. 이어 고친 편집은 화면과 dirty 에 그대로
+        // 살아 있어 나가기·언마운트 cleanup·Ctrl+S 가 남긴다 — 저장 시점의 스냅샷을 하나 더
+        // 만들 이유가 없다.
+        clearDraft(versionId);
+        // 배너도 같은 이유로 지운다. 그 스냅샷은 서버 최신본보다 낡았고, 남겨 두면 '복원'이
+        // 방금 저장한 내용을 그것으로 덮고 clearDraft 까지 불러 되돌릴 길도 없앤다 — 실패
+        // 갈래에서만 막아 둔 것을 성공 갈래에서도 막는다(FRT-191).
         setPendingDraft(null);
       }
       toast.success("저장됐어요");
@@ -468,6 +469,15 @@ export default function ResumeDetailPage({ params }: PageProps) {
     clearDraft(versionId);
     setPendingDraft(null);
   }, [versionId]);
+
+  // 언마운트한 인스턴스는 더 이상 어떤 요청도 대표하지 않는다. deps 를 비워 **진짜 언마운트
+  // 에서만** 무효화한다 — versionId 변경 cleanup 에 넣으면 렌더에서 막 갱신한 새 키를 지운다.
+  useEffect(() => {
+    const ref = requestKeyRef;
+    return () => {
+      ref.current = null;
+    };
+  }, []);
 
   // Persist draft on any client-side navigation (unmount)
   useEffect(() => {
