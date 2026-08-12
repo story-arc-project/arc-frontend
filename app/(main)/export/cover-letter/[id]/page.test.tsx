@@ -479,6 +479,42 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
     expect(storedDraft("A")?.data.answers[0].cover_letter).toBe("에이 본문!");
   });
 
+  // id 만 보는 가드로는 A→B→A 왕복이 안 잡힌다. 돌아오면 id 는 다시 같아지지만 그 사이
+  // 재조회가 끼어들어 resultRef 는 **저장 전** 본문으로 되돌아가 있고, 그걸 이어 고친
+  // 편집으로 오인해 쓰면 전환 때 남긴 올바른 draft 를 낡은 본문으로 덮는다.
+  it("저장 도중 A→B→A 로 돌아와도 재조회한 저장 전 본문이 임시 저장을 덮지 않는다", async () => {
+    const route = routeById();
+    const save = deferred<CoverLetterResult>();
+    mockUpdateCoverLetter.mockImplementation(() => save.promise);
+    const result = await renderId("A");
+    route.resolve("A", fixture("에이 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // A→B→A. 떠나던 순간의 cleanup 이 A 의 편집을 A 의 키에 남긴다.
+    await navigateTo(result, "B");
+    route.resolve("B", fixture("비 본문"));
+    await flush();
+    await navigateTo(result, "A");
+    // 두 번째 A 조회는 저장이 아직 안 끝나 **저장 전** 본문을 준다.
+    route.resolve("A", fixture("에이 본문"), 1);
+    await flush();
+
+    await act(async () => {
+      save.resolve(fixture("에이 본문!"));
+    });
+    await flush();
+
+    expect(storedDraft("A")?.data.answers[0].cover_letter).toBe("에이 본문!");
+    expect(screen.queryByRole("button", { name: "복원" })).toBeTruthy();
+  });
+
   // 저장 중 고쳤다가 되돌리면 객체는 새것이지만 내용은 방금 보낸 것과 같다. 식별자로만
   // 가르면 새 draft 가 남아, 되돌릴 게 없는데 다음 진입에서 배너가 다시 뜬다.
   it("저장 중 고쳤다가 되돌리면 임시 저장을 새로 남기지 않는다", async () => {

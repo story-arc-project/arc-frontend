@@ -1226,6 +1226,48 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
     expect(draftName("A")).toBe("에이!");
   });
 
+  // versionId 만 보는 가드로는 **A→B→A** 왕복이 안 잡힌다. 돌아오면 versionId 는 다시
+  // 같아지지만, 그 사이 재조회가 끼어들어 resumeRef 는 **저장 전** 본문으로 되돌아가 있다.
+  // 그걸 "이어 고친 편집"으로 오인해 쓰면 전환 때 남긴 올바른 draft 를 낡은 본문으로 덮고
+  // 배너까지 지운다 — 복원할 것이 사라진 채로 저장된 편집을 잃는 길이다.
+  it("저장 도중 A→B→A 로 돌아와도 재조회한 저장 전 본문이 임시 저장을 덮지 않는다", async () => {
+    const user = userEvent.setup();
+    const route = routeByVersion();
+    let resolveSave!: (value: ResumeVersion) => void;
+    mockUpdateResume.mockImplementation(
+      () =>
+        new Promise<ResumeVersion>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    const result = await renderVersion("A");
+    route.resolve("A", named("에이"));
+    await flush();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // A→B→A. 떠나던 순간의 cleanup 이 A 의 편집을 A 의 키에 남긴다.
+    await navigateTo(result, "B");
+    route.resolve("B", named("비"));
+    await flush();
+    await navigateTo(result, "A");
+    // 두 번째 A 조회는 PATCH 가 아직 안 끝나 **저장 전** 본문을 준다.
+    route.resolve("A", named("에이"), 1);
+    await flush();
+
+    // 이제서야 A 의 PATCH 응답이 도착한다.
+    await act(async () => {
+      resolveSave(named("에이!"));
+    });
+    await flush();
+
+    expect(draftName("A")).toBe("에이!");
+    // 배너까지 지우면 그 편집으로 되돌아갈 길이 함께 사라진다.
+    expect(screen.queryByRole("button", { name: "복원" })).toBeTruthy();
+  });
+
   // 저장 중 고쳤다가 되돌리면 객체는 새것이지만 내용은 방금 보낸 것과 같다. 식별자로만
   // 가르면 여기서 새 draft 를 써, 되돌릴 게 없는데 그 timestamp 때문에 다음 진입에서
   // "서버보다 최신"으로 판정돼 배너가 다시 뜬다.

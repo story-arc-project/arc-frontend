@@ -142,9 +142,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const dirtyRef = useRef(false);
   const resumeRef = useRef<ResumeVersion | null>(null);
   const initialRef = useRef<ResumeVersion | null>(null);
-  // 이 인스턴스가 **지금** 어느 버전을 그리고 있는지. 비동기 저장의 클로저는 시작 당시의
-  // versionId 를 쥐고 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave).
-  const versionIdRef = useRef(versionId);
+  // 이 인스턴스가 **지금** 답하고 있는 질문. 비동기 저장의 클로저는 시작 당시의 것을 쥐고
+  // 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave). versionId 가 아니라 requestKey 인
+  // 것은 A→B→A 때문이다 — 돌아오면 versionId 는 같아지지만 그 사이 재조회가 끼어들어
+  // resumeRef 는 **저장 전** 본문으로 되돌아가 있다. 세대까지 봐야 그 왕복이 잡힌다.
+  const requestKeyRef = useRef(requestKey);
 
   // FRT-147 — 영문 레쥬메는 읽기·내보내기 전용이다(매핑이 단방향이라 저장하면 영문 전용
   // 값이 사라진다). 편집 UI 를 숨기는 것만으로 막으면 그 바깥에서 setResume 을 부르는
@@ -163,7 +165,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   dirtyRef.current = dirty;
   resumeRef.current = resume;
   initialRef.current = initial;
-  versionIdRef.current = versionId;
+  requestKeyRef.current = requestKey;
 
   // 저장의 결말들(서버 저장·백엔드 미수용·그 외 오류·저장 없이 이탈)이 사용자에겐 거의
   // 같아 보이지만 데이터로는 전혀 다른 사실이다. 한 곳에서 같은 모양으로 싣는다(FRT-114).
@@ -244,14 +246,20 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const updated = await updateResume(versionId, snapshot);
       setInitial(updated);
       setResume((current) => (current === snapshot ? updated : current));
-      // 응답이 도는 동안 다른 버전으로 옮겨갔을 수 있다. App Router 는 versionId 만 바뀌면
-      // 이 인스턴스를 재사용하므로(FRT-238) 그때 resumeRef 는 **다음 버전** 내용인데
-      // 클로저의 versionId 는 이전 버전이다 — 그 조합으로 저장소를 건드리면 남의 본문이
-      // 이 버전의 draft 로 심긴다(다음 진입 때 배너로 그 본문을 이 버전에 덮어쓴다).
-      // 이 버전의 편집분은 versionId 가 바뀌던 순간의 cleanup 이 이미 같은 키에 남겼으니,
-      // 화면이 떠난 뒤에는 **아무것도 하지 않는 것**이 옳다. pendingDraft 도 마찬가지다 —
-      // 지금 그 상태는 이 버전이 아니라 다음 버전의 배너다.
-      if (versionIdRef.current === versionId) {
+      // 응답이 도는 동안 화면이 이 요청을 떠났을 수 있다. App Router 는 versionId 만 바뀌면
+      // 이 인스턴스를 재사용하므로(FRT-238) 그때 resumeRef 는 **다른** 내용인데 클로저의
+      // versionId 는 이 버전이다 — 그 조합으로 저장소를 건드리면 남의 본문이 이 버전의
+      // draft 로 심긴다(다음 진입 때 배너로 그 본문을 이 버전에 덮어쓴다).
+      //
+      // 판정은 versionId 가 아니라 **requestKey** 로 한다. A→B→A 로 돌아오면 versionId 는
+      // 다시 같아지지만 그 사이 재조회가 끼어들어 resumeRef 는 저장 전 본문으로 되돌아가
+      // 있고, 그걸 "이어 고친 편집"으로 오인해 쓰면 전환 때 남긴 **올바른 draft 를 낡은
+      // 본문으로 덮는다**. 세대까지 보면 그 왕복이 잡힌다.
+      //
+      // 이 버전의 편집분은 화면이 떠나던 순간의 cleanup 이 이미 같은 키에 남겼으니, 떠난
+      // 뒤에는 **아무것도 하지 않는 것**이 옳다. pendingDraft 도 마찬가지다 — 지금 그
+      // 상태는 이 요청이 아니라 다음 요청의 배너다.
+      if (requestKeyRef.current === requestKey) {
         const latest = resumeRef.current;
         // 식별자가 아니라 **내용**으로 가른다. 저장이 도는 동안 고쳤다가 되돌리면 객체는
         // 새것이지만 내용은 방금 보낸 것과 같다 — 그때 draft 를 쓰면 그 timestamp 때문에
@@ -314,7 +322,16 @@ export default function ResumeDetailPage({ params }: PageProps) {
     } finally {
       setSaving(false);
     }
-  }, [resume, dirty, saving, loading, versionId, initial, captureEditSaved]);
+  }, [
+    resume,
+    dirty,
+    saving,
+    loading,
+    versionId,
+    requestKey,
+    initial,
+    captureEditSaved,
+  ]);
 
   const handleRegenerate = useCallback(async () => {
     if (!resume || regenerating) return;

@@ -120,9 +120,11 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
 
   const dirtyRef = useRef(false);
   const resultRef = useRef<CoverLetterResult | null>(null);
-  // 이 인스턴스가 **지금** 어느 문서를 그리고 있는지. 비동기 저장의 클로저는 시작 당시의
-  // id 를 쥐고 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave).
-  const idRef = useRef(id);
+  // 이 인스턴스가 **지금** 답하고 있는 질문. 비동기 저장의 클로저는 시작 당시의 것을 쥐고
+  // 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave). id 가 아니라 requestKey 인 것은
+  // A→B→A 때문이다 — 돌아오면 id 는 같아지지만 그 사이 재조회가 끼어들어 resultRef 는
+  // **저장 전** 본문으로 되돌아가 있다. 세대까지 봐야 그 왕복이 잡힌다.
+  const requestKeyRef = useRef(requestKey);
 
   const dirty = useMemo(() => {
     if (!result || !initial) return false;
@@ -133,7 +135,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // 핸들러가 최신 값을 본다(레쥬메 상세와 같은 이유).
   dirtyRef.current = dirty;
   resultRef.current = result;
-  idRef.current = id;
+  requestKeyRef.current = requestKey;
 
   const handleSave = useCallback(async () => {
     // FRT-238 — loading 은 id 가 이미 바뀌었지만 새 자기소개서 응답은 아직 안 온 창이다.
@@ -151,12 +153,17 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       // 사용자가 써넣은 문장이 검증된 것처럼 보인다(codex P1). 재검증 시점을 정의하는 건
       // 서버 계약(BAC-62)의 몫이고, 그때 이 자리에서 기준선을 갱신하면 된다.
       setResult((cur) => (cur === snapshot ? updated : cur));
-      // 응답이 도는 동안 다른 문서로 옮겨갔을 수 있다. App Router 는 id 만 바뀌면 이
-      // 인스턴스를 재사용하므로(FRT-238) 그때 resultRef 는 **다음 문서** 내용인데 클로저의
-      // id 는 이전 문서다 — 그 조합으로 저장소를 건드리면 남의 본문이 이 문서의 draft 로
-      // 심긴다. 이 문서의 편집분은 id 가 바뀌던 순간의 cleanup 이 이미 같은 키에 남겼으니,
-      // 화면이 떠난 뒤에는 아무것도 하지 않는다. pendingDraft 도 지금은 다음 문서의 배너다.
-      if (idRef.current === id) {
+      // 응답이 도는 동안 화면이 이 요청을 떠났을 수 있다. App Router 는 id 만 바뀌면 이
+      // 인스턴스를 재사용하므로(FRT-238) 그때 resultRef 는 **다른** 본문인데 클로저의 id 는
+      // 이 문서다 — 그 조합으로 저장소를 건드리면 남의 본문이 이 문서의 draft 로 심긴다.
+      //
+      // 판정은 id 가 아니라 **requestKey** 로 한다. A→B→A 로 돌아오면 id 는 다시 같아지지만
+      // 그 사이 재조회가 끼어들어 resultRef 는 저장 전 본문으로 되돌아가 있고, 그걸 "이어
+      // 고친 편집"으로 오인해 쓰면 전환 때 남긴 올바른 draft 를 낡은 본문으로 덮는다.
+      //
+      // 이 문서의 편집분은 화면이 떠나던 순간의 cleanup 이 이미 같은 키에 남겼으니, 떠난
+      // 뒤에는 아무것도 하지 않는다. pendingDraft 도 지금은 다음 요청의 배너다.
+      if (requestKeyRef.current === requestKey) {
         const latest = resultRef.current;
         // 식별자가 아니라 **내용**으로 가른다. 저장이 도는 동안 고쳤다가 되돌리면 객체는
         // 새것이지만 내용은 방금 보낸 것과 같다 — 그때 draft 를 쓰면 그 timestamp 때문에
@@ -201,7 +208,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     } finally {
       setSaving(false);
     }
-  }, [result, dirty, saving, loading, id]);
+  }, [result, dirty, saving, loading, id, requestKey]);
 
   const handleBack = useCallback(() => {
     if (dirty && result) {
