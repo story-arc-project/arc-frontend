@@ -7,6 +7,7 @@ import type {
   CellValue,
   FileCellValue,
   ProjectLinkConfig,
+  RowArtifact,
 } from '@/types/archive'
 
 let _counter = 0
@@ -149,7 +150,14 @@ export function createFileField(
 export function createRepeatableCell(
   label: string,
   columns: BlockColumnDef[],
-  opts?: { collapsed?: boolean; lockColumns?: boolean; guide?: string; allowRowExtras?: boolean },
+  opts?: {
+    collapsed?: boolean
+    lockColumns?: boolean
+    guide?: string
+    allowRowExtras?: boolean
+    /** 각 행에 결과물(링크·파일·설명)을 여러 건 붙인다 (FRT-291). */
+    allowRowArtifacts?: boolean
+  },
 ): Block {
   const base = createBlock('repeatable-cell', label, {
     columns,
@@ -161,6 +169,7 @@ export function createRepeatableCell(
     lockColumns: opts?.lockColumns ?? true,
     // 끈 블록에 키를 남기지 않는다 — 템플릿 스냅샷 비교(toEqual)에 잡음이 된다.
     ...(opts?.allowRowExtras ? { allowRowExtras: true } : {}),
+    ...(opts?.allowRowArtifacts ? { allowRowArtifacts: true } : {}),
   }
 }
 
@@ -375,8 +384,29 @@ export function cellText(cell: CellValue | undefined): string {
 export function rowHasContent(row: BlockRow): boolean {
   return (
     Object.values(row.cells).some(cellFilled) ||
-    (row.extraFields ?? []).some(f => cellFilled(f.value))
+    (row.extraFields ?? []).some(f => cellFilled(f.value)) ||
+    (row.artifacts ?? []).some(artifactFilled)
   )
+}
+
+/**
+ * 행 첨부 한 건에 사용자가 남긴 것이 있는지 (FRT-291).
+ *
+ * ⚠️ 설명만 적고 링크·파일이 아직 없는 첨부도 **채워진 것으로 본다.** `cellFilled` 이 파일을
+ * `fileId` 로 판정하는 것과 같은 이유의 반대편이다 — 여기서 설명을 무시하면 사용자가 적어 둔
+ * 문장이 '빈 첨부'로 판정돼 다음 저장에 사라진다(FRT-267 ⑰ "버림 판정에는 전용 술어를").
+ */
+export function artifactFilled(a: RowArtifact): boolean {
+  return (
+    (a.url ?? '').trim() !== '' ||
+    (a.desc ?? '').trim() !== '' ||
+    (a.file?.fileId ?? '').trim() !== ''
+  )
+}
+
+/** 빈 행 첨부 한 건. */
+export function createEmptyArtifact(): RowArtifact {
+  return { id: uid('art') }
 }
 
 export function isBlockEmpty(block: Block): boolean {

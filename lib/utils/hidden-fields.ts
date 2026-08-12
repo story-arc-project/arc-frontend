@@ -51,6 +51,11 @@ import { hasResidualValue, isBlockEmpty, isRequiredBlock } from "@/lib/utils/blo
  * 치울 수도 채울 수도 없는 카드를 얻는다 — 위 증빙 카드에서 이미 한 번 겪은 실패다.
  */
 function hostsAttachment(block: Block): boolean {
+  // FRT-291: 파일은 열에만 있는 게 아니다 — 행 첨부(`BlockRow.artifacts`)를 켠 블록도 파일을
+  // 담는다. 열만 보면 그 표는 이 검사를 그냥 통과해, 업로드 중에 × 로 치우면 정확히 이 함수가
+  // 막으려던 유실이 새 경로로 되살아난다. **파일을 담을 수 있는가**로 묻지 파일 열이 있는가로
+  // 묻지 않는다.
+  if (block.allowRowArtifacts === true) return true
   const v = block.value
   if (v.type === "repeatable-cell") return v.columns.some(c => c.blockType === "file")
   return false

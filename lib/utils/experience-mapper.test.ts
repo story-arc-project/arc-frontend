@@ -3138,3 +3138,216 @@ describe("확정본 전면 교체 값 보존 (FRT-269 연구논문)", () => {
     expect(v2.hiddenKeys).not.toContain("research-info.역할")
   })
 })
+
+describe("확정본 전면 교체 값 보존 (FRT-291 프로젝트 — 개인·팀 통합)", () => {
+  /**
+   * ⚠️ 픽스처는 **그 시점의 렌더 경로가 실제로 만들어낼 수 있는 값**이어야 한다. 개인·팀은 구
+   * 템플릿이 서로 달라 코어의 상태가 갈린다 — 그게 이 유형의 핵심이다:
+   *  · `core.기간` — 개인·팀 **둘 다** 구 섹션에 '기간'(동명) 앵커가 있어 dedup 이 빈 코어를 화면에서
+   *    지웠다 → 채울 방법이 없었으므로 항상 비어 있다.
+   *  · `core.내 역할/기여도` — 팀에는 `tp-info.내 역할`(role 등재)이 있어 비어 있지만, **개인에는
+   *    role 앵커가 하나도 없어 그 코어 칸이 실제로 렌더됐다** → 값이 들어 있을 수 있다.
+   *  · `core.핵심 성과` — 개인에는 `pp-decisions.성과`(achievement 등재)가 있어 비어 있지만,
+   *    **팀에는 없어** 값이 들어 있을 수 있다(개인과 정반대).
+   *  · `core.증빙 자료` — `isEvidenceBlock` 이라 dedup 을 안 타고 항상 보였다 → 값이 있을 수 있다.
+   */
+  function legacyPersonalContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "캠퍼스 중고거래 앱",
+      summary: "단톡방 거래의 불편을 앱으로",
+      status: "complete",
+      tags: [],
+      fields: {
+        "core.기간": { type: "period", start: "", end: "", isCurrent: false },
+        "core.핵심 성과": textarea(""),
+        // 개인 프로젝트에만 있는 상태 — role 앵커가 없어 이 칸이 화면에 떴다.
+        "core.내 역할/기여도": textarea("기획부터 배포까지 전 과정을 혼자 맡았습니다."),
+        // 질문도 타입도 같아 새 키로 이관되는 것들.
+        "pp-info.프로젝트명": text("캠퍼스 중고거래 앱 개발"),
+        "pp-info.기간": { type: "period", start: "2024-03", end: "2024-06", isCurrent: false },
+        "pp-info.기술/도구": { type: "tags", tags: ["React Native", "Firebase"] },
+        "pp-info.목표/만들고 싶었던 이유": textarea("단톡방 거래가 불편해서 직접 만들었습니다."),
+        // 타입이 달라 옮길 수 없는 것 — ② '핵심 성과'는 개조식이다.
+        "pp-decisions.성과": textarea("베타 2주 만에 DAU 150명"),
+        // 확정본에 대응 칸이 없는 것들.
+        "pp-info.한 줄 설명": text("캠퍼스 한정 중고거래"),
+        "pp-info.대상 사용자/사용 상황": textarea("기숙사생이 방 정리할 때"),
+        "pp-info.주요 기능": { type: "checklist", options: ["채팅", "결제"], checked: ["채팅"] },
+        "pp-info.다음 개선 계획": textarea("결제 연동"),
+      },
+      custom: [],
+    }
+  }
+
+  function legacyTeamContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "교내 공모전 출품작",
+      summary: "5인 팀 프로젝트",
+      status: "complete",
+      tags: [],
+      fields: {
+        "core.기간": { type: "period", start: "", end: "", isCurrent: false },
+        "core.내 역할/기여도": textarea(""),
+        // 팀 프로젝트에만 있는 상태 — achievement 앵커가 없어 이 칸이 화면에 떴다.
+        "core.핵심 성과": textarea("공모전 우수상"),
+        "tp-info.프로젝트명": text("교내 창업 공모전 출품작"),
+        "tp-info.기간": { type: "period", start: "2024-09", end: "2024-11", isCurrent: false },
+        "tp-info.팀 구성": textarea("기획 2, 개발 2, 디자인 1"),
+        "tp-info.목표/문제 정의": textarea("교내 유휴 공간을 어떻게 쓸까에서 출발했습니다."),
+        "tp-tasks.갈등/의견 차이와 조율": textarea("범위를 두고 갈려 투표로 정했습니다."),
+        // 여러 줄이라 한 줄 text 로 옮기면 개행이 지워진다 → 옮기지 않는다.
+        "tp-info.내 역할": textarea("백엔드 API 설계\n배포 자동화 구축"),
+        // 열 구성이 달라 옮기지 않는 표.
+        "tp-tasks.작업 기록": {
+          type: "repeatable-cell",
+          columns: [
+            { key: "task", label: "작업/이슈명", blockType: "text", required: true },
+            { key: "work", label: "내가 한 일", blockType: "textarea", required: true },
+          ],
+          rows: [{ id: "r1", cells: { task: "로그인 API", work: "JWT 발급 구현" } }],
+        },
+        // 묻는 것이 더 넓어 옮기지 않는 것.
+        "tp-tasks.회고 (잘된 점/아쉬운 점/다음엔)": textarea("일정 관리가 아쉬웠습니다."),
+        // 확정본에 대응 칸이 없는 것들.
+        "tp-info.협업 방식": textarea("주 2회 스크럼"),
+        "tp-info.역할 분담표": textarea("A-기획 / B-개발"),
+      },
+      custom: [],
+    }
+  }
+
+  const loadPersonal = () =>
+    toExperienceV2(makeExperience({ type: "personal-project", content: legacyPersonalContent() }))
+  const loadTeam = () =>
+    toExperienceV2(makeExperience({ type: "team-project", content: legacyTeamContent() }))
+
+  it("개인 프로젝트의 질문·타입이 같은 필드는 확정본 자리로 이관된다", () => {
+    const v2 = loadPersonal()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("project-info.프로젝트명")?.value).toEqual(text("캠퍼스 중고거래 앱 개발"))
+    expect(byKey("project-info.진행 기간")?.value).toMatchObject({ start: "2024-03", end: "2024-06" })
+    expect(byKey("project-info.사용 기술 / 툴")?.value).toMatchObject({
+      tags: ["React Native", "Firebase"],
+    })
+    expect(byKey("project-detail.기획 배경 / 동기")?.value).toEqual(
+      textarea("단톡방 거래가 불편해서 직접 만들었습니다."),
+    )
+
+    // 옮긴 구 키는 '기타' 에 중복으로 되살아나지 않는다.
+    for (const oldKey of [
+      "pp-info.프로젝트명",
+      "pp-info.기간",
+      "pp-info.기술/도구",
+      "pp-info.목표/만들고 싶었던 이유",
+    ]) {
+      expect(v2.customBlocks.find(b => b.key === oldKey), oldKey).toBeUndefined()
+    }
+  })
+
+  it("팀 프로젝트도 같은 확정본 자리로 이관된다 — 두 세대가 한 폼으로 합쳐진다", () => {
+    const v2 = loadTeam()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("project-info.프로젝트명")?.value).toEqual(text("교내 창업 공모전 출품작"))
+    expect(byKey("project-info.진행 기간")?.value).toMatchObject({ start: "2024-09", end: "2024-11" })
+    expect(byKey("project-info.팀원")?.value).toEqual(textarea("기획 2, 개발 2, 디자인 1"))
+    expect(byKey("project-detail.기획 배경 / 동기")?.value).toEqual(
+      textarea("교내 유휴 공간을 어떻게 쓸까에서 출발했습니다."),
+    )
+    expect(byKey("project-detail.어려움 / 문제 해결")?.value).toEqual(
+      textarea("범위를 두고 갈려 투표로 정했습니다."),
+    )
+  })
+
+  /**
+   * `isInjectableInto` 는 text↔textarea 를 허용하지만 `TextBlock` 은 `<input>` 이라 브라우저가
+   * 개행을 지운다 — 문단으로 적은 답이 구분자 없이 붙고 한 글자만 고쳐도 그대로 저장된다
+   * (FRT-247 ①·FRT-267 ⑭). 저장 형식이 아니라 **그 값을 그리는 컨트롤**로 판정한 결과다.
+   */
+  it("여러 줄로 적은 구 '내 역할'은 한 줄 '역할'로 옮기지 않고 '기타'에 원본으로 남긴다", () => {
+    const v2 = loadTeam()
+
+    expect(v2.customBlocks.find(b => b.key === "tp-info.내 역할")?.value).toEqual(
+      textarea("백엔드 API 설계\n배포 자동화 구축"),
+    )
+    expect(v2.extensionBlocks.find(b => b.key === "project-info.역할")?.value).toEqual(text(""))
+  })
+
+  it("열 구성이 다른 구 작업 기록 표는 통째로 '기타'에 원본으로 남는다", () => {
+    const v2 = loadTeam()
+    const kept = v2.customBlocks.find(b => b.key === "tp-tasks.작업 기록")
+
+    expect(kept?.value).toMatchObject({
+      rows: [{ cells: { task: "로그인 API", work: "JWT 발급 구현" } }],
+    })
+    // 확정본 표는 비어 있어야 한다 — 열이 다른 값이 실리면 어느 답이 어느 질문의 답인지 사라진다.
+    const target = v2.extensionBlocks.find(b => b.key === "project-tasks.세부 작업")
+    expect(target?.value).toMatchObject({ rows: [] })
+  })
+
+  it("확정본에 대응 칸이 없는 값은 전부 '기타'에 보존된다", () => {
+    const personal = loadPersonal()
+    for (const key of [
+      "pp-info.한 줄 설명",
+      "pp-info.대상 사용자/사용 상황",
+      "pp-info.주요 기능",
+      "pp-info.다음 개선 계획",
+      "pp-decisions.성과",
+    ]) {
+      expect(personal.customBlocks.find(b => b.key === key), key).toBeTruthy()
+    }
+
+    const team = loadTeam()
+    for (const key of [
+      "tp-info.협업 방식",
+      "tp-info.역할 분담표",
+      "tp-tasks.회고 (잘된 점/아쉬운 점/다음엔)",
+    ]) {
+      expect(team.customBlocks.find(b => b.key === key), key).toBeTruthy()
+    }
+  })
+
+  /**
+   * 개인 프로젝트에는 구 role 앵커가 없어 코어 '내 역할/기여도'가 실제로 렌더됐다 — `CORE_EXCLUDE`
+   * 에 넣었다면 이 값이 '기타'로 밀렸을 것이다. 확정본 '역할'이 새 앵커가 되므로 dedup 이 **빈 것만**
+   * 숨기고, 값이 든 이 칸은 그대로 남는다(FRT-267 ① 과 같은 판정).
+   */
+  it("값이 든 코어 '내 역할/기여도'는 개인 프로젝트에서 그대로 남는다", () => {
+    const v2 = loadPersonal()
+    expect(v2.coreBlocks.find(b => b.label === "내 역할/기여도")?.value).toEqual(
+      textarea("기획부터 배포까지 전 과정을 혼자 맡았습니다."),
+    )
+  })
+
+  /**
+   * 반대로 '핵심 성과'는 확정본 ② 가 **정확히 같은 라벨**을 쓴다. 코어를 남기면 값이 든 코어와
+   * 확정본 칸이 나란히 서서 권위 있는 칸이 둘이 되고, `pickValue` 가 정확 라벨인 코어를 먼저 골라
+   * 사용자가 새 칸을 고쳐도 옛 값이 발행된다(FRT-267 ⑫). 목적지가 개조식이라 값 이관은 타입이
+   * 막으므로, 빼서 '기타'에 원본으로 남긴다 — 칸은 하나, 값은 보존.
+   */
+  it("값이 든 코어 '핵심 성과'는 팀 프로젝트에서 '기타'로 보존된다 — 같은 라벨 두 칸을 만들지 않는다", () => {
+    const v2 = loadTeam()
+
+    expect(v2.coreBlocks.find(b => b.label === "핵심 성과")).toBeUndefined()
+    expect(v2.customBlocks.find(b => b.key === "core.핵심 성과")?.value).toEqual(
+      textarea("공모전 우수상"),
+    )
+  })
+
+  it("숨겨 둔 구 키의 숨김 상태가 확정본 자리로 따라간다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "personal-project",
+        content: { ...legacyPersonalContent(), hidden: ["pp-info.기술/도구"] },
+      }),
+    )
+
+    expect(v2.hiddenKeys).toContain("project-info.사용 기술 / 툴")
+    expect(v2.hiddenKeys).not.toContain("pp-info.기술/도구")
+  })
+})

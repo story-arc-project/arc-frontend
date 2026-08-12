@@ -22,6 +22,7 @@ import {
   cellFilled,
   cellText,
   isFileCellValue,
+  artifactFilled,
   rowHasContent,
   isBlockEmpty,
   validateRequiredBlocks,
@@ -450,5 +451,38 @@ describe("rowHasContent — 파일 셀만 채운 행 (FRT-213)", () => {
     expect(
       rowHasContent({ id: "r1", cells: { 결과물: { type: "file", fileId: "", fileName: "" } } }),
     ).toBe(false)
+  })
+})
+
+describe("행 첨부 (FRT-291)", () => {
+  /**
+   * 빈 행 필터는 `rowHasContent` 하나를 세 곳(상세뷰·진행도·isBlockEmpty)이 공유한다.
+   * 첨부를 안 세면, 셀은 비우고 결과물만 붙인 행이 '빈 행'으로 판정돼 화면에서 통째로 사라진다.
+   */
+  it("첨부만 붙인 행은 빈 행이 아니다", () => {
+    const row = { id: "r1", cells: { task: "" }, artifacts: [{ id: "a1", url: "https://x.dev" }] }
+    expect(rowHasContent(row)).toBe(true)
+  })
+
+  it("빈 첨부만 있는 행은 빈 행이다", () => {
+    expect(rowHasContent({ id: "r1", cells: { task: "" }, artifacts: [{ id: "a1" }] })).toBe(false)
+  })
+
+  /**
+   * 설명만 적고 링크·파일이 아직 없는 첨부도 사용자가 친 것이다 — 무시하면 다음 저장에 사라진다
+   * (FRT-267 ⑰ "그릴 게 있나 · 버려도 되나 · 찼나는 서로 다른 질문").
+   */
+  it("설명만 적은 첨부도 채워진 것으로 본다", () => {
+    expect(artifactFilled({ id: "a1", desc: "와이어프레임" })).toBe(true)
+    expect(artifactFilled({ id: "a1", desc: "   " })).toBe(false)
+  })
+
+  it("업로드가 끝나지 않은 파일만 든 첨부는 비어 있다 — 셀 파일과 같은 기준(fileId)", () => {
+    expect(
+      artifactFilled({ id: "a1", file: { type: "file", fileId: "", fileName: "a.png" } }),
+    ).toBe(false)
+    expect(
+      artifactFilled({ id: "a1", file: { type: "file", fileId: "f1", fileName: "a.png" } }),
+    ).toBe(true)
   })
 })

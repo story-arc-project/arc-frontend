@@ -304,6 +304,47 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   // 목적지 `research-paper.연구 기간` 은 이번에 새로 생긴 키라 항상 비어 있어
   // `applyRenamedKeys` 의 "목적지가 차 있으면 진다" 규칙에 걸리지 않는다.
   'research-info.기간': 'research-paper.연구 기간',
+  // 프로젝트 확정본(FRT-291) — 개인·팀 두 구 템플릿(24필드)에서 **질문도 타입도 같은 것만** 옮긴다.
+  // 두 출발점이 한 목적지를 공유하는 줄이 있지만(목표/기획 배경) 한 레코드는 pp- 나 tp- 중 한쪽만
+  // 갖고 있어 충돌하지 않는다.
+  //
+  // 옮기지 않는 것과 이유 — 값은 전부 orphan '기타' 카드에 원본 그대로 남는다:
+  //  · `tp-info.내 역할`(required textarea) → '역할'(한 줄 text) 은 **위젯이 값을 못 지킨다.**
+  //    `isInjectableInto` 는 text↔textarea 를 허용하지만 `TextBlock` 은 `<input>` 이라 브라우저가
+  //    개행을 지운다 — 문단으로 적은 답이 구분자 없이 붙고, 한 글자만 고쳐도 그대로 저장된다
+  //    (FRT-247 ①·FRT-267 ⑭ 가 같은 자리에서 내린 결론). 게다가 확정본 '역할'은 `예: PM` 짜리라
+  //    **묻는 granularity 자체가 다르다.**
+  //  · `pp-decisions.성과`(textarea) → ② '핵심 성과'(outcome-list) 는 타입이 달라 injectValue 가
+  //    못 싣는다. 한 덩이 문장을 개조식 행으로 쪼개는 건 해석이라 시스템이 대신 정하지 않는다.
+  //  · `tp-tasks.작업 기록`(4열 표) → ③ '세부 작업'(5열 표) 은 타입은 같지만 **열 구성이 다르다.**
+  //    억지로 실으면 열 구조가 뒤엉켜 어느 답이 어느 질문의 답인지 알 수 없게 된다 — 표 전체를
+  //    '기타'에 원본으로 남겨 사용자가 보고 옮기게 둔다(창작물 '제작 과정' 표와 같은 처리).
+  //  · `tp-tasks.회고 (잘된 점/아쉬운 점/다음엔)` → '이 프로젝트가 나에게 남긴 것' 은 **묻는 것이
+  //    더 넓다.** 확정본은 새로 익힌 것·관점 변화·이어갈 방향을 묻지 '아쉬운 점'을 묻지 않아,
+  //    옮기면 답이 칸의 질문과 어긋난다(FRT-211 의 '개명 vs 대체').
+  //  · `tp-tasks.결과물 링크`(link)·`pp-decisions.데모/배포 링크`·`저장소 링크`(link)·
+  //    `스크린샷/영상`(file) → ⑤ '결과물 링크 / 파일'(repeatable-cell) 은 타입이 달라 못 싣는다
+  //    (창작물 '공개 링크'와 같은 자리).
+  //  · `pp-info.한 줄 설명` 은 코어 '한 줄 요약'으로 보내면 헤더 요약이 사용자 모르게 덮인다.
+  //  · `pp-info.대상 사용자/사용 상황`·`주요 기능`·`pp-decisions.설계/결정`·`다음 개선 계획`·
+  //    `tp-info.협업 방식`·`역할 분담표` 는 확정본에 대응 칸이 없다(사용자 확인 완료).
+  'pp-info.프로젝트명': 'project-info.프로젝트명',
+  'tp-info.프로젝트명': 'project-info.프로젝트명',
+  // 목적지 `project-info.진행 기간` 은 이번에 새로 생긴 키라 항상 비어 있어
+  // `applyRenamedKeys` 의 "목적지가 차 있으면 진다" 규칙에 걸리지 않는다. period→period.
+  'pp-info.기간': 'project-info.진행 기간',
+  'tp-info.기간': 'project-info.진행 기간',
+  'pp-info.기술/도구': 'project-info.사용 기술 / 툴',
+  // 확정본 '팀원' 가이드가 "함께한 팀원과 각자의 역할"이라 구 '팀 구성'과 같은 질문이다
+  // (SEMANTIC_GROUPS.team 이 이미 둘을 동의어로 묶는다). textarea→textarea.
+  'tp-info.팀 구성': 'project-info.팀원',
+  // 확정본 '기획 배경 / 동기' 가이드가 "시작하게 된 이유나 문제 의식"이라 구 두 라벨과 같은
+  // 질문이다(SEMANTIC_GROUPS.motivation 등재). 둘 다 textarea.
+  'pp-info.목표/만들고 싶었던 이유': 'project-detail.기획 배경 / 동기',
+  'tp-info.목표/문제 정의': 'project-detail.기획 배경 / 동기',
+  // 확정본 '어려움 / 문제 해결' 가이드가 "기술적 문제, **팀 갈등**, 방향 전환 등 무엇이든"이라
+  // 구 '갈등/의견 차이와 조율'을 명시적으로 포함한다. textarea→textarea.
+  'tp-tasks.갈등/의견 차이와 조율': 'project-detail.어려움 / 문제 해결',
 }
 
 /**

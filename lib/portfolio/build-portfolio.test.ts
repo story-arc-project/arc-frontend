@@ -53,7 +53,8 @@ describe("experienceToPost", () => {
     expect(post.id).toBe("exp-1");
     expect(post.title).toBe("주가 예측 프로젝트");
     expect(post.period).toBe("2026.02 – 2026.05");
-    expect(post.category).toBe("개인 프로젝트");
+    // 확정본 정렬(FRT-291)로 개인·팀이 한 유형이 되면서 라벨이 '프로젝트' 하나가 됐다.
+    expect(post.category).toBe("프로젝트");
     expect(post.summary).toBe("LLM 뉴스 감성 분석");
     expect(post.contribution).toBe("전 과정 독립 수행");
     expect(post.achievement).toBe("백테스팅 시각화 완성");
@@ -1013,6 +1014,104 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
         volunteerExp({ "volunteer-info.역할": { type: "text", text: "학습 멘토" } }),
       );
       expect(post.contribution).toBe("학습 멘토");
+    });
+  });
+
+  /**
+   * 프로젝트(FRT-291)는 창작물·연구논문과 같은 자리인데 **orphan 이 하나 더 많다** — 개인·팀이
+   * 합쳐지면서 구 `pp-info.기간` 과 `tp-info.기간` 둘 다 옛 값으로 남을 수 있다. 새 라벨이
+   * '진행 기간'이라 코어와 정확히 같은 이름이 아니므로, `TYPE_PERIOD_KEY` 등록을 빠뜨리면
+   * 정확-라벨 우선 정렬에서 orphan `core.기간` 이 확정본 값을 이긴다.
+   */
+  describe("프로젝트는 '진행 기간'을 발행 기간으로 쓴다 (FRT-291)", () => {
+    function projectExp(fields: Record<string, unknown>, type = "personal-project"): Experience {
+      return makeExp({
+        type,
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "캠퍼스 중고거래 앱",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const RUN_PERIOD = { type: "period", start: "2024-03-01", end: "2024-06-30", isCurrent: false };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+    const OLD_SECTION_PERIOD = {
+      type: "period",
+      start: "2020-05-01",
+      end: "2020-08-31",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '진행 기간'이 orphan 된 옛 기간들을 모두 이긴다", () => {
+      const post = experienceToPost(
+        projectExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "pp-info.기간": OLD_SECTION_PERIOD,
+          "project-info.진행 기간": RUN_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.06");
+    });
+
+    /**
+     * 은퇴한 `team-project` 도 같은 템플릿을 받으므로 같은 우선 조회 키를 등록해야 한다 —
+     * 한쪽만 넣으면 같은 폼인데 팀 레코드만 옛 기간이 발행된다.
+     */
+    it("은퇴한 팀 프로젝트 레코드도 '진행 기간'을 쓴다", () => {
+      const post = experienceToPost(
+        projectExp(
+          {
+            "core.기간": OLD_CORE_PERIOD,
+            "tp-info.기간": OLD_SECTION_PERIOD,
+            "project-info.진행 기간": RUN_PERIOD,
+          },
+          "team-project",
+        ),
+      );
+      expect(post.period).toBe("2024.03 – 2024.06");
+    });
+
+    it("'진행 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(projectExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("프로젝트 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("personal-project")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "진행 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(projectExp({ [key as string]: RUN_PERIOD })).period).toBe(
+        "2024.03 – 2024.06",
+      );
+    });
+
+    /**
+     * `CORE_EXCLUDE` 가 코어 '핵심 성과'를 빼도 확정본 ② '핵심 성과'가 같은 라벨이라 발행이
+     * 비지 않는다. 개조식이라 값 이관은 못 하지만 **발행 조회는 닿아야 한다.**
+     */
+    it("코어 성과를 빼도 확정본 '핵심 성과'가 성과로 발행된다", () => {
+      const post = experienceToPost(
+        projectExp({
+          "project-detail.핵심 성과": {
+            type: "repeatable-cell",
+            columns: [{ key: "item", label: "성과", blockType: "text" }],
+            rows: [{ id: "r1", cells: { item: "베타 2주 만에 DAU 150명" } }],
+          },
+        }),
+      );
+      expect(post.achievement).toContain("베타 2주 만에 DAU 150명");
     });
   });
 });

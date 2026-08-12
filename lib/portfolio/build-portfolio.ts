@@ -126,6 +126,12 @@ const TYPE_PERIOD_KEY: Partial<Record<ExperienceTypeId, string>> = {
   // 아니어서, 등록하지 않으면 개편 전 레코드에 orphan 으로 남은 `core.기간`(정확-라벨 우선)이
   // 확정본 값을 이긴다.
   research: "research-paper.연구 기간",
+  // 프로젝트(FRT-291)도 창작물·연구논문과 같다 — 새 라벨이 '진행 기간'이라 코어와 정확히 같은
+  // 이름이 아니어서, 등록하지 않으면 개편 전 레코드에 orphan 으로 남은 `core.기간`·`pp-info.기간`
+  // ·`tp-info.기간`(정확-라벨 우선)이 확정본 값을 이긴다.
+  // 은퇴 id 도 같은 템플릿을 받으므로 같은 키를 등록한다 — 빠뜨리면 팀 레코드만 옛 기간이 발행된다.
+  "personal-project": "project-info.진행 기간",
+  "team-project": "project-info.진행 기간",
 };
 
 /** 코어 '기간'이 없는 유형의 시점. 값이 없으면 빈 문자열 — 없는 날짜를 지어내지 않는다. */

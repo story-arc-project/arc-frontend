@@ -11,12 +11,15 @@ import type {
   BlockRow,
   BlockColumnDef,
   CellValue,
+  RowArtifact,
   RowExtraField,
   RowExtraFieldType,
 } from "@/types/archive"
 import {
+  artifactFilled,
   cellFilled,
   cellText,
+  createEmptyArtifact,
   createEmptyRow,
   isFileCellValue,
   rowHasContent,
@@ -55,6 +58,9 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   // FRT-145: 행마다 '항목 추가'. 열 잠금과 무관하다 — 열은 계속 템플릿이 소유하고(모든 행에 적용),
   // 여기서 열리는 건 그 행 하나에만 붙는 항목이다.
   const allowRowExtras = block.allowRowExtras === true
+
+  // FRT-291: 행마다 결과물(링크·파일·설명)을 여러 건. 열이 아니라 행에 붙으므로 열 잠금과 무관하다.
+  const allowRowArtifacts = block.allowRowArtifacts === true
 
   // FRT-210: 이 행이 형제 섹션의 개조식 리스트에서 연결돼 생겼는지(역방향 배지).
   // provider 밖(상세뷰·스토리북)에서는 null 이라 배지가 자동으로 숨는다 — 정방향 링크 UI 와 대칭.
@@ -99,6 +105,24 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
     if (isPlaceholderRow(rowId)) {
       // 표시용 행에서 항목을 추가하는 경로. 이름이 비면 애초에 항목이 만들어지지 않으므로
       // "실제로 채워졌을 때만 커밋"은 그대로 성립한다.
+      const row = materializeWith(rowId, patch)
+      if (row) onChange({ ...val, rows: [row] })
+      return
+    }
+    onChange({
+      ...val,
+      rows: val.rows.map(r => (r.id === rowId ? { ...r, ...patch(r) } : r)),
+    })
+  }
+
+  /**
+   * FRT-291: 행에 붙은 결과물만 갈아끼운다. `updateRowExtras` 와 같은 이유로 행을 다시 짜지
+   * 않는다 — 그러면 그때 존재하는 다른 행 필드(linkedProjectRowId·roleTags·extraFields)가
+   * 조용히 날아간다.
+   */
+  function updateRowArtifacts(rowId: string, next: (list: RowArtifact[]) => RowArtifact[]) {
+    const patch = (row: BlockRow) => ({ artifacts: next(row.artifacts ?? []) })
+    if (isPlaceholderRow(rowId)) {
       const row = materializeWith(rowId, patch)
       if (row) onChange({ ...val, rows: [row] })
       return
@@ -218,6 +242,31 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
                         </span>
                       </div>
                     ))}
+                  {/* FRT-291: 이 행에 붙은 결과물. 값이 빈 첨부는 감춘다(위 항목과 같은 철학). */}
+                  {(row.artifacts ?? []).filter(artifactFilled).map((a, ai) => (
+                    <div key={a.id} className="flex flex-col gap-0.5">
+                      <span className="text-caption text-text-tertiary font-medium">
+                        결과물 {ai + 1}
+                      </span>
+                      {a.url?.trim() && getSafeHref(a.url) ? (
+                        <a
+                          href={getSafeHref(a.url) ?? undefined}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-body-sm text-brand underline underline-offset-2 break-all hover:text-brand-dark"
+                        >
+                          <span className="break-all">{a.url}</span>
+                          <ExternalLink size={13} className="shrink-0" aria-hidden />
+                        </a>
+                      ) : null}
+                      {a.file?.fileId?.trim() ? (
+                        <FileCellInput value={a.file} readOnly ariaLabel={`결과물 ${ai + 1} 파일`} onChange={() => {}} />
+                      ) : null}
+                      {a.desc?.trim() ? (
+                        <span className="text-body-sm text-text-primary whitespace-pre-wrap">{a.desc}</span>
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
@@ -309,9 +358,11 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
               columns={val.columns}
               isPlaceholder={isPlaceholderRow(row.id)}
               allowRowExtras={allowRowExtras}
+              allowRowArtifacts={allowRowArtifacts}
               incomingLink={projectLink?.getIncomingLink(row.id) ?? null}
               onCellChange={(colKey, cellVal) => updateCell(row.id, colKey, cellVal)}
               onExtrasChange={next => updateRowExtras(row.id, next)}
+              onArtifactsChange={next => updateRowArtifacts(row.id, next)}
               onRemove={() => removeRow(row.id)}
             />
           ))}
@@ -341,9 +392,11 @@ function RowEditor({
   columns,
   isPlaceholder,
   allowRowExtras,
+  allowRowArtifacts,
   incomingLink,
   onCellChange,
   onExtrasChange,
+  onArtifactsChange,
   onRemove,
 }: {
   row: BlockRow
@@ -353,10 +406,13 @@ function RowEditor({
   isPlaceholder?: boolean
   /** FRT-145: 이 행에 사용자가 항목을 추가할 수 있는가(블록 층위 opt-in). */
   allowRowExtras?: boolean
+  /** FRT-291: 이 행에 결과물을 여러 건 붙일 수 있는가(블록 층위 opt-in). */
+  allowRowArtifacts?: boolean
   /** FRT-210: 이 행을 만든 개조식 리스트가 있으면 그 블록 라벨. 없으면 null. */
   incomingLink?: { sourceLabel: string } | null
   onCellChange: (colKey: string, value: CellValue) => void
   onExtrasChange: (next: (fields: RowExtraField[]) => RowExtraField[]) => void
+  onArtifactsChange?: (next: (list: RowArtifact[]) => RowArtifact[]) => void
   onRemove: () => void
 }) {
   return (
@@ -416,6 +472,79 @@ function RowEditor({
       {allowRowExtras && (
         <RowExtraFieldsEditor fields={row.extraFields ?? []} onChange={onExtrasChange} />
       )}
+      {allowRowArtifacts && onArtifactsChange && (
+        <RowArtifactsEditor artifacts={row.artifacts ?? []} onChange={onArtifactsChange} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * 행 하나에 붙는 결과물 목록 (FRT-291). 확정본의 'artifact-blocks (파일 or 링크 + 설명)' 다중 등록.
+ *
+ * 표 셀이 아니라 행 아래 별도 묶음으로 그린다 — 열이 아니므로 다른 행의 모양을 바꾸지 않고,
+ * 첨부가 없는 행은 버튼 한 줄만 차지한다(입력 허들 최소화).
+ */
+function RowArtifactsEditor({
+  artifacts,
+  onChange,
+}: {
+  artifacts: RowArtifact[]
+  onChange: (next: (list: RowArtifact[]) => RowArtifact[]) => void
+}) {
+  function patch(id: string, fields: Partial<RowArtifact>) {
+    onChange(list => list.map(a => (a.id === id ? { ...a, ...fields } : a)))
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+      <span className="text-caption text-text-secondary font-medium">결과물</span>
+      {artifacts.map((a, i) => (
+        <div key={a.id} className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-caption text-text-tertiary">결과물 #{i + 1}</span>
+            <button
+              type="button"
+              onClick={() => onChange(list => list.filter(x => x.id !== a.id))}
+              className="text-text-tertiary hover:text-error transition-colors p-1 rounded"
+              aria-label={`결과물 ${i + 1} 삭제`}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <input
+            type="url"
+            value={a.url ?? ""}
+            onChange={e => patch(a.id, { url: e.target.value })}
+            placeholder="Figma, Notion, GitHub 등"
+            aria-label={`결과물 ${i + 1} 링크`}
+            className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-disabled focus:border-brand focus:outline-none"
+          />
+          <FileCellInput
+            value={a.file}
+            ariaLabel={`결과물 ${i + 1} 파일`}
+            onChange={v => patch(a.id, { file: v })}
+          />
+          <input
+            type="text"
+            value={a.desc ?? ""}
+            onChange={e => patch(a.id, { desc: e.target.value })}
+            placeholder="결과물 설명 (예: 와이어프레임, ERD, 테스트 결과서)"
+            aria-label={`결과물 ${i + 1} 설명`}
+            className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-disabled focus:border-brand focus:outline-none"
+          />
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => onChange(list => [...list, createEmptyArtifact()])}
+        className="self-start text-text-secondary"
+      >
+        <Plus size={14} className="mr-1" />
+        결과물 추가
+      </Button>
     </div>
   )
 }
