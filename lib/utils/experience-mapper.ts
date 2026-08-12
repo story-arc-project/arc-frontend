@@ -24,6 +24,7 @@ import {
   createGroupBlock,
   isBlockDiscardable,
   dedupeBlockIdsAcross,
+  isFilledText,
   isKnownBlockType,
   isValueOccupied,
   normalizeBlockValue,
@@ -201,16 +202,24 @@ function customEntriesToBlocks(entries: CustomEntry[], depth = 0): Block[] {
   const out: Block[] = []
   for (const e of entries) {
     if (e.entryType === 'field') {
+      // ⚠️ **이 경로는 `normalizeBlocks` 를 지나지 않는다** — v1 저장 배열만 지난다. 그래서
+      // `normalizeBlock` 의 "블록 타입이 비었으면 값의 판별자로 되살린다"를 여기서 같은 경계로
+      // 되풀이해야 한다. 안 하면 깨진 타입이 그대로 실려 `isUnrenderableBlock` 이 그 칸을 잠그고
+      // (입력도 연필도 죽는다) `blockToCustomEntry` 가 깨진 타입을 다시 저장한다 —
+      // **사용자가 직접 만든 칸이 영구히 편집 불가**가 된다.
+      // 모르는 *이름*의 타입은 새 스키마의 흔적이라 그대로 둔다(보존 규칙과 같은 경계).
+      const fromValue = (e.value as { type?: unknown } | null | undefined)?.type
+      const type = !isFilledText(e.type) && isKnownBlockType(fromValue) ? fromValue : e.type
       out.push({
         id: uid('blk'),
         key: e.key,
-        type: e.type,
+        type,
         label: e.label,
         // ⚠️ 형제 `orphanFieldsToBlocks` 의 가드를 복사하면 안 된다 (FRT-200). 그쪽은 값이
         // 깨졌으면 블록을 통째로 버리는데, 여기서 그러면 **사용자가 직접 만든 칸이 사라진다** —
         // custom 은 값이 아니라 필드의 존재 자체가 정보다. 게다가 여긴 `e.type` 이 값과 별도로
         // 남아 있어 복구할 근거가 있다(orphan 은 `value.type` 이 유일한 타입 신호라 근거가 없다).
-        value: normalizeBlockValue(e.type, e.value, { options: e.options }),
+        value: normalizeBlockValue(type, e.value, { options: e.options }),
         ...(e.required ? { required: true } : {}),
         ...(e.options ? { options: e.options } : {}),
       })

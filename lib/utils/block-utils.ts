@@ -483,7 +483,7 @@ export function isBlockEmpty(block: Block): boolean {
  * 부속 필드가 빠진 채 저장된 구 레코드가 그대로 블록 값이 된다. 이 판정은 모든 블록에 대해
  * 돌므로 여기서 `undefined.trim()` 이 나면 화면이 통째로 터진다.
  */
-function isFilledText(s: unknown): boolean {
+export function isFilledText(s: unknown): boolean {
   return typeof s === 'string' && s.trim() !== ''
 }
 

@@ -14,7 +14,13 @@ import {
   toExperienceV2,
   toSavePayload,
 } from "@/lib/utils/experience-mapper"
-import { cloneBlocks, createGroupBlock, createTextField, isBlockEmpty } from "@/lib/utils/block-utils"
+import {
+  cloneBlocks,
+  createGroupBlock,
+  createTextField,
+  isBlockEmpty,
+  isUnrenderableBlock,
+} from "@/lib/utils/block-utils"
 import { computeFormCards } from "@/lib/utils/form-cards"
 import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
 
@@ -3828,5 +3834,85 @@ describe("toExperienceV2 — 이 코드가 모르는 타입 (FRT-200)", () => {
     const survived =
       content.fields["future.신규칸"] ?? content.custom.find(c => c.key === "future.신규칸")?.value
     expect(survived).toMatchObject({ type: "brand-new-in-v3", payload: "미래 스키마가 쓴 값" })
+  })
+
+  /**
+   * ⚠️ v2 의 `custom[]` 은 **`normalizeBlocks` 를 지나지 않는다**(v1 배열만 지난다).
+   * 그래서 `normalizeBlock` 이 하는 "블록 타입이 비었으면 값의 판별자로 되살린다"가
+   * 이 경로에만 적용되지 않고 있었다 — 깨진 타입이 그대로 블록에 실린다.
+   */
+  describe("v2 커스텀 항목의 깨진 블록 타입 (FRT-200)", () => {
+    const customContent = (entry: unknown) => makeV2Content({}, [entry])
+
+    it("타입이 비어 있어도 값의 판별자로 되살아난다", () => {
+      const v2 = toExperienceV2(
+        makeExperience({
+          content: customContent({
+            key: "c-1",
+            entryType: "field",
+            type: null,
+            label: "내가 만든 칸",
+            value: { type: "text", text: "저장된 값" },
+          }),
+        }),
+      )
+
+      const block = v2.customBlocks.find(b => b.label === "내가 만든 칸")
+      expect(block?.type).toBe("text")
+      expect(block?.value).toEqual({ type: "text", text: "저장된 값" })
+    })
+
+    it("되살아난 블록은 잠기지 않는다 — 사용자가 만든 칸을 계속 고칠 수 있다", () => {
+      const v2 = toExperienceV2(
+        makeExperience({
+          content: customContent({
+            key: "c-1",
+            entryType: "field",
+            type: "",
+            label: "내가 만든 칸",
+            value: { type: "textarea", text: "저장된 값" },
+          }),
+        }),
+      )
+
+      const block = v2.customBlocks.find(b => b.label === "내가 만든 칸")
+      expect(isUnrenderableBlock(block!)).toBe(false)
+    })
+
+    it("되살아난 타입이 저장 왕복에서도 유지된다 — 깨진 타입을 다시 싣지 않는다", () => {
+      const v2 = toExperienceV2(
+        makeExperience({
+          content: customContent({
+            key: "c-1",
+            entryType: "field",
+            type: null,
+            label: "내가 만든 칸",
+            value: { type: "text", text: "저장된 값" },
+          }),
+        }),
+      )
+
+      const content = toSavePayload(v2).content as { custom: Array<{ label: string; type: unknown }> }
+      expect(content.custom.find(c => c.label === "내가 만든 칸")?.type).toBe("text")
+    })
+
+    /** 경계 — **모르는 *이름*의 타입은 신호 없음이 아니다.** 새 스키마의 흔적이라 그대로 둔다. */
+    it("모르는 이름의 타입은 되살리지 않고 그대로 지킨다", () => {
+      const v2 = toExperienceV2(
+        makeExperience({
+          content: customContent({
+            key: "c-1",
+            entryType: "field",
+            type: "rating-v3",
+            label: "내가 만든 칸",
+            value: { type: "text", text: "저장된 값" },
+          }),
+        }),
+      )
+
+      const block = v2.customBlocks.find(b => b.label === "내가 만든 칸")
+      expect(block?.type).toBe("rating-v3")
+      expect(block?.value).toEqual({ type: "text", text: "저장된 값" })
+    })
   })
 })
