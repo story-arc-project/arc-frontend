@@ -616,6 +616,35 @@ describe("toExperienceV2", () => {
     }
     expect(content.custom.find(c => c.label === "결과/성과")?.value).toEqual(textarea("보존될 성과"))
   })
+
+  it("v1: 블록 정의가 깨진 체크리스트도 템플릿 선택지로 되살아난다", () => {
+    // `options: {}` 는 저장 JSONB 라 올 수 있는 모양이다. `??` 로 고르면 그 객체가 "있는 정의"가
+    // 되어 선택지가 `[]` 로 굳고, 병합은 그 빈 배열을 사용자가 다 지운 것으로 존중한다 —
+    // 체크박스가 하나도 안 그려져 **이미 고른 값을 끌 수조차 없고** 그대로 재저장된다.
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "extracurricular",
+        content: {
+          extensionBlocks: [
+            {
+              id: "b1",
+              type: "checklist",
+              label: "활동 성격",
+              options: {},
+              value: { type: "checklist", checked: ["🤝 팀 협업"] },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const all = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks]
+    const block = all.find(b => b.label === "활동 성격")
+    expect(block?.value.type).toBe("checklist")
+    const value = block?.value as { options: string[]; checked: string[] }
+    expect(value.options).toContain("🤝 팀 협업")
+    expect(value.options.length).toBeGreaterThan(1)
+    expect(value.checked).toEqual(["🤝 팀 협업"])
+  })
 })
 
 describe("toSavePayload", () => {

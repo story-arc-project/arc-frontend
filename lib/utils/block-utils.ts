@@ -39,7 +39,9 @@ function emptyValue(type: Exclude<BlockType, 'group'>, opts?: { options?: string
     case 'file':
       return { type: 'file', fileName: '', description: '', evidenceType: '' }
     case 'repeatable-cell':
-      return { type: 'repeatable-cell', columns: opts?.columns ?? [], rows: [] }
+      // `??` 가 아니라 배열인지로 고른다 — 정의도 저장분에서 올 수 있고, 배열이 아닌 값이
+      // 실리면 `RepeatableCellBlock` 의 `columns.map` 이 그 자리에서 죽는다.
+      return { type: 'repeatable-cell', columns: Array.isArray(opts?.columns) ? opts.columns : [], rows: [] }
     case 'table':
       return { type: 'table', columns: [], rows: [] }
   }
@@ -535,27 +537,16 @@ const optText = (x: unknown): string | undefined => (typeof x === 'string' ? x :
 const isOptText = (x: unknown): boolean => x === undefined || typeof x === 'string'
 const isOptNumber = (x: unknown): boolean => x === undefined || typeof x === 'number'
 
-/** 셀에 올 수 있는 유형(표·반복·그룹은 셀이 될 수 없다). */
-const isKnownCellType = (t: unknown): boolean =>
-  isKnownBlockType(t) && t !== 'repeatable-cell' && t !== 'table' && t !== 'group'
-
 /**
  * 이 코드가 모르는 판별자를 든 셀 — **새 스키마가 쓴 잎 값**일 수 있다.
- * 열 유형까지 미지일 때만 그대로 둔다(그리는 컨트롤이 없으니 객체가 화면에 닿지 않는다).
+ *
+ * ⚠️ **열 유형을 조건으로 걸지 않는다.** 한때는 열 유형까지 미지일 때만 지켰는데, 그러면
+ * `text` 처럼 아는(또는 낡은) 열 밑의 새 스키마 값이 곧장 `''` 로 낮아져 **열었다 저장하는
+ * 것만으로 영구히 사라진다.** 저장 경로는 열이 무엇이든 지키고, 그리기 위한 낮춤은 저장되지
+ * 않는 렌더 관문(`lowerOpaqueLeaves`)이 맡는다.
  */
 const isOpaqueCell = (c: unknown): boolean =>
   isPlainObject(c) && typeof c.type === 'string' && !isKnownBlockType(c.type)
-
-/** 값이 불투명해도 그대로 둘 열(= 이 코드가 유형을 모르는 열)의 key 집합. */
-function opaqueCellKeys(columns: unknown): Set<string> {
-  if (!Array.isArray(columns)) return new Set()
-  return new Set(
-    columns
-      .filter(isPlainObject)
-      .filter(c => !isKnownCellType(c.blockType))
-      .map(c => (typeof c.key === 'string' ? c.key : String(c.key))),
-  )
-}
 
 /**
  * 셀 하나가 이 코드가 그릴 수 있는 모양인가 (문자열 · 문자열 배열 · 파일 셀).
@@ -573,8 +564,8 @@ function isIntactCell(c: unknown): boolean {
   return false
 }
 
-function repairCell(c: unknown, allowOpaque = false): CellValue {
-  if (allowOpaque && isOpaqueCell(c)) return c as CellValue
+function repairCell(c: unknown): CellValue {
+  if (isOpaqueCell(c)) return c as CellValue
   if (typeof c === 'string') return c
   if (Array.isArray(c)) return asStrings(c)
   if (isPlainObject(c) && c.type === 'file') {
@@ -720,14 +711,9 @@ function repairExtraValue(x: unknown): string | string[] {
 }
 
 /** 행에 붙는 스키마 밖 부가 값(FRT-76 링크·FRT-178 역할태그·FRT-145 행 항목)까지 본다. */
-function isIntactRow(r: Record<string, unknown>, opaqueKeys: Set<string> = new Set()): boolean {
+function isIntactRow(r: Record<string, unknown>): boolean {
   if (!isFilledText(r.id) || !isPlainObject(r.cells)) return false
-  if (
-    !Object.entries(r.cells).every(
-      ([k, c]) => isIntactCell(c) || (opaqueKeys.has(k) && isOpaqueCell(c)),
-    )
-  )
-    return false
+  if (!Object.values(r.cells).every(c => isIntactCell(c) || isOpaqueCell(c))) return false
   if (r.linkedProjectRowId !== undefined && typeof r.linkedProjectRowId !== 'string') return false
   if (r.id !== undefined && typeof r.id !== 'string') return false
   if (r.roleTags !== undefined && !allStrings(r.roleTags)) return false
@@ -794,7 +780,7 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
         Array.isArray(v.rows) &&
         // 행 `id` 까지 물어야 한다 — 없으면 `repairRows` 를 건너뛴 채 렌더에 닿아
         // React key 가 겹치고 수정·삭제 핸들러가 엉뚱한 행을 잡는다.
-        v.rows.every(r => isPlainObject(r) && isIntactRow(r, opaqueCellKeys(v.columns))) &&
+        v.rows.every(r => isPlainObject(r) && isIntactRow(r)) &&
         // 행 하나씩은 성해도 **쌍으로 깨질 수 있다** — 같은 id 두 개면 한쪽을 고칠 때 둘 다 바뀐다.
         new Set(v.rows.map(r => (r as Record<string, unknown>).id)).size === v.rows.length
       )
@@ -815,11 +801,7 @@ function isIntactBlockValue(v: Record<string, unknown>): boolean {
  * `id` 가 없으면 인덱스로 채운다 — `uid()` 를 쓰면 렌더마다 id 가 바뀌어 행이 리마운트되고
  * 입력 포커스가 날아간다(이 함수는 렌더 관문에서도 돈다).
  */
-function repairRows(
-  x: unknown,
-  columnRenames?: Map<string, string>,
-  opaqueKeys: Set<string> = new Set(),
-): BlockRow[] {
+function repairRows(x: unknown, columnRenames?: Map<string, string>): BlockRow[] {
   if (!Array.isArray(x)) return []
   const rows = x.filter(isPlainObject)
   // ⚠️ 이미 쓰이는 id 를 피한다. 겹치면 수정·삭제 핸들러가 행을 id 로 찾으므로 **하나를 고치면
@@ -836,7 +818,7 @@ function repairRows(
         // 열 key 가 갈렸으면 셀도 새 이름으로 옮긴다. 새 이름에 이미 값이 있으면 그쪽을 존중한다.
         const renamed = columnRenames?.get(k)
         const key = renamed !== undefined && !(renamed in r.cells) ? renamed : k
-        cells[key] = repairCell(c, opaqueKeys.has(key))
+        cells[key] = repairCell(c)
       }
     }
     return {
@@ -1013,11 +995,11 @@ export function normalizeBlockValue(
         ...(Array.isArray(v.columns)
           ? (({ columns, renames }) => ({
               columns,
-              rows: repairRows(v.rows, renames, opaqueCellKeys(columns)),
+              rows: repairRows(v.rows, renames),
             }))(repairColumns(v.columns, allCellKeys(v.rows)))
           : {
-              columns: opts?.columns ?? [],
-              rows: repairRows(v.rows, undefined, opaqueCellKeys(opts?.columns)),
+              columns: Array.isArray(opts?.columns) ? opts.columns : [],
+              rows: repairRows(v.rows),
             }),
       } as BlockValue
     case 'table':
@@ -1071,8 +1053,12 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
   // ⚠️ **결측 정의를 근거 없이 `[]` 로 굳히면 그 뒤로는 못 되살린다.** 보정은 배열이면 빈
   // 배열도 사용자의 선택으로 존중하므로, 나중에 템플릿과 병합하는 경로(v1)에서는 여기서
   // 정의를 함께 넘겨야 "결측"과 "사용자가 다 지움"이 구분된 채로 남는다.
+  // ⚠️ **`??` 가 아니라 배열인지로 고른다.** 블록의 정의도 저장 JSONB 라 `{}` 같은 값이 올 수
+  // 있는데, `??` 는 그 객체를 "있는 정의"로 골라 폴백을 막는다 — 그러면 선택지가 `[]` 로
+  // 굳고, 병합 경로는 그 빈 배열을 **사용자가 다 지운 것**으로 존중해 템플릿 선택지가 영영
+  // 안 돌아온다. 체크된 값이 남아 있어도 끌 칸조차 그려지지 않는다.
   let value = normalizeBlockValue(block.type, block.value, {
-    options: block.options ?? defs?.options,
+    options: Array.isArray(block.options) ? block.options : defs?.options,
     columns: defs?.columns,
   })
   // ⚠️ **타입이 어긋나도 저장 경로에서는 값을 비우지 않는다.** 아는 타입끼리 어긋난 값도
@@ -1242,13 +1228,11 @@ export function dedupeBlockIdsAcross(groups: Block[][]): Block[][] {
 function hasOpaqueLeaf(value: unknown): boolean {
   if (!isPlainObject(value) || value.type !== 'repeatable-cell') return false
   if (!Array.isArray(value.rows)) return false
-  const opaque = opaqueCellKeys(value.columns)
   return value.rows.some(r => {
     if (!isPlainObject(r)) return false
-    const cellHit =
-      opaque.size > 0 &&
-      isPlainObject(r.cells) &&
-      Object.entries(r.cells).some(([k, c]) => opaque.has(k) && isOpaqueCell(c))
+    // ⚠️ **열 유형은 묻지 않는다.** 저장 경로가 열과 무관하게 지키므로, 여기서 열을 조건으로
+    // 걸면 아는 열 밑의 보존된 값 위에 편집 칸이 열리고 첫 입력이 그 값을 덮는다.
+    const cellHit = isPlainObject(r.cells) && Object.values(r.cells).some(isOpaqueCell)
     // 행 부가 항목도 센다 — 읽기 렌더러가 `f.value` 를 그대로 그리므로 더 위험하다.
     const extraHit =
       Array.isArray(r.extraFields) &&
@@ -1265,24 +1249,42 @@ function hasOpaqueLeaf(value: unknown): boolean {
  * **이 결과는 저장되지 않는다** — 그래서 새 스키마 값을 구 모양으로 굳히지 않는다.
  */
 /**
- * **표시 전용** — 부가 항목의 불투명 값(새 스키마의 잎)을 그릴 수 있는 글자로 낮춘다.
+ * **표시 전용** — 행 안쪽의 불투명 값(새 스키마의 잎)을 그릴 수 있는 글자로 낮춘다.
  *
- * ⚠️ 읽기 렌더러가 `f.value` 를 React 자식으로 **그대로** 그리므로 객체가 닿으면 죽는다.
- * 저장 경로는 그 값을 지키고(`repairExtraValue`), 낮추는 건 여기서만 한다.
+ * ⚠️ 셀 컨트롤과 읽기 렌더러가 셀·부가 값을 React 자식으로 **그대로** 그리므로 객체가 닿으면
+ * 죽는다. 저장 경로는 그 값을 지키고(`repairCell`·`repairExtraValue`), 낮추는 건 여기서만 한다
+ * — 이 결과는 저장되지 않고, 그 블록은 `isUnrenderableBlock` 이 읽기 전용으로 잠근다.
  */
-function lowerOpaqueExtras(block: Block): Block {
+function lowerOpaqueLeaves(block: Block): Block {
   const v = block.value as unknown as Record<string, unknown> | null | undefined
   if (!isPlainObject(v) || v.type !== 'repeatable-cell' || !Array.isArray(v.rows)) return block
   let changed = false
   const rows = v.rows.map(r => {
-    if (!isPlainObject(r) || !Array.isArray(r.extraFields)) return r
-    if (!r.extraFields.some(f => isPlainObject(f) && isOpaqueCell(f.value))) return r
+    if (!isPlainObject(r)) return r
+    const cellHit = isPlainObject(r.cells) && Object.values(r.cells).some(isOpaqueCell)
+    const extraHit =
+      Array.isArray(r.extraFields) && r.extraFields.some(f => isPlainObject(f) && isOpaqueCell(f.value))
+    if (!cellHit && !extraHit) return r
     changed = true
     return {
       ...r,
-      extraFields: r.extraFields.map(f =>
-        isPlainObject(f) && isOpaqueCell(f.value) ? { ...f, value: '' } : f,
-      ),
+      ...(cellHit
+        ? {
+            cells: Object.fromEntries(
+              Object.entries(r.cells as Record<string, unknown>).map(([k, c]) => [
+                k,
+                isOpaqueCell(c) ? '' : c,
+              ]),
+            ),
+          }
+        : {}),
+      ...(extraHit
+        ? {
+            extraFields: (r.extraFields as unknown[]).map(f =>
+              isPlainObject(f) && isOpaqueCell(f.value) ? { ...f, value: '' } : f,
+            ),
+          }
+        : {}),
     }
   })
   return changed ? ({ ...block, value: { ...v, rows } } as unknown as Block) : block
@@ -1306,7 +1308,7 @@ export function isUnrenderableBlock(block: Block): boolean {
 }
 
 export function normalizeBlockForRender(block: Block): Block {
-  const normalized = lowerOpaqueExtras(normalizeBlock(block))
+  const normalized = lowerOpaqueLeaves(normalizeBlock(block))
   const v = normalized.value as BlockValue | null | undefined
   if (!isKnownBlockType(block.type) || (v && v.type === block.type)) return normalized
   return { ...normalized, value: normalizeBlockValue(block.type, undefined, { options: block.options }) }

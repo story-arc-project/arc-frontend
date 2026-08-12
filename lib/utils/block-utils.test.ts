@@ -1642,3 +1642,93 @@ describe("isUnrenderableBlock — 편집을 열면 안 되는 블록", () => {
     ).toBe(false)
   })
 })
+
+describe("불투명 셀 — 아는 열 밑에서도 지킨다 (FRT-200)", () => {
+  const blockWithOpaqueCell = (): Block =>
+    ({
+      id: "b1",
+      type: "repeatable-cell",
+      label: "표",
+      value: {
+        type: "repeatable-cell",
+        columns: [{ key: "score", label: "점수", blockType: "text" }],
+        rows: [{ id: "r1", cells: { score: { type: "rating-v3", score: 5 } } }],
+      },
+    }) as unknown as Block
+
+  it("저장 경로는 아는 열의 불투명 셀을 그대로 지킨다", () => {
+    const v = normalizeBlockValue("repeatable-cell", blockWithOpaqueCell().value)
+    const cell = (v as unknown as { rows: { cells: Record<string, unknown> }[] }).rows[0].cells.score
+    expect(cell).toEqual({ type: "rating-v3", score: 5 })
+  })
+
+  it("그 블록은 편집을 막는다 — 열려 있으면 첫 입력이 보존한 값을 덮는다", () => {
+    expect(isUnrenderableBlock(blockWithOpaqueCell())).toBe(true)
+  })
+
+  it("렌더 관문은 그 셀을 글자로 낮춘다 — 객체가 셀 컨트롤에 닿으면 화면이 죽는다", () => {
+    const rendered = normalizeBlockForRender(blockWithOpaqueCell())
+    const cell = (rendered.value as unknown as { rows: { cells: Record<string, unknown> }[] })
+      .rows[0].cells.score
+    expect(cell).toBe("")
+  })
+
+  // ⚠️ 위 테스트는 **온전 판정을 통과해 보정에 닿지 않는다**(`isIntactRow` 가 먼저 지킨다).
+  // 행 `id` 를 깨뜨려 보정 경로를 강제로 지나게 해야 `repairCell` 이 검사 대상이 된다.
+  it("보정 경로를 지나도 불투명 셀은 남는다 — 행이 깨져 재작성될 때", () => {
+    const v = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "score", label: "점수", blockType: "text" }],
+      rows: [{ cells: { score: { type: "rating-v3", score: 5 } } }],
+    } as unknown as BlockValue)
+    const row = (v as unknown as { rows: { id: string; cells: Record<string, unknown> }[] }).rows[0]
+    expect(row.id).toBe("row-0")
+    expect(row.cells.score).toEqual({ type: "rating-v3", score: 5 })
+  })
+
+  it("모르는 열 밑의 불투명 셀도 그대로 지킨다 (기존 보장 유지)", () => {
+    const v = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "score", label: "점수", blockType: "rating-v3" }],
+      rows: [{ id: "r1", cells: { score: { type: "rating-v3", score: 5 } } }],
+    } as unknown as BlockValue)
+    const cell = (v as unknown as { rows: { cells: Record<string, unknown> }[] }).rows[0].cells.score
+    expect(cell).toEqual({ type: "rating-v3", score: 5 })
+  })
+
+  it("성한 셀은 그대로 — 불투명 보존이 일반 셀 보정을 무디게 하지 않는다", () => {
+    const v = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "name", label: "이름", blockType: "text" }],
+      rows: [{ id: "r1", cells: { name: 42 } }],
+    } as unknown as BlockValue)
+    const cell = (v as unknown as { rows: { cells: Record<string, unknown> }[] }).rows[0].cells.name
+    expect(cell).toBe("")
+  })
+})
+
+describe("깨진 블록 정의 — 배열이 아니면 템플릿으로 되살린다 (FRT-200)", () => {
+  it("block.options 가 객체면 템플릿 선택지를 쓴다 — `??` 는 그 객체를 고른다", () => {
+    const block = {
+      id: "b1",
+      type: "checklist",
+      label: "칸",
+      options: {} as unknown as string[],
+      value: { type: "checklist", checked: ["가"] },
+    } as unknown as Block
+    const out = normalizeBlock(block, { options: ["가", "나", "다"] })
+    expect((out.value as { options: string[] }).options).toEqual(["가", "나", "다"])
+  })
+
+  it("block.options 가 빈 배열이면 사용자가 다 지운 것으로 존중한다", () => {
+    const block = {
+      id: "b1",
+      type: "checklist",
+      label: "칸",
+      options: [],
+      value: { type: "checklist", checked: [] },
+    } as unknown as Block
+    const out = normalizeBlock(block, { options: ["가", "나"] })
+    expect((out.value as { options: string[] }).options).toEqual([])
+  })
+})
