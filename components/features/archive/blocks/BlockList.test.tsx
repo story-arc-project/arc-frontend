@@ -122,3 +122,43 @@ describe("BlockList 모달에서 옵션을 지우면 그 옵션을 가리키던 
     expect((latest[0].value as ChecklistBlockValue).checked).toEqual(["온라인", "오프라인(구)"])
   })
 })
+
+/**
+ * **읽기 전용 보장은 입력 칸에서 끝나지 않는다 (FRT-200).**
+ *
+ * `BlockRenderer` 는 모르는 값 위에 편집 칸을 안 띄우지만, 그 칸을 감싼 **연필은 바깥에 있다.**
+ * 눌리면 `getEditConfig` 가 `block.value.options` 를 무검증으로 꺼내 모달에 넘기고,
+ * 모달은 그걸 `.join()`·`.map()` 한다 — 손상값 하나가 화면을 통째로 날린다.
+ */
+describe("모르는 값 위에는 편집 경로 전체를 닫는다", () => {
+  function withValue(value: unknown): Block {
+    const block = createChecklistField("참여 방식", ["온라인"])
+    block.value = value as Block["value"]
+    return block
+  }
+
+  it("성한 블록에는 연필이 붙는다 — 아래 두 단언이 빈 그물이 아님을 세우는 대조군", () => {
+    render(<Harness initial={[withValue({ type: "checklist", options: ["온라인"], checked: [] })]} onBlocks={() => {}} />)
+    expect(screen.queryByRole("button", { name: "블록 편집" })).not.toBeNull()
+  })
+
+  it("모르는 판별자를 담은 블록에는 연필이 붙지 않는다", () => {
+    // 열면 `.join()` 에서 죽고, 살아서 확인을 누르면 보존해 둔 값을 덮는다 — 둘 다 막는다.
+    render(<Harness initial={[withValue({ type: "rating-v3", options: {} })]} onBlocks={() => {}} />)
+    expect(screen.queryByRole("button", { name: "블록 편집" })).toBeNull()
+  })
+
+  it("아는 타입인데 선택지가 깨져 있으면 연필을 열어도 죽지 않는다", async () => {
+    const user = userEvent.setup()
+    // 연필이 닫히는 건 판별자가 미지일 때뿐이다 — 아는 타입의 깨진 선택지는 열려야 하고,
+    // 그때 모달에 배열 아닌 값이 넘어가면 렌더 도중 throw 한다.
+    render(
+      <Harness
+        initial={[withValue({ type: "checklist", options: {}, checked: [] })]}
+        onBlocks={() => {}}
+      />,
+    )
+    await openBlockEditor(user)
+    expect(screen.getByPlaceholderText("블록 이름을 입력하세요")).toBeTruthy()
+  })
+})
