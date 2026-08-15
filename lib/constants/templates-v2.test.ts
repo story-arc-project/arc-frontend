@@ -2,8 +2,10 @@ import { describe, it, expect } from "vitest"
 import {
   EXPERIENCE_TYPES,
   EXPERIENCE_TYPE_MAP,
+  RETIRED_TYPE_IDS,
   SYSTEM_TEMPLATES_V2,
   TEMPLATE_VERSION,
+  canonicalTypeId,
   getTemplateForType,
 } from "@/lib/constants/templates-v2"
 import { isRequiredBlock } from "@/lib/utils/block-utils"
@@ -2101,6 +2103,25 @@ describe("확정본: 프로젝트 (개인·팀 통합)", () => {
     // 통째로 v1 경로로 떨어지고, 대시보드·카드·상세의 라벨이 사라진다.
     expect(EXPERIENCE_TYPE_MAP["team-project"]?.label).toBe("프로젝트")
     expect(EXPERIENCE_TYPE_MAP["personal-project"]?.label).toBe("프로젝트")
+  })
+
+  /**
+   * 목록에서 내린 id 는 **필터 칩이 만들어지지 않는다** → 그 id 를 정확 일치로 거르는 소비처가
+   * 있으면 옛 레코드를 골라낼 방법이 영영 사라진다. 그래서 은퇴 id 는 반드시 현행 id 로 접힌다.
+   * 앞으로 다른 유형을 은퇴시킬 때도 이 표만 채우면 되도록 전수로 단언한다.
+   */
+  it("은퇴한 id 는 전부 현행 유형으로 접힌다", () => {
+    for (const id of RETIRED_TYPE_IDS) {
+      const canonical = canonicalTypeId(id)
+      expect(canonical).not.toBe(id)
+      expect(EXPERIENCE_TYPES.map(t => t.id)).toContain(canonical)
+    }
+  })
+
+  it("현행 id 는 그대로 통과한다", () => {
+    for (const t of EXPERIENCE_TYPES) {
+      expect(canonicalTypeId(t.id)).toBe(t.id)
+    }
   })
 
   it("① 기본 정보는 확정본 필드를 순서 그대로 갖는다 (경험명·한 줄 요약은 헤더 코어 소유)", () => {

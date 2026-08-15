@@ -64,6 +64,25 @@ export const EXPERIENCE_TYPE_MAP: Record<ExperienceTypeId, ExperienceTypeInfo> =
     [...EXPERIENCE_TYPES, ...RETIRED_EXPERIENCE_TYPES].map(t => [t.id, t]),
   ) as Record<ExperienceTypeId, ExperienceTypeInfo>
 
+/**
+ * 은퇴한 id → 지금 그 자리를 대신하는 현행 id.
+ *
+ * 라벨 조회는 `EXPERIENCE_TYPE_MAP` 이 계속 해 주지만, **id 를 값으로 비교하는 소비처**는 그것만으로
+ * 부족하다. 유형 목록에서 내린 id 는 필터 칩이 만들어지지 않아 사용자가 그 값을 고를 수 없는데,
+ * 저장된 레코드에는 남아 있다 → 정확 일치로 거르는 순간 옛 기록이 목록에서 빠지고 **되돌릴 칩이
+ * 없다**. 사용자에게 이미 같은 이름의 한 유형이므로(둘 다 '프로젝트') 비교 전에 접어서 같게 만든다.
+ */
+const RETIRED_TYPE_ALIAS: Partial<Record<ExperienceTypeId, ExperienceTypeId>> = {
+  'team-project': 'personal-project',
+}
+
+export const RETIRED_TYPE_IDS: ExperienceTypeId[] = RETIRED_EXPERIENCE_TYPES.map(t => t.id)
+
+/** id 로 유형을 **비교·집계**하는 모든 경로는 이걸 통과시킨 값으로 비교한다. */
+export function canonicalTypeId(typeId: ExperienceTypeId): ExperienceTypeId {
+  return RETIRED_TYPE_ALIAS[typeId] ?? typeId
+}
+
 export const TYPE_CATEGORIES = [
   { key: 'academic', label: '학업' },
   { key: 'career', label: '커리어' },

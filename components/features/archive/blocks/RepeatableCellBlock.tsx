@@ -492,8 +492,17 @@ function RowArtifactsEditor({
   artifacts: RowArtifact[]
   onChange: (next: (list: RowArtifact[]) => RowArtifact[]) => void
 }) {
+  // FRT-145 형제(RowExtraFieldsEditor)와 같은 이유로, 값이 든 결과물은 한 번 확인한 뒤에 지운다 —
+  // 되돌리는 경로가 없는 손실이라서다.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+
   function patch(id: string, fields: Partial<RowArtifact>) {
     onChange(list => list.map(a => (a.id === id ? { ...a, ...fields } : a)))
+  }
+
+  function remove(id: string) {
+    onChange(list => list.filter(x => x.id !== id))
+    setPendingDelete(null)
   }
 
   return (
@@ -503,14 +512,34 @@ function RowArtifactsEditor({
         <div key={a.id} className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
           <div className="flex items-center justify-between">
             <span className="text-caption text-text-tertiary">결과물 #{i + 1}</span>
-            <button
-              type="button"
-              onClick={() => onChange(list => list.filter(x => x.id !== a.id))}
-              className="text-text-tertiary hover:text-error transition-colors p-1 rounded"
-              aria-label={`결과물 ${i + 1} 삭제`}
-            >
-              <Trash2 size={13} />
-            </button>
+            {pendingDelete === a.id ? (
+              <span className="flex items-center gap-1.5 text-caption text-text-tertiary">
+                지워집니다
+                <button
+                  type="button"
+                  onClick={() => remove(a.id)}
+                  className="rounded px-1.5 py-0.5 text-error hover:bg-surface-tertiary transition-colors"
+                >
+                  지우기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingDelete(null)}
+                  className="rounded px-1.5 py-0.5 text-text-secondary hover:bg-surface-tertiary transition-colors"
+                >
+                  취소
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => (artifactFilled(a) ? setPendingDelete(a.id) : remove(a.id))}
+                className="text-text-tertiary hover:text-error transition-colors p-1 rounded"
+                aria-label={`결과물 ${i + 1} 삭제`}
+              >
+                <Trash2 size={13} />
+              </button>
+            )}
           </div>
           <input
             type="url"

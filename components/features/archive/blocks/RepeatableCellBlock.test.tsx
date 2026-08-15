@@ -21,13 +21,17 @@ import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 afterEach(cleanup)
 beforeEach(() => vi.mocked(capture).mockClear())
 
-function makeBlock(rows: BlockRow[], opts?: { allowRowExtras?: boolean }): Block {
+function makeBlock(
+  rows: BlockRow[],
+  opts?: { allowRowExtras?: boolean; allowRowArtifacts?: boolean },
+): Block {
   return {
     id: "b1",
     type: "repeatable-cell",
     label: "프로젝트 / 과제",
     lockColumns: true,
     ...(opts?.allowRowExtras ? { allowRowExtras: true } : {}),
+    ...(opts?.allowRowArtifacts ? { allowRowArtifacts: true } : {}),
     value: {
       type: "repeatable-cell",
       columns: [
@@ -240,6 +244,54 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
     await user.click(screen.getByRole("button", { name: "수상 항목 삭제" }))
     await user.click(screen.getByRole("button", { name: "지우기" }))
     expect(latest?.rows[0].extraFields).toEqual([])
+  })
+
+  /**
+   * 행 결과물(FRT-291 `BlockRow.artifacts`)은 형제(`RowExtraFieldsEditor`)와 **같은 손실 모양**을
+   * 가진다 — 값을 적어 둔 첨부를 실수로 지우면 되돌릴 경로가 없다. 그래서 확인 절차도 같아야 한다.
+   * 두 편집기가 같은 자리에 나란히 있으므로, 한쪽만 확인을 물으면 사용자는 어느 쪽이 즉시 지워지는지
+   * 알 수 없다.
+   */
+  it("값이 든 결과물은 한 번 확인한 뒤에야 지워진다 — 취소하면 값이 남는다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1", desc: "시연 영상" }] }],
+          { allowRowArtifacts: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
+    expect(latest).toBeUndefined() // 아직 아무것도 지우지 않았다
+    await user.click(screen.getByRole("button", { name: "취소" }))
+    expect(screen.getByDisplayValue("시연 영상")).toBeDefined()
+
+    await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
+    await user.click(screen.getByRole("button", { name: "지우기" }))
+    expect(latest?.rows[0].artifacts).toEqual([])
+  })
+
+  it("값이 빈 결과물은 확인 없이 삭제된다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1" }] }],
+          { allowRowArtifacts: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
+
+    expect(latest?.rows[0].artifacts).toEqual([])
+    expect(screen.queryByRole("button", { name: "지우기" })).toBeNull()
   })
 
   it("셀을 수정해도 추가 항목이 보존된다 — 행 재구성 회귀 (FRT-178 교훈)", async () => {

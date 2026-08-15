@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useCallback } from "react"
+import { canonicalTypeId } from "@/lib/constants/templates-v2"
 import type {
   ExperienceV2,
   LibraryFilter,
@@ -30,7 +31,10 @@ export function matchesFilter(exp: ExperienceV2, filter: LibraryFilter): boolean
     if (!inTitle && !inSummary && !inTags) return false
   }
   if (filter.typeIds && filter.typeIds.length > 0) {
-    if (!filter.typeIds.includes(exp.typeId)) return false
+    // 은퇴한 유형 id 는 현행 id 로 접어서 비교한다 — 목록에서 내린 id 는 칩이 없어, 정확 일치로
+    // 거르면 옛 레코드를 다시 보이게 할 방법이 사라진다(FRT-291 `canonicalTypeId`).
+    const target = canonicalTypeId(exp.typeId)
+    if (!filter.typeIds.some(id => canonicalTypeId(id) === target)) return false
   }
   if (filter.statuses && filter.statuses.length > 0) {
     if (!filter.statuses.includes(exp.status)) return false

@@ -99,6 +99,21 @@ describe("parseArchiveContext", () => {
     expect(ctx?.filter.sortBy).toBeUndefined()
   })
 
+  /**
+   * 은퇴한 유형 id(FRT-291 `team-project`)를 실은 옛 링크·북마크가 그대로 되살아나면,
+   * 화면에는 그 id 의 칩이 없어 **활성 표시 없이 걸려 있는 필터**가 된다(사용자가 끌 수 없다).
+   * 파싱에서 현행 id 로 접어 두면 칩이 켜진 채 복원되고 목록도 같은 집합을 낸다.
+   */
+  it("은퇴한 유형 id 는 현행 id 로 접어 복원한다", () => {
+    const ctx = parseArchiveContext(new URLSearchParams("type=team-project"))
+    expect(ctx?.filter.typeIds).toEqual(["personal-project"])
+  })
+
+  it("접은 결과가 이미 있는 id 와 겹치면 중복으로 싣지 않는다", () => {
+    const ctx = parseArchiveContext(new URLSearchParams("type=personal-project,team-project"))
+    expect(ctx?.filter.typeIds).toEqual(["personal-project"])
+  })
+
   it("유효한 파라미터가 하나도 남지 않으면 undefined를 반환한다", () => {
     const ctx = parseArchiveContext(new URLSearchParams("type=__a__,__b__&status=__x__"))
     expect(ctx).toBeUndefined()
