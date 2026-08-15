@@ -23,10 +23,17 @@ import {
   cellText,
   isFileCellValue,
   rowHasContent,
+  isBlockDiscardable,
   isBlockEmpty,
+  isUnrenderableBlock,
+  isValueOccupied,
+  normalizeBlock,
+  normalizeBlockForRender,
+  normalizeBlockValue,
+  normalizeBlocks,
   validateRequiredBlocks,
 } from "@/lib/utils/block-utils"
-import type { FileCellValue } from "@/types/archive"
+import type { Block, BlockValue, CellValue, FileCellValue } from "@/types/archive"
 
 describe("isBlockEmpty", () => {
   it("새로 만든 빈 블록은 모든 타입에서 empty 다", () => {
@@ -450,5 +457,1278 @@ describe("rowHasContent — 파일 셀만 채운 행 (FRT-213)", () => {
     expect(
       rowHasContent({ id: "r1", cells: { 결과물: { type: "file", fileId: "", fileName: "" } } }),
     ).toBe(false)
+  })
+})
+
+// ─── FRT-200: 저장된 값이 타입이 약속한 모양대로 오지 않을 때 ──────────
+//
+// `Block.value` 는 non-nullable 로 선언돼 있지만 실제 값은 백엔드 JSONB 를 역직렬화한 것이라
+// 런타임에 null·결측 필드가 도착할 수 있다. 그 값이 판정·렌더까지 무검증으로 흘러 화면을
+// 통째로 죽였다(FRT-200).
+//
+// ⚠️ 픽스처는 반드시 `as unknown as` 로 타입 안전망을 우회한다. 타입이 허용하는 리터럴로만
+// 쓰면 컴파일러가 그 입력을 막아 **결함을 재현하지 못한다** — 통과하는 테스트가 그물이 아니다.
+
+/** 손상된 저장 값을 타입 검사 없이 블록에 싣는다 — 실제 JSONB 경로를 흉내낸다. */
+function withRawValue(block: Block, raw: unknown): Block {
+  return { ...block, value: raw as BlockValue }
+}
+
+describe("isBlockEmpty — 손상된 저장 값 (FRT-200)", () => {
+  it("value 가 통째로 없어도 죽지 않고 '비어 있다'로 판정한다", () => {
+    expect(() => isBlockEmpty(withRawValue(createDateField("d"), null))).not.toThrow()
+    expect(isBlockEmpty(withRawValue(createDateField("d"), null))).toBe(true)
+    expect(isBlockEmpty(withRawValue(createTextField("t"), undefined))).toBe(true)
+  })
+
+  it("type 은 있는데 문자열 필드가 null 이어도 죽지 않는다", () => {
+    expect(isBlockEmpty(withRawValue(createDateField("d"), { type: "date", date: null }))).toBe(true)
+    expect(isBlockEmpty(withRawValue(createTextField("t"), { type: "text" }))).toBe(true)
+    expect(
+      isBlockEmpty(withRawValue(createLinkField("l"), { type: "link", url: null })),
+    ).toBe(true)
+  })
+
+  it("배열 필드가 null 이어도 죽지 않는다", () => {
+    expect(
+      isBlockEmpty(withRawValue(createChecklistField("c", ["a"]), { type: "checklist", checked: null })),
+    ).toBe(true)
+    expect(isBlockEmpty(withRawValue(createTagsField("g"), { type: "tags", tags: null }))).toBe(true)
+  })
+
+  /**
+   * 이 단언이 이 묶음의 핵심이다. "죽지 않는다"만 확인하면 **손상 값을 통째로 빈 값으로
+   * 갈아치우는 오구현도 통과한다** — 그 구현은 살아 있는 `start` 를 지워 버린다.
+   * 살아남은 값이 실제로 판정에 반영되는지를 함께 물어야 그물이 된다.
+   */
+  it("한쪽 필드만 깨졌으면 살아 있는 쪽이 판정에 반영된다 — 통째 치환 오구현을 잡는다", () => {
+    const partial = withRawValue(createPeriodField("p"), {
+      type: "period",
+      start: "2023.01",
+      end: null,
+    })
+    expect(isBlockEmpty(partial)).toBe(false)
+  })
+
+  it("알 수 없는 type 은 '비어 있다'로 접는다", () => {
+    expect(isBlockEmpty(withRawValue(createTextField("t"), { type: "미래에생길타입" }))).toBe(true)
+  })
+})
+
+describe("normalizeBlockValue (FRT-200)", () => {
+  it("value 가 통째로 없으면 블록 타입 기준 빈 값으로 복구한다", () => {
+    expect(normalizeBlockValue("date", null)).toEqual({ type: "date", date: "" })
+    expect(normalizeBlockValue("period", undefined)).toEqual({
+      type: "period",
+      start: "",
+      end: "",
+      isCurrent: false,
+    })
+    expect(normalizeBlockValue("tags", "문자열이왔다")).toEqual({ type: "tags", tags: [] })
+  })
+
+  /**
+   * `type` 만 깨진 값은 **버릴 값이 아니다.** 블록이 선언한 타입이 곧 그 값을 그리던 컨트롤이라
+   * 복구 근거가 된다 — 여기서 빈 값으로 갈면 열었다 저장하는 것만으로 사용자 입력이 지워진다.
+   */
+  it("type 만 없고 알맹이는 멀쩡한 값은 블록 타입으로 되살린다 — 비우지 않는다", () => {
+    expect(normalizeBlockValue("text", { text: "값은있는데 type 이 없다" })).toEqual({
+      type: "text",
+      text: "값은있는데 type 이 없다",
+    })
+    expect(normalizeBlockValue("period", { start: "2023.01", end: "2023.12" })).toEqual({
+      type: "period",
+      start: "2023.01",
+      end: "2023.12",
+      isCurrent: false,
+    })
+  })
+
+  /** 값이 든 `type` 을 이 코드가 모를 때도 같다 — 블록이 아는 타입으로 되살린다. */
+  /**
+   * ⚠️ **모르는 `type` 은 "깨진 것"이 아니라 "내가 모르는 것"일 수 있다** — 새 스키마가 쓴 값을
+   * 구 프론트가 열면 그렇다. 블록 타입으로 갈아 끼우면 그 판별자가 지워진 채 저장되어,
+   * **열었다 저장하는 것만으로 새 스키마 값이 구 모양으로 굳는다.** 그대로 둔다.
+   */
+  it("이 코드가 모르는 type 은 갈아 끼우지 않고 그대로 둔다", () => {
+    const newer = { type: "brand-new-in-v3", text: "살아있는 값" }
+    expect(normalizeBlockValue("text", newer)).toBe(newer)
+  })
+
+  /**
+   * 값도 블록도 모르는 타입이면 복구할 근거가 없다. 그래도 **지우지는 않는다** —
+   * `emptyValue` 는 모르는 타입에서 `undefined` 를 주므로, 갈아치우면 값이 통째로 사라진다.
+   */
+  it("값도 블록도 모르는 타입이면 원본을 그대로 둔다 (undefined 를 만들지 않는다)", () => {
+    const alien = { type: "brand-new-in-v3", payload: "미래 스키마" }
+    const out = normalizeBlockValue("brand-new-in-v3" as BlockValue["type"], alien)
+    expect(out).toBe(alien)
+  })
+  /** 살아 있는 값을 지우지 않는다 — 결측 필드만 채운다. */
+  it("일부 필드만 깨졌으면 그 필드만 채우고 나머지는 보존한다", () => {
+    expect(normalizeBlockValue("period", { type: "period", start: "2023.01", end: null })).toEqual({
+      type: "period",
+      start: "2023.01",
+      end: "",
+      isCurrent: false,
+    })
+    expect(
+      normalizeBlockValue("single-select", { type: "single-select", options: ["a"], selected: null }),
+    ).toEqual({ type: "single-select", options: ["a"], selected: "" })
+  })
+
+  /**
+   * 온전한 값은 **같은 참조**로 돌려준다. 렌더 관문(BlockRenderer)이 매 렌더 이 함수를 부르는데
+   * 정상 값마다 새 객체를 만들면 props 가 매번 바뀌어 불필요한 리렌더를 낳는다.
+   */
+  it("온전한 값은 새 객체를 만들지 않고 원본 참조를 그대로 돌려준다", () => {
+    const intact: BlockValue = { type: "date", date: "2024-03-01" }
+    expect(normalizeBlockValue("date", intact)).toBe(intact)
+
+    const rows: BlockValue = {
+      type: "repeatable-cell",
+      columns: [{ key: "item", label: "활동", blockType: "text" }],
+      rows: [{ id: "r1", cells: { item: "값" } }],
+    }
+    expect(normalizeBlockValue("repeatable-cell", rows)).toBe(rows)
+  })
+
+  /**
+   * 행에는 스키마에 없는 부가 필드(FRT-76 링크·FRT-178 역할태그·FRT-145 행 추가항목)가 붙는다.
+   * 보정하면서 행을 재구성하면 이것들이 조용히 사라진다 — 값 유실보다 나쁜 건 없다.
+   */
+  it("행을 보정해도 링크·역할태그·행 추가항목은 살아남는다", () => {
+    const normalized = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: null,
+      rows: [
+        {
+          id: "r1",
+          cells: { item: "값" },
+          linkedProjectRowId: "proj-1",
+          roleTags: ["팀장"],
+          extraFields: [{ key: "k", label: "메모", blockType: "text", value: "남긴 말" }],
+        },
+      ],
+    })
+    expect(normalized).toMatchObject({
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: { item: "값" },
+          linkedProjectRowId: "proj-1",
+          roleTags: ["팀장"],
+          extraFields: [{ key: "k", label: "메모", blockType: "text", value: "남긴 말" }],
+        },
+      ],
+    })
+  })
+
+  it("행이 배열이 아니거나 셀이 없어도 죽지 않는다", () => {
+    expect(normalizeBlockValue("repeatable-cell", { type: "repeatable-cell", rows: null })).toMatchObject({
+      rows: [],
+    })
+    const noCells = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: "r1" }],
+    })
+    expect(() => isBlockEmpty(withRawValue(createTextField("t"), noCells))).not.toThrow()
+  })
+
+  it("group 은 값이 없는 센티넬이라 그대로 둔다", () => {
+    expect(normalizeBlockValue("group", null)).toEqual({ type: "group" })
+  })
+
+  /**
+   * ⚠️ **표의 셀·열은 위치가 곧 의미다.** 깨진 원소를 걸러 내면(`filter`) 뒤 원소가 앞으로
+   * 당겨져 **다른 열의 값이 된다** — 값 유실보다 나쁜 무음 오염이다. 자리에서 바꿔야 한다.
+   */
+  it("표는 깨진 셀·열을 걸러 내지 않고 그 자리에서 바꾼다 (열이 밀리면 안 된다)", () => {
+    const out = normalizeBlockValue("table", {
+      type: "table",
+      columns: ["A", null, "C"],
+      rows: [[null, "B값", "C값"]],
+    })
+    expect(out).toMatchObject({
+      type: "table",
+      columns: ["A", "", "C"],
+      rows: [["", "B값", "C값"]],
+    })
+  })
+
+  /**
+   * 행 id 는 수정·삭제 핸들러가 행을 찾는 열쇠다. 결측을 인덱스로 채울 때 이미 그 이름을 쓰는
+   * 행이 있으면 **둘이 같은 id 를 갖고**, 하나를 고치면 둘 다 바뀌고 하나를 지우면 둘 다 사라진다.
+   */
+  /** 이미 저장된 두 행이 같은 id 를 들고 있으면 각 행은 성해 보여도 **쌍으로는 깨져 있다.** */
+  it("저장분에 이미 중복된 행 id 가 있으면 뒤엣것을 갈아 준다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        { id: "r1", cells: { a: "먼저" } },
+        { id: "r1", cells: { a: "나중" } },
+      ],
+    }) as unknown as { rows: { id: string; cells: Record<string, unknown> }[] }
+    expect(new Set(out.rows.map(r => r.id)).size).toBe(2)
+    expect(out.rows.map(r => r.cells.a)).toEqual(["먼저", "나중"]) // 값은 그대로
+  })
+
+  /**
+   * ⚠️ **폴백이 저장된 이름을 빼앗으면 안 된다.** 결측 행이 먼저 나와 `row-0` 을 가져가면,
+   * 진짜 `row-0` 이 `row-0-1` 로 밀리고 그걸 가리키던 링크가 **엉뚱한 행을 가리킨다**.
+   */
+  it("폴백 id 는 저장된 id 를 빼앗지 않는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ cells: { a: "id 없는 행" } }, { id: "row-0", cells: { a: "진짜 row-0" } }],
+    }) as unknown as { rows: { id: string; cells: Record<string, unknown> }[] }
+    const real = out.rows.find(r => r.cells.a === "진짜 row-0")
+    expect(real?.id).toBe("row-0")
+    expect(new Set(out.rows.map(r => r.id)).size).toBe(2)
+  })
+
+  /**
+   * ⚠️ 링크는 **다른 블록**에서 해석된다(`getProjectRow` 는 `targetSectionId` 의 블록에서
+   * `r.id === projectRowId` 로 찾는다). 그래서 참조를 **같은 블록의 행 표**로 옮기면 안 된다 —
+   * 여기서 할 일은 양쪽이 **같은 규칙으로** 글자가 되게 하는 것뿐이다.
+   */
+  it("링크 참조와 대상 행 id 가 같은 규칙으로 글자가 된다", () => {
+    const source = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: "r1", cells: {}, linkedProjectRowId: 5 }],
+    }) as unknown as { rows: { linkedProjectRowId?: string }[] }
+
+    const target = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: 5, cells: { a: "대상 행" } }],
+    }) as unknown as { rows: { id: string }[] }
+
+    expect(source.rows[0].linkedProjectRowId).toBe(target.rows[0].id)
+  })
+
+  /**
+   * ⚠️ 같은 블록에 우연히 같은 id 의 행이 있어도 **참조를 그쪽으로 옮기면 안 된다** —
+   * 그 참조는 다른 블록의 행을 가리킨다. 소스-로컬 표로 개명하면 링크가 엉뚱한 데로 간다.
+   */
+  it("같은 블록에 같은 id 행이 있어도 링크를 그쪽으로 끌어오지 않는다", () => {
+    const source = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        { id: "5", cells: { a: "문자 행" } },
+        { id: 5, cells: { a: "숫자 행" } }, // 충돌로 개명된다
+        { id: "r3", cells: {}, linkedProjectRowId: 5 },
+      ],
+    }) as unknown as { rows: { id: string; linkedProjectRowId?: string }[] }
+
+    const target = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: 5, cells: { a: "대상 행" } }],
+    }) as unknown as { rows: { id: string }[] }
+
+    expect(source.rows[2].linkedProjectRowId).toBe(target.rows[0].id)
+  })
+
+  /** 중복 보정이 만드는 이름도 **저장된 이름을 피해야** 한다(`x`,`x`,`x-1` → 진짜 `x-1` 이 밀리면 안 됨). */
+  it("중복 보정이 만든 이름이 저장된 이름을 빼앗지 않는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        { id: "x", cells: { a: "첫째" } },
+        { id: "x", cells: { a: "중복" } },
+        { id: "x-1", cells: { a: "진짜 x-1" } },
+      ],
+    }) as unknown as { rows: { id: string; cells: Record<string, unknown> }[] }
+    expect(out.rows.find(r => r.cells.a === "진짜 x-1")?.id).toBe("x-1")
+    expect(new Set(out.rows.map(r => r.id)).size).toBe(3)
+  })
+
+  it("행 id 를 인덱스로 채울 때 이미 쓰는 id 와 겹치지 않는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: "row-1", cells: { a: "먼저" } }, { cells: { a: "나중" } }],
+    }) as unknown as { rows: { id: string }[] }
+    const ids = out.rows.map(r => r.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  /**
+   * ⚠️ **컨테이너가 배열이라고 원소가 성한 게 아니다.** `tags:[{}]` 를 온전하다고 통과시키면
+   * `TagsBlock` 이 객체를 React 자식으로 그리다 죽어, 이 PR 이 막으려던 바로 그 에러 화면이 뜬다.
+   */
+  it("배열 안에 문자열 아닌 원소가 있으면 온전하다고 보지 않고 걸러 낸다", () => {
+    expect(
+      normalizeBlockValue("tags", { type: "tags", tags: ["좋음", { broken: true }] }),
+    ).toMatchObject({ type: "tags", tags: ["좋음"] })
+
+    expect(
+      normalizeBlockValue("checklist", {
+        type: "checklist",
+        options: ["a", null],
+        checked: ["a", { broken: true }],
+      }),
+    ).toMatchObject({ type: "checklist", options: ["a"], checked: ["a"] })
+  })
+})
+
+/**
+ * ⚠️ **컨테이너를 막았다고 잎이 막힌 게 아니다** (FRT-200 리뷰 3라운드). 값 하나가 몇 겹인지
+ * 세지 않고 방어를 넣으면 매 라운드 한 겹씩 남는다 — 블록 → 셀 → 배열 원소 → 셀 안의 배열.
+ */
+describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
+  it("파일의 선택 메타데이터가 깨져도 렌더가 부를 수 있는 모양으로 만든다", () => {
+    const out = normalizeBlockValue("file", {
+      type: "file",
+      fileName: "증빙.pdf",
+      description: "",
+      evidenceType: "",
+      mimeType: { broken: true },
+      url: 12,
+    }) as unknown as { fileName: string; mimeType?: unknown; url?: unknown }
+    expect(out.fileName).toBe("증빙.pdf") // 살아 있는 값은 지킨다
+    expect(typeof out.mimeType === "string" || out.mimeType === undefined).toBe(true)
+    expect(typeof out.url === "string" || out.url === undefined).toBe(true)
+  })
+
+  /**
+   * ⚠️ 셀을 채워 두면 `rowHasContent` 의 `||` 가 앞에서 끝나 **부가 항목에 닿지도 않는다**
+   * (실제로 그렇게 써서 위양성으로 통과했다). 셀을 비워 두 번째 항을 반드시 평가하게 한다.
+   */
+  it("행의 부가 항목이 깨져도 행 판정이 죽지 않는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "item", label: "활동", blockType: "text" }],
+      rows: [{ id: "r1", cells: {}, extraFields: [null], roleTags: [{ x: 1 }] }],
+    }) as unknown as { rows: Parameters<typeof rowHasContent>[0][] }
+    expect(() => rowHasContent(out.rows[0])).not.toThrow()
+    expect(rowHasContent(out.rows[0])).toBe(false)
+  })
+
+  it("셀 안의 배열에 문자열 아닌 원소가 있으면 걸러 낸다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "skills", label: "역량", blockType: "tags" }],
+      rows: [{ id: "r1", cells: { skills: ["협업", { broken: true }] } }],
+    }) as unknown as { rows: { cells: { skills: unknown } }[] }
+    expect(out.rows[0].cells.skills).toEqual(["협업"])
+  })
+
+  /** 열 정의는 `key` 만이 아니라 **렌더러가 읽는 필드 전부**가 성해야 한다. */
+  it("열 정의의 라벨·선택지가 깨져 있으면 그것도 맞춘다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [
+        { key: "item", label: { broken: true }, blockType: "text" },
+        { key: "sel", label: "선택", blockType: "checklist", options: ["정상", { broken: true }] },
+      ],
+      rows: [],
+    }) as unknown as { columns: { key: string; label: unknown; options?: unknown }[] }
+    expect(typeof out.columns[0].label).toBe("string")
+    expect(out.columns[1].options).toEqual(["정상"])
+  })
+
+  /** 열 `key` 가 겹치면 둘이 같은 셀을 가리키고, 하나를 지우면 둘 다 사라진다. */
+  it("열 key 가 중복이면 뒤엣것을 갈아 준다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [
+        { key: "item", label: "A", blockType: "text" },
+        { key: "item", label: "B", blockType: "text" },
+      ],
+      rows: [],
+    }) as unknown as { columns: { key: string }[] }
+    expect(new Set(out.columns.map(c => c.key)).size).toBe(2)
+  })
+
+  /**
+   * ⚠️ 열 `key` 를 갈면 **그 열이 가리키던 셀도 같이 옮겨야** 한다. 이름표만 바꾸면 값은
+   * 옛 이름 아래 남고 렌더러는 새 이름으로 찾아 — 저장된 값이 화면에서 사라진다.
+   */
+  /**
+   * ⚠️ 열 key `5` 와 `"5"` 는 JSON 에서 **같은 셀**(`cells["5"]`)을 가리킨다. 숫자 key 를
+   * 버리면 그 셀의 주인이 **뒤 열**로 넘어간다 — 앞엣것이 이름을 지킨다는 규칙과 어긋난다.
+   */
+  it("숫자 열 key 도 글자로 살려 앞 열이 셀을 지킨다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [
+        { key: 5, label: "앞 열", blockType: "text" },
+        { key: "5", label: "뒤 열", blockType: "text" },
+      ],
+      rows: [{ id: "r1", cells: { "5": "저장된 값" } }],
+    }) as unknown as { columns: { key: string }[]; rows: { cells: Record<string, unknown> }[] }
+    expect(out.columns[0].key).toBe("5")
+    expect(out.columns[1].key).not.toBe("5")
+    expect(out.rows[0].cells["5"]).toBe("저장된 값")
+  })
+
+  /** 만들어 낸 열 key 가 **행에 이미 있는 셀 이름**과 겹치면 남의 값을 그 열이 그린다. */
+  it("만들어 낸 열 key 는 행에 이미 있는 셀 이름을 피한다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: 5, label: "숫자키", blockType: "text" }],
+      rows: [{ id: "r1", cells: { "5": "이 열의 값", "col-0": "남의 값" } }],
+    }) as unknown as { columns: { key: string }[]; rows: { cells: Record<string, unknown> }[] }
+    const key = out.columns[0].key
+    expect(key).not.toBe("col-0")
+    expect(out.rows[0].cells[key]).toBe("이 열의 값")
+    expect(out.rows[0].cells["col-0"]).toBe("남의 값")
+  })
+
+  it("열 key 를 갈면 그 열이 쓰던 셀도 함께 옮긴다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: 5, label: "숫자키", blockType: "text" }],
+      rows: [{ id: "r1", cells: { "5": "저장된 값" } }],
+    }) as unknown as { columns: { key: string }[]; rows: { cells: Record<string, unknown> }[] }
+    const key = out.columns[0].key
+    expect(out.rows[0].cells[key]).toBe("저장된 값")
+  })
+
+  /**
+   * ⚠️ 중복 key 를 갈 때는 **앞엣것이 그 이름을 지킨다** — 셀도 앞 열에 남아야 한다.
+   * 옛→새 표를 그대로 적용하면 하나뿐인 값이 **뒤 열로 옮겨가** 소유자가 바뀐다.
+   */
+  it("중복 열 key 를 갈아도 셀은 이름을 지킨 앞 열에 남는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [
+        { key: "item", label: "A", blockType: "text" },
+        { key: "item", label: "B", blockType: "text" },
+      ],
+      rows: [{ id: "r1", cells: { item: "저장된 값" } }],
+    }) as unknown as { columns: { key: string }[]; rows: { cells: Record<string, unknown> }[] }
+    expect(out.columns[0].key).toBe("item")
+    expect(out.rows[0].cells.item).toBe("저장된 값")
+  })
+
+  /** 깨진 key 가 여럿이어도 셀 소유권은 **첫 열**에 남아야 한다(뒤엣것이 표를 덮어쓰면 안 된다). */
+  it("깨진 열 key 가 중복이어도 셀은 첫 열에 남는다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [
+        { key: 5, label: "A", blockType: "text" },
+        { key: 5, label: "B", blockType: "text" },
+      ],
+      rows: [{ id: "r1", cells: { "5": "저장된 값" } }],
+    }) as unknown as { columns: { key: string }[]; rows: { cells: Record<string, unknown> }[] }
+    expect(out.rows[0].cells[out.columns[0].key]).toBe("저장된 값")
+  })
+
+  /**
+   * ⚠️ 열이 **이 코드가 모르는 유형**이면 그 칸의 값도 모르는 게 당연하다 — 빈 문자열로 갈면
+   * 열었다 저장하는 것만으로 새 스키마가 쓴 잎 값이 사라진다. 그리는 컨트롤도 없으니 안전하다.
+   */
+  it("모르는 유형의 열에 실린 불투명 셀은 그대로 지킨다", () => {
+    const cell = { type: "rating-v3", value: 5 }
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "score", label: "평점", blockType: "rating-v3" }],
+      // ⚠️ `id` 를 일부러 비워 **보정 경로를 지나게** 한다. 온전한 값으로 쓰면 fast-path 로
+      //    빠져 `repairCell` 에 닿지도 않고 통과한다(실제로 그렇게 썼다가 잡았다).
+      rows: [{ cells: { score: cell } }],
+    }) as unknown as { rows: Parameters<typeof rowHasContent>[0][] }
+    expect((out.rows[0] as unknown as { cells: Record<string, unknown> }).cells.score).toEqual(cell)
+    // 그 행은 "비어 있음"이 아니어야 한다 — 비었다고 보면 버림 판정에서 사라진다.
+    expect(rowHasContent(out.rows[0])).toBe(true)
+  })
+
+  it("부가 항목 key 가 성했더라도 서로 겹치면 갈아 준다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          extraFields: [
+            { key: "k", label: "A", blockType: "text", value: "가" },
+            { key: "k", label: "B", blockType: "text", value: "나" },
+          ],
+        },
+      ],
+    }) as unknown as { rows: { extraFields: { key: string }[] }[] }
+    expect(new Set(out.rows[0].extraFields.map(f => f.key)).size).toBe(2)
+  })
+
+  /**
+   * ⚠️ 부가 항목의 값도 **새 스키마가 쓴 잎**일 수 있다. 저장 경로에서 `""` 로 낮추면 열었다
+   * 저장하는 것만으로 사라진다 — 그리기 위한 낮춤은 저장되지 않는 렌더 관문의 몫이다.
+   */
+  it("모르는 판별자의 부가 항목 값은 저장 경로에서 지키고 렌더 관문에서만 낮춘다", () => {
+    const raw = {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          extraFields: [
+            { key: "k", label: "평점", blockType: "rating-v3", value: { type: "rating-v3", value: 5 } },
+          ],
+        },
+      ],
+    }
+    const stored = normalizeBlockValue("repeatable-cell", raw) as unknown as {
+      rows: { extraFields: { value: unknown }[] }[]
+    }
+    expect(stored.rows[0].extraFields[0].value).toMatchObject({ type: "rating-v3", value: 5 })
+
+    const forRender = normalizeBlockForRender({
+      id: "b1",
+      type: "repeatable-cell",
+      label: "표",
+      value: raw as unknown as BlockValue,
+    }).value as unknown as { rows: { extraFields: { value: unknown }[] }[] }
+    const shown = forRender.rows[0].extraFields[0].value
+    expect(typeof shown === "string" || Array.isArray(shown)).toBe(true)
+  })
+
+  it("행 부가 항목의 key 가 겹치면 결정적으로 갈아 준다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          extraFields: [
+            { label: "A", blockType: "text", value: "가" },
+            { label: "B", blockType: "text", value: "나" },
+          ],
+        },
+      ],
+    }) as unknown as { rows: { extraFields: { key: string }[] }[] }
+    const keys = out.rows[0].extraFields.map(f => f.key)
+    expect(new Set(keys).size).toBe(2)
+  })
+
+  /** 숫자 id 로 이어진 링크는 **양쪽을 같은 방식으로** 다뤄야 살아남는다. */
+  it("숫자 행 id 와 그걸 가리키는 링크를 함께 문자열로 맞춘다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        { id: 5, cells: { a: "대상" } },
+        { id: 6, cells: { a: "출처" }, linkedProjectRowId: 5 },
+      ],
+    }) as unknown as { rows: { id: string; linkedProjectRowId?: string }[] }
+    expect(out.rows[1].linkedProjectRowId).toBe(out.rows[0].id)
+  })
+
+  /** 폴백 값을 만들 때 쓰는 선택지 목록도 저장분이다 — 위생을 거치지 않으면 그대로 실린다. */
+  it("폴백 값을 만들 때도 선택지 목록을 걸러 낸다", () => {
+    const out = normalizeBlockValue("checklist", null, {
+      options: ["정상", { broken: true }] as unknown as string[],
+    }) as unknown as { options: unknown[] }
+    expect(out.options).toEqual(["정상"])
+  })
+
+  /** `RowExtraField.value` 는 문자열·문자열 배열만이다 — 파일 셀 객체는 그대로 그려지면 죽는다. */
+  it("행 부가 항목에 파일 셀 객체가 들어 있으면 글자로 바꾼다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          extraFields: [
+            {
+              key: "k",
+              label: "증빙",
+              blockType: "text",
+              value: { type: "file", fileId: "f1", fileName: "증빙.pdf" },
+            },
+          ],
+        },
+      ],
+    }) as unknown as { rows: { extraFields: { value: unknown }[] }[] }
+    const value = out.rows[0].extraFields[0].value
+    expect(typeof value === "string" || Array.isArray(value)).toBe(true)
+  })
+
+  /** 행 부가 항목도 `value` 만이 아니라 라벨까지 — 편집 모드가 `label.trim()` 을 부른다. */
+  it("행 부가 항목의 라벨이 깨져 있으면 그것도 맞춘다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          extraFields: [{ key: "k", label: { broken: true }, blockType: "text", value: "x" }],
+        },
+      ],
+    }) as unknown as { rows: { extraFields: { label: unknown; value: unknown }[] }[] }
+    expect(typeof out.rows[0].extraFields[0].label).toBe("string")
+    expect(out.rows[0].extraFields[0].value).toBe("x") // 값은 그대로
+  })
+
+  it("되살릴 선택지 목록 자체가 깨져 있으면 그것도 걸러 낸다", () => {
+    const out = normalizeBlockValue(
+      "checklist",
+      { type: "checklist", checked: [] },
+      { options: ["정상", { broken: true }] as unknown as string[] },
+    ) as unknown as { options: unknown[] }
+    expect(out.options).toEqual(["정상"])
+  })
+})
+
+/**
+ * 블록이 선언한 타입과 값이 든 타입이 **둘 다 아는 타입인데 서로 다를 때**, 렌더러는
+ * `block.type` 으로 컨트롤을 고르므로 값이 그 모양이 아니면 그 자리에서 죽는다.
+ */
+/**
+ * 값(`block.value`)만이 아니라 **블록 자신의 필드**도 저장 JSONB 에서 온다 — `block.options` 는
+ * `SingleSelectBlock`·`FileBlock` 이 직접 읽고, `children`·`id` 는 목록·핸들러가 직접 쓴다.
+ */
+describe("normalizeBlock/Blocks — 블록 자신의 필드 (FRT-200)", () => {
+  it("블록 층위 options 가 깨져 있으면 블록에서도 맞춘다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "single-select",
+      label: "칸",
+      options: ["정상", { broken: true }] as unknown as string[],
+      value: { type: "single-select", options: [], selected: "" },
+    })
+    expect(normalized.options).toEqual(["정상"])
+
+    const notArray = normalizeBlock({
+      id: "b2",
+      type: "single-select",
+      label: "칸",
+      options: { broken: true } as unknown as string[],
+      value: { type: "single-select", options: [], selected: "" },
+    })
+    expect(Array.isArray(notArray.options)).toBe(true)
+  })
+
+  /** `TextBlock:17` 은 `block.label` 을 React 자식으로 그대로 그린다 — 객체면 그 자리에서 죽는다. */
+  it("블록 층위 표시 문자열이 깨져 있으면 블록에서도 맞춘다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: { broken: true } as unknown as string,
+      placeholder: { broken: true } as unknown as string,
+      guide: { broken: true } as unknown as string,
+      value: { type: "text", text: "값" },
+    })
+    expect(typeof normalized.label).toBe("string")
+    expect(normalized.placeholder === undefined || typeof normalized.placeholder === "string").toBe(true)
+    expect(normalized.guide === undefined || typeof normalized.guide === "string").toBe(true)
+  })
+
+  /**
+   * ⚠️ `null` 은 "빈 목록"이 아니라 **정의가 없다**는 뜻이다. `[]` 로 굳히면 나중 템플릿 복원이
+   * "사용자가 다 지웠다"로 읽어(빈 배열은 truthy) 증빙 드롭다운이 통째로 사라진다.
+   */
+  it("options 가 null 이면 빈 배열로 굳히지 않는다 (복원 여지를 남긴다)", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "file",
+      label: "증빙",
+      options: null as unknown as string[],
+      value: { type: "file", fileName: "", description: "", evidenceType: "" },
+    })
+    expect(Array.isArray(normalized.options)).toBe(false)
+  })
+
+  /**
+   * ⚠️ 조건부 노출 메타데이터도 저장분이다 — `isConditionMet` 이 `condition.equals?.includes(...)`
+   * 를 부르므로 배열이 아니면 그 자리에서 죽고, 폼은 렌더 전에 그 판정을 돈다.
+   */
+  it("visibleWhen 이 깨져 있으면 조건을 버리거나 모양을 맞춘다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      visibleWhen: { key: "core.경험명", equals: {} } as unknown as Block["visibleWhen"],
+      value: { type: "text", text: "" },
+    })
+    const cond = normalized.visibleWhen
+    expect(cond === undefined || Array.isArray(cond.equals) || cond.equals === undefined).toBe(true)
+  })
+
+  /**
+   * ⚠️ 빈 배열은 "조건 없음"이 아니라 **"아무것도 안 맞음"**이다. `isConditionMet` 은
+   * `equals` 가 있으면 그걸로만 판정하므로, `[]` 로 두면 그 필드가 **영원히 숨는다**.
+   */
+  it("조건의 연산자가 살릴 게 없으면 빈 배열로 두지 않고 뺀다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      visibleWhen: { key: "core.경험명", equals: { broken: true } } as unknown as Block["visibleWhen"],
+      value: { type: "text", text: "" },
+    })
+    expect(normalized.visibleWhen?.equals).toBeUndefined()
+  })
+
+  /** 저장분에 **이미** `equals: []` 인 경우도 같다 — 배열이라고 성한 게 아니다. */
+  it("저장분에 이미 빈 연산자가 있어도 뺀다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      visibleWhen: { key: "core.경험명", equals: [] },
+      value: { type: "text", text: "" },
+    })
+    expect(normalized.visibleWhen?.equals).toBeUndefined()
+  })
+
+  /**
+   * ⚠️ `required` 는 표시가 아니라 **폼 의미**를 바꾼다 — 진행도 판정·숨김 가능 여부가 달라진다.
+   * 객체나 `"false"` 같은 truthy 쓰레기가 그대로 통과하면 그 칸이 영원히 필수가 된다.
+   */
+  it("required 가 boolean 이 아니면 참으로 읽히지 않게 정리한다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      required: { broken: true } as unknown as boolean,
+      value: { type: "text", text: "" },
+    })
+    expect(normalized.required).toBeUndefined()
+
+    const real = normalizeBlock({
+      id: "b2",
+      type: "text",
+      label: "칸",
+      required: true,
+      value: { type: "text", text: "" },
+    })
+    expect(real.required).toBe(true) // 진짜 필수는 그대로
+  })
+
+  /** `computeFormCards` 는 `buckets[b.category ?? "detail"]` 로 찾는다 — 모르는 값이면 죽는다. */
+  it("category 가 이 코드가 아는 값이 아니면 뺀다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      category: "bogus" as unknown as Block["category"],
+      value: { type: "text", text: "" },
+    })
+    expect(normalized.category).toBeUndefined()
+  })
+
+  /** 빈 트리거 키는 "조건 없음"이 아니다 — 맞는 트리거를 못 찾아 그 칸이 영원히 숨는다. */
+  it("visibleWhen.key 가 비어 있으면 조건을 버린다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      visibleWhen: { key: "   " },
+      value: { type: "text", text: "" },
+    })
+    expect(normalized.visibleWhen).toBeUndefined()
+  })
+
+  /** 값이 신원을 알려 주면 그걸로 블록 타입을 되살린다 — 안 그러면 렌더러가 아무것도 안 그린다. */
+  it("블록 타입이 깨졌어도 값의 판별자로 되살린다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: null as unknown as Block["type"],
+      label: "칸",
+      value: { type: "text", text: "살아 있는 글" },
+    })
+    expect(normalized.type).toBe("text")
+    expect(normalized.value).toMatchObject({ type: "text", text: "살아 있는 글" })
+  })
+
+  /** `OutcomeList` 는 `linkConfig.label` 을 React 자식으로 그대로 그린다 — 객체면 그 자리에서 죽는다. */
+  it("linkConfig 가 깨져 있으면 설정을 버리거나 모양을 맞춘다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "repeatable-cell",
+      label: "성과",
+      variant: "outcome-list",
+      linkConfig: { label: {} } as unknown as Block["linkConfig"],
+      value: { type: "repeatable-cell", columns: [], rows: [] },
+    })
+    const cfg = normalized.linkConfig
+    expect(cfg === undefined || typeof cfg.label === "string" || cfg.label === undefined).toBe(true)
+  })
+
+  it("children 이 배열이 아니거나 원소가 깨져 있어도 죽지 않는다", () => {
+    const group = {
+      id: "g1",
+      type: "group",
+      label: "섹션",
+      value: { type: "group" },
+      children: { broken: true },
+    } as unknown as Block
+    expect(() => normalizeBlock(group)).not.toThrow()
+
+    const withNull = {
+      id: "g2",
+      type: "group",
+      label: "섹션",
+      value: { type: "group" },
+      children: [null, { id: "c1", type: "text", label: "칸", value: { type: "text", text: "값" } }],
+    } as unknown as Block
+    expect(() => normalizeBlock(withNull)).not.toThrow()
+    expect(normalizeBlock(withNull).children).toHaveLength(1)
+  })
+
+  /** 블록 id 는 목록의 수정·삭제 핸들러가 블록을 찾는 열쇠다 — 겹치면 둘이 함께 바뀐다. */
+  it("블록 id 가 없거나 겹치면 결정적으로 갈아 준다", () => {
+    const out = normalizeBlocks([
+      { id: "b1", type: "text", label: "A", value: { type: "text", text: "가" } },
+      { id: "b1", type: "text", label: "B", value: { type: "text", text: "나" } },
+      { type: "text", label: "C", value: { type: "text", text: "다" } } as unknown as Block,
+    ])
+    expect(new Set(out.map(b => b.id)).size).toBe(3)
+    expect(out.map(b => (b.value as { text: string }).text)).toEqual(["가", "나", "다"])
+  })
+})
+
+describe("normalizeBlock — 타입 불일치 (FRT-200)", () => {
+  /**
+   * ⚠️ **저장과 표시는 다른 질문이다.** 모르는 판별자는 저장 경로에선 그대로 지켜야 하지만
+   * (구 프론트가 새 스키마 값을 굳히면 안 된다), 그리려면 컨트롤이 읽을 모양이 필요하다.
+   * 그래서 갈아 끼우는 건 **렌더 관문에서만** 한다 — 그 결과는 저장되지 않는다.
+   */
+  it("모르는 판별자는 보정에선 지키고, 렌더 관문에서만 그릴 모양으로 바꾼다", () => {
+    const block: Block = {
+      id: "b1",
+      type: "text",
+      label: "칸",
+      value: { type: "brand-new-in-v3", text: "새 스키마" } as unknown as BlockValue,
+    }
+    expect(normalizeBlock(block).value).toBe(block.value) // 저장 경로: 그대로
+    expect(normalizeBlockForRender(block).value.type).toBe("text") // 표시 경로: 그릴 모양
+  })
+
+  /**
+   * ⚠️ text ↔ textarea 는 **저장 모양이 같다** — 매퍼(`injectValue`)도 호환으로 본다.
+   * 그런데 불일치라고 빈 값으로 갈면 열었다 저장하는 것만으로 글이 사라진다.
+   */
+  it("text ↔ textarea 불일치는 글을 지키며 판별자만 바꾼다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "text",
+      label: "칸",
+      value: { type: "textarea", text: "살아 있어야 할 글" } as unknown as BlockValue,
+    })
+    expect(normalized.value).toMatchObject({ type: "text", text: "살아 있어야 할 글" })
+  })
+
+  /**
+   * ⚠️ 아는 타입끼리 어긋나도 **저장 경로에서는 비우지 않는다** — 복구 가능한 정보이고,
+   * v1 은 이 정규화가 "커스텀으로 보존할지" 결정보다 먼저 돌아 그대로 사라진다.
+   * 그릴 모양은 저장되지 않는 렌더 관문이 만든다.
+   */
+  it("타입이 어긋나도 저장 경로는 값을 지키고, 렌더 관문만 모양을 맞춘다", () => {
+    const block: Block = {
+      id: "b1",
+      type: "repeatable-cell",
+      label: "성과",
+      value: { type: "text", text: "엉뚱한 값" } as unknown as BlockValue,
+    }
+    expect(normalizeBlock(block).value).toMatchObject({ type: "text", text: "엉뚱한 값" })
+
+    const forRender = normalizeBlockForRender(block).value as unknown as {
+      type: string
+      columns: unknown[]
+      rows: unknown[]
+    }
+    expect(forRender.type).toBe("repeatable-cell")
+    expect(Array.isArray(forRender.columns)).toBe(true)
+    expect(Array.isArray(forRender.rows)).toBe(true)
+  })
+})
+
+/**
+ * "그릴 게 없다"와 "버려도 된다"는 **다른 질문이다** (FRT-200 리뷰). 모르는 타입은 그릴 수는
+ * 없지만, 버리면 저장 왕복에서 그 키가 통째로 사라진다 — 새 스키마가 쓴 값을 구 프론트가 지운다.
+ */
+describe("isBlockDiscardable — 모르는 타입 (FRT-200)", () => {
+  const blockWith = (value: unknown): Block =>
+    ({ id: "b1", type: "text", label: "칸", value }) as unknown as Block
+
+  it("이 코드가 모르는 type 의 값은 버리지 않는다", () => {
+    const block = blockWith({ type: "brand-new-in-v3", payload: "미래 스키마" })
+    expect(isBlockEmpty(block)).toBe(true) // 그릴 것은 없다
+    expect(isBlockDiscardable(block)).toBe(false) // 그렇다고 버려도 되는 건 아니다
+  })
+
+  /**
+   * ⚠️ **판별자가 "모르는 문자열"인 것과 "아예 없는" 것은 다르다.** 앞은 새 스키마의 흔적이라
+   * 지켜야 하지만, 뒤는 그냥 손상이라 이관·개명이 덮어쓸 수 있어야 한다 — 안 그러면 목적지가
+   * "차지됨"으로 오판돼 **레거시 원본이 지워진 채 아무것도 안 남는다**.
+   */
+  it("판별자가 아예 없는 값은 보존 대상이 아니다", () => {
+    const noDiscriminator = { id: "b1", type: undefined, label: "", value: {} } as unknown as Block
+    expect(isBlockDiscardable(noDiscriminator)).toBe(true)
+  })
+
+  it("아는 타입의 빈 값은 종전대로 버린다", () => {
+    expect(isBlockDiscardable(blockWith({ type: "text", text: "" }))).toBe(true)
+    expect(isBlockDiscardable(blockWith({ type: "text", text: "값" }))).toBe(false)
+  })
+
+  /** 값에 판별자가 없어도 **블록 타입 자체가 미지**면 그건 새 스키마의 흔적이다 — 버리면 안 된다. */
+  it("블록 타입이 미지이고 값이 불투명하면 버리지 않는다", () => {
+    const block = {
+      id: "b1",
+      type: "brand-new-in-v3",
+      label: "새 칸",
+      value: { payload: "미래 스키마" },
+    } as unknown as Block
+    expect(isBlockDiscardable(block)).toBe(false)
+  })
+
+  /** 그룹은 자식이 정보다 — 모르는 타입의 자식을 담은 섹션을 버리면 그 값이 통째로 사라진다. */
+  it("모르는 타입의 자식을 담은 group 은 버리지 않는다", () => {
+    const group: Block = {
+      id: "g1",
+      type: "group",
+      label: "사용자 섹션",
+      value: { type: "group" },
+      children: [
+        { id: "c1", type: "text", label: "빈 칸", value: { type: "text", text: "" } },
+        blockWith({ type: "brand-new-in-v3", payload: "미래 스키마" }),
+      ],
+    }
+    expect(isBlockEmpty(group)).toBe(true) // 그릴 것은 없다
+    expect(isBlockDiscardable(group)).toBe(false) // 그렇다고 섹션째 지우면 안 된다
+  })
+})
+
+describe("행·셀 판정 — 손상된 값 (FRT-200)", () => {
+  /**
+   * ⚠️ 이 판정은 **보정 전 원본**에도 돈다 — `orphanFieldsToBlocks` 가 소비 안 된 필드 값을
+   * 날것으로 `isBlockDiscardable` 에 넘긴다. 여기서 던지면 정규화가 손쓸 새도 없이 화면이 죽는다.
+   */
+  it("부가 항목이 배열이 아니거나 원소가 깨져 있어도 던지지 않는다", () => {
+    const notArray = { id: "r1", cells: {}, extraFields: { broken: true } }
+    const withNull = { id: "r2", cells: {}, extraFields: [null] }
+    type Row = Parameters<typeof rowHasContent>[0]
+    expect(() => rowHasContent(notArray as unknown as Row)).not.toThrow()
+    expect(() => rowHasContent(withNull as unknown as Row)).not.toThrow()
+    expect(rowHasContent(withNull as unknown as Row)).toBe(false)
+  })
+
+  it("cells 가 없는 행도 죽지 않는다", () => {
+    expect(() => rowHasContent({ id: "r1" } as unknown as Parameters<typeof rowHasContent>[0])).not.toThrow()
+    expect(rowHasContent({ id: "r1" } as unknown as Parameters<typeof rowHasContent>[0])).toBe(false)
+  })
+
+  it("null 셀은 빈 셀로 본다", () => {
+    expect(() => cellFilled(null as unknown as CellValue)).not.toThrow()
+    expect(cellFilled(null as unknown as CellValue)).toBe(false)
+    expect(cellText(null as unknown as CellValue)).toBe("")
+  })
+
+  /**
+   * 셀 **안쪽**도 깨진다. `isFileCellValue` 는 `type` 만 보고 통과시키므로 `fileId` 가 없으면
+   * 그 다음 줄 `cell.fileId.trim()` 에서 죽는다 — 블록 층위만 막고 셀 층위를 빠뜨린 자리다.
+   */
+  it("파일 셀의 fileId·fileName 이 결측이어도 죽지 않는다", () => {
+    const brokenId = { type: "file", fileId: null, fileName: "보고서.pdf" } as unknown as CellValue
+    expect(() => cellFilled(brokenId)).not.toThrow()
+    expect(cellFilled(brokenId)).toBe(false)
+    expect(() => cellText(brokenId)).not.toThrow()
+    expect(cellText(brokenId)).toBe("")
+
+    const brokenName = { type: "file", fileId: "f-1" } as unknown as CellValue
+    expect(cellFilled(brokenName)).toBe(true)
+    // 파일명이 없어도 첨부했다는 사실은 남긴다(기존 대체 문구 규칙과 같은 기준).
+    expect(cellText(brokenName)).toBe("첨부파일")
+  })
+
+  it("파일 셀이 깨진 행도 판정이 죽지 않는다", () => {
+    const row = {
+      id: "r1",
+      cells: { 결과물: { type: "file", fileId: null, fileName: "x" } },
+    } as unknown as Parameters<typeof rowHasContent>[0]
+    expect(() => rowHasContent(row)).not.toThrow()
+    expect(rowHasContent(row)).toBe(false)
+  })
+})
+
+describe("normalizeBlock — 템플릿 선택지 되살리기 (FRT-200)", () => {
+  /**
+   * `options` 는 사용자가 고른 값이 아니라 **템플릿이 주는 선택지**다. 결측이라고 `[]` 로 두면
+   * `ChecklistBlock` 은 `val.options` 를 그대로 그리므로(형제 `SingleSelectBlock` 과 달리
+   * `block.options` 폴백이 없다) 체크박스가 하나도 없는 칸이 되어, 이미 고른 값을 **끌 수도
+   * 없다.** 블록이 선택지를 알고 있으면 그것으로 되살린다.
+   */
+  it("checklist 선택지가 결측이면 블록이 아는 선택지로 되살리고 고른 값은 지킨다", () => {
+    const block = createChecklistField("분위기", ["뿌듯함", "아쉬움"])
+    const normalized = normalizeBlock({
+      ...block,
+      value: { type: "checklist", checked: ["뿌듯함"] } as unknown as BlockValue,
+    })
+    expect(normalized.value).toMatchObject({
+      type: "checklist",
+      options: ["뿌듯함", "아쉬움"],
+      checked: ["뿌듯함"],
+    })
+  })
+
+  it("single-select 도 같은 기준으로 선택지를 되살린다", () => {
+    const block = createSelectField("근무 형태", ["정규직", "인턴"])
+    const normalized = normalizeBlock({
+      ...block,
+      value: { type: "single-select", selected: "인턴" } as unknown as BlockValue,
+    })
+    expect(normalized.value).toMatchObject({
+      type: "single-select",
+      options: ["정규직", "인턴"],
+      selected: "인턴",
+    })
+  })
+
+  it("블록도 선택지를 모르면 빈 목록으로 둔다 — 없는 선택지를 지어내지 않는다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "checklist",
+      label: "선택지 없는 칸",
+      value: { type: "checklist", checked: ["직접 쓴 값"] } as unknown as BlockValue,
+    })
+    expect(normalized.value).toMatchObject({ options: [], checked: ["직접 쓴 값"] })
+  })
+})
+
+/**
+ * **빈 판별자는 "내가 모르는 것"이 아니라 "신호가 없는 것"이다.**
+ *
+ * 모르는 *이름*(`'rating-v3'`)은 새 스키마의 흔적이라 지켜야 하지만, 빈 문자열은 아무 신원도
+ * 싣고 있지 않다 — 손상이다. 그래서 **대체 신호가 있으면 그것으로 복구하고, 없으면 그대로 둔다.**
+ * 어느 갈래에서도 지우지 않는다는 것이 이 무리의 불변식이다.
+ */
+describe("빈 판별자 — 신호 없음은 미지가 아니다", () => {
+  it("값의 판별자가 비어 있으면 블록 타입으로 되살려 글자를 지킨다", () => {
+    const value = normalizeBlockValue("text", {
+      type: "",
+      text: "저장된 값",
+    } as unknown as BlockValue)
+    // 그대로 두면 렌더 관문이 "미지"로 보아 **잠긴 빈 칸**을 그린다 — 글자가 보이지도 고쳐지지도 않는다.
+    expect(value).toEqual({ type: "text", text: "저장된 값" })
+  })
+
+  it("공백뿐인 판별자도 같다 — 트림하면 비는 문자열은 신원이 아니다", () => {
+    const value = normalizeBlockValue("textarea", {
+      type: "   ",
+      text: "긴 글",
+    } as unknown as BlockValue)
+    expect(value).toEqual({ type: "textarea", text: "긴 글" })
+  })
+
+  it("블록 타입이 비어 있으면 값의 판별자로 되살린다 — 아니면 아무것도 안 그려진다", () => {
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "" as unknown as Block["type"],
+      label: "판별자 잃은 칸",
+      value: { type: "text", text: "저장된 값" },
+    })
+    expect(normalized.type).toBe("text")
+    expect(normalized.value).toEqual({ type: "text", text: "저장된 값" })
+  })
+
+  it("양쪽 다 신호가 없으면 복구할 근거가 없다 — 그래도 지우지 않는다", () => {
+    const value = normalizeBlockValue("" as unknown as Block["type"], {
+      type: "",
+      text: "저장된 값",
+    } as unknown as BlockValue)
+    expect(value).toMatchObject({ text: "저장된 값" })
+  })
+
+  it("이름이 있는 미지 판별자는 여전히 그대로 지킨다 — 새 스키마의 흔적이다", () => {
+    const value = normalizeBlockValue("text", {
+      type: "rating-v3",
+      score: 4,
+    } as unknown as BlockValue)
+    expect(value).toEqual({ type: "rating-v3", score: 4 })
+  })
+})
+
+/**
+ * ⚠️ **여기는 고치는 곳이 아니다.** 아래 셋은 "빈 판별자도 손상이니 똑같이 처리하라"는 지적이
+ * 반드시 다시 올 자리인데, 그 처방을 여기에 적용하면 **값이 지워진다.** 위 무리와 갈리는 이유는
+ * 하나다 — **복구에 쓸 대체 신호가 이 경로에는 오지 않는다.**
+ * 지우는 쪽 판정에서 신호 없음은 곧 보존이다.
+ */
+describe("빈 판별자 — 복구 신호가 없는 경로는 건드리지 않는다", () => {
+  it("셀은 낮추면 곧 삭제다 — 빈 판별자를 든 셀도 저장 경로에서 지킨다", () => {
+    // `repairCell` 에는 열 유형이 인자로 오지 않아 되살릴 목표가 없다. 불투명에서 빼면
+    // 곧장 `''` 로 낮아진다 — 열었다 저장하는 것만으로 사용자 입력이 사라진다.
+    const normalized = normalizeBlock({
+      id: "b1",
+      type: "repeatable-cell",
+      label: "로그",
+      value: {
+        type: "repeatable-cell",
+        columns: [{ key: "c1", label: "점수", blockType: "rating-v3" }],
+        rows: [{ id: "r1", cells: { c1: { type: "", text: "저장된 값" } } }],
+      } as unknown as BlockValue,
+    })
+    const rows = (normalized.value as unknown as { rows: { cells: Record<string, unknown> }[] }).rows
+    expect(rows[0].cells.c1).toEqual({ type: "", text: "저장된 값" })
+  })
+
+  it("자리를 차지했는지 물을 때는 블록 타입이 없다 — 해석 못 하는 값은 차지된 것으로 센다", () => {
+    // 여기서 false 를 내면 이관·개명이 이 자리를 덮어쓰고, 개명은 원본을 먼저 지운다.
+    expect(isValueOccupied({ type: "", text: "저장된 값" } as unknown as BlockValue)).toBe(true)
+  })
+
+  it("버려도 되는지 물을 때도 마찬가지 — 못 그린다는 이유로 남의 값을 지우지 않는다", () => {
+    expect(
+      isBlockDiscardable({
+        id: "b1",
+        type: "text",
+        label: "칸",
+        value: { type: "", text: "저장된 값" } as unknown as BlockValue,
+      }),
+    ).toBe(false)
+  })
+})
+
+describe("isUnrenderableBlock — 편집을 열면 안 되는 블록", () => {
+  it("이름이 있는 미지 판별자는 편집을 막는다", () => {
+    expect(
+      isUnrenderableBlock({
+        id: "b1",
+        type: "checklist",
+        label: "칸",
+        value: { type: "rating-v3", options: {} } as unknown as BlockValue,
+      }),
+    ).toBe(true)
+  })
+
+  it("아는 타입끼리 어긋나도 막는다 — 그 컨트롤이 다룰 수 있는 값이 아니다", () => {
+    expect(
+      isUnrenderableBlock({
+        id: "b1",
+        type: "text",
+        label: "칸",
+        value: { type: "date", date: "2023-01-01" } as unknown as BlockValue,
+      }),
+    ).toBe(true)
+  })
+
+  it("빈 판별자는 막지 않는다 — 블록 타입으로 되살아나 편집 가능한 값이 된다", () => {
+    expect(
+      isUnrenderableBlock({
+        id: "b1",
+        type: "text",
+        label: "칸",
+        value: { type: "", text: "저장된 값" } as unknown as BlockValue,
+      }),
+    ).toBe(false)
+  })
+
+  it("성한 값은 막지 않는다", () => {
+    expect(
+      isUnrenderableBlock({
+        id: "b1",
+        type: "text",
+        label: "칸",
+        value: { type: "text", text: "저장된 값" },
+      }),
+    ).toBe(false)
+  })
+})
+
+describe("불투명 셀 — 아는 열 밑에서도 지킨다 (FRT-200)", () => {
+  const blockWithOpaqueCell = (): Block =>
+    ({
+      id: "b1",
+      type: "repeatable-cell",
+      label: "표",
+      value: {
+        type: "repeatable-cell",
+        columns: [{ key: "score", label: "점수", blockType: "text" }],
+        rows: [{ id: "r1", cells: { score: { type: "rating-v3", score: 5 } } }],
+      },
+    }) as unknown as Block
+
+  it("저장 경로는 아는 열의 불투명 셀을 그대로 지킨다", () => {
+    const v = normalizeBlockValue("repeatable-cell", blockWithOpaqueCell().value)
+    const cell = (v as unknown as { rows: { cells: Record<string, unknown> }[] }).rows[0].cells.score
+    expect(cell).toEqual({ type: "rating-v3", score: 5 })
+  })
+
+  it("그 블록은 편집을 막는다 — 열려 있으면 첫 입력이 보존한 값을 덮는다", () => {
+    expect(isUnrenderableBlock(blockWithOpaqueCell())).toBe(true)
+  })
+
+  it("렌더 관문은 그 셀을 글자로 낮춘다 — 객체가 셀 컨트롤에 닿으면 화면이 죽는다", () => {
+    const rendered = normalizeBlockForRender(blockWithOpaqueCell())
+    const cell = (rendered.value as unknown as { rows: { cells: Record<string, unknown> }[] })
+      .rows[0].cells.score
+    expect(cell).toBe("")
+  })
+
+  // ⚠️ 위 테스트는 **온전 판정을 통과해 보정에 닿지 않는다**(`isIntactRow` 가 먼저 지킨다).
+  // 행 `id` 를 깨뜨려 보정 경로를 강제로 지나게 해야 `repairCell` 이 검사 대상이 된다.
+  it("보정 경로를 지나도 불투명 셀은 남는다 — 행이 깨져 재작성될 때", () => {
+    const v = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "score", label: "점수", blockType: "text" }],
+      rows: [{ cells: { score: { type: "rating-v3", score: 5 } } }],
+    } as unknown as BlockValue)
+    const row = (v as unknown as { rows: { id: string; cells: Record<string, unknown> }[] }).rows[0]
+    expect(row.id).toBe("row-0")
+    expect(row.cells.score).toEqual({ type: "rating-v3", score: 5 })
+  })
+
+  it("모르는 열 밑의 불투명 셀도 그대로 지킨다 (기존 보장 유지)", () => {
+    const v = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "score", label: "점수", blockType: "rating-v3" }],
+      rows: [{ id: "r1", cells: { score: { type: "rating-v3", score: 5 } } }],
+    } as unknown as BlockValue)
+    const cell = (v as unknown as { rows: { cells: Record<string, unknown> }[] }).rows[0].cells.score
+    expect(cell).toEqual({ type: "rating-v3", score: 5 })
+  })
+
+  it("성한 셀은 그대로 — 불투명 보존이 일반 셀 보정을 무디게 하지 않는다", () => {
+    const v = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [{ key: "name", label: "이름", blockType: "text" }],
+      rows: [{ id: "r1", cells: { name: 42 } }],
+    } as unknown as BlockValue)
+    const cell = (v as unknown as { rows: { cells: Record<string, unknown> }[] }).rows[0].cells.name
+    expect(cell).toBe("")
+  })
+})
+
+describe("깨진 블록 정의 — 배열이 아니면 템플릿으로 되살린다 (FRT-200)", () => {
+  it("block.options 가 객체면 템플릿 선택지를 쓴다 — `??` 는 그 객체를 고른다", () => {
+    const block = {
+      id: "b1",
+      type: "checklist",
+      label: "칸",
+      options: {} as unknown as string[],
+      value: { type: "checklist", checked: ["가"] },
+    } as unknown as Block
+    const out = normalizeBlock(block, { options: ["가", "나", "다"] })
+    expect((out.value as { options: string[] }).options).toEqual(["가", "나", "다"])
+  })
+
+  it("block.options 가 빈 배열이면 사용자가 다 지운 것으로 존중한다", () => {
+    const block = {
+      id: "b1",
+      type: "checklist",
+      label: "칸",
+      options: [],
+      value: { type: "checklist", checked: [] },
+    } as unknown as Block
+    const out = normalizeBlock(block, { options: ["가", "나"] })
+    expect((out.value as { options: string[] }).options).toEqual([])
   })
 })

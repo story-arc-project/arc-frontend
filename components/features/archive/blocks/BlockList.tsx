@@ -23,7 +23,7 @@ import type {
   ChecklistBlockValue,
   SingleSelectBlockValue,
 } from "@/types/archive"
-import { createBlock, cloneBlock } from "@/lib/utils/block-utils"
+import { createBlock, cloneBlock, isUnrenderableBlock } from "@/lib/utils/block-utils"
 import { canHideBlock } from "@/lib/utils/hidden-fields"
 import BlockRenderer from "./BlockRenderer"
 import BlockTypePicker from "./BlockTypePicker"
@@ -201,19 +201,32 @@ export default function BlockList({
   }
 
   // Build initial config for modal from existing block
+  /**
+   * ⚠️ **저장분에서 온 값이라 타입이 약속한 모양대로 오지 않는다.** 모달은 받은 목록을 곧장
+   * `.join()`·`.map()` 하므로, 여기서 거르지 않으면 손상값 하나가 **렌더 도중 throw** 해
+   * 화면을 통째로 에러 화면으로 바꾼다 — 이 PR 이 막으려는 바로 그 고장이다.
+   * `??` 는 `{}` 같은 객체를 통과시키므로 "있음"이 아니라 **"배열인가"** 를 물어야 한다.
+   */
   function getEditConfig(block: Block): BlockEditConfig {
     const config: BlockEditConfig = { label: block.label, placeholder: block.placeholder }
+    const val = (block.value ?? {}) as unknown as Record<string, unknown>
+    // ⚠️ **배열이면 걸러 쓰고, 배열이 아닐 때만 폴백한다** — `normalizeBlockValue` 의
+    // `optionsOf` 와 같은 규칙이다. 통째로 물리면 원소 하나가 깨졌다는 이유로 사용자가
+    // 만든 선택지 전체가 템플릿 기본값으로 되돌아가고, 확인 한 번에 그대로 저장된다.
+    const stringList = (x: unknown, fallback?: unknown): string[] => {
+      const src = Array.isArray(x) ? x : Array.isArray(fallback) ? fallback : []
+      return src.filter((i): i is string => typeof i === "string")
+    }
     if (block.type === "single-select" || block.type === "checklist") {
-      const val = block.value as { options?: string[] }
-      config.options = val.options ?? block.options ?? []
+      config.options = stringList(val.options, block.options)
     }
     if (block.type === "repeatable-cell") {
-      const val = block.value as { columns?: { key: string; label: string; blockType: string }[] }
-      config.columns = (val.columns ?? []) as BlockEditConfig["columns"]
+      // 원소까지 검사하지는 않는다 — 아는 타입의 열은 `normalizeBlock` 이 이미 보정하고,
+      // 모르는 값을 담은 블록은 위에서 연필 자체가 안 붙는다. 증명되지 않은 가드는 안 넣는다.
+      config.columns = (Array.isArray(val.columns) ? val.columns : []) as BlockEditConfig["columns"]
     }
     if (block.type === "table") {
-      const val = block.value as { columns?: string[] }
-      config.tableColumns = val.columns ?? []
+      config.tableColumns = stringList(val.columns)
     }
     return config
   }
@@ -234,7 +247,9 @@ export default function BlockList({
       block={block}
       allowReorder={allowReorder}
       allowDelete={allowDelete}
-      allowEdit={editEnabled}
+      // ⚠️ 입력 칸을 잠그는 것만으로는 부족하다 — 이 연필은 그 칸 **바깥**에 있어서
+      // 그대로 두면 모르는 값 위에 설정 모달이 열리고, 확인 한 번이 보존해 둔 값을 덮는다.
+      allowEdit={editEnabled && !isUnrenderableBlock(block)}
       onChange={handleBlockChange}
       onHide={onHide && canHideBlock(block) ? () => onHide(block) : undefined}
       onDelete={() => handleDeleteBlock(block.id)}

@@ -18,7 +18,19 @@ import {
   getTemplateForType,
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
-import { uid, cloneBlocks, createGroupBlock, isBlockDiscardable, isBlockEmpty } from "@/lib/utils/block-utils"
+import {
+  uid,
+  cloneBlocks,
+  createGroupBlock,
+  isBlockDiscardable,
+  dedupeBlockIdsAcross,
+  isFilledText,
+  isKnownBlockType,
+  isValueOccupied,
+  normalizeBlockValue,
+  normalizeBlocks,
+  type BlockDefs,
+} from "@/lib/utils/block-utils"
 import { normalizeHiddenKeys, parseHiddenKeys } from "@/lib/utils/hidden-fields"
 
 /**
@@ -74,17 +86,37 @@ function textualCompatValue(block: Block, value: BlockValue): BlockValue | null 
 
 function injectValue(block: Block, value: BlockValue | undefined): Block {
   if (value === undefined) return block
-  // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)면 주입을 생략해 위젯 렌더 깨짐을 막는다.
-  // 단 text↔textarea 는 값 모양이 같아 변환해 싣는다.
-  if (value.type !== block.type) {
-    const compat = textualCompatValue(block, value)
-    return compat ? { ...block, value: compat } : block
+  // 저장 값이 통째로 깨졌으면(null·비객체) 주입을 **생략**한다 (FRT-200) — 되살릴 알맹이가 없다.
+  // ⚠️ 여기서 빈 값으로 덮으면 안 된다: 템플릿 블록의 value 는 드롭다운 `options`·표 `columns`
+  // 같은 정의를 들고 있어서, 빈 값으로 갈면 선택지·열이 통째로 사라진다.
+  if (!value || typeof value !== "object") return block
+  // 객체면 `type` 이 깨져 있어도 싣는다 — 블록이 선언한 타입이 복구 근거가 되고, 알맹이를
+  // 버리면 열었다 저장하는 것만으로 사용자 입력이 지워진다. 값이 온전하면 같은 참조가 돌아온다.
+  const templateColumns =
+    block.value?.type === "repeatable-cell" ? block.value.columns : undefined
+  const safe = normalizeBlockValue(block.type, value, {
+    options: block.options,
+    columns: templateColumns,
+  })
+  // ⚠️ **모르는 판별자는 불일치가 아니라 "내가 모르는 것"이다** — 새 스키마가 쓴 값이 템플릿이
+  // 아는 키에 실려 온 경우다. 여기서 템플릿 블록을 돌려주면 그 키는 소비된 것으로 처리돼
+  // 저장 때 템플릿 빈 값이 새 스키마 값을 덮는다. 그대로 실어 보내고, 그릴 모양은 저장되지 않는
+  // 렌더 관문(`normalizeBlockForRender`)이 맡는다.
+  if (!isKnownBlockType(safe.type)) return { ...block, value: safe }
+  // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)여도 **값은 싣는다.**
+  // ⚠️ 예전엔 주입을 생략해 위젯 렌더 깨짐을 막았는데, 그러면 그 키가 소비된 것으로 처리돼
+  // orphan 으로도 안 남고 **저장 때 템플릿 빈 값이 그 자리를 덮는다.** 렌더 깨짐은 이제
+  // 렌더 관문이 모양을 맞추고 **읽기 전용**으로 그려 막으므로, 여기서 값을 버릴 이유가 없다.
+  // 단 text↔textarea 는 값 모양이 같아 판별자를 바꿔 싣는다(무손실).
+  if (safe.type !== block.type) {
+    const compat = textualCompatValue(block, safe)
+    return { ...block, value: compat ?? safe }
   }
   // 컬럼을 손댄 레코드는 잠금을 풀어 열 관리 UI 를 돌려준다(FRT-104).
-  if (block.lockColumns && !columnsMatchTemplate(block.value, value)) {
-    return { ...block, value, lockColumns: false }
+  if (block.lockColumns && !columnsMatchTemplate(block.value, safe)) {
+    return { ...block, value: safe, lockColumns: false }
   }
-  return { ...block, value }
+  return { ...block, value: safe }
 }
 
 /**
@@ -101,6 +133,42 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
 export function mergeSavedIntoTemplate(templateBlock: Block, saved: Block): Block {
   const merged = injectValue(templateBlock, saved.value)
   return merged === templateBlock ? saved : merged
+}
+
+/**
+ * v1 저장 블록의 정의(선택지·열) 출처 — 현재 템플릿에서 **라벨로** 찾는다.
+ *
+ * v1 은 안정키가 없어 라벨이 유일한 연결고리다. 라벨이 안 걸리면 `undefined` 를 돌려
+ * 블록 자신이 든 정의만 쓰게 한다 — 없는 정의를 지어내지 않는다.
+ */
+function templateDefsResolver(
+  expType: string,
+  typeId: ExperienceTypeId,
+): ((block: Block) => BlockDefs | undefined) | undefined {
+  if (!hasTemplate(expType)) return undefined
+  const tmpl = getTemplateForType(typeId)
+  const byLabel = new Map<string, Block>()
+  // ⚠️ **안정키가 살아 있으면 그게 더 확실한 신원이다** — 라벨은 개명으로 낡을 수 있고,
+  // 라벨만 보면 못 찾아 정의가 `[]` 로 굳는다(그 뒤 템플릿 병합이 되살리지 못한다).
+  const byKey = new Map<string, Block>()
+  for (const b of [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)]) {
+    for (const t of [b, ...(b.children ?? [])]) {
+      if (!byLabel.has(t.label)) byLabel.set(t.label, t)
+      if (t.key && !byKey.has(t.key)) byKey.set(t.key, t)
+    }
+  }
+  return block => {
+    // ⚠️ 키가 **엉뚱한 유형**을 가리키면 거기서 멈추지 말고 라벨로 되짚는다 — 손상된 키 하나가
+    // 라벨로 확정되는 정의까지 못 찾게 만들면, 정의가 `[]` 로 굳어 셀을 볼 수도 고칠 수도 없다.
+    const byKeyMatch = block.key ? byKey.get(block.key) : undefined
+    const match =
+      byKeyMatch && byKeyMatch.type === block.type ? byKeyMatch : byLabel.get(block.label)
+    if (!match || match.type !== block.type) return undefined
+    return {
+      options: match.options,
+      columns: match.value?.type === "repeatable-cell" ? match.value.columns : undefined,
+    }
+  }
 }
 
 /**
@@ -134,12 +202,24 @@ function customEntriesToBlocks(entries: CustomEntry[], depth = 0): Block[] {
   const out: Block[] = []
   for (const e of entries) {
     if (e.entryType === 'field') {
+      // ⚠️ **이 경로는 `normalizeBlocks` 를 지나지 않는다** — v1 저장 배열만 지난다. 그래서
+      // `normalizeBlock` 의 "블록 타입이 비었으면 값의 판별자로 되살린다"를 여기서 같은 경계로
+      // 되풀이해야 한다. 안 하면 깨진 타입이 그대로 실려 `isUnrenderableBlock` 이 그 칸을 잠그고
+      // (입력도 연필도 죽는다) `blockToCustomEntry` 가 깨진 타입을 다시 저장한다 —
+      // **사용자가 직접 만든 칸이 영구히 편집 불가**가 된다.
+      // 모르는 *이름*의 타입은 새 스키마의 흔적이라 그대로 둔다(보존 규칙과 같은 경계).
+      const fromValue = (e.value as { type?: unknown } | null | undefined)?.type
+      const type = !isFilledText(e.type) && isKnownBlockType(fromValue) ? fromValue : e.type
       out.push({
         id: uid('blk'),
         key: e.key,
-        type: e.type,
+        type,
         label: e.label,
-        value: e.value,
+        // ⚠️ 형제 `orphanFieldsToBlocks` 의 가드를 복사하면 안 된다 (FRT-200). 그쪽은 값이
+        // 깨졌으면 블록을 통째로 버리는데, 여기서 그러면 **사용자가 직접 만든 칸이 사라진다** —
+        // custom 은 값이 아니라 필드의 존재 자체가 정보다. 게다가 여긴 `e.type` 이 값과 별도로
+        // 남아 있어 복구할 근거가 있다(orphan 은 `value.type` 이 유일한 타입 신호라 근거가 없다).
+        value: normalizeBlockValue(type, e.value, { options: e.options }),
         ...(e.required ? { required: true } : {}),
         ...(e.options ? { options: e.options } : {}),
       })
@@ -481,8 +561,9 @@ function applyScopedMigrations(
     const carried = carry(templateByKey.get(to), legacy)
     if (!carried) continue
     const current = out[to]
-    const currentFilled =
-      current && !isBlockEmpty({ id: '', type: current.type, label: '', value: current })
+    // ⚠️ 이관은 **덮어쓰기 결정**이다 — `isBlockEmpty` 로 물으면 모르는 판별자의 값이
+    // "비어 있음"으로 분류돼 레거시 값에 덮이고, 다음 저장에서 영구히 사라진다.
+    const currentFilled = current && isValueOccupied(current)
     if (currentFilled) continue
     if (out === fields) out = { ...fields }
     delete out[from]
@@ -549,8 +630,9 @@ function applyRenamedKeys(fields: Record<string, BlockValue>): Record<string, Bl
     if (out === fields) out = { ...fields }
     delete out[oldKey]
     const current = out[newKey]
-    const currentFilled =
-      current && !isBlockEmpty({ id: '', type: current.type, label: '', value: current })
+    // ⚠️ 이관은 **덮어쓰기 결정**이다 — `isBlockEmpty` 로 물으면 모르는 판별자의 값이
+    // "비어 있음"으로 분류돼 레거시 값에 덮이고, 다음 저장에서 영구히 사라진다.
+    const currentFilled = current && isValueOccupied(current)
     if (!currentFilled) out[newKey] = legacy
   }
   return out
@@ -679,9 +761,25 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   }
 
   // ── v1 레거시: 저장된 블록 배열 통과 + 레지스트리 라벨매칭으로 안정키 주입 ──
-  const savedCore = content.coreBlocks ?? []
-  const savedExt = content.extensionBlocks ?? []
-  const savedCustom = content.customBlocks ?? []
+  // ⚠️ v1 은 저장 배열을 그대로 통과시키므로 손상 값이 무검증으로 들어온다 (FRT-200).
+  // 아래 이관·dedup 로직이 곧바로 `isBlockDiscardable`(=isBlockEmpty)을 부르므로,
+  // **여기서 즉시** 보정해야 한다 — 한 줄이라도 늦으면 그 판정에서 먼저 죽는다.
+  // ⚠️ 템플릿 정의를 함께 넘긴다. v1 은 템플릿 병합이 **나중에**(ExperienceFormV2 →
+  // mergeSavedIntoTemplate) 일어나는데, 여기서 결측 정의를 `[]` 로 굳혀 버리면 그 병합은
+  // 빈 배열을 "사용자가 다 지웠다"로 읽어 현재 템플릿의 선택지·열을 되살리지 못한다 —
+  // 값은 남는데 그릴 컨트롤이 없는 칸이 된다.
+  const defsOf = templateDefsResolver(exp.type, typeId)
+  // ⚠️ 커스텀 블록에는 **정의를 넘기지 않는다.** 커스텀 라벨은 템플릿 신원이 아니라 사용자가
+  // 지은 이름이라, 우연히 같은 이름이라고 템플릿 선택지·열을 밀어 넣으면 매칭된 적도 없는
+  // 사용자의 칸이 조용히 바뀐다. 블록 자신이 든 정의만 쓴다.
+  //
+  // ⚠️ id 유일성은 **세 배열에 걸쳐** 물어야 한다 — 폼이 하나의 id 맵으로 합쳐 쓰므로
+  // 배열 안에서만 유일해선 부족하다(이미 같은 id 를 든 두 블록은 폴백도 안 쓴다).
+  const [savedCore, savedExt, savedCustom] = dedupeBlockIdsAcross([
+    normalizeBlocks(content.coreBlocks ?? [], defsOf, 'core'),
+    normalizeBlocks(content.extensionBlocks ?? [], defsOf, 'ext'),
+    normalizeBlocks(content.customBlocks ?? [], undefined, 'custom'),
+  ])
 
   if (!hasTemplate(exp.type)) {
     return { ...base, coreBlocks: savedCore, extensionBlocks: savedExt, customBlocks: savedCustom }
@@ -860,9 +958,12 @@ export function toSavePayload(exp: ExperienceV2): ExperienceSavePayload {
     else custom.push(blockToCustomEntry(b)) // 키 없는(사용자 추가) 블록은 custom 으로 보존
   }
   // 완료 저장 시 완전히 빈 사용자 섹션(group)은 정리한다. 초안은 보존(돌아와 채울 수 있게).
+  // ⚠️ 판정은 `isBlockEmpty` 가 아니라 `isBlockDiscardable` 이다 — 이건 **삭제** 결정이고,
+  // "그릴 게 없다"와 "버려도 된다"는 다른 질문이다. 이 코드가 모르는 타입의 자식을 담은
+  // 섹션은 그리지 못할 뿐이지, 지우면 그 값이 영구히 사라진다 (FRT-200 리뷰).
   const customSource =
     exp.status === "complete"
-      ? exp.customBlocks.filter(b => !(b.type === "group" && isBlockEmpty(b)))
+      ? exp.customBlocks.filter(b => !(b.type === "group" && isBlockDiscardable(b)))
       : exp.customBlocks
   for (const b of customSource) {
     custom.push(blockToCustomEntry(b))

@@ -1016,3 +1016,47 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
     });
   });
 });
+
+// ─── FRT-200: 손상된 저장 값이 발행을 막지 않는다 ────────────────────
+//
+// 포트폴리오 빌드는 `typePeriodOf` 에서 `isBlockEmpty(b)` 를 부르고 `block.value.type` 을 직접
+// 읽는다 — 렌더 관문(BlockRenderer)을 거치지 않는 경로다. 방어는 매퍼(`toExperienceV2`)가
+// 하므로 이 테스트는 "매퍼를 거친 값은 안전하다"는 전제를 잠근다.
+
+describe("손상된 저장 값 (FRT-200)", () => {
+  /** 코어 '기간'의 종료월만 깨뜨린다 — 시작월은 살아 있어야 한다. */
+  function withBrokenPeriod(id: string): Experience {
+    const base = makeExp({ id });
+    const content = base.content as Record<string, unknown>;
+    const core = (content.coreBlocks as Block[]).map((b) =>
+      b.label === "기간"
+        ? {
+            ...b,
+            value: { type: "period", start: "2026-02-01", end: null } as unknown as Block["value"],
+          }
+        : b,
+    );
+    return { ...base, content: { ...content, coreBlocks: core } };
+  }
+
+  it("기간 값이 깨진 경험이 섞여도 나머지 경험까지 발행된다", () => {
+    const broken = withBrokenPeriod("broken");
+    const intact = makeExp({ id: "intact" });
+
+    expect(() => buildPortfolio("demo-portfolio-1", [broken, intact], profile)).not.toThrow();
+    const result = buildPortfolio("demo-portfolio-1", [broken, intact], profile);
+    expect(result.posts.map((p) => p.id)).toEqual(["broken", "intact"]);
+  });
+
+  it("기간 값이 통째로 null 이어도 발행 파이프라인이 죽지 않는다", () => {
+    const base = makeExp({ id: "null-period" });
+    const content = base.content as Record<string, unknown>;
+    const core = (content.coreBlocks as Block[]).map((b) =>
+      b.label === "기간" ? { ...b, value: null as unknown as Block["value"] } : b,
+    );
+    const exp: Experience = { ...base, content: { ...content, coreBlocks: core } };
+
+    expect(() => buildPortfolio("demo-portfolio-1", [exp], profile)).not.toThrow();
+    expect(buildPortfolio("demo-portfolio-1", [exp], profile).posts).toHaveLength(1);
+  });
+});
