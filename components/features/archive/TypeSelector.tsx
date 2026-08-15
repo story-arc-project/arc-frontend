@@ -1,11 +1,17 @@
 "use client"
 
 import type React from "react"
-import { createElement, useState } from "react"
+import { createElement, useMemo, useState } from "react"
 import { Search, Pencil } from "lucide-react"
 import * as icons from "lucide-react"
 import type { ExperienceTypeId } from "@/types/archive"
-import { EXPERIENCE_TYPES, EXPERIENCE_TYPE_MAP, TYPE_CATEGORIES } from "@/lib/constants/templates-v2"
+import {
+  EXPERIENCE_TYPES,
+  EXPERIENCE_TYPE_MAP,
+  SELECTABLE_EXPERIENCE_TYPES,
+  TYPE_CATEGORIES,
+  isRetiredType,
+} from "@/lib/constants/templates-v2"
 
 interface TypeSelectorProps {
   selectedId: ExperienceTypeId | null
@@ -25,9 +31,23 @@ export default function TypeSelector({ selectedId, onSelect, disabled, onRequest
   const [search, setSearch] = useState("")
   const [expanded, setExpanded] = useState(false)
 
+  /**
+   * 그릴 유형 목록 — 기본은 확정본 선택지(FRT-300)지만, 은퇴 유형이 **이미 선택돼 있으면 그것만**
+   * 남긴다. 그 기록을 편집하다 '변경'을 열었을 때 자기 유형이 사라지면 선택 상태를 보여줄 수도,
+   * 변경을 물릴 수도 없다. 끝에 append 하지 않고 전체 배열을 filter 하는 이유는 카테고리 안
+   * 원래 순서를 지키기 위해서다.
+   */
+  const availableTypes = useMemo(
+    () =>
+      selectedId !== null && isRetiredType(selectedId)
+        ? EXPERIENCE_TYPES.filter(t => !isRetiredType(t.id) || t.id === selectedId)
+        : SELECTABLE_EXPERIENCE_TYPES,
+    [selectedId],
+  )
+
   const filtered = search.trim()
-    ? EXPERIENCE_TYPES.filter(t => t.label.includes(search.trim()))
-    : EXPERIENCE_TYPES
+    ? availableTypes.filter(t => t.label.includes(search.trim()))
+    : availableTypes
 
   // Collapsed state: a type is chosen, not expanded, and not disabled-without-collapse
   const collapsed = selectedId !== null && !expanded
@@ -112,7 +132,7 @@ export default function TypeSelector({ selectedId, onSelect, disabled, onRequest
         </div>
       ) : (
         TYPE_CATEGORIES.map(cat => {
-          const types = EXPERIENCE_TYPES.filter(t => t.category === cat.key)
+          const types = availableTypes.filter(t => t.category === cat.key)
           return (
             <div key={cat.key}>
               <span className="text-caption text-text-tertiary mb-1.5 block">{cat.label}</span>

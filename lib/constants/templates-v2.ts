@@ -45,6 +45,31 @@ export const EXPERIENCE_TYPES: ExperienceTypeInfo[] = [
 export const EXPERIENCE_TYPE_MAP: Record<ExperienceTypeId, ExperienceTypeInfo> =
   Object.fromEntries(EXPERIENCE_TYPES.map(t => [t.id, t])) as Record<ExperienceTypeId, ExperienceTypeInfo>
 
+/**
+ * 확정본(경험 유형 세트)에서 내려간 유형 — 새로 만들 수는 없지만, 이 유형으로 이미 저장해 둔
+ * 기록은 그대로 열리고 편집된다(FRT-300).
+ *
+ * ⚠️ 이 id 들을 위 `EXPERIENCE_TYPES` 배열에서 **지우지 말 것.** 배열은 `EXPERIENCE_TYPE_MAP` 과
+ * `SYSTEM_TEMPLATES_V2` 의 파생 소스이고, `hasTemplate`(lib/utils/experience-mapper.ts)이 map 조회로
+ * v2 여부를 판정한다 — 배열에서 빼는 순간 그 유형으로 저장된 기존 레코드가 통째로 v1 으로 떨어지고
+ * 템플릿도 조회되지 않는다. 내리는 것은 '선택지'뿐이다.
+ */
+export const RETIRED_TYPE_IDS = ['sports', 'journal', 'goal'] as const satisfies readonly ExperienceTypeId[]
+
+const RETIRED_TYPE_ID_SET: ReadonlySet<string> = new Set(RETIRED_TYPE_IDS)
+
+/** 이 유형을 새로 만들 수 있는가 — 선택지를 그리는 모든 경로가 이 술어를 공유한다. */
+export function isRetiredType(typeId: string): boolean {
+  return RETIRED_TYPE_ID_SET.has(typeId)
+}
+
+/**
+ * 새 경험을 만들 때 고를 수 있는 유형 — 확정본 14종(프로젝트가 개인·팀 2항목이라 15항목).
+ * 유형 선택·필터 등 **사용자에게 목록을 보여주는 경로는 전부 이걸 쓴다.**
+ */
+export const SELECTABLE_EXPERIENCE_TYPES: ExperienceTypeInfo[] =
+  EXPERIENCE_TYPES.filter(t => !isRetiredType(t.id))
+
 export const TYPE_CATEGORIES = [
   { key: 'academic', label: '학업' },
   { key: 'career', label: '커리어' },

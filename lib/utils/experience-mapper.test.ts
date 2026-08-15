@@ -200,6 +200,38 @@ describe("toExperienceV2", () => {
     expect(block?.value).toEqual({ type: "textarea", text: "저장된 값" })
   })
 
+  /**
+   * FRT-300 — 확정본에서 내려간 유형(sports/journal/goal)은 **선택지에서만** 빠졌다.
+   * `hasTemplate` 이 `EXPERIENCE_TYPE_MAP` 조회로 v2 여부를 판정하므로, 은퇴 id 를 map(=파생
+   * 소스인 `EXPERIENCE_TYPES` 배열)에서 지우면 이 레코드가 통째로 v1 으로 떨어져 값이 템플릿
+   * 자리에 주입되지 않는다. "기존 기록은 그대로 열린다"를 이 층에서 못 박는다.
+   */
+  it.each(["sports", "journal", "goal"])(
+    "확정본에서 내려간 유형(%s)으로 저장된 v2 레코드도 템플릿 자리에 값이 실린다",
+    typeId => {
+      const v2 = toExperienceV2(
+        makeExperience({
+          type: typeId,
+          content: {
+            schema_version: 2,
+            template_version: TEMPLATE_VERSION,
+            title: "지난 기록",
+            summary: "",
+            status: "draft",
+            tags: [],
+            fields: { "core.핵심 성과": { type: "textarea", text: "저장해 둔 값" } },
+            custom: [],
+          },
+        }),
+      )
+      expect(v2.coreBlocks.find(b => b.key === "core.핵심 성과")?.value).toEqual({
+        type: "textarea",
+        text: "저장해 둔 값",
+      })
+      expect(v2.title).toBe("지난 기록")
+    },
+  )
+
   it("v1 레거시: 저장된 블록 배열에 레지스트리 라벨매칭으로 안정키를 주입한다", () => {
     const v2 = toExperienceV2(
       makeExperience({

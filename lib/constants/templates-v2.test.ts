@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest"
-import { SYSTEM_TEMPLATES_V2, TEMPLATE_VERSION, getTemplateForType } from "@/lib/constants/templates-v2"
+import {
+  EXPERIENCE_TYPE_MAP,
+  SELECTABLE_EXPERIENCE_TYPES,
+  SYSTEM_TEMPLATES_V2,
+  TEMPLATE_MAP,
+  TEMPLATE_VERSION,
+  getTemplateForType,
+  isRetiredType,
+} from "@/lib/constants/templates-v2"
 import { isRequiredBlock } from "@/lib/utils/block-utils"
 import { canHideBlock } from "@/lib/utils/hidden-fields"
 import { isCardComplete } from "@/lib/utils/form-cards"
@@ -2051,5 +2059,49 @@ describe("확정본: 연구논문", () => {
   /** 섹션 id 교체는 breaking change 다 — `withSectionKeys` 규약대로 bump 를 동반한다. */
   it("섹션 id 를 갈아치웠으므로 TEMPLATE_VERSION 이 창작물(6) 위로 올라가 있다", () => {
     expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(7)
+  })
+})
+
+/**
+ * FRT-300 — 경험 유형 선택지를 확정본 14종으로 정리.
+ *
+ * 이 블록이 지키는 불변식은 하나다: **내려간 것은 '선택지'뿐이고, 레지스트리·템플릿은 그대로다.**
+ * 두 단언을 한 벌로 두는 이유는 둘이 같은 배열에서 갈라져 나오기 때문이다 — 목록만 보면
+ * "은퇴 3종이 빠졌다"가 성공으로 보이는데, 그게 map 에서 빠진 결과일 수도 있다.
+ */
+describe("확정본에서 내려간 유형 (FRT-300)", () => {
+  const RETIRED: ExperienceTypeId[] = ["sports", "journal", "goal"]
+
+  it("선택지에는 은퇴 유형이 없다", () => {
+    const ids = SELECTABLE_EXPERIENCE_TYPES.map(t => t.id)
+    for (const id of RETIRED) {
+      expect(ids, id).not.toContain(id)
+    }
+    // 확정본 14종 — 프로젝트가 개인·팀 2항목이라 목록은 15개다.
+    expect(SELECTABLE_EXPERIENCE_TYPES).toHaveLength(15)
+  })
+
+  it("은퇴 유형도 라벨·아이콘 레지스트리에는 남는다 — 기존 기록의 유형 이름이 깨지지 않게", () => {
+    for (const id of RETIRED) {
+      expect(EXPERIENCE_TYPE_MAP[id], id).toBeDefined()
+      expect(EXPERIENCE_TYPE_MAP[id].label, id).toBeTruthy()
+      expect(isRetiredType(id), id).toBe(true)
+    }
+  })
+
+  it("은퇴 유형도 템플릿이 그대로 조립된다 — 기존 기록이 열리고 편집되게", () => {
+    for (const id of RETIRED) {
+      const tmpl = getTemplateForType(id)
+      expect(tmpl.typeId, id).toBe(id)
+      expect(tmpl.commonCore.blocks.length, id).toBeGreaterThan(0)
+      expect(TEMPLATE_MAP[id], id).toBeDefined()
+    }
+  })
+
+  it("선택지의 모든 유형은 레지스트리에 있고 은퇴로 표시되지 않는다", () => {
+    for (const t of SELECTABLE_EXPERIENCE_TYPES) {
+      expect(EXPERIENCE_TYPE_MAP[t.id], t.id).toBeDefined()
+      expect(isRetiredType(t.id), t.id).toBe(false)
+    }
   })
 })
