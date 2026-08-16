@@ -52,13 +52,19 @@ const PRIMARY_VALUE_KEYS = [
   "items",
 ] as const
 
-/** 값이 아니라 렌더 힌트·내부 태그인 키 — 화면에 내보내지 않는다. */
+/**
+ * 값이 아니라 렌더 힌트·내부 태그인 키 — 화면에 내보내지 않는다.
+ *
+ * ⚠️ 여기 넣어도 되는 것은 **사용자가 쓴 값이 아닌 것**뿐이다. 입력 컨트롤이 있는 키를
+ * 넣으면 근거에서 조용히 사라진다 — `linkType`·`evidenceType` 이 그렇게 들어와 있었다
+ * (`LinkBlock.tsx` · `FileBlock.tsx` 둘 다 사용자가 고르는 select 다).
+ * 그리고 이 집합은 **BlockValue 층위에서만** 뜻이 있다. 행의 `cells` 안쪽은 템플릿이 정한
+ * 사용자 컬럼이라 이름이 겹쳐도(`type` 컬럼을 둔 템플릿이 4종) 값이다.
+ */
 const INTERNAL_KEYS = new Set([
   "type",
   "isCurrent",
   "options",
-  "linkType",
-  "evidenceType",
   "fileId",
   "mimeType",
   "size",
@@ -91,10 +97,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-/** 안정키 `${sectionId}.${label}` 의 라벨 조각을 취한다. 최상위 키는 사전으로 옮긴다. */
+/**
+ * 안정키 `${sectionId}.${label}` 의 라벨 조각을 취한다. 최상위 키는 사전으로 옮긴다.
+ *
+ * **첫 점**에서 가른다. sectionId 는 점 없는 케밥 슬러그지만(`templates-v2.ts`) 라벨에는
+ * 점이 올 수 있어서, 마지막 점에서 가르면 라벨이 잘린다(`평점(4.5 만점)` → `5 만점)`).
+ */
 function labelOf(rawKey: string): string {
   const trimmed = rawKey.trim()
-  const dot = trimmed.lastIndexOf(".")
+  const dot = trimmed.indexOf(".")
   const tail = dot >= 0 ? trimmed.slice(dot + 1) : trimmed
   return TOP_LEVEL_LABELS[tail] ?? tail
 }
@@ -107,32 +118,47 @@ function renderPeriod(value: Record<string, unknown>): string {
   return `${start} ~ ${end}`.trim()
 }
 
-/** 남은 항목을 라벨과 함께 낸다(표의 행 등). `skip` 은 이미 다른 방식으로 낸 키다. */
-function renderEntries(value: Record<string, unknown>, skip?: ReadonlySet<string>): string {
+/**
+ * 남은 항목을 라벨과 함께 낸다(표의 행 등). `skip` 은 이미 다른 방식으로 낸 키다.
+ * `isCells` 면 내부 키 필터를 끈다 — 셀 키는 템플릿이 정한 사용자 컬럼이다.
+ */
+function renderEntries(
+  value: Record<string, unknown>,
+  skip?: ReadonlySet<string>,
+  isCells = false,
+): string {
   return Object.entries(value)
-    .filter(([key]) => !INTERNAL_KEYS.has(key) && !skip?.has(key))
+    .filter(([key]) => !skip?.has(key) && (isCells || !INTERNAL_KEYS.has(key)))
     .map(([key, entry]) => {
+      // `cells` 는 값을 감싸기만 하는 껍데기다. 안쪽은 BlockValue 가 아니라 행의 셀이므로
+      // 대표 키·내부 키 규칙을 적용하지 않고 편다.
+      if (WRAPPER_KEYS.has(key) && isRecord(entry)) return renderObject(entry, true)
       const rendered = renderValue(entry)
-      if (!rendered) return ""
-      return WRAPPER_KEYS.has(key) ? rendered : `${labelOf(key)}: ${rendered}`
+      return rendered ? `${labelOf(key)}: ${rendered}` : ""
     })
     .filter(Boolean)
     .join(", ")
 }
 
-function renderObject(value: Record<string, unknown>): string {
+function renderObject(value: Record<string, unknown>, isCells = false): string {
   // 기간으로 읽되 **형제 값은 버리지 않는다** — 조용히 사라지는 값이 읽기 어려운 값보다 나쁘다.
   if ("start" in value || "end" in value) {
-    return [renderPeriod(value), renderEntries(value, PERIOD_KEYS)].filter(Boolean).join(", ")
+    const rest = renderEntries(value, PERIOD_KEYS, isCells)
+    return [renderPeriod(value), rest].filter(Boolean).join(", ")
   }
 
-  for (const key of PRIMARY_VALUE_KEYS) {
-    if (!(key in value)) continue
-    const rendered = renderValue(value[key])
-    if (rendered) return rendered
+  // 대표 키는 "무엇이 이 블록의 값인가"를 고르는 장치지 형제를 버리는 장치가 아니다.
+  // `LinkBlockValue`·`FileBlockValue` 는 대표 키 옆에 사용자가 쓴 값을 더 담는다.
+  if (!isCells) {
+    for (const key of PRIMARY_VALUE_KEYS) {
+      if (!(key in value)) continue
+      const primary = renderValue(value[key])
+      if (!primary) continue
+      return [primary, renderEntries(value, new Set([key]))].filter(Boolean).join(", ")
+    }
   }
 
-  return renderEntries(value)
+  return renderEntries(value, undefined, isCells)
 }
 
 function renderArray(value: unknown[]): string {

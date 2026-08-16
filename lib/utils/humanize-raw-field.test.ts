@@ -110,8 +110,32 @@ describe("humanizeRawFieldNotation — 값 모양별 렌더", () => {
   })
 
   it("대표 키가 없는 객체는 남은 항목을 라벨과 함께 낸다", () => {
-    const raw = 'core.링크: {"url": "https://a.b", "title": "발표자료"}'
-    expect(humanizeRawFieldNotation(raw)).toBe("링크: https://a.b")
+    const raw = 'core.수상: {"대회": "공모전", "성과": "장려상"}'
+    expect(humanizeRawFieldNotation(raw)).toBe("수상: 대회: 공모전, 성과: 장려상")
+  })
+
+  /**
+   * 대표 키는 "무엇이 그 블록의 값인가"를 고르는 장치지 **형제를 버리는 장치가 아니다**.
+   * `LinkBlockValue`·`FileBlockValue` 는 대표 키 옆에 사용자가 직접 쓴 값을 더 담는다
+   * (`title`·`description`·`linkType`·`evidenceType` 전부 입력 컨트롤이 있다).
+   */
+  it("대표 키를 낸 뒤에도 사용자가 쓴 형제 값을 함께 낸다", () => {
+    const link = 'core.링크: {"type": "link", "url": "https://a.b", "title": "발표자료", "description": "", "linkType": "GitHub"}'
+    expect(humanizeRawFieldNotation(link)).toBe("링크: https://a.b, 제목: 발표자료, linkType: GitHub")
+
+    const file = 'core.증빙: {"type": "file", "fileName": "report.pdf", "description": "최종 보고서", "evidenceType": "보고서", "fileId": "f1"}'
+    expect(humanizeRawFieldNotation(file)).toBe(
+      "증빙: report.pdf, description: 최종 보고서, evidenceType: 보고서",
+    )
+  })
+
+  /**
+   * 안정키는 `${sectionId}.${label}` 이고 sectionId 는 점 없는 슬러그다(templates-v2.ts).
+   * 라벨에는 점이 올 수 있으므로 **첫 점**에서 갈라야 한다 — 마지막 점에서 가르면 라벨이 잘린다.
+   */
+  it("라벨에 점이 있어도 라벨 전체를 살린다", () => {
+    const raw = 'rating.평점(4.5 만점): [4.2]'
+    expect(humanizeRawFieldNotation(raw)).toBe("평점(4.5 만점): 4.2")
   })
 
   it("표(행 배열)는 행마다 셀을 이어 낸다", () => {
@@ -128,6 +152,20 @@ describe("humanizeRawFieldNotation — 값 모양별 렌더", () => {
     const raw =
       'club.역할 이력: {"type": "repeatable-cell", "columns": [{"key": "role", "label": "역할명"}], "rows": [{"id": "r1", "cells": {"start": "2024-03", "end": "2024-12", "role": "공연팀장"}}]}'
     expect(humanizeRawFieldNotation(raw)).toBe("역할 이력: 2024-03 ~ 2024-12, role: 공연팀장")
+  })
+
+  /**
+   * `cells` 안쪽 키는 템플릿이 정한 **사용자 컬럼**이다 — `edu-projects`·`extra-missions`·
+   * 동아리 활동·`research-publication` 이 모두 `type` 컬럼('유형' single-select)을 둔다.
+   * BlockValue 의 판별자 `type` 과 이름만 같을 뿐이라, 내부 키로 걸러내면 사용자가 고른
+   * 유형이 근거에서 사라진다.
+   */
+  it("행의 셀은 BlockValue 내부 키와 이름이 겹쳐도 값으로 낸다", () => {
+    const raw =
+      'edu-projects.과제: {"type": "repeatable-cell", "rows": [{"id": "r1", "cells": {"name": "브랜드 전략 제안", "type": "팀 프로젝트", "description": "5인 팀"}}]}'
+    expect(humanizeRawFieldNotation(raw)).toBe(
+      "과제: name: 브랜드 전략 제안, type: 팀 프로젝트, description: 5인 팀",
+    )
   })
 
   it("모든 값이 비어 있으면 지어내지 않고 원문을 남긴다", () => {
