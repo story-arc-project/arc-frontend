@@ -4201,4 +4201,53 @@ describe("통합된 유형의 판별자 되돌리기 (FRT-291 리뷰)", () => {
     })
     expect(collabOf(saved)?.selected).toBe("팀 프로젝트(6명 이상)")
   })
+
+  /**
+   * schema v1(FRT-69 이전) 레코드는 v2 분기에 못 들어와 심기가 통째로 빠져 있었다(Codex P2 3차).
+   * v1 은 **정의상 통합 이전**이다 — schema v2 도입이 유형 통합(템플릿 8)보다 앞서므로,
+   * template_version 숫자가 없어도 '통합 이전'이 참이다. 여기가 빠지면 폼이 빈 템플릿 칸을
+   * 병합하고, 저장이 스키마를 v2·현재 템플릿으로 굳혀 이후엔 영영 심을 수 없다.
+   */
+  function v1ProjectRecord(type: string, extensionBlocks: unknown[] = []) {
+    return toExperienceV2({
+      id: "e1",
+      user_id: "u1",
+      type,
+      importance: null,
+      content: {
+        title: "v1 구 레코드",
+        summary: "",
+        status: "complete",
+        tags: [],
+        coreBlocks: [],
+        extensionBlocks,
+        customBlocks: [],
+      },
+      created_at: "2023-01-01T00:00:00Z",
+      updated_at: "2023-01-02T00:00:00Z",
+    } as unknown as Experience)
+  }
+
+  it("schema v1 개인 프로젝트도 '개인 프로젝트'로 되살아난다", () => {
+    const collab = collabOf(v1ProjectRecord("personal-project"))
+    expect(collab?.selected).toBe("개인 프로젝트")
+    // 선택지도 템플릿 것 그대로 — 빈 목록이면 드롭다운이 통째로 빈다(v2 심기와 같은 함정).
+    expect(collab?.options ?? []).toContain("팀 프로젝트(2~5명)")
+  })
+
+  it("schema v1 팀 프로젝트는 비워 둔다 — 팀 규모를 모른다", () => {
+    expect(collabOf(v1ProjectRecord("team-project"))?.selected ?? "").toBe("")
+  })
+
+  it("schema v1 에 이미 답이 있으면 덮지 않는다", () => {
+    const saved = v1ProjectRecord("personal-project", [
+      {
+        id: "b1",
+        type: "single-select",
+        label: "개인 / 팀",
+        value: { type: "single-select", options: [], selected: "팀 프로젝트(6명 이상)" },
+      },
+    ])
+    expect(collabOf(saved)?.selected).toBe("팀 프로젝트(6명 이상)")
+  })
 })

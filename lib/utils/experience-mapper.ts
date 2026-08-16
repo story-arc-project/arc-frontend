@@ -612,15 +612,13 @@ function carryIntoSingleLine(
 function seedMergedTypeAnswer(
   fields: Record<string, BlockValue>,
   rawType: string,
-  templateVersion: unknown,
+  preMerge: boolean,
   templateByKey: Map<string, Block>,
 ): Record<string, BlockValue> {
   if (rawType !== "personal-project") return fields
   // 통합 이후 저장된 레코드에서 이 칸이 빈 것은 **사용자의 상태**(아직 안 골랐다)이지 우리가
   // 아는 사실이 아니다 — 대신 정하면 팀 프로젝트를 만들다 만 사람이 '개인'이라는 답을 받는다.
-  if (typeof templateVersion !== "number" || templateVersion >= PROJECT_TYPE_MERGE_VERSION) {
-    return fields
-  }
+  if (!preMerge) return fields
   const current = fields[PROJECT_COLLAB_KEY]
   // 이미 답이 있으면 손대지 않는다. `isBlockEmpty` 가 아니라 값의 모양을 직접 보는 이유는
   // 이 판정이 **보정 전 원본**에도 닿기 때문이다(FRT-200).
@@ -633,6 +631,15 @@ function seedMergedTypeAnswer(
     ...fields,
     [PROJECT_COLLAB_KEY]: { type: "single-select", options, selected: PROJECT_SOLO_OPTION },
   }
+}
+
+/**
+ * v2 레코드의 '통합 이전' 판정. 버전 **미기재는 모르는 것**이므로 이전으로 치지 않는다 —
+ * 심기는 확신이 있을 때만 한다. (v1 레코드는 이 판정을 쓰지 않는다: schema v2 도입이
+ * 유형 통합(템플릿 8)보다 앞서, v1 은 버전 숫자 없이도 정의상 통합 이전이다.)
+ */
+function isPreMergeTemplateVersion(templateVersion: unknown): boolean {
+  return typeof templateVersion === "number" && templateVersion < PROJECT_TYPE_MERGE_VERSION
 }
 
 function applyScopedMigrations(
@@ -827,7 +834,7 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
         templateByKey,
       ),
       exp.type,
-      content.template_version,
+      isPreMergeTemplateVersion(content.template_version),
       templateByKey,
     )
     const coreBlocks = tmpl.commonCore.blocks.map(b => {
@@ -998,6 +1005,25 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     else matchedExt.push(dest)
     const coreTpl = coreTemplateByLabel.get(source.label)
     consolidatedCore.set(source, coreTpl ? cloneBlocks([coreTpl])[0] : undefined)
+  }
+
+  // 유형 통합의 판별자 심기는 v1 에도 건다(Codex P2 3차) — v2 분기에만 걸면 v1 레코드는 폼이
+  // 빈 템플릿 칸을 병합한 채 열리고, 저장이 스키마를 v2·현재 템플릿으로 굳혀 **이후엔 영영 심을
+  // 수 없다**('개인이었다'는 사실이 일반 id 속으로 사라진다). v1 은 **정의상 통합 이전**이다 —
+  // schema v2 도입(FRT-69)이 유형 통합(템플릿 8)보다 앞서므로 버전 숫자 없이 preMerge=true.
+  // 값 구성은 seedMergedTypeAnswer 한 곳에 두고 여기서는 블록으로 옮겨 싣기만 한다 — 구성을
+  // 복제하면 선택지 목록 같은 세부가 세대별로 어긋난다(options 복사 함정과 같은 이유).
+  if (exp.type === "personal-project") {
+    const tb = extTemplateByKey.get(PROJECT_COLLAB_KEY)
+    const idx = matchedExt.findIndex(b => b.key === PROJECT_COLLAB_KEY)
+    const current: Record<string, BlockValue> =
+      idx >= 0 ? { [PROJECT_COLLAB_KEY]: matchedExt[idx].value } : {}
+    const seeded = seedMergedTypeAnswer(current, exp.type, true, extTemplateByKey)
+    if (seeded !== current && tb) {
+      const dest = injectValue(cloneBlocks([tb])[0], seeded[PROJECT_COLLAB_KEY])
+      if (idx >= 0) matchedExt[idx] = dest
+      else matchedExt.push(dest)
+    }
   }
 
   // v2 는 코어를 현재 템플릿에서 다시 짜므로 `CORE_EXCLUDE` 가 저절로 적용되지만, v1 은 저장된
