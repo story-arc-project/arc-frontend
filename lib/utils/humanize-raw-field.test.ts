@@ -54,6 +54,25 @@ describe("humanizeRawFieldNotation — 건드리면 안 되는 것", () => {
     const raw = "미술사 연구는 특정 분야 외의\n일반적인 산업 직무와 연결고리가 약합니다."
     expect(humanizeRawFieldNotation(raw)).toBe(raw)
   })
+
+  /**
+   * 정제기는 매퍼의 `asString`/`asStringArray` 라는 **단일 입구**에 걸려 있어, 서술형 필드뿐
+   * 아니라 식별자도 함께 지나간다(`asString(r.id)` 만 이 파일에 6곳 + `extractAnalysisId` 2곳).
+   * 식별자가 조용히 재작성되면 이후 경험 조회 매칭이 깨지므로, "무해하다"를 주석이 아니라
+   * 여기서 못 박는다 — 호출처마다 예외를 세는 방식은 반드시 몇 곳을 빠뜨린다(FRT-200 실패 모양).
+   */
+  it("식별자는 어떤 모양이든 그대로 통과한다 — id 가 재작성되면 조회가 깨진다", () => {
+    const ids = [
+      "3f2504e0-4f89-11d3-9a0c-0305e82c3301", // UUID
+      "exp-123",
+      "research-paper.연구 기간", // 안정키 자체(값이 안 붙은 경우)
+      "analysis:42", // 콜론이 있어도 값이 JSON 리터럴이 아니다
+      "exp-1: [초안]", // 콜론+대괄호지만 JSON 으로 파싱되지 않는다
+    ]
+    for (const id of ids) {
+      expect(humanizeRawFieldNotation(id)).toBe(id)
+    }
+  })
 })
 
 describe("humanizeRawFieldNotation — 값 모양별 렌더", () => {

@@ -2034,12 +2034,22 @@ describe("스냅샷 배열의 원소 타입 검증 (FRT-215)", () => {
           id: "a1",
           status: "success",
           selected_keywords: ["데이터 분석", 1, null, "기획"],
-          selected_experience_ids: ["e1", 2, "e3"],
+          selected_experience_ids: [
+            "e1",
+            2,
+            "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+            "e3",
+          ],
         },
       ]),
     )
     const list = await getIndividualAnalysisList()
     expect(list[0].selectedKeywords).toEqual(["데이터 분석", "기획"])
-    expect(list[0].selectedExperienceIds).toEqual(["e1", "e3"])
+    // id 는 원문 그대로여야 한다 — 정제기가 식별자를 건드리면 이후 경험 조회 매칭이 깨진다.
+    expect(list[0].selectedExperienceIds).toEqual([
+      "e1",
+      "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+      "e3",
+    ])
   })
 })
