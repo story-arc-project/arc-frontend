@@ -49,10 +49,15 @@ export function RecentCoverLetterList({
 
   // FRT-258 — 이 목록의 로딩 게이트는 `items === null`, 즉 첫 조회에만 걸린다. 그래서 재조회는
   // **목록이 조작 가능한 채로** 뒤에서 돌고, 그 사이 사용자가 만든 변경(삭제)을 늦게 도착한
-  // 응답이 통째로 덮는다. 요청마다 세대를 물려 자기 세대가 아닌 응답은 쓰지 않게 한다
-  // (전례: hooks/useAdminCustomers.ts 의 seqRef).
+  // 응답이 통째로 덮는다. 방어는 두 갈래다.
+  //   ① 요청 세대(seqRef) — 더 새 요청이 시작됐으면 옛 응답은 쓰지 않는다
+  //      (전례: hooks/useAdminCustomers.ts).
+  //   ② 지운 id 집합 — 삭제는 요청을 만들지 않아 ①이 못 잡는다. 그렇다고 삭제가 세대를
+  //      올려 응답을 **버리면**, 그 응답에 실려 온 새 항목(방금 만든 자소서·상태 갱신)까지
+  //      함께 사라진다. 버리지 말고 지운 것만 빼서 적용한다.
   const seqRef = useRef(0);
   const mountedRef = useRef(true);
+  const deletedIdsRef = useRef<Set<string>>(new Set());
 
   // load 보다 앞에 선언한다 — 마운트 effect 순서상 이쪽이 먼저 true 를 세워야 한다.
   useEffect(() => {
@@ -66,11 +71,12 @@ export function RecentCoverLetterList({
     const seq = ++seqRef.current;
     try {
       const data = await getCoverLetterList();
-      // 가드는 **쓰기보다 앞**이어야 한다. 언마운트됐거나 이 응답이 떠난 뒤 세대가 올랐으면
-      // (더 새 요청이 시작됐거나, 사용자가 행을 지웠으면) 화면에 쓰지 않는다.
+      // 가드는 **쓰기보다 앞**이어야 한다. 언마운트됐거나 이 응답이 떠난 뒤 더 새 요청이
+      // 시작됐으면 화면에 쓰지 않는다.
       if (!mountedRef.current || seq !== seqRef.current) return;
       setError(null);
-      setItems(data);
+      // 이 응답이 떠난 뒤 사용자가 지운 행은 서버가 아직 모를 수 있다 — 빼고 그린다.
+      setItems(data.filter((c) => !deletedIdsRef.current.has(c.id)));
     } catch (err) {
       if (!mountedRef.current || seq !== seqRef.current) return;
       setError(err as Error);
@@ -78,10 +84,10 @@ export function RecentCoverLetterList({
     }
   }, []);
 
-  // 세대 올리기와 로컬 제거를 한 몸으로 묶는다 — 둘 중 하나만 하면 그 순간 떠 있던
+  // 집합 기록과 화면 제거를 한 몸으로 묶는다 — 둘 중 하나만 하면 그 순간 떠 있던
   // 재조회가 지운 행을 되살린다.
   const removeLocally = (id: string) => {
-    seqRef.current += 1;
+    deletedIdsRef.current.add(id);
     setItems((prev) => (prev ?? []).filter((c) => c.id !== id));
   };
 

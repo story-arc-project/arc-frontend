@@ -38,8 +38,12 @@ export function RecentResumeList({
   // FRT-258 — 자기소개서 목록과 같은 창이다. 로딩 게이트가 `items === null`(첫 조회 전용)이라
   // `reloadToken` 재조회는 목록이 조작 가능한 채로 돌고, 그 사이의 삭제를 늦게 도착한 응답이
   // 덮는다. 여긴 폴링이 없어 교정할 다음 조회도 없다 — 되살아나면 새로고침 전까지 남는다.
+  // 세대(seqRef)는 "더 새 요청이 이겼다"만 판정한다. 삭제는 요청을 만들지 않아 세대가
+  // 안 오르므로 지운 id 를 따로 기억한다 — 그렇다고 삭제가 세대를 올려 응답을 **버리면**
+  // `reloadToken` 이 실어 온 방금 만든 레쥬메까지 사라지고, 여긴 그걸 되살릴 폴링도 없다.
   const seqRef = useRef(0);
   const mountedRef = useRef(true);
+  const deletedIdsRef = useRef<Set<string>>(new Set());
 
   // load 보다 앞에 선언한다 — 마운트 effect 순서상 이쪽이 먼저 true 를 세워야 한다.
   useEffect(() => {
@@ -53,11 +57,12 @@ export function RecentResumeList({
     const seq = ++seqRef.current;
     try {
       const data = await getResumeList();
-      // 가드는 **쓰기보다 앞**이어야 한다. 언마운트됐거나 이 응답이 떠난 뒤 세대가 올랐으면
-      // (더 새 요청이 시작됐거나, 사용자가 행을 지웠으면) 화면에 쓰지 않는다.
+      // 가드는 **쓰기보다 앞**이어야 한다. 언마운트됐거나 이 응답이 떠난 뒤 더 새 요청이
+      // 시작됐으면 화면에 쓰지 않는다.
       if (!mountedRef.current || seq !== seqRef.current) return;
       setError(null);
-      setItems(data);
+      // 이 응답이 떠난 뒤 사용자가 지운 행은 서버가 아직 모를 수 있다 — 빼고 그린다.
+      setItems(data.filter((r) => !deletedIdsRef.current.has(r.version_id)));
     } catch (err) {
       if (!mountedRef.current || seq !== seqRef.current) return;
       setError(err as Error);
@@ -65,10 +70,10 @@ export function RecentResumeList({
     }
   }, []);
 
-  // 세대 올리기와 로컬 제거를 한 몸으로 묶는다 — 둘 중 하나만 하면 그 순간 떠 있던
+  // 집합 기록과 화면 제거를 한 몸으로 묶는다 — 둘 중 하나만 하면 그 순간 떠 있던
   // 재조회가 지운 행을 되살린다.
   const removeLocally = (versionId: string) => {
-    seqRef.current += 1;
+    deletedIdsRef.current.add(versionId);
     setItems((prev) => (prev ?? []).filter((r) => r.version_id !== versionId));
   };
 

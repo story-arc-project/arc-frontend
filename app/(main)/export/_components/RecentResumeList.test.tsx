@@ -187,6 +187,45 @@ describe("RecentResumeList — 뒤에서 도는 재조회", () => {
     expect(screen.queryByText("지원용 레쥬메")).toBeNull();
   });
 
+  // 삭제가 "그 순간 떠 있던 응답을 버린다"로 구현되면, 같은 응답에 실려 온 **새 레쥬메**까지
+  // 함께 사라진다. 여긴 폴링이 없어 그걸 되살릴 다음 조회도 없다 — 새로고침 전까지 안 보인다.
+  it("삭제 때문에 재조회가 실어 온 새 레쥬메까지 사라지지는 않는다", async () => {
+    let resolveReload: (v: ResumeListItem[]) => void = () => {};
+    mockGetResumeList
+      .mockReset()
+      .mockResolvedValueOnce([item()])
+      // 새 레쥬메를 만들면 reloadToken 이 올라간다 — 그 응답에 새 레쥬메가 실려 온다.
+      .mockImplementationOnce(
+        () =>
+          new Promise<ResumeListItem[]>((res) => {
+            resolveReload = res;
+          }),
+      );
+
+    const { rerender } = render(
+      <RecentResumeList onCreateClick={() => {}} reloadToken={0} />,
+    );
+    await act(async () => {});
+    expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
+
+    rerender(<RecentResumeList onCreateClick={() => {}} reloadToken={1} />);
+    await act(async () => {});
+
+    // 재조회가 떠 있는 채로 옛 레쥬메를 지운다.
+    fireEvent.click(screen.getByLabelText("레쥬메 삭제"));
+    fireEvent.click(screen.getByRole("button", { name: "삭제하기" }));
+    await act(async () => {});
+    expect(mockDeleteResume).toHaveBeenCalledWith("v1");
+
+    // 서버는 아직 삭제를 모른 채 응답한다 — 지운 것만 빠지고 새 것은 나타나야 한다.
+    await act(async () => {
+      resolveReload([item(), other()]);
+    });
+
+    expect(screen.queryByText("지원용 레쥬메")).toBeNull();
+    expect(screen.getByText("인턴 지원 레쥬메")).toBeTruthy();
+  });
+
   it("늦게 도착한 옛 응답이 그 뒤에 시작된 재조회의 결과를 덮지 않는다", async () => {
     let resolveFirst: (v: ResumeListItem[]) => void = () => {};
     mockGetResumeList

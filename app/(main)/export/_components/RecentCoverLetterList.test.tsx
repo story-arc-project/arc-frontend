@@ -166,6 +166,47 @@ describe("RecentCoverLetterList — 뒤에서 도는 재조회", () => {
     expect(screen.queryByText("지원 자기소개서")).toBeNull();
   });
 
+  // 삭제가 "그 순간 떠 있던 응답을 버린다"로 구현되면, 같은 응답에 실려 온 **상태 갱신**까지
+  // 함께 버려진다 — 폴링은 완료를 보고 꺼지므로 그 응답이 마지막이면 '생성 중'이 고착된다.
+  it("삭제 때문에 같은 폴링 응답의 완료 갱신까지 버리지는 않는다", async () => {
+    vi.useFakeTimers();
+
+    let resolvePoll: (v: CoverLetterListItem[]) => void = () => {};
+    mockGetCoverLetterList
+      .mockReset()
+      .mockResolvedValueOnce([item(), processing()])
+      .mockImplementationOnce(
+        () =>
+          new Promise<CoverLetterListItem[]>((res) => {
+            resolvePoll = res;
+          }),
+      );
+
+    render(<RecentCoverLetterList onCreateClick={() => {}} />);
+    await act(async () => {});
+    expect(screen.getByText("생성 중")).toBeTruthy();
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(mockGetCoverLetterList).toHaveBeenCalledTimes(2);
+
+    // 폴링이 떠 있는 채로 **다른** 자기소개서를 지운다.
+    fireEvent.click(screen.getAllByLabelText("자기소개서 삭제")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "삭제하기" }));
+    await act(async () => {});
+    expect(mockDeleteCoverLetter).toHaveBeenCalledWith("c1");
+
+    // 그 폴링이 "다 만들어졌다"를 싣고 도착한다 — 지운 것만 빠지고 완료는 반영돼야 한다.
+    await act(async () => {
+      resolvePoll([item(), item({ id: "c2", title: "만드는 중 자기소개서" })]);
+    });
+
+    expect(screen.queryByText("지원 자기소개서")).toBeNull();
+    expect(screen.getByText("만드는 중 자기소개서")).toBeTruthy();
+    expect(screen.queryByText("생성 중")).toBeNull();
+  });
+
   it("늦게 도착한 옛 응답이 그 뒤에 시작된 재조회의 결과를 덮지 않는다", async () => {
     let resolveFirst: (v: CoverLetterListItem[]) => void = () => {};
     mockGetCoverLetterList
