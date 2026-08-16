@@ -73,3 +73,27 @@ describe("은퇴 유형으로 저장해 둔 기록은 그대로 편집된다", (
     }
   })
 })
+
+/**
+ * 흡수된 유형(FRT-291 `team-project`)은 폐기형과 정반대로 다뤄야 한다. 현행 '프로젝트'가 이미 같은
+ * 라벨로 목록에 있으므로 **되살리면 안 되고**(같은 이름 칩 두 장), 대신 선택 표시가 현행 유형으로
+ * 접혀서 가야 한다. 두 은퇴를 한 규칙으로 처리하면 반드시 한쪽이 깨지는 자리다.
+ */
+describe("흡수된 유형으로 저장해 둔 기록은 현행 유형으로 접혀 보인다", () => {
+  it("접힌 상태에서 '프로젝트' 라벨이 보인다", () => {
+    render(<TypeSelector selectedId="team-project" onSelect={() => {}} />)
+
+    expect(screen.getByRole("button", { name: "프로젝트" })).toBeInTheDocument()
+  })
+
+  it("'변경'을 눌러 펼치면 '프로젝트' 칩이 한 장뿐이고, 그 칩이 선택돼 있다", async () => {
+    const user = userEvent.setup()
+    render(<TypeSelector selectedId="team-project" onSelect={() => {}} />)
+
+    await user.click(screen.getByRole("button", { name: "유형 변경" }))
+
+    const chips = screen.getAllByRole("button", { name: "프로젝트" })
+    expect(chips).toHaveLength(1)
+    expect(chips[0]).toHaveAttribute("aria-pressed", "true")
+  })
+})

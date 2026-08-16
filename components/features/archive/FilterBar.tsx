@@ -3,7 +3,7 @@
 import { Search, X, SlidersHorizontal, BookmarkPlus } from "lucide-react"
 import { useState } from "react"
 import type { LibraryFilter, SortBy, ExperienceTypeId, ExperienceStatus } from "@/types/archive"
-import { SELECTABLE_EXPERIENCE_TYPES, TYPE_CATEGORIES } from "@/lib/constants/templates-v2"
+import { EXPERIENCE_TYPES, TYPE_CATEGORIES } from "@/lib/constants/templates-v2"
 import { isImeComposing } from "@/lib/utils/keyboard"
 
 interface FilterBarProps {
@@ -105,7 +105,7 @@ export default function FilterBar({
           {/* Type filters grouped by category */}
           <div className="flex flex-col gap-2">
             {TYPE_CATEGORIES.map(cat => {
-              const types = SELECTABLE_EXPERIENCE_TYPES.filter(t => t.category === cat.key)
+              const types = EXPERIENCE_TYPES.filter(t => t.category === cat.key)
               return (
                 <div key={cat.key}>
                   <p className="text-caption text-text-tertiary mb-1">{cat.label}</p>

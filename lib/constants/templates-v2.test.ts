@@ -1,12 +1,14 @@
 import { describe, it, expect } from "vitest"
 import {
+  ALL_EXPERIENCE_TYPES,
+  EXPERIENCE_TYPES,
   EXPERIENCE_TYPE_MAP,
-  SELECTABLE_EXPERIENCE_TYPES,
+  RETIRED_TYPE_IDS,
   SYSTEM_TEMPLATES_V2,
   TEMPLATE_MAP,
   TEMPLATE_VERSION,
+  canonicalTypeId,
   getTemplateForType,
-  isRetiredType,
 } from "@/lib/constants/templates-v2"
 import { isRequiredBlock } from "@/lib/utils/block-utils"
 import { canHideBlock } from "@/lib/utils/hidden-fields"
@@ -2062,35 +2064,311 @@ describe("확정본: 연구논문", () => {
   })
 })
 
+describe("확정본: 프로젝트 (개인·팀 통합)", () => {
+  const sections = () =>
+    getTemplateForType("personal-project").extensions.filter(s => s.id !== "extended")
+  const labelsIn = (blocks: Block[]) => blocks.map(b => b.label)
+  const blockAt = (idx: number, label: string) => sections()[idx].blocks.find(b => b.label === label)!
+  const columnsOf = (block: Block) =>
+    block.value.type === "repeatable-cell" ? block.value.columns : []
+
+  it("확정본 5섹션을 순서·id·category 그대로 갖는다 (④⑤ 는 evidence 한 카드로 접힌다)", () => {
+    expect(sections().map(s => [s.id, s.category])).toEqual([
+      ["project-info", "basic"],
+      ["project-detail", "detail"],
+      ["project-tasks", "repeat"],
+      ["project-release", "evidence"],
+      ["project-artifacts", "evidence"],
+    ])
+  })
+
+  it("구 섹션 id 를 재사용하지 않는다 — 구 키가 orphan 안전망으로 흐르게", () => {
+    const ids = sections().map(s => s.id)
+    for (const gone of ["pp-info", "pp-decisions", "tp-info", "tp-tasks"]) {
+      expect(ids, gone).not.toContain(gone)
+    }
+  })
+
+  /**
+   * 확정본은 개인/팀을 **유형이 아니라 항목**으로 묻는다 → 은퇴한 `team-project` 레코드도
+   * 같은 폼으로 열려야 한다. 두 id 가 갈리면 같은 유형인데 저장 세대에 따라 화면이 달라진다.
+   */
+  it("개인·팀 두 id 가 같은 템플릿을 받는다", () => {
+    const personal = getTemplateForType("personal-project").extensions.map(s => s.id)
+    const team = getTemplateForType("team-project").extensions.map(s => s.id)
+    expect(team).toEqual(personal)
+  })
+
+  it("선택 목록에서는 팀 프로젝트가 내려갔지만 라벨 조회는 계속 된다", () => {
+    expect(EXPERIENCE_TYPES.map(t => t.id)).not.toContain("team-project")
+    // 목록에서 빼기만 하고 map 에서도 빠지면 `hasTemplate` 이 v2 판정을 못 해 기존 팀 레코드가
+    // 통째로 v1 경로로 떨어지고, 대시보드·카드·상세의 라벨이 사라진다.
+    expect(EXPERIENCE_TYPE_MAP["team-project"]?.label).toBe("프로젝트")
+    expect(EXPERIENCE_TYPE_MAP["personal-project"]?.label).toBe("프로젝트")
+  })
+
+  /**
+   * 목록에서 내린 id 는 **필터 칩이 만들어지지 않는다** → 그 id 를 정확 일치로 거르는 소비처가
+   * 있으면 옛 레코드를 골라낼 방법이 영영 사라진다. 그래서 **자리를 넘겨받은 유형이 있는 은퇴
+   * (흡수형)** 는 반드시 그 현행 id 로 접힌다.
+   *
+   * 원래 이 단언은 "은퇴 id 는 *전부* 접힌다"였다. FRT-300 이 **대신할 유형이 없는 은퇴(폐기형)**
+   * 를 들여오면서 그 규칙이 더는 전칭이 아니게 됐다 — 접을 곳이 없는데 억지로 접으면 그 기록이
+   * 남의 유형으로 집계된다. 그래서 두 갈래를 갈라 단언하되, **접혔다면 반드시 지금 고를 수 있는
+   * 유형이어야 한다**는 알맹이는 그대로 지킨다(은퇴 유형으로 접히면 문제가 그대로 남는다).
+   */
+  it("은퇴한 id 는 현행 유형으로 접히거나, 접히지 않고 자기 자신으로 해석된다", () => {
+    const selectable = EXPERIENCE_TYPES.map(t => t.id)
+    for (const id of RETIRED_TYPE_IDS) {
+      const canonical = canonicalTypeId(id)
+      if (canonical === id) {
+        // 폐기형 — 자기 라벨·자기 템플릿으로 계속 해석돼야 한다.
+        expect(EXPERIENCE_TYPE_MAP[id], id).toBeDefined()
+      } else {
+        // 흡수형 — 접힌 곳은 반드시 '지금 고를 수 있는' 유형이다.
+        expect(selectable, id).toContain(canonical)
+      }
+    }
+  })
+
+  it("현행 id 는 그대로 통과한다", () => {
+    for (const t of EXPERIENCE_TYPES) {
+      expect(canonicalTypeId(t.id)).toBe(t.id)
+    }
+  })
+
+  it("① 기본 정보는 확정본 필드를 순서 그대로 갖는다 (경험명·한 줄 요약은 헤더 코어 소유)", () => {
+    expect(labelsIn(sections()[0].blocks)).toEqual([
+      "프로젝트명",
+      "프로젝트 유형",
+      "개인 / 팀",
+      "역할",
+      "진행 기간",
+      "사용 기술 / 툴",
+      "팀원",
+    ])
+  })
+
+  it("① 프로젝트 유형은 확정본 9종을 그대로 갖는다", () => {
+    expect(blockAt(0, "프로젝트 유형").options).toEqual([
+      "앱/웹 서비스 개발",
+      "데이터 분석/모델링",
+      "기획/전략 프로젝트",
+      "디자인 프로젝트",
+      "해커톤",
+      "스터디 결과물",
+      "비즈니스 아이디어 실험",
+      "콘텐츠/미디어 제작",
+      "기타",
+    ])
+  })
+
+  it("① 개인 / 팀은 확정본 3종을 그대로 갖는다", () => {
+    expect(blockAt(0, "개인 / 팀").options).toEqual([
+      "개인 프로젝트",
+      "팀 프로젝트(2~5명)",
+      "팀 프로젝트(6명 이상)",
+    ])
+  })
+
+  /**
+   * 트리거 키는 `${sectionId}.${label}` 파생이라 라벨을 바꾸면 함께 바꿔야 한다.
+   * 어긋나면 조건이 영원히 미충족이 되어 역할 칸이 아예 안 뜬다 — 이 테스트가 유일한 방어선이다.
+   */
+  it("① 역할의 조건부 노출 트리거가 실제 '개인 / 팀' 안정키를 가리킨다", () => {
+    expect(blockAt(0, "역할").visibleWhen?.key).toBe(blockAt(0, "개인 / 팀").key)
+  })
+
+  /** 확정본 §4 "'개인 프로젝트' 외 선택 시 노출" — 손으로 적지 않고 선택지에서 파생시킨다. */
+  it("① 역할은 '개인 프로젝트' 를 뺀 나머지 선택지 전부에서 노출된다", () => {
+    const all = blockAt(0, "개인 / 팀").options ?? []
+    expect(blockAt(0, "역할").visibleWhen?.equals).toEqual(all.filter(o => o !== "개인 프로젝트"))
+  })
+
+  /** 조건부 노출 칸을 required 로 두면 '개인 프로젝트'에서 화면에 없는 칸이 완료 저장을 막는다. */
+  it("① 역할은 required 가 아니다", () => {
+    expect(blockAt(0, "역할").required).toBeFalsy()
+  })
+
+  it("① 필수는 확정본이 (선택) 표기를 안 한 셋뿐이다", () => {
+    expect(sections()[0].blocks.filter(b => b.required).map(b => b.label)).toEqual([
+      "프로젝트명",
+      "프로젝트 유형",
+      "진행 기간",
+    ])
+  })
+
+  it("② 프로젝트 상세는 확정본 5필드를 순서 그대로 갖는다", () => {
+    expect(labelsIn(sections()[1].blocks)).toEqual([
+      "기획 배경 / 동기",
+      "핵심 성과",
+      "어려움 / 문제 해결",
+      "이 프로젝트가 나에게 남긴 것",
+      "성장 / 변화",
+    ])
+  })
+
+  /** 확정본 ② 는 "(필수)" 섹션인데 다섯 칸이 모두 *(선택)* 이다 — 연구논문과 같게 읽는다. */
+  it("② 는 required 를 하나도 두지 않는다", () => {
+    expect(sections()[1].blocks.filter(b => b.required)).toEqual([])
+  })
+
+  it("② 성장 / 변화는 확정본 10종 이모지 카드다", () => {
+    const growth = blockAt(1, "성장 / 변화")
+    expect(growth.variant).toBe("mood-tag")
+    expect(growth.options).toEqual([
+      "🗺️ 기획/설계",
+      "⚡ 실행력",
+      "🧠 문제 해결력",
+      "🤝 협업/팀워크",
+      "🚩 리더십",
+      "⚙️ 기술 역량",
+      "👤 사용자 이해",
+      "📊 데이터 감각",
+      "🗣️ 커뮤니케이션",
+      "🎯 우선순위 판단",
+    ])
+  })
+
+  /**
+   * ②→③ '＋ 세부 기록' 은 학회·독서·어학이 쓰는 FRT-76 링크 그대로다. 대상 섹션·컬럼이
+   * 실재하지 않으면 버튼이 조용히 아무 일도 안 한다(드리프트 가드).
+   */
+  it("② 핵심 성과의 세부 기록 링크가 실재하는 ③ 섹션·컬럼을 가리킨다", () => {
+    const link = blockAt(1, "핵심 성과").linkConfig
+    expect(link?.label).toBe("＋ 세부 기록")
+    const target = sections().find(s => s.id === link?.targetSectionId)
+    expect(target, link?.targetSectionId).toBeTruthy()
+    const cell = target!.blocks.find(b => b.value.type === "repeatable-cell")!
+    expect(columnsOf(cell).map(c => c.key)).toContain(link!.titleColumnKey)
+  })
+
+  it("③ 세부 작업은 확정본 컬럼을 순서 그대로 갖는다", () => {
+    expect(columnsOf(blockAt(2, "세부 작업")).map(c => [c.label, c.blockType])).toEqual([
+      ["작업 단위명", "text"],
+      ["기간", "period"],
+      ["내가 한 일", "textarea"],
+      ["성과 / 결과", "textarea"],
+      ["어려움 / 문제 해결", "textarea"],
+    ])
+  })
+
+  /**
+   * 확정본 ③ '결과물' 은 세부 작업 하나당 **여러 건**이라 열로는 담을 수 없다(셀 값은 단일).
+   * 행 첨부로 받는다 — 이 플래그가 꺼지면 결과물 입력이 화면에서 통째로 사라진다.
+   */
+  it("③ 은 행마다 결과물을 여러 건 붙일 수 있다", () => {
+    expect(blockAt(2, "세부 작업").allowRowArtifacts).toBe(true)
+  })
+
+  it("③ 필수 컬럼은 확정본이 (선택) 표기를 안 한 둘뿐이다", () => {
+    expect(columnsOf(blockAt(2, "세부 작업")).filter(c => c.required).map(c => c.label)).toEqual([
+      "작업 단위명",
+      "내가 한 일",
+    ])
+  })
+
+  it("④ 공개 / 배포 이력은 확정본 4필드를 순서 그대로 갖는다", () => {
+    expect(labelsIn(sections()[3].blocks)).toEqual([
+      "배포 / 공개 채널",
+      "사용자 수 / 반응",
+      "외부 노출 이력",
+      "서비스 운영 상태",
+    ])
+  })
+
+  /** 확정본 라벨은 '현재 운영 상태'인데 상단 진행 상태 토글과 겹쳐 읽혀 바꿨다(사용자 확인). */
+  it("④ 서비스 운영 상태는 확정본 4종을 그대로 갖는다", () => {
+    expect(blockAt(3, "서비스 운영 상태").options).toEqual([
+      "운영 중",
+      "종료(아카이브 공개)",
+      "종료(비공개)",
+      "개발 중/준비 중",
+    ])
+  })
+
+  /** 확정본 초과 결정 — 채널명만으로는 실제 주소를 남길 자리가 없다(사용자 요청). */
+  it("④ 배포 / 공개 채널은 채널과 링크를 함께 받는다", () => {
+    expect(columnsOf(blockAt(3, "배포 / 공개 채널")).map(c => [c.key, c.blockType])).toEqual([
+      ["channel", "text"],
+      ["link", "link"],
+    ])
+  })
+
+  /**
+   * 표 컬럼에 required 가 하나라도 붙으면 `isRequiredBlock` 이 표 전체를 필수로 보고
+   * `canHideBlock` 이 숨기지도 못한다 — 배포한 적 없는 프로젝트가 카드를 영영 완료 못 한다.
+   */
+  it("④⑤ 의 표에는 required 컬럼이 없다", () => {
+    expect(columnsOf(blockAt(3, "배포 / 공개 채널")).filter(c => c.required)).toEqual([])
+    expect(columnsOf(blockAt(4, "결과물 링크 / 파일")).filter(c => c.required)).toEqual([])
+  })
+
+  it("⑤ 결과물 링크 / 파일은 링크·파일·설명 3열 다중 등록이다", () => {
+    expect(columnsOf(blockAt(4, "결과물 링크 / 파일")).map(c => [c.key, c.blockType])).toEqual([
+      ["link", "link"],
+      ["file", "file"],
+      ["desc", "text"],
+    ])
+  })
+
+  it("확정본에 없는 구 필드는 템플릿에서 사라졌다 (값은 orphan '기타' 로 보존)", () => {
+    const labels = sections().flatMap(s => labelsIn(s.blocks))
+    for (const gone of [
+      "한 줄 설명",
+      "대상 사용자/사용 상황",
+      "주요 기능",
+      "설계/결정",
+      "다음 개선 계획",
+      "협업 방식",
+      "역할 분담표",
+      "내 역할",
+      "회고 (잘된 점/아쉬운 점/다음엔)",
+      "갈등/의견 차이와 조율",
+    ]) {
+      expect(labels, gone).not.toContain(gone)
+    }
+  })
+
+  /** 섹션 id 교체는 breaking change 다 — `withSectionKeys` 규약대로 bump 를 동반한다. */
+  it("섹션 id 를 갈아치웠으므로 TEMPLATE_VERSION 이 연구논문(7) 위로 올라가 있다", () => {
+    expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(8)
+  })
+})
+
 /**
  * FRT-300 — 경험 유형 선택지를 확정본 14종으로 정리.
  *
  * 이 블록이 지키는 불변식은 하나다: **내려간 것은 '선택지'뿐이고, 레지스트리·템플릿은 그대로다.**
  * 두 단언을 한 벌로 두는 이유는 둘이 같은 배열에서 갈라져 나오기 때문이다 — 목록만 보면
- * "은퇴 3종이 빠졌다"가 성공으로 보이는데, 그게 map 에서 빠진 결과일 수도 있다.
+ * "은퇴 3종이 빠졌다"가 성공으로 보이는데, 그게 레지스트리에서 빠진 결과일 수도 있다.
+ *
+ * 은퇴는 두 종류이고 여기서 갈린다(FRT-291 흡수 / FRT-300 폐기). 흡수형은 `canonicalTypeId` 로
+ * 접히고, 폐기형은 접히면 **남의 유형으로 둔갑**하므로 접히지 않아야 한다.
  */
 describe("확정본에서 내려간 유형 (FRT-300)", () => {
-  const RETIRED: ExperienceTypeId[] = ["sports", "journal", "goal"]
+  /** 대신할 유형이 없어 자기 라벨·자기 템플릿을 그대로 유지하는 '폐기형'. */
+  const DISCARDED: ExperienceTypeId[] = ["sports", "journal", "goal"]
 
-  it("선택지에는 은퇴 유형이 없다", () => {
-    const ids = SELECTABLE_EXPERIENCE_TYPES.map(t => t.id)
-    for (const id of RETIRED) {
+  it("선택지에는 폐기된 유형이 없다 — 확정본 14종만 남는다", () => {
+    const ids = EXPERIENCE_TYPES.map(t => t.id)
+    for (const id of DISCARDED) {
       expect(ids, id).not.toContain(id)
     }
-    // 확정본 14종 — 프로젝트가 개인·팀 2항목이라 목록은 15개다.
-    expect(SELECTABLE_EXPERIENCE_TYPES).toHaveLength(15)
+    // 확정본 14종 = 목록 14항목. 프로젝트는 FRT-291 에서 개인·팀이 한 유형으로 합쳐졌다.
+    expect(EXPERIENCE_TYPES).toHaveLength(14)
   })
 
-  it("은퇴 유형도 라벨·아이콘 레지스트리에는 남는다 — 기존 기록의 유형 이름이 깨지지 않게", () => {
-    for (const id of RETIRED) {
+  it("폐기된 유형도 라벨·아이콘 레지스트리에는 남는다 — 기존 기록의 유형 이름이 깨지지 않게", () => {
+    for (const id of DISCARDED) {
       expect(EXPERIENCE_TYPE_MAP[id], id).toBeDefined()
       expect(EXPERIENCE_TYPE_MAP[id].label, id).toBeTruthy()
-      expect(isRetiredType(id), id).toBe(true)
+      expect(RETIRED_TYPE_IDS, id).toContain(id)
     }
   })
 
-  it("은퇴 유형도 템플릿이 그대로 조립된다 — 기존 기록이 열리고 편집되게", () => {
-    for (const id of RETIRED) {
+  it("폐기된 유형도 템플릿이 그대로 조립된다 — 기존 기록이 열리고 편집되게", () => {
+    for (const id of DISCARDED) {
       const tmpl = getTemplateForType(id)
       expect(tmpl.typeId, id).toBe(id)
       expect(tmpl.commonCore.blocks.length, id).toBeGreaterThan(0)
@@ -2098,10 +2376,28 @@ describe("확정본에서 내려간 유형 (FRT-300)", () => {
     }
   })
 
-  it("선택지의 모든 유형은 레지스트리에 있고 은퇴로 표시되지 않는다", () => {
-    for (const t of SELECTABLE_EXPERIENCE_TYPES) {
+  /**
+   * 폐기형에 alias 를 걸면 그 기록이 통째로 남의 유형으로 집계된다 — 흡수형(`team-project`)과
+   * 정확히 반대 처리라, 한 표에 같이 올리는 실수를 여기서 막는다.
+   */
+  it("폐기된 유형은 접히지 않는다 — 대신할 유형이 없으므로", () => {
+    for (const id of DISCARDED) {
+      expect(canonicalTypeId(id), id).toBe(id)
+    }
+    // 대조군: 흡수형은 접힌다.
+    expect(canonicalTypeId("team-project")).toBe("personal-project")
+  })
+
+  it("저장될 수 있는 모든 유형은 템플릿을 갖는다 — 목록에서 내리는 일이 템플릿 삭제로 번지지 않게", () => {
+    for (const t of ALL_EXPERIENCE_TYPES) {
+      expect(TEMPLATE_MAP[t.id], t.id).toBeDefined()
+    }
+  })
+
+  it("선택지의 모든 유형은 레지스트리에 있고 은퇴 목록에 없다", () => {
+    for (const t of EXPERIENCE_TYPES) {
       expect(EXPERIENCE_TYPE_MAP[t.id], t.id).toBeDefined()
-      expect(isRetiredType(t.id), t.id).toBe(false)
+      expect(RETIRED_TYPE_IDS, t.id).not.toContain(t.id)
     }
   })
 })

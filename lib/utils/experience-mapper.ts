@@ -16,6 +16,9 @@ import { isImportanceLevel, SCHEMA_VERSION_V2 } from "@/types/archive"
 import {
   EXPERIENCE_TYPE_MAP,
   getTemplateForType,
+  PROJECT_COLLAB_KEY,
+  PROJECT_SOLO_OPTION,
+  PROJECT_TYPE_MERGE_VERSION,
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
 import {
@@ -384,6 +387,47 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   // 목적지 `research-paper.연구 기간` 은 이번에 새로 생긴 키라 항상 비어 있어
   // `applyRenamedKeys` 의 "목적지가 차 있으면 진다" 규칙에 걸리지 않는다.
   'research-info.기간': 'research-paper.연구 기간',
+  // 프로젝트 확정본(FRT-291) — 개인·팀 두 구 템플릿(24필드)에서 **질문도 타입도 같은 것만** 옮긴다.
+  // 두 출발점이 한 목적지를 공유하는 줄이 있지만(목표/기획 배경) 한 레코드는 pp- 나 tp- 중 한쪽만
+  // 갖고 있어 충돌하지 않는다.
+  //
+  // 옮기지 않는 것과 이유 — 값은 전부 orphan '기타' 카드에 원본 그대로 남는다:
+  //  · `tp-info.내 역할`(required textarea) → '역할'(한 줄 text) 은 **위젯이 값을 못 지킨다.**
+  //    `isInjectableInto` 는 text↔textarea 를 허용하지만 `TextBlock` 은 `<input>` 이라 브라우저가
+  //    개행을 지운다 — 문단으로 적은 답이 구분자 없이 붙고, 한 글자만 고쳐도 그대로 저장된다
+  //    (FRT-247 ①·FRT-267 ⑭ 가 같은 자리에서 내린 결론). 게다가 확정본 '역할'은 `예: PM` 짜리라
+  //    **묻는 granularity 자체가 다르다.**
+  //  · `pp-decisions.성과`(textarea) → ② '핵심 성과'(outcome-list) 는 타입이 달라 injectValue 가
+  //    못 싣는다. 한 덩이 문장을 개조식 행으로 쪼개는 건 해석이라 시스템이 대신 정하지 않는다.
+  //  · `tp-tasks.작업 기록`(4열 표) → ③ '세부 작업'(5열 표) 은 타입은 같지만 **열 구성이 다르다.**
+  //    억지로 실으면 열 구조가 뒤엉켜 어느 답이 어느 질문의 답인지 알 수 없게 된다 — 표 전체를
+  //    '기타'에 원본으로 남겨 사용자가 보고 옮기게 둔다(창작물 '제작 과정' 표와 같은 처리).
+  //  · `tp-tasks.회고 (잘된 점/아쉬운 점/다음엔)` → '이 프로젝트가 나에게 남긴 것' 은 **묻는 것이
+  //    더 넓다.** 확정본은 새로 익힌 것·관점 변화·이어갈 방향을 묻지 '아쉬운 점'을 묻지 않아,
+  //    옮기면 답이 칸의 질문과 어긋난다(FRT-211 의 '개명 vs 대체').
+  //  · `tp-tasks.결과물 링크`(link)·`pp-decisions.데모/배포 링크`·`저장소 링크`(link)·
+  //    `스크린샷/영상`(file) → ⑤ '결과물 링크 / 파일'(repeatable-cell) 은 타입이 달라 못 싣는다
+  //    (창작물 '공개 링크'와 같은 자리).
+  //  · `pp-info.한 줄 설명` 은 코어 '한 줄 요약'으로 보내면 헤더 요약이 사용자 모르게 덮인다.
+  //  · `pp-info.대상 사용자/사용 상황`·`주요 기능`·`pp-decisions.설계/결정`·`다음 개선 계획`·
+  //    `tp-info.협업 방식`·`역할 분담표` 는 확정본에 대응 칸이 없다(사용자 확인 완료).
+  'pp-info.프로젝트명': 'project-info.프로젝트명',
+  'tp-info.프로젝트명': 'project-info.프로젝트명',
+  // 목적지 `project-info.진행 기간` 은 이번에 새로 생긴 키라 항상 비어 있어
+  // `applyRenamedKeys` 의 "목적지가 차 있으면 진다" 규칙에 걸리지 않는다. period→period.
+  'pp-info.기간': 'project-info.진행 기간',
+  'tp-info.기간': 'project-info.진행 기간',
+  'pp-info.기술/도구': 'project-info.사용 기술 / 툴',
+  // 확정본 '팀원' 가이드가 "함께한 팀원과 각자의 역할"이라 구 '팀 구성'과 같은 질문이다
+  // (SEMANTIC_GROUPS.team 이 이미 둘을 동의어로 묶는다). textarea→textarea.
+  'tp-info.팀 구성': 'project-info.팀원',
+  // 확정본 '기획 배경 / 동기' 가이드가 "시작하게 된 이유나 문제 의식"이라 구 두 라벨과 같은
+  // 질문이다(SEMANTIC_GROUPS.motivation 등재). 둘 다 textarea.
+  'pp-info.목표/만들고 싶었던 이유': 'project-detail.기획 배경 / 동기',
+  'tp-info.목표/문제 정의': 'project-detail.기획 배경 / 동기',
+  // 확정본 '어려움 / 문제 해결' 가이드가 "기술적 문제, **팀 갈등**, 방향 전환 등 무엇이든"이라
+  // 구 '갈등/의견 차이와 조율'을 명시적으로 포함한다. textarea→textarea.
+  'tp-tasks.갈등/의견 차이와 조율': 'project-detail.어려움 / 문제 해결',
 }
 
 /**
@@ -549,6 +593,55 @@ function carryIntoSingleLine(
  * 전역 쪽은 목적지가 차 있으면 구 키를 보존 없이 delete 해서 값이 조용히 사라지는데
  * (FRT-247 에서 확인), 여기서는 구 키가 남아 orphan '기타' 카드로 흘러 사용자가 볼 수 있다.
  */
+/**
+ * 유형 통합으로 **id 가 답이던 질문**이 생겼을 때, 구 레코드에 그 답을 되돌려 준다 (FRT-291 리뷰).
+ *
+ * 개인·팀 프로젝트가 한 유형으로 합쳐지면서 그 구분은 ① '개인 / 팀' 칸으로 옮겨 갔다. 그런데
+ * 통합 이전 레코드는 그 칸이 없던 시절에 저장됐고, 남은 id `personal-project` 는 이제 **새 팀
+ * 프로젝트도 쓰는 일반 id** 라 "이건 개인 작업이었다"는 사실이 스키마 어디에도 남지 않는다.
+ * 우리가 이미 아는 답을 사용자에게 다시 묻게 되는 자리다(FRT-249 Codex P1 과 같은 양식).
+ *
+ * ⚠️ **팀 레코드는 일부러 채우지 않는다.** 새 선택지가 팀 규모로 갈리는데(2~5명 / 6명 이상)
+ * 구 데이터에 규모가 없어, 둘 중 하나를 고르면 답이 둔갑한다(`carrySelectValue` 와 같은 판단).
+ * 게다가 `team-project` id 는 은퇴했을 뿐 그대로 남아 '팀이었다'는 사실을 여전히 담고 있다.
+ *
+ * ⚠️ `options` 는 **템플릿 블록에서 그대로 복사한다.** `injectValue` 는 저장값의 목록을 그대로
+ * 실으므로 빈 배열을 넣으면 선택지 없는 드롭다운이 되고, 여기 목록을 손으로 적으면 확정본이
+ * 선택지를 고칠 때 조용히 어긋난다(`applyScopedMigrations` 의 정규화와 같은 이유).
+ */
+function seedMergedTypeAnswer(
+  fields: Record<string, BlockValue>,
+  rawType: string,
+  preMerge: boolean,
+  templateByKey: Map<string, Block>,
+): Record<string, BlockValue> {
+  if (rawType !== "personal-project") return fields
+  // 통합 이후 저장된 레코드에서 이 칸이 빈 것은 **사용자의 상태**(아직 안 골랐다)이지 우리가
+  // 아는 사실이 아니다 — 대신 정하면 팀 프로젝트를 만들다 만 사람이 '개인'이라는 답을 받는다.
+  if (!preMerge) return fields
+  const current = fields[PROJECT_COLLAB_KEY]
+  // 이미 답이 있으면 손대지 않는다. `isBlockEmpty` 가 아니라 값의 모양을 직접 보는 이유는
+  // 이 판정이 **보정 전 원본**에도 닿기 때문이다(FRT-200).
+  if (current && current.type === "single-select" && typeof current.selected === "string" && current.selected.trim()) {
+    return fields
+  }
+  const templateValue = templateByKey.get(PROJECT_COLLAB_KEY)?.value
+  const options = templateValue?.type === "single-select" ? templateValue.options : []
+  return {
+    ...fields,
+    [PROJECT_COLLAB_KEY]: { type: "single-select", options, selected: PROJECT_SOLO_OPTION },
+  }
+}
+
+/**
+ * v2 레코드의 '통합 이전' 판정. 버전 **미기재는 모르는 것**이므로 이전으로 치지 않는다 —
+ * 심기는 확신이 있을 때만 한다. (v1 레코드는 이 판정을 쓰지 않는다: schema v2 도입이
+ * 유형 통합(템플릿 8)보다 앞서, v1 은 버전 숫자 없이도 정의상 통합 이전이다.)
+ */
+function isPreMergeTemplateVersion(templateVersion: unknown): boolean {
+  return typeof templateVersion === "number" && templateVersion < PROJECT_TYPE_MERGE_VERSION
+}
+
 function applyScopedMigrations(
   fields: Record<string, BlockValue>,
   rules: ScopedMigration[],
@@ -734,9 +827,14 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) templateByKey.set(b.key, b)
     // 전역 개명 별칭 뒤에 유형 스코프 이관을 얹는다 — 순서가 규칙이다. 유형 섹션 쪽 값이 먼저
     // 목적지를 차지하고, 코어 잔재는 목적지가 비었을 때만 들어간다.
-    const fields = applyScopedMigrations(
-      applyRenamedKeys(content.fields ?? {}),
-      [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
+    const fields = seedMergedTypeAnswer(
+      applyScopedMigrations(
+        applyRenamedKeys(content.fields ?? {}),
+        [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
+        templateByKey,
+      ),
+      exp.type,
+      isPreMergeTemplateVersion(content.template_version),
       templateByKey,
     )
     const coreBlocks = tmpl.commonCore.blocks.map(b => {
@@ -907,6 +1005,25 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     else matchedExt.push(dest)
     const coreTpl = coreTemplateByLabel.get(source.label)
     consolidatedCore.set(source, coreTpl ? cloneBlocks([coreTpl])[0] : undefined)
+  }
+
+  // 유형 통합의 판별자 심기는 v1 에도 건다(Codex P2 3차) — v2 분기에만 걸면 v1 레코드는 폼이
+  // 빈 템플릿 칸을 병합한 채 열리고, 저장이 스키마를 v2·현재 템플릿으로 굳혀 **이후엔 영영 심을
+  // 수 없다**('개인이었다'는 사실이 일반 id 속으로 사라진다). v1 은 **정의상 통합 이전**이다 —
+  // schema v2 도입(FRT-69)이 유형 통합(템플릿 8)보다 앞서므로 버전 숫자 없이 preMerge=true.
+  // 값 구성은 seedMergedTypeAnswer 한 곳에 두고 여기서는 블록으로 옮겨 싣기만 한다 — 구성을
+  // 복제하면 선택지 목록 같은 세부가 세대별로 어긋난다(options 복사 함정과 같은 이유).
+  if (exp.type === "personal-project") {
+    const tb = extTemplateByKey.get(PROJECT_COLLAB_KEY)
+    const idx = matchedExt.findIndex(b => b.key === PROJECT_COLLAB_KEY)
+    const current: Record<string, BlockValue> =
+      idx >= 0 ? { [PROJECT_COLLAB_KEY]: matchedExt[idx].value } : {}
+    const seeded = seedMergedTypeAnswer(current, exp.type, true, extTemplateByKey)
+    if (seeded !== current && tb) {
+      const dest = injectValue(cloneBlocks([tb])[0], seeded[PROJECT_COLLAB_KEY])
+      if (idx >= 0) matchedExt[idx] = dest
+      else matchedExt.push(dest)
+    }
   }
 
   // v2 는 코어를 현재 템플릿에서 다시 짜므로 `CORE_EXCLUDE` 가 저절로 적용되지만, v1 은 저장된

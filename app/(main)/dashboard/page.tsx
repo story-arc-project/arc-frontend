@@ -20,7 +20,7 @@ import { useReportExperienceCount } from "@/contexts/FeedbackTriggerContext";
 import { getAnalysisHomeSummary } from "@/lib/api/analysis-api";
 import { toExperienceV2 } from "@/lib/utils/experience-mapper";
 import { formatRelativeTime } from "@/lib/utils/date-utils";
-import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2";
+import { EXPERIENCE_TYPE_MAP, canonicalTypeId } from "@/lib/constants/templates-v2";
 import { getDisplayTitle } from "@/lib/utils/analysis-display";
 import {
   analysisTypeLabel,
@@ -69,7 +69,11 @@ function calcTypeDistribution(
 ): { type: string; label: string; count: number }[] {
   const map = new Map<string, number>();
   for (const exp of experiences) {
-    map.set(exp.type, (map.get(exp.type) ?? 0) + 1);
+    // 은퇴한 id 는 현행 id 로 접어서 센다 — 라벨은 `EXPERIENCE_TYPE_MAP` 이 둘 다 '프로젝트'로
+    // 돌려주므로, 접지 않으면 **구분되지 않는 막대가 둘** 뜨고 개수까지 쪼개진다. 유형이 많으면
+    // 쪼개진 탓에 한쪽이 '기타'로 밀려 들어가기도 한다(FRT-291 리뷰).
+    const type = canonicalTypeId(exp.type as ExperienceTypeId);
+    map.set(type, (map.get(type) ?? 0) + 1);
   }
   const sorted = [...map.entries()]
     .sort((a, b) => b[1] - a[1]);

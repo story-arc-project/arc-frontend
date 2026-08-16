@@ -153,6 +153,37 @@ export interface BlockRow {
    * 노출 여부는 블록 층위 `Block.allowRowExtras` 로 템플릿이 opt-in 한다.
    */
   extraFields?: RowExtraField[]
+  /**
+   * 이 행에만 붙은 결과물 첨부 목록 (FRT-291).
+   *
+   * 확정본 프로젝트 ③ 은 세부 작업마다 결과물을 **여러 개** 등록한다. 셀 값(`CellValue`)은
+   * 단일 값이라 목록을 담을 수 없고 `BlockColumnDef.blockType` 은 `repeatable-cell` 을
+   * 제외하므로, 열을 늘리는 대신 `extraFields`·`roleTags`·`linkedProjectRowId` 와 같은
+   * **행 필드**로 얹는다(additive·무마이그레이션, value(JSONB) 경로로 직렬화).
+   * 노출 여부는 블록 층위 `Block.allowRowArtifacts` 로 템플릿이 opt-in 한다.
+   *
+   * ⚠️ 파일을 담으므로 `hostsAttachment`(hidden-fields.ts)의 업로드 유실 불변식이 이 경로에도
+   * 서야 한다 — 그 함수는 `file` **열**만 보므로 행 첨부는 그냥 두면 검사를 통과해 버린다.
+   */
+  artifacts?: RowArtifact[]
+}
+
+/**
+ * 행 첨부 한 건 (FRT-291). 확정본의 'artifact-blocks (파일 or 링크 + 설명)' 한 줄에 대응한다.
+ *
+ * 링크와 파일을 **둘 다** 담을 수 있게 둔 것은 확정본 ⑤ '결과물 링크 / 파일'(link·file·desc
+ * 3컬럼 표)과 같은 모양을 유지하기 위해서다 — 같은 질문을 층위만 달리해 묻는데 담는 것이
+ * 달라지면, 나중에 둘 사이에 값을 옮길 때 한쪽이 조용히 버려진다.
+ *
+ * 파일은 `FileCellValue` 를 그대로 재사용한다(신규 값 타입을 만들지 않는다) — 업로드·다운로드
+ * 배선이 그 모양에 이미 맞춰져 있고, 모양이 갈리면 `cellFilled` 같은 공유 술어가 한쪽을 못 읽는다.
+ */
+export interface RowArtifact {
+  id: string
+  /** 사용자가 적는 링크. 만료되는 presigned URL(`FileCellValue`)과 다른 층이다. */
+  url?: string
+  file?: FileCellValue
+  desc?: string
 }
 
 /**
@@ -289,6 +320,15 @@ export interface Block {
    */
   allowRowExtras?: boolean
   /**
+   * 각 행에 결과물(링크·파일·설명)을 **여러 건** 붙일 수 있게 한다 (FRT-291).
+   * `allowRowExtras` 와 같은 인스턴스별 opt-in 규약이고, 값은 `BlockRow.artifacts` 에 저장된다.
+   * 열이 아니라 행에 붙으므로 `lockColumns` 와도 충돌하지 않는다.
+   *
+   * ⚠️ 켜는 순간 그 블록은 파일을 담을 수 있게 된다 → `canHideBlock` 이 × 를 막아야 한다
+   * (업로드 중 언마운트로 고른 파일이 조용히 사라지는 것을 막는 불변식, hidden-fields.ts).
+   */
+  allowRowArtifacts?: boolean
+  /**
    * 조건부 노출 (FRT-211). 다른 블록(트리거)의 현재 값에 따라 이 필드를 보이거나 숨긴다 —
    * 수상경력 확정본의 "'개인 / 팀'에서 '팀 수상'을 고르면 '팀에서 내가 맡은 역할'이 나타난다".
    * `roleTags`·`lockColumns` 와 같은 규약이다: 템플릿 정의에만 존재하며 value(JSONB)에는
@@ -361,6 +401,16 @@ export interface ExperienceTypeInfo {
 }
 
 /**
+ * 프로젝트는 개인·팀 두 id 가 **같은 템플릿**을 공유하므로(FRT-291) 표시 오버라이드도 같아야 한다.
+ * 한쪽만 등록하면 같은 폼인데 저장된 유형에 따라 카드 이름이 갈린다.
+ */
+const PROJECT_SECTION_LABELS: Partial<Record<SectionCategory, string>> = {
+  detail: '프로젝트 상세',
+  repeat: '세부 작업 기록',
+  evidence: '공개 / 배포 · 결과물',
+}
+
+/**
  * 유형별 섹션(카드·앵커) 라벨 오버라이드. 고정 4카테고리 라벨(SECTION_CATEGORIES)을
  * 특정 경험 유형에서만 다른 이름으로 보이게 한다 — 예: 학회의 '반복 기록' → '프로젝트 기록'.
  * "유형마다 섹션이 달라지는" 구조의 확장점이며, 표시 전용이라 안정키(`${sectionId}.${label}`)와
@@ -394,6 +444,22 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   // 연구논문 확정본 ②③④(FRT-269). basic 은 오버라이드하지 않는다 — 확정본 ① 의 이름이 기본
   // 라벨과 같은 '기본 정보'이고, 헤더 코어(경험명·한 줄 요약)도 함께 드는 카드다.
   'research': { detail: '연구 내용', repeat: '게재 / 발표 이력', evidence: '연구 증빙' },
+  // 프로젝트 확정본 ②③④⑤(FRT-291). basic 은 오버라이드하지 않는다 — 헤더 코어(경험명·한 줄
+  // 요약)와 코어 '내 역할/기여도'가 함께 드는 카드라 기본 라벨 '기본 정보'가 맞다.
+  // evidence 이름이 둘을 합친 것인 이유는 확정본 5섹션이 고정 4카테고리로 접히기 때문이다
+  // (④ 공개/배포 + ⑤ 결과물/증빙 → 한 카드, templates-v2 `projectExtensions` 주석 참조).
+  'personal-project': PROJECT_SECTION_LABELS,
+  'team-project': PROJECT_SECTION_LABELS,
+}
+
+/** 프로젝트 안내 문구 — 개인·팀 두 id 공유(FRT-291). */
+const PROJECT_SECTION_DESCRIPTIONS: Partial<Record<SectionCategory, string>> = {
+  detail:
+    '이 프로젝트가 무엇이었는지, 어떻게 진행했는지, 무엇을 얻었는지 항목별로 기록해주세요.',
+  repeat:
+    '이 프로젝트를 단계별·기능별로 더 자세히 남기고 싶다면 기록해주세요. 기획, 개발, 디자인, 검증 등 원하는 단위로 추가할 수 있어요.',
+  evidence:
+    '어디에 공개했고 어떤 반응이 있었는지, 그리고 프로젝트를 직접 확인할 수 있는 링크나 파일을 남겨주세요.',
 }
 
 /**
@@ -455,6 +521,11 @@ export const SECTION_DESCRIPTION_OVERRIDES: Partial<
     evidence:
       '연구 참여 확인서, 상장, IRB 승인서 등 이 연구를 증명할 수 있는 자료를 첨부해주세요.',
   },
+  // 프로젝트 확정본 ②③ 의 섹션 안내는 문서 문구 그대로다(FRT-291). evidence 는 ④⑤ 가 한 카드로
+  // 합쳐진 자리라 확정본 ⑤ 의 안내에 ④ 를 포함해 다시 썼다 — 문서의 한 문장을 그대로 쓰면
+  // 카드 절반(배포 이력)을 설명하지 못한다.
+  'personal-project': PROJECT_SECTION_DESCRIPTIONS,
+  'team-project': PROJECT_SECTION_DESCRIPTIONS,
 }
 
 // ─── Templates ──────────────────────────────────────────────────
