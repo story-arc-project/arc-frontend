@@ -1,4 +1,4 @@
-import type { Block, ExperienceV2, SectionCategory, TemplateV2 } from "@/types/archive"
+import type { Block, ExperienceV2, TemplateV2 } from "@/types/archive"
 import { SECTION_CATEGORIES, SECTION_LABEL_OVERRIDES } from "@/types/archive"
 import { isBlockEmpty } from "@/lib/utils/block-utils"
 import { computeFormCards, type FormCardSection } from "@/lib/utils/form-cards"

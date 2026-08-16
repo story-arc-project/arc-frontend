@@ -605,7 +605,7 @@ describe("isCardComplete / computeFormProgress", () => {
       id: "sib", key: "t.메모", type: "textarea", label: "회고",
       value: { type: "textarea", text: "" },
     }
-    const repeat: FormCardModel = { category: "repeat", label: "반복 기록", blocks: [cell, sibling] }
+    const repeat: FormCardModel = { id: "repeat", category: "repeat", label: "반복 기록", blocks: [cell, sibling] }
     if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
     expect(cell.value.columns.some(c => c.required)).toBe(true)
     expect(cell.required).toBeFalsy()

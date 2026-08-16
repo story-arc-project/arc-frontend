@@ -1085,7 +1085,7 @@ describe("확정본: 독서", () => {
     // `isCardComplete` 는 숨김 키를 먼저 걸러내므로 "숨길 수 있는가"를 증명하지 못한다.
     expect(canHideBlock(table)).toBe(true)
 
-    const card = { category: "repeat" as const, label: "문장별 감상", blocks: [table] }
+    const card = { id: "repeat", category: "repeat" as const, label: "문장별 감상", blocks: [table] }
     expect(isCardComplete(card)).toBe(false)
     expect(isCardComplete(card, [table.key!])).toBe(true)
   })
@@ -1494,7 +1494,7 @@ describe("확정본: 해외경험", () => {
     // `isCardComplete` 는 숨김 키를 먼저 걸러내므로 "숨길 수 있는가"를 증명하지 못한다.
     expect(canHideBlock(table)).toBe(true)
 
-    const card = { category: "repeat" as const, label: "활동별 상세 설명", blocks: [table] }
+    const card = { id: "repeat", category: "repeat" as const, label: "활동별 상세 설명", blocks: [table] }
     expect(isCardComplete(card)).toBe(false)
     expect(isCardComplete(card, [table.key!])).toBe(true)
   })
@@ -1693,7 +1693,7 @@ describe("확정본: 창작물", () => {
     expect(isRequiredBlock(table)).toBe(false)
     expect(canHideBlock(table)).toBe(false)
 
-    const card = { category: "basic" as const, label: "기본 정보", blocks: sections()[0].blocks }
+    const card = { id: "basic", category: "basic" as const, label: "기본 정보", blocks: sections()[0].blocks }
     expect(card.blocks.some(isRequiredBlock)).toBe(true)
     // 필수를 채우면 빈 '작품 링크 / 파일' 이 남아 있어도 카드가 완료된다.
     const filled = {
