@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { ResumeListItem } from "@/types/resume";
@@ -137,6 +137,84 @@ describe("RecentResumeList — 삭제 확인", () => {
       expect(screen.getByLabelText("레쥬메 삭제")).toBeTruthy();
     },
   );
+});
+
+/**
+ * FRT-258 — 뒤에서 도는 재조회가 화면을 덮어쓴다.
+ *
+ * 이 목록의 로딩 게이트도 `items === null`(첫 조회 전용)이라, 레쥬메를 만든 뒤 올라가는
+ * `reloadToken` 재조회는 **목록이 조작 가능한 채로** 돈다. 자기소개서 목록보다 창은 좁지만
+ * 여긴 폴링이 없어 교정할 다음 조회도 없다 — 한번 되살아나면 새로고침 전까지 남는다.
+ */
+describe("RecentResumeList — 뒤에서 도는 재조회", () => {
+  const other = () => item({ version_id: "v2", title: "인턴 지원 레쥬메" });
+
+  it("재조회가 떠 있는 동안 지운 레쥬메를 그 응답이 되살리지 않는다", async () => {
+    let resolveReload: (v: ResumeListItem[]) => void = () => {};
+    mockGetResumeList
+      .mockReset()
+      .mockResolvedValueOnce([item(), other()])
+      // 레쥬메를 만들면 올라가는 reloadToken 의 재조회 — 삭제 뒤에 도착시킨다.
+      .mockImplementationOnce(
+        () =>
+          new Promise<ResumeListItem[]>((res) => {
+            resolveReload = res;
+          }),
+      );
+
+    const { rerender } = render(
+      <RecentResumeList onCreateClick={() => {}} reloadToken={0} />,
+    );
+    await act(async () => {});
+    expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
+
+    rerender(<RecentResumeList onCreateClick={() => {}} reloadToken={1} />);
+    await act(async () => {});
+    expect(mockGetResumeList).toHaveBeenCalledTimes(2);
+
+    // 재조회가 떠 있는 채로 **다른** 레쥬메를 지운다.
+    fireEvent.click(screen.getAllByLabelText("레쥬메 삭제")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "삭제하기" }));
+    await act(async () => {});
+    expect(mockDeleteResume).toHaveBeenCalledWith("v1");
+    expect(screen.queryByText("지원용 레쥬메")).toBeNull();
+
+    // 삭제 전에 떠난 재조회 응답이 이제 도착한다.
+    await act(async () => {
+      resolveReload([item(), other()]);
+    });
+
+    expect(screen.queryByText("지원용 레쥬메")).toBeNull();
+  });
+
+  it("늦게 도착한 옛 응답이 그 뒤에 시작된 재조회의 결과를 덮지 않는다", async () => {
+    let resolveFirst: (v: ResumeListItem[]) => void = () => {};
+    mockGetResumeList
+      .mockReset()
+      .mockImplementationOnce(
+        () =>
+          new Promise<ResumeListItem[]>((res) => {
+            resolveFirst = res;
+          }),
+      )
+      .mockResolvedValueOnce([item()]);
+
+    const { rerender } = render(
+      <RecentResumeList onCreateClick={() => {}} reloadToken={0} />,
+    );
+    await act(async () => {});
+
+    rerender(<RecentResumeList onCreateClick={() => {}} reloadToken={1} />);
+    await act(async () => {});
+    expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
+    expect(screen.queryByText("인턴 지원 레쥬메")).toBeNull();
+
+    await act(async () => {
+      resolveFirst([item(), other()]);
+    });
+
+    expect(screen.queryByText("인턴 지원 레쥬메")).toBeNull();
+  });
 });
 
 describe("RecentResumeList — 만든 시각", () => {

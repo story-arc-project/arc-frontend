@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PenLine, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
@@ -47,16 +47,43 @@ export function RecentCoverLetterList({
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pollExhausted, setPollExhausted] = useState(false);
 
+  // FRT-258 — 이 목록의 로딩 게이트는 `items === null`, 즉 첫 조회에만 걸린다. 그래서 재조회는
+  // **목록이 조작 가능한 채로** 뒤에서 돌고, 그 사이 사용자가 만든 변경(삭제)을 늦게 도착한
+  // 응답이 통째로 덮는다. 요청마다 세대를 물려 자기 세대가 아닌 응답은 쓰지 않게 한다
+  // (전례: hooks/useAdminCustomers.ts 의 seqRef).
+  const seqRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  // load 보다 앞에 선언한다 — 마운트 effect 순서상 이쪽이 먼저 true 를 세워야 한다.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const load = useCallback(async () => {
+    const seq = ++seqRef.current;
     try {
       const data = await getCoverLetterList();
+      // 가드는 **쓰기보다 앞**이어야 한다. 언마운트됐거나 이 응답이 떠난 뒤 세대가 올랐으면
+      // (더 새 요청이 시작됐거나, 사용자가 행을 지웠으면) 화면에 쓰지 않는다.
+      if (!mountedRef.current || seq !== seqRef.current) return;
       setError(null);
       setItems(data);
     } catch (err) {
+      if (!mountedRef.current || seq !== seqRef.current) return;
       setError(err as Error);
       setItems([]);
     }
   }, []);
+
+  // 세대 올리기와 로컬 제거를 한 몸으로 묶는다 — 둘 중 하나만 하면 그 순간 떠 있던
+  // 재조회가 지운 행을 되살린다.
+  const removeLocally = (id: string) => {
+    seqRef.current += 1;
+    setItems((prev) => (prev ?? []).filter((c) => c.id !== id));
+  };
 
   useEffect(() => {
     load();
@@ -108,7 +135,7 @@ export function RecentCoverLetterList({
     setDeletingId(id);
     try {
       await deleteCoverLetter(id);
-      setItems((prev) => (prev ?? []).filter((c) => c.id !== id));
+      removeLocally(id);
       toast.success("자기소개서를 삭제했어요");
     } catch (err) {
       if (err instanceof CoverLetterMutationUnsupportedError) {
@@ -116,7 +143,7 @@ export function RecentCoverLetterList({
         toast("삭제 기능은 곧 제공될 예정이에요", "info");
       } else if (err instanceof ApiError && err.status === 404) {
         // 이미 없는 것을 지우려 한 것뿐이다 — 사용자가 원한 결과와 같으므로 목록에서 뺀다.
-        setItems((prev) => (prev ?? []).filter((c) => c.id !== id));
+        removeLocally(id);
       } else {
         toast.error("삭제에 실패했어요");
       }
