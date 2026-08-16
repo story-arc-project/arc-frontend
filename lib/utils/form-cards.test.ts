@@ -1,8 +1,14 @@
 import { describe, it, expect } from "vitest"
-import { computeFormCards, isCardComplete, computeFormProgress } from "@/lib/utils/form-cards"
+import {
+  computeFormCards,
+  isCardComplete,
+  computeFormProgress,
+  equivalentLabels,
+} from "@/lib/utils/form-cards"
 import { partitionByCondition } from "@/lib/utils/conditional-fields"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
-import { cloneBlocks } from "@/lib/utils/block-utils"
+import { cloneBlocks, isRequiredBlock } from "@/lib/utils/block-utils"
+import { canHideBlock } from "@/lib/utils/hidden-fields"
 import type { FormCardSection, FormCardModel } from "@/lib/utils/form-cards"
 import type { Block } from "@/types/archive"
 import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
@@ -14,6 +20,29 @@ function sectionsFor(typeId: Parameters<typeof getTemplateForType>[0]): { core: 
     sections: t.extensions.map(e => ({ id: e.id, category: e.category, blocks: cloneBlocks(e.blocks) })),
   }
 }
+
+describe("동의어 등록 — 코어를 뺀 자리를 이어받은 라벨 (FRT-291)", () => {
+  /**
+   * `CORE_EXCLUDE` 로 코어를 빼는 것과 그 자리를 이어받은 라벨을 `SEMANTIC_GROUPS` 에 넣는 것은
+   * **한 쌍**이다(FRT-269 리뷰). 앞만 하면 폴백이던 코어까지 함께 사라져 발행 경로가 값을 못 찾는다.
+   *
+   * ⚠️ 이 테스트는 표를 직접 본다 — **동작 테스트로는 잡히지 않기 때문**이다. 프로젝트의 발행
+   * 기간은 `TYPE_PERIOD_KEY` 가 안정키로 먼저 집으므로, 이 등록을 지워도 지금은 아무 발행물이
+   * 바뀌지 않는다(회귀 주입에서 유일하게 GREEN 이었던 자리). 그래서 지금은 **방어선이자 의도
+   * 표기**다 — 훗날 우선 조회 키가 빠지거나 라벨이 또 바뀌면 그때 범용 폴백이 유일한 경로가 되고,
+   * 그 순간 이 등록이 없으면 기간이 조용히 빈다. 못 잡는 걸 잡는 척하지 않고, 무엇을 지키는지
+   * 아는 층위에서 고정한다.
+   */
+  it("확정본 '진행 기간'이 코어 '기간'의 동의어로 등록돼 있다", () => {
+    expect(equivalentLabels("기간")).toContain("진행 기간")
+  })
+
+  it("확정본 '팀원'·'기획 배경 / 동기'도 구 라벨과 같은 그룹이다", () => {
+    expect(equivalentLabels("팀 구성")).toContain("팀원")
+    expect(equivalentLabels("목표/만들고 싶었던 이유")).toContain("기획 배경 / 동기")
+    expect(equivalentLabels("목표/문제 정의")).toContain("기획 배경 / 동기")
+  })
+})
 
 describe("computeFormCards", () => {
   it("헤더(경험명/요약)를 key 로 추출하고 카드에 넣지 않는다", () => {
@@ -271,6 +300,67 @@ describe("computeFormCards", () => {
     expect(hidden.map(b => b.label)).not.toContain("역할")
   })
 
+  /**
+   * 프로젝트(FRT-291)는 창작물과 같은 조합인데 **코어 역할을 안 뺐다는 점이 다르다** —
+   * 구 개인 프로젝트 템플릿에 role 앵커가 하나도 없어 그 코어 칸이 실제로 렌더됐기 때문이다.
+   * 그래서 "신규 개인 프로젝트에는 역할 칸이 0개"(확정본대로)와 "구 레코드의 코어 역할 값은
+   * 남는다"(유실 없음)가 **동시에** 성립해야 한다. 함수 하나가 아니라 화면이 보는 마지막 층까지
+   * 이어 붙여 센다(FRT-267 ⑩).
+   */
+  it("프로젝트: 개인/팀 값에 따라 화면에 남는 역할 칸이 갈리고, 값은 어느 쪽에서도 안 사라진다", () => {
+    const roleFieldsFor = (collab: string, coreRole = "") => {
+      const { core, sections } = sectionsFor("personal-project")
+      const withCore = core.map(b =>
+        b.label === "내 역할/기여도" && coreRole
+          ? { ...b, value: { type: "textarea" as const, text: coreRole } }
+          : b,
+      )
+      const withCollab = sections.map(s => ({
+        ...s,
+        blocks: s.blocks.map(b =>
+          b.label === "개인 / 팀" && collab
+            ? { ...b, value: { type: "single-select" as const, selected: collab, options: [] } }
+            : b,
+        ),
+      }))
+      const r = computeFormCards(withCore, withCollab, SECTION_LABEL_OVERRIDES["personal-project"])
+      const cardBlocks = r.cards.flatMap(c => c.blocks)
+      const allFlat = [...withCore, ...withCollab.flatMap(s => s.blocks)]
+      return partitionByCondition(cardBlocks, allFlat)
+        .visible.map(b => b.label)
+        .filter(l => l.includes("역할") || l.includes("기여"))
+    }
+
+    // 아직 안 고른 신규 기록 · '개인 프로젝트' — 확정본대로 역할을 묻지 않는다(사용자 확인).
+    expect(roleFieldsFor("")).toEqual([])
+    expect(roleFieldsFor("개인 프로젝트")).toEqual([])
+    // 팀 프로젝트 — 확정본 '역할' 하나만. 코어가 함께 나와 두 칸이 되면 안 된다.
+    expect(roleFieldsFor("팀 프로젝트(2~5명)")).toEqual(["역할"])
+    // 구 개인 프로젝트 레코드가 코어에 남긴 값은 '개인 프로젝트'에서도 화면에 남는다(= 유실 없음).
+    expect(roleFieldsFor("개인 프로젝트", "기획부터 배포까지 혼자")).toEqual(["내 역할/기여도"])
+  })
+
+  /** 확정본 5섹션이 고정 4카테고리로 접힌다 — ④ 공개/배포와 ⑤ 결과물이 한 카드다. */
+  it("프로젝트: 확정본 5섹션이 4카드로 접히고 ④⑤ 가 한 카드에 순서대로 든다", () => {
+    const { core, sections } = sectionsFor("personal-project")
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES["personal-project"])
+
+    expect(r.cards.map(c => c.label)).toEqual([
+      "기본 정보",
+      "프로젝트 상세",
+      "세부 작업 기록",
+      "공개 / 배포 · 결과물",
+    ])
+    const evidence = r.cards.find(c => c.category === "evidence")!
+    expect(evidence.blocks.map(b => b.label)).toEqual([
+      "배포 / 공개 채널",
+      "사용자 수 / 반응",
+      "외부 노출 이력",
+      "서비스 운영 상태",
+      "결과물 링크 / 파일",
+    ])
+  })
+
   // ── FRT-178: 동아리가 확정본 4카드로 그려지는지 (문서 ①~④) ──
   it("동아리: 4카드가 모두 보이고 범용 확장 카드가 걷힌다", () => {
     const { core, sections } = sectionsFor("club")
@@ -480,13 +570,30 @@ describe("isCardComplete / computeFormProgress", () => {
     expect(isCardComplete(repeat)).toBe(true)
   })
 
-  it("필수 컬럼 repeatable + optional 형제(팀프로젝트 작업 기록): optional 만 채우면 미완료", () => {
+  it("필수 컬럼 repeatable + optional 형제: optional 만 채우면 미완료", () => {
     // Codex P2: block.required 는 false 지만 필수 컬럼을 가진 repeatable-cell 은 필수로 취급해야 한다.
-    const { core, sections } = sectionsFor("team-project")
-    const r = computeFormCards(core, sections)
-    const repeat = r.cards.find(c => c.category === "repeat")!
-    const cell = repeat.blocks.find(b => b.value.type === "repeatable-cell")!
-    const sibling = repeat.blocks.find(b => b.value.type !== "repeatable-cell")!
+    //
+    // ⚠️ 카드를 **직접 구성**한다. 원래는 팀 프로젝트 '작업 기록' 카드를 픽스처로 썼는데, 확정본
+    // 정렬(FRT-291)로 그 카드가 사라졌고 **지금은 이 모양을 가진 유형이 하나도 없다**(필수 컬럼
+    // 표와 표 아닌 형제가 같은 repeat 카드에 있는 조합). 다른 유형으로 갈아타면 그 유형이 개편될
+    // 때 이 테스트가 다시 죽거나, 더 나쁘게는 모양이 조용히 달라져 **아무것도 검증하지 않는
+    // 그물**이 된다. 검증 대상은 `isCardComplete` 의 판정 규칙이지 특정 템플릿의 생김새가 아니다.
+    const cell: Block = {
+      id: "cell", key: "t.표", type: "repeatable-cell", label: "작업 기록",
+      value: {
+        type: "repeatable-cell",
+        columns: [
+          { key: "task", label: "작업명", blockType: "text", required: true },
+          { key: "memo", label: "메모", blockType: "textarea" },
+        ],
+        rows: [],
+      },
+    }
+    const sibling: Block = {
+      id: "sib", key: "t.메모", type: "textarea", label: "회고",
+      value: { type: "textarea", text: "" },
+    }
+    const repeat: FormCardModel = { category: "repeat", label: "반복 기록", blocks: [cell, sibling] }
     if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
     expect(cell.value.columns.some(c => c.required)).toBe(true)
     expect(cell.required).toBeFalsy()
@@ -585,5 +692,94 @@ describe("isCardComplete / computeFormProgress", () => {
     const basic = r.cards.find(c => c.category === "basic")!
     const someKey = basic.blocks.map(b => b.key).filter((k): k is string => !!k)[0]
     expect(computeFormProgress(r.cards, [someKey]).done).toBe(0)
+  })
+})
+
+/**
+ * 치울 수도 채울 수도 없는 칸이 카드를 영영 미완료로 붙잡는 자리 (FRT-291 리뷰).
+ *
+ * `hostsAttachment` 는 파일을 담는 블록에서 × 를 뗀다 — 업로드가 도는 순간 값이 비어 보여
+ * 숨김이 통과하면 고른 파일이 사라지기 때문이다(hidden-fields.ts). 그 대가로 **빈 첨부 표는
+ * 사용자가 없앨 수단이 없다.** 필수가 있는 카드에 살면 무해하지만(`isCardComplete` 이 필수만
+ * 본다), 필수가 하나도 없는 카드에서는 `some(채워짐)` 기준으로 내려가 배포도 결과물도 없는
+ * 프로젝트가 100% 에 닿을 방법을 잃는다.
+ *
+ * ⚠️ 이건 새 규칙이 아니라 **이미 한 번 겪고 되돌린 실패의 재발**이다 — 블록 층위 `file` 을
+ * 통째로 제외했던 초안이 코어 증빙 카드에서 정확히 같은 덫을 만들었다(hidden-fields.ts 주석).
+ * 그때는 제외를 거둬 풀었지만 표 쪽은 업로드 상태를 흘릴 배선이 없어 제외가 남았으므로,
+ * 이번엔 진행도 쪽에서 "사용자가 손쓸 수 있는 칸"만 세는 것으로 푼다.
+ *
+ * 프로브로 18유형 전수를 훑어 이 모양(필수 0 + 못 치우는 블록)을 가진 카드는 프로젝트 2종
+ * 뿐임을 확인했다 — 다른 유형의 진행도는 이 변경에 영향받지 않는다.
+ */
+describe("못 치우는 빈 첨부 표는 진행도를 막지 않는다 (FRT-291 리뷰)", () => {
+  function evidenceCardOf(typeId: Parameters<typeof getTemplateForType>[0]) {
+    const { core, sections } = sectionsFor(typeId)
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES[typeId])
+    return r.cards.find(c => c.category === "evidence")!
+  }
+
+  it("프로젝트 증빙 카드는 필수가 없고 결과물 표를 치울 수 없다 — 전제 확인", () => {
+    const card = evidenceCardOf("personal-project")
+    expect(card.blocks.filter(isRequiredBlock)).toHaveLength(0)
+    const stuck = card.blocks.filter(b => !canHideBlock(b))
+    expect(stuck.map(b => b.label)).toEqual(["결과물 링크 / 파일"])
+  })
+
+  it("치울 수 있는 칸을 전부 숨기면 결과물이 없어도 카드가 완료된다", () => {
+    const card = evidenceCardOf("personal-project")
+    const hideable = card.blocks
+      .filter(canHideBlock)
+      .map(b => b.key)
+      .filter((k): k is string => !!k)
+    expect(hideable.length).toBeGreaterThan(0) // 픽스처가 분기를 실제로 거치는지
+
+    expect(isCardComplete(card, hideable)).toBe(true)
+  })
+
+  it("은퇴 id 도 같은 템플릿을 받으므로 판정이 같다", () => {
+    const card = evidenceCardOf("team-project")
+    const hideable = card.blocks
+      .filter(canHideBlock)
+      .map(b => b.key)
+      .filter((k): k is string => !!k)
+
+    expect(isCardComplete(card, hideable)).toBe(true)
+  })
+
+  /**
+   * 완화는 "손쓸 수 없는 칸"에만 닿아야 한다 — 아직 치울 수 있는 빈 칸이 남아 있으면 그 카드는
+   * 여전히 할 일이 있는 카드다. 여기가 무너지면 첨부 표가 있는 카드가 전부 처음부터 완료로
+   * 세어져 진행도가 거짓말을 한다.
+   */
+  it("치울 수 있는 빈 칸이 남아 있으면 여전히 미완료다", () => {
+    const card = evidenceCardOf("personal-project")
+    expect(isCardComplete(card, [])).toBe(false)
+  })
+
+  /**
+   * 제외는 **빈** 첨부 표에만 닿아야 한다(`isBlockEmpty` 조건). 여기가 무너지면 결과물을 실제로
+   * 채운 사용자의 그 칸이 actionable 에서 빠져, 다른 칸이 빈 카드가 근거를 다 채우고도 영영
+   * 미완료로 남는다 — 이 조건만 무력화하면 기존 그물 전부가 GREEN 이었다(/code-review high).
+   */
+  it("결과물 표에 실제 내용을 채우면 그 칸이 곧 완료 근거다", () => {
+    const card = evidenceCardOf("personal-project")
+    const stuck = card.blocks.find(b => !canHideBlock(b))!
+    expect(stuck.value.type).toBe("repeatable-cell") // 픽스처가 전제(첨부 표)를 실제로 갖는지
+    const filled = {
+      ...card,
+      blocks: card.blocks.map(b =>
+        b === stuck && b.value.type === "repeatable-cell"
+          ? {
+              ...b,
+              value: {
+                ...b.value,
+                rows: [{ id: "r1", cells: { link: "https://github.com/arc/demo" } }],
+              },
+            }
+          : b,
+      ),
+    }
+    expect(isCardComplete(filled, [])).toBe(true)
   })
 })

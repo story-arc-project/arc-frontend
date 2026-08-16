@@ -33,6 +33,21 @@ describe("canHideBlock", () => {
     expect(canHideBlock(block("detail.배운 점"))).toBe(true)
   })
 
+  /**
+   * FRT-291: 행 첨부(`BlockRow.artifacts`)를 켠 블록은 **파일 열이 없어도** 파일을 담는다.
+   * `hostsAttachment` 가 열만 보면 이 표는 검사를 그냥 통과해, 업로드 중에 × 로 치우는 순간
+   * `FileCellInput` 이 언마운트되며 고른 파일이 조용히 사라진다 — 이 함수가 막으려던 바로 그 유실이
+   * 새 경로로 되살아난다. 열 없는 표로 픽스처를 짜야 "열을 보는 기존 규칙"이 아니라 새 규칙이
+   * 검증된다.
+   */
+  it("행 첨부를 켠 표는 파일 열이 없어도 숨길 수 없다", () => {
+    const t = emptyTableBlock("tasks.세부 작업")
+    if (t.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
+    expect(t.value.columns.some(c => c.blockType === "file")).toBe(false)
+    expect(canHideBlock(t)).toBe(true)
+    expect(canHideBlock({ ...t, allowRowArtifacts: true })).toBe(false)
+  })
+
   it("값이 있으면 숨길 수 없다 — 화면에 없는 값은 손실과 구분되지 않는다", () => {
     expect(canHideBlock(block("detail.배운 점", { text: "많이 배웠다" }))).toBe(false)
   })

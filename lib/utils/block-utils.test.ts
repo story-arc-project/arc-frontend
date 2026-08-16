@@ -22,6 +22,7 @@ import {
   cellFilled,
   cellText,
   isFileCellValue,
+  artifactFilled,
   rowHasContent,
   isBlockDiscardable,
   isBlockEmpty,
@@ -33,7 +34,7 @@ import {
   normalizeBlocks,
   validateRequiredBlocks,
 } from "@/lib/utils/block-utils"
-import type { Block, BlockValue, CellValue, FileCellValue } from "@/types/archive"
+import type { Block, BlockRow, BlockValue, CellValue, FileCellValue } from "@/types/archive"
 
 describe("isBlockEmpty", () => {
   it("새로 만든 빈 블록은 모든 타입에서 empty 다", () => {
@@ -457,6 +458,53 @@ describe("rowHasContent — 파일 셀만 채운 행 (FRT-213)", () => {
     expect(
       rowHasContent({ id: "r1", cells: { 결과물: { type: "file", fileId: "", fileName: "" } } }),
     ).toBe(false)
+  })
+})
+
+describe("행 첨부 (FRT-291)", () => {
+  /**
+   * 빈 행 필터는 `rowHasContent` 하나를 세 곳(상세뷰·진행도·isBlockEmpty)이 공유한다.
+   * 첨부를 안 세면, 셀은 비우고 결과물만 붙인 행이 '빈 행'으로 판정돼 화면에서 통째로 사라진다.
+   */
+  it("첨부만 붙인 행은 빈 행이 아니다", () => {
+    const row = { id: "r1", cells: { task: "" }, artifacts: [{ id: "a1", url: "https://x.dev" }] }
+    expect(rowHasContent(row)).toBe(true)
+  })
+
+  it("빈 첨부만 있는 행은 빈 행이다", () => {
+    expect(rowHasContent({ id: "r1", cells: { task: "" }, artifacts: [{ id: "a1" }] })).toBe(false)
+  })
+
+  /**
+   * 설명만 적고 링크·파일이 아직 없는 첨부도 사용자가 친 것이다 — 무시하면 다음 저장에 사라진다
+   * (FRT-267 ⑰ "그릴 게 있나 · 버려도 되나 · 찼나는 서로 다른 질문").
+   */
+  it("설명만 적은 첨부도 채워진 것으로 본다", () => {
+    expect(artifactFilled({ id: "a1", desc: "와이어프레임" })).toBe(true)
+    expect(artifactFilled({ id: "a1", desc: "   " })).toBe(false)
+  })
+
+  it("업로드가 끝나지 않은 파일만 든 첨부는 비어 있다 — 셀 파일과 같은 기준(fileId)", () => {
+    expect(
+      artifactFilled({ id: "a1", file: { type: "file", fileId: "", fileName: "a.png" } }),
+    ).toBe(false)
+    expect(
+      artifactFilled({ id: "a1", file: { type: "file", fileId: "f1", fileName: "a.png" } }),
+    ).toBe(true)
+  })
+
+  /**
+   * FRT-200 이 같은 파일의 형제 컬렉션들에 세운 규칙을 행 첨부에도 적용했는지 — 이 판정은
+   * 보정 전 원본에도 도달하므로 배열이 아니거나 원소가 날것이면 여기서 던지고 목록이 죽는다.
+   */
+  it("첨부가 배열이 아니거나 원소가 날것이어도 던지지 않는다", () => {
+    const broken = { id: "r1", cells: { task: "" }, artifacts: "지워짐" } as unknown as BlockRow
+    expect(() => rowHasContent(broken)).not.toThrow()
+    expect(rowHasContent(broken)).toBe(false)
+
+    const rawItems = { id: "r1", cells: { task: "" }, artifacts: [null, { id: "a1", url: 7 }] } as unknown as BlockRow
+    expect(() => rowHasContent(rawItems)).not.toThrow()
+    expect(rowHasContent(rawItems)).toBe(false)
   })
 })
 
@@ -1011,6 +1059,44 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
     }) as unknown as { rows: { extraFields: { key: string }[] }[] }
     const keys = out.rows[0].extraFields.map(f => f.key)
     expect(new Set(keys).size).toBe(2)
+  })
+
+  /**
+   * 행 결과물(FRT-291)도 `id` 를 수정·삭제 핸들러의 이름표로 쓴다 — 형제(행 id · 부가 항목 key)와
+   * 같은 규칙이 서야 한다. FRT-200 이 이 함수에 세운 규칙을 뒤에 만든 컬렉션이 비껴가면,
+   * **하나를 지웠는데 둘이 사라지는** 같은 결함이 새 그릇에서 그대로 되살아난다.
+   */
+  it("행 결과물의 id 가 겹치면 결정적으로 갈아 준다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [
+        {
+          id: "r1",
+          cells: {},
+          artifacts: [
+            { id: "a1", desc: "가" },
+            { id: "a1", desc: "나" },
+          ],
+        },
+      ],
+    }) as unknown as { rows: { artifacts: { id: string; desc: string }[] }[] }
+    const ids = out.rows[0].artifacts.map(a => a.id)
+    expect(new Set(ids).size).toBe(2)
+    // 값은 그대로 살아 있어야 한다 — 신원을 고치자고 내용을 버리면 안 된다.
+    expect(out.rows[0].artifacts.map(a => a.desc)).toEqual(["가", "나"])
+  })
+
+  it("행 결과물의 잎이 날것이어도 렌더가 죽지 않을 모양으로 낮춘다", () => {
+    const out = normalizeBlockValue("repeatable-cell", {
+      type: "repeatable-cell",
+      columns: [],
+      rows: [{ id: "r1", cells: {}, artifacts: [{ id: 7, url: 42, desc: null }] }],
+    }) as unknown as { rows: { artifacts: { id: unknown; url: unknown; desc: unknown }[] }[] }
+    const a = out.rows[0].artifacts[0]
+    expect(typeof a.id).toBe("string")
+    expect(a.url === undefined || typeof a.url === "string").toBe(true)
+    expect(a.desc === undefined || typeof a.desc === "string").toBe(true)
   })
 
   /** 숫자 id 로 이어진 링크는 **양쪽을 같은 방식으로** 다뤄야 살아남는다. */

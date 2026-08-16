@@ -7,6 +7,7 @@ import type {
   CellValue,
   FileCellValue,
   ProjectLinkConfig,
+  RowArtifact,
   SectionCategory,
 } from '@/types/archive'
 
@@ -189,7 +190,14 @@ export function createFileField(
 export function createRepeatableCell(
   label: string,
   columns: BlockColumnDef[],
-  opts?: { collapsed?: boolean; lockColumns?: boolean; guide?: string; allowRowExtras?: boolean },
+  opts?: {
+    collapsed?: boolean
+    lockColumns?: boolean
+    guide?: string
+    allowRowExtras?: boolean
+    /** 각 행에 결과물(링크·파일·설명)을 여러 건 붙인다 (FRT-291). */
+    allowRowArtifacts?: boolean
+  },
 ): Block {
   const base = createBlock('repeatable-cell', label, {
     columns,
@@ -201,6 +209,7 @@ export function createRepeatableCell(
     lockColumns: opts?.lockColumns ?? true,
     // 끈 블록에 키를 남기지 않는다 — 템플릿 스냅샷 비교(toEqual)에 잡음이 된다.
     ...(opts?.allowRowExtras ? { allowRowExtras: true } : {}),
+    ...(opts?.allowRowArtifacts ? { allowRowArtifacts: true } : {}),
   }
 }
 
@@ -414,8 +423,8 @@ export function cellText(cell: CellValue | undefined): string {
 
 /**
  * 반복 입력 행 하나에 사용자가 남긴 내용이 있는지. 셀뿐 아니라 그 행에만 붙은 항목
- * (`extraFields`, FRT-145)까지 본다 — 셀만 보면 추가 항목에만 값을 쓴 행이 '빈 행'으로
- * 판정돼 상세뷰에서 통째로 사라진다(유령 행 필터가 사용자 값을 숨기는 형태).
+ * (`extraFields`, FRT-145)과 결과물 첨부(`artifacts`, FRT-291)까지 본다 — 셀만 보면 그쪽에만
+ * 값을 쓴 행이 '빈 행'으로 판정돼 상세뷰에서 통째로 사라진다(유령 행 필터가 사용자 값을 숨기는 형태).
  * 빈 판정을 하는 세 곳(isBlockEmpty · RepeatableCellBlock readOnly · 진행도)이 이 함수를 공유한다.
  */
 export function rowHasContent(row: BlockRow): boolean {
@@ -425,10 +434,35 @@ export function rowHasContent(row: BlockRow): boolean {
   // ⚠️ 이 판정은 **보정 전 원본**에도 돈다(`orphanFieldsToBlocks` 가 날것을 넘긴다) — 컬렉션이
   // 배열이 아니거나 원소가 null 이면 여기서 던지고, 정규화가 손쓸 새도 없이 화면이 죽는다.
   const extras = Array.isArray(row.extraFields) ? row.extraFields : []
+  // 행 첨부(FRT-291)도 같은 이유로 배열인지부터 묻는다 — 새로 만든 그릇이라고 해서 날것이
+  // 안 오는 게 아니다. 위 두 줄의 규칙을 세 번째 컬렉션에도 그대로 적용한다.
+  const artifacts = Array.isArray(row.artifacts) ? row.artifacts : []
   return (
     Object.values(cells).some(cellFilled) ||
-    extras.some(f => !!f && typeof f === 'object' && cellFilled((f as { value?: CellValue }).value))
+    extras.some(f => !!f && typeof f === 'object' && cellFilled((f as { value?: CellValue }).value)) ||
+    artifacts.some(a => !!a && typeof a === 'object' && artifactFilled(a))
   )
+}
+
+/**
+ * 행 첨부 한 건에 사용자가 남긴 것이 있는지 (FRT-291).
+ *
+ * ⚠️ 설명만 적고 링크·파일이 아직 없는 첨부도 **채워진 것으로 본다.** `cellFilled` 이 파일을
+ * `fileId` 로 판정하는 것과 같은 이유의 반대편이다 — 여기서 설명을 무시하면 사용자가 적어 둔
+ * 문장이 '빈 첨부'로 판정돼 다음 저장에 사라진다(FRT-267 ⑰ "버림 판정에는 전용 술어를").
+ *
+ * ⚠️ 문자열 여부는 `isFilledText` 로만 묻는다 — 이 판정도 **보정 전 원본**에 도달하므로
+ * `.trim()` 을 직접 부르면 저장 값이 숫자·객체로 왔을 때 목록이 통째로 죽는다(FRT-200).
+ */
+export function artifactFilled(a: RowArtifact): boolean {
+  if (!a || typeof a !== 'object') return false
+  const file = a.file && typeof a.file === 'object' ? a.file : undefined
+  return isFilledText(a.url) || isFilledText(a.desc) || isFilledText(file?.fileId)
+}
+
+/** 빈 행 첨부 한 건. */
+export function createEmptyArtifact(): RowArtifact {
+  return { id: uid('art') }
 }
 
 /**
@@ -724,6 +758,26 @@ function isIntactRow(r: Record<string, unknown>): boolean {
     const ks = r.extraFields.map(f => (f as Record<string, unknown>).key)
     if (new Set(ks).size !== ks.length) return false
   }
+  // 행 결과물(FRT-291)도 `id` 를 수정·삭제 핸들러의 이름표로 쓴다 — 위 두 컬렉션과 같은 질문을
+  // 여기서도 물어야 한다. 안 물으면 깨진 첨부를 든 행이 '성하다'로 판정돼 `repairRows` 를
+  // 통째로 건너뛴 채 렌더에 닿는다.
+  if (r.artifacts !== undefined) {
+    if (!Array.isArray(r.artifacts)) return false
+    if (!r.artifacts.every(isIntactArtifact)) return false
+    const as = r.artifacts.map(a => (a as Record<string, unknown>).id)
+    if (new Set(as).size !== as.length) return false
+  }
+  return true
+}
+
+function isIntactArtifact(a: unknown): boolean {
+  if (!isPlainObject(a)) return false
+  if (!isFilledText(a.id)) return false
+  if (a.url !== undefined && typeof a.url !== 'string') return false
+  if (a.desc !== undefined && typeof a.desc !== 'string') return false
+  // 첨부 파일은 셀 파일과 **같은 모양**이라 같은 술어로 묻는다 — 여기서 기준이 갈리면
+  // `artifactFilled`(fileId 로 판정)와 어긋나 "찼는데 못 그리는" 첨부가 생긴다.
+  if (a.file !== undefined && !isIntactCell(a.file)) return false
   return true
 }
 
@@ -846,6 +900,24 @@ function repairRows(x: unknown, columnRenames?: Map<string, string>): BlockRow[]
                 label: asText(f.label),
                 blockType: typeof f.blockType === 'string' ? f.blockType : 'text',
                 value: repairExtraValue(f.value),
+              }))
+            })(),
+          }
+        : {}),
+      // 결과물 첨부(FRT-291)도 `id` 로 수정·삭제된다 — 행 id·부가 항목 key 와 **같은 규칙**으로
+      // 겹침을 풀고 잎을 낮춘다. `url`·`desc` 는 없으면 없는 대로 둔다(빈 문자열을 새로 만들면
+      // `artifactFilled` 가 보는 "비었음"의 모양이 바뀐다).
+      ...(r.artifacts !== undefined
+        ? {
+            artifacts: (() => {
+              const as = (Array.isArray(r.artifacts) ? r.artifacts : []).filter(isPlainObject)
+              const aIds = dedupeNames(as.map(a => asIdText(a.id)), j => `art-${j}`)
+              return as.map((a, j) => ({
+                ...a,
+                id: aIds[j],
+                ...(a.url !== undefined ? { url: asText(a.url) } : {}),
+                ...(a.desc !== undefined ? { desc: asText(a.desc) } : {}),
+                ...(a.file !== undefined ? { file: repairCell(a.file) } : {}),
               }))
             })(),
           }

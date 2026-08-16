@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { AnalysisHomeSummary, AnalysisSnapshot, AnalysisType } from "@/types/analysis";
 
 // FRT-169: 대시보드도 `getAnalysisHomeSummary` 를 소비한다. 부분 실패가 무음이던 시절엔
@@ -161,5 +161,43 @@ describe("대시보드 — 분석 요약 부분 실패 안내 (FRT-169)", () => 
     await flush();
 
     expect(screen.getByText("분석 데이터를 불러오지 못했습니다.")).toBeInTheDocument();
+  });
+});
+
+/**
+ * 유형 분포 집계 (FRT-291 리뷰).
+ *
+ * `personal-project` 와 `team-project` 는 확정본 통합으로 **화면에서 같은 '프로젝트'** 다.
+ * 그런데 집계가 원시 `exp.type` 으로 묶으면 구분되지 않는 막대가 둘 뜨고 개수가 쪼개진다 —
+ * 어느 쪽이 무엇인지 사용자는 알 방법이 없고, 유형이 많으면 쪼개진 탓에 한쪽이 '기타'로
+ * 밀려 들어가기까지 한다.
+ *
+ * ⚠️ 필터(`matchesFilter`)와 URL 파싱은 `canonicalTypeId` 로 접었는데 **집계만 놓쳤다** —
+ * "id 를 값으로 비교·집계하는 경로를 전수로 세라"고 정해 놓고 세다 만 자리다.
+ */
+describe("유형 분포 — 은퇴 id 접기 (FRT-291 리뷰)", () => {
+  function exp(id: string, type: string) {
+    return { id, type, title: id, updated_at: "2024-01-01T00:00:00Z" };
+  }
+
+  it("구 팀 프로젝트와 새 프로젝트가 한 막대로 합쳐진다", async () => {
+    getSummary.mockResolvedValue(summary());
+    experiencesState.experiences = [
+      exp("e1", "personal-project"),
+      exp("e2", "team-project"),
+      exp("e3", "team-project"),
+    ];
+    experiencesState.count = 3;
+
+    render(<DashboardPage />);
+    await flush();
+
+    // '프로젝트'라는 글자는 최근 경험 목록에도 뜨므로 분포 섹션 안으로 범위를 좁힌다.
+    const section = screen.getByRole("heading", { name: "경험 유형 분포" }).parentElement!;
+    const labels = within(section).getAllByText("프로젝트");
+
+    expect(labels).toHaveLength(1);
+    // 쪼개지면 1개·2개 두 줄이 된다 — 합쳐졌는지는 개수로 확인해야 확실하다.
+    expect(within(section).getByText("3개")).toBeInTheDocument();
   });
 });

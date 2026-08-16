@@ -5,7 +5,7 @@ import type {
   ExperienceTypeId,
 } from "@/types/archive"
 import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
-import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2"
+import { EXPERIENCE_TYPE_MAP, canonicalTypeId } from "@/lib/constants/templates-v2"
 
 /**
  * Archive 리스트 페이지의 "뷰 컨텍스트" — 활성 라이브러리 + 사용자 필터.
@@ -86,7 +86,9 @@ export function parseArchiveContext(
 
   const type = params.get(PARAM.type)
   if (type) {
-    const ids = type.split(",").filter(isTypeId)
+    // 은퇴한 유형 id 를 실은 옛 링크·북마크는 현행 id 로 접어서 되살린다 — 그대로 두면 그 id 의
+    // 칩이 화면에 없어 **끌 수 없는 필터**가 걸린 채로 복원된다(FRT-291).
+    const ids = [...new Set(type.split(",").filter(isTypeId).map(canonicalTypeId))]
     if (ids.length > 0) filter.typeIds = ids
   }
 
