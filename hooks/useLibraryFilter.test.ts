@@ -123,3 +123,67 @@ describe("기간 정렬 — 손상된 저장 값 (FRT-200)", () => {
     ])
   })
 })
+
+/**
+ * 코어 '기간'을 뺀 유형의 기간 정렬 (FRT-291 리뷰).
+ *
+ * 확정본 정렬로 여러 유형이 `CORE_EXCLUDE` 를 통해 코어 '기간'을 내리고 자기 라벨
+ * (`진행 기간`·`연구 기간`…)로 시점을 옮겼다. 그런데 정렬은 `coreBlocks` 만 훑으므로 그 유형들은
+ * 전부 "시점 없음"으로 같아져 **기간 정렬이 아무 일도 하지 않는다** — 사용자는 드롭다운을
+ * 골랐는데 순서가 그대로인 화면을 본다. 발행 경로가 `TYPE_PERIOD_KEY` 로 이미 푼 문제를
+ * 목록 정렬만 못 받고 있었다.
+ */
+describe("기간 정렬 — 코어 밖으로 옮겨간 시점 (FRT-291 리뷰)", () => {
+  function projectWithPeriod(id: string, start: string): ExperienceV2 {
+    return toExperienceV2({
+      id,
+      user_id: "user-1",
+      type: "personal-project",
+      importance: null,
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: id,
+        summary: "",
+        status: "draft",
+        tags: [],
+        // 확정본 ① 이 소유하는 시점 — 코어가 아니라 유형 섹션의 안정키에 저장된다.
+        fields: {
+          "project-info.진행 기간": { type: "period", start, end: "", isCurrent: false },
+        },
+        custom: [],
+      },
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-02T00:00:00Z",
+    } as unknown as Experience)
+  }
+
+  it("코어에 기간이 없어도 유형 섹션의 시점으로 정렬된다", () => {
+    const experiences = [
+      projectWithPeriod("가운데", "2023.06"),
+      projectWithPeriod("가장 오래된", "2021.03"),
+      projectWithPeriod("가장 최근", "2025.01"),
+    ]
+
+    const { result } = renderHook(() => useLibraryFilter(experiences, { sortBy: "period" }))
+
+    expect(result.current.filteredExperiences.map(e => e.title)).toEqual([
+      "가장 최근",
+      "가운데",
+      "가장 오래된",
+    ])
+  })
+
+  /**
+   * 픽스처가 정말 "코어에 기간이 없는" 상태인지 따로 묻는다 — 코어에 값이 남아 있었다면 위
+   * 테스트는 기존 경로로 통과해 **새 폴백을 하나도 검증하지 못한 채 초록**이 된다.
+   */
+  it("전제 확인 — 이 픽스처의 코어에는 기간 블록의 값이 없다", () => {
+    const exp = projectWithPeriod("확인용", "2023.06")
+    const core = exp.coreBlocks.find(b => b.label === "기간")
+    expect(core?.value.type === "period" ? core.value.start : "").toBeFalsy()
+    expect(
+      exp.extensionBlocks.some(b => b.label === "진행 기간" && b.value.type === "period"),
+    ).toBe(true)
+  })
+})

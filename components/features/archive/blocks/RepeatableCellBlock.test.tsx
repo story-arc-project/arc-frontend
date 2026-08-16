@@ -12,6 +12,20 @@ vi.mock("@/lib/api/files-api", async () => {
 vi.mock("@/lib/analytics", () => ({ capture: vi.fn() }))
 const { capture } = await import("@/lib/analytics")
 
+// 업로드 진행 중에만 존재하는 상태를 테스트가 정할 수 있어야 한다 — 값(fileId)만 보면
+// '고르는 중'과 '아직 안 고름'이 구분되지 않는다(FileCellInput.test.tsx 와 같은 방식).
+let uploadState: "idle" | "uploading" | "error" = "idle"
+vi.mock("@/hooks/useFileUpload", () => ({
+  useFileUpload: () => ({
+    state: uploadState,
+    progress: 0,
+    error: null,
+    start: vi.fn(async () => null),
+    cancel: vi.fn(),
+    reset: vi.fn(),
+  }),
+}))
+
 import RepeatableCellBlock from "./RepeatableCellBlock"
 import { isBlockEmpty } from "@/lib/utils/block-utils"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
@@ -19,7 +33,10 @@ import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
 afterEach(cleanup)
-beforeEach(() => vi.mocked(capture).mockClear())
+beforeEach(() => {
+  vi.mocked(capture).mockClear()
+  uploadState = "idle"
+})
 
 function makeBlock(
   rows: BlockRow[],
@@ -292,6 +309,79 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
 
     expect(latest?.rows[0].artifacts).toEqual([])
     expect(screen.queryByRole("button", { name: "지우기" })).toBeNull()
+  })
+
+  /**
+   * 업로드가 도는 동안에는 결과물을 지울 수 없어야 한다.
+   *
+   * 파일을 고른 직후 `fileId` 는 아직 비어 있어 `artifactFilled` 가 false 다 → 확인 절차를 그냥
+   * 지나 즉시 삭제되고, 언마운트된 `FileCellInput` 의 `mountedRef` 가드가 **완료된 업로드까지
+   * 조용히 버린다**. 사용자가 방금 고른 파일이 아무 흔적 없이 사라지는 자리다. 값이 아니라
+   * 업로드 상태로만 알 수 있으므로 `onBusyChange` 신호로 그 순간에만 막는다(FileBlock 과 같은 처방).
+   */
+  it("파일 업로드가 도는 동안에는 결과물을 지울 수 없다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    uploadState = "uploading"
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1" }] }],
+          { allowRowArtifacts: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
+
+    // 값이 비어 확인 절차도 안 거치는 경로였다 — 지워지지 않아야 한다.
+    expect(latest).toBeUndefined()
+    expect(screen.getByLabelText("결과물 1 링크")).toBeInTheDocument()
+  })
+
+  /**
+   * 결과물 링크도 `LinkCellInput`(FRT-113 계측)과 같은 대접을 받아야 한다. 표 셀의 링크와 파일
+   * 첨부는 둘 다 `archive_attachment_added` 를 쏘는데 결과물 링크만 안 쏘면, "프로젝트 결과물은
+   * 링크로 남긴다"는 가장 흔한 경로가 지표에서 통째로 빠진다(FRT-291 리뷰).
+   */
+  it("결과물 링크를 입력하고 나가면 첨부 계측이 한 번 발화한다", async () => {
+    const user = userEvent.setup()
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1" }] }],
+          { allowRowArtifacts: true },
+        )}
+      />,
+    )
+
+    await user.type(screen.getByLabelText("결과물 1 링크"), "https://github.com/me/repo")
+    await user.tab()
+
+    expect(capture).toHaveBeenCalledWith("archive_attachment_added", { attachment_type: "url" })
+    expect(vi.mocked(capture).mock.calls.filter(c => c[0] === "archive_attachment_added")).toHaveLength(1)
+  })
+
+  /**
+   * 열 수 없는 주소라고 값을 숨기면 안 된다 — `artifactFilled` 은 그 첨부를 '채워진 것'으로 세는데
+   * 화면에는 '결과물 N' 제목만 남아, 사용자는 자기가 적은 주소가 사라졌다고 읽는다. 표의 link 셀은
+   * 이미 "anchor 는 안 만들되 글자로는 보여 준다"로 처리하고 있다 — 같은 값이 두 화면에서 다르게
+   * 취급되면 안 된다(FRT-291 리뷰).
+   */
+  it("조회 화면에서 열 수 없는 결과물 주소도 글자로는 남는다", () => {
+    render(
+      <Harness
+        readOnly
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1", url: "javascript:alert(1)" }] }],
+          { allowRowArtifacts: true },
+        )}
+      />,
+    )
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument()
+    expect(screen.getByText("javascript:alert(1)")).toBeInTheDocument()
   })
 
   it("셀을 수정해도 추가 항목이 보존된다 — 행 재구성 회귀 (FRT-178 교훈)", async () => {

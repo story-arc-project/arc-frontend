@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react"
 import { canonicalTypeId } from "@/lib/constants/templates-v2"
+import { equivalentLabels } from "@/lib/utils/form-cards"
 import type {
   ExperienceV2,
   LibraryFilter,
@@ -45,6 +46,30 @@ export function matchesFilter(exp: ExperienceV2, filter: LibraryFilter): boolean
   return true
 }
 
+/**
+ * 정렬에 쓰는 시작 시점 (FRT-291 리뷰).
+ *
+ * 코어 '기간'을 먼저 보고, 없으면 **유형 섹션이 대신 소유한 시점**을 찾는다. 확정본 정렬로
+ * 여러 유형이 `CORE_EXCLUDE` 로 코어 '기간'을 내리고 자기 라벨('진행 기간'·'연구 기간'…)로
+ * 옮겨 갔는데, 코어만 보면 그 유형들이 전부 빈 문자열로 같아져 기간 정렬이 아무 일도 하지 않는다.
+ *
+ * 라벨 후보는 `SEMANTIC_GROUPS.period`(form-cards)를 그대로 쓴다 — 어떤 라벨이 '기간'과 같은
+ * 질문인지는 이미 그 표가 정본이고, 사본을 두면 새 유형이 추가될 때 한쪽만 갱신돼 조용히
+ * 어긋난다. 코어를 먼저 보므로 기존 유형의 정렬 결과는 한 건도 바뀌지 않는다.
+ */
+function periodStart(exp: ExperienceV2): string {
+  const core = exp.coreBlocks.find(bl => bl.label === "기간")
+  if (core?.value.type === "period" && core.value.start) return core.value.start
+
+  const group = equivalentLabels("기간")
+  for (const bl of exp.extensionBlocks) {
+    if (bl.value.type === "period" && bl.value.start && group.includes(bl.label)) {
+      return bl.value.start
+    }
+  }
+  return ""
+}
+
 function sortExperiences(experiences: ExperienceV2[], sortBy: SortBy): ExperienceV2[] {
   const sorted = [...experiences]
   switch (sortBy) {
@@ -52,13 +77,7 @@ function sortExperiences(experiences: ExperienceV2[], sortBy: SortBy): Experienc
       sorted.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       break
     case "period":
-      sorted.sort((a, b) => {
-        const aStart = a.coreBlocks.find(bl => bl.label === "기간")
-        const bStart = b.coreBlocks.find(bl => bl.label === "기간")
-        const aVal = aStart?.value.type === "period" ? aStart.value.start : ""
-        const bVal = bStart?.value.type === "period" ? bStart.value.start : ""
-        return bVal.localeCompare(aVal)
-      })
+      sorted.sort((a, b) => periodStart(b).localeCompare(periodStart(a)))
       break
     case "completion":
       sorted.sort((a, b) => {

@@ -248,16 +248,24 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
                       <span className="text-caption text-text-tertiary font-medium">
                         결과물 {ai + 1}
                       </span>
-                      {a.url?.trim() && getSafeHref(a.url) ? (
-                        <a
-                          href={getSafeHref(a.url) ?? undefined}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-body-sm text-brand underline underline-offset-2 break-all hover:text-brand-dark"
-                        >
-                          <span className="break-all">{a.url}</span>
-                          <ExternalLink size={13} className="shrink-0" aria-hidden />
-                        </a>
+                      {/* 열 수 없는 주소(스킴 없음·javascript: 등)는 anchor 로 만들지 않되 **글자로는
+                          남긴다** — `artifactFilled` 이 채워진 것으로 세는 값이라, 안 그리면 화면엔
+                          제목만 남아 사용자는 자기가 적은 주소를 잃은 것으로 읽는다. 같은 파일의
+                          link 셀이 이미 쓰는 처리다(FRT-291 리뷰). */}
+                      {a.url?.trim() ? (
+                        getSafeHref(a.url) ? (
+                          <a
+                            href={getSafeHref(a.url) ?? undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-body-sm text-brand underline underline-offset-2 break-all hover:text-brand-dark"
+                          >
+                            <span className="break-all">{a.url}</span>
+                            <ExternalLink size={13} className="shrink-0" aria-hidden />
+                          </a>
+                        ) : (
+                          <span className="text-body-sm text-text-primary break-all">{a.url}</span>
+                        )
                       ) : null}
                       {a.file?.fileId?.trim() ? (
                         <FileCellInput value={a.file} readOnly ariaLabel={`결과물 ${ai + 1} 파일`} onChange={() => {}} />
@@ -492,77 +500,21 @@ function RowArtifactsEditor({
   artifacts: RowArtifact[]
   onChange: (next: (list: RowArtifact[]) => RowArtifact[]) => void
 }) {
-  // FRT-145 형제(RowExtraFieldsEditor)와 같은 이유로, 값이 든 결과물은 한 번 확인한 뒤에 지운다 —
-  // 되돌리는 경로가 없는 손실이라서다.
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
-
   function patch(id: string, fields: Partial<RowArtifact>) {
     onChange(list => list.map(a => (a.id === id ? { ...a, ...fields } : a)))
-  }
-
-  function remove(id: string) {
-    onChange(list => list.filter(x => x.id !== id))
-    setPendingDelete(null)
   }
 
   return (
     <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
       <span className="text-caption text-text-secondary font-medium">결과물</span>
       {artifacts.map((a, i) => (
-        <div key={a.id} className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
-          <div className="flex items-center justify-between">
-            <span className="text-caption text-text-tertiary">결과물 #{i + 1}</span>
-            {pendingDelete === a.id ? (
-              <span className="flex items-center gap-1.5 text-caption text-text-tertiary">
-                지워집니다
-                <button
-                  type="button"
-                  onClick={() => remove(a.id)}
-                  className="rounded px-1.5 py-0.5 text-error hover:bg-surface-tertiary transition-colors"
-                >
-                  지우기
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPendingDelete(null)}
-                  className="rounded px-1.5 py-0.5 text-text-secondary hover:bg-surface-tertiary transition-colors"
-                >
-                  취소
-                </button>
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => (artifactFilled(a) ? setPendingDelete(a.id) : remove(a.id))}
-                className="text-text-tertiary hover:text-error transition-colors p-1 rounded"
-                aria-label={`결과물 ${i + 1} 삭제`}
-              >
-                <Trash2 size={13} />
-              </button>
-            )}
-          </div>
-          <input
-            type="url"
-            value={a.url ?? ""}
-            onChange={e => patch(a.id, { url: e.target.value })}
-            placeholder="Figma, Notion, GitHub 등"
-            aria-label={`결과물 ${i + 1} 링크`}
-            className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-disabled focus:border-brand focus:outline-none"
-          />
-          <FileCellInput
-            value={a.file}
-            ariaLabel={`결과물 ${i + 1} 파일`}
-            onChange={v => patch(a.id, { file: v })}
-          />
-          <input
-            type="text"
-            value={a.desc ?? ""}
-            onChange={e => patch(a.id, { desc: e.target.value })}
-            placeholder="결과물 설명 (예: 와이어프레임, ERD, 테스트 결과서)"
-            aria-label={`결과물 ${i + 1} 설명`}
-            className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-disabled focus:border-brand focus:outline-none"
-          />
-        </div>
+        <ArtifactCard
+          key={a.id}
+          artifact={a}
+          index={i}
+          onPatch={fields => patch(a.id, fields)}
+          onRemove={() => onChange(list => list.filter(x => x.id !== a.id))}
+        />
       ))}
       <Button
         type="button"
@@ -574,6 +526,99 @@ function RowArtifactsEditor({
         <Plus size={14} className="mr-1" />
         결과물 추가
       </Button>
+    </div>
+  )
+}
+
+/**
+ * 결과물 한 건의 카드.
+ *
+ * 목록이 아니라 **카드가** 컴포넌트인 이유는 상태 둘이 첨부마다 따로 살아야 해서다:
+ * 삭제 확인(`pendingDelete`)과 업로드 진행 여부(`uploading`). 특히 후자는 `FileCellInput` 에
+ * 넘기는 콜백이 **매 렌더 같은 함수여야** 한다 — 인라인 화살표를 주면 `onBusyChange` 의 effect 가
+ * 렌더마다 정리(false)→재실행(true)을 반복해 상태가 진동한다. `useState` 의 setter 는 그 자체로
+ * 안정적이라 이 구조가 가장 단순한 답이다.
+ */
+function ArtifactCard({
+  artifact: a,
+  index,
+  onPatch,
+  onRemove,
+}: {
+  artifact: RowArtifact
+  index: number
+  onPatch: (fields: Partial<RowArtifact>) => void
+  onRemove: () => void
+}) {
+  // FRT-145 형제(RowExtraFieldsEditor)와 같은 이유로, 값이 든 결과물은 한 번 확인한 뒤에 지운다 —
+  // 되돌리는 경로가 없는 손실이라서다.
+  const [pendingDelete, setPendingDelete] = useState(false)
+  // 업로드가 도는 동안 지우면 `FileCellInput` 이 언마운트되며 완료된 업로드가 버려진다 —
+  // 그때 값(`fileId`)은 아직 비어 있어 위 확인 절차조차 지나가 버린다. 값으로는 알 수 없는
+  // 상태라 신호로 받는다(`FileBlock`·`BlockList` 가 블록 층위에서 쓰는 것과 같은 처방).
+  const [uploading, setUploading] = useState(false)
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-caption text-text-tertiary">결과물 #{index + 1}</span>
+        {pendingDelete ? (
+          <span className="flex items-center gap-1.5 text-caption text-text-tertiary">
+            지워집니다
+            <button
+              type="button"
+              onClick={() => {
+                setPendingDelete(false)
+                onRemove()
+              }}
+              className="rounded px-1.5 py-0.5 text-error hover:bg-surface-tertiary transition-colors"
+            >
+              지우기
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingDelete(false)}
+              className="rounded px-1.5 py-0.5 text-text-secondary hover:bg-surface-tertiary transition-colors"
+            >
+              취소
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => (artifactFilled(a) ? setPendingDelete(true) : onRemove())}
+            className="text-text-tertiary hover:text-error transition-colors p-1 rounded disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-text-tertiary"
+            aria-label={`결과물 ${index + 1} 삭제`}
+            title={uploading ? "파일을 올리는 중이에요. 잠시 후 지울 수 있어요." : undefined}
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
+      </div>
+      {/* 원시 input 이 아니라 링크 셀을 쓴다 — 첨부 계측(FRT-113)이 여기에도 붙어야 한다.
+          표의 link 셀과 파일 첨부는 이미 `archive_attachment_added` 를 쏘므로, 결과물 링크만
+          빠지면 "프로젝트 결과물을 링크로 남긴다"는 가장 흔한 경로가 지표에서 사라진다. */}
+      <LinkCellInput
+        value={a.url ?? ""}
+        placeholder="Figma, Notion, GitHub 등"
+        ariaLabel={`결과물 ${index + 1} 링크`}
+        onChange={v => onPatch({ url: v })}
+      />
+      <FileCellInput
+        value={a.file}
+        ariaLabel={`결과물 ${index + 1} 파일`}
+        onBusyChange={setUploading}
+        onChange={v => onPatch({ file: v })}
+      />
+      <input
+        type="text"
+        value={a.desc ?? ""}
+        onChange={e => onPatch({ desc: e.target.value })}
+        placeholder="결과물 설명 (예: 와이어프레임, ERD, 테스트 결과서)"
+        aria-label={`결과물 ${index + 1} 설명`}
+        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-disabled focus:border-brand focus:outline-none"
+      />
     </div>
   )
 }

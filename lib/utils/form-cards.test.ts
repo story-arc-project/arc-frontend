@@ -7,7 +7,8 @@ import {
 } from "@/lib/utils/form-cards"
 import { partitionByCondition } from "@/lib/utils/conditional-fields"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
-import { cloneBlocks } from "@/lib/utils/block-utils"
+import { cloneBlocks, isRequiredBlock } from "@/lib/utils/block-utils"
+import { canHideBlock } from "@/lib/utils/hidden-fields"
 import type { FormCardSection, FormCardModel } from "@/lib/utils/form-cards"
 import type { Block } from "@/types/archive"
 import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
@@ -691,5 +692,68 @@ describe("isCardComplete / computeFormProgress", () => {
     const basic = r.cards.find(c => c.category === "basic")!
     const someKey = basic.blocks.map(b => b.key).filter((k): k is string => !!k)[0]
     expect(computeFormProgress(r.cards, [someKey]).done).toBe(0)
+  })
+})
+
+/**
+ * 치울 수도 채울 수도 없는 칸이 카드를 영영 미완료로 붙잡는 자리 (FRT-291 리뷰).
+ *
+ * `hostsAttachment` 는 파일을 담는 블록에서 × 를 뗀다 — 업로드가 도는 순간 값이 비어 보여
+ * 숨김이 통과하면 고른 파일이 사라지기 때문이다(hidden-fields.ts). 그 대가로 **빈 첨부 표는
+ * 사용자가 없앨 수단이 없다.** 필수가 있는 카드에 살면 무해하지만(`isCardComplete` 이 필수만
+ * 본다), 필수가 하나도 없는 카드에서는 `some(채워짐)` 기준으로 내려가 배포도 결과물도 없는
+ * 프로젝트가 100% 에 닿을 방법을 잃는다.
+ *
+ * ⚠️ 이건 새 규칙이 아니라 **이미 한 번 겪고 되돌린 실패의 재발**이다 — 블록 층위 `file` 을
+ * 통째로 제외했던 초안이 코어 증빙 카드에서 정확히 같은 덫을 만들었다(hidden-fields.ts 주석).
+ * 그때는 제외를 거둬 풀었지만 표 쪽은 업로드 상태를 흘릴 배선이 없어 제외가 남았으므로,
+ * 이번엔 진행도 쪽에서 "사용자가 손쓸 수 있는 칸"만 세는 것으로 푼다.
+ *
+ * 프로브로 18유형 전수를 훑어 이 모양(필수 0 + 못 치우는 블록)을 가진 카드는 프로젝트 2종
+ * 뿐임을 확인했다 — 다른 유형의 진행도는 이 변경에 영향받지 않는다.
+ */
+describe("못 치우는 빈 첨부 표는 진행도를 막지 않는다 (FRT-291 리뷰)", () => {
+  function evidenceCardOf(typeId: Parameters<typeof getTemplateForType>[0]) {
+    const { core, sections } = sectionsFor(typeId)
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES[typeId])
+    return r.cards.find(c => c.category === "evidence")!
+  }
+
+  it("프로젝트 증빙 카드는 필수가 없고 결과물 표를 치울 수 없다 — 전제 확인", () => {
+    const card = evidenceCardOf("personal-project")
+    expect(card.blocks.filter(isRequiredBlock)).toHaveLength(0)
+    const stuck = card.blocks.filter(b => !canHideBlock(b))
+    expect(stuck.map(b => b.label)).toEqual(["결과물 링크 / 파일"])
+  })
+
+  it("치울 수 있는 칸을 전부 숨기면 결과물이 없어도 카드가 완료된다", () => {
+    const card = evidenceCardOf("personal-project")
+    const hideable = card.blocks
+      .filter(canHideBlock)
+      .map(b => b.key)
+      .filter((k): k is string => !!k)
+    expect(hideable.length).toBeGreaterThan(0) // 픽스처가 분기를 실제로 거치는지
+
+    expect(isCardComplete(card, hideable)).toBe(true)
+  })
+
+  it("은퇴 id 도 같은 템플릿을 받으므로 판정이 같다", () => {
+    const card = evidenceCardOf("team-project")
+    const hideable = card.blocks
+      .filter(canHideBlock)
+      .map(b => b.key)
+      .filter((k): k is string => !!k)
+
+    expect(isCardComplete(card, hideable)).toBe(true)
+  })
+
+  /**
+   * 완화는 "손쓸 수 없는 칸"에만 닿아야 한다 — 아직 치울 수 있는 빈 칸이 남아 있으면 그 카드는
+   * 여전히 할 일이 있는 카드다. 여기가 무너지면 첨부 표가 있는 카드가 전부 처음부터 완료로
+   * 세어져 진행도가 거짓말을 한다.
+   */
+  it("치울 수 있는 빈 칸이 남아 있으면 여전히 미완료다", () => {
+    const card = evidenceCardOf("personal-project")
+    expect(isCardComplete(card, [])).toBe(false)
   })
 })
