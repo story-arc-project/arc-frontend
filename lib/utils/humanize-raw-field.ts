@@ -72,6 +72,9 @@ const INTERNAL_KEYS = new Set([
   "blockType",
   "key",
   "id",
+  // 다른 행의 id 를 가리키는 내부 소프트링크(FRT-76). 행 필드지만 사용자가 쓴 값이 아니다 —
+  // 같은 행에 붙는 `roleTags`(FRT-178)·`extraFields`(FRT-145)는 사용자 값이라 남긴다.
+  "linkedProjectRowId",
   "required",
   "placeholder",
   "guide",
@@ -110,11 +113,20 @@ function labelOf(rawKey: string): string {
   return TOP_LEVEL_LABELS[tail] ?? tail
 }
 
-/** 기간 객체(`start`/`end`)를 `시작 ~ 종료` 로. 진행 중이면 종료를 '현재'로 읽는다. */
+/**
+ * 기간 객체(`start`/`end`)를 `시작 ~ 종료` 로. 진행 중이면 종료를 '현재'로 읽는다.
+ *
+ * 끝이 없으면 **구분자도 붙이지 않는다** — 시작만 있는 기간은 저장이 실제로 만드는 상태이고,
+ * 앱의 정본 포매터 `formatPeriodString` 도 그때 시작만 낸다(`lib/utils/period-format.ts`).
+ * 구분자가 남으면 근거마다 `2024-01 ~` 이라는 끊긴 문장이 박힌다.
+ * (정본 포매터를 그대로 부르지는 않는다 — 대시→점 치환은 *저장 포맷* 변환이라, 날짜가 아닐
+ * 수도 있는 인용문에 걸면 원문을 망친다.)
+ */
 function renderPeriod(value: Record<string, unknown>): string {
   const start = renderValue(value.start)
   const end = value.isCurrent === true ? "현재" : renderValue(value.end)
   if (!start && !end) return ""
+  if (!end) return start
   return `${start} ~ ${end}`.trim()
 }
 

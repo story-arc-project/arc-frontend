@@ -95,6 +95,16 @@ describe("humanizeRawFieldNotation — 값 모양별 렌더", () => {
     expect(humanizeRawFieldNotation(raw)).toBe("기간: 2024-10 ~ 현재")
   })
 
+  /**
+   * 시작만 있는 기간은 저장이 실제로 만드는 상태다 — `formatPeriodString` 도 이 경우
+   * 구분자 없이 시작만 낸다(`lib/utils/period-format.ts:60`). 구분자가 남으면 근거마다
+   * `2024-01 ~` 이라는 끊긴 문장이 박힌다.
+   */
+  it("시작만 있는 기간은 구분자를 붙이지 않는다", () => {
+    const raw = 'core.기간: {"type": "period", "start": "2024-01", "end": "", "isCurrent": false}'
+    expect(humanizeRawFieldNotation(raw)).toBe("기간: 2024-01")
+  })
+
   it("끝만 있는 기간도 읽을 수 있게 낸다", () => {
     expect(humanizeRawFieldNotation('core.기간: {"end": "2024-12"}')).toBe("기간: ~ 2024-12")
   })
@@ -166,6 +176,17 @@ describe("humanizeRawFieldNotation — 값 모양별 렌더", () => {
     expect(humanizeRawFieldNotation(raw)).toBe(
       "과제: name: 브랜드 전략 제안, type: 팀 프로젝트, description: 5인 팀",
     )
+  })
+
+  /**
+   * `BlockRow` 는 셀 말고도 행 필드를 갖는다 — `linkedProjectRowId`(FRT-76)는 **다른 행의 id**를
+   * 가리키는 내부 소프트링크라 화면에 나오면 안 되고, `roleTags`(FRT-178)·`extraFields`(FRT-145)는
+   * 사용자가 붙인 값이라 남아야 한다. 둘을 같은 규칙으로 처리하면 한쪽이 반드시 틀린다.
+   */
+  it("행의 내부 링크 id 는 숨기되 사용자가 붙인 행 필드는 남긴다", () => {
+    const raw =
+      'club.성과: {"type": "repeatable-cell", "rows": [{"id": "r1", "linkedProjectRowId": "row-abc", "roleTags": ["공연팀장"], "cells": {"item": "교내 공연 기획"}}]}'
+    expect(humanizeRawFieldNotation(raw)).toBe("성과: roleTags: 공연팀장, item: 교내 공연 기획")
   })
 
   it("모든 값이 비어 있으면 지어내지 않고 원문을 남긴다", () => {
