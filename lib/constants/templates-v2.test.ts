@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest"
 import {
+  ALL_EXPERIENCE_TYPES,
   EXPERIENCE_TYPES,
   EXPERIENCE_TYPE_MAP,
   RETIRED_TYPE_IDS,
   SYSTEM_TEMPLATES_V2,
+  TEMPLATE_MAP,
   TEMPLATE_VERSION,
   canonicalTypeId,
   getTemplateForType,
@@ -2107,14 +2109,25 @@ describe("확정본: 프로젝트 (개인·팀 통합)", () => {
 
   /**
    * 목록에서 내린 id 는 **필터 칩이 만들어지지 않는다** → 그 id 를 정확 일치로 거르는 소비처가
-   * 있으면 옛 레코드를 골라낼 방법이 영영 사라진다. 그래서 은퇴 id 는 반드시 현행 id 로 접힌다.
-   * 앞으로 다른 유형을 은퇴시킬 때도 이 표만 채우면 되도록 전수로 단언한다.
+   * 있으면 옛 레코드를 골라낼 방법이 영영 사라진다. 그래서 **자리를 넘겨받은 유형이 있는 은퇴
+   * (흡수형)** 는 반드시 그 현행 id 로 접힌다.
+   *
+   * 원래 이 단언은 "은퇴 id 는 *전부* 접힌다"였다. FRT-300 이 **대신할 유형이 없는 은퇴(폐기형)**
+   * 를 들여오면서 그 규칙이 더는 전칭이 아니게 됐다 — 접을 곳이 없는데 억지로 접으면 그 기록이
+   * 남의 유형으로 집계된다. 그래서 두 갈래를 갈라 단언하되, **접혔다면 반드시 지금 고를 수 있는
+   * 유형이어야 한다**는 알맹이는 그대로 지킨다(은퇴 유형으로 접히면 문제가 그대로 남는다).
    */
-  it("은퇴한 id 는 전부 현행 유형으로 접힌다", () => {
+  it("은퇴한 id 는 현행 유형으로 접히거나, 접히지 않고 자기 자신으로 해석된다", () => {
+    const selectable = EXPERIENCE_TYPES.map(t => t.id)
     for (const id of RETIRED_TYPE_IDS) {
       const canonical = canonicalTypeId(id)
-      expect(canonical).not.toBe(id)
-      expect(EXPERIENCE_TYPES.map(t => t.id)).toContain(canonical)
+      if (canonical === id) {
+        // 폐기형 — 자기 라벨·자기 템플릿으로 계속 해석돼야 한다.
+        expect(EXPERIENCE_TYPE_MAP[id], id).toBeDefined()
+      } else {
+        // 흡수형 — 접힌 곳은 반드시 '지금 고를 수 있는' 유형이다.
+        expect(selectable, id).toContain(canonical)
+      }
     }
   })
 
@@ -2320,5 +2333,71 @@ describe("확정본: 프로젝트 (개인·팀 통합)", () => {
   /** 섹션 id 교체는 breaking change 다 — `withSectionKeys` 규약대로 bump 를 동반한다. */
   it("섹션 id 를 갈아치웠으므로 TEMPLATE_VERSION 이 연구논문(7) 위로 올라가 있다", () => {
     expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(8)
+  })
+})
+
+/**
+ * FRT-300 — 경험 유형 선택지를 확정본 14종으로 정리.
+ *
+ * 이 블록이 지키는 불변식은 하나다: **내려간 것은 '선택지'뿐이고, 레지스트리·템플릿은 그대로다.**
+ * 두 단언을 한 벌로 두는 이유는 둘이 같은 배열에서 갈라져 나오기 때문이다 — 목록만 보면
+ * "은퇴 3종이 빠졌다"가 성공으로 보이는데, 그게 레지스트리에서 빠진 결과일 수도 있다.
+ *
+ * 은퇴는 두 종류이고 여기서 갈린다(FRT-291 흡수 / FRT-300 폐기). 흡수형은 `canonicalTypeId` 로
+ * 접히고, 폐기형은 접히면 **남의 유형으로 둔갑**하므로 접히지 않아야 한다.
+ */
+describe("확정본에서 내려간 유형 (FRT-300)", () => {
+  /** 대신할 유형이 없어 자기 라벨·자기 템플릿을 그대로 유지하는 '폐기형'. */
+  const DISCARDED: ExperienceTypeId[] = ["sports", "journal", "goal"]
+
+  it("선택지에는 폐기된 유형이 없다 — 확정본 14종만 남는다", () => {
+    const ids = EXPERIENCE_TYPES.map(t => t.id)
+    for (const id of DISCARDED) {
+      expect(ids, id).not.toContain(id)
+    }
+    // 확정본 14종 = 목록 14항목. 프로젝트는 FRT-291 에서 개인·팀이 한 유형으로 합쳐졌다.
+    expect(EXPERIENCE_TYPES).toHaveLength(14)
+  })
+
+  it("폐기된 유형도 라벨·아이콘 레지스트리에는 남는다 — 기존 기록의 유형 이름이 깨지지 않게", () => {
+    for (const id of DISCARDED) {
+      expect(EXPERIENCE_TYPE_MAP[id], id).toBeDefined()
+      expect(EXPERIENCE_TYPE_MAP[id].label, id).toBeTruthy()
+      expect(RETIRED_TYPE_IDS, id).toContain(id)
+    }
+  })
+
+  it("폐기된 유형도 템플릿이 그대로 조립된다 — 기존 기록이 열리고 편집되게", () => {
+    for (const id of DISCARDED) {
+      const tmpl = getTemplateForType(id)
+      expect(tmpl.typeId, id).toBe(id)
+      expect(tmpl.commonCore.blocks.length, id).toBeGreaterThan(0)
+      expect(TEMPLATE_MAP[id], id).toBeDefined()
+    }
+  })
+
+  /**
+   * 폐기형에 alias 를 걸면 그 기록이 통째로 남의 유형으로 집계된다 — 흡수형(`team-project`)과
+   * 정확히 반대 처리라, 한 표에 같이 올리는 실수를 여기서 막는다.
+   */
+  it("폐기된 유형은 접히지 않는다 — 대신할 유형이 없으므로", () => {
+    for (const id of DISCARDED) {
+      expect(canonicalTypeId(id), id).toBe(id)
+    }
+    // 대조군: 흡수형은 접힌다.
+    expect(canonicalTypeId("team-project")).toBe("personal-project")
+  })
+
+  it("저장될 수 있는 모든 유형은 템플릿을 갖는다 — 목록에서 내리는 일이 템플릿 삭제로 번지지 않게", () => {
+    for (const t of ALL_EXPERIENCE_TYPES) {
+      expect(TEMPLATE_MAP[t.id], t.id).toBeDefined()
+    }
+  })
+
+  it("선택지의 모든 유형은 레지스트리에 있고 은퇴 목록에 없다", () => {
+    for (const t of EXPERIENCE_TYPES) {
+      expect(EXPERIENCE_TYPE_MAP[t.id], t.id).toBeDefined()
+      expect(RETIRED_TYPE_IDS, t.id).not.toContain(t.id)
+    }
   })
 })

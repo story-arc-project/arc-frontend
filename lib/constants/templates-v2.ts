@@ -36,32 +36,49 @@ export const EXPERIENCE_TYPES: ExperienceTypeInfo[] = [
   { id: 'personal-project', label: '프로젝트', icon: 'Rocket', category: 'project' },
   { id: 'creative-work', label: '창작물/작업물', icon: 'Palette', category: 'project' },
   // Personal
+  // 확정본 14종에 없는 `sports`·`journal`·`goal` 은 아래 `RETIRED_EXPERIENCE_TYPES` 로 옮겼다(FRT-300).
   { id: 'volunteer', label: '봉사활동', icon: 'Heart', category: 'personal' },
   { id: 'overseas', label: '해외 경험', icon: 'Globe', category: 'personal' },
-  { id: 'sports', label: '운동 및 신체 역량', icon: 'Dumbbell', category: 'personal' },
   { id: 'reading', label: '독서', icon: 'BookMarked', category: 'personal' },
+]
+
+/**
+ * 선택 목록에서는 내렸지만 **저장된 레코드에는 남아 있는** 유형 (FRT-291 · FRT-300).
+ *
+ * 내려간 사정이 둘로 갈리고, 그 차이가 아래 `RETIRED_TYPE_ALIAS` 에 실릴지를 가른다:
+ *  · **흡수** — `team-project` 는 확정본이 개인/팀을 한 유형으로 합치면서 자리를 `personal-project`
+ *    에게 넘겼다. 라벨·아이콘을 현행 프로젝트와 같게 맞추고 alias 로 접어, 사용자에게는 애초에
+ *    한 유형이었던 것처럼 보이게 한다.
+ *  · **폐기** — `sports`·`journal`·`goal` 은 확정본 14종에 들지 못했고 **대신할 유형이 없다.**
+ *    그래서 alias 를 걸지 않는다 — 접을 곳이 없는데 접으면 남의 유형으로 둔갑한다. 자기 라벨과
+ *    자기 템플릿을 그대로 둔 채 '새로 고를 수 없는 유형'이 될 뿐이다.
+ *
+ * 어느 쪽이든 `EXPERIENCE_TYPE_MAP` 에서 빼면 두 가지가 동시에 깨진다:
+ *  (ㄱ) `hasTemplate`(experience-mapper) 이 map 존재 여부로 v2 경로를 판정하므로, 그 유형으로 저장된
+ *       기존 레코드가 통째로 v1 경로로 떨어져 확정본 템플릿을 못 받는다.
+ *  (ㄴ) 라벨 조회(대시보드·카드·상세·레쥬메 선택)가 전부 `EXPERIENCE_TYPE_MAP[id]` 라 이름이 사라진다.
+ * 그래서 목록에서만 내리고 해석은 계속 되게 둔다.
+ */
+const RETIRED_EXPERIENCE_TYPES: ExperienceTypeInfo[] = [
+  { id: 'team-project', label: '프로젝트', icon: 'Rocket', category: 'project' },
+  { id: 'sports', label: '운동 및 신체 역량', icon: 'Dumbbell', category: 'personal' },
   { id: 'journal', label: '기록 (일지/회고)', icon: 'NotebookPen', category: 'personal' },
   { id: 'goal', label: '목표/계획', icon: 'Target', category: 'personal' },
 ]
 
 /**
- * 선택 목록에서는 내렸지만 **저장된 레코드에는 남아 있는** 유형 (FRT-291).
- *
- * `team-project` 는 확정본이 개인/팀을 한 유형으로 합치면서 은퇴했다. 그런데 `EXPERIENCE_TYPE_MAP`
- * 에서 빼면 두 가지가 동시에 깨진다:
- *  (ㄱ) `hasTemplate`(experience-mapper) 이 map 존재 여부로 v2 경로를 판정하므로, 기존 팀 프로젝트
- *       레코드가 통째로 v1 경로로 떨어져 확정본 템플릿을 못 받는다.
- *  (ㄴ) 라벨 조회(대시보드·카드·상세·레쥬메 선택)가 전부 `EXPERIENCE_TYPE_MAP[id]` 라 이름이 사라진다.
- * 그래서 목록에서만 내리고 해석은 계속 되게 둔다 — 라벨·아이콘도 현행 프로젝트와 같게 맞춰,
- * 사용자에게는 애초에 한 유형이었던 것처럼 보인다.
+ * 선택지 + 은퇴 = 저장될 수 있는 유형 전체. **저장된 id 를 해석해야 하는 경로만** 쓴다
+ * (유형 선택기가 '이미 그 유형으로 저장된 기록'의 현재 유형을 되살릴 때 등).
+ * 새로 고를 수 있는 유형을 그리는 목록은 `EXPERIENCE_TYPES` 다.
  */
-const RETIRED_EXPERIENCE_TYPES: ExperienceTypeInfo[] = [
-  { id: 'team-project', label: '프로젝트', icon: 'Rocket', category: 'project' },
+export const ALL_EXPERIENCE_TYPES: ExperienceTypeInfo[] = [
+  ...EXPERIENCE_TYPES,
+  ...RETIRED_EXPERIENCE_TYPES,
 ]
 
 export const EXPERIENCE_TYPE_MAP: Record<ExperienceTypeId, ExperienceTypeInfo> =
   Object.fromEntries(
-    [...EXPERIENCE_TYPES, ...RETIRED_EXPERIENCE_TYPES].map(t => [t.id, t]),
+    ALL_EXPERIENCE_TYPES.map(t => [t.id, t]),
   ) as Record<ExperienceTypeId, ExperienceTypeInfo>
 
 /**
@@ -71,6 +88,9 @@ export const EXPERIENCE_TYPE_MAP: Record<ExperienceTypeId, ExperienceTypeInfo> =
  * 부족하다. 유형 목록에서 내린 id 는 필터 칩이 만들어지지 않아 사용자가 그 값을 고를 수 없는데,
  * 저장된 레코드에는 남아 있다 → 정확 일치로 거르는 순간 옛 기록이 목록에서 빠지고 **되돌릴 칩이
  * 없다**. 사용자에게 이미 같은 이름의 한 유형이므로(둘 다 '프로젝트') 비교 전에 접어서 같게 만든다.
+ *
+ * **흡수된 유형만 여기 올린다.** 폐기된 `sports`·`journal`·`goal` 은 대신할 유형이 없어 접으면
+ * 남의 유형으로 둔갑하므로 빠져 있고, `canonicalTypeId` 를 지나도 자기 id 그대로 나온다.
  */
 const RETIRED_TYPE_ALIAS: Partial<Record<ExperienceTypeId, ExperienceTypeId>> = {
   'team-project': 'personal-project',
@@ -2867,7 +2887,12 @@ function buildTemplate(typeId: ExperienceTypeId): TemplateV2 {
   }
 }
 
-export const SYSTEM_TEMPLATES_V2: TemplateV2[] = EXPERIENCE_TYPES.map(t => buildTemplate(t.id))
+/**
+ * 선택지가 아니라 **전체 레지스트리**에서 만든다 — 은퇴 유형(FRT-291 · FRT-300)으로 저장된 기록도
+ * 자기 템플릿으로 열려야 하기 때문이다. 선택지만 돌면 `TEMPLATE_MAP[은퇴 id]` 가 undefined 가 되어,
+ * 유형을 목록에서 내리는 것이 조용히 '템플릿을 없애는 일'로 번진다.
+ */
+export const SYSTEM_TEMPLATES_V2: TemplateV2[] = ALL_EXPERIENCE_TYPES.map(t => buildTemplate(t.id))
 
 export const TEMPLATE_MAP: Record<ExperienceTypeId, TemplateV2> =
   Object.fromEntries(SYSTEM_TEMPLATES_V2.map(t => [t.typeId, t])) as Record<ExperienceTypeId, TemplateV2>
