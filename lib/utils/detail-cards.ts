@@ -64,30 +64,48 @@ export function buildDetailSections(
         if (hit) consumed.add(b.id)
         return hit
       })
-      return { id: ext.id, category: ext.category, blocks }
+      return {
+        id: ext.id,
+        label: ext.label,
+        standalone: ext.standalone,
+        description: ext.description,
+        category: ext.category,
+        blocks,
+      }
     })
 
     const { cards } = computeFormCards(experience.coreBlocks, sections)
 
-    // 정식 4섹션만 노출 — 매칭된 카드 블록 + 매칭 안 된 잔여 블록(자신의 category, 없으면
-    // detail)을 category 별로 합쳐 SECTION_CATEGORIES 순서로 출력한다("추가 입력" 미생성).
-    const blocksByCat = new Map<SectionCategory, Block[]>()
-    const add = (cat: SectionCategory, blocks: Block[]) => {
-      if (blocks.length > 0) blocksByCat.set(cat, [...(blocksByCat.get(cat) ?? []), ...blocks])
-    }
-    for (const card of cards) add(card.category, card.blocks.filter(b => !isBlockEmpty(b)))
-    for (const b of experience.extensionBlocks) {
-      if (consumed.has(b.id) || isBlockEmpty(b)) continue
-      add(b.category ?? "detail", [b])
-    }
     // 카드 이름은 입력 폼과 같아야 한다 — 저장 직후 '봉사 회고'로 적어 넣은 카드가 상세뷰에서만
     // 일반 라벨 '경험 상세'로 바뀌면 같은 카드가 화면마다 다른 이름으로 불린다(FRT-247 Codex P2).
     // 폼은 ExperienceFormV2 가 computeFormCards 에 넘겨 적용하지만 상세뷰는 여기서 라벨을 직접
     // 만들어 왔다. 표시 전용이라 안정키·저장 shape 와 무관하다.
+    // 분할 카드(FRT-320, id≠category)는 섹션 이름(card.label)이 곧 폼 카드 제목이므로 그대로 쓴다.
     const labelOverrides = SECTION_LABEL_OVERRIDES[experience.typeId]
-    for (const { id, label } of SECTION_CATEGORIES) {
-      const blocks = blocksByCat.get(id)
-      if (blocks && blocks.length > 0) out.push({ label: labelOverrides?.[id] ?? label, blocks })
+    const categoryLabel = new Map(SECTION_CATEGORIES.map(c => [c.id, c.label]))
+    const rendered = cards.map(card => ({
+      category: card.category,
+      label:
+        card.id === card.category
+          ? labelOverrides?.[card.category] ?? categoryLabel.get(card.category)!
+          : card.label,
+      blocks: card.blocks.filter(b => !isBlockEmpty(b)),
+    }))
+    // 매칭 안 된 잔여 블록(키 없는 레거시)은 자신의 category(없으면 detail)의 마지막 카드에
+    // 합류시키고, 그 카테고리 카드가 없으면 새로 만든다("추가 입력" 미생성 — 기존 동작 유지).
+    for (const b of experience.extensionBlocks) {
+      if (consumed.has(b.id) || isBlockEmpty(b)) continue
+      const cat = b.category ?? "detail"
+      const target = [...rendered].reverse().find(c => c.category === cat)
+      if (target) target.blocks.push(b)
+      else rendered.push({ category: cat, label: labelOverrides?.[cat] ?? categoryLabel.get(cat)!, blocks: [b] })
+    }
+    // 잔여 블록으로 새로 만든 카드가 뒤에 붙었을 수 있다 — 카테고리 순서(SECTION_CATEGORIES)로
+    // 안정 정렬해 기존 출력 순서를 유지한다(같은 카테고리 안의 분할 카드 순서는 그대로).
+    const rank = new Map(SECTION_CATEGORIES.map((c, i) => [c.id, i]))
+    rendered.sort((a, b) => (rank.get(a.category) ?? 0) - (rank.get(b.category) ?? 0))
+    for (const card of rendered) {
+      if (card.blocks.length > 0) out.push({ label: card.label, blocks: card.blocks })
     }
   } else {
     const coreBlocks = experience.coreBlocks.filter(
