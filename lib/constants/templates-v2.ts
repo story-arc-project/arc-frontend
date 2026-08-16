@@ -1843,7 +1843,20 @@ const PROJECT_COLLAB_OPTIONS = [
 ] as const
 
 /** ① '개인 / 팀' 의 안정키. 라벨을 바꾸면 이 문자열도 함께 바꿔야 한다(조건부 노출 트리거). */
-const PROJECT_COLLAB_KEY = 'project-info.개인 / 팀'
+export const PROJECT_COLLAB_KEY = 'project-info.개인 / 팀'
+
+/** ① '개인 / 팀' 에서 "혼자 했다"를 뜻하는 선택지. 구 개인 프로젝트 레코드의 이관 목적지다. */
+export const PROJECT_SOLO_OPTION = PROJECT_COLLAB_OPTIONS[0]
+
+/**
+ * 개인·팀 프로젝트가 한 유형으로 합쳐진 템플릿 세대 (FRT-291).
+ *
+ * ⚠️ **`TEMPLATE_VERSION` 을 참조하지 말 것.** 이건 "지금 몇 세대인가"가 아니라 "id 가 개인/팀의
+ * 답이던 마지막 지점이 어디인가"를 가리키는 **고정된 이정표**다. 여기에 `TEMPLATE_VERSION` 을
+ * 쓰면 다음 개편으로 9가 되는 순간, 통합 이후에 저장돼 **사용자가 일부러 비워 둔** 레코드까지
+ * 구 레코드로 오인해 답을 대신 정해 버린다.
+ */
+export const PROJECT_TYPE_MERGE_VERSION = 8
 
 const PROJECT_SERVICE_STATUS_OPTIONS = [
   '운영 중',

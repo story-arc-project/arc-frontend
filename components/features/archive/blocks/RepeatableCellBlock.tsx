@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, type ReactNode } from "react"
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react"
 import { CornerUpLeft, ExternalLink, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { RequiredDot } from "@/components/ui/required-dot"
@@ -423,6 +423,43 @@ function RowEditor({
   onArtifactsChange?: (next: (list: RowArtifact[]) => RowArtifact[]) => void
   onRemove: () => void
 }) {
+  /**
+   * 이 행 안에서 업로드가 하나라도 도는가 (FRT-291 리뷰).
+   *
+   * 결과물의 × 만 막는 것으로는 부족했다 — **행 전체를 지우는 버튼**이 바로 위에 있고, 그쪽으로
+   * 지워도 `FileCellInput` 이 똑같이 언마운트돼 고른 파일이 사라진다. 셀의 `file` 열도 같은
+   * 경로이므로 둘을 한 자리에서 센다.
+   *
+   * 핸들러는 키마다 **메모해서** 돌려준다. 인라인으로 만들면 `onBusyChange` 의 effect 가 렌더마다
+   * 정리(false)→재실행(true)을 반복하고, 그 false 가 상태를 실제로 바꿔 다시 렌더를 부른다 —
+   * 무한 루프가 된다.
+   */
+  const [busyKeys, setBusyKeys] = useState<ReadonlySet<string>>(() => new Set())
+  // 신호를 보내는 칸의 목록을 **문자열로 굳혀** 메모 기준으로 쓴다. 배열째 의존하면 사용자가
+  // 설명 한 글자만 고쳐도(= artifacts 배열이 새로 생겨도) 핸들러 신원이 바뀌어, 업로드 도중에
+  // false→true 로 한 번 깜빡이는 창이 열린다. 목록이 실제로 달라질 때만 다시 만든다.
+  const busySignature = [
+    ...columns.filter(c => c.blockType === "file").map(c => `cell:${c.key}`),
+    ...(row.artifacts ?? []).map(a => `artifact:${a.id}`),
+  ].join("|")
+  const busyHandlers = useMemo(() => {
+    const map = new Map<string, (busy: boolean) => void>()
+    for (const key of busySignature.split("|").filter(Boolean)) {
+      map.set(key, (busy: boolean) =>
+        setBusyKeys(prev => {
+          if (prev.has(key) === busy) return prev
+          const next = new Set(prev)
+          if (busy) next.add(key)
+          else next.delete(key)
+          return next
+        }),
+      )
+    }
+    return map
+  }, [busySignature])
+  const busyHandler = (key: string) => busyHandlers.get(key)
+  const uploading = busyKeys.size > 0
+
   return (
     // data-row-id: FRT-76 '프로젝트로 연결' 스크롤 앵커(전역 유일 row.id 로 scrollIntoView).
     <div data-row-id={row.id} className="scroll-mt-20 bg-surface-secondary border border-border rounded-lg p-4">
@@ -439,9 +476,11 @@ function RowEditor({
         {!isPlaceholder && (
           <button
             type="button"
+            disabled={uploading}
             onClick={onRemove}
-            className="text-text-tertiary hover:text-error transition-colors p-1 rounded"
+            className="text-text-tertiary hover:text-error transition-colors p-1 rounded disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-text-tertiary"
             aria-label="행 삭제"
+            title={uploading ? "파일을 올리는 중이에요. 잠시 후 지울 수 있어요." : undefined}
           >
             <Trash2 size={14} />
           </button>
@@ -471,6 +510,7 @@ function RowEditor({
                 column={col}
                 value={cellVal}
                 ariaLabel={col.label}
+                onBusyChange={busyHandler(`cell:${col.key}`)}
                 onChange={(v) => onCellChange(col.key, v)}
               />
             </div>
@@ -481,7 +521,11 @@ function RowEditor({
         <RowExtraFieldsEditor fields={row.extraFields ?? []} onChange={onExtrasChange} />
       )}
       {allowRowArtifacts && onArtifactsChange && (
-        <RowArtifactsEditor artifacts={row.artifacts ?? []} onChange={onArtifactsChange} />
+        <RowArtifactsEditor
+          artifacts={row.artifacts ?? []}
+          onChange={onArtifactsChange}
+          busyHandler={busyHandler}
+        />
       )}
     </div>
   )
@@ -496,9 +540,12 @@ function RowEditor({
 function RowArtifactsEditor({
   artifacts,
   onChange,
+  busyHandler,
 }: {
   artifacts: RowArtifact[]
   onChange: (next: (list: RowArtifact[]) => RowArtifact[]) => void
+  /** 첨부별 업로드 신호를 행에 모아 주는 발급기 — 키마다 같은 함수를 돌려준다(RowEditor). */
+  busyHandler: (key: string) => ((busy: boolean) => void) | undefined
 }) {
   function patch(id: string, fields: Partial<RowArtifact>) {
     onChange(list => list.map(a => (a.id === id ? { ...a, ...fields } : a)))
@@ -512,6 +559,7 @@ function RowArtifactsEditor({
           key={a.id}
           artifact={a}
           index={i}
+          onBusyChange={busyHandler(`artifact:${a.id}`)}
           onPatch={fields => patch(a.id, fields)}
           onRemove={() => onChange(list => list.filter(x => x.id !== a.id))}
         />
@@ -542,11 +590,14 @@ function RowArtifactsEditor({
 function ArtifactCard({
   artifact: a,
   index,
+  onBusyChange,
   onPatch,
   onRemove,
 }: {
   artifact: RowArtifact
   index: number
+  /** 행에도 같은 신호를 흘린다 — 행 삭제 버튼이 이 카드 바깥에 있기 때문이다. */
+  onBusyChange?: (busy: boolean) => void
   onPatch: (fields: Partial<RowArtifact>) => void
   onRemove: () => void
 }) {
@@ -557,6 +608,15 @@ function ArtifactCard({
   // 그때 값(`fileId`)은 아직 비어 있어 위 확인 절차조차 지나가 버린다. 값으로는 알 수 없는
   // 상태라 신호로 받는다(`FileBlock`·`BlockList` 가 블록 층위에서 쓰는 것과 같은 처방).
   const [uploading, setUploading] = useState(false)
+  // 두 곳이 같은 신호를 본다: 이 카드의 × 와 행 삭제 버튼. 한 콜백으로 묶어 두 소비처의
+  // 기준이 갈리지 않게 하고, `useCallback` 으로 신원을 고정해 effect 진동을 막는다.
+  const handleBusyChange = useCallback(
+    (busy: boolean) => {
+      setUploading(busy)
+      onBusyChange?.(busy)
+    },
+    [onBusyChange],
+  )
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
@@ -608,7 +668,7 @@ function ArtifactCard({
       <FileCellInput
         value={a.file}
         ariaLabel={`결과물 ${index + 1} 파일`}
-        onBusyChange={setUploading}
+        onBusyChange={handleBusyChange}
         onChange={v => onPatch({ file: v })}
       />
       <input
@@ -905,12 +965,15 @@ function CellInput({
   column,
   value,
   ariaLabel,
+  onBusyChange,
   onChange,
 }: {
   column: BlockColumnDef
   value: CellValue | undefined
   /** 라벨이 `<label htmlFor>` 로 묶여 있지 않아 입력칸에 접근 가능한 이름이 없다 — 직접 준다. */
   ariaLabel?: string
+  /** `file` 열의 업로드 진행 여부를 행에 알린다 — 그동안 행 삭제를 막는다(FRT-291 리뷰). */
+  onBusyChange?: (busy: boolean) => void
   onChange: (value: CellValue) => void
 }) {
   // 열 타입이 변경되어 기존 값(string ↔ string[])이 불일치할 때 UI에서 값이 사라지지 않도록 정규화한다.
@@ -955,6 +1018,7 @@ function CellInput({
           <FileCellInput
             value={isFileCellValue(value) ? value : undefined}
             onChange={onChange}
+            onBusyChange={onBusyChange}
             ariaLabel={ariaLabel}
           />
           {legacy && <LegacyCellText text={legacy} note="파일을 올리면 이 값은 지워져요" />}

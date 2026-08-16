@@ -16,6 +16,9 @@ import { isImportanceLevel, SCHEMA_VERSION_V2 } from "@/types/archive"
 import {
   EXPERIENCE_TYPE_MAP,
   getTemplateForType,
+  PROJECT_COLLAB_KEY,
+  PROJECT_SOLO_OPTION,
+  PROJECT_TYPE_MERGE_VERSION,
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
 import {
@@ -590,6 +593,48 @@ function carryIntoSingleLine(
  * 전역 쪽은 목적지가 차 있으면 구 키를 보존 없이 delete 해서 값이 조용히 사라지는데
  * (FRT-247 에서 확인), 여기서는 구 키가 남아 orphan '기타' 카드로 흘러 사용자가 볼 수 있다.
  */
+/**
+ * 유형 통합으로 **id 가 답이던 질문**이 생겼을 때, 구 레코드에 그 답을 되돌려 준다 (FRT-291 리뷰).
+ *
+ * 개인·팀 프로젝트가 한 유형으로 합쳐지면서 그 구분은 ① '개인 / 팀' 칸으로 옮겨 갔다. 그런데
+ * 통합 이전 레코드는 그 칸이 없던 시절에 저장됐고, 남은 id `personal-project` 는 이제 **새 팀
+ * 프로젝트도 쓰는 일반 id** 라 "이건 개인 작업이었다"는 사실이 스키마 어디에도 남지 않는다.
+ * 우리가 이미 아는 답을 사용자에게 다시 묻게 되는 자리다(FRT-249 Codex P1 과 같은 양식).
+ *
+ * ⚠️ **팀 레코드는 일부러 채우지 않는다.** 새 선택지가 팀 규모로 갈리는데(2~5명 / 6명 이상)
+ * 구 데이터에 규모가 없어, 둘 중 하나를 고르면 답이 둔갑한다(`carrySelectValue` 와 같은 판단).
+ * 게다가 `team-project` id 는 은퇴했을 뿐 그대로 남아 '팀이었다'는 사실을 여전히 담고 있다.
+ *
+ * ⚠️ `options` 는 **템플릿 블록에서 그대로 복사한다.** `injectValue` 는 저장값의 목록을 그대로
+ * 실으므로 빈 배열을 넣으면 선택지 없는 드롭다운이 되고, 여기 목록을 손으로 적으면 확정본이
+ * 선택지를 고칠 때 조용히 어긋난다(`applyScopedMigrations` 의 정규화와 같은 이유).
+ */
+function seedMergedTypeAnswer(
+  fields: Record<string, BlockValue>,
+  rawType: string,
+  templateVersion: unknown,
+  templateByKey: Map<string, Block>,
+): Record<string, BlockValue> {
+  if (rawType !== "personal-project") return fields
+  // 통합 이후 저장된 레코드에서 이 칸이 빈 것은 **사용자의 상태**(아직 안 골랐다)이지 우리가
+  // 아는 사실이 아니다 — 대신 정하면 팀 프로젝트를 만들다 만 사람이 '개인'이라는 답을 받는다.
+  if (typeof templateVersion !== "number" || templateVersion >= PROJECT_TYPE_MERGE_VERSION) {
+    return fields
+  }
+  const current = fields[PROJECT_COLLAB_KEY]
+  // 이미 답이 있으면 손대지 않는다. `isBlockEmpty` 가 아니라 값의 모양을 직접 보는 이유는
+  // 이 판정이 **보정 전 원본**에도 닿기 때문이다(FRT-200).
+  if (current && current.type === "single-select" && typeof current.selected === "string" && current.selected.trim()) {
+    return fields
+  }
+  const templateValue = templateByKey.get(PROJECT_COLLAB_KEY)?.value
+  const options = templateValue?.type === "single-select" ? templateValue.options : []
+  return {
+    ...fields,
+    [PROJECT_COLLAB_KEY]: { type: "single-select", options, selected: PROJECT_SOLO_OPTION },
+  }
+}
+
 function applyScopedMigrations(
   fields: Record<string, BlockValue>,
   rules: ScopedMigration[],
@@ -775,9 +820,14 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) templateByKey.set(b.key, b)
     // 전역 개명 별칭 뒤에 유형 스코프 이관을 얹는다 — 순서가 규칙이다. 유형 섹션 쪽 값이 먼저
     // 목적지를 차지하고, 코어 잔재는 목적지가 비었을 때만 들어간다.
-    const fields = applyScopedMigrations(
-      applyRenamedKeys(content.fields ?? {}),
-      [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
+    const fields = seedMergedTypeAnswer(
+      applyScopedMigrations(
+        applyRenamedKeys(content.fields ?? {}),
+        [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
+        templateByKey,
+      ),
+      exp.type,
+      content.template_version,
       templateByKey,
     )
     const coreBlocks = tmpl.commonCore.blocks.map(b => {

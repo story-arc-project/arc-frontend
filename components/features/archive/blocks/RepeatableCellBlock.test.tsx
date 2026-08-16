@@ -341,6 +341,50 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
   })
 
   /**
+   * 결과물의 × 만 막는 것으로는 부족하다 — **행 전체를 지우는 버튼**이 바로 위에 있고, 그쪽으로
+   * 지워도 `FileCellInput` 은 똑같이 언마운트돼 고른 파일이 사라진다. 첫 수정이 놓친 형제 경로다.
+   * 처방이 닿아야 할 경로를 세다 만 자리이므로, 셀의 file 열도 같은 축에서 함께 막는다.
+   */
+  it("결과물 업로드가 도는 동안에는 행 전체도 지울 수 없다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    uploadState = "uploading"
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1" }] }],
+          { allowRowArtifacts: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "행 삭제" }))
+
+    expect(latest).toBeUndefined()
+    expect(screen.getByLabelText("결과물 1 링크")).toBeInTheDocument()
+  })
+
+  it("셀의 file 열 업로드 중에도 행을 지울 수 없다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    uploadState = "uploading"
+    render(
+      <Harness
+        block={makeBlockWithColumns(
+          [{ key: "out", label: "결과물", blockType: "file" as const }],
+          [{ id: "r1", cells: {} }],
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "행 삭제" }))
+
+    expect(latest).toBeUndefined()
+  })
+
+  /**
    * 결과물 링크도 `LinkCellInput`(FRT-113 계측)과 같은 대접을 받아야 한다. 표 셀의 링크와 파일
    * 첨부는 둘 다 `archive_attachment_added` 를 쏘는데 결과물 링크만 안 쏘면, "프로젝트 결과물은
    * 링크로 남긴다"는 가장 흔한 경로가 지표에서 통째로 빠진다(FRT-291 리뷰).

@@ -4129,3 +4129,76 @@ describe("toExperienceV2 — 이 코드가 모르는 타입 (FRT-200)", () => {
     })
   })
 })
+
+/**
+ * 유형 통합으로 **id 가 답이던 질문**이 생긴 자리 (FRT-291 리뷰).
+ *
+ * 확정본은 개인·팀을 한 유형으로 합치고 '개인 / 팀' 이라는 칸으로 그 구분을 옮겼다. 그런데
+ * 통합 이전 레코드는 그 칸이 없던 시절에 저장됐다 — 그리고 남은 id `personal-project` 는 이제
+ * **새 팀 프로젝트도 쓰는 일반 id** 라, 그 레코드가 '개인'이었다는 사실이 스키마 어디에도 남지
+ * 않는다. 우리가 아는 답을 사용자에게 다시 묻는 셈이다(FRT-249 Codex P1 과 같은 양식).
+ *
+ * ⚠️ 팀 레코드는 **일부러 안 채운다.** 새 선택지가 팀 규모로 갈리는데(2~5명 / 6명 이상) 구
+ * 데이터에 규모가 없다 — 둘 중 하나를 고르면 답이 둔갑한다(`carrySelectValue` 와 같은 판단).
+ * 게다가 `team-project` id 는 은퇴했을 뿐 그대로 남아 '팀이었다'는 사실을 여전히 담고 있다.
+ */
+describe("통합된 유형의 판별자 되돌리기 (FRT-291 리뷰)", () => {
+  function projectRecord(type: string, templateVersion: number, fields: Record<string, BlockValue> = {}) {
+    return toExperienceV2({
+      id: "e1",
+      user_id: "u1",
+      type,
+      importance: null,
+      content: {
+        schema_version: 2,
+        template_version: templateVersion,
+        title: "구 레코드",
+        summary: "",
+        status: "complete",
+        tags: [],
+        fields,
+        custom: [],
+      },
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-02T00:00:00Z",
+    } as unknown as Experience)
+  }
+
+  function collabOf(v2: ExperienceV2): SingleSelectBlockValue | undefined {
+    const block = v2.extensionBlocks.find(b => b.label === "개인 / 팀")
+    return block?.value.type === "single-select" ? block.value : undefined
+  }
+
+  it("통합 이전 개인 프로젝트는 '개인 프로젝트'로 되살아난다", () => {
+    expect(collabOf(projectRecord("personal-project", 7))?.selected).toBe("개인 프로젝트")
+  })
+
+  it("선택지는 템플릿 것이 그대로 살아 있다 — 되살린 값이 목록을 좁히지 않는다", () => {
+    const collab = collabOf(projectRecord("personal-project", 7))
+    expect(collab?.options ?? []).toContain("팀 프로젝트(2~5명)")
+  })
+
+  it("통합 이전 팀 프로젝트는 비워 둔다 — 팀 규모를 모른다", () => {
+    expect(collabOf(projectRecord("team-project", 7))?.selected).toBe("")
+  })
+
+  /**
+   * 통합 이후 저장된 레코드에서 이 칸이 비어 있는 것은 **사용자의 상태**(아직 안 골랐다)이지
+   * 우리가 아는 사실이 아니다. 여기가 무너지면 팀 프로젝트를 만들다 만 사용자가 다음 진입에
+   * '개인 프로젝트'라는 답을 받아 든다.
+   */
+  it("통합 이후 레코드의 빈 칸은 대신 정하지 않는다", () => {
+    expect(collabOf(projectRecord("personal-project", TEMPLATE_VERSION))?.selected).toBe("")
+  })
+
+  it("이미 고른 답은 덮어쓰지 않는다", () => {
+    const saved = projectRecord("personal-project", 7, {
+      "project-info.개인 / 팀": {
+        type: "single-select",
+        options: [],
+        selected: "팀 프로젝트(6명 이상)",
+      },
+    })
+    expect(collabOf(saved)?.selected).toBe("팀 프로젝트(6명 이상)")
+  })
+})
