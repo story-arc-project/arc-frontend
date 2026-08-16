@@ -218,6 +218,26 @@ describe("CreateResumeModal — 경험 선택 (플래그 on)", () => {
     );
   });
 
+  // 은퇴한 id(team-project)는 화면 어디서나 '프로젝트' 하나로 접힌다(FRT-291) — 계측만 원시
+  // id 로 세면 같은 유형이 둘로 쪼개져 유형 분포가 부풀려진다(대시보드 집계와 같은 기전).
+  it("은퇴한 유형 id 는 접어서 센다 — 구 팀 프로젝트와 새 프로젝트는 한 유형이다", async () => {
+    const user = userEvent.setup();
+    mockExperiences = [
+      experience("e1", "구 팀 프로젝트", "2026-07-20T00:00:00.000Z", "team-project"),
+      experience("e2", "새 프로젝트", "2026-07-21T00:00:00.000Z", "personal-project"),
+    ];
+    renderModal(true);
+
+    await user.click(screen.getByRole("button", { name: "만들기" }));
+
+    await waitFor(() =>
+      expect(mockCapture).toHaveBeenCalledWith("resume_experience_selected", {
+        count: 2,
+        experience_types: ["personal-project"],
+      }),
+    );
+  });
+
   // 생성 요청 실패는 곧 drop-off 다. 선택을 요청 **직전**에 쏘지 않으면
   // "골랐는데 만들어지지 않은" 사용자가 데이터에서 통째로 사라진다.
   it("생성 요청이 실패해도 선택 사실은 남는다", async () => {

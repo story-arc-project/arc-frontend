@@ -756,4 +756,30 @@ describe("못 치우는 빈 첨부 표는 진행도를 막지 않는다 (FRT-291
     const card = evidenceCardOf("personal-project")
     expect(isCardComplete(card, [])).toBe(false)
   })
+
+  /**
+   * 제외는 **빈** 첨부 표에만 닿아야 한다(`isBlockEmpty` 조건). 여기가 무너지면 결과물을 실제로
+   * 채운 사용자의 그 칸이 actionable 에서 빠져, 다른 칸이 빈 카드가 근거를 다 채우고도 영영
+   * 미완료로 남는다 — 이 조건만 무력화하면 기존 그물 전부가 GREEN 이었다(/code-review high).
+   */
+  it("결과물 표에 실제 내용을 채우면 그 칸이 곧 완료 근거다", () => {
+    const card = evidenceCardOf("personal-project")
+    const stuck = card.blocks.find(b => !canHideBlock(b))!
+    expect(stuck.value.type).toBe("repeatable-cell") // 픽스처가 전제(첨부 표)를 실제로 갖는지
+    const filled = {
+      ...card,
+      blocks: card.blocks.map(b =>
+        b === stuck && b.value.type === "repeatable-cell"
+          ? {
+              ...b,
+              value: {
+                ...b.value,
+                rows: [{ id: "r1", cells: { link: "https://github.com/arc/demo" } }],
+              },
+            }
+          : b,
+      ),
+    }
+    expect(isCardComplete(filled, [])).toBe(true)
+  })
 })

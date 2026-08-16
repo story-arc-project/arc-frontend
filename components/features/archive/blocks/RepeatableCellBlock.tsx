@@ -625,13 +625,17 @@ function ArtifactCard({
         {pendingDelete ? (
           <span className="flex items-center gap-1.5 text-caption text-text-tertiary">
             지워집니다
+            {/* ×(진입)만 막으면 부족하다 — 확인 UI 가 떠 있는 동안에도 FileCellInput 은 렌더돼
+                있어 업로드를 시작할 수 있고, 여기서 확정하면 같은 언마운트 경로로 유실된다. */}
             <button
               type="button"
+              disabled={uploading}
               onClick={() => {
                 setPendingDelete(false)
                 onRemove()
               }}
-              className="rounded px-1.5 py-0.5 text-error hover:bg-surface-tertiary transition-colors"
+              className="rounded px-1.5 py-0.5 text-error hover:bg-surface-tertiary transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              title={uploading ? "파일을 올리는 중이에요. 잠시 후 지울 수 있어요." : undefined}
             >
               지우기
             </button>

@@ -341,6 +341,34 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
   })
 
   /**
+   * ×만 막으면 부족하다 — 확인 UI 가 **떠 있는 동안에도** `FileCellInput` 은 계속 렌더돼 있어
+   * 사용자가 파일을 고를 수 있고, 그 뒤 '지우기'를 누르면 같은 언마운트 경로로 업로드가 유실된다.
+   * ×(진입)와 '지우기'(확정)는 같은 손실의 두 문이라 같은 신호로 잠가야 한다(/code-review high).
+   */
+  it("확인 단계의 '지우기'도 업로드 중에는 눌리지 않는다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1", desc: "시연 영상" }] }],
+          { allowRowArtifacts: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
+    // 확인 UI 가 뜬 채로 업로드가 시작된다 — 설명 입력이 리렌더를 일으켜 신호가 반영된다.
+    uploadState = "uploading"
+    await user.type(screen.getByLabelText("결과물 1 설명"), "!")
+
+    await user.click(screen.getByRole("button", { name: "지우기" }))
+
+    expect(latest?.rows[0].artifacts).toHaveLength(1)
+  })
+
+  /**
    * 결과물의 × 만 막는 것으로는 부족하다 — **행 전체를 지우는 버튼**이 바로 위에 있고, 그쪽으로
    * 지워도 `FileCellInput` 은 똑같이 언마운트돼 고른 파일이 사라진다. 첫 수정이 놓친 형제 경로다.
    * 처방이 닿아야 할 경로를 세다 만 자리이므로, 셀의 file 열도 같은 축에서 함께 막는다.

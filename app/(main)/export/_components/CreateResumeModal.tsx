@@ -7,6 +7,7 @@ import { toast } from "@/components/ui/toast";
 import { ResumeExperiencePicker } from "@/components/features/export/ResumeExperiencePicker";
 import { createResume } from "@/lib/api/export-api";
 import { capture } from "@/lib/analytics";
+import { canonicalTypeId } from "@/lib/constants/templates-v2";
 import { toExperienceV2 } from "@/lib/utils/experience-mapper";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { useExperiences } from "@/hooks/useExperiences";
@@ -123,8 +124,10 @@ export function CreateResumeModal({
       capture("resume_experience_selected", {
         count: selectedIds.length,
         // 경험 제목·id 는 PII 위험이라 싣지 않는다 — 유형만, 중복 없이.
+        // 은퇴한 id 는 접어서 센다(FRT-291) — 원시 id 로 세면 화면에선 하나인 유형이
+        // 통계에서 둘로 쪼개진다(대시보드 분포 집계와 같은 기전).
         experience_types: [
-          ...new Set(selectedExperiences.map((e) => e.typeId)),
+          ...new Set(selectedExperiences.map((e) => canonicalTypeId(e.typeId))),
         ],
       });
     }

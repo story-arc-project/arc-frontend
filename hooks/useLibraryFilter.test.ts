@@ -186,4 +186,51 @@ describe("기간 정렬 — 코어 밖으로 옮겨간 시점 (FRT-291 리뷰)",
       exp.extensionBlocks.some(b => b.label === "진행 기간" && b.value.type === "period"),
     ).toBe(true)
   })
+
+  /**
+   * 폴백은 '기간' 시맨틱 그룹의 라벨만 집어야 한다 — 이 게이트를 지우면 배열에서 먼저 나오는
+   * 아무 period 블록이 정렬 키가 된다. 지금 템플릿들은 최상위 period 필드가 유형당 하나뿐이라
+   * 게이트가 안전망으로만 존재하고, 그래서 기존 그물로는 제거가 보이지 않았다(/code-review high).
+   * 미끼('휴학 기간')를 진짜('진행 기간')보다 **앞에** 두어 게이트 유무로 순서가 갈리게 한다.
+   */
+  it("시맨틱 그룹 밖의 period 블록은 정렬 키가 되지 않는다", () => {
+    const withDecoy = (id: string, decoyStart: string, realStart: string): ExperienceV2 => ({
+      id,
+      userId: "user-1",
+      typeId: "personal-project" as ExperienceTypeId,
+      title: id,
+      summary: "",
+      status: "draft",
+      tags: [],
+      hiddenKeys: [],
+      createdAt: "2024-01-01T00:00:00Z",
+      updatedAt: "2024-01-02T00:00:00Z",
+      coreBlocks: [],
+      extensionBlocks: [
+        {
+          id: `${id}-decoy`,
+          type: "period",
+          label: "휴학 기간",
+          value: { type: "period", start: decoyStart, end: "", isCurrent: false },
+        },
+        {
+          id: `${id}-real`,
+          type: "period",
+          label: "진행 기간",
+          value: { type: "period", start: realStart, end: "", isCurrent: false },
+        },
+      ],
+      customBlocks: [],
+    })
+    // 미끼로 재면 옛것(2025 > 2020)이, 진짜로 재면 최신(2024 > 2021)이 앞선다.
+    const older = withDecoy("진짜가 오래된 쪽", "2025.01", "2021.01")
+    const newer = withDecoy("진짜가 최신인 쪽", "2020.01", "2024.01")
+
+    const { result } = renderHook(() => useLibraryFilter([older, newer], { sortBy: "period" }))
+
+    expect(result.current.filteredExperiences.map(e => e.title)).toEqual([
+      "진짜가 최신인 쪽",
+      "진짜가 오래된 쪽",
+    ])
+  })
 })
