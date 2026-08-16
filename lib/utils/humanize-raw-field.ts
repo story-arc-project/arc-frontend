@@ -74,6 +74,16 @@ const INTERNAL_KEYS = new Set([
   "template_version",
 ])
 
+/**
+ * 기간을 이루는 키. **이 키가 있다고 그 객체가 기간인 것은 아니다** — repeatable-cell 의
+ * 행(`createRoleHistory` 는 `start`·`end`·`role` 3열)은 기간 키를 포함한 셀 묶음이다.
+ * 기간으로 읽되 형제 셀은 남긴다.
+ */
+const PERIOD_KEYS = new Set(["start", "end"])
+
+/** 값을 감싸기만 하는 키 — 라벨로 내보내지 않고 안쪽을 그대로 편다(행의 `cells`). */
+const WRAPPER_KEYS = new Set(["cells"])
+
 /** `<키>: <JSON 리터럴>` 로만 이루어진 줄. 값이 리터럴이 아니면 걸리지 않는다. */
 const FIELD_LINE = /^\s*([^\s:][^:]*?)\s*:\s*(\[[\s\S]*\]|\{[\s\S]*\})\s*$/
 
@@ -97,8 +107,24 @@ function renderPeriod(value: Record<string, unknown>): string {
   return `${start} ~ ${end}`.trim()
 }
 
+/** 남은 항목을 라벨과 함께 낸다(표의 행 등). `skip` 은 이미 다른 방식으로 낸 키다. */
+function renderEntries(value: Record<string, unknown>, skip?: ReadonlySet<string>): string {
+  return Object.entries(value)
+    .filter(([key]) => !INTERNAL_KEYS.has(key) && !skip?.has(key))
+    .map(([key, entry]) => {
+      const rendered = renderValue(entry)
+      if (!rendered) return ""
+      return WRAPPER_KEYS.has(key) ? rendered : `${labelOf(key)}: ${rendered}`
+    })
+    .filter(Boolean)
+    .join(", ")
+}
+
 function renderObject(value: Record<string, unknown>): string {
-  if ("start" in value || "end" in value) return renderPeriod(value)
+  // 기간으로 읽되 **형제 값은 버리지 않는다** — 조용히 사라지는 값이 읽기 어려운 값보다 나쁘다.
+  if ("start" in value || "end" in value) {
+    return [renderPeriod(value), renderEntries(value, PERIOD_KEYS)].filter(Boolean).join(", ")
+  }
 
   for (const key of PRIMARY_VALUE_KEYS) {
     if (!(key in value)) continue
@@ -106,15 +132,7 @@ function renderObject(value: Record<string, unknown>): string {
     if (rendered) return rendered
   }
 
-  // 대표 키가 없는 객체(표의 행 등)는 남은 항목을 라벨과 함께 낸다.
-  return Object.entries(value)
-    .filter(([key]) => !INTERNAL_KEYS.has(key))
-    .map(([key, entry]) => {
-      const rendered = renderValue(entry)
-      return rendered ? `${labelOf(key)}: ${rendered}` : ""
-    })
-    .filter(Boolean)
-    .join(", ")
+  return renderEntries(value)
 }
 
 function renderArray(value: unknown[]): string {

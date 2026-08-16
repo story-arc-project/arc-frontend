@@ -119,6 +119,17 @@ describe("humanizeRawFieldNotation — 값 모양별 렌더", () => {
     expect(humanizeRawFieldNotation(raw)).toBe("수상: 대회: 공모전, 성과: 장려상 / 대회: 학회, 성과: 발표")
   })
 
+  /**
+   * `createRoleHistory` 는 `start`·`end`·`role` 3열짜리 repeatable-cell 이다(block-utils.ts).
+   * 행의 셀 묶음이 기간 객체와 **같은 키를 포함**하므로, 기간 판정이 형제 셀을 삼키면
+   * 역할명이 조용히 사라진다 — 읽기 어려운 것보다 나쁜 것이 값을 잃는 것이다.
+   */
+  it("기간 키가 있어도 같은 객체의 다른 셀을 버리지 않는다", () => {
+    const raw =
+      'club.역할 이력: {"type": "repeatable-cell", "columns": [{"key": "role", "label": "역할명"}], "rows": [{"id": "r1", "cells": {"start": "2024-03", "end": "2024-12", "role": "공연팀장"}}]}'
+    expect(humanizeRawFieldNotation(raw)).toBe("역할 이력: 2024-03 ~ 2024-12, role: 공연팀장")
+  })
+
   it("모든 값이 비어 있으면 지어내지 않고 원문을 남긴다", () => {
     const raw = 'core.기간: {"type": "period", "start": "", "end": "", "isCurrent": false}'
     expect(humanizeRawFieldNotation(raw)).toBe(raw)
