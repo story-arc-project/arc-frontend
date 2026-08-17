@@ -98,7 +98,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     initialExperience?.coreBlocks ?? []
   )
   const [extensionSections, setExtensionSections] = useState<
-    { id: string; label: string; category: SectionCategory; collapsed?: boolean; blocks: Block[] }[]
+    { id: string; label: string; category: SectionCategory; standalone?: boolean; description?: string; collapsed?: boolean; blocks: Block[] }[]
   >([])
   const [customBlocks, setCustomBlocks] = useState<Block[]>(
     initialExperience?.customBlocks ?? []
@@ -160,6 +160,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
           id: ext.id,
           label: ext.label,
           category: ext.category,
+          standalone: ext.standalone,
+          description: ext.description,
           collapsed: ext.collapsed,
           blocks: cloneBlocks(ext.blocks),
         }))
@@ -201,6 +203,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             id: ext.id,
             label: ext.label,
             category: ext.category,
+            standalone: ext.standalone,
+            description: ext.description,
             collapsed: ext.collapsed,
             blocks: ext.blocks.map(tb => {
               const saved = (tb.key ? savedByKey.get(tb.key) : undefined) ?? savedByLabel.get(tb.label)
@@ -534,7 +538,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   // ── Visible sections callback (고정 4카드 + 사용자 섹션) ──────────────────────────────────────
   // 앵커 라벨은 카드 라벨(오버라이드 반영)과 동일 소스를 쓴다 → 앵커=카드헤더 일치.
   const fixedSections = useMemo(
-    () => (formCards?.cards ?? []).map(c => ({ id: c.category as string, label: c.label })),
+    // 분할 카드(FRT-320)는 category 가 겹치므로 앵커 id 는 카드 고유 id 를 쓴다.
+    () => (formCards?.cards ?? []).map(c => ({ id: c.id, label: c.label })),
     [formCards]
   )
   const allNavSections = useMemo(
@@ -673,16 +678,23 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             const { visible, hidden } = resolveHiddenBlocks(shown, effectiveHiddenKeys)
             return (
               <FormSection
-                key={card.category}
+                key={card.id}
                 variant="card"
-                sectionId={card.category}
+                sectionId={card.id}
                 label={card.label}
                 blocks={visible}
                 hiddenBlocks={hidden}
                 onHide={handleHideBlock}
                 onUnhide={handleUnhideBlock}
                 optional={card.optional}
-                description={sectionDescription(typeId, card.category)}
+                // 분할 카드(FRT-320, id≠category)는 섹션이 실어 온 안내만 쓴다 — 카테고리 키
+                // 오버라이드/기본 문구를 그대로 태우면 같은 카테고리의 여러 카드에 같은 안내가
+                // 반복돼 붙는다.
+                description={
+                  card.id === card.category
+                    ? sectionDescription(typeId, card.category)
+                    : card.description
+                }
                 onChange={writeBackBlocks}
               />
             )

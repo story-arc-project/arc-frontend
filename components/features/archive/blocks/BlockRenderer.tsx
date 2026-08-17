@@ -12,6 +12,7 @@ import DateBlock from "./DateBlock"
 import PeriodBlock from "./PeriodBlock"
 import ChecklistBlock from "./ChecklistBlock"
 import MoodTagBlock, { moodTagOptions } from "./MoodTagBlock"
+import BinaryChoiceBlock, { binaryChoiceOptions } from "./BinaryChoiceBlock"
 import SingleSelectBlock from "./SingleSelectBlock"
 import TagsBlock from "./TagsBlock"
 import LinkBlock from "./LinkBlock"
@@ -95,8 +96,14 @@ export default function BlockRenderer({
           ? <MoodTagBlock block={block} readOnly={locked} onChange={handleChange} />
           : <ChecklistBlock block={block} readOnly={locked} onChange={handleChange} />
       }
-      case "single-select":
-        return <SingleSelectBlock block={block} readOnly={locked} onChange={handleChange} />
+      case "single-select": {
+        // binary-choice 는 두 카드 양자택일 UI(FRT-320). 옵션이 정확히 2개일 때만 그릴 수 있다 —
+        // 사용자가 옵션 편집으로 늘린 저장값이면 값이 숨지 않도록 드롭다운으로 폴백한다.
+        // 판정은 렌더와 같은 계산을 써야 갈리지 않는다.
+        return block.variant === "binary-choice" && binaryChoiceOptions(block)
+          ? <BinaryChoiceBlock block={block} readOnly={locked} onChange={handleChange} />
+          : <SingleSelectBlock block={block} readOnly={locked} onChange={handleChange} />
+      }
       case "tags":
         return <TagsBlock block={block} readOnly={locked} onChange={handleChange} />
       case "link":

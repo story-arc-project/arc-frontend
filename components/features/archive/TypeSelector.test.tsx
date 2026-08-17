@@ -6,7 +6,7 @@ import TypeSelector from "./TypeSelector"
 afterEach(cleanup)
 
 /**
- * FRT-300 경험 유형 선택지를 확정본 14종으로 정리.
+ * FRT-300 경험 유형 선택지를 확정본 14종으로 정리 (+ FRT-320 '나는 누구인가?'로 15종).
  *
  * 확정본에서 내려간 3종(운동·기록·목표)은 **새로 고를 수 없어야** 하지만, 그 유형으로 이미 저장해
  * 둔 기록은 그대로 열리고 편집돼야 한다. 그래서 "목록에서 빠졌는가"와 "이미 선택된 것은 남는가"를
@@ -28,6 +28,8 @@ describe("확정본에서 내려간 유형은 선택지에 없다", () => {
 
     expect(screen.getByRole("button", { name: "독서" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "봉사활동" })).toBeInTheDocument()
+    // FRT-320 — 새 유형은 배열 추가만으로 칩에 파생된다.
+    expect(screen.getByRole("button", { name: "나는 누구인가?" })).toBeInTheDocument()
   })
 
   it("검색으로도 은퇴 유형을 꺼낼 수 없다 — 검색 경로가 다른 목록을 보지 않는다", async () => {

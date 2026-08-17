@@ -153,9 +153,29 @@ export function createChecklistField(
 export function createMoodTagField(
   label: string,
   options: string[],
-  opts?: { required?: boolean; guide?: string },
+  opts?: { required?: boolean; guide?: string; allowCustomTag?: boolean },
 ): Block {
-  return { ...createChecklistField(label, options, opts), variant: 'mood-tag' }
+  return {
+    ...createChecklistField(label, options, opts),
+    variant: 'mood-tag',
+    // 끈 블록에 키를 남기지 않는다 — 템플릿 스냅샷 비교(toEqual)에 잡음이 된다.
+    ...(opts?.allowCustomTag ? { allowCustomTag: true } : {}),
+  }
+}
+
+/**
+ * 양자택일 카드('나는 누구인가?' ③ 업무 성향, FRT-320). 저장은 single-select
+ * `{options: [left, right], selected}` 그대로 두고 `variant: 'binary-choice'` 마커로
+ * 두 카드 나란히 UI(BinaryChoiceBlock)를 지정한다(무마이그레이션, mood-tag 와 같은 패턴).
+ * 옵션은 정확히 [왼쪽, 오른쪽] 2개 — BlockRenderer 가 2개가 아니면(사용자가 옵션 편집으로
+ * 늘린 저장값 등) 값이 숨지 않도록 SingleSelectBlock 드롭다운으로 폴백한다.
+ */
+export function createBinaryChoiceField(
+  label: string,
+  options: [string, string],
+  opts?: { guide?: string },
+): Block {
+  return { ...createSelectField(label, options, opts), variant: 'binary-choice' }
 }
 
 export function createTagsField(label: string, opts?: { required?: boolean; guide?: string }): Block {

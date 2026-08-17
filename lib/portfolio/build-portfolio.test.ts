@@ -61,6 +61,27 @@ describe("experienceToPost", () => {
     expect(post.keywords).toEqual(["LLM", "NLP"]);
   });
 
+  /**
+   * FRT-320 — '나는 누구인가?'는 기간·역할·성과 개념 자체가 없는 유형이다(코어 4종 전부
+   * CORE_EXCLUDE, TYPE_PERIOD_KEY 미등록). 발행 경로가 죽지 않고 제목·요약은 정상 발행되며,
+   * 기간이 빈 문자열인 것은 **의도된 결과**임을 여기 고정한다.
+   */
+  it("기간 없는 유형(self-identity)도 발행이 죽지 않는다 — 기간은 빈 문자열", () => {
+    const exp = makeExp({ type: "self-identity" });
+    const content = exp.content as { title: string; summary: string; coreBlocks: Block[] };
+    content.title = "나는 누구인가";
+    content.summary = "자기 인식 프로필";
+    content.coreBlocks = [
+      blk("c1", "text", "경험명", { type: "text", text: "나는 누구인가" }),
+      blk("c3", "text", "한 줄 요약", { type: "text", text: "자기 인식 프로필" }),
+    ];
+    const post = experienceToPost(exp);
+    expect(post.title).toBe("나는 누구인가");
+    expect(post.summary).toBe("자기 인식 프로필");
+    expect(post.period).toBe("");
+    expect(post.category).toBe("나는 누구인가?");
+  });
+
   it("진행 중(period.isCurrent)이면 종료를 '현재'로 표기한다", () => {
     const exp = makeExp();
     (exp.content as { coreBlocks: Block[] }).coreBlocks[1].value = {

@@ -286,9 +286,21 @@ export interface Block {
    * 프리셋이라 체크리스트의 옵션 추가·삭제 UI 를 숨긴다(FRT-177).
    * `'role-history'` 는 `repeatable-cell` 을 접이식 역할 이력 패널(RoleHistoryBlock)로 렌더한다.
    * 이 블록의 역할명이 폼 안의 모든 역할 칩 선택지가 된다(FRT-178).
+   * `'binary-choice'` 는 `single-select` 를 두 카드 나란히 양자택일 UI(BinaryChoiceBlock)로
+   * 렌더한다(FRT-320) — 옵션이 정확히 2개일 때만 이 UI 가 뜨고, 아니면(사용자가 옵션 편집으로
+   * 늘린 저장값 등) 값이 숨지 않도록 SingleSelectBlock 드롭다운으로 폴백한다.
    * 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다 — 로드 시 레지스트리에서 재공급된다.
    */
-  variant?: 'outcome-list' | 'mood-tag' | 'role-history'
+  variant?: 'outcome-list' | 'mood-tag' | 'role-history' | 'binary-choice'
+  /**
+   * 이모티콘/키워드 태그에 사용자가 직접 새 태그를 추가할 수 있게 한다 (FRT-320, '나는
+   * 누구인가?' ① 키워드). `variant: 'mood-tag'` 블록에서만 의미가 있고, `roleTags` 와 같은
+   * 인스턴스별 opt-in 규약이다 — 켜지 않은 블록(대외활동·동아리 등)의 동작은 완전히 그대로다.
+   * 저장 shape 은 바뀌지 않는다: 새 태그는 `options`(프리셋)를 건드리지 않고 `checked` 에만
+   * 추가되고, `moodTagOptions()` 의 기존 "checked 에만 남은 값도 뒤에 붙인다" 폴백이 다음
+   * 렌더에서 그대로 그려 준다. 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
+   */
+  allowCustomTag?: boolean
   /**
    * '프로젝트로 연결' 링크 설정 (FRT-76). OutcomeList 인스턴스별로 opt-in 한다 —
    * 있으면 각 활동 행에 링크 버튼이 노출되고, 없으면 미노출(설정 가능한 on/off).
@@ -392,6 +404,7 @@ export type ExperienceTypeId =
   | 'reading'
   | 'journal'
   | 'goal'
+  | 'self-identity'
 
 export interface ExperienceTypeInfo {
   id: ExperienceTypeId
@@ -450,6 +463,11 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   // (④ 공개/배포 + ⑤ 결과물/증빙 → 한 카드, templates-v2 `projectExtensions` 주석 참조).
   'personal-project': PROJECT_SECTION_LABELS,
   'team-project': PROJECT_SECTION_LABELS,
+  // '나는 누구인가?' 확정본 ① (FRT-320). basic 카드에는 헤더 코어(경험명·한 줄 요약)가 카드
+  // 밖(헤더)으로 빠지고 ① 필드만 남으므로 확정본 이름을 그대로 쓴다. detail 카드들은 섹션당
+  // 1카드로 분할되어 각 섹션의 label(②~⑦ 이름)이 카드 제목이 된다 — 카테고리 키인 이 표로는
+  // 여섯 카드에 이름을 따로 줄 수 없어 여기엔 basic 만 둔다.
+  'self-identity': { basic: '나를 소개한다면' },
 }
 
 /** 프로젝트 안내 문구 — 개인·팀 두 id 공유(FRT-291). */
@@ -526,6 +544,13 @@ export const SECTION_DESCRIPTION_OVERRIDES: Partial<
   // 카드 절반(배포 이력)을 설명하지 못한다.
   'personal-project': PROJECT_SECTION_DESCRIPTIONS,
   'team-project': PROJECT_SECTION_DESCRIPTIONS,
+  // '나는 누구인가?' 상단 가이드 배너 (FRT-320). 확정본은 페이지 최상단 독립 배너를 그리지만
+  // 폼 셸에 그런 슬롯이 없어 첫 카드(①)의 안내 문단으로 근사한다. ⑤⑦ 의 섹션 안내는
+  // 분할 카드라 이 표(카테고리 키)가 아니라 TemplateSection.description 이 싣는다.
+  'self-identity': {
+    basic:
+      '이 페이지는 천천히, 오래 두고 채워가세요. 한 번에 다 채울 필요 없어요 — 면접 준비, 자소서 작성, 일상의 단상에서 하나씩 추가해도 좋아요. 여기 적어둔 내용이 자기소개서·면접 답변을 생성할 때 "나다운 결"을 잡는 핵심 재료가 됩니다.',
+  },
 }
 
 // ─── Templates ──────────────────────────────────────────────────
@@ -535,6 +560,20 @@ export interface TemplateSection {
   label: string
   /** 입력 폼 4섹션 분류 (FRT-70). 섹션 블록은 기본적으로 이 category 로 묶인다. */
   category: SectionCategory
+  /**
+   * 이 섹션이 카테고리 버킷에 합쳐지지 않고 **자기 카드**로 선다 (FRT-320).
+   * ⚠️ 개수로 추론하지 않고 명시로만 켠다 — "같은 카테고리 2개 이상이면 분할" 같은 파생
+   * 규칙은 이미 프로젝트(evidence 섹션 2개가 한 카드 '공개 / 배포 · 결과물'로 합쳐지는 것이
+   * 확정본)를 깨뜨린다. 켜지 않은 섹션(기존 전 유형)은 현행 카테고리당 1카드 그대로다.
+   * 켠 카드의 제목은 `label`, 안내는 `description` 이 담당한다(카테고리 키 오버라이드는
+   * 같은 카테고리의 여러 카드를 구분하지 못하므로).
+   */
+  standalone?: boolean
+  /**
+   * 섹션 카드 제목 아래 안내 문단 (FRT-320). `standalone` 카드에서만 쓰인다 — 카테고리
+   * 카드는 기존 `SECTION_DESCRIPTION_OVERRIDES` 경로를 그대로 쓴다.
+   */
+  description?: string
   collapsed?: boolean
   blocks: Block[]
 }
