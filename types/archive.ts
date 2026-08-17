@@ -243,6 +243,13 @@ export type BlockValue =
   | TableBlockValue
   | GroupBlockValue
 
+/**
+ * '＋ 빠른 선택' 그룹 픽커 프리셋 식별자 (FRT-130).
+ * 실제 카테고리·항목 목록은 `lib/constants/quick-pick-presets.ts` 가 소유한다 —
+ * 여기엔 id 만 두어 타입 층(의존성 최하층)이 상수 모듈을 참조하지 않게 한다.
+ */
+export type QuickPickPresetId = 'industry' | 'job-function'
+
 // ─── Section Category (입력 폼 4섹션 분류, FRT-70) ───────────────
 export type SectionCategory = "basic" | "detail" | "repeat" | "evidence"
 
@@ -301,6 +308,23 @@ export interface Block {
    * 렌더에서 그대로 그려 준다. 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
    */
   allowCustomTag?: boolean
+  /**
+   * '＋ 빠른 선택' 그룹 픽커를 켠다 (FRT-130, 인턴 ① 산업·직무). 값은 어느 프리셋 목록을 쓸지
+   * 가리키는 id 이고, 실제 목록은 `lib/constants/quick-pick-presets.ts` 가 소유한다.
+   * `allowCustomTag`·`roleTags` 와 같은 인스턴스별 opt-in 규약이다 — 켜지 않은 블록의 동작은
+   * 완전히 그대로다.
+   *
+   * ⚠️ **입력 보조일 뿐 저장 shape 을 바꾸지 않는다.** `tags` 블록이면 고른 항목이 `tags` 배열에,
+   * `text` 블록이면 `text` 문자열에 그냥 들어간다 — 픽커에 없는 값도 자유 입력으로 계속 들어오고,
+   * 목록을 나중에 바꿔도 기존 레코드는 살아 있다. 라벨을 안 바꾸므로 안정키도 무변경이다.
+   *
+   * ⚠️ 모르는 id 는 픽커를 켜지 않고 기존 자유 입력 UI 로 폴백한다(`getQuickPickPreset` → null).
+   * 새 프론트가 추가한 프리셋을 구 프론트가 만났을 때 입력이 막히면 안 된다.
+   *
+   * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다
+   * (로드 시 레지스트리에서 재공급).
+   */
+  quickPick?: QuickPickPresetId
   /**
    * '프로젝트로 연결' 링크 설정 (FRT-76). OutcomeList 인스턴스별로 opt-in 한다 —
    * 있으면 각 활동 행에 링크 버튼이 노출되고, 없으면 미노출(설정 가능한 on/off).

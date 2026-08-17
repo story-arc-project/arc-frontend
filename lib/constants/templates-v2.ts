@@ -1057,8 +1057,8 @@ function clubExtensions(): TemplateSection[] {
 }
 
 // 인턴 — 프로토타입 확정본(2026-07). 학회(FRT-90)와 동일한 3섹션 구조(basic/detail/repeat).
-// 산업/직무 '＋빠른 선택' 그룹 픽커는 후속 이슈(FRT-130) — 이번엔 태그·텍스트로 근사한다.
-// 그래서 문서의 "아래에서 선택해주세요" 류 안내는 싣지 않는다(없는 UI를 가리키게 된다).
+// 산업/직무는 '＋빠른 선택' 그룹 픽커를 켠다(FRT-130) — 저장은 여전히 태그·텍스트 그대로이고
+// 픽커는 그 위에 얹힌 입력 보조라, 목록에 없는 값도 직접 입력으로 계속 들어온다.
 // 지원 동기 예시문장 삽입·성장/변화 회고 카드·프로젝트 감정 태깅은 FRT-132.
 function careerExtensions(): TemplateSection[] {
   return [
@@ -1072,18 +1072,20 @@ function careerExtensions(): TemplateSection[] {
           guide: '인턴으로 근무한 회사의 이름을 적어주세요.',
           placeholder: '예: OO주식회사',
         }),
-        // 산업/회사 종류 — 문서상 6카테고리 그룹 픽커. 이번엔 자유 태그로 근사(픽커는 FRT-130).
+        // 산업/회사 종류 — 6카테고리 그룹 픽커(다중 선택). "스타트업 + IT" 처럼 조합해 고른다.
         createTagsField('산업 / 회사 종류', {
-          guide: '이 회사가 속한 산업이나 종류를 자유롭게 입력해주세요. 여러 개 가능해요.',
+          quickPick: 'industry',
+          guide: '빠른 선택에서 고르거나 직접 입력해주세요. 여러 개 고를 수 있어요.',
         }),
         createTextField('부서 / 팀', {
           guide: '소속된 부서와 팀 이름을 적어주세요.',
           placeholder: '예: 마케팅본부 브랜드전략팀',
         }),
-        // 직무/포지션 — 문서상 단일선택 픽커(15종). 픽커는 FRT-130, 지금은 자유 입력 텍스트.
+        // 직무/포지션 — 5카테고리 15종 픽커(단일 선택). 텍스트 칸이라 고르면 값이 대체된다.
         createTextField('직무 / 포지션', {
           required: true,
-          guide: '담당한 직무나 포지션을 적어주세요.',
+          quickPick: 'job-function',
+          guide: '빠른 선택에서 고르거나 직접 적어주세요.',
           placeholder: '예: 브랜드 마케팅 인턴',
         }),
         createPeriodField('근무 기간', {

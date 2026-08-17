@@ -10,6 +10,7 @@ import {
   canonicalTypeId,
   getTemplateForType,
 } from "@/lib/constants/templates-v2"
+import { getQuickPickPreset } from "@/lib/constants/quick-pick-presets"
 import { isRequiredBlock } from "@/lib/utils/block-utils"
 import { canHideBlock } from "@/lib/utils/hidden-fields"
 import { computeFormCards, isCardComplete } from "@/lib/utils/form-cards"
@@ -66,6 +67,40 @@ describe("templates-v2 category tagging", () => {
   })
 })
 
+describe("'＋빠른 선택' 픽커 배선 (FRT-130)", () => {
+  // 픽커를 켠 곳을 **세지 않고** 전 템플릿에서 그러모은다 — 나중에 다른 유형이 켜도 그물이 따라간다.
+  const walk = (blocks: Block[]): Block[] => blocks.flatMap(b => [b, ...walk(b.children ?? [])])
+  const picked = SYSTEM_TEMPLATES_V2.flatMap(t =>
+    [t.commonCore, ...t.extensions].flatMap(s =>
+      walk(s.blocks)
+        .filter(b => b.quickPick !== undefined)
+        .map(b => ({ where: `${t.typeId}/${s.id}/${b.label}`, block: b })),
+    ),
+  )
+
+  it("픽커를 켠 블록이 실제로 있다", () => {
+    // 이 단언이 없으면 아래 전칭들이 빈 배열 위에서 조용히 통과한다.
+    expect(picked.length).toBeGreaterThan(0)
+  })
+
+  it("모든 quickPick 은 실재하는 프리셋을 가리킨다", () => {
+    for (const { where, block } of picked) {
+      expect(getQuickPickPreset(block.quickPick), where).not.toBeNull()
+    }
+  })
+
+  it("프리셋 선택 방식과 블록 타입이 맞물린다 — multi↔tags · single↔text", () => {
+    // 어긋나면 값을 담을 그릇이 안 맞는다: text 칸에 다중 선택을 태우면 고를 때마다 앞 값이
+    // 조용히 지워진다. 렌더러는 그럴 때 픽커를 아예 안 그리고 폴백하므로 "켰는데 안 뜨는"
+    // 조용한 실패가 된다 — 배선 단계에서 잡는다.
+    const EXPECTED_TYPE = { multi: "tags", single: "text" } as const
+    for (const { where, block } of picked) {
+      const preset = getQuickPickPreset(block.quickPick)
+      expect(block.type, where).toBe(EXPECTED_TYPE[preset!.mode])
+    }
+  })
+})
+
 // 프로토타입 확정본(2026-07) 반영 — 인턴·수업·대외활동을 학회(FRT-90) 패턴으로 재정의.
 describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
   const CASES: ExperienceTypeId[] = ["career", "education", "extracurricular"]
@@ -102,6 +137,21 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     expect(info.blocks.find(b => b.label === "근무 형태")?.type).toBe("single-select")
     // '진행 중/완료'는 임시저장인지 입력완료인지를 가리는 개념이지 입력 항목이 아니다(FRT-135).
     expect(labels).not.toContain("상태")
+  })
+
+  it("인턴 ① 산업·직무는 '＋빠른 선택' 픽커를 켜되 저장 타입은 그대로다 (FRT-130)", () => {
+    const info = sectionsOf("career")[0]
+    const industry = info.blocks.find(b => b.label === "산업 / 회사 종류")
+    const job = info.blocks.find(b => b.label === "직무 / 포지션")
+
+    // 픽커는 입력 보조일 뿐이라 저장 shape 은 근사 구현(FRT-135) 때와 동일해야 한다 —
+    // 타입이 바뀌면 이미 저장된 인턴 기록의 값이 그 자리에서 안 그려진다.
+    expect(industry?.type).toBe("tags")
+    expect(job?.type).toBe("text")
+    expect(industry?.quickPick).toBe("industry")
+    expect(job?.quickPick).toBe("job-function")
+    // 직무는 확정본에서 필수다.
+    expect(job?.required).toBe(true)
   })
 
   it("인턴 ② 상세는 개조식 성과 필드를 갖고, '나의 담당 업무 / 주요 성과'는 ③으로 연결된다", () => {
