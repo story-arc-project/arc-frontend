@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { render, screen, cleanup } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { EXPERIENCE_TYPES } from "@/lib/constants/templates-v2"
 import TypeSelector from "./TypeSelector"
 
 afterEach(cleanup)
@@ -30,14 +31,33 @@ describe("확정본에서 내려간 유형은 선택지에 없다", () => {
     expect(screen.getByRole("button", { name: "봉사활동" })).toBeInTheDocument()
   })
 
-  it("검색으로도 은퇴 유형을 꺼낼 수 없다 — 검색 경로가 다른 목록을 보지 않는다", async () => {
-    const user = userEvent.setup()
+  /**
+   * FRT-302 로 유형 검색바가 사라지기 전에는, 이 자리에 "검색으로도 은퇴 유형을 꺼낼 수 없다"가 있었다.
+   * 검색은 카테고리 그룹과 **다른 목록을 볼 수 있는 두 번째 렌더 경로**였고, 그 테스트는 두 경로가
+   * 같은 목록을 본다는 것을 지켰다. 경로가 하나로 줄어든 지금은 알맹이를 아래 전칭 단언이 이어받는다 —
+   * "그려진 칩 = 고를 수 있는 유형", 경로를 세지 않고 결과 집합으로 못박는다.
+   */
+  it("그려진 칩은 고를 수 있는 유형과 정확히 일치한다", () => {
     render(<TypeSelector selectedId={null} onSelect={() => {}} />)
 
-    await user.type(screen.getByPlaceholderText("유형 검색..."), "운동")
+    const rendered = screen.getAllByRole("button").map(b => b.textContent?.trim())
 
-    expect(screen.queryByRole("button", { name: "운동 및 신체 역량" })).not.toBeInTheDocument()
-    expect(screen.getByText("검색 결과가 없습니다")).toBeInTheDocument()
+    // 라벨을 적어 두지 않고 상수에서 파생한다 — 유형이 늘거나 줄어도 이 그물은 따라간다.
+    expect([...rendered].sort()).toEqual(EXPERIENCE_TYPES.map(t => t.label).sort())
+  })
+})
+
+describe("유형 검색바는 없다 (FRT-302)", () => {
+  it("검색 입력창이 그려지지 않는다", () => {
+    render(<TypeSelector selectedId={null} onSelect={() => {}} />)
+
+    expect(screen.queryByPlaceholderText("유형 검색...")).not.toBeInTheDocument()
+  })
+
+  it("검색 결과 빈 상태 문구도 남아 있지 않다", () => {
+    render(<TypeSelector selectedId={null} onSelect={() => {}} />)
+
+    expect(screen.queryByText("검색 결과가 없습니다")).not.toBeInTheDocument()
   })
 })
 
