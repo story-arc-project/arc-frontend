@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { render, screen, cleanup, fireEvent } from "@testing-library/react"
+import { render, screen, cleanup, fireEvent, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import type { ExperienceV2 } from "@/types/archive"
@@ -781,5 +781,60 @@ describe("FRT-172 태그 입력 IME 조합 중 Enter", () => {
     fireEvent.keyDown(input, { key: "Enter", keyCode: 229 })
 
     expect(screen.queryByRole("button", { name: "리더십 삭제" })).toBeNull()
+  })
+})
+
+/**
+ * FRT-301 — 경험 레벨 태그(폼 하단 TagInput)의 UX 3종.
+ *
+ * ① Enter 를 모르는 사용자도 '추가' 버튼으로 태그를 넣을 수 있다.
+ * ② 태그가 없으면 입력줄 위에 chip 영역이 공간을 차지하지 않는다 — 태그가 생길 때만
+ *    chip 줄이 나타나며 입력줄이 아래로 밀린다.
+ * ③ 태그 항목은 경험 유형 아래·"기본 정보" 카드 위에 렌더된다.
+ */
+describe("FRT-301 경험 레벨 태그 입력 UX", () => {
+  async function openForm(user: ReturnType<typeof userEvent.setup>) {
+    renderForm()
+    await selectType(user)
+    return screen.getByPlaceholderText("태그 입력 후 Enter")
+  }
+
+  it("내용 입력 후 '추가' 버튼 클릭으로 태그가 커밋되고 입력창이 비워진다", async () => {
+    const user = userEvent.setup()
+    const input = await openForm(user)
+    await user.type(input, "리더십")
+
+    // '추가' 버튼은 입력창과 같은 행에 있다 — 다른 태그 블록의 버튼과 섞이지 않게 행 안에서 찾는다.
+    const row = input.parentElement as HTMLElement
+    await user.click(within(row).getByRole("button", { name: "추가" }))
+
+    expect(screen.getByRole("button", { name: "리더십 삭제" })).toBeInTheDocument()
+    expect(input).toHaveValue("")
+  })
+
+  it("태그가 없으면 chip 컨테이너가 렌더되지 않고, 태그가 생기면 입력줄 위에 나타난다", async () => {
+    const user = userEvent.setup()
+    const input = await openForm(user)
+    const wrapper = (input.parentElement as HTMLElement).parentElement as HTMLElement
+
+    // 빈 상태: 입력 행 하나만 — 입력줄 위에 자리를 차지하는 형제가 없다.
+    expect(wrapper.children).toHaveLength(1)
+
+    await user.type(input, "리더십")
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    // 태그가 생기면 chip 줄이 입력 행 **위에** 추가된다.
+    expect(wrapper.children).toHaveLength(2)
+    expect(wrapper.children[0]).toHaveTextContent("리더십")
+  })
+
+  it("태그 항목은 '기본 정보' 카드보다 위에 렌더된다", async () => {
+    const user = userEvent.setup()
+    const input = await openForm(user)
+    const basic = screen.getAllByText("기본 정보")[0]
+
+    expect(
+      input.compareDocumentPosition(basic) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 })

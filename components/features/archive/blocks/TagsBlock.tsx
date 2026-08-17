@@ -50,24 +50,27 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
     <div className="flex flex-col gap-1.5">
       <label htmlFor={inputId} className="text-field-label text-text-primary">{block.label}</label>
       {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
-      <div className="flex flex-wrap gap-1.5 min-h-[32px]">
-        {val.tags.map(tag => (
-          <span
-            key={tag}
-            className="inline-flex items-center gap-1 bg-surface-brand text-brand-dark rounded-full pl-2.5 pr-1.5 py-0.5 text-caption font-medium"
-          >
-            {tag}
-            <button
-              type="button"
-              onClick={() => removeTag(tag)}
-              className="rounded-full p-0.5 hover:bg-brand-light transition-colors"
-              aria-label={`${tag} 삭제`}
+      {/* FRT-301: 태그가 있을 때만 chip 줄을 렌더 — 빈 상태에서 공간을 차지하지 않는다. */}
+      {val.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {val.tags.map(tag => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 bg-surface-brand text-brand-dark rounded-full pl-2.5 pr-1.5 py-0.5 text-caption font-medium"
             >
-              <X size={12} />
-            </button>
-          </span>
-        ))}
-      </div>
+              {tag}
+              <button
+                type="button"
+                onClick={() => removeTag(tag)}
+                className="rounded-full p-0.5 hover:bg-brand-light transition-colors"
+                aria-label={`${tag} 삭제`}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex gap-2">
         <input
           id={inputId}

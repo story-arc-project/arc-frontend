@@ -666,6 +666,12 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         <ProjectLinkProvider value={projectLink}>
         <RoleHistoryProvider value={roleHistory}>
         <div className="flex flex-col gap-5 archive-input-14">
+          {/* Tags — FRT-301: 경험 유형 아래·기본 정보 위. 태그를 폼 진입 직후 먼저 붙일 수 있게 한다. */}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor={tagInputId} className="text-field-label text-text-primary">태그</label>
+            <TagInput inputId={tagInputId} tags={tags} onChange={setTags} />
+          </div>
+
           {formCards.cards.map(card => {
             // 숨김은 카드 모델이 아니라 이 렌더 층에서 가른다 — 카드 자체와 하단 되살리기
             // 토글은 남겨야 마지막 필드를 숨겨도 되돌릴 길이 사라지지 않는다.
@@ -743,12 +749,6 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             블록 추가
           </button>
 
-          {/* Tags */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={tagInputId} className="text-field-label text-text-primary">태그</label>
-            <TagInput inputId={tagInputId} tags={tags} onChange={setTags} />
-          </div>
-
           {/* Action buttons — 입력 뷰 셸에서는 sticky 바로 이관되어 숨겨진다(hideInlineActions). */}
           {!hideInlineActions && (
             <div className="flex gap-2 pt-6 border-t border-border">
@@ -787,25 +787,28 @@ function TagInput({ inputId, tags, onChange }: { inputId?: string; tags: string[
   }
 
   return (
-    <div>
-      <div className="flex flex-wrap gap-1.5 mb-2">
-        {tags.map(tag => (
-          <span
-            key={tag}
-            className="inline-flex items-center gap-1 bg-surface-brand text-brand-dark rounded-full pl-2.5 pr-1.5 py-0.5 text-caption font-medium"
-          >
-            {tag}
-            <button
-              type="button"
-              onClick={() => onChange(tags.filter(t => t !== tag))}
-              className="rounded-full p-0.5 hover:bg-brand-light transition-colors text-brand-dark"
-              aria-label={`${tag} 삭제`}
+    <div className="flex flex-col gap-2">
+      {/* FRT-301: 태그가 있을 때만 chip 줄을 렌더 — 빈 상태에서 공간을 차지하지 않는다. */}
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map(tag => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 bg-surface-brand text-brand-dark rounded-full pl-2.5 pr-1.5 py-0.5 text-caption font-medium"
             >
-              ×
-            </button>
-          </span>
-        ))}
-      </div>
+              {tag}
+              <button
+                type="button"
+                onClick={() => onChange(tags.filter(t => t !== tag))}
+                className="rounded-full p-0.5 hover:bg-brand-light transition-colors text-brand-dark"
+                aria-label={`${tag} 삭제`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex gap-2">
         <input
           id={inputId}
@@ -816,6 +819,13 @@ function TagInput({ inputId, tags, onChange }: { inputId?: string; tags: string[
           onChange={e => setInput(e.target.value)}
           onKeyDown={onEnterCommit(add)}
         />
+        <button
+          type="button"
+          onClick={add}
+          className="h-9 rounded-md border border-border bg-surface px-3 text-body-sm text-text-secondary hover:bg-surface-secondary transition-colors"
+        >
+          추가
+        </button>
       </div>
     </div>
   )
