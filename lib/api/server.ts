@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ApiError } from "./api-error";
+import { parseErrorBody } from "./error-body";
 
 export { ApiError } from "./api-error";
 
@@ -57,7 +58,7 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
+    const body = await parseErrorBody(res);
     throw new ApiError(res.status, body.message ?? "오류가 발생했어요.", body.code);
   }
 

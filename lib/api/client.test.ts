@@ -128,6 +128,55 @@ describe("401 → refresh 분기 (FRT-11 회귀 가드)", () => {
 })
 
 /**
+ * 에러 바디가 **유효한 JSON 리터럴 `null`** 인 경우 (FRT-216).
+ *
+ * 위 테스트들이 쓰는 `new Response(null, ...)` 는 본문이 **비어 있어** 파싱이 SyntaxError 로
+ * 실패하고 `.catch()` 가 개입한다. 반면 본문 텍스트가 문자 그대로 `null` 이면 파싱은 **성공**해
+ * `.catch()` 가 열리지 않는다 — 두 경우는 같아 보이지만 갈라진다. 이 구분이 이 describe 의 전부다.
+ */
+describe("에러 바디가 JSON 리터럴 null (FRT-216 회귀 가드)", () => {
+  it("비-2xx 는 TypeError 대신 폴백 문구의 ApiError 를 던진다", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(null, 500))
+    const err = await api.get("/x").catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(500)
+    expect(err.message).toBe("오류가 발생했어요.")
+    expect(err.code).toBeUndefined()
+  })
+
+  it("401 이어도 갱신 흐름이 죽지 않고 재시도로 되살아난다", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(null, 401)) // 원요청 — 여기서 터지면 갱신 자체가 안 열린다
+      .mockResolvedValueOnce(new Response(null, { status: 200 })) // /auth/refresh
+      .mockResolvedValueOnce(jsonResponse({ ok: true })) // 재시도
+    const res = await api.get<{ ok: boolean }>("/x")
+    expect(res).toEqual({ ok: true })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it("403 은 갱신하지 않고 폴백 문구의 ApiError 를 던진다", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(null, 403))
+    const err = await api.get("/x").catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.status).toBe(403)
+    expect(err.message).toBe("오류가 발생했어요.")
+    expect(fetchMock).toHaveBeenCalledTimes(1) // 갱신·재전송 없음
+  })
+
+  it("message 가 문자열이 아니면 [object Object] 대신 폴백 문구가 뜬다", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ message: { detail: [{ msg: "field required" }] } }, 422),
+    )
+    const err = await api.get("/x").catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    if (!(err instanceof ApiError)) return
+    expect(err.message).toBe("오류가 발생했어요.")
+  })
+})
+
+/**
  * 백엔드(`arc-backend app/src/api/auth.py`)의 refresh 토큰 **회전 + 재사용 탐지**를 흉내낸다.
  *
  * - 회전 성공 시 옛 토큰에 `next` 를 기록한다 → 그 토큰이 다시 오면 재사용(=탈취)으로 본다.

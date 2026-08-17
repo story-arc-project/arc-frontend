@@ -1,6 +1,7 @@
 "use client";
 
 import { ApiError } from "./api-error";
+import { parseErrorBody } from "./error-body";
 
 export { ApiError } from "./api-error";
 
@@ -156,10 +157,7 @@ async function request<T>(
 
   if ((res.status === 401 || res.status === 403) && refreshRoundsLeft > 0) {
     // 본문은 한 번만 읽을 수 있으니 여기서 한 번 파싱해 판정과 throw 에 함께 쓴다.
-    const body = (await res.json().catch(() => ({}))) as {
-      message?: string;
-      code?: string;
-    };
+    const body = await parseErrorBody(res);
 
     // 갱신해도 달라지지 않는 응답은 여기서 갈라 그대로 던진다.
     // - 403 은 "내 액세스 토큰이 갱신에 밀려났다"일 때만 되살린다. 진짜 폐기(`AUTH_REVOKED`)나
@@ -210,7 +208,7 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
+    const body = await parseErrorBody(res);
     throw new ApiError(res.status, body.message ?? "오류가 발생했어요.", body.code);
   }
 
