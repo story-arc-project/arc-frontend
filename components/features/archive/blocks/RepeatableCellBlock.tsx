@@ -486,19 +486,12 @@ function RowEditor({
           </button>
         )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* 한 필드당 한 행(FRT-315) — 반 칸에서는 placeholder·가이드라인·입력값이 잘린다. */}
+      <div className="flex flex-col gap-3">
         {columns.map(col => {
           const cellVal = row.cells[col.key]
-          const isWide =
-            col.blockType === "textarea" ||
-            col.blockType === "tags" ||
-            col.blockType === "checklist" ||
-            // 기간은 월 입력 2개+체크박스, 파일은 카드라 반 칸에 눌리면 읽을 수 없다(FRT-213).
-            col.blockType === "period" ||
-            col.blockType === "file"
-
           return (
-            <div key={col.key} className={`flex flex-col gap-1.5 ${isWide ? "sm:col-span-2" : ""}`}>
+            <div key={col.key} className="flex flex-col gap-1.5">
               <label className="text-caption text-text-secondary">
                 {col.label}
                 {col.required && <RequiredDot />}
