@@ -4,6 +4,7 @@ import { useState } from "react"
 
 import type { Block, RepeatableCellBlockValue } from "@/types/archive"
 import RepeatableCellBlock from "./RepeatableCellBlock"
+import { longFileName } from "../__fixtures__/archive.fixtures"
 
 const meta: Meta<typeof RepeatableCellBlock> = {
   title: "Features/Archive/Blocks/RepeatableCellBlock",
@@ -315,6 +316,54 @@ export const FileColumnReadOnly: Story = {
     await expect(canvas.getByText("발표자료.pdf")).toBeInTheDocument()
     await expect(canvas.queryByRole("button", { name: /첨부 삭제/ })).not.toBeInTheDocument()
     await expect(await canvas.findByRole("link", { name: /다운로드/ })).toBeInTheDocument()
+  },
+}
+
+/**
+ * FRT-318: 셀의 `file` 열도 긴 파일명으로 부모 폭을 밀어내지 않는다.
+ *
+ * 파일 행 마크업은 블록 층위(`FileBlock`)와 표 층위(`FileCellInput`)가 같은 카드를 공유하므로,
+ * 한쪽만 재면 다른 쪽 회귀를 못 잡는다. 넘침은 레이아웃 결과라 실브라우저에서 폭으로 단언한다.
+ */
+export const FileColumnLongFileName: Story = {
+  decorators: [
+    Story => (
+      <div data-testid="frt318-cell-container" className="w-[545px]">
+        <Story />
+      </div>
+    ),
+  ],
+  args: {
+    block: {
+      ...fileBlock,
+      value: {
+        ...(fileBlock.value as RepeatableCellBlockValue),
+        rows: [
+          {
+            id: "r1",
+            cells: {
+              name: "학회 정기 세미나 발표",
+              output: {
+                type: "file",
+                fileId: "file-frt318-cell",
+                fileName: longFileName,
+                size: 45_000_000,
+              },
+            },
+          },
+        ],
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(await canvas.findByText(longFileName)).toBeInTheDocument()
+
+    const container = canvasElement.querySelector<HTMLElement>(
+      '[data-testid="frt318-cell-container"]',
+    )
+    expect(container).not.toBeNull()
+    expect(container!.scrollWidth).toBeLessThanOrEqual(container!.clientWidth)
   },
 }
 

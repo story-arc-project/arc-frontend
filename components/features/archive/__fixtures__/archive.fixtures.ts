@@ -337,6 +337,15 @@ export const fileBlock: Block = {
   },
 }
 
+/**
+ * 넘침 회귀용 긴 파일명 (FRT-318 제보에 실제로 올라온 이름).
+ *
+ * 공백이 있어 줄바꿈은 가능하지만 파일 행은 `truncate`(=`white-space: nowrap`)로 한 줄에
+ * 그리므로, 조상 중 하나라도 최소 너비를 풀지 않으면 이 이름이 그대로 폭 요구가 된다.
+ */
+export const longFileName =
+  "2023-15424 고고미술사학과 이상헌__유럽의 17, 18세기 미술_ 소논문 최종본_무리요의 성 삼위일체 도상 연구.pdf"
+
 export const emptyFileBlock: Block = {
   id: "blk-file-empty",
   type: "file",

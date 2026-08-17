@@ -213,7 +213,11 @@ export default function FileBlock({ block, readOnly, onBusyChange, onChange }: F
   }
 
   return (
-    <fieldset className="flex flex-col gap-3">
+    // `min-w-0` 은 장식이 아니다(FRT-318) — `fieldset` 은 UA 스타일이
+    // `min-inline-size: min-content` 라 부모 폭을 무시하고 콘텐츠의 최소 너비까지 늘어난다.
+    // 파일 행은 파일명을 한 줄(`truncate`)로 그리므로 긴 이름이 그대로 폭 요구가 되고,
+    // 그러면 파일 행뿐 아니라 그 아래 설명·증빙 유형 칸까지 통째로 카드 밖으로 밀려난다.
+    <fieldset className="flex min-w-0 flex-col gap-3">
       <legend className="text-field-label text-text-primary mb-1">{block.label}</legend>
       {block.guide && <p className="text-caption text-text-tertiary -mt-2">{block.guide}</p>}
 
