@@ -1016,3 +1016,25 @@ describe("RepeatableCellBlock — 링크 열", () => {
     expect(capture).not.toHaveBeenCalledWith("archive_attachment_added", expect.anything())
   })
 })
+
+describe("입력 필드 배치 — 한 필드당 한 행 (FRT-315)", () => {
+  // 결과 집합으로 못박는다: 유형별 예외(isWide)를 세는 대신 "편집 폼 어디에도 다단 그리드가
+  // 없다"를 단언해, 새 blockType 이 추가돼도 잘림(placeholder·가이드라인) 회귀를 그물이 잡는다.
+  it("편집 폼은 어떤 열 유형이든 다단 그리드 없이 필드를 세로로 쌓는다", () => {
+    const columns: RepeatableCellBlockValue["columns"] = [
+      { key: "venue", label: "저널 / 학회명", blockType: "text", placeholder: "예: 한국소비자학회 / Journal of Consumer Research" },
+      { key: "status", label: "게재 상태", blockType: "single-select", options: ["게재 완료", "심사 중"] },
+      { key: "date", label: "게재 / 발표일", blockType: "date" },
+      { key: "url", label: "링크", blockType: "link" },
+      { key: "award", label: "수상 내역", blockType: "text", guide: "이 발표나 논문으로 받은 수상이 있다면 적어주세요." },
+      { key: "desc", label: "설명", blockType: "textarea" },
+    ]
+    const { container } = render(
+      <Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: {} }])} />,
+    )
+
+    expect(screen.getByLabelText("저널 / 학회명")).toBeInTheDocument()
+    expect(container.querySelector('[class*="grid-cols-2"]')).toBeNull()
+    expect(container.querySelector('[class*="col-span-2"]')).toBeNull()
+  })
+})
