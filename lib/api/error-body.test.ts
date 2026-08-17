@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { normalizeErrorBody, parseErrorBody } from "@/lib/api/error-body"
 
@@ -90,5 +92,38 @@ describe("parseErrorBody — 응답 파싱까지", () => {
     await expect(
       parseErrorBody(jsonResponse(JSON.stringify({ message: "안돼요", code: "NO" }))),
     ).resolves.toEqual({ message: "안돼요", code: "NO" })
+  })
+})
+
+/**
+ * 호출부를 하나씩 세지 않고 **결과 집합으로 못박는다**.
+ *
+ * `lib/api/server.ts` 는 `next/headers` 에 묶여 유닛 테스트가 없다 — 거기서 정제기를 걷어내도
+ * 죽는 테스트가 하나도 없었다(실측). 새 API 모듈이 늘어도 마찬가지다. 그래서 "누가 고쳤나"가
+ * 아니라 "lib/api 어디에도 직접 파싱이 남아 있지 않다"를 단언한다.
+ */
+describe("실패 응답 파싱은 이 모듈만 한다 (전칭 그물)", () => {
+  // jsdom 환경에서는 `import.meta.url` 이 file 스킴이 아니라 http 다. vitest 는 프로젝트
+  // 루트에서 돌므로 cwd 로 잡는다 — 아래 "검사 대상이 실제로 잡혀 있다"가 이 전제를 지킨다.
+  const API_DIR = join(process.cwd(), "lib", "api")
+
+  const sourceFiles = readdirSync(API_DIR).filter(
+    (name) => name.endsWith(".ts") && !name.endsWith(".test.ts"),
+  )
+
+  it("검사 대상이 실제로 잡혀 있다", () => {
+    // 목록이 비면 아래 단언이 언제나 통과해 그물이 조용히 사라진다.
+    expect(sourceFiles.length).toBeGreaterThan(5)
+    expect(sourceFiles).toContain("client.ts")
+    expect(sourceFiles).toContain("server.ts")
+    expect(sourceFiles).toContain("error-body.ts")
+  })
+
+  it("error-body.ts 외에는 res.json().catch 로 본문을 직접 읽지 않는다", () => {
+    const offenders = sourceFiles
+      .filter((name) => name !== "error-body.ts")
+      .filter((name) => /\.json\(\)\s*\.catch\(/.test(readFileSync(join(API_DIR, name), "utf8")))
+
+    expect(offenders).toEqual([])
   })
 })
