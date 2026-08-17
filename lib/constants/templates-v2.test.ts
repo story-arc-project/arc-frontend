@@ -12,7 +12,7 @@ import {
 } from "@/lib/constants/templates-v2"
 import { isRequiredBlock } from "@/lib/utils/block-utils"
 import { canHideBlock } from "@/lib/utils/hidden-fields"
-import { isCardComplete } from "@/lib/utils/form-cards"
+import { computeFormCards, isCardComplete } from "@/lib/utils/form-cards"
 import type { ExperienceTypeId, Block } from "@/types/archive"
 
 describe("templates-v2 category tagging", () => {
@@ -1085,7 +1085,7 @@ describe("확정본: 독서", () => {
     // `isCardComplete` 는 숨김 키를 먼저 걸러내므로 "숨길 수 있는가"를 증명하지 못한다.
     expect(canHideBlock(table)).toBe(true)
 
-    const card = { category: "repeat" as const, label: "문장별 감상", blocks: [table] }
+    const card = { id: "repeat", category: "repeat" as const, label: "문장별 감상", blocks: [table] }
     expect(isCardComplete(card)).toBe(false)
     expect(isCardComplete(card, [table.key!])).toBe(true)
   })
@@ -1494,7 +1494,7 @@ describe("확정본: 해외경험", () => {
     // `isCardComplete` 는 숨김 키를 먼저 걸러내므로 "숨길 수 있는가"를 증명하지 못한다.
     expect(canHideBlock(table)).toBe(true)
 
-    const card = { category: "repeat" as const, label: "활동별 상세 설명", blocks: [table] }
+    const card = { id: "repeat", category: "repeat" as const, label: "활동별 상세 설명", blocks: [table] }
     expect(isCardComplete(card)).toBe(false)
     expect(isCardComplete(card, [table.key!])).toBe(true)
   })
@@ -1693,7 +1693,7 @@ describe("확정본: 창작물", () => {
     expect(isRequiredBlock(table)).toBe(false)
     expect(canHideBlock(table)).toBe(false)
 
-    const card = { category: "basic" as const, label: "기본 정보", blocks: sections()[0].blocks }
+    const card = { id: "basic", category: "basic" as const, label: "기본 정보", blocks: sections()[0].blocks }
     expect(card.blocks.some(isRequiredBlock)).toBe(true)
     // 필수를 채우면 빈 '작품 링크 / 파일' 이 남아 있어도 카드가 완료된다.
     const filled = {
@@ -2355,8 +2355,9 @@ describe("확정본에서 내려간 유형 (FRT-300)", () => {
     for (const id of DISCARDED) {
       expect(ids, id).not.toContain(id)
     }
-    // 확정본 14종 = 목록 14항목. 프로젝트는 FRT-291 에서 개인·팀이 한 유형으로 합쳐졌다.
-    expect(EXPERIENCE_TYPES).toHaveLength(14)
+    // 확정본 14종 + '나는 누구인가?'(FRT-320) = 목록 15항목. 프로젝트는 FRT-291 에서
+    // 개인·팀이 한 유형으로 합쳐졌다.
+    expect(EXPERIENCE_TYPES).toHaveLength(15)
   })
 
   it("폐기된 유형도 라벨·아이콘 레지스트리에는 남는다 — 기존 기록의 유형 이름이 깨지지 않게", () => {
@@ -2398,6 +2399,222 @@ describe("확정본에서 내려간 유형 (FRT-300)", () => {
     for (const t of EXPERIENCE_TYPES) {
       expect(EXPERIENCE_TYPE_MAP[t.id], t.id).toBeDefined()
       expect(RETIRED_TYPE_IDS, t.id).not.toContain(t.id)
+    }
+  })
+})
+
+/**
+ * FRT-320 — '나는 누구인가?' 확정본 (나는누구인가_final).
+ *
+ * 다른 유형이 "무엇을 했는가"를 기록한다면 이 유형은 "나는 어떤 사람인가"를 기록하는
+ * 자기 인식 프로필이다. 그래서 두 가지가 다른 유형과 구조적으로 다르다:
+ *  · core 4종(기간·역할·성과·증빙)이 전부 성립하지 않는 질문이라 모두 CORE_EXCLUDE 다.
+ *    기간이 없으므로 TYPE_PERIOD_KEY 미등록·기간순 정렬 맨 뒤는 **의도된 결과**다.
+ *  · 확정본 배너가 "천천히, 오래 두고 채워가세요"다 — 필수 필드를 하나라도 두면
+ *    그 약속이 거짓이 되므로 전 필드가 선택이다.
+ */
+describe("확정본: 나는 누구인가 (FRT-320)", () => {
+  const sections = () =>
+    getTemplateForType("self-identity").extensions.filter(s => s.id !== "extended")
+  const labelsIn = (blocks: Block[]) => blocks.map(b => b.label)
+  const blockIn = (sectionId: string, label: string) =>
+    sections().find(s => s.id === sectionId)!.blocks.find(b => b.label === label)!
+
+  it("선택지·레지스트리에 등록된다 — 칩이 이 배열에서 파생되므로 작성·필터 양쪽에 노출된다", () => {
+    expect(EXPERIENCE_TYPES.map(t => t.id)).toContain("self-identity")
+    expect(EXPERIENCE_TYPE_MAP["self-identity"].label).toBe("나는 누구인가?")
+    expect(EXPERIENCE_TYPE_MAP["self-identity"].category).toBe("personal")
+    expect(RETIRED_TYPE_IDS).not.toContain("self-identity")
+  })
+
+  /**
+   * ⑤(관심 분야)도 repeat 이 아니라 detail 이다 — 카드가 카테고리 순서(basic→detail→repeat)로
+   * 서므로 repeat 으로 두면 ⑤ 가 ⑥⑦ 뒤로 밀려 문서 순서가 깨진다. ②~⑦ 이 전부
+   * `standalone: true` 라 각자 자기 카드로 서고, 템플릿 순서가 곧 카드 순서다.
+   */
+  it("확정본 7섹션을 순서·id·category 그대로 갖는다 — ②~⑦ 은 standalone 카드", () => {
+    expect(sections().map(s => [s.id, s.category, s.standalone ?? false])).toEqual([
+      ["self-intro", "basic", false],
+      ["self-values", "detail", true],
+      ["self-worklife", "detail", true],
+      ["self-relations", "detail", true],
+      ["self-interests", "detail", true],
+      ["self-direction", "detail", true],
+      ["self-reflection", "detail", true],
+    ])
+  })
+
+  it("core 는 헤더 둘만 남는다 — 기간·역할·성과·증빙은 프로필에 성립하지 않는 질문이다", () => {
+    const core = getTemplateForType("self-identity").commonCore.blocks
+    expect(core.map(b => b.label)).toEqual(["경험명", "한 줄 요약"])
+  })
+
+  it("① 나를 소개한다면 — 확정본 5필드", () => {
+    expect(labelsIn(sections()[0].blocks)).toEqual([
+      "내가 나라는 사람을 스스로 정의한다면",
+      "주변 사람들이 나를 어떻게 평가하는지",
+      "성격적 강점",
+      "보완하고 있는 약점",
+      "나를 표현하는 키워드",
+    ])
+  })
+
+  it("'나를 표현하는 키워드'는 확정본 20종 태그 + 직접 추가", () => {
+    const kw = blockIn("self-intro", "나를 표현하는 키워드")
+    expect(kw.variant).toBe("mood-tag")
+    expect(kw.allowCustomTag).toBe(true)
+    expect(kw.options).toEqual([
+      "꼼꼼한", "추진력 있는", "관계 중심", "분석적인", "감성적인",
+      "도전적인", "신중한", "유연한", "책임감 강한", "아이디어가 많은",
+      "성실한", "공감 잘하는", "논리적인", "행동파", "호기심 많은",
+      "독립적인", "낙관적인", "끈기 있는", "배우는 걸 좋아하는", "정리 잘하는",
+    ])
+  })
+
+  it("② 가치관과 동기 — 태그 15종과 이유·열정 서술", () => {
+    expect(labelsIn(sections()[1].blocks)).toEqual([
+      "삶에서 가장 중요하게 생각하는 가치관",
+      "이 가치가 중요한 이유",
+      "가장 열정을 갖고 임하는 일",
+    ])
+    const values = blockIn("self-values", "삶에서 가장 중요하게 생각하는 가치관")
+    expect(values.variant).toBe("mood-tag")
+    // 확정본이 프리셋 15종만 정의한다 — 직접 추가는 ① 키워드에만 있다.
+    expect(values.allowCustomTag).toBeUndefined()
+    expect(values.options).toEqual([
+      "🌱 성장", "🕊️ 자율성", "🏠 안정감", "⚖️ 공정함", "🎨 창의성",
+      "🔬 전문성", "🌍 영향력", "🤝 팀워크", "💎 진정성", "⚡ 효율",
+      "🔥 도전", "🌏 사회 기여", "👏 인정", "⏰ 균형(워라밸)", "🎯 몰입",
+    ])
+  })
+
+  /**
+   * 확정본 '나의 업무 성향'은 이름 없는 5행 양자택일이다. 행 라벨(실행 방식 등)은 안정키가
+   * 되므로 여기 적힌 이름이 곧 계약이다 — 확정본에 이름이 없어 구현이 명명했고, 머지 전
+   * 리뷰에서 확정한다.
+   */
+  it("③ 업무 성향은 확정본 5행 양자택일이다 — 저장은 single-select 그대로", () => {
+    const pairs = sections()[2].blocks.filter(b => b.variant === "binary-choice")
+    expect(pairs.map(b => b.label)).toEqual([
+      "실행 방식", "협업 방식", "관점 순서", "실행 속도", "우선순위",
+    ])
+    expect(pairs.map(b => b.options)).toEqual([
+      ["계획을 세운 뒤 실행", "상황에 맞게 유연하게 대응"],
+      ["혼자 집중해서 작업", "함께 논의하며 진행"],
+      ["큰 방향부터 잡고 내려가기", "디테일부터 쌓아 올리기"],
+      ["빠르게 실행하고 수정", "충분히 검토 후 실행"],
+      ["팀워크와 합의를 우선", "개인의 전문성과 성과를 우선"],
+    ])
+    for (const b of pairs) expect(b.type, b.label).toBe("single-select")
+  })
+
+  it("③ 업무 스타일과 협업 — 양자택일 5행 뒤에 역할 태그 8종과 서술 4필드", () => {
+    expect(labelsIn(sections()[2].blocks)).toEqual([
+      "실행 방식", "협업 방식", "관점 순서", "실행 속도", "우선순위",
+      "팀에서 자연스럽게 맡게 되는 역할",
+      "동료와 의견 충돌이 생겼을 때 대처 방식",
+      "가장 힘들었던 피드백 경험과 대응",
+      "에너지를 얻는 순간",
+      "에너지를 잃는 순간",
+    ])
+    const role = blockIn("self-worklife", "팀에서 자연스럽게 맡게 되는 역할")
+    expect(role.variant).toBe("mood-tag")
+    expect(role.options).toEqual([
+      "🚩 리더", "⚡ 실행자", "🗺️ 기획자", "🤝 조율자",
+      "📊 분석가", "🎨 크리에이터", "🛡️ 서포터", "🧠 문제 해결사",
+    ])
+  })
+
+  it("④ 관계와 환경 — 확정본 4필드, 조직 문화 태그 10종", () => {
+    expect(labelsIn(sections()[3].blocks)).toEqual([
+      "함께 일하고 싶은 사람",
+      "함께 일하기 어려운 유형",
+      "선호하는 조직 문화",
+      "조직문화가 나와 맞지 않을 때 적응 방식",
+    ])
+    const culture = blockIn("self-relations", "선호하는 조직 문화")
+    expect(culture.variant).toBe("mood-tag")
+    expect(culture.options).toEqual([
+      "🤝 수평적", "📋 체계적", "🕊️ 자율적", "📈 성과 중심", "🔄 과정 중심",
+      "🚀 빠른 실행", "💬 깊은 논의", "☕ 따뜻한 분위기", "🔬 전문성 존중", "🎉 재미/유머",
+    ])
+  })
+
+  it("⑤ 관심 분야와 나의 적합성 — 분야별로 반복 추가하는 4컬럼 표", () => {
+    expect(labelsIn(sections()[4].blocks)).toEqual(["관심 분야와 나의 적합성"])
+    const table = sections()[4].blocks[0]
+    const columns = table.value.type === "repeatable-cell" ? table.value.columns : []
+    expect(columns.map(c => [c.key, c.label, c.blockType])).toEqual([
+      ["field", "관심 분야 / 직무", "text"],
+      ["motive", "이 분야에 관심을 갖게 된 계기", "textarea"],
+      ["fit", "이 분야에 나라는 사람이 필요한 이유", "textarea"],
+      ["evidence", "관련 경험 / 근거", "textarea"],
+    ])
+    expect(columns.some(c => c.required)).toBe(false)
+    expect(table.lockColumns).toBe(true)
+  })
+
+  it("⑥ 방향과 지향점 — 확정본 3필드", () => {
+    expect(labelsIn(sections()[5].blocks)).toEqual([
+      "1~2년 안에 이루고 싶은 것",
+      "장기적으로 되고 싶은 모습",
+      "나의 성장에서 빠질 수 없는 경험 하나",
+    ])
+  })
+
+  it("⑦ 인생 회고 — 시기별 자유 서술 4필드 (구조를 늘릴수록 회고를 못 쓴다)", () => {
+    expect(labelsIn(sections()[6].blocks)).toEqual([
+      "🧒 유년기", "🎒 중학생", "📚 고등학생", "🎓 대학생",
+    ])
+    for (const b of sections()[6].blocks) expect(b.type, b.label).toBe("textarea")
+  })
+
+  it("⑤·⑦ 은 확정본 섹션 안내를 카드 설명으로 갖는다", () => {
+    const interests = sections().find(s => s.id === "self-interests")!
+    expect(interests.description).toBe(
+      "관심 있는 분야별로 '왜 나인가'를 정리해두세요. 분야마다 다른 이유가 있을 수 있으니 블록을 여러 개 추가해도 좋아요.",
+    )
+    const reflection = sections().find(s => s.id === "self-reflection")!
+    expect(reflection.description).toBe(
+      "시기별로 나의 이야기를 자유롭게 풀어보세요. 잘 정리된 글이 아니어도 좋아요. 기억나는 장면, 감정, 사람, 선택 — 떠오르는 대로 적어주세요.",
+    )
+  })
+
+  it("전 필드가 선택이다 — 표 컬럼까지 (배너 '천천히 채워가세요'가 약속이 되게)", () => {
+    for (const s of sections()) {
+      for (const b of s.blocks) {
+        expect(isRequiredBlock(b), `${s.id}.${b.label}`).toBe(false)
+      }
+    }
+  })
+
+  /**
+   * 필수 0 카드의 완료 판정. FRT-291 함정(치울 수도 채울 수도 없는 첨부 표가 완료를 영영
+   * 막는다)은 이 유형에 file 블록이 하나도 없어 성립하지 않는다 — 그 사실을 이론이 아니라
+   * 코드로 고정한다: 빈 카드는 미완료, 값 하나면 완료.
+   */
+  it("필수 0 카드도 값 하나로 완료가 된다 — 빈 카드는 미완료", () => {
+    const t = getTemplateForType("self-identity")
+    const { cards } = computeFormCards(
+      t.commonCore.blocks,
+      t.extensions.map(e => ({ id: e.id, label: e.label, category: e.category, blocks: e.blocks })),
+    )
+    expect(cards.length).toBeGreaterThan(0)
+    for (const card of cards) {
+      expect(isCardComplete(card, []), card.label).toBe(false)
+    }
+    const intro = cards.find(c => c.blocks.some(b => b.label === "성격적 강점"))!
+    const strength = intro.blocks.find(b => b.label === "성격적 강점")!
+    strength.value = { type: "textarea", text: "구조화" }
+    expect(isCardComplete(intro, [])).toBe(true)
+  })
+
+  it("파일을 담을 블록이 없다 — 업로드 유실 불변식(FRT-291)의 전제가 성립한다", () => {
+    for (const s of sections()) {
+      for (const b of s.blocks) {
+        expect(b.type, `${s.id}.${b.label}`).not.toBe("file")
+        expect(b.allowRowArtifacts, `${s.id}.${b.label}`).toBeUndefined()
+      }
     }
   })
 })

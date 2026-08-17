@@ -55,10 +55,29 @@ function isSummary(b: Block): boolean { return b.key === SUMMARY_KEY || b.label 
 /** 코어 증빙 자료 블록은 항상 evidence 카드에 표시 — dedup 대상에서 제외. */
 function isEvidenceBlock(b: Block): boolean { return b.key === EVIDENCE_KEY || b.label === "증빙 자료" }
 
-export interface FormCardSection { id: string; category: SectionCategory; blocks: Block[] }
+export interface FormCardSection {
+  id: string
+  category: SectionCategory
+  blocks: Block[]
+  /** 이 섹션이 자기 카드로 선다 (FRT-320). TemplateSection.standalone 을 넘긴다. */
+  standalone?: boolean
+  /** 섹션 이름 — standalone 카드의 제목이 된다. TemplateSection.label 을 넘긴다. */
+  label?: string
+  /** 섹션 안내 문구 — standalone 카드의 카드 설명이 된다. TemplateSection.description 을 넘긴다. */
+  description?: string
+}
 export interface FormCardModel {
+  /**
+   * 카드의 고유 식별자 (FRT-320). React key·앵커·`data-section-id` 가 이 값을 쓴다.
+   * standalone 이 아닌 카드(기존 전 유형)는 category 와 같고, standalone 카드는 섹션 id 다 —
+   * 같은 카테고리 카드가 여러 장일 수 있으므로 category 는 더 이상 카드를 유일하게
+   * 가리키지 못한다.
+   */
+  id: string
   category: SectionCategory
   label: string
+  /** standalone 카드의 안내 문구. 나머지 카드는 기존 SECTION_DESCRIPTION_OVERRIDES 경로를 쓴다. */
+  description?: string
   blocks: Block[]
   optional?: boolean
 }
@@ -84,18 +103,67 @@ export function computeFormCards(
   const anchorLabels = new Set<string>()
   for (const s of typeSections) for (const b of s.blocks) anchorLabels.add(b.label)
 
-  // core 블록(헤더·증빙 제외) 분류 + dedup
-  const buckets: Record<SectionCategory, Block[]> = { basic: [], detail: [], repeat: [], evidence: [] }
+  // ── 카드 골격 (FRT-320) ─────────────────────────────────────────
+  // `standalone: true` 를 명시한 섹션만 자기 카드로 선다('나는 누구인가?'의 7섹션 확정본).
+  // ⚠️ "같은 카테고리 2개 이상이면 분할" 같은 개수 추론은 쓰지 않는다 — 프로젝트는 evidence
+  // 섹션 2개가 한 카드('공개 / 배포 · 결과물')로 합쳐지는 것이 확정본이라, 추론 규칙은 기존
+  // 유형을 깨뜨린다. 켜지 않은 섹션(기존 전 유형)은 현행 카테고리당 1카드(id=category)
+  // 그대로다 — form-cards.test.ts 의 전칭 단언("self-identity 외 전 유형 카드 id=카테고리")이
+  // 이 경계를 지킨다.
+  const cards: FormCardModel[] = []
+  const cardBySection = new Map<string, FormCardModel>()
+  const lastCardByCat = {} as Record<SectionCategory, FormCardModel>
+  for (const { id: cat, label: defaultLabel } of SECTION_CATEGORIES) {
+    const own = typeSections.filter(s => s.category === cat)
+    const standalone = own.filter(s => s.standalone)
+    for (const s of standalone) {
+      const card: FormCardModel = {
+        id: s.id,
+        category: cat,
+        // standalone 카드의 이름은 섹션이 정한다 — 카테고리 키인 labelOverrides 를 여기
+        // 적용하면 같은 카테고리의 모든 카드가 한 이름으로 겹쳐 불린다.
+        label: s.label ?? defaultLabel,
+        ...(s.description ? { description: s.description } : {}),
+        blocks: [],
+        optional: cat === "detail" || undefined,
+      }
+      cards.push(card)
+      cardBySection.set(s.id, card)
+      lastCardByCat[cat] = card
+    }
+    // 카테고리 카드는 standalone 이 아닌 섹션이 있거나, standalone 카드가 하나도 없을 때만
+    // 만든다 — 전부 standalone 인 카테고리에 빈 카테고리 카드를 두면 잔여(설정) 블록이 거기
+    // 고여 '경험 상세' 한 칸짜리 카드가 생긴다(잔여는 마지막 standalone 카드에 붙는 것이 현행
+    // 시각 위치와 같다).
+    if (standalone.length === 0 || own.some(s => !s.standalone)) {
+      const card: FormCardModel = {
+        id: cat,
+        category: cat,
+        label: labelOverrides?.[cat] ?? defaultLabel,
+        blocks: [],
+        optional: cat === "detail" || undefined,
+      }
+      cards.push(card)
+      lastCardByCat[cat] = card
+    }
+  }
+  // 목적지 카드. 자기 섹션이 standalone 카드를 가지면 그 카드, 아니면(코어·extended·다른
+  // 섹션에서 category 로 넘어온 블록) 그 카테고리의 **마지막** 카드 — 설정(공개 설정) 같은
+  // 잔여 블록이 분할돼도 현행 시각 위치(카테고리 맨 아래)를 유지한다.
+  const dest = (cat: SectionCategory, sectionId?: string): FormCardModel => {
+    const own = sectionId !== undefined ? cardBySection.get(sectionId) : undefined
+    return own && own.category === cat ? own : lastCardByCat[cat]
+  }
 
-  // 코어 증빙 자료는 항상 evidence 버킷에 직접 추가 (dedup 없음)
-  if (coreEvidenceBlock) buckets.evidence.push(coreEvidenceBlock)
+  // 코어 증빙 자료는 항상 evidence 카드에 직접 추가 (dedup 없음)
+  if (coreEvidenceBlock) dest("evidence").blocks.push(coreEvidenceBlock)
 
   const keepCoreOrExtended = (b: Block, others: Set<string>) =>
     !isBlockEmpty(b) || !hasEquivalentIn(b.label, others)
 
   // 1) type-specific 섹션 블록 → category 그대로 (anchor 이므로 dedup 대상 아님)
   for (const s of typeSections) {
-    for (const b of s.blocks) buckets[b.category ?? s.category].push(b)
+    for (const b of s.blocks) dest(b.category ?? s.category, s.id).blocks.push(b)
   }
 
   // 2) core 블록(헤더·증빙 제외) → block.category, anchor 와 중복 dedup
@@ -103,7 +171,7 @@ export function computeFormCards(
   const survivingCore: Block[] = []
   for (const b of coreNonHeader) {
     if (keepCoreOrExtended(b, anchorLabels)) {
-      buckets[b.category ?? "detail"].push(b)
+      dest(b.category ?? "detail").blocks.push(b)
       survivingCore.push(b)
     }
   }
@@ -113,26 +181,17 @@ export function computeFormCards(
   for (const b of survivingCore) usedLabels.add(b.label)
   const extended = sections.find(s => s.id === "extended")
   for (const b of extended?.blocks ?? []) {
-    if (keepCoreOrExtended(b, usedLabels)) buckets[b.category ?? "detail"].push(b)
+    if (keepCoreOrExtended(b, usedLabels)) dest(b.category ?? "detail").blocks.push(b)
   }
 
-  const cards: FormCardModel[] = []
-  for (const { id, label } of SECTION_CATEGORIES) {
-    const blocks = buckets[id]
-    if (blocks.length === 0) continue
-    cards.push({
-      category: id,
-      label: labelOverrides?.[id] ?? label,
-      blocks,
-      optional: id === "detail" || undefined,
-    })
-  }
+  const visibleCards = cards.filter(c => c.blocks.length > 0)
 
   return {
     titleBlock,
     summaryBlock,
-    cards,
-    visibleCategories: cards.map(c => c.category),
+    cards: visibleCards,
+    // 분할로 같은 카테고리 카드가 여러 장이어도 카테고리는 한 번만 나열한다.
+    visibleCategories: [...new Set(visibleCards.map(c => c.category))],
   }
 }
 

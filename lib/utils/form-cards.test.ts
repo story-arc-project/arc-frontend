@@ -6,8 +6,13 @@ import {
   equivalentLabels,
 } from "@/lib/utils/form-cards"
 import { partitionByCondition } from "@/lib/utils/conditional-fields"
-import { getTemplateForType } from "@/lib/constants/templates-v2"
-import { cloneBlocks, isRequiredBlock } from "@/lib/utils/block-utils"
+import { ALL_EXPERIENCE_TYPES, getTemplateForType } from "@/lib/constants/templates-v2"
+import {
+  cloneBlocks,
+  createSelectField,
+  createTextareaField,
+  isRequiredBlock,
+} from "@/lib/utils/block-utils"
 import { canHideBlock } from "@/lib/utils/hidden-fields"
 import type { FormCardSection, FormCardModel } from "@/lib/utils/form-cards"
 import type { Block } from "@/types/archive"
@@ -17,7 +22,14 @@ function sectionsFor(typeId: Parameters<typeof getTemplateForType>[0]): { core: 
   const t = getTemplateForType(typeId)
   return {
     core: cloneBlocks(t.commonCore.blocks),
-    sections: t.extensions.map(e => ({ id: e.id, category: e.category, blocks: cloneBlocks(e.blocks) })),
+    sections: t.extensions.map(e => ({
+      id: e.id,
+      label: e.label,
+      standalone: e.standalone,
+      description: e.description,
+      category: e.category,
+      blocks: cloneBlocks(e.blocks),
+    })),
   }
 }
 
@@ -593,7 +605,7 @@ describe("isCardComplete / computeFormProgress", () => {
       id: "sib", key: "t.메모", type: "textarea", label: "회고",
       value: { type: "textarea", text: "" },
     }
-    const repeat: FormCardModel = { category: "repeat", label: "반복 기록", blocks: [cell, sibling] }
+    const repeat: FormCardModel = { id: "repeat", category: "repeat", label: "반복 기록", blocks: [cell, sibling] }
     if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
     expect(cell.value.columns.some(c => c.required)).toBe(true)
     expect(cell.required).toBeFalsy()
@@ -781,5 +793,139 @@ describe("못 치우는 빈 첨부 표는 진행도를 막지 않는다 (FRT-291
       ),
     }
     expect(isCardComplete(filled, [])).toBe(true)
+  })
+})
+
+/**
+ * FRT-320 — standalone 섹션의 자기 카드 분할.
+ *
+ * '나는 누구인가?' 확정본은 7섹션인데 카드가 카테고리당 1장이면 detail 섹션 6개가 구분 없이
+ * 한 카드에 합쳐진다. 그래서 **`standalone: true` 를 명시한 섹션만** 자기 카드로 선다.
+ * ⚠️ "같은 카테고리 2개 이상이면 분할" 같은 개수 추론이 아니다 — 프로젝트는 evidence 섹션
+ * 2개가 한 카드('공개 / 배포 · 결과물')로 합쳐지는 것이 확정본이라, 추론 규칙은 기존 유형을
+ * 깨뜨린다(아래 병합 단언과 전칭 단언이 그 경계다).
+ */
+describe("standalone 섹션 분할 (FRT-320)", () => {
+  const section = (
+    id: string,
+    label: string,
+    category: FormCardSection["category"],
+    blockLabels: string[],
+    standalone = false,
+  ): FormCardSection => ({
+    id,
+    label,
+    category,
+    ...(standalone ? { standalone: true } : {}),
+    blocks: blockLabels.map(l => createTextareaField(l)),
+  })
+
+  it("standalone 섹션은 자기 카드로 선다 — id·라벨은 섹션 것", () => {
+    const r = computeFormCards([], [
+      section("a-one", "하나", "detail", ["A"], true),
+      section("a-two", "둘", "detail", ["B"], true),
+    ])
+    expect(r.cards.map(c => [c.id, c.label, c.category])).toEqual([
+      ["a-one", "하나", "detail"],
+      ["a-two", "둘", "detail"],
+    ])
+  })
+
+  it("standalone 이 아니면 같은 카테고리 여러 섹션도 현행대로 한 카드에 합쳐진다", () => {
+    const r = computeFormCards([], [
+      section("a-one", "하나", "detail", ["A"]),
+      section("a-two", "둘", "detail", ["B"]),
+    ])
+    expect(r.cards.map(c => [c.id, c.label])).toEqual([["detail", "경험 상세"]])
+    expect(r.cards[0].blocks.map(b => b.label)).toEqual(["A", "B"])
+  })
+
+  it("분할은 카테고리별로 독립이다 — basic 은 현행, standalone detail 만 가른다", () => {
+    const r = computeFormCards([], [
+      section("b", "기본", "basic", ["말머리"]),
+      section("d-one", "하나", "detail", ["A"], true),
+      section("d-two", "둘", "detail", ["B"], true),
+    ])
+    expect(r.cards.map(c => c.id)).toEqual(["basic", "d-one", "d-two"])
+  })
+
+  /**
+   * extended(설정) 블록은 카테고리 버킷으로 흘러 왔다 — 분할돼도 그 시각적 위치(카테고리의
+   * 맨 아래)를 유지해야 하므로 그 카테고리의 **마지막 카드**에 붙는다. 자기 카드를 새로 만들면
+   * '설정' 한 칸짜리 카드가 생기고, 첫 카드에 붙으면 설정이 본문 중간에 낀다.
+   */
+  it("extended(설정) 잔여 블록은 분할된 카테고리의 마지막 카드에 붙는다", () => {
+    const r = computeFormCards([], [
+      { id: "extended", label: "설정", category: "detail", blocks: [createSelectField("공개 설정", ["공개", "비공개"])] },
+      section("d-one", "하나", "detail", ["A"], true),
+      section("d-two", "둘", "detail", ["B"], true),
+    ])
+    const last = r.cards[r.cards.length - 1]
+    expect(last.id).toBe("d-two")
+    expect(last.blocks.map(b => b.label)).toEqual(["B", "공개 설정"])
+    const first = r.cards.find(c => c.id === "d-one")!
+    expect(first.blocks.map(b => b.label)).toEqual(["A"])
+  })
+
+  it("값이 채워진 core 잔여 블록도 분할된 카테고리의 마지막 카드에 붙는다", () => {
+    const core = cloneBlocks([createTextareaField("내 역할/기여도")])
+    core[0].value = { type: "textarea", text: "리드" }
+    core[0].category = "detail"
+    const r = computeFormCards(core, [
+      section("d-one", "하나", "detail", ["A"], true),
+      section("d-two", "둘", "detail", ["B"], true),
+    ])
+    const last = r.cards[r.cards.length - 1]
+    expect(last.blocks.map(b => b.label)).toEqual(["B", "내 역할/기여도"])
+  })
+
+  it("standalone 카드는 섹션의 description 을 카드 설명으로 실어 나른다", () => {
+    const r = computeFormCards([], [
+      { ...section("d-one", "하나", "detail", ["A"], true), description: "하나 안내" },
+      section("d-two", "둘", "detail", ["B"], true),
+    ])
+    expect(r.cards.find(c => c.id === "d-one")!.description).toBe("하나 안내")
+    expect(r.cards.find(c => c.id === "d-two")!.description).toBeUndefined()
+  })
+
+  it("visibleCategories 는 분할돼도 카테고리를 중복 나열하지 않는다", () => {
+    const r = computeFormCards([], [
+      section("d-one", "하나", "detail", ["A"], true),
+      section("d-two", "둘", "detail", ["B"], true),
+    ])
+    expect(r.visibleCategories).toEqual(["detail"])
+  })
+
+  /**
+   * 분할 규칙의 파급 경계 — 기존 유형은 전부 카테고리당 섹션 1개라 **분할 경로에 아예 들어가지
+   * 않는다.** 이 전칭 단언이 무너지는 날(어떤 유형이 카테고리당 2섹션이 되는 날)은 그 유형의
+   * 카드 id·라벨이 바뀌는 날이므로, 의도적으로 여기서 소리가 나야 한다.
+   */
+  it("전칭: self-identity 외 모든 유형은 분할되지 않는다 — 카드 id=카테고리 불변", () => {
+    for (const t of ALL_EXPERIENCE_TYPES) {
+      if (t.id === "self-identity") continue
+      const { core, sections } = sectionsFor(t.id)
+      const r = computeFormCards(core, sections)
+      for (const c of r.cards) {
+        expect(c.id, `${t.id}/${c.label}`).toBe(c.category)
+      }
+    }
+  })
+
+  it("나는 누구인가: 확정본 7카드가 문서 순서로 선다", () => {
+    const { core, sections } = sectionsFor("self-identity")
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES["self-identity"])
+    expect(r.cards.map(c => [c.id, c.label])).toEqual([
+      ["basic", "나를 소개한다면"],
+      ["self-values", "가치관과 동기"],
+      ["self-worklife", "업무 스타일과 협업"],
+      ["self-relations", "관계와 환경"],
+      ["self-interests", "관심 분야와 나의 적합성"],
+      ["self-direction", "방향과 지향점"],
+      ["self-reflection", "인생 회고"],
+    ])
+    // 설정(공개 설정)은 마지막 카드(인생 회고) 맨 아래에 붙는다.
+    const last = r.cards[r.cards.length - 1]
+    expect(last.blocks[last.blocks.length - 1].label).toBe("공개 설정")
   })
 })

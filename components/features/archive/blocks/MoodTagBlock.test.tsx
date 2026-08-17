@@ -118,6 +118,79 @@ describe("BlockRenderer mood-tag 분기", () => {
 })
 
 /**
+ * FRT-320 — '나는 누구인가?' ① 키워드 태그의 "직접 추가 가능".
+ *
+ * `allowCustomTag` 는 템플릿 전용 opt-in 이다(variant·lockColumns 규약). 핵심 불변식 둘:
+ *  · 플래그가 없으면 입력줄 자체가 렌더되지 않는다 — 기존 12개 유형의 무드 태그가
+ *    이 확장의 영향권에 들지 않는다(위 "버튼을 두지 않는다" 단언과 한 쌍인 회귀 그물).
+ *  · 새 태그는 `options`(프리셋)에 넣지 않고 `checked` 에만 넣는다 — 다음 렌더는
+ *    `moodTagOptions()` 의 기존 "checked 에만 남은 값도 뒤에 붙인다" 폴백이 그려 준다.
+ */
+describe("MoodTagBlock 직접 추가 (allowCustomTag)", () => {
+  function makeCustomBlock(checked: string[] = []): Block {
+    const block = createMoodTagField("나를 표현하는 키워드", TAGS, { allowCustomTag: true })
+    return { ...block, value: { ...(block.value as ChecklistBlockValue), checked } }
+  }
+
+  it("플래그가 없으면 입력줄이 렌더되지 않는다 — 기존 유형 동작 불변", () => {
+    render(<MoodTagBlock block={makeBlock()} onChange={() => {}} />)
+    expect(screen.queryByRole("textbox")).toBeNull()
+  })
+
+  it("입력 후 추가하면 options 는 그대로, checked 에만 태그가 붙는다", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(<MoodTagBlock block={makeCustomBlock()} onChange={onChange} />)
+
+    await user.type(screen.getByRole("textbox"), "정리 덕후")
+    await user.click(screen.getByRole("button", { name: "직접 추가" }))
+    expect(onChange).toHaveBeenCalledWith({
+      type: "checklist",
+      options: TAGS,
+      checked: ["정리 덕후"],
+    })
+  })
+
+  it("이미 선택된 태그와 같은 텍스트는 다시 추가하지 않는다", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(<MoodTagBlock block={makeCustomBlock(["정리 덕후"])} onChange={onChange} />)
+
+    await user.type(screen.getByRole("textbox"), "정리 덕후")
+    await user.click(screen.getByRole("button", { name: "직접 추가" }))
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it("추가된 커스텀 태그는 다음 렌더에서 pill 로 보이고 해제할 수 있다", async () => {
+    const user = userEvent.setup()
+    function CustomHarness() {
+      const [block, setBlock] = useState(() => makeCustomBlock())
+      return (
+        <MoodTagBlock block={block} onChange={value => setBlock(prev => ({ ...prev, value }))} />
+      )
+    }
+    render(<CustomHarness />)
+
+    await user.type(screen.getByRole("textbox"), "정리 덕후")
+    await user.click(screen.getByRole("button", { name: "직접 추가" }))
+
+    const added = screen.getByRole("checkbox", { name: "정리 덕후" }) as HTMLInputElement
+    expect(added.checked).toBe(true)
+    // 해제해도 pill 은 남는다 — 토글이 계산된 목록을 options 로 저장하는 기존 규약 그대로라,
+    // 한 번 추가한 태그는 프리셋처럼 다시 고를 수 있다.
+    await user.click(added)
+    expect(
+      (screen.getByRole("checkbox", { name: "정리 덕후" }) as HTMLInputElement).checked,
+    ).toBe(false)
+  })
+
+  it("readOnly 에는 입력줄이 없다", () => {
+    render(<MoodTagBlock block={makeCustomBlock(["정리 덕후"])} readOnly onChange={() => {}} />)
+    expect(screen.queryByRole("textbox")).toBeNull()
+  })
+})
+
+/**
  * 손상·개편된 저장값 방어. 선택돼 있는데 화면에 안 보이면 해제할 방법이 사라진다.
  */
 describe("MoodTagBlock 손상값 복원", () => {
