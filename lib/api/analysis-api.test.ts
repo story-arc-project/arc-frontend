@@ -1935,3 +1935,121 @@ describe("getAnalysisHomeSummary — 부분 실패 보고 (FRT-169)", () => {
     expect(summary.stats.totalExperiences).toBe(7)
   })
 })
+
+describe("분석 본문의 원시 필드 표기 정제 (FRT-316)", () => {
+  const resultWith = (weakness: Record<string, unknown>) => ({
+    itemName: "",
+    itemType: "",
+    briefSummary: "",
+    deepAnalysis: {},
+    starFormat: {},
+    itemDiagnosis: { weaknesses: [weakness] },
+    synergyRecommendations: [],
+    actionPlan: {},
+    missingInfoWarning: "",
+  })
+
+  it("`근거` 자리에 온 tags 배열 표기를 사람이 읽는 문장으로 낸다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-1",
+        status: "completed",
+        experience_id: "e1",
+        result: resultWith({
+          id: 1,
+          title: "산업 직무 연결성",
+          evidence: 'tags: ["미술사", "소논문", "17세기 스페인 회화", "무리요"]',
+        }),
+      }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.result.itemDiagnosis.weaknesses[0].evidence).toBe(
+      "태그: 미술사, 소논문, 17세기 스페인 회화, 무리요",
+    )
+  })
+
+  it("fields 안정키와 기간 객체 표기도 매핑을 지나며 정제된다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-1",
+        status: "completed",
+        experience_id: "e1",
+        result: resultWith({
+          id: 2,
+          title: "연구 기간의 짧음",
+          evidence: 'research-paper.연구 기간: {"start": "2024-10", "end": "2024-12"}',
+        }),
+      }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.result.itemDiagnosis.weaknesses[0].evidence).toBe("연구 기간: 2024-10 ~ 2024-12")
+  })
+
+  it("배열형 서술(누락된 요소)도 원소 단위로 정제된다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-1",
+        status: "completed",
+        experience_id: "e1",
+        result: {
+          itemName: "",
+          itemType: "",
+          briefSummary: "",
+          deepAnalysis: {},
+          starFormat: {},
+          itemDiagnosis: { missingElements: ['tags: ["미술사"]', "정량적 성과가 없습니다."] },
+          synergyRecommendations: [],
+          actionPlan: {},
+          missingInfoWarning: "",
+        },
+      }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.result.itemDiagnosis.missingElements).toEqual([
+      "태그: 미술사",
+      "정량적 성과가 없습니다.",
+    ])
+  })
+
+  it("정상 서술 문장은 매핑을 지나도 그대로다", async () => {
+    const sentence = "근거: 지원 직무와의 연결고리가 드러나지 않습니다."
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-1",
+        status: "completed",
+        experience_id: "e1",
+        result: resultWith({ id: 3, title: "연결성", evidence: sentence }),
+      }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    expect(res.result.itemDiagnosis.weaknesses[0].evidence).toBe(sentence)
+  })
+})
+
+describe("스냅샷 배열의 원소 타입 검증 (FRT-215)", () => {
+  it("selectedKeywords 에 문자열 아닌 값이 섞여도 화면까지 흘려보내지 않는다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope([
+        {
+          id: "a1",
+          status: "success",
+          selected_keywords: ["데이터 분석", 1, null, "기획"],
+          selected_experience_ids: [
+            "e1",
+            2,
+            "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+            "e3",
+          ],
+        },
+      ]),
+    )
+    const list = await getIndividualAnalysisList()
+    expect(list[0].selectedKeywords).toEqual(["데이터 분석", "기획"])
+    // id 는 원문 그대로여야 한다 — 정제기가 식별자를 건드리면 이후 경험 조회 매칭이 깨진다.
+    expect(list[0].selectedExperienceIds).toEqual([
+      "e1",
+      "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+      "e3",
+    ])
+  })
+})

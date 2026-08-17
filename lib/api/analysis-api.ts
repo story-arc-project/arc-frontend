@@ -1,5 +1,6 @@
 import { api } from "./client";
 import { getExperiences } from "./experience-api";
+import { humanizeRawFieldNotation } from "@/lib/utils/humanize-raw-field";
 import type { ApiSuccessResponse } from "@/types/api";
 import type {
   AnalysisHomeSummary,
@@ -121,8 +122,16 @@ function asArray<T = unknown>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+/**
+ * 문자열이면 그대로 읽되, 분석 본문에 섞여 온 저장 필드 표기는 사람이 읽는 문장으로 되돌린다.
+ *
+ * 정제를 호출처마다 고르지 않고 **이 한 곳**에 둔 이유: 서술형 필드는 매퍼 전반에 흩어져 있어
+ * "어느 필드가 서술형인가"를 세는 방식은 반드시 몇 곳을 빠뜨린다(FRT-200 에서 겪은 실패 모양).
+ * `humanizeRawFieldNotation` 은 값이 JSON 리터럴인 줄에만 반응하므로, id·날짜처럼 서술형이
+ * 아닌 값이 함께 지나가도 무해하다.
+ */
 function asString(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback;
+  return typeof value === "string" ? humanizeRawFieldNotation(value) : fallback;
 }
 
 /**
@@ -292,14 +301,15 @@ function mapSnapshot(
     createdAt: asString(r.createdAt ?? r.created_at),
     experienceCount: asNumber(r.experienceCount ?? r.experience_count),
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked),
+    // ⚠️ 단언(`as string[]`)이 아니라 원소 단위로 거른다 — 이 파일의 다른 배열 필드와 같은
+    // 방어 파싱 규약이다. 단언으로 두면 백엔드가 문자열 아닌 원소를 보낼 때 그대로 Badge 로
+    // 흘러가 렌더 오류가 된다(FRT-215).
     selectedExperienceIds: Array.isArray(experienceIdsRaw)
-      ? (experienceIdsRaw as string[])
+      ? asStringArray(experienceIdsRaw)
       : typeof singleExperienceId === "string" && singleExperienceId
         ? [singleExperienceId]
         : undefined,
-    selectedKeywords: Array.isArray(keywordsRaw)
-      ? (keywordsRaw as string[])
-      : undefined,
+    selectedKeywords: Array.isArray(keywordsRaw) ? asStringArray(keywordsRaw) : undefined,
     experiences: Array.isArray(experiencesRaw)
       ? experiencesRaw.map(mapExperienceRef)
       : undefined,
@@ -333,7 +343,11 @@ function asSynergyPriority(value: unknown): SynergyPriority {
 }
 
 function asStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+  return Array.isArray(value)
+    ? value
+        .filter((v): v is string => typeof v === "string")
+        .map(humanizeRawFieldNotation)
+    : [];
 }
 
 function mapIndividualWeakness(dto: unknown, index: number): IndividualWeakness {
