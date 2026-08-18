@@ -1,8 +1,13 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
-import { expect, waitFor, within } from "storybook/test"
+import { expect, within } from "storybook/test"
 
 import FileBlock from "./FileBlock"
-import { emptyFileBlock, fileBlock, longFileName } from "../__fixtures__/archive.fixtures"
+import {
+  emptyFileBlock,
+  fileBlock,
+  longFileName,
+  longUnbrokenFileName,
+} from "../__fixtures__/archive.fixtures"
 
 const meta: Meta<typeof FileBlock> = {
   title: "Features/Archive/Blocks/FileBlock",
@@ -85,16 +90,23 @@ export const ReadOnlyEmpty: Story = {
  * 그러면 잘린 파일 행뿐 아니라 그 아래 설명·증빙 유형 칸까지 통째로 카드 밖으로 밀려난다.
  * 넘침은 레이아웃 결과라 jsdom 으로는 잴 수 없어 실브라우저인 여기서 폭으로 단언한다.
  */
+function expectWithinParent(canvasElement: HTMLElement, testId: string) {
+  const container = canvasElement.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
+  expect(container).not.toBeNull()
+  // 컨테이너보다 넓은 자손이 있으면 그만큼 스크롤 폭이 생긴다(넘침 여부는 overflow 설정과 무관).
+  expect(container!.scrollWidth).toBeLessThanOrEqual(container!.clientWidth)
+}
+
 const overflowProbe = (testId: string): NonNullable<Story["play"]> =>
   async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    // 카드가 그려진 뒤에 재야 한다 — 빈 상태의 '파일 선택' 칸은 넘치지 않는다.
-    await waitFor(() => expect(canvas.getByText(longFileName)).toBeInTheDocument())
+    // 파일명만 기다리면 **너무 이르다** — `getFileUrl` 이 아직이면 URL 없는 카드가 먼저 그려지고
+    // 그 이름은 두 상태에 다 있다. 그 사이에 재면 '열기'(고정폭)가 빠진 좁은 카드를 재게 되어,
+    // 느린 CI 에서는 진짜 넘치는 최종 레이아웃을 건드리지 않고도 통과한다.
+    // 링크가 붙은 뒤가 이 블록이 가장 넓어지는 상태다.
+    await canvas.findByRole("link", { name: `${longFileName} 열기` })
 
-    const container = canvasElement.querySelector<HTMLElement>(`[data-testid="${testId}"]`)
-    expect(container).not.toBeNull()
-    // 컨테이너보다 넓은 자손이 있으면 그만큼 스크롤 폭이 생긴다(넘침 여부는 overflow 설정과 무관).
-    expect(container!.scrollWidth).toBeLessThanOrEqual(container!.clientWidth)
+    expectWithinParent(canvasElement, testId)
   }
 
 export const LongFileName: Story = {
@@ -152,4 +164,40 @@ export const ReadOnlyLongFileName: Story = {
     readOnly: true,
   },
   play: overflowProbe("frt318-readonly-container"),
+}
+
+/**
+ * 업로드 실물 없이 **이름만** 남은 첨부의 상세뷰 (FRT-318 리뷰 지적).
+ *
+ * `fileId` 가 없으면 파일 카드가 아니라 클립 아이콘 + 파일명 한 줄로 그려진다.
+ * 데모 시드(`lib/demo/seed.ts`)가 의도적으로 `fileId` 를 비우므로 살아 있는 경로다.
+ * 끊을 자리가 없는 이름을 넣어 그 줄에 자를 장치가 있는지 가른다.
+ */
+export const ReadOnlyNameOnlyLongFileName: Story = {
+  decorators: [
+    Story => (
+      <div data-testid="frt318-nameonly-container" className="w-[545px]">
+        <Story />
+      </div>
+    ),
+  ],
+  args: {
+    block: {
+      ...fileBlock,
+      label: "증빙 자료",
+      value: {
+        type: "file",
+        fileName: longUnbrokenFileName,
+        description: "",
+        evidenceType: "증빙 서류",
+      },
+    },
+    readOnly: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByText(longUnbrokenFileName)
+
+    expectWithinParent(canvasElement, "frt318-nameonly-container")
+  },
 }

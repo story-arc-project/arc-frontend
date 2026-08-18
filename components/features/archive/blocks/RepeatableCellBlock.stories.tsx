@@ -357,7 +357,9 @@ export const FileColumnLongFileName: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await expect(await canvas.findByText(longFileName)).toBeInTheDocument()
+    // 파일명만 기다리면 너무 이르다 — `getFileUrl` 전에는 '다운로드'(고정폭)가 없는 좁은
+    // 카드가 먼저 그려지고 이름은 두 상태에 다 있다. 가장 넓어지는 최종 상태를 재야 한다.
+    await canvas.findByRole("link", { name: `${longFileName} 다운로드` })
 
     const container = canvasElement.querySelector<HTMLElement>(
       '[data-testid="frt318-cell-container"]',

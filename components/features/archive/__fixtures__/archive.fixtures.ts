@@ -338,13 +338,27 @@ export const fileBlock: Block = {
 }
 
 /**
- * 넘침 회귀용 긴 파일명 (FRT-318 제보에 실제로 올라온 이름).
+ * 넘침 회귀용 긴 파일명 (FRT-318).
+ *
+ * 제보에 올라온 실제 파일명은 학번·학과·실명이 드러나므로 **쓰지 않는다** — 폭만 같으면
+ * 그물의 목적은 그대로다. 길이·구조(학번·학과·이름·구분자·주제)를 같게 맞춘 가짜 이름이다.
  *
  * 공백이 있어 줄바꿈은 가능하지만 파일 행은 `truncate`(=`white-space: nowrap`)로 한 줄에
  * 그리므로, 조상 중 하나라도 최소 너비를 풀지 않으면 이 이름이 그대로 폭 요구가 된다.
  */
 export const longFileName =
-  "2023-15424 고고미술사학과 이상헌__유럽의 17, 18세기 미술_ 소논문 최종본_무리요의 성 삼위일체 도상 연구.pdf"
+  "2000-00000 예시학과 홍길동__표본 강의 17, 18세기 자료_ 소논문 최종본_아주 긴 이름의 첨부 파일 표본 예시.pdf"
+
+/**
+ * 어디서도 줄바꿈될 수 없는 긴 파일명 (FRT-318).
+ *
+ * `longFileName` 은 공백이 있어 줄바꿈되고, **한글은 음절마다 끊긴다** — 둘 다
+ * `truncate` 가 없는 자리에서도 여러 줄이 될 뿐 넘치지는 않는다.
+ * 공백·하이픈 없는 라틴 문자열만이 끊을 자리가 없어
+ * **"자를 장치가 정말 있는가"** 를 가른다.
+ */
+export const longUnbrokenFileName =
+  "evidence_submission_final_revised_reviewed_resubmitted_20240301_v12_really_final.pdf"
 
 export const emptyFileBlock: Block = {
   id: "blk-file-empty",
