@@ -32,7 +32,10 @@ person 속성은 인제스트 *시점*의 값이다). ②는 과거까지 즉시
 따라서 팀원 이메일만 알면 해시를 직접 계산해 필터에 넣을 수 있다.
 
 ```bash
-printf '%s' "team@story-arc.org" | shasum -a 256 | awk '{print $1}'
+# 코드(hash.ts)와 똑같이 정규화한 뒤 해싱해야 한다 — 대문자·앞뒤 공백이 섞인 채로 해싱하면
+# 해시가 어긋나 이 계정만 필터에서 조용히 빠진다(에러가 안 난다).
+printf '%s' "Team@Story-Arc.org" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' \
+  | shasum -a 256 | awk '{print $1}'
 ```
 
 이 값을 PostHog → Settings → *Filter out internal and test users* 의 `distinct_id` 조건에 넣는다.
