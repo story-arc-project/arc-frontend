@@ -9,10 +9,24 @@ import { isImeComposing, onEnterCommit } from "@/lib/utils/keyboard"
 interface SingleSelectBlockProps {
   block: Block
   readOnly?: boolean
+  /**
+   * 인라인 옵션 편집 노출 (FRT-322). **미지정이면 닫힘** — 템플릿이 소유한 확정본 선택지를
+   * 사용자가 고치면 기획이 정한 목록이 계정마다 갈린다.
+   *
+   * 판정을 새로 만들지 않고 `BlockList` 의 `editEnabled`(= `allowEdit ?? allowAdd`, 곧
+   * "커스텀 블록인가")를 그대로 받는다 — 같은 플래그가 바깥 연필(블록 편집 모달)도 가르므로
+   * 편집 경로가 한쪽만 열린 채 남지 않는다.
+   */
+  allowOptionEdit?: boolean
   onChange: (value: SingleSelectBlockValue) => void
 }
 
-export default function SingleSelectBlock({ block, readOnly, onChange }: SingleSelectBlockProps) {
+export default function SingleSelectBlock({
+  block,
+  readOnly,
+  allowOptionEdit,
+  onChange,
+}: SingleSelectBlockProps) {
   const val = block.value as SingleSelectBlockValue
   const options = val.options.length > 0 ? val.options : (block.options ?? [])
   const [showEditor, setShowEditor] = useState(false)
@@ -101,16 +115,18 @@ export default function SingleSelectBlock({ block, readOnly, onChange }: SingleS
         ))}
       </select>
 
-      {/* Option editor toggle */}
-      <button
-        type="button"
-        onClick={() => setShowEditor(s => !s)}
-        className="self-start text-caption text-text-tertiary hover:text-text-secondary transition-colors mt-1"
-      >
-        {showEditor ? "옵션 편집 닫기" : "옵션 편집"}
-      </button>
+      {/* Option editor toggle — 커스텀 블록에만 붙는다(FRT-322) */}
+      {allowOptionEdit && (
+        <button
+          type="button"
+          onClick={() => setShowEditor(s => !s)}
+          className="self-start text-caption text-text-tertiary hover:text-text-secondary transition-colors mt-1"
+        >
+          {showEditor ? "옵션 편집 닫기" : "옵션 편집"}
+        </button>
+      )}
 
-      {showEditor && (
+      {allowOptionEdit && showEditor && (
         <div className="border border-border rounded-lg p-3 bg-surface-secondary">
           <div className="flex flex-col gap-1.5">
             {options.map((opt, idx) => (

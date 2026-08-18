@@ -250,6 +250,10 @@ export default function BlockList({
       // ⚠️ 입력 칸을 잠그는 것만으로는 부족하다 — 이 연필은 그 칸 **바깥**에 있어서
       // 그대로 두면 모르는 값 위에 설정 모달이 열리고, 확인 한 번이 보존해 둔 값을 덮는다.
       allowEdit={editEnabled && !isUnrenderableBlock(block)}
+      // 블록 **안**의 인라인 옵션 편집도 같은 문을 쓴다(FRT-322) — 커스텀 블록만 열리고,
+      // 템플릿이 소유한 확정본 선택지는 고칠 수 없다. 연필과 같은 술어라 두 편집 경로가
+      // 한쪽만 열린 채 남지 않는다.
+      allowOptionEdit={editEnabled && !isUnrenderableBlock(block)}
       onChange={handleBlockChange}
       onHide={onHide && canHideBlock(block) ? () => onHide(block) : undefined}
       onDelete={() => handleDeleteBlock(block.id)}
@@ -305,6 +309,7 @@ function SortableBlockItem({
   allowReorder,
   allowDelete,
   allowEdit,
+  allowOptionEdit,
   onChange,
   onHide,
   onDelete,
@@ -315,6 +320,7 @@ function SortableBlockItem({
   allowReorder: boolean
   allowDelete: boolean
   allowEdit: boolean
+  allowOptionEdit: boolean
   onChange: (blockId: string, value: BlockValue) => void
   onHide?: () => void
   onDelete: () => void
@@ -370,6 +376,7 @@ function SortableBlockItem({
           onChange={onChange}
           hideSlot={!!onHide}
           onBusyChange={setUploading}
+          allowOptionEdit={allowOptionEdit}
         />
         {onHide && !uploading && (
           <button
