@@ -61,8 +61,27 @@ npx vitest run lib/analytics/client.test.ts components/analytics/InternalUserTag
 
 ## 알려진 한계
 
-- **로그인 전 익명 이벤트는 걸러지지 않는다.** 해당하는 건 `signup_method_selected` 와
-  가입 직후의 `signup_completed` 뿐이다(`$pageview` 는 FRT-18 에서 봉인돼 애초에 안 쌓인다).
+- **식별 전에 발화하는 이벤트는 두 겹 어디에도 안 걸린다.** 해당하는 건 `signup_method_selected`,
+  `signup_completed`, `onboarding_completed` 세 가지다. 앞의 둘뿐 아니라 `onboarding_completed`
+  까지인 이유는, 가입 플로우가 끝까지 `(auth)` 안에서 돌고 `AuthProvider` 는 가입 *전에* 이미
+  `/auth/me` 를 비인증으로 확정해 두었기 때문이다 — 인증 상태가 갱신되는 건 온보딩 성공 뒤의
+  하드 내비게이션(`window.location.assign("/dashboard")`)이고, 이벤트는 그 **직전**에 나간다.
+  그래서 identify 도 admin 판정도 아직 없고, distinct_id 는 익명 UUID 라 ② 필터로도 못 걷는다.
+  (`$pageview` 는 FRT-18 에서 봉인돼 애초에 안 쌓인다.)
+  **감수하는 이유**: 이 셋은 계정당 평생 1회뿐이고 팀원은 이미 전원 가입을 마쳤다.
+  이걸 막으려면 가입 임계 경로에 인증 재조회 + `/api/admin/status` 왕복을 끼워 넣어야 하는데,
+  얻는 것(신규 팀원 1명당 이벤트 3건)에 비해 건드리는 곳이 너무 크다.
+- **표식이 붙기 전에 나간 이벤트는 ①이 아니라 ②가 걷는다.** `/api/admin/status` 는 왕복이라,
+  팀원의 **첫** 세션에서 로드 직후 발화하는 이벤트(예: `archive_entry_started`)는 표식보다 먼저
+  인제스트된다. person-on-events 라 나중에 소급되지 않는다. 다만 재방문 사용자는 distinct_id 가
+  localStorage 에 남아 있어 이 이벤트들도 **올바른 해시로** 들어가므로 ② 필터가 그대로 걷어낸다.
+  → 두 겹으로 설계한 이유가 이것이다. ① 하나만 믿으면 이 구간이 조용히 샌다.
+- **`ADMIN_EMAILS` 에서 빠져도 이미 붙은 표식은 자동으로 안 떨어진다.** person 속성은 서버 쪽에
+  남고 `resetUser()` 나 새로고침으로는 지워지지 않는다 — 퇴사자의 이후 활동이 계속 제외된다.
+  코드로 지우지 않는 이유는 `useIsAdmin()` 이 **로딩·실패·비인증을 모두 `false`** 로 접기 때문이다
+  (fail-close). "확정된 false" 를 구분하지 않은 채 해제를 걸면 판정 요청이 한 번 실패한 진짜
+  팀원의 표식이 지워진다. 지울 일이 생기면 **PostHog 콘솔에서 그 person 의 속성을 직접 지운다**
+  (해제 대상이 팀원 이탈뿐이라 수동으로 충분하다).
 - **팀원이 개인 이메일로 새 계정을 만들어 테스트하면 안 걸린다.** 그 계정도
   `ADMIN_EMAILS` 에 넣거나, 유저테스트 리허설은 별도 계정 없이 데모 모드(`/demo`)로 돈다
   (데모 모드는 `isDemoMode()` 로 이미 계측에서 통째 제외된다).

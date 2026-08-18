@@ -17,8 +17,12 @@ import { useIsAdmin } from "@/hooks/useIsAdmin";
  * boolean 만 본다 — 운영자 이메일 목록은 번들에 실리지 않는다(lib/auth/admin.ts 의 계약).
  * 사람이 늘면 코드가 아니라 그 env 만 고치면 된다.
  *
- * RootLayout(AuthProvider 안)에 마운트한다. `(main)` 레이아웃이 아니라 루트인 이유는 가입 직후
- * `signup_completed` 가 `(auth)` 경로에서 발화하기 때문이다 — 거기서도 표식이 붙어 있어야 한다.
+ * RootLayout(AuthProvider 안)에 마운트한다. 루트에 둔다고 `(auth)` 구간이 덮이지는 **않는다** —
+ * 로그인·가입·소셜 콜백은 전부 하드 내비게이션으로 `(main)` 에 들어가므로 `(auth)` 안에서
+ * `isAuthenticated` 가 true 가 되는 순간이 없고, 그래서 `signup_completed`·`onboarding_completed`
+ * 는 표식 없이 나간다(계정당 1회뿐이라 감수한다 — docs/analytics-internal-user-exclusion.md 의
+ * '알려진 한계'). 그럼에도 루트에 두는 것은 인증 진입점이 늘어도 마운트 위치를 다시 따지지 않기
+ * 위해서다. `(auth)` 에서는 훅이 fail-close(false)라 요청조차 나가지 않아 비용이 없다.
  *
  * GNB 도 같은 훅으로 admin 진입점 노출을 판정하므로 `(main)` 경로에서는 `/api/admin/status` 가
  * 두 번 나간다. 사용자별 판정이라 캐시할 수 없고(force-dynamic), 페이지 로드당 1회 추가라
