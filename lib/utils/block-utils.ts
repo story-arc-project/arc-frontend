@@ -7,6 +7,7 @@ import type {
   CellValue,
   FileCellValue,
   ProjectLinkConfig,
+  QuickPickPresetId,
   RowArtifact,
   SectionCategory,
 } from '@/types/archive'
@@ -112,8 +113,20 @@ export function createBlock(
   }
 }
 
-export function createTextField(label: string, opts?: { required?: boolean; placeholder?: string; guide?: string }): Block {
-  return createBlock('text', label, opts)
+/**
+ * '＋ 빠른 선택' 픽커 opt-in 을 얹는다 (FRT-130). 저장 shape 은 건드리지 않는다 —
+ * `quickPick` 은 템플릿 정의에만 사는 렌더 힌트다.
+ * 끈 블록에 키를 남기지 않는다 — 템플릿 스냅샷 비교(toEqual)에 잡음이 된다(mood-tag 와 같은 규약).
+ */
+function withQuickPick(block: Block, preset: QuickPickPresetId | undefined): Block {
+  return preset ? { ...block, quickPick: preset } : block
+}
+
+export function createTextField(
+  label: string,
+  opts?: { required?: boolean; placeholder?: string; guide?: string; quickPick?: QuickPickPresetId },
+): Block {
+  return withQuickPick(createBlock('text', label, opts), opts?.quickPick)
 }
 
 export function createTextareaField(label: string, opts?: { required?: boolean; placeholder?: string; guide?: string }): Block {
@@ -178,8 +191,11 @@ export function createBinaryChoiceField(
   return { ...createSelectField(label, options, opts), variant: 'binary-choice' }
 }
 
-export function createTagsField(label: string, opts?: { required?: boolean; guide?: string }): Block {
-  return createBlock('tags', label, opts)
+export function createTagsField(
+  label: string,
+  opts?: { required?: boolean; guide?: string; quickPick?: QuickPickPresetId },
+): Block {
+  return withQuickPick(createBlock('tags', label, opts), opts?.quickPick)
 }
 
 export function createLinkField(label: string, opts?: { required?: boolean; placeholder?: string; guide?: string }): Block {

@@ -44,6 +44,36 @@ export const WithGuide: Story = {
   },
 }
 
+/**
+ * 인턴 ① '산업 / 회사 종류' (FRT-130). 평상시엔 `＋ 빠른 선택` 버튼 하나만 보이고,
+ * 누르면 6 카테고리 그룹이 펼쳐진다 — 고른 항목은 위쪽 오렌지 뱃지로 쌓인다(다중 선택).
+ */
+export const WithQuickPick: Story = {
+  args: {
+    block: {
+      ...emptyTagsBlock,
+      label: "산업 / 회사 종류",
+      guide: "빠른 선택에서 고르거나 직접 입력해주세요. 여러 개 고를 수 있어요.",
+      quickPick: "industry",
+    },
+    readOnly: false,
+  },
+}
+
+/** 이미 고른 값이 있는 상태 — 픽커를 열면 그 항목이 눌린 칩으로 보인다. */
+export const QuickPickWithSelection: Story = {
+  args: {
+    block: {
+      ...emptyTagsBlock,
+      label: "산업 / 회사 종류",
+      guide: "빠른 선택에서 고르거나 직접 입력해주세요. 여러 개 고를 수 있어요.",
+      quickPick: "industry",
+      value: { type: "tags", tags: ["스타트업", "핀테크"] },
+    },
+    readOnly: false,
+  },
+}
+
 export const ReadOnly: Story = {
   args: {
     block: tagsBlock,

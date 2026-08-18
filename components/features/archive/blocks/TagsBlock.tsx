@@ -4,6 +4,8 @@ import { useId, useState } from "react"
 import { X } from "lucide-react"
 import type { Block, TagsBlockValue } from "@/types/archive"
 import { onEnterCommit } from "@/lib/utils/keyboard"
+import { getQuickPickPreset } from "@/lib/constants/quick-pick-presets"
+import QuickPickPanel from "./QuickPickPanel"
 
 interface TagsBlockProps {
   block: Block
@@ -15,6 +17,12 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
   const val = block.value as TagsBlockValue
   const [input, setInput] = useState("")
   const inputId = useId()
+  /**
+   * '＋ 빠른 선택' 픽커(FRT-130). 다중 선택 프리셋일 때만 그린다 — 모르는 id 나 단일 선택
+   * 프리셋이면 픽커 없이 기존 자유 입력만 남아, 어느 쪽이든 태그를 못 넣게 되지는 않는다.
+   */
+  const preset = getQuickPickPreset(block.quickPick)
+  const quickPick = preset?.mode === "multi" ? preset : null
 
   function addTag() {
     const trimmed = input.trim()
@@ -25,6 +33,12 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
 
   function removeTag(tag: string) {
     onChange({ type: "tags", tags: val.tags.filter(t => t !== tag) })
+  }
+
+  /** 픽커에서 고른 항목은 토글이다 — 이미 있으면 빼고, 없으면 뒤에 붙인다(뱃지 × 와 같은 결과). */
+  function toggleTag(tag: string) {
+    if (val.tags.includes(tag)) removeTag(tag)
+    else onChange({ type: "tags", tags: [...val.tags, tag] })
   }
 
   if (readOnly) {
@@ -70,6 +84,9 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
             </span>
           ))}
         </div>
+      )}
+      {quickPick && (
+        <QuickPickPanel preset={quickPick} selected={val.tags} onPick={toggleTag} />
       )}
       <div className="flex gap-2">
         <input
