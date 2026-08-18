@@ -61,8 +61,14 @@ export default function SingleSelectBlock({
   /**
    * 저장값이 프리셋 밖이면 사용자가 '기타'로 적어 넣은 값이다 — 목록 끝에 붙이는 대신
    * '기타' 모드로 복원한다. 같은 값이 목록과 입력칸에 두 번 나오면 어느 쪽이 진짜인지 모른다.
+   *
+   * 저장값이 문자 그대로 "기타"인 경우도 같이 복원한다. 이 기능 전에는 '기타'를 골라도 아무
+   * 일이 없었으므로 그 사람들의 저장값이 바로 이것인데, 평범한 프리셋 선택으로 보면 select 가
+   * **이미 '기타'에 있어 다시 골라도 change 가 안 뜬다** — 다른 값을 거쳐 돌아오지 않는 한
+   * 입력칸을 열 방법이 0이다. 이 PR 이 구제하려는 사람들이 정확히 그들이다.
    */
-  const savedIsOther = hasOther && !!val.selected && !base.includes(val.selected)
+  const savedIsOther = hasOther && !!val.selected
+    && (!base.includes(val.selected) || val.selected === OTHER_OPTION_LABEL)
   const [otherOpen, setOtherOpen] = useState(false)
   const otherMode = hasOther && (savedIsOther || otherOpen)
   const options = val.selected && !base.includes(val.selected) && !savedIsOther
@@ -182,7 +188,11 @@ export default function SingleSelectBlock({
           ].join(" ")}
           placeholder="직접 입력해주세요"
           value={val.selected}
-          onChange={e => onChange({ ...val, selected: e.target.value })}
+          onChange={e => {
+            // 한 번 손댄 칸은 세션 동안 열어 둔다 — 비웠다고 닫으면 타이핑 도중 칸이 사라진다.
+            setOtherOpen(true)
+            onChange({ ...val, selected: e.target.value })
+          }}
           required={block.required}
         />
       )}

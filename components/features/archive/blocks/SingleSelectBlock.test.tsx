@@ -237,6 +237,64 @@ describe("FRT-322 '기타' 직접 입력", () => {
     expect((screen.getByRole("combobox") as HTMLSelectElement).required).toBe(false)
   })
 
+  /**
+   * 이 PR 전에는 '기타'를 골라도 아무 일이 없었다 — 그래서 그 사람들의 저장값은 문자 그대로
+   * "기타"다. 이 값을 평범한 프리셋 선택으로 보면 입력칸이 안 열리는데, select 가 이미 '기타'에
+   * 있어 **다시 골라도 change 가 안 뜬다** → 다른 값을 거쳐 돌아오지 않는 한 열 방법이 0이다.
+   */
+  it("저장값이 문자 그대로 '기타'여도 입력칸이 열린 채로 그려진다", () => {
+    render(<SingleSelectBlock block={makeOtherBlock("기타")} onChange={() => {}} />)
+
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("기타")
+    // 보이는 값과 저장된 값이 어긋나면 빈 칸인 줄 알고 저장해 "기타"가 조용히 남는다.
+    expect((screen.getByLabelText("기타 직접 입력") as HTMLInputElement).value).toBe("기타")
+  })
+
+  it("레거시 '기타' 저장값을 그 자리에서 실제 값으로 바꿔 쓸 수 있다", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    function OtherHarness() {
+      const [block, setBlock] = useState(() => makeOtherBlock("기타"))
+      return (
+        <SingleSelectBlock
+          block={block}
+          onChange={value => {
+            onChange(value)
+            setBlock(prev => ({ ...prev, value }))
+          }}
+        />
+      )
+    }
+    render(<OtherHarness />)
+
+    await user.clear(screen.getByLabelText("기타 직접 입력"))
+    await user.type(screen.getByLabelText("기타 직접 입력"), "항공")
+
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ selected: "항공" }))
+  })
+
+  /**
+   * 입력칸을 비우면 selected 가 "" 가 되는데, 그것만으로 모드를 닫으면 **타이핑 도중에 칸이
+   * 사라진다**. 한 번 손댄 칸은 그 세션 동안 열어 둔다.
+   */
+  it("입력칸을 비워도 칸이 사라지지 않는다", async () => {
+    const user = userEvent.setup()
+    function OtherHarness() {
+      const [block, setBlock] = useState(() => makeOtherBlock("항공"))
+      return (
+        <SingleSelectBlock
+          block={block}
+          onChange={value => setBlock(prev => ({ ...prev, value }))}
+        />
+      )
+    }
+    render(<OtherHarness />)
+
+    await user.clear(screen.getByLabelText("기타 직접 입력"))
+
+    expect(screen.getByLabelText("기타 직접 입력")).toBeDefined()
+  })
+
   it("allowOther 를 끄면 블록에 키를 남기지 않는다", () => {
     // 템플릿 스냅샷 비교(toEqual)에 잡음이 된다 — quickPick·allowCustomTag 와 같은 규약.
     expect("allowOther" in createSelectField("분야", OTHER_OPTIONS)).toBe(false)
