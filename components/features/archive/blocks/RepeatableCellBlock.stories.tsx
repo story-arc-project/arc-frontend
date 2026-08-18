@@ -4,6 +4,7 @@ import { useState } from "react"
 
 import type { Block, RepeatableCellBlockValue } from "@/types/archive"
 import RepeatableCellBlock from "./RepeatableCellBlock"
+import { longFileName } from "../__fixtures__/archive.fixtures"
 
 const meta: Meta<typeof RepeatableCellBlock> = {
   title: "Features/Archive/Blocks/RepeatableCellBlock",
@@ -315,6 +316,56 @@ export const FileColumnReadOnly: Story = {
     await expect(canvas.getByText("발표자료.pdf")).toBeInTheDocument()
     await expect(canvas.queryByRole("button", { name: /첨부 삭제/ })).not.toBeInTheDocument()
     await expect(await canvas.findByRole("link", { name: /다운로드/ })).toBeInTheDocument()
+  },
+}
+
+/**
+ * FRT-318: 셀의 `file` 열도 긴 파일명으로 부모 폭을 밀어내지 않는다.
+ *
+ * 파일 행 마크업은 블록 층위(`FileBlock`)와 표 층위(`FileCellInput`)가 같은 카드를 공유하므로,
+ * 한쪽만 재면 다른 쪽 회귀를 못 잡는다. 넘침은 레이아웃 결과라 실브라우저에서 폭으로 단언한다.
+ */
+export const FileColumnLongFileName: Story = {
+  decorators: [
+    Story => (
+      <div data-testid="frt318-cell-container" className="w-[545px]">
+        <Story />
+      </div>
+    ),
+  ],
+  args: {
+    block: {
+      ...fileBlock,
+      value: {
+        ...(fileBlock.value as RepeatableCellBlockValue),
+        rows: [
+          {
+            id: "r1",
+            cells: {
+              name: "학회 정기 세미나 발표",
+              output: {
+                type: "file",
+                fileId: "file-frt318-cell",
+                fileName: longFileName,
+                size: 45_000_000,
+              },
+            },
+          },
+        ],
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // 파일명만 기다리면 너무 이르다 — `getFileUrl` 전에는 '다운로드'(고정폭)가 없는 좁은
+    // 카드가 먼저 그려지고 이름은 두 상태에 다 있다. 가장 넓어지는 최종 상태를 재야 한다.
+    await canvas.findByRole("link", { name: `${longFileName} 다운로드` })
+
+    const container = canvasElement.querySelector<HTMLElement>(
+      '[data-testid="frt318-cell-container"]',
+    )
+    expect(container).not.toBeNull()
+    expect(container!.scrollWidth).toBeLessThanOrEqual(container!.clientWidth)
   },
 }
 
