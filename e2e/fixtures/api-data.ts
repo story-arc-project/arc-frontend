@@ -259,10 +259,32 @@ export function individualDetail(): ApiSuccessResponse<Record<string, unknown>> 
       briefSummary: "리더십과 기획 역량이 드러나는 경험.",
       deepAnalysis: {
         careerValue: "조직 운영 경험으로 협업 직무에 강점.",
-        strengths: ["리더십", "기획력"],
-        limitations: ["정량 성과 부족"],
-        applicableRoles: ["PM", "기획자"],
         marketValue: "신입 기준 평균 이상.",
+      },
+      // FRT-271: 아래 세 갈래는 백엔드가 두는 자리와 표기를 그대로 흉내 낸다 —
+      // applicable_roles 는 deep_analysis 밖 최상위, 강점은 item_strengths,
+      // 한계는 item_diagnosis 안이다. 픽스처가 프런트 타입을 따라가면 계약 회귀를 못 잡는다.
+      applicable_roles: ["PM", "기획자"],
+      item_strengths: {
+        has_genuine_strengths: true,
+        one_line_strength_verdict: "운영을 맡아 이탈률을 낮춘 것이 핵심이다.",
+        no_strength_reason: null,
+        summarized_strengths: ["온보딩 체계를 새로 세운 경험"],
+        strengths: [
+          {
+            id: 1,
+            category: "경험_깊이",
+            strength_level: "moderate",
+            title: "온보딩 설계",
+            analysis: "멘토링 프로그램을 신설해 신입 이탈을 줄였다.",
+            evidence: "이탈률 30% 감소",
+            career_impact: "조직을 굴러가게 만든 경험으로 읽힌다.",
+            leverage_action: "프로그램 운영 절차를 한 장으로 정리하라.",
+            showcase_example: null,
+          },
+        ],
+        strongest_asset: "이탈률을 30% 낮춘 온보딩 개선",
+        positioning_tip: "숫자를 먼저 말하고 과정을 뒤에 붙이세요.",
       },
       starFormat: {
         title: "동아리 운영",
@@ -273,6 +295,7 @@ export function individualDetail(): ApiSuccessResponse<Record<string, unknown>> 
       },
       itemDiagnosis: {
         oneLineVerdict: "근거가 비교적 충분한 경험.",
+        limitations: ["정량 성과 부족"],
         weaknesses: [],
         missingElements: ["정량 지표"],
         rewriteSuggestion: "성과를 수치로 보강하세요.",

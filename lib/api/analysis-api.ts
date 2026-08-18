@@ -11,6 +11,9 @@ import type {
   IndividualAnalysisResult,
   IndividualAnalysisResultBody,
   IndividualWeakness,
+  IndividualStrength,
+  IndividualStrengthLevel,
+  IndividualItemStrengths,
   IndividualSynergyRecommendation,
   IndividualStarFormat,
   IndividualActionPlan,
@@ -338,6 +341,23 @@ function asStrengthLevel(value: unknown): StrengthLevel {
     : "notable";
 }
 
+/**
+ * 개별분석의 강점 등급 판별기 (FRT-271).
+ *
+ * ⚠️ `asStrengthLevel` 과 **합치면 안 된다** — 개별분석의 어휘는 outstanding|notable|moderate 로
+ * 종합분석(outstanding|strong|notable)과 다르다. 합치면 `moderate` 가 모르는 값이 되어 조용히
+ * `notable` 로 한 단계 승격된다.
+ *
+ * 미상값은 가장 낮은 `moderate` 로 떨어뜨린다 — 백엔드 프롬프트의 "strength_level 인플레이션
+ * 금지"와 같은 방향이다. (약점의 `asWeaknessSeverity` 가 중간값으로 폴백하는 것과 대칭:
+ * 어느 쪽이든 사용자에게 유리하게 부풀리지 않는 쪽으로 떨어진다.)
+ */
+function asIndividualStrengthLevel(value: unknown): IndividualStrengthLevel {
+  return value === "outstanding" || value === "notable" || value === "moderate"
+    ? value
+    : "moderate";
+}
+
 function asSynergyPriority(value: unknown): SynergyPriority {
   return value === "high" || value === "medium" || value === "low" ? value : "medium";
 }
@@ -362,6 +382,38 @@ function mapIndividualWeakness(dto: unknown, index: number): IndividualWeakness 
     impact: asString(r.impact),
     priorityAction: asString(r.priorityAction ?? r.priority_action),
     improvementExample: asString(r.improvementExample ?? r.improvement_example),
+  };
+}
+
+// ── 개별분석 강점 (item_strengths, FRT-271) ─────────────────
+// 종합분석 Strength 와 필드명이 다르다: diagnosis→analysis, impact→career_impact,
+// level→strength_level, 그리고 showcase_example 이 추가로 있다. 매퍼를 공유하지 않는 이유다.
+function mapIndividualStrength(dto: unknown, index: number): IndividualStrength {
+  const r = asRecord(dto);
+  return {
+    id: asIdString(r.id, `s-${index}`),
+    category: asString(r.category),
+    level: asIndividualStrengthLevel(r.strengthLevel ?? r.strength_level),
+    title: asString(r.title),
+    analysis: asString(r.analysis),
+    evidence: asString(r.evidence),
+    careerImpact: asString(r.careerImpact ?? r.career_impact),
+    leverageAction: asString(r.leverageAction ?? r.leverage_action),
+    showcaseExample: asString(r.showcaseExample ?? r.showcase_example),
+  };
+}
+
+/** item_strengths 부재(구 레코드·진행중)에도 빈 구조를 돌려 화면이 안전히 건너뛴다. */
+function mapItemStrengths(dto: unknown): IndividualItemStrengths {
+  const r = asRecord(dto);
+  return {
+    hasGenuineStrengths: asBoolean(r.hasGenuineStrengths ?? r.has_genuine_strengths),
+    oneLineVerdict: asString(r.oneLineStrengthVerdict ?? r.one_line_strength_verdict),
+    noStrengthReason: asString(r.noStrengthReason ?? r.no_strength_reason),
+    summarizedStrengths: asStringArray(r.summarizedStrengths ?? r.summarized_strengths),
+    strengths: asArray(r.strengths).map((s, i) => mapIndividualStrength(s, i)),
+    strongestAsset: asString(r.strongestAsset ?? r.strongest_asset),
+    positioningTip: asString(r.positioningTip ?? r.positioning_tip),
   };
 }
 
@@ -570,6 +622,14 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
   const deep = asRecord(body.deepAnalysis ?? body.deep_analysis);
   const diagnosis = asRecord(body.itemDiagnosis ?? body.item_diagnosis);
 
+  // 백엔드는 applicable_roles 를 deep_analysis 밖 **최상위**에 둔다(FRT-271). 다만 프롬프트의
+  // 출력 스키마에서 이 한 줄만 들여쓰기가 어긋나 있어(deep_analysis 를 닫은 뒤인데 4칸) 모델이
+  // deep_analysis 안에 넣어 보내는 응답도 실재할 수 있다 — 두 자리를 모두 본다.
+  // `??` 체인이 아니라 "값이 있는 쪽"을 고르는 이유: 최상위가 빈 배열로 명시돼 오면
+  // `??` 는 거기서 멈춰 중첩에 담긴 값을 가려버린다.
+  const rolesAtRoot = asStringArray(body.applicableRoles ?? body.applicable_roles);
+  const rolesInDeep = asStringArray(deep.applicableRoles ?? deep.applicable_roles);
+
   const result: IndividualAnalysisResultBody = {
     status: asString(body.status ?? r.status),
     itemName: asString(body.itemName ?? body.item_name),
@@ -577,14 +637,15 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
     briefSummary: asString(body.briefSummary ?? body.brief_summary),
     deepAnalysis: {
       careerValue: asString(deep.careerValue ?? deep.career_value),
-      strengths: asStringArray(deep.strengths),
-      limitations: asStringArray(deep.limitations),
-      applicableRoles: asStringArray(deep.applicableRoles ?? deep.applicable_roles),
+      applicableRoles: rolesAtRoot.length > 0 ? rolesAtRoot : rolesInDeep,
       marketValue: asString(deep.marketValue ?? deep.market_value),
     },
     starFormat: mapStarFormat(body.starFormat ?? body.star_format),
+    itemStrengths: mapItemStrengths(body.itemStrengths ?? body.item_strengths),
     itemDiagnosis: {
       oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
+      // 백엔드는 limitations 를 deep_analysis 가 아니라 item_diagnosis 안에 둔다(FRT-271).
+      limitations: asStringArray(diagnosis.limitations),
       weaknesses: asArray(diagnosis.weaknesses).map((w, i) => mapIndividualWeakness(w, i)),
       missingElements: asStringArray(diagnosis.missingElements ?? diagnosis.missing_elements),
       rewriteSuggestion: asString(diagnosis.rewriteSuggestion ?? diagnosis.rewrite_suggestion),

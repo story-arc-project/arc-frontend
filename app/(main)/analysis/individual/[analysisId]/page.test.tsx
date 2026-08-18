@@ -41,14 +41,22 @@ function emptyBody(): IndividualAnalysisResult["result"] {
     briefSummary: "",
     deepAnalysis: {
       careerValue: "",
-      strengths: [],
-      limitations: [],
       applicableRoles: [],
       marketValue: "",
     },
     starFormat: { title: "", situation: "", task: "", action: "", result: "" },
+    itemStrengths: {
+      hasGenuineStrengths: false,
+      oneLineVerdict: "",
+      noStrengthReason: "",
+      summarizedStrengths: [],
+      strengths: [],
+      strongestAsset: "",
+      positioningTip: "",
+    },
     itemDiagnosis: {
       oneLineVerdict: "",
+      limitations: [],
       weaknesses: [],
       missingElements: [],
       rewriteSuggestion: "",
@@ -112,5 +120,155 @@ describe("개별 분석 상세 — 본문 부재 화면 (FRT-134)", () => {
     await waitFor(() =>
       expect(screen.getByText("분석 결과를 불러오지 못했습니다.")).toBeInTheDocument(),
     );
+  });
+});
+
+// FRT-271: 백엔드가 보내던 값들이 화면에 도달하는지 — 매퍼가 읽어도 그리지 않으면 같은 증상이다.
+describe("개별 분석 상세 — 강점·적합 직무·한계 (FRT-271)", () => {
+  const strengths = (): IndividualAnalysisResult["result"]["itemStrengths"] => ({
+    hasGenuineStrengths: true,
+    oneLineVerdict: "전 구간을 혼자 이어본 것이 이 항목의 핵심이다.",
+    noStrengthReason: "",
+    summarizedStrengths: ["수집~시각화 단독 구현"],
+    strengths: [
+      {
+        id: "1",
+        category: "전문성_희소성",
+        level: "moderate",
+        title: "단독 파이프라인",
+        analysis: "수집·전처리·모델링을 한 사람이 이었다.",
+        evidence: "크롤러부터 대시보드까지 직접 구현",
+        careerImpact: "전 구간 이해도를 증명한다.",
+        leverageAction: "구조도를 한 장으로 정리하라.",
+        showcaseExample: "Before: 감성 분석을 했다 → After: 일 1만건 단독 구축",
+      },
+    ],
+    strongestAsset: "전 구간을 혼자 이어본 경험",
+    positioningTip: "'왜 그 설계였나'로 이야기를 열어라.",
+  });
+
+  it("강점 섹션을 그린다 — 회귀 시 이 영역이 통째로 없었다", async () => {
+    getResult.mockResolvedValue(
+      result({ result: { ...emptyBody(), itemStrengths: strengths() } }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    expect(await screen.findByRole("heading", { name: "강점" })).toBeInTheDocument();
+    expect(
+      screen.getByText("전 구간을 혼자 이어본 것이 이 항목의 핵심이다."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("단독 파이프라인")).toBeInTheDocument();
+    // 백엔드가 만든 7개 필드를 버리지 않는다.
+    expect(screen.getByText("수집~시각화 단독 구현")).toBeInTheDocument();
+    expect(screen.getByText("수집·전처리·모델링을 한 사람이 이었다.")).toBeInTheDocument();
+    expect(screen.getByText("크롤러부터 대시보드까지 직접 구현")).toBeInTheDocument();
+    expect(screen.getByText("전 구간 이해도를 증명한다.")).toBeInTheDocument();
+    expect(screen.getByText("구조도를 한 장으로 정리하라.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Before: 감성 분석을 했다 → After: 일 1만건 단독 구축"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("전 구간을 혼자 이어본 경험")).toBeInTheDocument();
+    expect(screen.getByText("'왜 그 설계였나'로 이야기를 열어라.")).toBeInTheDocument();
+    // 개별분석 전용 등급 라벨 — 종합분석 표를 쓰면 moderate 에서 터지거나 오라벨된다.
+    expect(screen.getByText("무난")).toBeInTheDocument();
+  });
+
+  it("강점이 없으면 사유만 알린다 — 강점 카드 자리를 비워두지 않는다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          itemStrengths: {
+            ...strengths(),
+            hasGenuineStrengths: false,
+            strengths: [],
+            summarizedStrengths: [],
+            oneLineVerdict: "",
+            strongestAsset: "",
+            positioningTip: "",
+            noStrengthReason: "기간·역할·성과가 모두 비어 강점을 판단할 수 없다.",
+          },
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    expect(await screen.findByRole("heading", { name: "강점" })).toBeInTheDocument();
+    expect(
+      screen.getByText("기간·역할·성과가 모두 비어 강점을 판단할 수 없다."),
+    ).toBeInTheDocument();
+  });
+
+  it("강점이 통째로 비면 섹션 자체를 그리지 않는다", async () => {
+    getResult.mockResolvedValue(
+      result({ result: { ...emptyBody(), briefSummary: "요약" } }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    await screen.findByText("요약");
+    expect(screen.queryByRole("heading", { name: "강점" })).not.toBeInTheDocument();
+  });
+
+  it("적합한 직무를 그린다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          deepAnalysis: {
+            careerValue: "",
+            marketValue: "",
+            applicableRoles: ["데이터 분석가", "ML 엔지니어"],
+          },
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    expect(await screen.findByText("적합한 직무")).toBeInTheDocument();
+    expect(screen.getByText("데이터 분석가")).toBeInTheDocument();
+    expect(screen.getByText("ML 엔지니어")).toBeInTheDocument();
+  });
+
+  it("한계를 진단 결과 안에 그린다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          itemDiagnosis: {
+            ...emptyBody().itemDiagnosis,
+            limitations: ["기간이 3주로 짧다", "팀 규모가 적혀 있지 않다"],
+          },
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    expect(await screen.findByText("한계")).toBeInTheDocument();
+    expect(screen.getByText("기간이 3주로 짧다")).toBeInTheDocument();
+    expect(screen.getByText("팀 규모가 적혀 있지 않다")).toBeInTheDocument();
+  });
+
+  // 백엔드 프롬프트의 앵커링 저항 원칙(강점 → 약점)과 화면 순서를 맞춘다.
+  it("강점을 진단 결과보다 먼저 놓는다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          itemStrengths: strengths(),
+          itemDiagnosis: {
+            ...emptyBody().itemDiagnosis,
+            oneLineVerdict: "서술이 얇다.",
+          },
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    const strengthHeading = await screen.findByRole("heading", { name: "강점" });
+    const diagnosisHeading = screen.getByRole("heading", { name: "진단 결과" });
+    expect(
+      strengthHeading.compareDocumentPosition(diagnosisHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });

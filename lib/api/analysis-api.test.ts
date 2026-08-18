@@ -2053,3 +2053,223 @@ describe("스냅샷 배열의 원소 타입 검증 (FRT-215)", () => {
     ])
   })
 })
+
+// ─── FRT-271 ────────────────────────────────────────────────
+// 백엔드(arc-backend `ai_analyst/src/ai/individual.py`)가 실제로 보내는 값 중 세 갈래가
+// 화면에 도달하지 못했다. 여기서 고정하는 것은 "매퍼가 백엔드가 두는 자리에서 읽는가"다.
+// 응답 본문은 analyzer 가 만든 JSON 이 DB(JSONB)를 거쳐 무변형 통과한 것이라, 프롬프트의
+// 출력 스키마가 곧 프런트가 받는 모양이다(app/src/api/analysis.py — result: dict[str, Any]).
+describe("개별분석 — 백엔드가 보내는데 화면에 안 닿던 값들 (FRT-271)", () => {
+  const bodyWith = (extra: Record<string, unknown>) => ({
+    item_name: "뉴스 감성 분석 프로젝트",
+    item_type: "프로젝트",
+    brief_summary: "",
+    deep_analysis: { career_value: "", market_value: "" },
+    star_format: {},
+    item_diagnosis: {},
+    synergy_recommendations: [],
+    action_plan: {},
+    missing_info_warning: "",
+    ...extra,
+  })
+
+  const fetchDetail = async (extra: Record<string, unknown>) => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "ind-1", status: "completed", experience_id: "e1", result: bodyWith(extra) }),
+    )
+    const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+    return res
+  }
+
+  describe("applicable_roles 는 deep_analysis 밖 최상위에 온다", () => {
+    it("최상위 snake_case 를 읽는다 — 회귀 시 항상 빈 배열이었다", async () => {
+      const res = await fetchDetail({ applicable_roles: ["데이터 분석가", "ML 엔지니어"] })
+      expect(res.result.deepAnalysis.applicableRoles).toEqual(["데이터 분석가", "ML 엔지니어"])
+    })
+
+    it("최상위 camelCase 도 읽는다", async () => {
+      const res = await fetchDetail({ applicableRoles: ["PM"] })
+      expect(res.result.deepAnalysis.applicableRoles).toEqual(["PM"])
+    })
+
+    // 백엔드 프롬프트에서 이 한 줄만 들여쓰기가 어긋나 있어(individual.py, deep_analysis 를
+    // 닫은 뒤인데 4칸 들여쓰기) 모델이 deep_analysis 안에 넣어 보내는 경우가 실재할 수 있다.
+    // 기존 경로를 폴백으로 남긴다.
+    it("구 경로(deep_analysis 안)에 와도 계속 읽는다", async () => {
+      const res = await fetchDetail({
+        deep_analysis: { career_value: "", market_value: "", applicable_roles: ["기획자"] },
+      })
+      expect(res.result.deepAnalysis.applicableRoles).toEqual(["기획자"])
+    })
+
+    // `??` 만 쓰면 최상위가 빈 배열로 "명시돼" 올 때 중첩에 담긴 값이 가려진다.
+    it("최상위가 빈 배열이면 중첩에 담긴 값을 살린다", async () => {
+      const res = await fetchDetail({
+        applicable_roles: [],
+        deep_analysis: { career_value: "", market_value: "", applicable_roles: ["리서처"] },
+      })
+      expect(res.result.deepAnalysis.applicableRoles).toEqual(["리서처"])
+    })
+
+    it("어느 쪽에도 없으면 빈 배열이다", async () => {
+      const res = await fetchDetail({})
+      expect(res.result.deepAnalysis.applicableRoles).toEqual([])
+    })
+  })
+
+  describe("item_strengths 를 읽는다", () => {
+    const itemStrengths = {
+      has_genuine_strengths: true,
+      one_line_strength_verdict: "데이터 파이프라인을 혼자 끝까지 세운 경험이 핵심이다.",
+      no_strength_reason: null,
+      summarized_strengths: ["수집~시각화 전 구간 단독 구현", "정량 성과 명시"],
+      strengths: [
+        {
+          id: 1,
+          category: "전문성_희소성",
+          strength_level: "outstanding",
+          title: "단독 파이프라인",
+          analysis: "수집·전처리·모델링·시각화를 한 사람이 이었다.",
+          evidence: "크롤러부터 대시보드까지 직접 구현했다고 기록돼 있다.",
+          career_impact: "주니어 단계에서 보기 드문 전 구간 이해도를 증명한다.",
+          leverage_action: "파이프라인 구조도를 한 장으로 정리해 포트폴리오 첫 장에 배치하라.",
+          showcase_example: "Before: 감성 분석을 했다 → After: 일 1만건 수집~대시보드까지 단독 구축",
+        },
+        {
+          id: 2,
+          category: "성과_입증",
+          strength_level: "moderate",
+          title: "정량 성과",
+          analysis: "정확도 수치가 남아 있다.",
+          evidence: "F1 0.82",
+          career_impact: "설득력을 높인다.",
+          leverage_action: "비교 기준선을 함께 적어라.",
+          showcase_example: null,
+        },
+      ],
+      strongest_asset: "전 구간을 혼자 이어본 경험",
+      positioning_tip: "면접에서 '왜 그 설계를 골랐나'로 이야기를 열어라.",
+    }
+
+    it("최상위 item_strengths 전체를 매핑한다 — 회귀 시 섹션이 통째로 없었다", async () => {
+      const res = await fetchDetail({ item_strengths: itemStrengths })
+      const s = res.result.itemStrengths
+
+      expect(s.hasGenuineStrengths).toBe(true)
+      expect(s.oneLineVerdict).toBe("데이터 파이프라인을 혼자 끝까지 세운 경험이 핵심이다.")
+      expect(s.summarizedStrengths).toEqual(["수집~시각화 전 구간 단독 구현", "정량 성과 명시"])
+      expect(s.strongestAsset).toBe("전 구간을 혼자 이어본 경험")
+      expect(s.positioningTip).toBe("면접에서 '왜 그 설계를 골랐나'로 이야기를 열어라.")
+      expect(s.strengths).toHaveLength(2)
+      expect(s.strengths[0]).toMatchObject({
+        id: "1",
+        category: "전문성_희소성",
+        level: "outstanding",
+        title: "단독 파이프라인",
+        analysis: "수집·전처리·모델링·시각화를 한 사람이 이었다.",
+        evidence: "크롤러부터 대시보드까지 직접 구현했다고 기록돼 있다.",
+        careerImpact: "주니어 단계에서 보기 드문 전 구간 이해도를 증명한다.",
+        leverageAction: "파이프라인 구조도를 한 장으로 정리해 포트폴리오 첫 장에 배치하라.",
+      })
+      expect(s.strengths[0].showcaseExample).toContain("After:")
+      // null 은 빈 문자열로 떨어져 화면이 조용히 건너뛴다.
+      expect(s.strengths[1].showcaseExample).toBe("")
+      expect(s.noStrengthReason).toBe("")
+    })
+
+    // ⚠️ 종합분석의 level 어휘는 outstanding|strong|notable, 개별은 outstanding|notable|moderate 다.
+    // 한 판별기로 합치면 moderate 가 "모르는 값"이 되어 조용히 notable 로 승격된다.
+    it("moderate 를 notable 로 승격하지 않는다", async () => {
+      const res = await fetchDetail({
+        item_strengths: { strengths: [{ id: 1, strength_level: "moderate" }] },
+      })
+      expect(res.result.itemStrengths.strengths[0].level).toBe("moderate")
+    })
+
+    it("개별분석에 없는 어휘(strong)·미상값은 가장 낮은 등급으로 떨어뜨린다 — 강점 인플레이션 금지", async () => {
+      const res = await fetchDetail({
+        item_strengths: {
+          strengths: [{ id: 1, strength_level: "strong" }, { id: 2, strength_level: null }],
+        },
+      })
+      expect(res.result.itemStrengths.strengths[0].level).toBe("moderate")
+      expect(res.result.itemStrengths.strengths[1].level).toBe("moderate")
+    })
+
+    it("강점 없음 응답은 사유를 살려 내려보낸다", async () => {
+      const res = await fetchDetail({
+        item_strengths: {
+          has_genuine_strengths: false,
+          strengths: [],
+          no_strength_reason: "기간·역할·성과가 모두 비어 강점을 판단할 수 없다.",
+          one_line_strength_verdict: null,
+        },
+      })
+      const s = res.result.itemStrengths
+      expect(s.hasGenuineStrengths).toBe(false)
+      expect(s.strengths).toEqual([])
+      expect(s.noStrengthReason).toBe("기간·역할·성과가 모두 비어 강점을 판단할 수 없다.")
+    })
+
+    it("item_strengths 부재(구 레코드)여도 빈 구조를 돌려 화면이 안전히 건너뛴다", async () => {
+      const res = await fetchDetail({})
+      expect(res.result.itemStrengths.strengths).toEqual([])
+      expect(res.result.itemStrengths.hasGenuineStrengths).toBe(false)
+      expect(res.result.itemStrengths.oneLineVerdict).toBe("")
+    })
+
+    // has_genuine_strengths 는 boolean 이라 hasAnyContent 가 컨텐츠로 세지 않는다.
+    // 세기 시작하면 본문이 통째로 없어도 "본문 있음"이 된다(FRT-134 회귀).
+    it("강점 플래그만 true 인 빈 본문을 '본문 있음'으로 오판하지 않는다", async () => {
+      apiMock.get.mockResolvedValue(
+        envelope({
+          id: "ind-1",
+          status: "processing",
+          experience_id: "e1",
+          result: {
+            item_name: "",
+            item_type: "",
+            brief_summary: "",
+            deep_analysis: {},
+            star_format: {},
+            item_diagnosis: {},
+            item_strengths: { has_genuine_strengths: true, strengths: [] },
+            synergy_recommendations: [],
+            action_plan: {},
+            missing_info_warning: "",
+          },
+        }),
+      )
+      const res: IndividualAnalysisResult = await getIndividualAnalysisResult("ind-1")
+      expect(res.hasResultBody).toBe(false)
+    })
+
+    it("강점 서술에 섞여 온 원시 필드 표기도 정제된다 (FRT-316 과 같은 그물)", async () => {
+      const res = await fetchDetail({
+        item_strengths: {
+          summarized_strengths: ['tags: ["미술사", "소논문"]'],
+          strengths: [{ id: 1, evidence: 'tags: ["미술사", "소논문"]' }],
+        },
+      })
+      expect(res.result.itemStrengths.summarizedStrengths).toEqual(["태그: 미술사, 소논문"])
+      expect(res.result.itemStrengths.strengths[0].evidence).toBe("태그: 미술사, 소논문")
+    })
+  })
+
+  describe("limitations 는 item_diagnosis 안에 온다", () => {
+    it("item_diagnosis.limitations 를 읽는다 — 회귀 시 '한계' 블록이 늘 비었다", async () => {
+      const res = await fetchDetail({
+        item_diagnosis: { limitations: ["기간이 3주로 짧다", "팀 규모가 적혀 있지 않다"] },
+      })
+      expect(res.result.itemDiagnosis.limitations).toEqual([
+        "기간이 3주로 짧다",
+        "팀 규모가 적혀 있지 않다",
+      ])
+    })
+
+    it("부재 시 빈 배열이다", async () => {
+      const res = await fetchDetail({})
+      expect(res.result.itemDiagnosis.limitations).toEqual([])
+    })
+  })
+})
