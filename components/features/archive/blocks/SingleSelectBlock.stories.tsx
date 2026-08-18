@@ -60,11 +60,50 @@ export const ReadOnlyEmpty: Story = {
   },
 }
 
-/** 옵션 편집을 연 상태 — 옵션이 여러 개면 각 줄에서 지울 수 있다. */
+/**
+ * 템플릿 블록(FRT-322) — 확정본이 목록을 소유하므로 옵션 편집 토글이 아예 없다.
+ * `allowOptionEdit` 미지정이 이 상태이며, 폼의 고정 카드가 전부 여기에 해당한다.
+ */
+export const TemplateLocked: Story = {
+  args: {
+    block: singleSelectBlock,
+    readOnly: false,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByRole("button", { name: "옵션 편집" })).toBeNull()
+    await expect(canvas.getByRole("combobox")).toBeInTheDocument()
+  },
+}
+
+/**
+ * '기타' 직접 입력(FRT-322). 확정본이 이미 가진 '기타'를 고르면 그 자리에서 적을 수 있다 —
+ * 인라인 편집을 막은 뒤 프리셋 밖 값을 넣는 유일한 통로다. 적은 값은 `selected` 에 원문으로 간다.
+ */
+export const OtherDirectInput: Story = {
+  args: {
+    block: {
+      ...emptySingleSelectBlock,
+      label: "자격증 분야",
+      options: ["IT/개발", "데이터/AI", "디자인/크리에이티브", "기타"],
+      allowOther: true,
+      value: { type: "single-select", options: [], selected: "" },
+    },
+    readOnly: false,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.selectOptions(canvas.getByRole("combobox"), "기타")
+    await expect(canvas.getByLabelText("기타 직접 입력")).toBeInTheDocument()
+  },
+}
+
+/** 옵션 편집을 연 상태 — 커스텀 블록에서만 열린다(FRT-322). 옵션이 여러 개면 각 줄에서 지울 수 있다. */
 export const OptionEditorOpen: Story = {
   args: {
     block: singleSelectBlock,
     readOnly: false,
+    allowOptionEdit: true,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
@@ -85,6 +124,7 @@ export const LastOptionLocked: Story = {
       value: { ...(singleSelectBlock.value as SingleSelectBlockValue), options: ["정규직"], selected: "" },
     },
     readOnly: false,
+    allowOptionEdit: true,
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
