@@ -109,4 +109,27 @@ describe("QuickPickPanel (FRT-130)", () => {
     fireEvent.click(toggle)
     expect(screen.queryByText("스타트업")).toBeNull()
   })
+
+  describe("접힌 토글도 어느 픽커인지 구분된다", () => {
+    // 접힌 상태에서 보이는 글자는 두 픽커 모두 '빠른 선택' 하나뿐이라, 이름을 프리셋에서
+    // 끌어오지 않으면 스크린리더 버튼 탐색에서 산업 토글과 직무 토글이 같은 이름으로 겹친다.
+    it("토글의 접근 이름이 프리셋 제목이다", () => {
+      renderPanel(MULTI)
+      expect(screen.getByRole("button", { name: MULTI.title })).toBeTruthy()
+    })
+
+    it("두 픽커를 한 화면에 놓아도 토글 이름이 서로 다르다", () => {
+      render(
+        <>
+          <QuickPickPanel preset={MULTI} selected={[]} onPick={vi.fn()} />
+          <QuickPickPanel preset={SINGLE} selected={[]} onPick={vi.fn()} />
+        </>
+      )
+      const names = screen
+        .getAllByRole("button")
+        .map(b => b.getAttribute("aria-label") ?? b.textContent?.trim() ?? "")
+      expect(new Set(names).size).toBe(names.length)
+      expect(names).toEqual([MULTI.title, SINGLE.title])
+    })
+  })
 })

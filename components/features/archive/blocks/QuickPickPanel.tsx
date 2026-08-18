@@ -47,6 +47,7 @@ export default function QuickPickPanel({ preset, selected, onPick, disabled }: Q
         disabled={disabled}
         aria-expanded={open}
         aria-controls={panelId}
+        aria-label={preset.title}
         className="inline-flex w-fit items-center gap-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-caption text-text-secondary transition-colors hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Plus size={14} />
