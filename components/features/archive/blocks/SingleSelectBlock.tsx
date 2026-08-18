@@ -6,6 +6,13 @@ import { RequiredDot } from "@/components/ui/required-dot"
 import type { Block, SingleSelectBlockValue } from "@/types/archive"
 import { isImeComposing, onEnterCommit } from "@/lib/utils/keyboard"
 
+/**
+ * 프리셋에서 '직접 입력'을 여는 선택지 라벨 (FRT-322). 확정본 15개 필드가 이 문자열을 공유한다 —
+ * 동작은 라벨에서 파생시키지 않고 `block.allowOther` 로 명시 opt-in 하며, 이 상수는 그 플래그가
+ * 켜진 블록에서 **어느 선택지가 입력 모드인지**만 가리킨다.
+ */
+export const OTHER_OPTION_LABEL = "기타"
+
 interface SingleSelectBlockProps {
   block: Block
   readOnly?: boolean
@@ -46,7 +53,26 @@ export default function SingleSelectBlock({
    * ⚠️ 표시 전용 보정이다. onChange 로 이 목록을 굳혀 내보내지 않는다 — 굳히면 다음 확정본
    * 개편이 그 필드에 닿지 못한다.
    */
-  const options = val.selected && !base.includes(val.selected) ? [...base, val.selected] : base
+  /**
+   * '기타' 직접 입력 (FRT-322). 플래그가 켜져 있어도 목록에 '기타'가 없으면 아무 일도 하지
+   * 않는다 — 모르는 상태에서 입력칸이 열려 값을 덮으면 안 된다.
+   */
+  const hasOther = block.allowOther === true && base.includes(OTHER_OPTION_LABEL)
+  /**
+   * 저장값이 프리셋 밖이면 사용자가 '기타'로 적어 넣은 값이다 — 목록 끝에 붙이는 대신
+   * '기타' 모드로 복원한다. 같은 값이 목록과 입력칸에 두 번 나오면 어느 쪽이 진짜인지 모른다.
+   */
+  const savedIsOther = hasOther && !!val.selected && !base.includes(val.selected)
+  const [otherOpen, setOtherOpen] = useState(false)
+  const otherMode = hasOther && (savedIsOther || otherOpen)
+  const options = val.selected && !base.includes(val.selected) && !savedIsOther
+    ? [...base, val.selected]
+    : base
+  /**
+   * '기타' 모드에서는 필수 판정을 입력칸으로 넘긴다 — select 의 값은 "기타"라서 여기에
+   * required 를 두면 정작 저장값(selected)이 비어 있는데 브라우저 검증이 통과한다.
+   */
+  const requiredOnSelect = !!block.required && !otherMode
   const [showEditor, setShowEditor] = useState(false)
   const [newOption, setNewOption] = useState("")
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
@@ -117,21 +143,49 @@ export default function SingleSelectBlock({
       {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
       <select
         id={selectId}
-        value={val.selected}
-        onChange={e => onChange({ ...val, selected: e.target.value })}
+        value={otherMode ? OTHER_OPTION_LABEL : val.selected}
+        onChange={e => {
+          const next = e.target.value
+          if (hasOther && next === OTHER_OPTION_LABEL) {
+            // '기타'는 값이 아니라 입력 모드다 — 그대로 저장하면 분석이 "기타"라는 분야를 읽는다.
+            setOtherOpen(true)
+            onChange({ ...val, selected: "" })
+            return
+          }
+          setOtherOpen(false)
+          onChange({ ...val, selected: next })
+        }}
         className={[
           "h-12 w-full rounded-md border border-border bg-surface px-4",
           "text-body text-text-primary",
           "focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand",
           "transition-colors",
         ].join(" ")}
-        required={block.required}
+        required={requiredOnSelect}
       >
         <option value="">선택해주세요</option>
         {options.map(opt => (
           <option key={opt} value={opt}>{opt}</option>
         ))}
       </select>
+
+      {/* '기타' 직접 입력 — 프리셋 밖 값을 넣는 통로(FRT-322) */}
+      {otherMode && (
+        <input
+          type="text"
+          aria-label="기타 직접 입력"
+          className={[
+            "h-12 w-full rounded-md border border-border bg-surface px-4 mt-1.5",
+            "text-body text-text-primary placeholder:text-text-tertiary",
+            "focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand",
+            "transition-colors",
+          ].join(" ")}
+          placeholder="직접 입력해주세요"
+          value={val.selected}
+          onChange={e => onChange({ ...val, selected: e.target.value })}
+          required={block.required}
+        />
+      )}
 
       {/* Option editor toggle — 커스텀 블록에만 붙는다(FRT-322) */}
       {allowOptionEdit && (

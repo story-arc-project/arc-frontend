@@ -136,6 +136,114 @@ describe("FRT-322 옵션 목록 소유권", () => {
   })
 })
 
+/**
+ * FRT-322 — 편집을 막으면 프리셋 밖 값을 넣을 길이 사라진다. 확정본이 이미 갖고 있는
+ * '기타'가 그 통로가 된다: 고르면 그 자리에서 직접 적고, 적은 값은 `selected` 에
+ * **원문 그대로** 저장된다("기타"가 아니라 "항공"). 새 값 필드를 만들지 않으므로
+ * selected 문자열만 읽는 소비처(포트폴리오 공개 판정·백엔드 분석)가 전부 무변경이다.
+ */
+describe("FRT-322 '기타' 직접 입력", () => {
+  const OTHER_OPTIONS = ["IT/개발", "디자인", "기타"]
+
+  function makeOtherBlock(selected = ""): Block {
+    const block = createSelectField("분야", OTHER_OPTIONS, { allowOther: true })
+    return { ...block, value: { ...(block.value as SingleSelectBlockValue), selected } }
+  }
+
+  it("allowOther 없이 '기타'를 골라도 입력칸이 열리지 않는다", async () => {
+    const user = userEvent.setup()
+    render(<SingleSelectBlock block={makeBlock(OTHER_OPTIONS)} onChange={() => {}} />)
+
+    await user.selectOptions(screen.getByRole("combobox"), "기타")
+
+    expect(screen.queryByLabelText("기타 직접 입력")).toBeNull()
+  })
+
+  it("allowOther 이면 '기타' 선택 시 입력칸이 열린다", async () => {
+    const user = userEvent.setup()
+    render(<SingleSelectBlock block={makeOtherBlock()} onChange={() => {}} />)
+
+    await user.selectOptions(screen.getByRole("combobox"), "기타")
+
+    expect(screen.getByLabelText("기타 직접 입력")).toBeDefined()
+  })
+
+  it("'기타'를 고른 것만으로는 selected 에 '기타'가 저장되지 않는다", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(<SingleSelectBlock block={makeOtherBlock()} onChange={onChange} />)
+
+    await user.selectOptions(screen.getByRole("combobox"), "기타")
+
+    // '기타'는 값이 아니라 입력 모드다. 그대로 저장되면 분석이 "기타"라는 분야를 읽는다.
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ selected: "" }))
+  })
+
+  it("입력한 값이 selected 에 원문 그대로 나간다", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    function OtherHarness() {
+      const [block, setBlock] = useState(() => makeOtherBlock())
+      return (
+        <SingleSelectBlock
+          block={block}
+          onChange={value => {
+            onChange(value)
+            setBlock(prev => ({ ...prev, value }))
+          }}
+        />
+      )
+    }
+    render(<OtherHarness />)
+
+    await user.selectOptions(screen.getByRole("combobox"), "기타")
+    await user.type(screen.getByLabelText("기타 직접 입력"), "항공")
+
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ selected: "항공" }))
+  })
+
+  it("프리셋 밖 저장값은 '기타' 모드로 복원된다 — 목록 끝에 붙지 않는다", () => {
+    render(<SingleSelectBlock block={makeOtherBlock("항공")} onChange={() => {}} />)
+
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("기타")
+    expect((screen.getByLabelText("기타 직접 입력") as HTMLInputElement).value).toBe("항공")
+    // 같은 값이 목록과 입력칸에 두 번 나오면 어느 쪽이 진짜인지 알 수 없다.
+    expect(renderedOptions()).toEqual(OTHER_OPTIONS)
+  })
+
+  it("옵션에 '기타'가 없으면 allowOther 를 켜도 아무 일도 없다", async () => {
+    const user = userEvent.setup()
+    const block = createSelectField("분야", ["IT/개발", "디자인"], { allowOther: true })
+    render(<SingleSelectBlock block={block} onChange={() => {}} />)
+
+    await user.selectOptions(screen.getByRole("combobox"), "디자인")
+
+    expect(screen.queryByLabelText("기타 직접 입력")).toBeNull()
+  })
+
+  /**
+   * 필수 드롭다운에서 '기타'만 고르고 적지 않으면 select 의 값은 "기타"라 브라우저 검증이
+   * 통과해 버린다 — 실제 저장값은 빈 문자열인데. 필수를 입력칸이 물려받아야 그 구멍이 막힌다.
+   */
+  it("필수 필드의 '기타' 입력칸은 필수를 물려받는다", async () => {
+    const user = userEvent.setup()
+    const base = createSelectField("분야", OTHER_OPTIONS, { allowOther: true, required: true })
+    render(<SingleSelectBlock block={base} onChange={() => {}} />)
+
+    await user.selectOptions(screen.getByRole("combobox"), "기타")
+
+    expect((screen.getByLabelText("기타 직접 입력") as HTMLInputElement).required).toBe(true)
+    // 모드가 열린 동안 select 는 값을 갖지 않는다 — 필수 판정을 입력칸 하나로 모은다.
+    expect((screen.getByRole("combobox") as HTMLSelectElement).required).toBe(false)
+  })
+
+  it("allowOther 를 끄면 블록에 키를 남기지 않는다", () => {
+    // 템플릿 스냅샷 비교(toEqual)에 잡음이 된다 — quickPick·allowCustomTag 와 같은 규약.
+    expect("allowOther" in createSelectField("분야", OTHER_OPTIONS)).toBe(false)
+    expect(createSelectField("분야", OTHER_OPTIONS, { allowOther: true }).allowOther).toBe(true)
+  })
+})
+
 describe("SingleSelectBlock 옵션 편집", () => {
   it("옵션이 2개 이상이면 삭제한 옵션이 드롭다운에서 빠진다", async () => {
     const user = userEvent.setup()
