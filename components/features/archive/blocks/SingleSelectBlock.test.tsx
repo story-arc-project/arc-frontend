@@ -79,6 +79,63 @@ describe("FRT-322 옵션 편집 노출", () => {
   })
 })
 
+/**
+ * FRT-322 — 목록의 **소유권**은 편집 권한과 같은 축이다. 편집을 막았으므로 템플릿 블록은
+ * 확정본을 되찾아야 하고(과거 인라인 편집으로 프리셋을 지운 저장값을 되돌릴 UI 가 이제 없다),
+ * 커스텀 블록은 반대로 사용자가 지운 옵션이 부활하면 안 된다(FRT-158 그 버그다).
+ */
+describe("FRT-322 옵션 목록 소유권", () => {
+  it("템플릿 블록은 저장값이 반쪽이어도 프리셋 전체를 되찾는다", () => {
+    const block = makeBlock()
+    render(
+      <SingleSelectBlock
+        block={{ ...block, value: { type: "single-select", options: ["인턴"], selected: "인턴" } }}
+        onChange={() => {}}
+      />,
+    )
+    expect(renderedOptions()).toEqual(OPTIONS)
+  })
+
+  it("프리셋에 없는 저장 선택값은 목록 끝에 붙어 살아남는다", () => {
+    const block = makeBlock()
+    render(
+      <SingleSelectBlock
+        block={{ ...block, value: { type: "single-select", options: [], selected: "파견직" } }}
+        onChange={() => {}}
+      />,
+    )
+    expect(renderedOptions()).toEqual([...OPTIONS, "파견직"])
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("파견직")
+  })
+
+  it("커스텀 블록에서 지운 옵션은 되살아나지 않는다", () => {
+    const block = makeBlock()
+    render(
+      <SingleSelectBlock
+        block={{ ...block, value: { type: "single-select", options: ["인턴"], selected: "인턴" } }}
+        allowOptionEdit
+        onChange={() => {}}
+      />,
+    )
+    expect(renderedOptions()).toEqual(["인턴"])
+  })
+
+  it("템플릿 프리셋이 없는 블록은 저장 옵션을 그대로 쓴다", () => {
+    const block = makeBlock()
+    render(
+      <SingleSelectBlock
+        block={{
+          ...block,
+          options: undefined,
+          value: { type: "single-select", options: ["갑", "을"], selected: "" },
+        }}
+        onChange={() => {}}
+      />,
+    )
+    expect(renderedOptions()).toEqual(["갑", "을"])
+  })
+})
+
 describe("SingleSelectBlock 옵션 편집", () => {
   it("옵션이 2개 이상이면 삭제한 옵션이 드롭다운에서 빠진다", async () => {
     const user = userEvent.setup()

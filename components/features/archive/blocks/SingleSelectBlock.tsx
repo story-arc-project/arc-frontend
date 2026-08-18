@@ -28,7 +28,25 @@ export default function SingleSelectBlock({
   onChange,
 }: SingleSelectBlockProps) {
   const val = block.value as SingleSelectBlockValue
-  const options = val.options.length > 0 ? val.options : (block.options ?? [])
+  const saved = Array.isArray(val.options) ? val.options : []
+  const preset = block.options ?? []
+  /**
+   * 목록의 **소유권**은 편집 권한과 같은 축이다 (FRT-322).
+   *  · 커스텀 블록(allowOptionEdit): 사용자가 목록을 소유한다 — 저장값을 우선한다. 프리셋을
+   *    되살리면 방금 지운 옵션이 다음 렌더에 부활한다(FRT-158 이 그 버그였다).
+   *  · 템플릿 블록: 확정본이 목록을 소유한다 — 프리셋을 우선한다. 편집 UI 를 없앴으므로
+   *    과거 인라인 편집으로 프리셋을 지워 저장한 값은 여기서만 복구될 수 있다.
+   */
+  const base = allowOptionEdit
+    ? (saved.length > 0 ? saved : preset)
+    : (preset.length > 0 ? preset : saved)
+  /**
+   * 어느 쪽이든 저장된 **값**(selected)은 목록에서 빠지지 않는다 — 빠지면 값이 저장돼 있는데
+   * 화면에 안 보여 바꿀 수도 지울 수도 없다(moodTagOptions 의 checked 보존과 같은 규약).
+   * ⚠️ 표시 전용 보정이다. onChange 로 이 목록을 굳혀 내보내지 않는다 — 굳히면 다음 확정본
+   * 개편이 그 필드에 닿지 못한다.
+   */
+  const options = val.selected && !base.includes(val.selected) ? [...base, val.selected] : base
   const [showEditor, setShowEditor] = useState(false)
   const [newOption, setNewOption] = useState("")
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
