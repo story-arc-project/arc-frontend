@@ -101,6 +101,45 @@ describe("'＋빠른 선택' 픽커 배선 (FRT-130)", () => {
   })
 })
 
+describe("'기타' 직접 입력 배선 (FRT-322)", () => {
+  // 켠 곳을 세지 않고 전 템플릿에서 그러모은다 — 확정본이 늘어도 그물이 따라간다(FRT-130 패턴).
+  const walk = (blocks: Block[]): Block[] => blocks.flatMap(b => [b, ...walk(b.children ?? [])])
+  const selects = SYSTEM_TEMPLATES_V2.flatMap(t =>
+    [t.commonCore, ...t.extensions].flatMap(s =>
+      walk(s.blocks)
+        .filter(b => b.type === "single-select")
+        .map(b => ({ where: `${t.typeId}/${s.id}/${b.label}`, block: b })),
+    ),
+  )
+
+  it("템플릿에 드롭다운이 실제로 있다", () => {
+    // 이 단언이 없으면 아래 전칭들이 빈 배열 위에서 조용히 통과한다.
+    expect(selects.length).toBeGreaterThan(0)
+  })
+
+  /**
+   * 인라인 옵션 편집을 없앴으므로(FRT-322) '기타'가 프리셋 밖 값을 넣는 유일한 통로다.
+   * '기타'를 가진 필드가 그 통로를 안 열어 두면 사용자는 목록에 없는 답을 적을 데가 없다.
+   */
+  it("'기타' 선택지를 가진 드롭다운은 전부 직접 입력을 연다", () => {
+    const offenders = selects
+      .filter(({ block }) => (block.options ?? []).includes("기타") && block.allowOther !== true)
+      .map(({ where }) => where)
+    expect(offenders).toEqual([])
+  })
+
+  /**
+   * 반대 방향도 막는다 — '기타'가 없는데 플래그만 켜면 UI 는 폴백해 아무 일도 안 하므로
+   * "켰는데 안 뜨는" 조용한 실패가 된다.
+   */
+  it("'기타'가 없는 드롭다운에는 플래그를 켜지 않는다", () => {
+    const offenders = selects
+      .filter(({ block }) => block.allowOther === true && !(block.options ?? []).includes("기타"))
+      .map(({ where }) => where)
+    expect(offenders).toEqual([])
+  })
+})
+
 // 프로토타입 확정본(2026-07) 반영 — 인턴·수업·대외활동을 학회(FRT-90) 패턴으로 재정의.
 describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
   const CASES: ExperienceTypeId[] = ["career", "education", "extracurricular"]

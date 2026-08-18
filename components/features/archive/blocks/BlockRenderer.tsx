@@ -35,6 +35,12 @@ interface BlockRendererProps {
   hideSlot?: boolean
   /** 첨부 업로드가 진행 중인지 상위에 알린다 — 그동안 × 를 감춰 파일 유실을 막는다(FRT-190). */
   onBusyChange?: (busy: boolean) => void
+  /**
+   * 선택지 자체를 고칠 수 있는지 (FRT-322). `BlockList` 의 `editEnabled`(커스텀 블록인가)를
+   * 받아 옵션 편집 UI 를 가진 두 컴포넌트로 내린다 — 여기가 그들의 유일한 프로덕션 진입점이라
+   * 관문 한 곳에서 전파하면 소비처마다 판정을 반복하지 않는다. 미지정이면 닫힘.
+   */
+  allowOptionEdit?: boolean
   onChange: (blockId: string, value: BlockValue) => void
 }
 
@@ -43,6 +49,7 @@ export default function BlockRenderer({
   readOnly,
   hideSlot,
   onBusyChange,
+  allowOptionEdit,
   onChange,
 }: BlockRendererProps) {
   /**
@@ -94,7 +101,14 @@ export default function BlockRenderer({
         // ChecklistBlock 으로 폴백한다 — 판정은 렌더와 같은 계산을 써야 갈리지 않는다.
         return block.variant === "mood-tag" && moodTagOptions(block).length > 0
           ? <MoodTagBlock block={block} readOnly={locked} onChange={handleChange} />
-          : <ChecklistBlock block={block} readOnly={locked} onChange={handleChange} />
+          : (
+            <ChecklistBlock
+              block={block}
+              readOnly={locked}
+              allowOptionEdit={allowOptionEdit}
+              onChange={handleChange}
+            />
+          )
       }
       case "single-select": {
         // binary-choice 는 두 카드 양자택일 UI(FRT-320). 옵션이 정확히 2개일 때만 그릴 수 있다 —
@@ -102,7 +116,14 @@ export default function BlockRenderer({
         // 판정은 렌더와 같은 계산을 써야 갈리지 않는다.
         return block.variant === "binary-choice" && binaryChoiceOptions(block)
           ? <BinaryChoiceBlock block={block} readOnly={locked} onChange={handleChange} />
-          : <SingleSelectBlock block={block} readOnly={locked} onChange={handleChange} />
+          : (
+            <SingleSelectBlock
+              block={block}
+              readOnly={locked}
+              allowOptionEdit={allowOptionEdit}
+              onChange={handleChange}
+            />
+          )
       }
       case "tags":
         return <TagsBlock block={block} readOnly={locked} onChange={handleChange} />

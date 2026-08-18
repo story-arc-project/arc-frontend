@@ -350,6 +350,7 @@ function educationExtensions(): TemplateSection[] {
         // 2단 배치는 FRT-144 라 지금은 형제 블록으로 펼쳐지므로, 한 문장을 첫 칸에만 남기면
         // 학점 칸이 성적·증빙까지 받는 것처럼 읽힌다. 문구를 각 칸이 받는 값으로 좁힌다.
         createSelectField('학점', ['1학점', '2학점', '3학점', '4학점', '기타'], {
+          allowOther: true,
           guide: '이수 학점을 선택해주세요.',
         }),
         createSelectField(
@@ -520,7 +521,7 @@ function extracurricularExtensions(): TemplateSection[] {
             '해외 프로그램 / 교환',
             '기타',
           ],
-          { required: true, guide: '이 활동의 유형을 선택해주세요.' },
+          { allowOther: true, required: true, guide: '이 활동의 유형을 선택해주세요.' },
         ),
         createTextField('기수 / 차수', {
           guide: '이 활동의 기수나 차수가 있다면 적어주세요.',
@@ -880,7 +881,7 @@ function clubExtensions(): TemplateSection[] {
             '연합 동아리',
             '기타',
           ],
-          { required: true, guide: '이 단체의 성격을 선택해주세요.' },
+          { allowOther: true, required: true, guide: '이 단체의 성격을 선택해주세요.' },
         ),
         createTextField('소속 학교', {
           guide:
@@ -894,7 +895,7 @@ function clubExtensions(): TemplateSection[] {
         createSelectField(
           '소속 단위',
           ['중앙 동아리', '단과대 동아리', '학과 (과 동아리)', '연합 동아리', '학생회', '기타'],
-          { guide: '중앙 동아리인지, 학과·단과대 소속인지, 연합 동아리인지 알려주세요.' },
+          { allowOther: true, guide: '중앙 동아리인지, 학과·단과대 소속인지, 연합 동아리인지 알려주세요.' },
         ),
         createPeriodField('활동 기간', {
           required: true,
@@ -1261,6 +1262,7 @@ function awardExtensions(): TemplateSection[] {
           placeholder: '예: 2024 전국 대학생 창업 경진대회',
         }),
         createSelectField('대회 유형', [...AWARD_TYPE_OPTIONS], {
+          allowOther: true,
           required: true,
           guide: '이 상의 성격을 선택해주세요.',
         }),
@@ -1384,6 +1386,7 @@ function certificationExtensions(): TemplateSection[] {
           placeholder: '예: 정보처리기사, ADsP, CFA Level 1',
         }),
         createSelectField('자격증 분야', [...CERTIFICATION_FIELD_OPTIONS], {
+          allowOther: true,
           required: true,
           guide:
             '이 자격증이 속한 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
@@ -1503,6 +1506,7 @@ function languageExtensions(): TemplateSection[] {
       label: '언어 개요',
       blocks: [
         createSelectField('언어', [...LANGUAGE_OPTIONS], {
+          allowOther: true,
           required: true,
           guide: '이 경험과 관련된 언어를 선택해주세요.',
         }),
@@ -1706,6 +1710,7 @@ function researchExtensions(): TemplateSection[] {
           placeholder: '예: 대학생의 SNS 사용 패턴이 학업 몰입도에 미치는 영향',
         }),
         createSelectField('유형', [...RESEARCH_TYPE_OPTIONS], {
+          allowOther: true,
           required: true,
           guide: '이 연구/논문의 유형을 선택해주세요.',
         }),
@@ -1723,7 +1728,7 @@ function researchExtensions(): TemplateSection[] {
         // month~month 는 코어 '기간' 과 같은 period 위젯이라 구 `research-info.기간` 값을
         // 그대로 실을 수 있다(RENAMED_FIELD_KEYS).
         createPeriodField('연구 기간', { required: true }),
-        createSelectField('역할 / 기여도', [...RESEARCH_ROLE_OPTIONS]),
+        createSelectField('역할 / 기여도', [...RESEARCH_ROLE_OPTIONS], { allowOther: true }),
         createTextareaField('공저자 / 팀원', {
           guide: '함께 연구를 진행한 공저자나 팀원을 적어주세요.',
           placeholder: '예: OOO 교수 (지도), OOO (공동 1저자), OOO (데이터 분석)',
@@ -1934,6 +1939,7 @@ function projectExtensions(): TemplateSection[] {
           placeholder: '예: 캠퍼스 중고거래 앱 개발, 소상공인 브랜딩 사이드 프로젝트',
         }),
         createSelectField('프로젝트 유형', [...PROJECT_TYPE_OPTIONS], {
+          allowOther: true,
           required: true,
           guide: '이 프로젝트의 성격을 선택해주세요.',
         }),
@@ -2195,6 +2201,7 @@ function volunteerExtensions(): TemplateSection[] {
           placeholder: '예: OO아동복지센터 학습 멘토링, 지역 노인복지관 급식 봉사',
         }),
         createSelectField('봉사 분야', [...VOLUNTEER_FIELD_OPTIONS], {
+          allowOther: true,
           required: true,
           guide:
             '이 봉사의 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
@@ -2306,6 +2313,7 @@ function overseasExtensions(): TemplateSection[] {
       label: '해외경험 정보',
       blocks: [
         createSelectField('경험 유형', [...OVERSEAS_KIND_OPTIONS], {
+          allowOther: true,
           required: true,
           guide:
             '해외 경험의 유형을 선택해주세요. 여러 개 해당된다면 가장 대표되는 유형 기준으로 선택해주세요.',
@@ -2458,6 +2466,7 @@ function creativeWorkExtensions(): TemplateSection[] {
           placeholder: '예: 브랜드 리뉴얼 프로젝트, 단편 소설 〈OO〉, 개인 웹사이트',
         }),
         createSelectField('유형 / 매체', [...CREATIVE_MEDIUM_OPTIONS], {
+          allowOther: true,
           required: true,
           guide:
             '이 작품의 유형을 선택해주세요. 여러 매체가 결합된 작업이라면 가장 대표되는 유형 기준으로 선택해주세요.',
@@ -2646,6 +2655,7 @@ function readingExtensions(): TemplateSection[] {
           placeholder: '예: 유발 하라리',
         }),
         createSelectField('장르 / 분야', [...READING_GENRE_OPTIONS], {
+          allowOther: true,
           guide:
             '이 책이 속한 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
         }),
@@ -2776,7 +2786,7 @@ function goalExtensions(): TemplateSection[] {
       blocks: [
         createTextField('목표명', { required: true }),
         createPeriodField('기간', { required: true }),
-        createSelectField('목표 유형', ['학습', '커리어', '건강', '프로젝트', '기타']),
+        createSelectField('목표 유형', ['학습', '커리어', '건강', '프로젝트', '기타'], { allowOther: true }),
         createSelectField('목표 수준', ['상', '중', '하']),
         createTextareaField('성공 기준', { required: true, placeholder: '어떻게 되면 성공인가?' }),
       ],

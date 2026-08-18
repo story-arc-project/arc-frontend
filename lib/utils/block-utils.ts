@@ -144,9 +144,11 @@ export function createPeriodField(label: string, opts?: { required?: boolean; gu
 export function createSelectField(
   label: string,
   options: string[],
-  opts?: { required?: boolean; guide?: string },
+  opts?: { required?: boolean; guide?: string; allowOther?: boolean },
 ): Block {
-  return createBlock('single-select', label, { ...opts, options })
+  const block = createBlock('single-select', label, { ...opts, options })
+  // 끈 블록에 키를 남기지 않는다 — 템플릿 스냅샷 비교(toEqual)에 잡음이 된다(quickPick 과 같은 규약).
+  return opts?.allowOther ? { ...block, allowOther: true } : block
 }
 
 export function createChecklistField(
