@@ -13,6 +13,11 @@ import { isImeComposing, onEnterCommit } from "@/lib/utils/keyboard"
  */
 export const OTHER_OPTION_LABEL = "기타"
 
+/** 첫 등장 순서를 지키며 중복을 걷어낸다. */
+function dedupe(options: string[]): string[] {
+  return options.length === new Set(options).size ? options : Array.from(new Set(options))
+}
+
 interface SingleSelectBlockProps {
   block: Block
   readOnly?: boolean
@@ -44,9 +49,17 @@ export default function SingleSelectBlock({
    *  · 템플릿 블록: 확정본이 목록을 소유한다 — 프리셋을 우선한다. 편집 UI 를 없앴으므로
    *    과거 인라인 편집으로 프리셋을 지워 저장한 값은 여기서만 복구될 수 있다.
    */
-  const base = allowOptionEdit
-    ? (saved.length > 0 ? saved : preset)
-    : (preset.length > 0 ? preset : saved)
+  /**
+   * 중복 라벨은 여기서 한 번 걷어낸다(첫 등장 순서 보존). 저장·API 값은 원소 **타입**만 씻겨
+   * 오고(`normalizeBlockValue` → `asStrings`) 중복은 그대로 통과하는데, 같은 라벨이 두 줄이면
+   * `select` 로는 애초에 구분해 고를 수 없고 — 편집은 값으로 대상을 잡으므로(FRT-293) 두 줄이
+   * 한꺼번에 열려 확인 한 번에 첫 줄만 바뀐다. 지워지는 건 고를 수도 구분할 수도 없던 사본뿐이다.
+   */
+  const base = dedupe(
+    allowOptionEdit
+      ? (saved.length > 0 ? saved : preset)
+      : (preset.length > 0 ? preset : saved),
+  )
   /**
    * 어느 쪽이든 저장된 **값**(selected)은 목록에서 빠지지 않는다 — 빠지면 값이 저장돼 있는데
    * 화면에 안 보여 바꿀 수도 지울 수도 없다(moodTagOptions 의 checked 보존과 같은 규약).

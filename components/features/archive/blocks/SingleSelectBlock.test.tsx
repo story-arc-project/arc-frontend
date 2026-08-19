@@ -512,4 +512,20 @@ describe("FRT-293 편집 중 다른 옵션을 지워도 편집 대상은 그대�
     expect(screen.queryByDisplayValue("인턴십")).not.toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: "옵션 수정" })).toHaveLength(3)
   })
+
+  it("중복 라벨이 저장돼 있어도 한 줄로만 그리고 편집도 한 줄만 열린다", async () => {
+    const user = userEvent.setup()
+    // 저장·API 값은 원소 타입만 씻겨 오고(normalizeBlockValue) 중복은 그대로 통과한다.
+    render(<Harness allowOptionEdit initial={["정규직", "계약직", "정규직"]} />)
+
+    expect(renderedOptions()).toEqual(["정규직", "계약직"])
+
+    await openEditor(user)
+    const editButtons = screen.getAllByRole("button", { name: "옵션 수정" })
+    expect(editButtons).toHaveLength(2)
+
+    // 값으로 대상을 잡으므로(FRT-293) 중복이 남아 있으면 두 줄이 한꺼번에 편집 모드로 열린다.
+    await user.click(editButtons[0])
+    expect(screen.getAllByDisplayValue("정규직").filter(el => el.tagName === "INPUT")).toHaveLength(1)
+  })
 })
