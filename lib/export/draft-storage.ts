@@ -75,27 +75,61 @@ function markerKey(tier: WebStorageTier, key: string): string {
   return `${STALE_MARKER_PREFIX}${stampOf(tier, key)}`;
 }
 
-/** 웹 스토리지 계층은 둘뿐이라 "이 계층이 아닌 쪽"이 곧 묘비를 맡길 자리다. */
-function otherWebTier(tier: WebStorageTier): WebStorageTier {
-  return tier === "local" ? "session" : "local";
+/**
+ * 묘비를 맡길 자리. **묘비는 자기가 감추는 값과 같은 범위에 살아야 한다.**
+ *
+ * session 값은 이 탭에만 있다. 그 묘비를 모든 탭이 공유하는 localStorage 에 적으면, 한 탭에서
+ * 지운 것이 같은 키를 쓰는 **다른 탭의 멀쩡한 session draft** 까지 읽기에서 건너뛰게 만든다 —
+ * 남의 편집을 지우는 셈이다. 그래서 session 묘비는 sessionStorage 에만 적는다(탭 스코프이면서
+ * 새로고침은 견디므로 수명도 맞는다). 못 적으면 이번 로드 동안만 유효하다.
+ *
+ * local 값은 모든 탭이 공유하므로 어디에 적어도 범위가 좁아질 뿐 남을 가리지 않는다. 살아남은
+ * draft 가 있는 자리를 먼저 쓴다 — 묘비가 그 draft 와 같은 수명을 갖는다.
+ */
+function markerHosts(tier: WebStorageTier, keep: WebStorageTier | null): readonly WebStorageTier[] {
+  if (tier === "session") return ["session"];
+  return keep === "session" ? ["session", "local"] : ["local", "session"];
 }
 
-/** 지우지 못했다고 표시한다. `keep` 이 웹 스토리지면 거기에 묘비도 남긴다. */
-function markStale(tier: WebStorageTier, key: string, keep: DraftTier): void {
+/**
+ * 읽기는 위 계층부터 보므로 `keep` **위**에 남은 낡은 값만이 새 편집을 가릴 수 있다.
+ * 아래에 남은 잔재는 위에서 값을 먼저 찾으므로 읽히지 않는다.
+ */
+function canShadow(tier: WebStorageTier, keep: DraftTier): boolean {
+  if (keep === "memory") return true;
+  return WEB_STORAGE_TIERS.indexOf(tier) < WEB_STORAGE_TIERS.indexOf(keep);
+}
+
+/**
+ * 지우지 못했다고 표시하고, **묘비를 새로고침 너머까지 남겼는지**를 알린다.
+ *
+ * `keep` 은 이 draft 가 살아남은 자리다. `null` 은 지우는 길이라 살아남은 자리가 없다는 뜻.
+ */
+function markStale(tier: WebStorageTier, key: string, keep: DraftTier | null): boolean {
   const stamp = stampOf(tier, key);
   staleEntries.add(stamp);
   freshEntries.delete(stamp);
   // 메모리 계층이면 적을 곳이 없다 — 그런데 그 경우 draft 자체도 새로고침을 못 넘기므로,
   // 리로드 뒤 남는 것은 위 계층의 옛 값뿐이다. 옛 값이라도 돌려주는 편이 낫다.
-  if (keep === "memory") return;
-  try {
-    webStorage(keep)?.setItem(markerKey(tier, key), "1");
-  } catch {
-    // 묘비를 못 남겼다 — 이번 로드 동안만 유효하다. 그래도 지금 세션은 지켜진다.
+  if (keep === "memory") return false;
+  for (const host of markerHosts(tier, keep)) {
+    try {
+      const storage = webStorage(host);
+      if (!storage) continue;
+      storage.setItem(markerKey(tier, key), "1");
+      return true;
+    } catch {
+      // 이 자리에는 못 남겼다 — 다음 자리를 본다.
+    }
   }
+  return false;
 }
 
-/** 표시를 거둔다 — 물리적으로 지웠거나 그 자리에 새 값을 덮어썼을 때. */
+/**
+ * 표시를 거둔다 — 물리적으로 지웠거나 그 자리에 새 값을 덮어썼을 때.
+ * 남기는 자리는 좁혔지만 거두는 자리는 넓게 본다 — 옛 판본이 다른 스토리지에 남긴
+ * 묘비까지 여기서 청소된다.
+ */
 function unmarkStale(tier: WebStorageTier, key: string): void {
   staleEntries.delete(stampOf(tier, key));
   for (const host of WEB_STORAGE_TIERS) {
@@ -112,7 +146,9 @@ function isStale(tier: WebStorageTier, key: string): boolean {
   const stamp = stampOf(tier, key);
   if (freshEntries.has(stamp)) return false;
   if (staleEntries.has(stamp)) return true;
-  for (const host of WEB_STORAGE_TIERS) {
+  // 적을 수 있었던 자리만 본다 — 특히 session 묘비를 localStorage 에서 찾으면 다른 탭이
+  // 남긴 표시에 이 탭의 draft 가 가려진다.
+  for (const host of markerHosts(tier, null)) {
     try {
       if (webStorage(host)?.getItem(markerKey(tier, key)) != null) return true;
     } catch {
@@ -143,26 +179,32 @@ function webStorage(tier: WebStorageTier): Storage | null {
  * 읽기는 위 계층부터 보므로, 낡은 값이 위에 남아 있으면 아래에 방금 쓴 새 편집이 영영 안
  * 읽힌다 — 저장 실패를 구제하려다 저장 성공분을 잃는 정반대 결과가 된다. 쓰기가 성공한
  * 계층 말고는 전부 여기서 비운다.
+ *
+ * `keep` 이 **새로고침 뒤에도** 가려지지 않는지를 돌려준다. 위 계층을 못 지웠는데 묘비까지
+ * 못 남겼다면 이번 로드 동안만 가려진 것이므로, 호출부는 그 자리를 안전한 집으로 쳐선 안 된다.
  */
-function evictOtherTiers(key: string, keep: DraftTier): void {
+function evictOtherTiers(key: string, keep: DraftTier): boolean {
+  let sealed = true;
   for (const tier of WEB_STORAGE_TIERS) {
     if (tier === keep) continue;
     const storage = webStorage(tier);
-    if (!storage) {
-      // 접근조차 못 했다 — **지웠는지 알 수 없다.** 지금은 읽지도 못하니 무해해 보이지만,
-      // 정책이 풀리면 옛 값이 그대로 되살아나 새 편집을 덮는다. 못 지운 것과 결과가 같다.
-      markStale(tier, key, keep);
-      continue;
+    let cleared = false;
+    if (storage) {
+      try {
+        storage.removeItem(key);
+        unmarkStale(tier, key);
+        cleared = true;
+      } catch {
+        // 지우지 못했다 — 낡은 값이 남았으므로 읽기에서 건너뛰게 표시하고 정리를 계속한다.
+      }
     }
-    try {
-      storage.removeItem(key);
-      unmarkStale(tier, key);
-    } catch {
-      // 지우지 못했다 — 낡은 값이 남았으므로 읽기에서 건너뛰게 표시하고 정리를 계속한다.
-      markStale(tier, key, keep);
-    }
+    // 접근조차 못 했다면 **지웠는지 알 수 없다.** 지금은 읽지도 못하니 무해해 보이지만,
+    // 정책이 풀리면 옛 값이 그대로 되살아나 새 편집을 덮는다. 못 지운 것과 결과가 같다.
+    if (cleared) continue;
+    if (!markStale(tier, key, keep) && canShadow(tier, keep)) sealed = false;
   }
   if (keep !== "memory") memoryDrafts.delete(key);
+  return sealed;
 }
 
 /**
@@ -179,15 +221,18 @@ export function writeRaw(key: string, value: string): DraftTier | null {
     if (!storage) continue;
     try {
       storage.setItem(key, value);
-      // 방금 쓴 값이 최신이다 — 이 계층에 붙어 있던 "낡음" 표시를 거둔다. 표시를 못 지우는
-      // 환경도 있으므로, 직접 썼다는 사실을 따로 기억해 읽기에서 건너뛰지 않게 한다.
-      freshEntries.add(stampOf(tier, key));
-      unmarkStale(tier, key);
-      evictOtherTiers(key, tier);
-      return tier;
     } catch {
       // 용량 초과·프라이빗 모드 — 다음 계층으로 내려간다.
+      continue;
     }
+    // 방금 쓴 값이 최신이다 — 이 계층에 붙어 있던 "낡음" 표시를 거둔다. 표시를 못 지우는
+    // 환경도 있으므로, 직접 썼다는 사실을 따로 기억해 읽기에서 건너뛰지 않게 한다.
+    freshEntries.add(stampOf(tier, key));
+    unmarkStale(tier, key);
+    if (evictOtherTiers(key, tier)) return tier;
+    // 위 계층의 옛 값을 **이번 로드 동안만** 가릴 수 있다. 그런데 이 자리를 알리면 그 경고는
+    // "새로고침은 견딘다"는 뜻이 되고, 정작 리로드하면 표시가 죽어 옛 값이 새 편집을 덮는다.
+    // 지킬 수 없는 약속을 하느니 한 계층 내려가 잃는 조건을 사실대로 알린다.
   }
 
   // 다시 쓴 문서는 끝으로 보낸다 — 지금 손대고 있는 문서가 먼저 버려지면 안 된다.
@@ -234,7 +279,7 @@ export function clearRaw(key: string): void {
     const storage = webStorage(tier);
     if (!storage) {
       // 접근을 못 해 못 지웠다 — 접근이 풀리면 지운 줄 알았던 draft 가 되살아난다.
-      markStale(tier, key, otherWebTier(tier));
+      markStale(tier, key, null);
       continue;
     }
     try {
@@ -242,8 +287,8 @@ export function clearRaw(key: string): void {
       unmarkStale(tier, key);
     } catch {
       // 지우지 못했으면 낡은 값이 남는다 — 없는 셈 쳐야 "지웠다"가 지켜진다. 묘비는
-      // 살아남는 계층에 적어야 새로고침 뒤에도 지운 draft 가 안 되살아난다.
-      markStale(tier, key, otherWebTier(tier));
+      // 새로고침을 견디는 자리에 적어야 지운 draft 가 안 되살아난다.
+      markStale(tier, key, null);
     }
   }
   memoryDrafts.delete(key);

@@ -22,6 +22,8 @@ const realRemoveItem = Storage.prototype.removeItem;
 const blockedWrites = new Set<Storage>();
 const blockedReads = new Set<Storage>();
 const blockedRemovals = new Set<Storage>();
+/** 키를 가려서 막는다 — "본문은 받아 줬는데 묘비는 못 받은" 자리를 재현한다. */
+const blockedKeyWrites = new Map<Storage, (key: string) => boolean>();
 
 /** 이 스토리지의 쓰기를 막는다 — 용량 초과·프라이빗 모드가 실제로 이렇게 던진다. */
 function breakWrites(storage: Storage) {
@@ -41,6 +43,14 @@ function breakRemovals(storage: Storage) {
   blockedRemovals.add(storage);
 }
 
+function healRemovals(storage: Storage) {
+  blockedRemovals.delete(storage);
+}
+
+function breakWritesFor(storage: Storage, match: (key: string) => boolean) {
+  blockedKeyWrites.set(storage, match);
+}
+
 function denied(): never {
   throw new DOMException("storage unavailable", "QuotaExceededError");
 }
@@ -52,13 +62,14 @@ beforeEach(() => {
   blockedWrites.clear();
   blockedReads.clear();
   blockedRemovals.clear();
+  blockedKeyWrites.clear();
 
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
     this: Storage,
     k: string,
     v: string,
   ) {
-    if (blockedWrites.has(this)) denied();
+    if (blockedWrites.has(this) || blockedKeyWrites.get(this)?.(k)) denied();
     return realSetItem.call(this, k, v);
   });
   vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, k: string) {
@@ -242,6 +253,26 @@ describe("표시는 새로고침을 견뎌야 한다", () => {
     expect(readRaw(KEY)).toBeNull();
   });
 
+
+  /**
+   * 표시를 **남기지 못했는데도** "session 에 담았다"고 답하면, 그 경고("탭을 닫으면 사라진다")는
+   * 새로고침은 견딘다고 약속하는 셈이다. 그런데 표시가 모듈 스코프에만 있으면 리로드에 죽고
+   * 위 계층의 옛 값이 그대로 새 편집을 덮는다 — 지킬 수 없는 약속이다. 지킬 수 있는 만큼만
+   * 약속하도록 한 계층 더 내려간다.
+   */
+  it("묘비를 못 남긴 계층은 안전한 집이 아니다 — 한 계층 더 내려가 사실대로 경고한다", () => {
+    expect(writeRaw(KEY, "옛 편집")).toBe("local");
+
+    // 이 환경은 local 의 쓰기도 삭제도 막는다 — 옛 값이 local 에 남는다.
+    breakWrites(window.localStorage);
+    breakRemovals(window.localStorage);
+    // session 은 본문은 받아 주지만 묘비 한 줄은 못 받는다.
+    breakWritesFor(window.sessionStorage, (k) => k.startsWith("arc:draft-stale:"));
+
+    expect(writeRaw(KEY, "새 편집")).toBe("memory");
+    expect(readRaw(KEY)).toBe("새 편집");
+  });
+
   it("리로드 뒤 위 계층이 살아나 새로 쓰면 다시 그 값을 읽는다", () => {
     expect(writeRaw(KEY, "옛 편집")).toBe("local");
     breakWrites(window.localStorage);
@@ -309,6 +340,28 @@ describe("clearRaw — 세 계층을 모두 지운다", () => {
     clearRaw(KEY);
 
     expect(readRaw(KEY)).toBeNull();
+  });
+
+
+  /**
+   * session 값은 **탭마다 따로**다. 그 묘비를 모든 탭이 공유하는 localStorage 에 적으면, 한 탭의
+   * 지우기가 다른 탭의 멀쩡한 session draft 까지 읽기에서 건너뛰게 만든다 — 남의 편집을 지운다.
+   *
+   * 다른 탭은 "sessionStorage 와 모듈 상태가 그 탭만의 것"이라는 점으로 흉내 낸다.
+   */
+  it("한 탭의 지우기가 다른 탭의 session draft 를 가리지 않는다", () => {
+    // 탭 A: 지우려는데 이 탭의 session 삭제가 막혔다.
+    window.sessionStorage.setItem(KEY, "탭 A 의 편집");
+    breakRemovals(window.sessionStorage);
+    clearRaw(KEY);
+
+    // 탭 B 로 옮겨 간다 — sessionStorage 도 모듈 상태도 이 탭만의 것이다.
+    healRemovals(window.sessionStorage);
+    window.sessionStorage.clear();
+    __resetMemoryDrafts();
+    window.sessionStorage.setItem(KEY, "탭 B 의 새 편집");
+
+    expect(readRaw(KEY)).toBe("탭 B 의 새 편집");
   });
 
   it("스토리지 삭제가 던져도 나머지 계층 정리를 계속한다", () => {
