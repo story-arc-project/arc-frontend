@@ -4,8 +4,19 @@ import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 
 import BlockList from "./BlockList"
-import { createChecklistField, createSelectField } from "@/lib/utils/block-utils"
-import type { Block, ChecklistBlockValue, SingleSelectBlockValue } from "@/types/archive"
+import {
+  createChecklistField,
+  createRepeatableCell,
+  createSelectField,
+  createTableField,
+} from "@/lib/utils/block-utils"
+import type {
+  Block,
+  ChecklistBlockValue,
+  RepeatableCellBlockValue,
+  SingleSelectBlockValue,
+  TableBlockValue,
+} from "@/types/archive"
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
 afterEach(cleanup)
@@ -160,5 +171,101 @@ describe("모르는 값 위에는 편집 경로 전체를 닫는다", () => {
     )
     await openBlockEditor(user)
     expect(screen.getByPlaceholderText("블록 이름을 입력하세요")).toBeTruthy()
+  })
+})
+
+/**
+ * **열 목록도 옵션 목록과 같은 규칙을 따라야 한다 (FRT-158 형제 결함).**
+ *
+ * `options` 는 "빈 배열도 그대로 넘긴다"로 이미 고쳐졌지만 `columns`/`tableColumns` 는
+ * `length > 0 ? … : undefined` 로 접혀 있었다. `BlockList` 는 `undefined` 를
+ * **"안 건드렸다"** 로 읽으므로, 사용자가 열을 전부 지우고 확인해도 갱신이 통째로 스킵되고
+ * 옛 열이 그대로 남는다 — 지운 행위가 조용히 삼켜진다.
+ */
+describe("BlockList 모달에서 열을 전부 지우면 빈 목록이 반영된다", () => {
+  it("표: 열을 전부 지우면 빈 열 목록이 블록에 반영된다", async () => {
+    const user = userEvent.setup()
+    let latest: Block[] = []
+    const block = createTableField("기록표")
+    block.value = { type: "table", columns: ["열1"], rows: [["v"]] }
+    render(<Harness initial={[block]} onBlocks={b => { latest = b }} />)
+
+    await openBlockEditor(user)
+    await user.click(screen.getByRole("button", { name: "열1 삭제" }))
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    expect((latest[0].value as TableBlockValue).columns).toEqual([])
+  })
+
+  it("반복 셀: 열을 전부 지우면 빈 열 목록이 블록에 반영된다", async () => {
+    const user = userEvent.setup()
+    let latest: Block[] = []
+    const block = createRepeatableCell(
+      "활동 로그",
+      [{ key: "c1", label: "날짜", blockType: "date" }],
+      { lockColumns: false },
+    )
+    render(<Harness initial={[block]} onBlocks={b => { latest = b }} />)
+
+    await openBlockEditor(user)
+    await user.click(screen.getByRole("button", { name: "열 삭제" }))
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    expect((latest[0].value as RepeatableCellBlockValue).columns).toEqual([])
+  })
+
+  it("열을 하나만 지우면 남은 열이 그대로 반영된다 — 위 두 단언이 빈 그물이 아님을 세우는 대조군", async () => {
+    const user = userEvent.setup()
+    let latest: Block[] = []
+    const block = createTableField("기록표")
+    block.value = { type: "table", columns: ["열1", "열2"], rows: [] }
+    render(<Harness initial={[block]} onBlocks={b => { latest = b }} />)
+
+    await openBlockEditor(user)
+    await user.click(screen.getByRole("button", { name: "열1 삭제" }))
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    expect((latest[0].value as TableBlockValue).columns).toEqual(["열2"])
+  })
+})
+
+/**
+ * **모달은 단일 인스턴스라 앞 블록의 열 구성이 남을 여지가 있다 (FRT-272).**
+ *
+ * 내부 상태를 리셋하는 키에 `columns`/`tableColumns` 가 빠져 있어, 라벨이 같은 표 블록을
+ * 연달아 열면 키가 같아진다. 지금 이게 사고로 번지지 않는 이유는 **닫힘(open=false) 렌더가
+ * 반드시 한 번 끼어들어 키를 비우기 때문**이다 — 즉 안전은 리셋 키가 아니라 *닫힘을 거친다*는
+ * 사실이 떠받치고 있다. 모달을 닫지 않고 다른 블록으로 갈아타는 UI 가 생기면 그날로 깨진다.
+ * 이 테스트는 그 사실을 못 박는다.
+ */
+describe("라벨이 같은 블록을 연달아 열어도 앞 블록의 열 구성이 남지 않는다", () => {
+  function tableWithColumns(id: string, label: string, columns: string[]): Block {
+    const block = createTableField(label)
+    block.id = id
+    block.value = { type: "table", columns, rows: [] }
+    return block
+  }
+
+  it("A 에서 열을 바꾸고 닫은 뒤 B 를 열면 B 의 실제 열만 보인다", async () => {
+    const user = userEvent.setup()
+    render(
+      <Harness
+        initial={[
+          tableWithColumns("a", "기록표", ["A열1", "A열2"]),
+          tableWithColumns("b", "기록표", ["B열1"]),
+        ]}
+        onBlocks={() => {}}
+      />,
+    )
+
+    await user.click(screen.getAllByRole("button", { name: "블록 편집" })[0])
+    await user.type(screen.getByPlaceholderText("열 이름 추가..."), "A열3{Enter}")
+    await user.click(screen.getByRole("button", { name: "취소" }))
+
+    await user.click(screen.getAllByRole("button", { name: "블록 편집" })[1])
+
+    expect(screen.queryByRole("button", { name: "B열1 삭제" })).not.toBeNull()
+    expect(screen.queryByRole("button", { name: "A열1 삭제" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "A열3 삭제" })).toBeNull()
   })
 })
