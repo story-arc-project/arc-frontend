@@ -5,6 +5,8 @@
 // 가입→온보딩→기록→분석→export 를 PostHog 안에서 하나의 퍼널로 잇기 위해 완료 등뼈를
 // 이벤트로 emit 한다. 단순 총량 집계는 DB(고객정보 API 등)로 넘겨 중복 계측을 피한다.
 
+import type { DraftTier } from "@/lib/export/draft-storage";
+
 export type SignupMethod = "email" | "google";
 // 개별(individual) 분석은 기록 저장 시 백엔드가 자동 생성 — 프론트에 "실행 완료" 관측
 // 지점이 없어 완료 이벤트에서 제외한다(후속 FRT-107).
@@ -136,6 +138,11 @@ export interface AnalyticsEventProps {
     persisted: boolean;
     sections: string[];
     section_count: number;
+    // FRT-261: 임시 저장이 **어느 계층까지 내려갔는가**. 폴백을 깔면서 `persisted:false` 가
+    // 사실상 안 찍히게 됐다(메모리 계층이 거의 항상 받아낸다) — 유실 위험은 이제 이 축으로
+    // 읽어야 한다. optional 인 것은 서버 저장 경로처럼 임시 저장을 거치지 않는 호출부가
+    // 있기 때문이다: "안 실린 것"과 "못 담은 것(null)"은 다른 사실이라 뭉치면 안 된다.
+    storage_tier?: DraftTier | null;
   };
   // 인앱 피드백 응답. PII 금지 — comment 원문·analysis_id 는 절대 싣지 않는다(서버에만 남긴다).
   // 리터럴 유니온을 인라인한다: lib/feedback/types.ts 가 이미 이 파일(AnalysisKind)을 import 하므로

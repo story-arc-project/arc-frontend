@@ -6,7 +6,7 @@ import {
   readRaw,
   writeRaw,
   __resetMemoryDrafts,
-  MEMORY_DRAFT_LIMIT,
+  MEMORY_DRAFT_BUDGET_CHARS,
 } from "./draft-storage";
 
 const KEY = "arc:test-draft:1";
@@ -158,6 +158,48 @@ describe("draft 는 언제나 한 계층에만 산다", () => {
   });
 });
 
+/**
+ * 계층을 건너뛰게 하는 표시가 **모듈 스코프에만** 살면 새로고침에 죽는다. 그런데 지우지
+ * 못한 옛 값은 localStorage 에 그대로 살아남고 sessionStorage 의 새 편집도 살아남는다 —
+ * 리로드 후 읽기가 다시 위부터 보면서 옛 값을 집어, 이 파일이 막으려는 유실이 되돌아온다.
+ *
+ * 리로드는 "모듈 상태만 초기화되고 웹 스토리지 내용은 남는 것"으로 흉내 낸다.
+ */
+describe("표시는 새로고침을 견뎌야 한다", () => {
+  function simulateReload() {
+    __resetMemoryDrafts();
+  }
+
+  it("비우지 못한 옛 값은 리로드 뒤에도 새 편집을 덮지 않는다", () => {
+    expect(writeRaw(KEY, "옛 편집")).toBe("local");
+
+    breakWrites(window.localStorage);
+    breakRemovals(window.localStorage);
+    expect(writeRaw(KEY, "새 편집")).toBe("session");
+
+    simulateReload();
+
+    // local 에는 여전히 옛 값이, session 에는 새 편집이 남아 있다.
+    expect(window.localStorage.getItem(KEY)).toBe("옛 편집");
+    expect(readRaw(KEY)).toBe("새 편집");
+  });
+
+  it("리로드 뒤 위 계층이 살아나 새로 쓰면 다시 그 값을 읽는다", () => {
+    expect(writeRaw(KEY, "옛 편집")).toBe("local");
+    breakWrites(window.localStorage);
+    breakRemovals(window.localStorage);
+    expect(writeRaw(KEY, "새 편집")).toBe("session");
+    simulateReload();
+
+    // 사용자가 공간을 비웠다 — 이제 위 계층에 다시 쓸 수 있다.
+    healWrites(window.localStorage);
+    expect(writeRaw(KEY, "복구 후 편집")).toBe("local");
+
+    // 표시가 남아 위 계층을 영영 건너뛰면, 방금 쓴 값을 도로 못 읽는다.
+    expect(readRaw(KEY)).toBe("복구 후 편집");
+  });
+});
+
 describe("readRaw — 위 계층부터 본다", () => {
   it("아무 데도 없으면 null", () => {
     expect(readRaw(KEY)).toBeNull();
@@ -224,34 +266,77 @@ describe("clearRaw — 세 계층을 모두 지운다", () => {
   });
 });
 
-describe("메모리 계층은 무한히 자라지 않는다", () => {
-  it(`상한(${MEMORY_DRAFT_LIMIT})을 넘으면 가장 오래된 것부터 버린다`, () => {
+describe("메모리 계층 — 방문만으로 편집을 잃지 않는다", () => {
+  /** 두 웹 스토리지를 모두 막아 메모리 계층으로 떨어뜨린다. */
+  function forceMemoryTier() {
     breakWrites(window.localStorage);
     breakWrites(window.sessionStorage);
+  }
 
-    const keys = Array.from({ length: MEMORY_DRAFT_LIMIT + 1 }, (_, i) => `doc:${i}`);
-    keys.forEach((k) => writeRaw(k, `본문 ${k}`));
+  function releaseStorages() {
     healWrites(window.localStorage);
     healWrites(window.sessionStorage);
+  }
 
-    expect(readRaw(keys[0])).toBeNull();
-    keys.slice(1).forEach((k) => {
+  /**
+   * 예전에는 문서 **개수**(3)로 끊어서, 같은 세션에서 네 번째 문서를 여는 것만으로 첫
+   * 문서의 편집이 조용히 사라졌다. 이 계층은 편집을 안 잃으려고 있는 것인데 *방문만으로*
+   * 잃는 셈이었고, `memory` 경고는 "새로고침하면 사라진다"고만 말해 예상할 수도 없었다.
+   */
+  it("문서를 여러 개 거쳐도 앞 문서의 편집이 남아 있다", () => {
+    forceMemoryTier();
+
+    const keys = Array.from({ length: 8 }, (_, i) => `doc:${i}`);
+    keys.forEach((k) => writeRaw(k, `본문 ${k}`));
+    releaseStorages();
+
+    keys.forEach((k) => {
       expect(readRaw(k)).toBe(`본문 ${k}`);
     });
   });
 
-  it("같은 문서를 다시 쓰면 자리를 새로 차지하지 않는다", () => {
-    breakWrites(window.localStorage);
-    breakWrites(window.sessionStorage);
+  // 둘은 들어가고 셋은 못 들어가는 크기. 실패 출력이 본문으로 뒤덮이지 않도록 값 자체를
+  // 비교하지 않고 "남았는가"만 본다.
+  const BIG = "가".repeat(Math.floor(MEMORY_DRAFT_BUDGET_CHARS * 0.4));
 
-    writeRaw("doc:0", "첫 편집");
-    for (let i = 1; i < MEMORY_DRAFT_LIMIT; i += 1) writeRaw(`doc:${i}`, `본문 ${i}`);
-    // 상한을 꽉 채운 상태에서 기존 문서를 갱신한다 — 새 자리를 차지한다면 doc:0 이 밀려난다.
-    writeRaw("doc:0", "두 번째 편집");
-    healWrites(window.localStorage);
-    healWrites(window.sessionStorage);
+  it("총량을 넘기면 가장 오래 손대지 않은 것부터 버린다", () => {
+    forceMemoryTier();
 
-    expect(readRaw("doc:0")).toBe("두 번째 편집");
+    writeRaw("doc:0", BIG);
+    writeRaw("doc:1", BIG);
+    writeRaw("doc:2", BIG);
+    releaseStorages();
+
+    expect(readRaw("doc:0")).toBeNull();
+    expect(readRaw("doc:2")).not.toBeNull();
+  });
+
+  it("다시 손댄 문서는 뒤로 밀려 먼저 버려지지 않는다", () => {
+    forceMemoryTier();
+
+    writeRaw("doc:0", BIG);
+    writeRaw("doc:1", BIG);
+    // doc:0 을 다시 고친다 — 이제 가장 오래 손대지 않은 것은 doc:1 이다.
+    writeRaw("doc:0", BIG);
+    writeRaw("doc:2", BIG);
+    releaseStorages();
+
+    expect(readRaw("doc:0")).not.toBeNull();
+    expect(readRaw("doc:1")).toBeNull();
+  });
+
+  /**
+   * 상한을 넘겼다고 방금 쓴 것까지 버리면 `"memory"` 를 돌려주고도 정작 안 들고 있는 셈이
+   * 되어, 그 반환값으로 띄우는 경고("새로고침하면 사라집니다")가 거짓이 된다.
+   */
+  it("혼자 상한을 넘기는 문서라도 방금 쓴 것은 들고 있는다", () => {
+    forceMemoryTier();
+
+    const huge = "가".repeat(MEMORY_DRAFT_BUDGET_CHARS + 10);
+    expect(writeRaw("doc:huge", huge)).toBe("memory");
+    releaseStorages();
+
+    expect(readRaw("doc:huge")?.length).toBe(huge.length);
   });
 });
 
