@@ -20,9 +20,15 @@ jobs:
 
       - run: npm ci
 
-      # test-runner가 사용하는 playwright 버전에 맞는 chromium + OS 의존성 설치.
+      # test-runner가 사용하는 playwright 버전에 맞는 chromium 바이너리 설치.
+      #
+      # `--with-deps` 는 쓰지 않는다. 러너 이미지에 chromium 공유 라이브러리가 이미 다 있어
+      # apt 가 실제로 받아오는 건 CJK·태국어·키릴 **폴백 폰트 9개뿐**인데, 이 잡은 스토리
+      # 마운트와 콘솔 에러만 보지 픽셀을 비교하지 않으므로 그 폰트가 필요 없다.
+      # 반면 대가는 크다 — Azure apt 미러가 무응답이면 apt 가 조용히 매달려 잡 전체가
+      # 15분 타임아웃으로 죽는다(2026-08-19 같은 커밋에서 성공/실패가 번갈아 난 원인).
       - name: Install Playwright (chromium)
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       # build-storybook → 정적 서빙 → 전체 스토리 마운트(렌더/콘솔 에러 0 검증).
       - name: Run Storybook test-runner
