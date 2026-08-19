@@ -67,6 +67,18 @@ describe("RoleChips", () => {
     expect(details.open).toBe(false)
   })
 
+  it("고른 뒤 포커스가 숨겨진 옵션이 아니라 '역할' 버튼으로 돌아온다", async () => {
+    // 포커스를 안 옮기면 방금 숨겨진 옵션에 초점이 남아, 이어지는 Enter 가 보이지 않는 항목을 누른다.
+    const user = userEvent.setup()
+    render(<Harness roles={["회장", "공연팀장"]} />)
+
+    const summary = screen.getByText("🏷️ 역할")
+    await user.click(summary)
+    await user.click(screen.getByRole("button", { name: "공연팀장" }))
+
+    expect(document.activeElement).toBe(summary)
+  })
+
   it("드롭다운에서 이미 붙은 역할을 해제해도 닫힌다", async () => {
     const user = userEvent.setup()
     render(<Harness roles={["회장"]} initial={["회장"]} />)

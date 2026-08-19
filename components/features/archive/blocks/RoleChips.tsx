@@ -36,6 +36,7 @@ export default function RoleChips({ value, onChange, readOnly, inline }: RoleChi
   const editable = !readOnly && !!ctx
 
   const detailsRef = useRef<HTMLDetailsElement>(null)
+  const summaryRef = useRef<HTMLElement>(null)
 
   function toggle(role: string) {
     onChange(selected.includes(role) ? selected.filter(r => r !== role) : [...selected, role])
@@ -45,9 +46,14 @@ export default function RoleChips({ value, onChange, readOnly, inline }: RoleChi
    * 드롭다운에서 고르는 경로. 값만 바꾸고 열어 두면 메뉴가 아래 입력칸을 가리고,
    * 닫으려면 방금 옆으로 밀려난 요약 버튼을 눈으로 다시 찾아야 한다(FRT-323).
    * 다중 선택은 그대로 살아 있다 — 두 번째 역할은 다시 열어서 붙인다.
+   *
+   * 닫기 **전에** 포커스를 요약 버튼으로 되돌린다. 안 옮기면 키보드 사용자의 포커스가
+   * 방금 숨겨진 옵션에 남아 초점 표시가 사라지고, 이어지는 Enter/Space 가 보이지 않는
+   * 항목을 계속 누른다. 브라우저의 포커스 보정 동작에 기대지 않는다.
    */
   function pick(role: string) {
     toggle(role)
+    summaryRef.current?.focus()
     if (detailsRef.current) detailsRef.current.open = false
   }
 
@@ -76,7 +82,7 @@ export default function RoleChips({ value, onChange, readOnly, inline }: RoleChi
         고를 때마다 버튼이 오른쪽으로 이동하고 메뉴도 같이 튄다(FRT-323).
       */}
       <details ref={detailsRef} className="relative inline-block shrink-0">
-        <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-caption text-text-tertiary transition-colors hover:border-brand hover:text-brand">
+        <summary ref={summaryRef} className="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-caption text-text-tertiary transition-colors hover:border-brand hover:text-brand">
           🏷️ 역할
         </summary>
         <div className="absolute left-0 top-full z-10 mt-1 min-w-40 rounded-lg border border-border bg-surface p-1 shadow-lg">
