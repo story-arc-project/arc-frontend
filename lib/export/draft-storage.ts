@@ -147,8 +147,15 @@ function webStorage(tier: WebStorageTier): Storage | null {
 function evictOtherTiers(key: string, keep: DraftTier): void {
   for (const tier of WEB_STORAGE_TIERS) {
     if (tier === keep) continue;
+    const storage = webStorage(tier);
+    if (!storage) {
+      // 접근조차 못 했다 — **지웠는지 알 수 없다.** 지금은 읽지도 못하니 무해해 보이지만,
+      // 정책이 풀리면 옛 값이 그대로 되살아나 새 편집을 덮는다. 못 지운 것과 결과가 같다.
+      markStale(tier, key, keep);
+      continue;
+    }
     try {
-      webStorage(tier)?.removeItem(key);
+      storage.removeItem(key);
       unmarkStale(tier, key);
     } catch {
       // 지우지 못했다 — 낡은 값이 남았으므로 읽기에서 건너뛰게 표시하고 정리를 계속한다.
@@ -223,14 +230,19 @@ export function clearRaw(key: string): void {
   if (typeof window === "undefined") return;
 
   for (const tier of WEB_STORAGE_TIERS) {
+    freshEntries.delete(stampOf(tier, key));
+    const storage = webStorage(tier);
+    if (!storage) {
+      // 접근을 못 해 못 지웠다 — 접근이 풀리면 지운 줄 알았던 draft 가 되살아난다.
+      markStale(tier, key, otherWebTier(tier));
+      continue;
+    }
     try {
-      webStorage(tier)?.removeItem(key);
+      storage.removeItem(key);
       unmarkStale(tier, key);
-      freshEntries.delete(stampOf(tier, key));
     } catch {
       // 지우지 못했으면 낡은 값이 남는다 — 없는 셈 쳐야 "지웠다"가 지켜진다. 묘비는
       // 살아남는 계층에 적어야 새로고침 뒤에도 지운 draft 가 안 되살아난다.
-      freshEntries.delete(stampOf(tier, key));
       markStale(tier, key, otherWebTier(tier));
     }
   }

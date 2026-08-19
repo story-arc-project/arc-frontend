@@ -184,6 +184,64 @@ describe("표시는 새로고침을 견뎌야 한다", () => {
     expect(readRaw(KEY)).toBe("새 편집");
   });
 
+  /**
+   * 스토리지는 **프로퍼티 접근만으로도** 던진다(정책으로 차단된 브라우저). 그때는 지울 수도
+   * 없는데, "지웠다"고 보면 표시가 남지 않는다 — 나중에 접근이 **풀리면** 옛 값이 그대로
+   * 되살아나 새 편집을 덮는다. 못 지운 것과 못 들여다본 것은 결과가 같다.
+   */
+  function breakAccess(prop: "localStorage" | "sessionStorage"): () => void {
+    let target: object = window;
+    let desc = Object.getOwnPropertyDescriptor(window, prop);
+    while (!desc) {
+      target = Object.getPrototypeOf(target) as object;
+      if (target === null) break;
+      desc = Object.getOwnPropertyDescriptor(target, prop);
+    }
+    Object.defineProperty(window, prop, {
+      configurable: true,
+      get() {
+        throw new DOMException("storage blocked", "SecurityError");
+      },
+    });
+    return () => {
+      delete (window as unknown as Record<string, unknown>)[prop];
+      if (desc) Object.defineProperty(target, prop, desc);
+    };
+  }
+
+  it("접근조차 못 한 계층의 옛 값은, 접근이 풀린 뒤에도 새 편집을 덮지 않는다", () => {
+    expect(writeRaw(KEY, "옛 편집")).toBe("local");
+
+    // 정책이 바뀌어 localStorage 를 아예 못 만지게 됐다.
+    const restore = breakAccess("localStorage");
+    try {
+      expect(writeRaw(KEY, "새 편집")).toBe("session");
+    } finally {
+      // 사용자가 설정을 되돌렸다 — 접근이 살아난다.
+      restore();
+    }
+
+    simulateReload();
+
+    expect(window.localStorage.getItem(KEY)).toBe("옛 편집");
+    expect(readRaw(KEY)).toBe("새 편집");
+  });
+
+  it("접근을 못 한 채 지운 draft 는 접근이 풀려도 되살아나지 않는다", () => {
+    expect(writeRaw(KEY, "저장 끝난 draft")).toBe("local");
+
+    const restore = breakAccess("localStorage");
+    try {
+      clearRaw(KEY);
+    } finally {
+      restore();
+    }
+
+    simulateReload();
+
+    expect(readRaw(KEY)).toBeNull();
+  });
+
   it("리로드 뒤 위 계층이 살아나 새로 쓰면 다시 그 값을 읽는다", () => {
     expect(writeRaw(KEY, "옛 편집")).toBe("local");
     breakWrites(window.localStorage);
