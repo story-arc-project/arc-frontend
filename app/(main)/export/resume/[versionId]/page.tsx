@@ -511,11 +511,15 @@ export default function ResumeDetailPage({ params }: PageProps) {
   useEffect(() => {
     return () => {
       if (dirtyRef.current && resumeRef.current) {
+        // '나가기' 버튼이 이미 이 이탈을 처리했는지를 먼저 본다 — router.push 가 곧바로
+        // 이 effect 의 cleanup 을 부르므로, 나중에 세우면 handleBack 이 방금 띄운 경고
+        // 토스트를 여기서 또 띄우게 된다(FRT-261 회귀).
+        const alreadyHandled = exitDraftFiredRef.current;
         const tier = writeDraft(versionId, resumeRef.current);
         // 상단 '나가기'만 출구가 아니다 — GNB 링크로 떠나도 페이지는 조용히 임시 저장한다.
         // 그 편집도 어디까지 갔는지는 같은 질문이라 같은 이벤트로 남긴다. 단 '나가기'는
         // 스스로 이동을 일으켜 여기로 이어지므로, 이미 쐈으면 두 번 세지 않는다.
-        if (!exitDraftFiredRef.current) {
+        if (!alreadyHandled) {
           exitDraftFiredRef.current = true;
           captureEditSaved(
             "exit_draft",
@@ -527,6 +531,8 @@ export default function ResumeDetailPage({ params }: PageProps) {
         // 이 경로가 기댈 안전망은 이것 하나뿐이다. 결과를 지표에만 남기고 사용자에게 안
         // 알리면 저장 실패가 **아무에게도 안 알려진 채** 편집이 사라진다(FRT-261).
         // toast 는 모듈 전역 pub/sub 라 이 컴포넌트가 죽은 뒤에도 다음 화면에서 뜬다.
+        // 다만 '나가기'가 이미 같은 경고를 띄웠으면 중복이니 여기서는 건너뛴다.
+        if (alreadyHandled) return;
         const tierWarning = draftTierWarning(tier);
         if (tierWarning) toast.error(tierWarning);
       }

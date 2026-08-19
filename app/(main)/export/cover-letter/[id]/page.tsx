@@ -121,6 +121,10 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
 
   const dirtyRef = useRef(false);
   const resultRef = useRef<CoverLetterResult | null>(null);
+  // '뒤로' 버튼이 이미 이 이탈을 알렸으면 뒤이은 언마운트 cleanup 은 같은 경고를 또
+  // 띄우지 않는다 — router.push 가 이 컴포넌트를 곧바로 언마운트시키므로, 가드가 없으면
+  // 저장 계층 경고(tierWarning)가 사용자에게 두 번 뜬다(FRT-261 회귀).
+  const exitHandledRef = useRef(false);
   // 이 인스턴스가 **지금** 답하고 있는 질문. 비동기 저장의 클로저는 시작 당시의 것을 쥐고
   // 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave). id 가 아니라 requestKey 인 것은
   // A→B→A 때문이다 — 돌아오면 id 는 같아지지만 그 사이 재조회가 끼어들어 resultRef 는
@@ -227,6 +231,8 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       const tierWarning = draftTierWarning(tier);
       if (tierWarning) toast.error(tierWarning);
       else toast("변경사항을 임시 저장했어요", "info");
+      // 이동이 확정된 뒤에만 세운다 — 곧 이어질 언마운트가 이 경고를 또 띄우지 않도록.
+      exitHandledRef.current = true;
     }
     router.push(`${basePath}/export`);
   }, [dirty, result, id, router, basePath]);
@@ -266,7 +272,10 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   useEffect(() => {
     return () => {
       if (!dirtyRef.current || !resultRef.current) return;
-      const tierWarning = draftTierWarning(writeDraft(id, resultRef.current));
+      const tier = writeDraft(id, resultRef.current);
+      // '뒤로' 버튼이 같은 이탈을 이미 경고했으면 여기서는 조용히 저장만 이어간다.
+      if (exitHandledRef.current) return;
+      const tierWarning = draftTierWarning(tier);
       if (tierWarning) toast.error(tierWarning);
     };
   }, [id]);

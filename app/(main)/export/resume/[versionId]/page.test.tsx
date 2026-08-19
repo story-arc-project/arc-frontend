@@ -659,6 +659,34 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       expect(captured("resume_edit_saved").length).toBe(1);
     });
 
+    // 같은 이유로 **경고 문구**도 한 번뿐이어야 한다. 계측만 접고 toast 를 안 접으면,
+    // 저장 공간이 막힌 사용자는 '나가기' 한 번에 같은 경고를 두 번 받는다 — 두 번째는
+    // 알려줄 새 사실이 없으면서 "또 실패했나" 하는 인상만 남긴다.
+    it("나가기가 이미 경고했으면 뒤따르는 언마운트는 같은 경고를 되풀이하지 않는다", async () => {
+      const user = userEvent.setup();
+      const { unmount } = await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      vi.mocked(toast.error).mockClear();
+      // 클릭과 뒤이은 언마운트가 **같은** 저장 실패 환경을 만나야 재현된다.
+      const setItem = vi
+        .spyOn(Storage.prototype, "setItem")
+        .mockImplementation(() => {
+          throw new Error("quota");
+        });
+      try {
+        await user.click(
+          screen.getByRole("button", { name: "익스포트로 돌아가기" }),
+        );
+        await waitFor(() => expect(mockPush).toHaveBeenCalled());
+        unmount();
+      } finally {
+        setItem.mockRestore();
+      }
+
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+
     // 실패한 '나가기'는 이탈이 아니다 — 사용자는 화면에 그대로 남는다. 여기서 중복
     // 방지 플래그를 세워버리면, 뒤이어 진짜로 떠날 때 보관된 편집이 통째로 안 남는다.
     it("나가기가 임시 저장에 실패했다면 뒤이은 이탈은 다시 남긴다", async () => {

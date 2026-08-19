@@ -634,4 +634,29 @@ describe("이탈 경로에서 임시 저장이 위태로우면 사용자에게 �
     // 담기긴 했으므로 붙잡지 않는다 — 예전에는 여기서 이동이 막혔다.
     expect(mockPush).toHaveBeenCalled();
   });
+
+  // '뒤로'는 스스로 이동을 일으켜 곧바로 언마운트로 이어진다. 두 자리가 각각 경고를
+  // 띄우면 한 번의 이탈에 같은 문구가 두 번 뜬다 — 두 번째는 알려줄 새 사실이 없으면서
+  // "또 실패했나" 하는 인상만 남긴다. 저장 자체는 양쪽 모두에서 계속 시도한다.
+  it("'뒤로'가 이미 경고했으면 뒤따르는 언마운트는 같은 경고를 되풀이하지 않는다", async () => {
+    const route = routeById();
+    const view = await renderId("A");
+    route.resolve("A", fixture("에이 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    vi.mocked(toast.error).mockClear();
+
+    // 클릭과 뒤이은 언마운트가 **같은** 저장 실패 환경을 만나야 재현된다.
+    const spy = blockStorageWrites();
+    await user.click(screen.getByRole("button", { name: "익스포트" }));
+    view.unmount();
+    spy.mockRestore();
+
+    expect(toast.error).toHaveBeenCalledTimes(1);
+  });
 });
