@@ -91,6 +91,20 @@ export default function SingleSelectBlock({
   const [editValue, setEditValue] = useState("")
   const selectId = useId()
 
+  /**
+   * 편집하던 옵션이 목록에서 빠지면 편집 상태를 **그 자리에서 비운다**. 렌더 조건만으로 입력칸을
+   * 거두면 상태는 남아 있어서, 같은 이름이 다시 들어올 때(예: '새 옵션 추가'로 같은 이름 입력)
+   * 새로 생긴 행이 옛 입력값을 문 채 편집 모드로 열리고 확인 한 번에 엉뚱하게 개명된다.
+   * `options` 는 `val.selected` 가 프리셋 밖이면 그 값을 덧붙여 만들므로, 선택을 바꾸는 것만으로도
+   * 편집 대상이 사라질 수 있다 — 바깥 재렌더가 아니어도 열리는 경로다.
+   * 이펙트가 아니라 렌더 중 조정인 이유: 이펙트로 미루면 커밋이 한 번 더 돌아 그 사이의 렌더가
+   * 낡은 상태를 그대로 쓴다. 조건이 다음 패스에서 곧바로 거짓이 되므로 루프도 아니다.
+   */
+  if (editingOption !== null && !options.includes(editingOption)) {
+    setEditingOption(null)
+    setEditValue("")
+  }
+
   function addOption() {
     const trimmed = newOption.trim()
     if (!trimmed || options.includes(trimmed)) return

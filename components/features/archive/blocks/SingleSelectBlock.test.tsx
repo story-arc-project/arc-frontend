@@ -486,4 +486,30 @@ describe("FRT-293 편집 중 다른 옵션을 지워도 편집 대상은 그대�
     expect(screen.queryByDisplayValue("인턴십")).not.toBeInTheDocument()
     expect(onChange).not.toHaveBeenCalled()
   })
+
+  it("사라졌던 이름이 다시 생겨도 옛 편집 상태가 되살아나지 않는다", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <SingleSelectBlock block={makeBlock(FOUR)} allowOptionEdit onChange={onChange} />,
+    )
+    await startEditingIntern(user)
+
+    // '인턴'이 목록에서 빠졌다가...
+    rerender(
+      <SingleSelectBlock block={makeBlock(["계약직", "프리랜서"])} allowOptionEdit onChange={onChange} />,
+    )
+    // ...같은 이름이 다시 들어온다 ('새 옵션 추가'로 같은 이름을 넣는 경우가 이 모양이다).
+    rerender(
+      <SingleSelectBlock
+        block={makeBlock(["계약직", "프리랜서", "인턴"])}
+        allowOptionEdit
+        onChange={onChange}
+      />,
+    )
+
+    // 새로 생긴 행이 옛 입력값을 문 채 편집 모드로 열리면 안 된다 — 확인 한 번에 개명된다.
+    expect(screen.queryByDisplayValue("인턴십")).not.toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "옵션 수정" })).toHaveLength(3)
+  })
 })
