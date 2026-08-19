@@ -81,7 +81,13 @@ export default function SingleSelectBlock({
   const requiredOnSelect = !!block.required && !otherMode
   const [showEditor, setShowEditor] = useState(false)
   const [newOption, setNewOption] = useState("")
-  const [editingIdx, setEditingIdx] = useState<number | null>(null)
+  /**
+   * 편집 대상은 **인덱스가 아니라 값**으로 기억한다 (FRT-293). 편집 중이 아닌 행의 삭제 버튼은
+   * 계속 활성이라 이름을 고치는 도중 앞 옵션이 사라지는 일이 실제로 일어나는데, 인덱스로 잡으면
+   * 그때 배열이 밀려 확인 순간 엉뚱한 옵션이 덮어써진다. 값의 고유성은 `addOption`·`commitEdit`
+   * 의 중복 검사가 이미 보장한다 — `ChecklistBlock`(값)·`RepeatableCellBlock`(필드 id)과 같은 규약.
+   */
+  const [editingOption, setEditingOption] = useState<string | null>(null)
   const [editValue, setEditValue] = useState("")
   const selectId = useId()
 
@@ -107,26 +113,29 @@ export default function SingleSelectBlock({
     })
   }
 
-  function startEdit(idx: number) {
-    setEditingIdx(idx)
-    setEditValue(options[idx])
+  function startEdit(opt: string) {
+    setEditingOption(opt)
+    setEditValue(opt)
   }
 
   function commitEdit() {
-    if (editingIdx === null) return
+    if (editingOption === null) return
+    // 편집 중이던 옵션이 그 사이 목록에서 빠졌으면 확정할 대상이 없다 — 자리를 이어받은 옆
+    // 옵션을 덮어쓰는 대신 편집만 닫는다. 아래 렌더 조건(`editingOption === opt`)이 이미 입력칸을
+    // 거두므로 평소엔 도달하지 않지만, Enter 등 다른 호출처가 생겨도 안전하도록 남기는 이중 방어다.
+    const targetIdx = options.indexOf(editingOption)
     const trimmed = editValue.trim()
-    if (!trimmed || (options.includes(trimmed) && trimmed !== options[editingIdx])) {
-      setEditingIdx(null)
+    if (targetIdx === -1 || !trimmed || (options.includes(trimmed) && trimmed !== editingOption)) {
+      setEditingOption(null)
       return
     }
-    const oldValue = options[editingIdx]
-    const newOptions = options.map((opt, i) => (i === editingIdx ? trimmed : opt))
+    const newOptions = options.map((opt, i) => (i === targetIdx ? trimmed : opt))
     onChange({
       ...val,
       options: newOptions,
-      selected: val.selected === oldValue ? trimmed : val.selected,
+      selected: val.selected === editingOption ? trimmed : val.selected,
     })
-    setEditingIdx(null)
+    setEditingOption(null)
   }
 
   if (readOnly) {
@@ -212,8 +221,10 @@ export default function SingleSelectBlock({
         <div className="border border-border rounded-lg p-3 bg-surface-secondary">
           <div className="flex flex-col gap-1.5">
             {options.map((opt, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                {editingIdx === idx ? (
+              // key 도 값으로 잡는다 — 앞 옵션이 지워져 배열이 밀려도 편집 중인 입력칸이
+              // 재마운트되지 않아 커서 위치와 autoFocus 가 흔들리지 않는다(FRT-293).
+              <div key={opt} className="flex items-center gap-2">
+                {editingOption === opt ? (
                   <>
                     <input
                       type="text"
@@ -224,7 +235,7 @@ export default function SingleSelectBlock({
                         // 조합 중 Enter 는 확정용, Escape 는 조합 취소용이므로 편집을 끝내지 않는다.
                         if (isImeComposing(e)) return
                         if (e.key === "Enter") commitEdit()
-                        if (e.key === "Escape") setEditingIdx(null)
+                        if (e.key === "Escape") setEditingOption(null)
                       }}
                       autoFocus
                     />
@@ -238,7 +249,7 @@ export default function SingleSelectBlock({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setEditingIdx(null)}
+                      onClick={() => setEditingOption(null)}
                       className="p-1 text-text-tertiary hover:text-text-secondary transition-colors"
                       aria-label="취소"
                     >
@@ -250,7 +261,7 @@ export default function SingleSelectBlock({
                     <span className="flex-1 text-body-sm text-text-primary truncate">{opt}</span>
                     <button
                       type="button"
-                      onClick={() => startEdit(idx)}
+                      onClick={() => startEdit(opt)}
                       className="p-1 text-text-tertiary hover:text-text-secondary transition-colors"
                       aria-label="옵션 수정"
                     >

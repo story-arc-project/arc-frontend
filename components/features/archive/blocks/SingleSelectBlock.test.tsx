@@ -415,3 +415,75 @@ describe("FRT-172 옵션 이름 편집 중 IME 조합", () => {
     expect(renderedOptions()).toEqual(["파견직", "계약직"])
   })
 })
+
+/**
+ * FRT-293 — 편집 대상은 **인덱스가 아니라 값**으로 잡는다. 편집 중이 아닌 행의 삭제 버튼은
+ * 계속 활성이라 이름을 고치는 도중 앞 옵션을 지우는 일이 실제로 일어나는데, 인덱스로 기억하면
+ * 그 순간 배열이 밀려 확인할 때 엉뚱한 옵션이 덮어써진다.
+ */
+describe("FRT-293 편집 중 다른 옵션을 지워도 편집 대상은 그대로", () => {
+  const FOUR = ["정규직", "계약직", "인턴", "프리랜서"]
+
+  /**
+   * 이름 편집칸만 집는다 — 같은 값이 선택돼 있으면 `getByDisplayValue` 가 combobox 까지 잡는다.
+   */
+  function renameInput(value: string) {
+    return screen.getAllByDisplayValue(value).find(el => el.tagName === "INPUT") as HTMLInputElement
+  }
+
+  /** 3번째 옵션 '인턴'을 '인턴십'으로 고치는 중 — 아직 확정 전. */
+  async function startEditingIntern(user: ReturnType<typeof userEvent.setup>) {
+    await openEditor(user)
+    await user.click(screen.getAllByRole("button", { name: "옵션 수정" })[2])
+    const input = renameInput("인턴")
+    await user.clear(input)
+    await user.type(input, "인턴십")
+    return input
+  }
+
+  it("앞 옵션을 지운 뒤 확인하면 편집하던 옵션만 이름이 바뀐다", async () => {
+    const user = userEvent.setup()
+    render(<Harness allowOptionEdit initial={FOUR} />)
+    await startEditingIntern(user)
+
+    // 편집 중인 행에는 삭제 버튼이 없으므로 [0] 은 맨 앞 '정규직' 이다.
+    await user.click(screen.getAllByRole("button", { name: "옵션 삭제" })[0])
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    expect(renderedOptions()).toEqual(["계약직", "인턴십", "프리랜서"])
+  })
+
+  it("편집하던 옵션이 선택돼 있었으면 선택값도 새 이름을 따라간다", async () => {
+    const user = userEvent.setup()
+    render(<Harness allowOptionEdit initial={FOUR} selected="인턴" />)
+    await startEditingIntern(user)
+
+    await user.click(screen.getAllByRole("button", { name: "옵션 삭제" })[0])
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("인턴십")
+  })
+
+  it("편집하던 옵션이 목록에서 사라지면 남은 옵션을 덮어쓰지 않는다", async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <SingleSelectBlock block={makeBlock(FOUR)} allowOptionEdit onChange={onChange} />,
+    )
+    await startEditingIntern(user)
+    onChange.mockClear()
+
+    // 바깥(블록 편집 모달 등)에서 목록이 바뀌어 '인턴'이 사라진 채 다시 그려진 상황.
+    rerender(
+      <SingleSelectBlock
+        block={makeBlock(["계약직", "프리랜서", "파견직"])}
+        allowOptionEdit
+        onChange={onChange}
+      />,
+    )
+
+    // 편집 입력이 남은 다른 행으로 옮겨 붙지 않는다 — 확정할 대상이 없으면 편집은 그냥 닫힌다.
+    expect(screen.queryByDisplayValue("인턴십")).not.toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+  })
+})
