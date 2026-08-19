@@ -48,9 +48,63 @@ describe("RoleChips", () => {
     await user.click(screen.getByRole("button", { name: "공연팀장" }))
 
     expect(screen.getByRole("button", { name: "공연팀장 역할 태그 해제" })).toBeDefined()
-    // 다중 선택 — 드롭다운이 닫히지 않고 두 번째도 고를 수 있다.
+    // 다중 선택은 그대로 — 고르면 닫히므로(FRT-323) 두 번째는 다시 열어서 붙인다.
+    await user.click(screen.getByText("🏷️ 역할"))
     await user.click(screen.getByRole("button", { name: "회장" }))
     expect(screen.getByRole("button", { name: "회장 역할 태그 해제" })).toBeDefined()
+  })
+
+  it("역할을 고르면 드롭다운이 바로 닫힌다", async () => {
+    // FRT-323: 열린 채 남으면 아래 입력칸을 가리고, 닫으려면 옆으로 밀려난 버튼을 다시 찾아야 한다.
+    const user = userEvent.setup()
+    render(<Harness roles={["회장", "공연팀장"]} />)
+
+    const details = screen.getByText("🏷️ 역할").closest("details")!
+    await user.click(screen.getByText("🏷️ 역할"))
+    expect(details.open).toBe(true)
+
+    await user.click(screen.getByRole("button", { name: "공연팀장" }))
+    expect(details.open).toBe(false)
+  })
+
+  it("고른 뒤 포커스가 숨겨진 옵션이 아니라 '역할' 버튼으로 돌아온다", async () => {
+    // 포커스를 안 옮기면 방금 숨겨진 옵션에 초점이 남아, 이어지는 Enter 가 보이지 않는 항목을 누른다.
+    const user = userEvent.setup()
+    render(<Harness roles={["회장", "공연팀장"]} />)
+
+    const summary = screen.getByText("🏷️ 역할")
+    await user.click(summary)
+    await user.click(screen.getByRole("button", { name: "공연팀장" }))
+
+    expect(document.activeElement).toBe(summary)
+  })
+
+  it("드롭다운에서 이미 붙은 역할을 해제해도 닫힌다", async () => {
+    const user = userEvent.setup()
+    render(<Harness roles={["회장"]} initial={["회장"]} />)
+
+    const details = screen.getByText("🏷️ 역할").closest("details")!
+    await user.click(screen.getByText("🏷️ 역할"))
+    await user.click(screen.getByRole("button", { name: "회장" }))
+
+    expect(details.open).toBe(false)
+    expect(screen.queryByRole("button", { name: "회장 역할 태그 해제" })).toBeNull()
+  })
+
+  it("'역할' 버튼 자리는 태그가 붙어도 밀리지 않는다", async () => {
+    // FRT-323: 버튼이 칩 뒤에 있으면 고를 때마다 오른쪽으로 밀리고 드롭다운도 같이 튄다.
+    const user = userEvent.setup()
+    render(<Harness roles={["회장", "공연팀장"]} />)
+
+    const details = screen.getByText("🏷️ 역할").closest("details")!
+    const slotOfButton = () => Array.from(details.parentElement!.children).indexOf(details)
+    const before = slotOfButton()
+
+    await user.click(screen.getByText("🏷️ 역할"))
+    await user.click(screen.getByRole("button", { name: "공연팀장" }))
+
+    expect(screen.getByRole("button", { name: "공연팀장 역할 태그 해제" })).toBeDefined()
+    expect(slotOfButton()).toBe(before)
   })
 
   it("뱃지의 × 로 해제할 수 있다", async () => {
