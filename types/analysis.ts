@@ -57,12 +57,56 @@ export type WeaknessSeverity = "critical" | "major" | "minor";
 export type SynergyPriority = "high" | "medium" | "low";
 export type StrengthLevel = "outstanding" | "strong" | "notable";
 
+/**
+ * 개별분석 `item_strengths[].strength_level` 의 등급 (FRT-271).
+ *
+ * ⚠️ 종합분석의 `StrengthLevel` 과 **어휘가 다르다** — 개별에는 `strong` 이 없고 `moderate` 가 있다
+ * (individual.py `outstanding|notable|moderate` vs comprehensive.py `outstanding|strong|notable`).
+ * 한 타입으로 합치면 `moderate` 가 "모르는 값"이 되어 조용히 `notable` 로 승격된다.
+ */
+export type IndividualStrengthLevel = "outstanding" | "notable" | "moderate";
+
+/**
+ * ⚠️ `strengths`/`limitations` 는 여기 없다. 백엔드 `deep_analysis` 는 career_value·market_value
+ * 뿐이라 두 필드는 늘 빈 배열이었다(FRT-271). 강점은 `itemStrengths`, 한계는
+ * `itemDiagnosis.limitations` 가 받는다 — 백엔드가 실제로 값을 두는 자리다.
+ */
 export interface IndividualDeepAnalysis {
   careerValue: string;
-  strengths: string[];
-  limitations: string[];
+  /**
+   * 백엔드는 `applicable_roles` 를 `deep_analysis` **밖 최상위**에 둔다. 화면에서는 심층 분석과
+   * 함께 읽히므로 프런트 타입에서는 이 자리를 유지하고, 매퍼가 두 위치를 모두 본다.
+   */
   applicableRoles: string[];
   marketValue: string;
+}
+
+export interface IndividualStrength {
+  id: string;
+  category: string;
+  level: IndividualStrengthLevel;
+  title: string;
+  /** 왜 강점인지의 근거 서술 (종합분석 Strength 의 `diagnosis` 자리). */
+  analysis: string;
+  evidence: string;
+  /** 이 강점이 취업·커리어에 주는 실질적 영향 (종합분석의 `impact` 자리). */
+  careerImpact: string;
+  /** 강점을 극대화할 행동 (동사 시작). */
+  leverageAction: string;
+  /** Before/After 형식 개선 예시. 백엔드가 null 로 보낼 수 있어 부재는 빈 문자열이다. */
+  showcaseExample: string;
+}
+
+export interface IndividualItemStrengths {
+  hasGenuineStrengths: boolean;
+  /** 백엔드 `one_line_strength_verdict`. */
+  oneLineVerdict: string;
+  /** 강점이 없을 때만 채워지는 사유. */
+  noStrengthReason: string;
+  summarizedStrengths: string[];
+  strengths: IndividualStrength[];
+  strongestAsset: string;
+  positioningTip: string;
 }
 
 export interface IndividualStarFormat {
@@ -87,6 +131,8 @@ export interface IndividualWeakness {
 
 export interface IndividualItemDiagnosis {
   oneLineVerdict: string;
+  /** 이 항목만으로는 부족한 점. 백엔드는 `item_diagnosis` 안에 둔다(FRT-271). */
+  limitations: string[];
   weaknesses: IndividualWeakness[];
   missingElements: string[];
   rewriteSuggestion: string;
@@ -114,6 +160,8 @@ export interface IndividualAnalysisResultBody {
   briefSummary: string;
   deepAnalysis: IndividualDeepAnalysis;
   starFormat: IndividualStarFormat;
+  /** 강점은 진단(약점)보다 먼저 노출한다 — 백엔드 프롬프트의 앵커링 저항 원칙과 같은 순서. */
+  itemStrengths: IndividualItemStrengths;
   itemDiagnosis: IndividualItemDiagnosis;
   synergyRecommendations: IndividualSynergyRecommendation[];
   actionPlan: IndividualActionPlan;
@@ -146,6 +194,13 @@ export const strengthLevelLabel: Record<StrengthLevel, string> = {
   outstanding: "탁월",
   strong: "강점",
   notable: "눈에 띔",
+};
+
+// 개별분석 전용 등급 라벨 — 종합분석과 어휘가 달라 표도 따로 둔다(FRT-271).
+export const individualStrengthLevelLabel: Record<IndividualStrengthLevel, string> = {
+  outstanding: "탁월",
+  notable: "눈에 띔",
+  moderate: "무난",
 };
 
 export const synergyPriorityLabel: Record<SynergyPriority, string> = {
