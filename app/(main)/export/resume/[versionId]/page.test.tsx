@@ -75,9 +75,29 @@ vi.mock("@/lib/export/resume-docx", () => ({
   renderResumeDocx: (...args: unknown[]) => mockRenderDocx(...args),
 }));
 
+/**
+ * 임시 저장이 **아무 계층에도** 못 담기는 상태(`null`)를 주입하는 훅.
+ *
+ * 계층 폴백이 생긴 뒤로(FRT-261) 메모리 계층이 거의 항상 받아내므로, 브라우저 환경에서
+ * `null` 을 실제로 만들 방법이 사실상 없다. 그래도 그 분기는 코드에 살아 있고 "담지 못했으면
+ * 이탈이 아니다"라는 불변식이 걸려 있어, 주입으로만 지킬 수 있다.
+ */
+const draftWrite = vi.hoisted(() => ({ forceFailure: false }));
+
+vi.mock("./_components/resume-draft", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("./_components/resume-draft")>();
+  return {
+    ...actual,
+    writeDraft: (...args: Parameters<typeof actual.writeDraft>) =>
+      draftWrite.forceFailure ? null : actual.writeDraft(...args),
+  };
+});
+
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
 import { writeDraft } from "./_components/resume-draft";
+import { __resetMemoryDrafts } from "@/lib/export/draft-storage";
 import ResumeDetailPage from "./page";
 
 function resumeFixture(overrides: Partial<ResumeVersion> = {}): ResumeVersion {
@@ -145,6 +165,10 @@ beforeEach(() => {
   // 다음 테스트로 새면 "왜 이 응답이 오지"를 한참 쫓게 된다.
   mockGetResume.mockReset();
   window.localStorage.clear();
+  // draft 는 이제 아래 계층으로도 떨어진다(FRT-261) — 셋 다 비워야 테스트가 격리된다.
+  window.sessionStorage.clear();
+  __resetMemoryDrafts();
+  draftWrite.forceFailure = false;
   window.print = vi.fn();
   mockGetResume.mockResolvedValue(resumeFixture());
   mockRenderPdf.mockResolvedValue(new Blob(["pdf"]));
@@ -293,6 +317,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
         expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
           outcome: "failed",
           persisted: true,
+          storage_tier: "local",
           sections: ["personal_info"],
           section_count: 1,
         }),
@@ -374,8 +399,10 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     );
   });
 
-  // 서버도 로컬도 못 남긴 = **편집 유실**. outcome 만으로는 이 최악의 경우가 안 보인다.
-  it("임시저장까지 실패하면 draft_saved=false 로 유실을 드러낸다", async () => {
+  // 서버도 웹 스토리지도 못 남긴 상태. 예전에는 그대로 **편집 유실**이었지만 이제 메모리
+  // 계층이 받아낸다(FRT-261) — 편집은 살아 있되 새로고침이면 잃는다. outcome 만으로는 그
+  // 차이가 안 보이므로 어느 계층에 담겼는지를 함께 남긴다.
+  it("웹 스토리지가 다 막히면 storage_tier='memory' 로 위태로움을 드러낸다", async () => {
     const user = userEvent.setup();
     mockUpdateResume.mockRejectedValue(new ApiError(500, "server error"));
     const setItem = vi
@@ -394,7 +421,8 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
           "resume_edit_saved",
           expect.objectContaining({
             outcome: "failed",
-            persisted: false,
+            persisted: true,
+            storage_tier: "memory",
           }),
         ),
       );
@@ -425,7 +453,8 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       await waitFor(() => expect(toast.error).toHaveBeenCalled());
       const message = vi.mocked(toast.error).mock.calls.at(-1)?.[0] as string;
       expect(message).toContain("제목은 100자를 넘을 수 없어요.");
-      expect(message).toContain("페이지를 닫지 마세요");
+      // 위기 신호도 함께다. 편집은 메모리 계층이 받아냈지만(FRT-261) 새로고침이면 잃는다.
+      expect(message).toContain("새로고침");
     } finally {
       setItem.mockRestore();
     }
@@ -461,6 +490,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
         outcome: "failed",
         persisted: true,
+        storage_tier: "local",
         sections: ["personal_info", "summary"],
         section_count: 2,
       }),
@@ -496,6 +526,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
           {
             outcome: "exit_draft",
             persisted: true,
+            storage_tier: "local",
             sections: ["personal_info"],
             section_count: 1,
           },
@@ -503,9 +534,10 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       ]);
     });
 
-    // 임시 저장이 실패하면 페이지는 이동을 막고 "저장 후 나가주세요"를 띄운다 —
-    // 편집 유실 직전이라는 뜻인데, 지금까지 이 순간은 데이터에 전혀 남지 않았다.
-    it("임시 저장이 실패하면 persisted=false 로 남기고 이동하지 않는다", async () => {
+    // 웹 스토리지가 다 막혀도 메모리 계층이 받아낸다(FRT-261). 담긴 이상 붙잡지 않는다 —
+    // 이 환경에서는 아무리 다시 눌러도 영구 저장이 성공하지 않아, 막으면 출구가 없다.
+    // 대신 무엇을 조심해야 하는지(새로고침) 알린 뒤 보낸다.
+    it("웹 스토리지가 막히면 경고하고, 이동은 막지 않는다", async () => {
       const user = userEvent.setup();
       await renderLoaded();
 
@@ -523,13 +555,15 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
         setItem.mockRestore();
       }
 
-      expect(mockPush).not.toHaveBeenCalled();
+      await waitFor(() => expect(mockPush).toHaveBeenCalled());
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("새로고침"));
       expect(captured("resume_edit_saved")).toEqual([
         [
           "resume_edit_saved",
           {
             outcome: "exit_draft",
-            persisted: false,
+            persisted: true,
+            storage_tier: "memory",
             sections: ["personal_info"],
             section_count: 1,
           },
@@ -563,11 +597,50 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
           {
             outcome: "exit_draft",
             persisted: true,
+            storage_tier: "local",
             sections: ["personal_info"],
             section_count: 1,
           },
         ],
       ]);
+    });
+
+    /**
+     * FRT-261 — '나가기' 버튼은 저장 실패를 알렸지만, GNB 링크·브라우저 뒤로가기로 떠나는
+     * 경로가 기댈 안전망은 언마운트 cleanup 하나뿐이었다. 그 자리는 결과를 **지표에만**
+     * 남기고 사용자에게는 아무 말도 하지 않아, 저장이 위태로워도 사용자는 알 수 없었다.
+     */
+    it("언마운트 이탈에서 웹 스토리지가 막히면 사용자에게 경고한다", async () => {
+      const user = userEvent.setup();
+      const { unmount } = await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      vi.mocked(toast.error).mockClear();
+      const setItem = vi
+        .spyOn(Storage.prototype, "setItem")
+        .mockImplementation(() => {
+          throw new Error("quota");
+        });
+      try {
+        unmount();
+      } finally {
+        setItem.mockRestore();
+      }
+
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining("새로고침"),
+      );
+    });
+
+    it("언마운트 이탈이 정상 저장되면 아무것도 경고하지 않는다", async () => {
+      const user = userEvent.setup();
+      const { unmount } = await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      vi.mocked(toast.error).mockClear();
+      unmount();
+
+      expect(toast.error).not.toHaveBeenCalled();
     });
 
     // '나가기'는 스스로 이동을 일으켜 곧바로 언마운트로 이어진다. 두 곳이 각각 쏘면
@@ -593,20 +666,14 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       const { unmount } = await renderLoaded();
 
       await user.type(screen.getByLabelText("이름"), "!");
-      const setItem = vi
-        .spyOn(Storage.prototype, "setItem")
-        .mockImplementation(() => {
-          throw new Error("quota");
-        });
-      try {
-        await user.click(
-          screen.getByRole("button", { name: "익스포트로 돌아가기" }),
-        );
-      } finally {
-        setItem.mockRestore();
-      }
+      // 메모리 계층까지 못 담는 상태를 주입한다 — 이 분기에서만 이동이 막힌다.
+      draftWrite.forceFailure = true;
+      await user.click(
+        screen.getByRole("button", { name: "익스포트로 돌아가기" }),
+      );
       expect(mockPush).not.toHaveBeenCalled();
 
+      draftWrite.forceFailure = false;
       unmount();
 
       expect(captured("resume_edit_saved")).toEqual([
@@ -615,6 +682,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
           {
             outcome: "exit_draft",
             persisted: false,
+            storage_tier: null,
             sections: ["personal_info"],
             section_count: 1,
           },
@@ -624,6 +692,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
           {
             outcome: "exit_draft",
             persisted: true,
+            storage_tier: "local",
             sections: ["personal_info"],
             section_count: 1,
           },

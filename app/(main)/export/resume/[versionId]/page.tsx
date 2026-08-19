@@ -30,6 +30,7 @@ import { ResumeEditorPanel } from "./_components/ResumeEditorPanel";
 import { ResumePreview } from "./_components/ResumePreview";
 import { EnglishReadOnlyNotice } from "./_components/EnglishReadOnlyNotice";
 import { RemainingExperiencesNotice } from "./_components/RemainingExperiencesNotice";
+import { draftTierWarning, type DraftTier } from "@/lib/export/draft-storage";
 import { reserveClientIds } from "./_components/editors/shared";
 import { changedResumeSections } from "./_components/resume-diff";
 import {
@@ -175,12 +176,20 @@ export default function ResumeDetailPage({ params }: PageProps) {
   // 저장의 결말들(서버 저장·백엔드 미수용·그 외 오류·저장 없이 이탈)이 사용자에겐 거의
   // 같아 보이지만 데이터로는 전혀 다른 사실이다. 한 곳에서 같은 모양으로 싣는다(FRT-114).
   const captureEditSaved = useCallback(
-    (outcome: ResumeSaveOutcome, persisted: boolean, changed: string[]) => {
+    (
+      outcome: ResumeSaveOutcome,
+      persisted: boolean,
+      changed: string[],
+      // 로컬로 떨어진 경우 **어느 계층**에 담겼는지. 같은 "보관됨"이라도 브라우저를 닫으면
+      // 사라지는 보관이 섞여 있어, 이걸 안 나누면 유실 규모를 과소 보고한다(FRT-261).
+      storageTier?: DraftTier | null,
+    ) => {
       capture("resume_edit_saved", {
         outcome,
         persisted,
         sections: changed,
         section_count: changed.length,
+        ...(storageTier === undefined ? {} : { storage_tier: storageTier }),
       });
     },
     [],
@@ -286,7 +295,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // 탭을 그대로 닫았을 때(cleanup 미실행) 고친 내용이 통째로 사라진다.
       // dirty 는 그대로 두어 다음 저장/이탈 경로가 계속 살아 있게 한다.
       const latest = resumeRef.current ?? snapshot;
-      const saved = writeDraft(versionId, latest);
+      const tier = writeDraft(versionId, latest);
+      const saved = tier !== null;
+      const tierWarning = draftTierWarning(tier);
       if (saved) {
         // 방금 쓴 임시 저장이 곧 지금 편집 중인 내용이다. 배너를 그대로 두면 '복원'이
         // 화면에 없는 낡은 스냅샷(pendingDraft)을 되돌리면서 clearDraft 로 방금 쓴
@@ -312,12 +323,18 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // 서버도 로컬도 못 남긴 = 편집 유실 직전. 그렇다고 사유를 빼면 안 된다 — 사유가
       // 곧 탈출구다(제목 길이 초과라면 고쳐서 바로 저장하면 위기 자체가 사라진다).
       // 둘 다 말한다: 무엇이 잘못됐는지, 그리고 지금 닫으면 잃는다는 것.
+      // 담긴 계층이 오래 못 버티면 그것도 함께 말한다 — "저장됐다"고 읽히면 사용자는
+      // 탭을 닫고, 그 순간 임시 보관분까지 사라진다(FRT-261).
       toast.error(
-        saved ? detail : `${detail} 임시 저장도 안 됐으니 페이지를 닫지 마세요.`,
+        saved
+          ? tierWarning
+            ? `${detail} ${tierWarning}`
+            : detail
+          : `${detail} 임시 저장도 안 됐으니 페이지를 닫지 마세요.`,
       );
       // 섹션은 **실제로 보관된 값(latest)** 기준이다 — 요청이 도는 동안 이어서 고친
       // 섹션이 draft 에는 들어갔는데 지표에서만 빠지면 보관된 편집을 과소 보고한다.
-      captureEditSaved("failed", saved, changedResumeSections(initial, latest));
+      captureEditSaved("failed", saved, changedResumeSections(initial, latest), tier);
     } finally {
       setSaving(false);
     }
@@ -421,16 +438,17 @@ export default function ResumeDetailPage({ params }: PageProps) {
 
   const handleBack = useCallback(() => {
     if (dirty && resume) {
-      const saved = writeDraft(versionId, resume);
+      const tier = writeDraft(versionId, resume);
       // 저장 버튼을 누른 적은 없지만 사용자에게는 "임시 저장했어요"라고 **말한다**.
       // 여기서 안 쏘면 안전하게 보관된 편집이 유실된 편집과 데이터상 구별되지 않고,
       // 실패(=편집 유실 직전)한 순간은 아예 어디에도 남지 않는다(FRT-114).
       captureEditSaved(
         "exit_draft",
-        saved,
+        tier !== null,
         changedResumeSections(initial, resume),
+        tier,
       );
-      if (!saved) {
+      if (tier === null) {
         toast.error("임시 저장에 실패했어요. 저장 후 나가주세요.");
         // 실패한 '나가기'는 이탈이 아니다 — 사용자는 화면에 그대로 남는다. 여기서
         // 중복 방지 플래그를 세우면 뒤이어 **진짜로** 떠날 때 보관된 편집이 안 남는다.
@@ -438,7 +456,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
       }
       // 이동이 확정된 뒤에만 세운다 — 곧 이어질 언마운트가 같은 이탈을 또 세지 않도록.
       exitDraftFiredRef.current = true;
-      toast("변경사항을 임시 저장했어요", "info");
+      // 담기긴 했으니 붙잡지 않는다. 이 환경에서는 아무리 눌러도 영구 저장이 성공하지
+      // 않아 막으면 출구 없는 화면이 된다 — 대신 무엇을 조심할지 알린다(FRT-261).
+      const tierWarning = draftTierWarning(tier);
+      if (tierWarning) toast.error(tierWarning);
+      else toast("변경사항을 임시 저장했어요", "info");
     }
     router.push(`${basePath}/export`);
   }, [
@@ -489,7 +511,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   useEffect(() => {
     return () => {
       if (dirtyRef.current && resumeRef.current) {
-        const saved = writeDraft(versionId, resumeRef.current);
+        const tier = writeDraft(versionId, resumeRef.current);
         // 상단 '나가기'만 출구가 아니다 — GNB 링크로 떠나도 페이지는 조용히 임시 저장한다.
         // 그 편집도 어디까지 갔는지는 같은 질문이라 같은 이벤트로 남긴다. 단 '나가기'는
         // 스스로 이동을 일으켜 여기로 이어지므로, 이미 쐈으면 두 번 세지 않는다.
@@ -497,10 +519,16 @@ export default function ResumeDetailPage({ params }: PageProps) {
           exitDraftFiredRef.current = true;
           captureEditSaved(
             "exit_draft",
-            saved,
+            tier !== null,
             changedResumeSections(initialRef.current, resumeRef.current),
+            tier,
           );
         }
+        // 이 경로가 기댈 안전망은 이것 하나뿐이다. 결과를 지표에만 남기고 사용자에게 안
+        // 알리면 저장 실패가 **아무에게도 안 알려진 채** 편집이 사라진다(FRT-261).
+        // toast 는 모듈 전역 pub/sub 라 이 컴포넌트가 죽은 뒤에도 다음 화면에서 뜬다.
+        const tierWarning = draftTierWarning(tier);
+        if (tierWarning) toast.error(tierWarning);
       }
     };
   }, [versionId, captureEditSaved]);
