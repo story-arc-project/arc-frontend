@@ -26,6 +26,20 @@ export const MEMORY_DRAFT_LIMIT = 3;
 /** 삽입 순서를 유지하는 Map 이라 가장 오래된 항목이 곧 첫 키다(FIFO). */
 const memoryDrafts = new Map<string, string>();
 
+/**
+ * 비우는 데 **실패한** 계층(`"<tier>:<key>"`).
+ *
+ * 아래 계층으로 내려갈 때 위 계층의 옛 값을 지우는데, 그 삭제 자체가 막힐 수 있다(쓰기 계열
+ * 전체를 차단하는 환경). 그대로 두면 위에 낡은 값이 남고 읽기는 위부터 보므로, 방금 아래에
+ * 쓴 새 편집 대신 **옛 편집이 복원된다** — 이 파일이 막으려는 바로 그 실패다. 지우지 못했으면
+ * 없는 셈 치고 건너뛴다.
+ */
+const staleEntries = new Set<string>();
+
+function stampOf(tier: WebStorageTier, key: string): string {
+  return `${tier}:${key}`;
+}
+
 const WEB_STORAGE_TIERS = ["local", "session"] as const;
 type WebStorageTier = (typeof WEB_STORAGE_TIERS)[number];
 
@@ -53,8 +67,10 @@ function evictOtherTiers(key: string, keep: DraftTier): void {
     if (tier === keep) continue;
     try {
       webStorage(tier)?.removeItem(key);
+      staleEntries.delete(stampOf(tier, key));
     } catch {
-      // 지우지 못하는 계층은 어차피 쓰지도 못한다 — 남은 계층 정리를 계속한다.
+      // 지우지 못했다 — 낡은 값이 남았으므로 읽기에서 건너뛰게 표시하고 정리를 계속한다.
+      staleEntries.add(stampOf(tier, key));
     }
   }
   if (keep !== "memory") memoryDrafts.delete(key);
@@ -74,6 +90,8 @@ export function writeRaw(key: string, value: string): DraftTier | null {
     if (!storage) continue;
     try {
       storage.setItem(key, value);
+      // 방금 쓴 값이 최신이다 — 이 계층에 붙어 있던 "낡음" 표시를 거둔다.
+      staleEntries.delete(stampOf(tier, key));
       evictOtherTiers(key, tier);
       return tier;
     } catch {
@@ -97,6 +115,8 @@ export function readRaw(key: string): string | null {
   if (typeof window === "undefined") return null;
 
   for (const tier of WEB_STORAGE_TIERS) {
+    // 비우지 못해 낡은 값이 남은 계층이다 — 읽으면 아래에 있는 새 편집을 덮는다.
+    if (staleEntries.has(stampOf(tier, key))) continue;
     try {
       const value = webStorage(tier)?.getItem(key);
       if (value !== null && value !== undefined) return value;
@@ -118,8 +138,10 @@ export function clearRaw(key: string): void {
   for (const tier of WEB_STORAGE_TIERS) {
     try {
       webStorage(tier)?.removeItem(key);
+      staleEntries.delete(stampOf(tier, key));
     } catch {
-      // 나머지 계층 정리를 계속한다.
+      // 지우지 못했으면 낡은 값이 남는다 — 없는 셈 쳐야 "지웠다"가 지켜진다.
+      staleEntries.add(stampOf(tier, key));
     }
   }
   memoryDrafts.delete(key);
@@ -144,7 +166,8 @@ export function draftTierWarning(tier: DraftTier | null): string | null {
   }
 }
 
-/** 테스트 전용 — 메모리 계층은 모듈 스코프라 테스트 사이에 살아남는다. */
+/** 테스트 전용 — 모듈 스코프 상태는 테스트 사이에 살아남는다. */
 export function __resetMemoryDrafts(): void {
   memoryDrafts.clear();
+  staleEntries.clear();
 }

@@ -127,6 +127,25 @@ describe("draft 는 언제나 한 계층에만 산다", () => {
     expect(readRaw(KEY)).toBe("새 편집");
   });
 
+  /**
+   * 한 계층 규칙은 "위 계층을 비운다"에 기대는데, 그 **삭제 자체가 막힐 수 있다**(쓰기 계열
+   * 전체를 차단하는 환경). 그러면 위에 옛 값이 남고 읽기는 위부터 보므로, 방금 아래에 쓴 새
+   * 편집 대신 옛 편집이 복원된다 — 이 파일이 막으려는 바로 그 유실이 되돌아온다.
+   */
+  it("비우지 못한 계층의 옛 값은 읽기에서 건너뛴다", () => {
+    expect(writeRaw(KEY, "옛 편집")).toBe("local");
+
+    // 이 환경은 쓰기도 삭제도 막는다 — 옛 값이 local 에 그대로 남는다.
+    breakWrites(window.localStorage);
+    breakRemovals(window.localStorage);
+    expect(writeRaw(KEY, "새 편집")).toBe("session");
+
+    // local 에는 여전히 옛 값이 물리적으로 남아 있다.
+    expect(window.localStorage.getItem(KEY)).toBe("옛 편집");
+    // 그래도 사용자가 되찾는 것은 새 편집이어야 한다.
+    expect(readRaw(KEY)).toBe("새 편집");
+  });
+
   it("다시 localStorage 가 살아나면 아래 계층의 잔재를 지운다", () => {
     breakWrites(window.localStorage);
     expect(writeRaw(KEY, "임시 보관분")).toBe("session");
