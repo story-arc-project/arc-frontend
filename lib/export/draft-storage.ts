@@ -76,11 +76,18 @@ function stampOf(tier: WebStorageTier, key: string): string {
 const STALE_MARKER_PREFIX = "arc:draft-stale:";
 
 /**
- * 값을 못 읽어(접근 자체가 막힘) 지문을 뜰 수 없을 때의 묘비. 그 자리를 통째로 가린다.
- *
- * 읽을 수 없는 계층이라면 그 차단은 오리진 전체에 걸리므로 **다른 탭도 그 값을 못 읽는다** —
- * 통째로 가려도 남의 draft 를 가로채지 않는다. 어느 탭이든 그 자리에 다시 쓰는 순간 거둬진다.
+ * 값을 못 읽어(접근 자체가 막힘) 지문을 뜰 수 없을 때의 묘비. 그 자리를 **통째로** 가린다.
  * 옛 판본이 남긴 `"1"` 묘비도 같은 뜻으로 읽힌다.
+ *
+ * 통째로 가리는 만큼 **어디에 적느냐가 중요하다.** session 값은 탭마다 따로이므로, 이 묘비가
+ * 공유 저장소로 새어 나가면 다른 탭이 *지금 쓰고 있는* 멀쩡한 draft 까지 싸잡아 가려
+ * 살아 있는 작업을 잃는다. 그래서 통째 묘비 중 session 것은 sessionStorage 밖으로 내보내지
+ * 않는다. local 은 모든 탭이 **같은 하나**를 보므로 그런 위험이 없어 그대로 둔다.
+ *
+ * 그 대가로 session 접근이 막힌 채 지우면 표시가 이번 로드에만 살고, 접근이 회복된 뒤
+ * 리로드하면 지운 draft 가 복원 후보로 다시 뜬다. **둘은 동시에 만족할 수 없다** — 어느 탭이
+ * 남긴 표시인지 가려내려면 탭 스코프 저장이 필요한데, 바로 그것이 막힌 상황이기 때문이다.
+ * 되살아난 배너는 성가심이고 남의 탭 draft 를 가리는 것은 유실이므로, 유실을 피하는 쪽을 택했다.
  */
 const BLANKET_MARK = "*";
 
@@ -150,7 +157,12 @@ function markStale(tier: WebStorageTier, key: string, keep: DraftTier | null): b
   // 메모리 계층이면 적을 곳이 없다 — 그런데 그 경우 draft 자체도 새로고침을 못 넘기므로,
   // 리로드 뒤 남는 것은 위 계층의 옛 값뿐이다. 옛 값이라도 돌려주는 편이 낫다.
   if (keep === "memory") return false;
-  for (const host of markerHosts(tier, keep)) {
+  // 지문을 못 뜬 묘비는 미래의 아무 값이나 가린다. session 값은 탭마다 다르므로 그런 묘비를
+  // 공유 저장소로 내보내면 남의 탭이 쓰고 있는 draft 를 가린다 — 자기 계층에만 적는다.
+  // local 값은 모든 탭이 **같은 하나**를 보므로 통째로 가려도 가릴 남의 값이 없다.
+  const hosts: readonly WebStorageTier[] =
+    mark === BLANKET_MARK && tier === "session" ? ["session"] : markerHosts(tier, keep);
+  for (const host of hosts) {
     try {
       const storage = webStorage(host);
       if (!storage) continue;

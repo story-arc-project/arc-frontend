@@ -273,14 +273,19 @@ describe("표시는 새로고침을 견뎌야 한다", () => {
     expect(readRaw(KEY)).toBe("새 편집");
   });
 
-/**
-   * 묘비를 **감추는 값과 같은 범위**에 두면서 생긴 반대편 구멍이다. session 접근이 통째로
-   * 막힌 채 지우면 sessionStorage 에는 묘비를 못 적는다 — 표시가 이번 로드 동안만 살고,
-   * 접근이 풀린 뒤 리로드하면 지운 draft 가 복원 후보로 되살아난다.
+  /**
+   * 값을 못 읽어 지문을 못 뜬 묘비는 그 자리를 **통째로** 가린다. 그런 묘비를 모든 탭이
+   * 공유하는 localStorage 에 적으면, 다른 탭이 지금 쓰고 있는 멀쩡한 session draft 까지
+   * 싸잡아 가려 **살아 있는 작업을 잃는다.**
+   *
+   * 그래서 통째로 가리는 session 묘비는 sessionStorage 밖으로 나가지 않는다. 대가는 있다 —
+   * session 접근이 막힌 채 지우면 표시가 이번 로드에만 살아, 접근이 회복된 뒤 리로드하면
+   * 지운 draft 가 복원 후보로 다시 뜬다. 둘은 동시에 만족할 수 없다(탭을 가려내려면 탭 스코프
+   * 저장이 필요한데, 바로 그게 막힌 상황을 다루는 코드다). **되살아난 배너는 성가심이고, 남의
+   * 탭 draft 를 가리는 것은 유실이다** — 유실을 피하는 쪽을 택한다.
    */
-  it("session 접근을 못 한 채 지운 draft 도 접근이 풀리면 되살아나지 않는다", () => {
-    window.sessionStorage.setItem(KEY, "지운 draft");
-
+  it("지문을 못 뜬 session 표시는 다른 탭의 draft 를 가리지 않는다", () => {
+    // 탭 A: sessionStorage 를 아예 못 만지는 채로 지운다.
     const restore = breakAccess("sessionStorage");
     try {
       clearRaw(KEY);
@@ -288,9 +293,11 @@ describe("표시는 새로고침을 견뎌야 한다", () => {
       restore();
     }
 
-    simulateReload();
+    // 탭 B: 자기 sessionStorage 에 지금 쓰고 있는 편집이 있다.
+    __resetMemoryDrafts();
+    window.sessionStorage.setItem(KEY, "탭 B 의 편집");
 
-    expect(readRaw(KEY)).toBeNull();
+    expect(readRaw(KEY)).toBe("탭 B 의 편집");
   });
 
   /**
