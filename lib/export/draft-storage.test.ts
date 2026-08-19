@@ -273,6 +273,50 @@ describe("표시는 새로고침을 견뎌야 한다", () => {
     expect(readRaw(KEY)).toBe("새 편집");
   });
 
+/**
+   * 묘비를 **감추는 값과 같은 범위**에 두면서 생긴 반대편 구멍이다. session 접근이 통째로
+   * 막힌 채 지우면 sessionStorage 에는 묘비를 못 적는다 — 표시가 이번 로드 동안만 살고,
+   * 접근이 풀린 뒤 리로드하면 지운 draft 가 복원 후보로 되살아난다.
+   */
+  it("session 접근을 못 한 채 지운 draft 도 접근이 풀리면 되살아나지 않는다", () => {
+    window.sessionStorage.setItem(KEY, "지운 draft");
+
+    const restore = breakAccess("sessionStorage");
+    try {
+      clearRaw(KEY);
+    } finally {
+      restore();
+    }
+
+    simulateReload();
+
+    expect(readRaw(KEY)).toBeNull();
+  });
+
+  /**
+   * 묘비가 "이 **자리**를 건너뛰라"고만 말하면 그 자리의 **미래 값까지 영영** 가린다.
+   * 탭 A 가 남긴 표시는 탭 A 의 sessionStorage 에 있어 탭 B 가 지울 수 없으므로, 탭 B 가
+   * 공유 계층에 새로 쓴 멀쩡한 값이 탭 A 에서 영원히 안 읽힌다 — 묘비는 자리가 아니라
+   * **자기가 죽이는 값**을 가리켜야 한다.
+   */
+  it("한 탭이 남긴 표시가 다른 탭이 새로 쓴 값까지 가리지 않는다", () => {
+    expect(writeRaw(KEY, "탭 A 가 본 옛 편집")).toBe("local");
+
+    // 탭 A: local 을 못 지운 채 session 으로 내려간다 — 표시는 A 의 sessionStorage 에 남는다.
+    breakWrites(window.localStorage);
+    breakRemovals(window.localStorage);
+    expect(writeRaw(KEY, "탭 A 의 편집")).toBe("session");
+
+    // 탭 B 가 회복해 공유 계층에 새 값을 쓴다. B 는 A 의 sessionStorage 를 지울 수 없다.
+    healWrites(window.localStorage);
+    healRemovals(window.localStorage);
+    window.localStorage.setItem(KEY, "탭 B 의 새 편집");
+
+    simulateReload();
+
+    expect(readRaw(KEY)).toBe("탭 B 의 새 편집");
+  });
+
   it("리로드 뒤 위 계층이 살아나 새로 쓰면 다시 그 값을 읽는다", () => {
     expect(writeRaw(KEY, "옛 편집")).toBe("local");
     breakWrites(window.localStorage);

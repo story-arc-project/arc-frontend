@@ -41,14 +41,14 @@ function memoryDraftChars(): number {
 }
 
 /**
- * 비우는 데 **실패한** 계층(`"<tier>:<key>"`).
+ * 비우는 데 **실패한** 값(`"<tier>:<key>"` → 그 값의 지문).
  *
  * 아래 계층으로 내려갈 때 위 계층의 옛 값을 지우는데, 그 삭제 자체가 막힐 수 있다(쓰기 계열
  * 전체를 차단하는 환경). 그대로 두면 위에 낡은 값이 남고 읽기는 위부터 보므로, 방금 아래에
  * 쓴 새 편집 대신 **옛 편집이 복원된다** — 이 파일이 막으려는 바로 그 실패다. 지우지 못했으면
  * 없는 셈 치고 건너뛴다.
  */
-const staleEntries = new Set<string>();
+const staleMarks = new Map<string, string>();
 
 /**
  * 이번 로드에서 **직접 써서** 최신임을 아는 자리. `staleEntries` 와 아래의 묘비보다 우선한다.
@@ -63,32 +63,65 @@ function stampOf(tier: WebStorageTier, key: string): string {
 }
 
 /**
- * 지우지 못한 계층을 가리키는 **묘비**. draft 를 받아 준 계층에 함께 적는다.
+ * 지우지 못한 값을 가리키는 **묘비**.
  *
- * 모듈 스코프 Set 은 새로고침에 죽는데 localStorage 의 옛 값은 살아남는다. 표시만 사라지면
+ * 모듈 스코프 상태는 새로고침에 죽는데 localStorage 의 옛 값은 살아남는다. 표시만 사라지면
  * 리로드 직후 읽기가 다시 위부터 보면서 옛 값을 집어, 막으려던 유실이 그대로 되돌아온다.
  * 그래서 표시도 draft 와 **같은 수명**을 갖게 한다.
+ *
+ * 묘비가 가리키는 것은 계층이라는 **자리**가 아니라 그 자리에 있던 **값**이다. 자리를 가리키면
+ * 그 자리의 *미래 값까지* 영영 가린다 — 다른 탭이 회복해 새로 쓴 멀쩡한 draft 도, 지울 수 없는
+ * 남의 탭 묘비 때문에 안 읽힌다. 값을 가리키면 새 값은 지문이 달라 저절로 통과한다.
  */
 const STALE_MARKER_PREFIX = "arc:draft-stale:";
+
+/**
+ * 값을 못 읽어(접근 자체가 막힘) 지문을 뜰 수 없을 때의 묘비. 그 자리를 통째로 가린다.
+ *
+ * 읽을 수 없는 계층이라면 그 차단은 오리진 전체에 걸리므로 **다른 탭도 그 값을 못 읽는다** —
+ * 통째로 가려도 남의 draft 를 가로채지 않는다. 어느 탭이든 그 자리에 다시 쓰는 순간 거둬진다.
+ * 옛 판본이 남긴 `"1"` 묘비도 같은 뜻으로 읽힌다.
+ */
+const BLANKET_MARK = "*";
+
+/**
+ * 값을 식별하는 지문. 길이와 32비트 해시를 함께 적어 서로 다른 본문이 같은 지문을 갖기 어렵게
+ * 한다. 내용이 완전히 같은 draft 는 같은 지문을 갖는데, 그때는 감춰도 사용자가 잃는 글이 없다.
+ */
+function fingerprintOf(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (Math.imul(31, hash) + value.charCodeAt(i)) | 0;
+  }
+  return `${value.length.toString(36)}.${(hash >>> 0).toString(36)}`;
+}
 
 function markerKey(tier: WebStorageTier, key: string): string {
   return `${STALE_MARKER_PREFIX}${stampOf(tier, key)}`;
 }
 
 /**
- * 묘비를 맡길 자리. **묘비는 자기가 감추는 값과 같은 범위에 살아야 한다.**
+ * 묘비를 맡길 자리. 묘비는 자기가 감추는 값**만큼은** 오래 살아야 한다.
  *
- * session 값은 이 탭에만 있다. 그 묘비를 모든 탭이 공유하는 localStorage 에 적으면, 한 탭에서
- * 지운 것이 같은 키를 쓰는 **다른 탭의 멀쩡한 session draft** 까지 읽기에서 건너뛰게 만든다 —
- * 남의 편집을 지우는 셈이다. 그래서 session 묘비는 sessionStorage 에만 적는다(탭 스코프이면서
- * 새로고침은 견디므로 수명도 맞는다). 못 적으면 이번 로드 동안만 유효하다.
- *
- * local 값은 모든 탭이 공유하므로 어디에 적어도 범위가 좁아질 뿐 남을 가리지 않는다. 살아남은
- * draft 가 있는 자리를 먼저 쓴다 — 묘비가 그 draft 와 같은 수명을 갖는다.
+ * 살아남은 draft 가 있으면 그 자리에 먼저 적는다 — 둘의 수명이 같아진다. 지우는 길이라
+ * 살아남은 자리가 없으면 감추는 값과 같은 계층에 적는다(영구 계층의 묘비가 탭과 함께 죽으면
+ * 지운 draft 가 새 탭에서 되살아난다). 어느 쪽이든 못 적으면 다른 쪽을 시도한다 — 묘비가
+ * 자리가 아니라 값을 가리키므로, 남의 탭이 보게 되더라도 그 탭의 다른 값은 가리지 않는다.
  */
 function markerHosts(tier: WebStorageTier, keep: WebStorageTier | null): readonly WebStorageTier[] {
-  if (tier === "session") return ["session"];
-  return keep === "session" ? ["session", "local"] : ["local", "session"];
+  const first = keep ?? tier;
+  return first === "local" ? ["local", "session"] : ["session", "local"];
+}
+
+/** 이 자리에 지금 무엇이 있는가. `undefined` 는 **읽을 수 없었다**는 뜻이다. */
+function peek(tier: WebStorageTier, key: string): string | null | undefined {
+  const storage = webStorage(tier);
+  if (!storage) return undefined;
+  try {
+    return storage.getItem(key);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -106,8 +139,13 @@ function canShadow(tier: WebStorageTier, keep: DraftTier): boolean {
  * `keep` 은 이 draft 가 살아남은 자리다. `null` 은 지우는 길이라 살아남은 자리가 없다는 뜻.
  */
 function markStale(tier: WebStorageTier, key: string, keep: DraftTier | null): boolean {
+  const current = peek(tier, key);
+  // 읽어 봤더니 비어 있다 — 감출 것이 없으므로 묘비도 필요 없다.
+  if (current === null) return true;
+
+  const mark = current === undefined ? BLANKET_MARK : fingerprintOf(current);
   const stamp = stampOf(tier, key);
-  staleEntries.add(stamp);
+  staleMarks.set(stamp, mark);
   freshEntries.delete(stamp);
   // 메모리 계층이면 적을 곳이 없다 — 그런데 그 경우 draft 자체도 새로고침을 못 넘기므로,
   // 리로드 뒤 남는 것은 위 계층의 옛 값뿐이다. 옛 값이라도 돌려주는 편이 낫다.
@@ -116,7 +154,7 @@ function markStale(tier: WebStorageTier, key: string, keep: DraftTier | null): b
     try {
       const storage = webStorage(host);
       if (!storage) continue;
-      storage.setItem(markerKey(tier, key), "1");
+      storage.setItem(markerKey(tier, key), mark);
       return true;
     } catch {
       // 이 자리에는 못 남겼다 — 다음 자리를 본다.
@@ -131,7 +169,7 @@ function markStale(tier: WebStorageTier, key: string, keep: DraftTier | null): b
  * 묘비까지 여기서 청소된다.
  */
 function unmarkStale(tier: WebStorageTier, key: string): void {
-  staleEntries.delete(stampOf(tier, key));
+  staleMarks.delete(stampOf(tier, key));
   for (const host of WEB_STORAGE_TIERS) {
     try {
       webStorage(host)?.removeItem(markerKey(tier, key));
@@ -141,21 +179,35 @@ function unmarkStale(tier: WebStorageTier, key: string): void {
   }
 }
 
-/** 이 계층의 값을 읽어도 되는가. 이번 로드에서 직접 쓴 자리는 무조건 최신이다. */
-function isStale(tier: WebStorageTier, key: string): boolean {
-  const stamp = stampOf(tier, key);
-  if (freshEntries.has(stamp)) return false;
-  if (staleEntries.has(stamp)) return true;
-  // 적을 수 있었던 자리만 본다 — 특히 session 묘비를 localStorage 에서 찾으면 다른 탭이
-  // 남긴 표시에 이 탭의 draft 가 가려진다.
-  for (const host of markerHosts(tier, null)) {
+/** 이 자리에 걸린 묘비. 어디에 적혔는지는 모르므로 두 스토리지를 다 본다. */
+function markOf(tier: WebStorageTier, key: string): string | null {
+  const recorded = staleMarks.get(stampOf(tier, key));
+  if (recorded !== undefined) return recorded;
+  for (const host of WEB_STORAGE_TIERS) {
     try {
-      if (webStorage(host)?.getItem(markerKey(tier, key)) != null) return true;
+      const mark = webStorage(host)?.getItem(markerKey(tier, key));
+      if (mark != null) return mark;
     } catch {
       // 못 읽는 계층은 묘비도 없는 셈 친다.
     }
   }
-  return false;
+  return null;
+}
+
+/**
+ * **이 값을** 읽어도 되는가. 묘비가 가리키는 값과 지문이 다르면 그 사이에 누군가 새로 쓴
+ * 것이므로 읽어야 한다 — 자리를 통째로 막으면 남의 탭이 회복해 쓴 새 draft 까지 잃는다.
+ *
+ * 이번 로드에서 직접 쓴 자리는 무조건 최신이다(내용이 그대로라 지문까지 같을 수 있다).
+ */
+function isStaleValue(tier: WebStorageTier, key: string, value: string): boolean {
+  const stamp = stampOf(tier, key);
+  if (freshEntries.has(stamp)) return false;
+  const mark = markOf(tier, key);
+  if (mark === null) return false;
+  // 지문을 못 뜬 묘비(옛 판본의 `"1"` 포함)는 그 자리를 통째로 가린다.
+  if (mark === BLANKET_MARK || mark === "1") return true;
+  return mark === fingerprintOf(value);
 }
 
 const WEB_STORAGE_TIERS = ["local", "session"] as const;
@@ -254,14 +306,12 @@ export function readRaw(key: string): string | null {
   if (typeof window === "undefined") return null;
 
   for (const tier of WEB_STORAGE_TIERS) {
-    // 비우지 못해 낡은 값이 남은 계층이다 — 읽으면 아래에 있는 새 편집을 덮는다.
-    if (isStale(tier, key)) continue;
-    try {
-      const value = webStorage(tier)?.getItem(key);
-      if (value !== null && value !== undefined) return value;
-    } catch {
-      // 읽기가 막힌 계층은 없는 것으로 보고 아래로 이어간다.
-    }
+    // 읽기가 막힌 계층은 없는 것으로 보고 아래로 이어간다.
+    const value = peek(tier, key);
+    if (value === null || value === undefined) continue;
+    // 비우지 못해 남은 낡은 값이다 — 읽으면 아래에 있는 새 편집을 덮는다.
+    if (isStaleValue(tier, key, value)) continue;
+    return value;
   }
 
   return memoryDrafts.get(key) ?? null;
@@ -316,6 +366,6 @@ export function draftTierWarning(tier: DraftTier | null): string | null {
 /** 테스트 전용 — 모듈 스코프 상태는 테스트 사이에 살아남는다. */
 export function __resetMemoryDrafts(): void {
   memoryDrafts.clear();
-  staleEntries.clear();
+  staleMarks.clear();
   freshEntries.clear();
 }
