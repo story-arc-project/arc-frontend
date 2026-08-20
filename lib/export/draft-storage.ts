@@ -159,7 +159,12 @@ function markStale(tier: WebStorageTier, key: string, keep: DraftTier | null): b
   if (keep === "memory") return false;
   // 지문을 못 뜬 묘비는 미래의 아무 값이나 가린다. session 값은 탭마다 다르므로 그런 묘비를
   // 공유 저장소로 내보내면 남의 탭이 쓰고 있는 draft 를 가린다 — 자기 계층에만 적는다.
-  // local 값은 모든 탭이 **같은 하나**를 보므로 통째로 가려도 가릴 남의 값이 없다.
+  //
+  // local 은 그렇게 가두지 **않는다**. local 접근이 막힌 채 통째 묘비를 자기 계층에만 적으려
+  // 하면 적을 곳이 없어 묘비가 아예 안 남고, 접근이 회복된 순간 옛 값이 새 편집을 덮거나
+  // 지운 draft 가 되살아난다(이 파일의 "접근조차 못 한 계층…"·"접근을 못 한 채 지운…" 테스트).
+  // 대가는 안다 — 이 묘비는 다른 탭이 청소할 수 없는 자리에 오래 산다. 그 탭에서 복원 배너가
+  // 한동안 안 뜬다. **유실보다 성가심을 택한 것이다.** 뒤집기 전에 위 두 테스트를 먼저 봐라.
   const hosts: readonly WebStorageTier[] =
     mark === BLANKET_MARK && tier === "session" ? ["session"] : markerHosts(tier, keep);
   for (const host of hosts) {
