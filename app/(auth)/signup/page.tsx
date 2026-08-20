@@ -602,10 +602,21 @@ function SignupForm() {
                 </div>
 
                 {/* 현재 상태 (선택) */}
-                <div className="mb-5">
-                  <label className="block text-label text-text-primary mb-2">
+                {/* 선택 여부가 색상으로만 바뀌면 스크린리더에는 아무것도 전달되지 않는다(FRT-296).
+                    다시 눌러 해제되는 토글이라 radio 가 아니라 aria-pressed 로 상태를 노출한다.
+                    묶음 이름이 없으면 "무엇에 대한 선택인지"가 여전히 들리지 않아 group 으로 감싼다. */}
+                <div
+                  className="mb-5"
+                  role="group"
+                  aria-labelledby="signup-affiliation-label"
+                  aria-describedby="signup-affiliation-hint"
+                >
+                  <span
+                    id="signup-affiliation-label"
+                    className="block text-label text-text-primary mb-2"
+                  >
                     현재 상태
-                  </label>
+                  </span>
                   <div className="grid grid-cols-4 gap-2">
                     {AFFILIATION_OPTIONS.map((opt) => {
                       const active = affiliation === opt.value;
@@ -613,6 +624,7 @@ function SignupForm() {
                         <button
                           key={opt.value}
                           type="button"
+                          aria-pressed={active}
                           onClick={() => {
                             setAffiliation(active ? "" : opt.value);
                             setSchool("");
@@ -634,7 +646,12 @@ function SignupForm() {
                       );
                     })}
                   </div>
-                  <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
+                  <p
+                    id="signup-affiliation-hint"
+                    className="mt-1.5 text-caption text-text-tertiary"
+                  >
+                    선택 사항이에요
+                  </p>
                 </div>
 
                 {/* 상태별 조건부 입력 */}
@@ -706,17 +723,23 @@ function SignupForm() {
             {/* ── q1 ───────────────────────────────── */}
             {step === "q1" && (
               <div>
-                <h1 className="text-heading-2 text-text-primary mb-1">
+                <h1 id="signup-q1-heading" className="text-heading-2 text-text-primary mb-1">
                   요즘 가장 고민되는 게 뭐예요?
                 </h1>
-                <p className="text-body text-text-secondary mb-8">
+                <p id="signup-q1-hint" className="text-body text-text-secondary mb-8">
                   복수 선택 가능해요 · 솔직하게 골라도 괜찮아요 😊
                 </p>
-                <div className="grid grid-cols-2 gap-2.5 mb-6">
+                <div
+                  className="grid grid-cols-2 gap-2.5 mb-6"
+                  role="group"
+                  aria-labelledby="signup-q1-heading"
+                  aria-describedby="signup-q1-hint"
+                >
                   {Q1_OPTIONS.map((opt) => (
                     <button
                       key={opt}
                       type="button"
+                      aria-pressed={worries.includes(opt)}
                       onClick={() => toggleWorry(opt)}
                       className={[
                         "h-12 rounded-xl border-2 text-body font-semibold",
@@ -749,17 +772,23 @@ function SignupForm() {
             {/* ── q2 ───────────────────────────────── */}
             {step === "q2" && (
               <div>
-                <h1 className="text-heading-2 text-text-primary mb-1">
+                <h1 id="signup-q2-heading" className="text-heading-2 text-text-primary mb-1">
                   관심 있는 분야를 골라보세요
                 </h1>
-                <p className="text-body text-text-secondary mb-8">
+                <p id="signup-q2-hint" className="text-body text-text-secondary mb-8">
                   복수 선택 가능해요
                 </p>
-                <div className="grid grid-cols-2 gap-2.5 mb-6">
+                <div
+                  className="grid grid-cols-2 gap-2.5 mb-6"
+                  role="group"
+                  aria-labelledby="signup-q2-heading"
+                  aria-describedby="signup-q2-hint"
+                >
                   {INTEREST_OPTIONS.map((opt) => (
                     <button
                       key={opt}
                       type="button"
+                      aria-pressed={interests.includes(opt)}
                       onClick={() => toggleInterest(opt)}
                       className={[
                         "h-12 rounded-xl border-2 text-body font-semibold",
