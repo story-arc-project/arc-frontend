@@ -191,19 +191,26 @@ function unmarkStale(tier: WebStorageTier, key: string): void {
   }
 }
 
-/** 이 자리에 걸린 묘비. 어디에 적혔는지는 모르므로 두 스토리지를 다 본다. */
-function markOf(tier: WebStorageTier, key: string): string | null {
+/**
+ * 이 자리에 걸린 묘비 **전부**. 어디에 적혔는지는 모르므로 두 스토리지를 다 본다.
+ *
+ * 하나만 찾고 멈추면 안 된다 — 지우기가 막힌 자리에 옛 묘비가 남은 채 새 묘비가 다른 자리에
+ * 적히면 둘이 공존한다. 그때 옛 묘비만 보고 판정하면 지문이 안 맞는다는 이유로 **이미 지운
+ * draft 를 되살린다.**
+ */
+function marksOf(tier: WebStorageTier, key: string): string[] {
+  const marks: string[] = [];
   const recorded = staleMarks.get(stampOf(tier, key));
-  if (recorded !== undefined) return recorded;
+  if (recorded !== undefined) marks.push(recorded);
   for (const host of WEB_STORAGE_TIERS) {
     try {
       const mark = webStorage(host)?.getItem(markerKey(tier, key));
-      if (mark != null) return mark;
+      if (mark != null) marks.push(mark);
     } catch {
       // 못 읽는 계층은 묘비도 없는 셈 친다.
     }
   }
-  return null;
+  return marks;
 }
 
 /**
@@ -215,11 +222,12 @@ function markOf(tier: WebStorageTier, key: string): string | null {
 function isStaleValue(tier: WebStorageTier, key: string, value: string): boolean {
   const stamp = stampOf(tier, key);
   if (freshEntries.has(stamp)) return false;
-  const mark = markOf(tier, key);
-  if (mark === null) return false;
+  const marks = marksOf(tier, key);
+  if (marks.length === 0) return false;
+  const fingerprint = fingerprintOf(value);
+  // 묘비가 여럿이면 **하나라도** 이 값을 가리키는 순간 낡은 것이다.
   // 지문을 못 뜬 묘비(옛 판본의 `"1"` 포함)는 그 자리를 통째로 가린다.
-  if (mark === BLANKET_MARK || mark === "1") return true;
-  return mark === fingerprintOf(value);
+  return marks.some((mark) => mark === BLANKET_MARK || mark === "1" || mark === fingerprint);
 }
 
 const WEB_STORAGE_TIERS = ["local", "session"] as const;

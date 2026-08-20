@@ -338,6 +338,34 @@ describe("표시는 새로고침을 견뎌야 한다", () => {
     // 표시가 남아 위 계층을 영영 건너뛰면, 방금 쓴 값을 도로 못 읽는다.
     expect(readRaw(KEY)).toBe("복구 후 편집");
   });
+
+  /**
+   * 묘비는 두 스토리지에 **동시에** 남을 수 있다 — 지우기가 막힌 자리에 옛 묘비가 남은 채
+   * 새 묘비가 다른 자리에 적히면 그렇다. 그때 먼저 찾은 하나만 보고 판정하면, 옛 묘비와
+   * 지문이 안 맞는다는 이유로 **이미 지운 draft 를 되살려** 돌려준다.
+   */
+  it("다른 스토리지에 남은 옛 표시 때문에 지운 draft 가 되살아나지 않는다", () => {
+    // local 에 옛 편집을 쓰고, 지우기가 막힌 채 지운다 → 본문도 옛 묘비도 local 에 남는다.
+    writeRaw(KEY, "옛 편집");
+    breakRemovals(window.localStorage);
+    clearRaw(KEY);
+
+    // 새 탭/새로고침: 모듈 상태는 죽고 local 만 살아남는다.
+    __resetMemoryDrafts();
+
+    // 새 편집을 덮어쓴다 — 지우기가 막혀 있어 옛 묘비는 local 에 그대로 남는다.
+    writeRaw(KEY, "새 편집");
+
+    // 이번엔 묘비를 local 에 못 적는다 → 새 묘비는 session 으로 간다.
+    breakWritesFor(window.localStorage, (k) => k.startsWith("arc:draft-stale:"));
+    clearRaw(KEY);
+
+    // 새로고침 — local 에는 옛 묘비, session 에는 새 편집을 가리키는 묘비가 공존한다.
+    __resetMemoryDrafts();
+
+    expect(readRaw(KEY)).toBeNull();
+  });
+
 });
 
 describe("readRaw — 위 계층부터 본다", () => {
