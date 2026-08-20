@@ -225,13 +225,20 @@ function marksOf(tier: WebStorageTier, key: string): string[] {
  * 이번 로드에서 직접 쓴 자리는 무조건 최신이다(내용이 그대로라 지문까지 같을 수 있다).
  */
 function isStaleValue(tier: WebStorageTier, key: string, value: string): boolean {
-  const stamp = stampOf(tier, key);
-  if (freshEntries.has(stamp)) return false;
+  if (freshEntries.has(stampOf(tier, key))) return false;
+  return isShadowed(tier, key, value);
+}
+
+/**
+ * 이 자리의 **이 값**을 가리는 묘비가 있는가 — 이번 로드에 직접 썼는지는 보지 않는다.
+ *
+ * 묘비가 여럿이면 **하나라도** 이 값을 가리키는 순간 가려진다. 지문을 못 뜬 묘비(옛 판본의
+ * `"1"` 포함)는 그 자리를 통째로 가린다.
+ */
+function isShadowed(tier: WebStorageTier, key: string, value: string): boolean {
   const marks = marksOf(tier, key);
   if (marks.length === 0) return false;
   const fingerprint = fingerprintOf(value);
-  // 묘비가 여럿이면 **하나라도** 이 값을 가리키는 순간 낡은 것이다.
-  // 지문을 못 뜬 묘비(옛 판본의 `"1"` 포함)는 그 자리를 통째로 가린다.
   return marks.some((mark) => mark === BLANKET_MARK || mark === "1" || mark === fingerprint);
 }
 
@@ -306,6 +313,10 @@ export function writeRaw(key: string, value: string): DraftTier | null {
     // 환경도 있으므로, 직접 썼다는 사실을 따로 기억해 읽기에서 건너뛰지 않게 한다.
     freshEntries.add(stampOf(tier, key));
     unmarkStale(tier, key);
+    // 묘비를 못 **남긴** 계층이 안전한 집이 아니듯, 못 **거둔** 계층도 안전한 집이 아니다.
+    // 거두지 못한 묘비가 방금 쓴 이 값을 가리키면, 이 값은 `freshEntries` 덕에 이번 로드에만
+    // 보이고 새로고침에 사라진다 — 그 자리를 "담았다"고 답하면 경고조차 안 나간다.
+    if (isShadowed(tier, key, value)) continue;
     if (evictOtherTiers(key, tier)) return tier;
     // 위 계층의 옛 값을 **이번 로드 동안만** 가릴 수 있다. 그런데 이 자리를 알리면 그 경고는
     // "새로고침은 견딘다"는 뜻이 되고, 정작 리로드하면 표시가 죽어 옛 값이 새 편집을 덮는다.

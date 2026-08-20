@@ -366,6 +366,30 @@ describe("표시는 새로고침을 견뎌야 한다", () => {
     expect(readRaw(KEY)).toBeNull();
   });
 
+
+  /**
+   * 묘비를 **못 남긴** 계층이 안전한 집이 아니듯, 묘비를 **못 거둔** 계층도 안전한 집이 아니다.
+   * 새로 쓴 값을 가리는 묘비가 남아 있으면 이번 로드에서만 보이고(`freshEntries`) 새로고침에
+   * 사라진다 — 그런데 "local 에 담았다"고 답하면 경고조차 안 나간다. 그 자리는 건너뛴다.
+   */
+  it("묘비를 못 거둔 계층도 안전한 집이 아니다 — 한 계층 내려가 사실대로 경고한다", () => {
+    // local 접근이 막힌 채 쓴다 → session 에 담기고, 지문 못 뜬 local 묘비가 session 에 남는다.
+    const restore = breakAccess("localStorage");
+    try {
+      expect(writeRaw(KEY, "옛 편집")).toBe("session");
+    } finally {
+      restore();
+    }
+
+    // local 접근이 돌아왔다. 그런데 session 지우기가 막혀 그 묘비를 거둘 수 없다.
+    breakRemovals(window.sessionStorage);
+    expect(writeRaw(KEY, "새 편집")).toBe("session");
+
+    simulateReload();
+
+    expect(readRaw(KEY)).toBe("새 편집");
+  });
+
 });
 
 describe("readRaw — 위 계층부터 본다", () => {
