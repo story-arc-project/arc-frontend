@@ -21,6 +21,7 @@ import type {
   BlockType,
   BlockValue,
   ChecklistBlockValue,
+  RepeatableCellBlockValue,
   SingleSelectBlockValue,
 } from "@/types/archive"
 import { createBlock, cloneBlock, isUnrenderableBlock } from "@/lib/utils/block-utils"
@@ -131,7 +132,29 @@ export default function BlockList({
             }
           }
           if (b.type === "repeatable-cell" && config.columns) {
-            updated.value = { ...b.value, columns: config.columns } as unknown as BlockValue
+            // 지운 열의 셀도 함께 쳐낸다 — 인라인 `RepeatableCellBlock.removeColumn` 이 이미
+            // 지키는 규칙인데 모달 경로만 빠져 있었다(위 옵션 삭제와 같은 형태의 누락).
+            // 남겨 두면 `rowHasContent` 가 그 값을 계속 세므로, 열을 전부 지운 블록이
+            // `isBlockEmpty` 에선 "내용 있음"으로 굳어 상세뷰에 빈 껍데기로 남는다.
+            //
+            // 행 자체는 지우지 않는다 — `extraFields`·`artifacts`·`roleTags` 는 열이 아니라
+            // **행에 붙은 사용자 값**이라, 열을 지웠다는 이유로 함께 버리면 안 된다.
+            const val = b.value as RepeatableCellBlockValue
+            const keptKeys = new Set(config.columns.map(c => c.key))
+            updated.value = {
+              ...val,
+              columns: config.columns,
+              rows: (Array.isArray(val.rows) ? val.rows : []).map(r => {
+                // 저장된 행에 `cells` 가 없거나 객체가 아닐 수 있다(FRT-200).
+                const cells = r.cells && typeof r.cells === "object" ? r.cells : {}
+                return {
+                  ...r,
+                  cells: Object.fromEntries(
+                    Object.entries(cells).filter(([k]) => keptKeys.has(k))
+                  ),
+                }
+              }),
+            } as BlockValue
           }
           if (b.type === "table" && config.tableColumns) {
             const val = b.value as { type: "table"; columns: string[]; rows: string[][] }
@@ -139,12 +162,18 @@ export default function BlockList({
             updated.value = {
               ...val,
               columns: newCols,
-              rows: val.rows.map(row => {
-                const newRow = [...row]
-                // Extend or trim rows to match new column count
-                while (newRow.length < newCols.length) newRow.push("")
-                return newRow.slice(0, newCols.length)
-              }),
+              // 열이 하나도 안 남으면 행도 함께 거둔다. 칸이 없어진 행은 이미 `[]` 라 담을
+              // 값이 없는데, `isBlockEmpty` 는 표를 **`rows.length` 로만** 판정하므로 껍데기
+              // 행이 남으면 빈 표가 상세뷰에 계속 그려지고 열을 다시 만들 때 빈 행이 되살아난다.
+              rows:
+                newCols.length === 0
+                  ? []
+                  : val.rows.map(row => {
+                      const newRow = [...row]
+                      // Extend or trim rows to match new column count
+                      while (newRow.length < newCols.length) newRow.push("")
+                      return newRow.slice(0, newCols.length)
+                    }),
             } as BlockValue
           }
           return updated

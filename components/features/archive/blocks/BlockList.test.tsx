@@ -9,6 +9,7 @@ import {
   createRepeatableCell,
   createSelectField,
   createTableField,
+  isBlockEmpty,
 } from "@/lib/utils/block-utils"
 import type {
   Block,
@@ -226,6 +227,79 @@ describe("BlockList 모달에서 열을 전부 지우면 빈 목록이 반영된
     await user.click(screen.getByRole("button", { name: "확인" }))
 
     expect((latest[0].value as TableBlockValue).columns).toEqual(["열2"])
+  })
+})
+
+/**
+ * **열을 지우면 그 열이 담고 있던 값도 함께 사라져야 한다 (Codex 리뷰 P2 2건).**
+ *
+ * 열 목록만 갈아끼우면 지운 열의 값이 `rows` 에 유령으로 남는다. 그 잔재는 눈에 안 보이는
+ * 데서 판정을 뒤집는다 — `isBlockEmpty` 가 반복 셀은 `rowHasContent`(=셀에 값이 있는가),
+ * 표는 `rows.length` 로 판정하므로, **화면엔 아무 칸도 없는 블록이 "내용 있음"으로 굳어**
+ * 상세뷰에 빈 껍데기로 계속 그려지고 열을 다시 만들면 옛 값·빈 행이 되살아난다.
+ */
+describe("모달에서 열을 지우면 그 열의 값도 함께 거둔다", () => {
+  it("반복 셀: 열을 전부 지우면 그 열의 셀도 사라져 빈 블록이 된다", async () => {
+    const user = userEvent.setup()
+    let latest: Block[] = []
+    const block = createRepeatableCell(
+      "활동 로그",
+      [{ key: "c1", label: "날짜", blockType: "date" }],
+      { lockColumns: false },
+    )
+    block.value = {
+      type: "repeatable-cell",
+      columns: [{ key: "c1", label: "날짜", blockType: "date" }],
+      rows: [{ id: "r1", cells: { c1: "2026-01-01" } }],
+    }
+    render(<Harness initial={[block]} onBlocks={b => { latest = b }} />)
+
+    await openBlockEditor(user)
+    await user.click(screen.getByRole("button", { name: "열 삭제" }))
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    const val = latest[0].value as RepeatableCellBlockValue
+    expect(val.rows[0].cells).toEqual({})
+    expect(isBlockEmpty(latest[0])).toBe(true)
+  })
+
+  it("반복 셀: 열을 하나만 지우면 남은 열의 값은 그대로다 — 값을 통째로 날리지 않는다", async () => {
+    const user = userEvent.setup()
+    let latest: Block[] = []
+    const columns = [
+      { key: "c1", label: "날짜", blockType: "date" as const },
+      { key: "c2", label: "메모", blockType: "text" as const },
+    ]
+    const block = createRepeatableCell("활동 로그", columns, { lockColumns: false })
+    block.value = {
+      type: "repeatable-cell",
+      columns,
+      rows: [{ id: "r1", cells: { c1: "2026-01-01", c2: "메모값" } }],
+    }
+    render(<Harness initial={[block]} onBlocks={b => { latest = b }} />)
+
+    await openBlockEditor(user)
+    await user.click(screen.getAllByRole("button", { name: "열 삭제" })[0])
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    const val = latest[0].value as RepeatableCellBlockValue
+    expect(val.rows[0].cells).toEqual({ c2: "메모값" })
+    expect(isBlockEmpty(latest[0])).toBe(false)
+  })
+
+  it("표: 열을 전부 지우면 껍데기 행도 남지 않는다", async () => {
+    const user = userEvent.setup()
+    let latest: Block[] = []
+    const block = createTableField("기록표")
+    block.value = { type: "table", columns: ["열1"], rows: [["v"]] }
+    render(<Harness initial={[block]} onBlocks={b => { latest = b }} />)
+
+    await openBlockEditor(user)
+    await user.click(screen.getByRole("button", { name: "열1 삭제" }))
+    await user.click(screen.getByRole("button", { name: "확인" }))
+
+    expect((latest[0].value as TableBlockValue).rows).toEqual([])
+    expect(isBlockEmpty(latest[0])).toBe(true)
   })
 })
 
