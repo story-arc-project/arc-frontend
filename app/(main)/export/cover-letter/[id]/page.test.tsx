@@ -53,6 +53,8 @@ vi.mock("@/lib/api/cover-letter-api", async (importOriginal) => {
 });
 
 import { writeDraft } from "@/lib/export/cover-letter-draft";
+import { __resetMemoryDrafts } from "@/lib/export/draft-storage";
+import { toast } from "@/components/ui/toast";
 import CoverLetterDetailPage from "./page";
 
 interface Deferred<T> {
@@ -172,6 +174,10 @@ beforeEach(() => {
   // clearAllMocks 는 once 큐를 비우지 않는다 — 남으면 다음 테스트가 남의 응답을 받는다.
   mockGetCoverLetter.mockReset();
   window.localStorage.clear();
+  // draft 는 이제 아래 계층으로도 떨어진다(FRT-261). 셋 다 비우지 않으면 앞 테스트의
+  // 편집이 다음 테스트의 복원 배너로 되살아난다.
+  window.sessionStorage.clear();
+  __resetMemoryDrafts();
 });
 
 describe("FRT-238 — 자기소개서 전환 중 늦게 도착한 응답", () => {
@@ -550,5 +556,107 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
     await flush();
 
     expect(storedDraft("A")?.data.answers[0].cover_letter).toBe("에이 본문!");
+  });
+});
+
+/**
+ * FRT-261 — '뒤로' 버튼은 저장 실패를 알리고 이동까지 막는데, GNB 링크·브라우저 뒤로가기로
+ * 떠나는 경로가 기댈 안전망은 언마운트 cleanup 하나뿐이었다. 그 자리가 `writeDraft` 의
+ * 결과를 버리고 있어, 저장이 실패해도 **아무 신호 없이** 편집이 사라졌다.
+ *
+ * 이 화면은 플래그가 꺼져 있어 브라우저로 열어볼 수 없다 — 이 테스트가 유일한 증거다.
+ */
+describe("이탈 경로에서 임시 저장이 위태로우면 사용자에게 알린다", () => {
+  /** 웹 스토리지 쓰기를 통째로 막는다 — 프라이빗 모드·용량 초과가 이렇게 던진다. */
+  function blockStorageWrites() {
+    return vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(function (this: Storage) {
+        throw new DOMException("quota exceeded", "QuotaExceededError");
+      });
+  }
+
+  async function editThenLeaveBy(leave: (r: ReturnType<typeof render>) => void) {
+    const route = routeById();
+    const view = await renderId("A");
+    route.resolve("A", fixture("에이 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    vi.mocked(toast.error).mockClear();
+    return { view, leave: () => leave(view) };
+  }
+
+  it("언마운트 이탈에서 저장이 메모리로 밀리면 경고한다", async () => {
+    const { leave } = await editThenLeaveBy((v) => v.unmount());
+    const spy = blockStorageWrites();
+
+    leave();
+    spy.mockRestore();
+
+    // 편집 자체는 살아 있다 — 다만 새로고침이면 잃는다는 사실을 사용자가 알아야 한다.
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("새로고침"));
+  });
+
+  it("정상 저장되는 이탈에서는 아무것도 경고하지 않는다", async () => {
+    const { leave } = await editThenLeaveBy((v) => v.unmount());
+
+    leave();
+
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  // '뒤로' 버튼은 담긴 이상 붙잡지 않는다 — 이 환경에서는 아무리 눌러도 영구 저장이
+  // 성공하지 않아, 막으면 출구 없는 화면이 된다.
+  it("'뒤로' 버튼은 임시 계층에 담겼으면 경고하고 이동시킨다", async () => {
+    const route = routeById();
+    await renderId("A");
+    route.resolve("A", fixture("에이 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    vi.mocked(toast.error).mockClear();
+    mockPush.mockClear();
+
+    const spy = blockStorageWrites();
+    await user.click(screen.getByRole("button", { name: "익스포트" }));
+    spy.mockRestore();
+
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("새로고침"));
+    // 담기긴 했으므로 붙잡지 않는다 — 예전에는 여기서 이동이 막혔다.
+    expect(mockPush).toHaveBeenCalled();
+  });
+
+  // '뒤로'는 스스로 이동을 일으켜 곧바로 언마운트로 이어진다. 두 자리가 각각 경고를
+  // 띄우면 한 번의 이탈에 같은 문구가 두 번 뜬다 — 두 번째는 알려줄 새 사실이 없으면서
+  // "또 실패했나" 하는 인상만 남긴다. 저장 자체는 양쪽 모두에서 계속 시도한다.
+  it("'뒤로'가 이미 경고했으면 뒤따르는 언마운트는 같은 경고를 되풀이하지 않는다", async () => {
+    const route = routeById();
+    const view = await renderId("A");
+    route.resolve("A", fixture("에이 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    vi.mocked(toast.error).mockClear();
+
+    // 클릭과 뒤이은 언마운트가 **같은** 저장 실패 환경을 만나야 재현된다.
+    const spy = blockStorageWrites();
+    await user.click(screen.getByRole("button", { name: "익스포트" }));
+    view.unmount();
+    spy.mockRestore();
+
+    expect(toast.error).toHaveBeenCalledTimes(1);
   });
 });

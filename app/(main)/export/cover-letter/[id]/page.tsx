@@ -23,6 +23,7 @@ import {
   writeDraft,
   type CoverLetterDraft,
 } from "@/lib/export/cover-letter-draft";
+import { draftTierWarning } from "@/lib/export/draft-storage";
 import {
   applyBaseline,
   readBaseline,
@@ -120,6 +121,10 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
 
   const dirtyRef = useRef(false);
   const resultRef = useRef<CoverLetterResult | null>(null);
+  // '뒤로' 버튼이 이미 이 이탈을 알렸으면 뒤이은 언마운트 cleanup 은 같은 경고를 또
+  // 띄우지 않는다 — router.push 가 이 컴포넌트를 곧바로 언마운트시키므로, 가드가 없으면
+  // 저장 계층 경고(tierWarning)가 사용자에게 두 번 뜬다(FRT-261 회귀).
+  const exitHandledRef = useRef(false);
   // 이 인스턴스가 **지금** 답하고 있는 질문. 비동기 저장의 클로저는 시작 당시의 것을 쥐고
   // 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave). id 가 아니라 requestKey 인 것은
   // A→B→A 때문이다 — 돌아오면 id 는 같아지지만 그 사이 재조회가 끼어들어 resultRef 는
@@ -182,7 +187,11 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       // 서버에 저장 경로가 없다(BAC-62 미착수). 편집을 잃을 이유는 아니므로 **항상** 로컬에
       // 남긴다 — 미지원이든 서버 장애든 결과가 같기 때문이다(FRT-148 의 네 경로).
       const latest = resultRef.current ?? snapshot;
-      const saved = writeDraft(id, latest);
+      const tier = writeDraft(id, latest);
+      const saved = tier !== null;
+      // 담기긴 했지만 오래 못 버티는 계층일 수 있다 — 그 사실을 안 알리면 사용자는 저장된
+      // 줄 알고 탭을 닫는다(FRT-261).
+      const tierWarning = draftTierWarning(tier);
       if (saved) {
         // 방금 쓴 임시 저장이 곧 지금 편집 중인 내용이다. 배너를 남겨 두면 '복원'이 화면에
         // 없는 낡은 스냅샷을 되돌리면서 방금 쓴 최신 저장까지 지운다 — 배너 하나가 편집을
@@ -193,13 +202,16 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       if (err instanceof CoverLetterMutationUnsupportedError) {
         if (saved) {
           setInitial(snapshot);
-          toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
+          // 경고가 있으면 그쪽이 먼저다 — "곧 제공될 예정"은 지금 할 일을 말해주지 않는다.
+          if (tierWarning) toast.error(tierWarning);
+          else toast("편집 저장 기능은 곧 제공될 예정이에요", "info");
         } else {
           toast.error("임시 저장도 실패했어요. 페이지를 닫지 마세요.");
         }
       } else {
         // dirty 는 그대로 둔다 — 다음 저장/이탈 경로가 계속 살아 있어야 한다.
-        toast.error("저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+        const detail = "저장에 실패했어요. 잠시 후 다시 시도해주세요.";
+        toast.error(tierWarning ? `${detail} ${tierWarning}` : detail);
       }
     } finally {
       setSaving(false);
@@ -208,11 +220,19 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
 
   const handleBack = useCallback(() => {
     if (dirty && result) {
-      if (!writeDraft(id, result)) {
+      const tier = writeDraft(id, result);
+      if (tier === null) {
+        // 아무 데도 못 담았다 — 나가면 그대로 잃는다. 여기서만 이동을 막는다.
         toast.error("임시 저장에 실패했어요. 저장 후 나가주세요.");
         return;
       }
-      toast("변경사항을 임시 저장했어요", "info");
+      // 담기긴 했으니 붙잡아 둘 이유가 없다. 이 환경에서는 아무리 눌러도 영구 저장이
+      // 성공하지 않아, 막으면 출구 없는 화면이 된다. 대신 무엇을 조심해야 하는지 알린다.
+      const tierWarning = draftTierWarning(tier);
+      if (tierWarning) toast.error(tierWarning);
+      else toast("변경사항을 임시 저장했어요", "info");
+      // 이동이 확정된 뒤에만 세운다 — 곧 이어질 언마운트가 이 경고를 또 띄우지 않도록.
+      exitHandledRef.current = true;
     }
     router.push(`${basePath}/export`);
   }, [dirty, result, id, router, basePath]);
@@ -244,9 +264,19 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   }, [requestKey]);
 
   // 클라이언트 이동(언마운트)에도 편집을 남긴다.
+  //
+  // 상단 '뒤로' 버튼만 출구가 아니다 — GNB 링크·브라우저 뒤로가기로 떠나도 여기로 온다.
+  // 그런데 그 경로들이 기댈 안전망은 이것 하나뿐이라, 여기서 결과를 버리면 저장 실패가
+  // **아무에게도 안 알려진 채** 편집이 사라진다(FRT-261). toast 는 모듈 전역 pub/sub 라
+  // 이 컴포넌트가 죽은 뒤에도 다음 화면에서 정상적으로 뜬다.
   useEffect(() => {
     return () => {
-      if (dirtyRef.current && resultRef.current) writeDraft(id, resultRef.current);
+      if (!dirtyRef.current || !resultRef.current) return;
+      const tier = writeDraft(id, resultRef.current);
+      // '뒤로' 버튼이 같은 이탈을 이미 경고했으면 여기서는 조용히 저장만 이어간다.
+      if (exitHandledRef.current) return;
+      const tierWarning = draftTierWarning(tier);
+      if (tierWarning) toast.error(tierWarning);
     };
   }, [id]);
 

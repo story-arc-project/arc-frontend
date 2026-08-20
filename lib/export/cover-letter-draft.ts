@@ -1,8 +1,10 @@
+import { clearRaw, readRaw, writeRaw, type DraftTier } from "./draft-storage";
 import { normalizeCoverLetter } from "./cover-letter-normalize";
 import type { CoverLetterResult } from "@/types/cover-letter";
 
 // 서버 저장(PATCH)이 아직 없어(BAC-62 미착수) 편집은 이 로컬 임시 저장이 유일한 보관처다.
 // 레쥬메 resume-draft 와 같은 구조·같은 이유다.
+// 어느 저장소에 어떻게 담기는지는 draft-storage 가 안다 — 여기는 자소서 스키마만 안다.
 
 const STORAGE_PREFIX = "arc:cover-letter-draft:";
 
@@ -18,7 +20,7 @@ function key(id: string): string {
 export function readDraft(id: string): CoverLetterDraft | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(key(id));
+    const raw = readRaw(key(id));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CoverLetterDraft;
     if (!parsed?.data || !parsed?.updated_at) return null;
@@ -30,25 +32,27 @@ export function readDraft(id: string): CoverLetterDraft | null {
   }
 }
 
-export function writeDraft(id: string, data: CoverLetterResult): boolean {
-  if (typeof window === "undefined") return false;
+/**
+ * **반환값은 "저장됐다/아니다"가 아니라 "얼마나 오래 버티는가"다.**
+ *
+ * `"local"` 만 브라우저를 닫아도 남는다. `"session"`·`"memory"` 는 임시 보관이고 `null` 은
+ * 아예 담지 못했다는 뜻이라, 호출부는 그 차이를 사용자에게 알려야 한다 — 조용히 넘기면
+ * 사용자는 저장된 줄 알고 탭을 닫는다(FRT-261).
+ */
+export function writeDraft(id: string, data: CoverLetterResult): DraftTier | null {
+  if (typeof window === "undefined") return null;
   const draft: CoverLetterDraft = { data, updated_at: new Date().toISOString() };
   try {
-    window.localStorage.setItem(key(id), JSON.stringify(draft));
-    return true;
+    return writeRaw(key(id), JSON.stringify(draft));
   } catch {
-    // 용량 초과·프라이빗 모드 — 호출부가 "저장 실패"를 사용자에게 알려야 한다.
-    return false;
+    // 직렬화 자체가 실패하는 경우(순환 참조 등) — 저장할 것이 없다.
+    return null;
   }
 }
 
 export function clearDraft(id: string): void {
   if (typeof window === "undefined") return;
-  try {
-    window.localStorage.removeItem(key(id));
-  } catch {
-    // ignore
-  }
+  clearRaw(key(id));
 }
 
 /**

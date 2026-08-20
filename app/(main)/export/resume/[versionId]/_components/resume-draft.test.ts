@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import { readDraft, writeDraft } from "./resume-draft";
 import type { ResumeVersion } from "@/types/resume";
@@ -37,6 +37,31 @@ function resume(링크: unknown): ResumeVersion {
 
 beforeEach(() => {
   window.localStorage.clear();
+  // draft 는 이제 아래 계층으로도 떨어진다 — 여기를 안 비우면 앞 테스트의 draft 가
+  // 다음 테스트의 readDraft 에 잡힌다.
+  window.sessionStorage.clear();
+});
+
+// localStorage 가 막힌 환경(프라이빗 모드·용량 초과)에서도 편집은 살아야 한다(FRT-261).
+// 계층 자체는 draft-storage 가 검증한다 — 여기서 보는 것은 아래 계층으로 떨어진 draft 도
+// **정규화를 태워 돌아오는가**다(링크 정규화가 이 파일의 오래된 계약이다).
+describe("localStorage 가 막혀도 편집을 잃지 않는다", () => {
+  it("아래 계층으로 담기고, 읽을 때 정규화를 거친다", () => {
+    const realSetItem = Storage.prototype.setItem;
+    const spy = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(function (this: Storage, k: string, v: string) {
+        if (this === window.localStorage) {
+          throw new DOMException("quota exceeded", "QuotaExceededError");
+        }
+        return realSetItem.call(this, k, v);
+      });
+
+    expect(writeDraft("v-fallback", resume("https://example.com"))).toBe("session");
+    spy.mockRestore();
+
+    expect(readDraft("v-fallback")?.data.meta.language).toBe("ko");
+  });
 });
 
 /**
