@@ -16,17 +16,51 @@ const STORAGE_PREFIX = "arc:cover-letter-limits:";
 interface StoredLimit {
   question: string;
   max_chars: number;
+  /**
+   * **같은 문항 텍스트 중 몇 번째**인지(0-base). 문항 텍스트는 유일하지 않다 — 입력 폼이
+   * 중복을 막지 않아 "성장 과정" 두 문항에 서로 다른 제한을 걸 수 있고, 텍스트만으로 접으면
+   * 한쪽 제한이 다른 쪽을 덮어써 **엉뚱한 초과 경고**가 뜬다.
+   *
+   * 옛 저장분에는 없어 optional 이다 — 없으면 첫 번째 문항의 제한으로 읽는다.
+   */
+  occurrence?: number;
 }
 
 function key(id: string): string {
   return `${STORAGE_PREFIX}${id}`;
 }
 
+/**
+ * `question` + `occurrence` 짝의 조회 키. 순번을 **앞에** 두고 가른다 — 순번은 정수라
+ * 구분자를 품을 수 없으므로 첫 `:` 가 항상 경계고, 서로 다른 짝이 같은 키를 만들 수 없다.
+ */
+function slotKey(question: string, occurrence: number): string {
+  return `${occurrence}:${question}`;
+}
+
+/**
+ * 문항 텍스트별 등장 순번을 매기는 카운터. 제한을 비워 둔 문항도 **자리는 차지**하므로
+ * 세는 대상에서 빼면 안 된다 — 빼면 뒤 문항의 제한이 앞으로 당겨 붙는다.
+ */
+function createOccurrenceCounter(): (question: string) => number {
+  const seen = new Map<string, number>();
+  return (question) => {
+    const next = seen.get(question) ?? 0;
+    seen.set(question, next + 1);
+    return next;
+  };
+}
+
 export function writeLimits(id: string, questions: readonly CoverLetterQuestion[]): void {
   if (typeof window === "undefined") return;
-  const limits: StoredLimit[] = questions
-    .filter((q) => typeof q.maxChars === "number" && q.maxChars > 0)
-    .map((q) => ({ question: q.question, max_chars: q.maxChars as number }));
+  const nextOccurrence = createOccurrenceCounter();
+  const limits: StoredLimit[] = [];
+  for (const q of questions) {
+    const occurrence = nextOccurrence(q.question.trim());
+    if (typeof q.maxChars === "number" && q.maxChars > 0) {
+      limits.push({ question: q.question, max_chars: q.maxChars, occurrence });
+    }
+  }
   if (limits.length === 0) return;
   try {
     window.localStorage.setItem(key(id), JSON.stringify(limits));
@@ -42,14 +76,17 @@ export function readLimits(id: string): StoredLimit[] | null {
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
-    const limits = parsed.filter(
-      (v): v is StoredLimit =>
-        typeof v === "object" &&
-        v !== null &&
-        typeof (v as StoredLimit).question === "string" &&
-        typeof (v as StoredLimit).max_chars === "number" &&
-        (v as StoredLimit).max_chars > 0,
-    );
+    const limits = parsed.filter((v): v is StoredLimit => {
+      if (typeof v !== "object" || v === null) return false;
+      const limit = v as StoredLimit;
+      if (typeof limit.question !== "string") return false;
+      if (typeof limit.max_chars !== "number" || limit.max_chars <= 0) return false;
+      // 없으면 옛 저장분(첫 문항으로 읽는다), 있으면 0 이상 정수여야 자리를 믿을 수 있다.
+      return (
+        limit.occurrence === undefined ||
+        (Number.isInteger(limit.occurrence) && limit.occurrence >= 0)
+      );
+    });
     return limits.length > 0 ? limits : null;
   } catch {
     return null;
@@ -62,6 +99,9 @@ export function readLimits(id: string): StoredLimit[] | null {
  * 문항 본문으로 짝지어야 한다 — 명세상 순서는 보존되지만 빈 문항이 "(자유 형식)" 으로
  * 대체되거나 서버가 자유 형식 1건을 만들어 개수가 어긋날 수 있어, 인덱스만 믿으면 **다른
  * 문항의 제한이 붙어 엉뚱한 초과 경고**가 뜬다.
+ *
+ * 다만 본문만으로도 부족하다 — 같은 텍스트 문항이 둘 이상이면 제한이 서로 덮어쓴다. 그래서
+ * 텍스트에 **그 텍스트 안에서의 순번**을 더한 자리로 짝짓는다(`StoredLimit.occurrence`).
  */
 export function applyLimits(
   result: CoverLetterResult,
@@ -69,12 +109,22 @@ export function applyLimits(
 ): CoverLetterResult {
   if (!limits || limits.length === 0) return result;
 
-  const byQuestion = new Map(limits.map((l) => [l.question.trim(), l.max_chars]));
+  const bySlot = new Map<string, number>();
+  for (const l of limits) {
+    const slot = slotKey(l.question.trim(), l.occurrence ?? 0);
+    // 한 자리에 둘이 겹치면(옛 저장분의 중복 텍스트) 먼저 적힌 값이 이긴다.
+    if (!bySlot.has(slot)) bySlot.set(slot, l.max_chars);
+  }
+
+  const nextOccurrence = createOccurrenceCounter();
   let changed = false;
 
   const answers = result.answers.map((a) => {
+    const question = a.question.trim();
+    // 서버 값이 있는 문항도 자리는 차지한다 — 세기 전에 빠져나가면 뒤 문항 순번이 밀린다.
+    const occurrence = nextOccurrence(question);
     if (typeof a.max_chars === "number") return a; // 서버 값이 정본이다.
-    const found = byQuestion.get(a.question.trim());
+    const found = bySlot.get(slotKey(question, occurrence));
     if (found === undefined) return a;
     changed = true;
     return { ...a, max_chars: found };
