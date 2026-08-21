@@ -101,9 +101,19 @@ export const ANALYTICS_EVENTS = {
   // analysis_type 으로 가른다 — analysis_completed·analysis_target_selected 와 같은 결.
   analysisViewed: "analysis_viewed",
   // ── 기술적 실패 판별 (FRT-107) ────────────────────────────────────
-  // 눌렀는데 요청이 안 나간 실패는 흔적을 남기지 않는다. 이 둘과 짝이 되는 요청·완료
-  // 이벤트의 **건수 차이**가 그 실패다(버그·네트워크 ↔ 사용자 의도적 이탈을 가른다).
-  analysisExecuteButtonClicked: "analysis_execute_button_clicked",
+  // "눌렀는데 요청이 안 나갔다"를 보려면 **누른 사실**과 **서버가 받은 사실**이 둘 다
+  // 있어야 하고, 그 차이가 곧 버그·네트워크 실패다(사용자 의도적 이탈과 갈린다).
+  // 이미 있는 반쪽은 새로 만들지 않는다 — 어느 쪽이 비어 있었는지가 아래를 갈랐다:
+  //
+  //  분석  : 누른 사실 = analysis_target_selected(요청 **앞**에서 발화) — 있다.
+  //          받은 사실 = 없다 → analysis_requested 를 만든다.
+  //          (analysis_completed 로는 못 가른다. 그건 분석이 **끝났다**는 뜻이라
+  //           "접수됐지만 아직 도는 중"과 "요청조차 못 갔다"가 한 덩어리가 된다.)
+  //  엑스포트: 받은 사실 = export_completed(이름과 달리 실체는 접수다) — 있다.
+  //          누른 사실 = 없다 → export_execute_button_clicked 를 만든다.
+  //          (resume_experience_selected 는 선택 UI 플래그가 꺼지면 아예 안 떠서
+  //           누름의 대역이 못 된다.)
+  analysisRequested: "analysis_requested",
   exportExecuteButtonClicked: "export_execute_button_clicked",
   // ── 자소서 이후 행동 (FRT-107) ────────────────────────────────────
   // 자소서 기능은 FRT-140 에서 생겼는데 상세 화면 계측이 통째로 비어 있었다.
@@ -196,9 +206,12 @@ export interface AnalyticsEventProps {
     analysis_id: string;
     view_duration_seconds: number;
   };
-  // 실행 버튼을 누른 시점(요청 함수를 부르기 **직전**). analysis_completed 와의 건수 차이가
-  // "눌렀는데 요청이 안 나간" 기술적 실패다 — 그 실패는 스스로 아무 흔적도 남기지 않는다.
-  analysis_execute_button_clicked: { analysis_type: AnalysisKind };
+  // 서버가 분석 요청을 **받은** 시점(생성 응답 성공 직후). 이미 있는
+  // analysis_target_selected(누름)와의 건수 차이가 "눌렀는데 요청이 안 나간" 기술적 실패다.
+  // 그 실패는 스스로 아무 흔적도 남기지 않는다.
+  analysis_requested: { analysis_type: AnalysisKind };
+  // 엑스포트 실행 버튼을 누른 시점(요청 함수를 부르기 **직전**). export_completed(실체는
+  // 접수)와의 차이가 같은 질문을 엑스포트에서 답한다.
   export_execute_button_clicked: { export_type: ExportType };
   // experience_count — 사용자가 레쥬메에 넣기로 고른 경험 수(FRT-109). 선택 UI 가 꺼져 있으면
   // "고른" 개념 자체가 없으므로 싣지 않는다(0 이 아니라 부재).

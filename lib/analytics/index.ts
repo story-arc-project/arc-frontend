@@ -12,6 +12,7 @@ export { markSignupCompletedIfUnseen } from "./signup";
 // FRT-107: 이탈·체류를 재는 훅. exit-signal 은 이 둘의 공용 내부라 공개하지 않는다.
 export { useDwell, type DwellOptions } from "./use-dwell";
 export { useFlowExit, type FlowExitOptions, type FlowExitResult } from "./use-flow-exit";
+export { useAnalysisViewed, type AnalysisViewedOptions } from "./use-analysis-viewed";
 export {
   useArchiveEntryAnalytics,
   type ArchiveEntryAnalytics,

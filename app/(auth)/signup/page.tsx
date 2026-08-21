@@ -8,7 +8,7 @@ import { Button, DatePicker, Input, toast } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { api, ApiError } from "@/lib/api/client";
-import { capture, markSignupCompletedIfUnseen } from "@/lib/analytics";
+import { capture, markSignupCompletedIfUnseen, useFlowExit } from "@/lib/analytics";
 import { useAuth } from "@/hooks/useAuth";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { VerifyEmailResponse } from "@/types/auth";
@@ -118,6 +118,36 @@ function SignupForm() {
       goTo(FIRST_ONBOARDING_STEP);
     }
   }, [step, isAuthenticated, isAuthLoading]);
+
+  const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
+  const isOnboarding = onboardingIndex >= 0;
+
+  // FRT-107: 온보딩은 라우트가 하나(step state)라 스텝 진입이 **어떤 방법으로도** 관측되지
+  // 않는다 — capture_pageview 를 켜더라도 URL 이 안 바뀐다. 어느 스텝에서 오래 머물고
+  // 어디서 그만두는지는 이 두 이벤트에만 남는다.
+  //
+  // 같은 스텝이 연속으로 다시 발화하지 않게만 막는다(StrictMode 이중 마운트). 뒤로 갔다
+  // 다시 온 재진입은 진짜 재조회라 그대로 센다 — 그게 "이 스텝에서 헤맸다"는 신호다.
+  const lastViewedStepRef = useRef<Step | null>(null);
+  useEffect(() => {
+    if (!isOnboarding) return;
+    if (lastViewedStepRef.current === step) return;
+    lastViewedStepRef.current = step;
+    capture("onboarding_step_viewed", { step, step_index: onboardingIndex });
+  }, [step, isOnboarding, onboardingIndex]);
+
+  const { markCompleted: markOnboardingCompleted } = useFlowExit({
+    active: isOnboarding,
+    onExit: (elapsedSeconds) => {
+      capture(
+        "onboarding_abandoned",
+        { last_step: step, elapsed_seconds: elapsedSeconds },
+        // 온보딩 완료는 하드 내비게이션(window.location.assign)이라, 배치 큐에 담으면
+        // 이탈이든 완료든 페이지와 함께 사라진다.
+        { atUnload: true },
+      );
+    },
+  });
 
   function toggleInterest(opt: string) {
     setInterests((prev) =>
@@ -310,6 +340,9 @@ function SignupForm() {
       // 온보딩 완료 확정 지점(성공 응답). DUPLICATE_ONBOARDING(이미 완료 재진입)은
       // 아래 catch 에서 별도 처리하며 중복 발화하지 않는다.
       capture("onboarding_completed", {});
+      // 여기서부터 이 온보딩은 이탈이 아니다(FRT-107). 아래 하드 내비게이션이 pagehide 를
+      // 부르므로, 이 표시가 먼저 서야 완료가 이탈로도 집계되지 않는다.
+      markOnboardingCompleted();
       // 하드 내비게이션으로 AuthProvider를 재마운트·refetch해야 온보딩 직후 GNB 계정 메뉴가 노출된다.
       window.location.assign("/dashboard");
     } catch (e) {
@@ -320,6 +353,9 @@ function SignupForm() {
           toast.error("로그인 정보가 정확하지 않아요. 다시 로그인해주세요.")
         } else if (e.code === "DUPLICATE_ONBOARDING") {
           // 이미 온보딩 완료 — 대시보드로 이동 (하드 내비게이션으로 auth 재동기화)
+          // 완료 이벤트는 중복이라 안 쏘지만 이탈도 아니다. 표시를 안 세우면 이 재진입이
+          // 곧바로 onboarding_abandoned 로 잡혀 이탈률이 부풀어 오른다(FRT-107).
+          markOnboardingCompleted();
           window.location.assign("/dashboard");
         } else if (e.code === "INVALID_INPUT") {
           toast.error("입력 정보를 다시 확인해주세요.");
@@ -339,9 +375,6 @@ function SignupForm() {
     name.trim().length > 0 &&
     birthValid &&
     phone.length === 11;
-  const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
-  const isOnboarding = onboardingIndex >= 0;
-
   if (shouldRedirect) return null;
 
   return (

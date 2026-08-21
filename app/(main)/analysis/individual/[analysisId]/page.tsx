@@ -18,6 +18,7 @@ import {
   individualStrengthLevelLabel,
 } from "@/types/analysis";
 import { getIndividualAnalysisResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
+import { useAnalysisViewed } from "@/lib/analytics";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui"
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
@@ -54,6 +55,10 @@ export default function IndividualAnalysisDetailPage() {
       active = false;
     };
   }, [analysisId]);
+
+  // 이 결과를 얼마나 봤는가(FRT-107). 개별 분석은 백엔드가 자동 생성해 "실행" 이벤트가
+  // 없지만, 조회는 사람이 하므로 종합·키워드와 같은 축에서 비교할 수 있다.
+  useAnalysisViewed({ analysisType: "individual", analysisId, ready: !!data });
 
   if (unsupported) {
     return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/individual" />;

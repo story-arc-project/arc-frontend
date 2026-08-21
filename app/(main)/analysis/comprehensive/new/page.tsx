@@ -65,6 +65,10 @@ export default function ComprehensiveNewPage() {
     capture("analysis_target_selected", { analysis_type: "comprehensive", count: selected.length });
     try {
       const { analysisId: id } = await createComprehensiveAnalysis(selected);
+      // 서버가 요청을 받았다(FRT-107). 위 analysis_target_selected(누름)와의 건수 차이가
+      // "눌렀는데 요청이 안 나간" 기술적 실패다 — analysis_completed 로는 못 가른다.
+      // 그건 분석이 끝났다는 뜻이라 "접수됐지만 도는 중"과 한 덩어리가 되기 때문이다.
+      capture("analysis_requested", { analysis_type: "comprehensive" });
       toast("분석을 시작했어요. 목록에서 진행 상황을 확인하세요.", "success");
       if (!mountedRef.current) return;
       // 방금 만든 분석 id 를 목록에 알려준다 — 빨리 끝나는 분석은 목록의 첫 조회 시점에 이미

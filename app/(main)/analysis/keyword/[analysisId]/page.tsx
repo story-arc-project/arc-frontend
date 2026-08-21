@@ -16,6 +16,7 @@ import type {
 } from "@/types/analysis";
 import { getKeywordResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
 import { formatDateTime } from "@/lib/utils/date-utils";
+import { useAnalysisViewed } from "@/lib/analytics";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { isAnalysisRetryEnabled } from "@/lib/analysis/flags";
 import { Badge } from "@/components/ui";
@@ -55,6 +56,9 @@ export default function KeywordDetailPage() {
       active = false;
     };
   }, [analysisId]);
+
+  // 이 결과를 얼마나 봤는가(FRT-107). 결과가 화면에 실제로 있는 동안만 잰다.
+  useAnalysisViewed({ analysisType: "keyword", analysisId, ready: !!data });
 
   if (unsupported) {
     return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/keyword" />;

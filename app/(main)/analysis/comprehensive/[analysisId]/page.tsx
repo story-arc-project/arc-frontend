@@ -30,6 +30,7 @@ import {
   weaknessSeverityLabel,
 } from "@/types/analysis";
 import { getComprehensiveResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
+import { useAnalysisViewed } from "@/lib/analytics";
 import { isSafeHttpUrl } from "@/lib/utils/url-utils";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui";
@@ -68,6 +69,14 @@ export default function ComprehensiveDetailPage() {
       active = false;
     };
   }, [analysisId]);
+
+  // 이 결과를 얼마나 봤는가(FRT-107). 결과가 화면에 실제로 있는 동안만 잰다 —
+  // 불러오는 중·실패 화면은 "본 것"이 아니다.
+  useAnalysisViewed({
+    analysisType: "comprehensive",
+    analysisId,
+    ready: !!data,
+  });
 
   if (unsupported) {
     return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/comprehensive" />;
