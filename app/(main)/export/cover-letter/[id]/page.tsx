@@ -23,7 +23,9 @@ import {
   writeDraft,
   type CoverLetterDraft,
 } from "@/lib/export/cover-letter-draft";
-import { draftTierWarning } from "@/lib/export/draft-storage";
+import { capture, type CoverLetterSaveOutcome } from "@/lib/analytics";
+import { firstChangedAnswerIndex } from "@/lib/export/cover-letter-diff";
+import { draftTierWarning, type DraftTier } from "@/lib/export/draft-storage";
 import {
   applyBaseline,
   readBaseline,
@@ -36,6 +38,30 @@ import { CoverLetterPreview } from "@/components/features/export/CoverLetterPrev
 import { isEmptyCoverLetter, type CoverLetterResult } from "@/types/cover-letter";
 
 type MobileTab = "editor" | "preview";
+
+/**
+ * FRT-107: 저장의 결말들(서버 저장·실패·저장 없이 이탈)이 사용자에겐 거의 같아 보이지만
+ * 데이터로는 전혀 다른 사실이다. 레쥬메의 captureEditSaved 와 같은 모양으로 한 곳에서 싣는다.
+ *
+ * 컴포넌트 밖에 두는 이유는 언마운트 cleanup 이 이 함수를 부르기 때문이다 — 안에 두면
+ * 그 effect 의 의존성에 걸리고, 훗날 무엇 하나라도 클로저에 들어오는 순간 cleanup 이 매
+ * 렌더마다 돌아 '이탈 저장'이 반복 발화한다. 인자만 받으니 밖이 제자리다.
+ */
+function captureEditSaved(
+  outcome: CoverLetterSaveOutcome,
+  persisted: boolean,
+  snapshot: CoverLetterResult | null,
+  // 로컬로 떨어진 경우 **어느 계층**에 담겼는지. 같은 "보관됨"이라도 브라우저를 닫으면
+  // 사라지는 보관이 섞여 있어, 이걸 안 나누면 유실 규모를 과소 보고한다(FRT-261).
+  storageTier?: DraftTier | null,
+): void {
+  capture("cover_letter_edit_saved", {
+    outcome,
+    persisted,
+    question_count: snapshot?.answers?.length ?? 0,
+    ...(storageTier === undefined ? {} : { storage_tier: storageTier }),
+  });
+}
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -144,6 +170,25 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // 핸들러가 최신 값을 본다(레쥬메 상세와 같은 이유).
   dirtyRef.current = dirty;
   resultRef.current = result;
+
+  // AI 초안에 처음 손댄 시점(FRT-107). 레쥬메의 resume_edited 와 같은 축이다 —
+  // "AI 결과물을 얼마나 고쳐 쓰는가"는 두 기능에 같은 질문이고, 자소서 쪽만 이 관측이
+  // 통째로 비어 있었다. 문서(requestKey)당 1회 — 키 입력마다 쏘면 이벤트가 폭증한다.
+  // '나가기'는 스스로 이동을 일으켜 언마운트로 이어진다 — 이미 쐈으면 두 번 세지 않는다.
+  const exitDraftFiredRef = useRef(false);
+
+  const editedFiredKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!dirty || editedFiredKeyRef.current === requestKey) return;
+    const questionIndex = firstChangedAnswerIndex(result, initial);
+    // 본문이 아니라 다른 무엇이 달라진 경우(-1)는 "고쳐 썼다"가 아니다.
+    if (questionIndex < 0) return;
+    editedFiredKeyRef.current = requestKey;
+    capture("cover_letter_edited", {
+      cover_letter_id: id,
+      question_index: questionIndex,
+    });
+  }, [dirty, result, initial, requestKey, id]);
   // requestKeyRef 는 여기서 갱신하지 않는다 — 아래 effect(커밋 단계)에서만 움직인다.
 
   const handleSave = useCallback(async () => {
@@ -182,6 +227,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
         // 방금 저장한 내용을 그것으로 덮는다(FRT-191).
         setPendingDraft(null);
       }
+      captureEditSaved("server", true, updated);
       toast.success("저장됐어요");
     } catch (err) {
       // 서버에 저장 경로가 없다(BAC-62 미착수). 편집을 잃을 이유는 아니므로 **항상** 로컬에
@@ -192,6 +238,8 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       // 담기긴 했지만 오래 못 버티는 계층일 수 있다 — 그 사실을 안 알리면 사용자는 저장된
       // 줄 알고 탭을 닫는다(FRT-261).
       const tierWarning = draftTierWarning(tier);
+      // 서버에 못 남긴 저장. persisted 는 **어디든** 남았는가라, false 가 진짜 유실이다.
+      captureEditSaved("failed", saved, latest, tier);
       if (saved) {
         // 방금 쓴 임시 저장이 곧 지금 편집 중인 내용이다. 배너를 남겨 두면 '복원'이 화면에
         // 없는 낡은 스냅샷을 되돌리면서 방금 쓴 최신 저장까지 지운다 — 배너 하나가 편집을
@@ -221,11 +269,18 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   const handleBack = useCallback(() => {
     if (dirty && result) {
       const tier = writeDraft(id, result);
+      // 저장 버튼을 누른 적은 없지만 사용자에게는 "임시 저장했어요"라고 **말한다**.
+      // 여기서 안 쏘면 안전하게 보관된 편집이 유실된 편집과 데이터상 구별되지 않고,
+      // 실패(=편집 유실 직전)한 순간은 아예 어디에도 남지 않는다(FRT-107).
+      captureEditSaved("exit_draft", tier !== null, result, tier);
       if (tier === null) {
         // 아무 데도 못 담았다 — 나가면 그대로 잃는다. 여기서만 이동을 막는다.
+        // 실패한 '나가기'는 이탈이 아니다 — 사용자는 화면에 그대로 남는다. 여기서 중복
+        // 방지 플래그를 세우면 뒤이어 **진짜로** 떠날 때 보관된 편집이 안 남는다.
         toast.error("임시 저장에 실패했어요. 저장 후 나가주세요.");
         return;
       }
+      exitDraftFiredRef.current = true;
       // 담기긴 했으니 붙잡아 둘 이유가 없다. 이 환경에서는 아무리 눌러도 영구 저장이
       // 성공하지 않아, 막으면 출구 없는 화면이 된다. 대신 무엇을 조심해야 하는지 알린다.
       const tierWarning = draftTierWarning(tier);
@@ -273,6 +328,12 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     return () => {
       if (!dirtyRef.current || !resultRef.current) return;
       const tier = writeDraft(id, resultRef.current);
+      // 상단 '뒤로'만 출구가 아니다 — GNB 링크로 떠나도 페이지는 조용히 임시 저장한다.
+      // 그 편집도 어디까지 갔는지는 같은 질문이라 같은 이벤트로 남긴다(FRT-107).
+      if (!exitDraftFiredRef.current) {
+        exitDraftFiredRef.current = true;
+        captureEditSaved("exit_draft", tier !== null, resultRef.current, tier);
+      }
       // '뒤로' 버튼이 같은 이탈을 이미 경고했으면 여기서는 조용히 저장만 이어간다.
       if (exitHandledRef.current) return;
       const tierWarning = draftTierWarning(tier);
@@ -374,7 +435,12 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => window.print()}
+          onClick={() => {
+            // 만든 자소서를 실제로 꺼내간 시점(FRT-107). export_completed 까지만 보면
+            // "만들어놓고 안 쓰는지"가 안 보인다 — 레쥬메의 resume_downloaded 와 같은 축.
+            capture("cover_letter_downloaded", { format: "print" });
+            window.print();
+          }}
           aria-label="인쇄"
         >
           <Printer size={16} />
