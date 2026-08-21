@@ -15,7 +15,7 @@
 //     0초짜리 유령 이탈이 남는다. 그래서 언마운트 발화는 한 틱 미루고, 같은 인스턴스가
 //     곧바로 다시 마운트되면 그 예약을 취소하고 원래 시작 시각을 이어 쓴다.
 //     (페이지가 통째로 사라지는 경우는 pagehide 가 이미 동기로 처리한 뒤다.)
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 export interface ExitSignalOptions {
   // 잴 준비가 됐는가. false 인 동안은 시계가 돌지 않는다.
@@ -30,17 +30,27 @@ export interface ExitSignalOptions {
   onFire: (elapsedSeconds: number) => void;
 }
 
+export interface ExitSignalResult {
+  // 흐름이 시작된 뒤 흐른 시간(초). 아직 시작 전이면 0.
+  // 완료한 사람의 소요시간을 이탈한 사람의 elapsed_seconds 와 **같은 시계**로 재기 위한 것 —
+  // 호출부가 자기 시계를 따로 두면 두 값이 조용히 어긋난다.
+  elapsedSeconds: () => number;
+}
+
 export function useExitSignal({
   active,
   onHidden,
   shouldFire,
   onFire,
-}: ExitSignalOptions): void {
-  // 발화는 언마운트 이후에도 일어난다 — 그때 옛 클로저가 굳지 않도록 매 렌더 최신값으로 갈아둔다.
+}: ExitSignalOptions): ExitSignalResult {
+  // 발화는 언마운트 이후에도 일어난다 — 그때 옛 클로저가 굳지 않도록 커밋마다 최신값으로
+  // 갈아둔다(렌더 중 ref 쓰기는 금지 — ExperienceFormV2 의 onProgressChangeRef 와 같은 패턴).
   const shouldFireRef = useRef(shouldFire);
-  shouldFireRef.current = shouldFire;
   const onFireRef = useRef(onFire);
-  onFireRef.current = onFire;
+  useEffect(() => {
+    shouldFireRef.current = shouldFire;
+    onFireRef.current = onFire;
+  });
 
   const startedAtRef = useRef<number | null>(null);
   const firedRef = useRef(false);
@@ -91,4 +101,12 @@ export function useExitSignal({
       }, 0);
     };
   }, [active, onHidden]);
+
+  const elapsedSeconds = useCallback((): number => {
+    const startedAt = startedAtRef.current;
+    if (startedAt === null) return 0;
+    return Math.round((Date.now() - startedAt) / 1000);
+  }, []);
+
+  return { elapsedSeconds };
 }

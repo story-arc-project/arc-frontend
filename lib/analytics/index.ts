@@ -13,6 +13,11 @@ export { markSignupCompletedIfUnseen } from "./signup";
 export { useDwell, type DwellOptions } from "./use-dwell";
 export { useFlowExit, type FlowExitOptions, type FlowExitResult } from "./use-flow-exit";
 export {
+  useArchiveEntryAnalytics,
+  type ArchiveEntryAnalytics,
+  type ArchiveEntryProgressProps,
+} from "./use-archive-entry";
+export {
   ANALYTICS_EVENTS,
   type AnalyticsEventName,
   type AnalyticsEventProps,

@@ -23,6 +23,9 @@ export interface FlowExitOptions {
 export interface FlowExitResult {
   // 흐름이 완료됐음을 알린다. 이 뒤로는 언마운트·pagehide 어느 쪽에서도 발화하지 않는다.
   markCompleted: () => void;
+  // 흐름 시작부터의 경과(초). 완료 이벤트에 소요시간을 실을 때 쓴다 —
+  // 이탈 이벤트의 elapsed_seconds 와 같은 시계여야 둘을 나란히 놓고 비교할 수 있다.
+  elapsedSeconds: () => number;
 }
 
 export function useFlowExit({ active, onExit }: FlowExitOptions): FlowExitResult {
@@ -31,7 +34,7 @@ export function useFlowExit({ active, onExit }: FlowExitOptions): FlowExitResult
 
   const shouldFire = useCallback(() => !completedRef.current, []);
 
-  useExitSignal({
+  const { elapsedSeconds } = useExitSignal({
     active,
     onHidden: false,
     shouldFire,
@@ -42,5 +45,5 @@ export function useFlowExit({ active, onExit }: FlowExitOptions): FlowExitResult
     completedRef.current = true;
   }, []);
 
-  return { markCompleted };
+  return { markCompleted, elapsedSeconds };
 }

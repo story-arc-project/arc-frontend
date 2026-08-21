@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest"
 import {
+  completedCardIds,
   computeFormCards,
+  filledQualitativeKeys,
   isCardComplete,
   computeFormProgress,
   equivalentLabels,
@@ -927,5 +929,89 @@ describe("standalone 섹션 분할 (FRT-320)", () => {
     // 설정(공개 설정)은 마지막 카드(인생 회고) 맨 아래에 붙는다.
     const last = r.cards[r.cards.length - 1]
     expect(last.blocks[last.blocks.length - 1].label).toBe("공개 설정")
+  })
+})
+
+describe("진행 자취 — 어디까지 채웠는가 (FRT-107)", () => {
+  /**
+   * 진행도 바는 개수만 준다. "어디서 멈췄나"를 물으려면 **어느 카드**가 채워졌는지가
+   * 필요하고, 그 판정은 진행도 바와 한 치도 달라선 안 된다 — 다르면 화면이 60% 라고
+   * 말하는 순간 계측은 다른 이야기를 남긴다.
+   */
+  it("completedCardIds 는 폼 순서를 유지하고 개수는 진행도와 일치한다", () => {
+    const { core, sections } = sectionsFor("career")
+    const r = computeFormCards(core, sections)
+    // 아무것도 안 채운 상태에서도 필수 없는 카드는 완료로 잡힐 수 있다 —
+    // 그 판정 자체는 isCardComplete 의 몫이고, 여기서는 두 함수가 어긋나지 않는지만 본다.
+    const ids = completedCardIds(r.cards)
+    expect(ids.length).toBe(computeFormProgress(r.cards).done)
+    // 폼 순서 유지 — 이탈 지점을 "폼의 어디"로 읽으려면 자리가 살아 있어야 한다.
+    const order = r.cards.map(c => c.id)
+    expect(ids).toEqual(order.filter(id => ids.includes(id)))
+  })
+
+  it("completedCardIds 는 hiddenKeys 를 진행도와 같은 방식으로 반영한다", () => {
+    const { core, sections } = sectionsFor("career")
+    const r = computeFormCards(core, sections)
+    const hidden = r.cards.flatMap(c => c.blocks.map(b => b.key).filter((k): k is string => !!k))
+    expect(completedCardIds(r.cards, hidden).length).toBe(
+      computeFormProgress(r.cards, hidden).done,
+    )
+  })
+
+  it("빈 폼에는 정성 항목이 하나도 없다 — '정성 기록이 일어났는가'의 기준선", () => {
+    const { core, sections } = sectionsFor("career")
+    const r = computeFormCards(core, sections)
+    expect(filledQualitativeKeys(r.cards)).toEqual([])
+  })
+
+  it("filledQualitativeKeys 는 값이 들어간 '경험 상세' 블록만, 상세가 아닌 카드는 세지 않는다", () => {
+    const emptyDetail = createTextareaField("지원 동기")
+    emptyDetail.key = "detail.지원 동기"
+    const filledDetail = createTextareaField("배운 점")
+    filledDetail.key = "detail.배운 점"
+    filledDetail.value = { type: "text", text: "성장했다" }
+    // 같은 값이 들어가도 basic 카드는 정성 항목이 아니다 — 회사명을 적은 것은
+    // "정성적 맥락을 기록했다"가 아니다.
+    const filledBasic = createTextareaField("회사명")
+    filledBasic.key = "basic.회사명"
+    filledBasic.value = { type: "text", text: "회사" }
+
+    const cards: FormCardModel[] = [
+      { id: "basic", category: "basic", label: "기본 정보", blocks: [filledBasic] },
+      { id: "detail", category: "detail", label: "경험 상세", blocks: [emptyDetail, filledDetail] },
+    ]
+
+    expect(filledQualitativeKeys(cards)).toEqual(["detail.배운 점"])
+  })
+
+  it("filledQualitativeKeys 는 사용자가 치운 항목(hiddenKeys)을 세지 않는다", () => {
+    const filledDetail = createTextareaField("배운 점")
+    filledDetail.key = "detail.배운 점"
+    filledDetail.value = { type: "text", text: "성장했다" }
+    const cards: FormCardModel[] = [
+      { id: "detail", category: "detail", label: "경험 상세", blocks: [filledDetail] },
+    ]
+
+    expect(filledQualitativeKeys(cards, ["detail.배운 점"])).toEqual([])
+  })
+
+  it("filledQualitativeKeys 는 키 없는 블록을 싣지 않는다 (사용자 작성 라벨 유출 차단)", () => {
+    const cards: FormCardModel[] = [
+      {
+        id: "detail",
+        category: "detail",
+        label: "경험 상세",
+        blocks: [
+          {
+            id: "b1",
+            label: "내가 직접 붙인 이름",
+            type: "textarea",
+            value: { type: "text", text: "내용" },
+          } as Block,
+        ],
+      },
+    ]
+    expect(filledQualitativeKeys(cards)).toEqual([])
   })
 })

@@ -1,10 +1,11 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 
 import { updateExperience } from "@/lib/api/experience-api"
+import { capture, useArchiveEntryAnalytics } from "@/lib/analytics"
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper"
 import { useBasePath } from "@/lib/utils/use-base-path"
 import { useExperience } from "@/hooks/useExperience"
@@ -44,6 +45,23 @@ export default function ArchiveEditPage() {
     [experience],
   )
 
+  // FRT-107: 기록을 불러오는 동안은 폼이 없다 — 그 시간을 이탈로 세면 로딩이 곧 포기가 된다.
+  const entryAnalytics = useArchiveEntryAnalytics({
+    mode: "edit",
+    active: !!experienceV2,
+  })
+
+  // 임시저장을 다시 열어 이어쓰기 시작한 시점(FRT-107). **draft 일 때만** 센다 —
+  // 완성된 기록의 수정까지 섞으면 "재방문 의도가 있는 이탈이 회수됐는가"라는 질문이
+  // 평범한 편집에 묻힌다. 문서(id)당 1회: 폼 재시드(key={id})와 같은 축으로 묶는다.
+  const resumeCapturedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!experienceV2 || experienceV2.status !== "draft") return
+    if (resumeCapturedRef.current === id) return
+    resumeCapturedRef.current = id
+    capture("archive_entry_resumed", { experience_type: experienceV2.typeId })
+  }, [experienceV2, id])
+
   async function handleSave(exp: ExperienceV2) {
     setSaving(true)
     try {
@@ -54,6 +72,8 @@ export default function ArchiveEditPage() {
       })
       setSaveError(null)
       setHasUnsaved(false)
+      // 여기서부터 이 수정은 이탈이 아니다(FRT-107).
+      entryAnalytics.markSaved()
       router.push(backTo)
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "경험을 저장하지 못했어요")
@@ -115,6 +135,7 @@ export default function ArchiveEditPage() {
         onUnsavedChange={setHasUnsaved}
         onVisibleSectionsChange={setSections}
         onProgressChange={setProgress}
+        onCompletionChange={entryAnalytics.handleCompletionChange}
       />
     </InputViewShell>
   )

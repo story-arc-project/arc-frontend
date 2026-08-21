@@ -33,7 +33,13 @@ import {
   uid,
 } from "@/lib/utils/block-utils"
 import { capture } from "@/lib/analytics"
-import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
+import {
+  completedCardIds,
+  computeFormCards,
+  computeFormProgress,
+  filledQualitativeKeys,
+  type FormCompletionSnapshot,
+} from "@/lib/utils/form-cards"
 import { normalizeHiddenKeys, resolveHiddenBlocks } from "@/lib/utils/hidden-fields"
 import { conditionHiddenKeys, partitionByCondition } from "@/lib/utils/conditional-fields"
 import { onEnterCommit } from "@/lib/utils/keyboard"
@@ -55,6 +61,19 @@ interface ExperienceFormV2Props {
   onVisibleSectionsChange?: (sections: { id: string; label: string }[]) => void
   /** 고정 카드 진행도(완료 카드 수/전체) 변경 알림. 값 입력마다 갱신된다. */
   onProgressChange?: (progress: { done: number; total: number }) => void
+  /**
+   * FRT-107: 진행 **자취** 알림. onProgressChange 가 개수만 주는 것과 갈린다 —
+   * 계측이 "어디서 멈췄나"를 물으려면 어느 카드가 채워졌는지와 정성 항목이 실제로
+   * 쓰였는지가 필요하다. 화면은 이 값을 쓰지 않는다(계측 전용).
+   */
+  onCompletionChange?: (snapshot: FormCompletionSnapshot) => void
+}
+
+/** 유형 미선택(템플릿 없음) 상태의 진행 자취 — 아무것도 진행되지 않았다. */
+const EMPTY_COMPLETION: FormCompletionSnapshot = {
+  sectionIds: [],
+  completedSectionIds: [],
+  qualitativeFieldsFilled: [],
 }
 
 /** detail 카드의 공통 기본 안내 — 유형별 문구가 없을 때만 쓴다. */
@@ -89,6 +108,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   hideInlineActions,
   onVisibleSectionsChange,
   onProgressChange,
+  onCompletionChange,
 }: ExperienceFormV2Props, ref) {
   const [typeId, setTypeId] = useState<ExperienceTypeId | null>(
     initialExperience?.typeId ?? null
@@ -579,6 +599,32 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     emit(template ? progress : { done: 0, total: 0 })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- emit read from ref; depend only on progress/template
   }, [progress.done, progress.total, template])
+
+  // ── Completion snapshot (FRT-107 계측 전용) ──────────────────────────────────────
+  // 진행도와 **같은 판정·같은 숨김 목록**을 쓴다. 여기서 갈리면 화면이 60% 라고 말하는
+  // 순간 계측은 다른 이야기를 남긴다. 값 하나가 바뀔 때마다 재계산되므로 문자열 키로
+  // 얕게 비교해, 같은 자취를 두 번 흘려보내지 않는다(발화가 카드 완료마다 1회여야 한다).
+  const completion = useMemo<FormCompletionSnapshot>(() => {
+    const cards = formCards?.cards ?? []
+    const hidden = [...effectiveHiddenKeys, ...conditionKeys]
+    return {
+      sectionIds: cards.map(c => c.id),
+      completedSectionIds: completedCardIds(cards, hidden),
+      qualitativeFieldsFilled: filledQualitativeKeys(cards, hidden),
+    }
+  }, [formCards, effectiveHiddenKeys, conditionKeys])
+  const completionKey = `${completion.sectionIds.join(",")}|${completion.completedSectionIds.join(",")}|${completion.qualitativeFieldsFilled.join(",")}`
+  const onCompletionChangeRef = useRef(onCompletionChange)
+  useEffect(() => {
+    onCompletionChangeRef.current = onCompletionChange
+  })
+  useEffect(() => {
+    const emit = onCompletionChangeRef.current
+    if (!emit) return
+    // 템플릿이 아직 없으면(유형 미선택) 진행 자취도 없다 — onProgressChange 와 같은 규칙.
+    emit(template ? completion : EMPTY_COMPLETION)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- emit read from ref; depend only on completionKey/template
+  }, [completionKey, template])
 
   const titleValue = formCards?.titleBlock?.value
   const titleText = titleValue?.type === "text" ? titleValue.text : ""

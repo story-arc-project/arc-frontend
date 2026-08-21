@@ -139,6 +139,30 @@ describe("useFlowExit — 완료하지 못하고 떠났는가(FRT-107)", () => {
     expect(onExit).toHaveBeenCalledWith(6);
   });
 
+  it("elapsedSeconds 는 이탈 이벤트와 같은 시계를 준다 (완료자·포기자 비교 가능)", () => {
+    const onExit = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useFlowExit({ active: true, onExit }),
+    );
+
+    vi.advanceTimersByTime(9_000);
+    expect(result.current.elapsedSeconds()).toBe(9);
+
+    // 완료로 끝난 흐름은 이탈로 세지 않지만, 소요시간은 같은 시계에서 읽힌다.
+    act(() => result.current.markCompleted());
+    unmount();
+    settle();
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("시작 전에는 elapsedSeconds 가 0 이다", () => {
+    const { result } = renderHook(() =>
+      useFlowExit({ active: false, onExit: vi.fn() }),
+    );
+    vi.advanceTimersByTime(5_000);
+    expect(result.current.elapsedSeconds()).toBe(0);
+  });
+
   it("최신 콜백을 쓴다 — 이탈 스냅샷이 옛 값으로 굳지 않는다", () => {
     const seen: number[] = [];
     const { rerender, unmount } = renderHook(
