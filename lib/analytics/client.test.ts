@@ -62,6 +62,26 @@ describe("analytics client — capture/identify/reset 가드(FRT-19)", () => {
     });
   });
 
+  // FRT-107: 이탈·체류 이벤트는 화면이 사라지는 순간에 발화한다. 기본 경로는 배치 큐라
+  // 그대로 두면 페이지와 함께 사라진다.
+  it("atUnload 면 sendBeacon 으로 즉시 보낸다", () => {
+    capture("onboarding_abandoned", { last_step: "q1", elapsed_seconds: 12 }, {
+      atUnload: true,
+    });
+    expect(ph.capture).toHaveBeenCalledWith(
+      "onboarding_abandoned",
+      { last_step: "q1", elapsed_seconds: 12 },
+      { transport: "sendBeacon", send_instantly: true },
+    );
+  });
+
+  // 기존 호출부는 한 글자도 바뀌지 않았다 — 세 번째 인자가 undefined 로라도 실리면
+  // 배치 큐 대신 다른 경로를 타게 되므로 인자 수까지 그대로여야 한다.
+  it("atUnload 가 없으면 전송 옵션 인자 자체를 넘기지 않는다", () => {
+    capture("onboarding_completed", {});
+    expect(ph.capture).toHaveBeenCalledWith("onboarding_completed", {});
+  });
+
   it("PostHog 미초기화(__loaded=false)면 아무것도 전송하지 않는다", () => {
     ph.__loaded = false;
     capture("signup_completed", { method: "email" });

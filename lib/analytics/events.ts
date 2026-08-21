@@ -9,8 +9,25 @@ import type { DraftTier } from "@/lib/export/draft-storage";
 
 export type SignupMethod = "email" | "google";
 // 개별(individual) 분석은 기록 저장 시 백엔드가 자동 생성 — 프론트에 "실행 완료" 관측
-// 지점이 없어 완료 이벤트에서 제외한다(후속 FRT-107).
+// 지점이 없어 완료 이벤트에서 제외한다(FRT-107 에서도 못 만든다 — 관측점이 여전히 없어
+// 서버사이드 캡처가 필요하다). 조회는 다르다: 개별 분석도 사람이 열어 보므로
+// analysis_viewed 에는 실린다(아래 ViewableAnalysisKind).
 export type AnalysisKind = "comprehensive" | "keyword";
+// FRT-107: 실행은 못 세도 조회는 세는 분석들. 개별 분석은 자동 생성이라 실행 이벤트가
+// 없지만, 결과를 얼마나 오래 보는지는 나머지 둘과 같은 축에서 비교해야 의미가 있다.
+export type ViewableAnalysisKind = AnalysisKind | "individual";
+// FRT-107: 경험 입력 폼에 들어온 경로. 신규 작성과 수정은 이탈의 뜻이 달라(수정 중 이탈은
+// 이미 저장된 기록이 있다) 한 이벤트에 싣되 여기서 가른다.
+export type ArchiveEntryMode = "new" | "edit";
+// FRT-107: 자소서를 손에서 꺼내가는 수단. 지금은 인쇄뿐이다 — 레쥬메의 ResumeExportFormat
+// 을 빌려 쓰지 않는 이유는, 값이 하나라고 남의 축에 얹으면 자소서에 PDF 가 생기는 순간
+// 두 기능의 포맷 축이 얽히기 때문이다.
+export type CoverLetterExportFormat = "print";
+// FRT-107: 자소서 편집 저장의 결말. 값은 ResumeSaveOutcome 과 같지만 축을 따로 두는 이유는
+// 위 format 과 같다 — 지금 같다고 남의 타입에 얹으면, 한쪽 기능의 저장 경로가 바뀔 때
+// 다른 쪽 계약이 조용히 따라 움직인다.
+// exit_draft — 저장 버튼을 누르지 않고 화면을 떠나 페이지가 대신 임시 저장한 경우.
+export type CoverLetterSaveOutcome = "server" | "failed" | "exit_draft";
 export type ExportType = "resume" | "cover_letter";
 export type RecordStatus = "complete" | "draft";
 // FRT-114: 레쥬메를 손에서 꺼내가는 수단. 인쇄는 파일이 떨어지지 않지만 "결과물을
@@ -65,6 +82,35 @@ export const ANALYTICS_EVENTS = {
   analysisRetried: "analysis_retried",
   // ── 인앱 피드백 (FRT-92 전송 레이어가 emit) ───────────────────────
   feedbackSubmitted: "feedback_submitted",
+  // ── 한 화면 *안*에서의 이탈 (FRT-107) ─────────────────────────────
+  // 퍼널은 "A 는 했는데 B 는 안 했다"까지만 안다. 아래 둘은 **한 화면을 벗어나지 않은 채**
+  // 멈춘 자리를 묻기 때문에 퍼널로 파생되지 않는다 — 그래서만 이벤트로 만든다.
+  // (반대로 comprehensive_analysis_abandoned·resume_export_abandoned 처럼 두 이벤트 사이의
+  //  단순 미도달인 것들은 만들지 않았다. 퍼널이 코드 없이, 과거 데이터까지 답한다.)
+  archiveEntryAbandoned: "archive_entry_abandoned",
+  onboardingAbandoned: "onboarding_abandoned",
+  // 진행의 자취. 이탈 이벤트만으로는 "어디서 멈췄나"는 알아도 "어디까지 순조로웠나"를 모른다.
+  archiveSectionCompleted: "archive_section_completed",
+  // 임시저장한 기록을 다시 열어 이어쓰기 시작한 시점 — "재방문 의도가 있는 이탈"의 회수율.
+  archiveEntryResumed: "archive_entry_resumed",
+  // 온보딩은 라우트가 하나(step state)라 pageview 로도 스텝 진입이 안 보인다.
+  onboardingStepViewed: "onboarding_step_viewed",
+  // ── 조회 체류 (FRT-107) ───────────────────────────────────────────
+  // capture_pageview/capture_pageleave 가 꺼져 있어 $prev_pageview_duration 을 못 쓴다.
+  // 정의서의 individual_/comprehensive_/keyword_analysis_result_viewed 3종을 하나로 합치고
+  // analysis_type 으로 가른다 — analysis_completed·analysis_target_selected 와 같은 결.
+  analysisViewed: "analysis_viewed",
+  // ── 기술적 실패 판별 (FRT-107) ────────────────────────────────────
+  // 눌렀는데 요청이 안 나간 실패는 흔적을 남기지 않는다. 이 둘과 짝이 되는 요청·완료
+  // 이벤트의 **건수 차이**가 그 실패다(버그·네트워크 ↔ 사용자 의도적 이탈을 가른다).
+  analysisExecuteButtonClicked: "analysis_execute_button_clicked",
+  exportExecuteButtonClicked: "export_execute_button_clicked",
+  // ── 자소서 이후 행동 (FRT-107) ────────────────────────────────────
+  // 자소서 기능은 FRT-140 에서 생겼는데 상세 화면 계측이 통째로 비어 있었다.
+  // 레쥬메의 resume_edited/_edit_saved/_downloaded 와 같은 이름 규칙·같은 속성 축으로 맞춘다.
+  coverLetterEdited: "cover_letter_edited",
+  coverLetterEditSaved: "cover_letter_edit_saved",
+  coverLetterDownloaded: "cover_letter_downloaded",
   // ── placeholder: 이름·속성만 정의, emit 은 크레딧 과금 프로젝트(FRT-105)에서 ──
   // 크레딧 잔액·원장 UI 가 아직 없어 여기서는 배선하지 않는다(dead call site 금지).
   freeTokenExhausted: "free_token_exhausted",
@@ -84,7 +130,53 @@ export interface AnalyticsEventProps {
     | { analysis_type: "keyword"; count: number; keyword_categories: string[] };
   signup_completed: { method: SignupMethod };
   onboarding_completed: Record<string, never>;
-  record_created: { experience_type: string; status: RecordStatus };
+  // 온보딩은 라우트가 하나(signup 페이지의 step state)라 스텝 진입이 **어떤 방법으로도**
+  // 관측되지 않는다 — capture_pageview 도 꺼져 있고, 켜더라도 URL 이 안 바뀐다.
+  // step_index 는 스텝 이름이 바뀌어도 순서를 유지하려고 함께 싣는다.
+  onboarding_step_viewed: { step: string; step_index: number };
+  // 온보딩을 끝내지 못하고 떠난 시점. elapsed_seconds 는 온보딩 시작부터의 벽시계다.
+  onboarding_abandoned: { last_step: string; elapsed_seconds: number };
+  // FRT-107 속성 보강 — 아래 넷은 신규 작성 경로에서만 실린다. 수정 저장에는 "진입" 시작점이
+  // 없어서 잴 수가 없고, 0 을 넣으면 "즉시 저장했다"는 거짓이 된다(부재와 0 은 다른 사실).
+  // archive_entry_abandoned 와 **같은 이름·같은 축**으로 싣는 것이 요점이다 — 끝낸 사람과
+  // 포기한 사람을 나란히 놓고 "무엇이 달랐나"를 물을 수 있어야 한다.
+  record_created: {
+    experience_type: string;
+    status: RecordStatus;
+    elapsed_seconds?: number;
+    sections_done?: number;
+    sections_total?: number;
+    qualitative_fields_filled?: string[];
+  };
+  // 경험 입력 폼을 저장하지 않고 떠난 시점. 퍼널이 볼 수 없는 것을 본다 —
+  // archive_entry_started → record_created 미도달까지는 퍼널도 알지만,
+  // **그 화면 어디에서** 멈췄는지는 이 이벤트에만 있다.
+  archive_entry_abandoned: {
+    mode: ArchiveEntryMode;
+    // 마지막으로 완료한 섹션 슬러그. 하나도 못 채웠으면 null — "시작도 못 했다"는
+    // 유효한 답이라 부재로 뭉개지 않는다.
+    last_section: string | null;
+    sections_done: number;
+    sections_total: number;
+    elapsed_seconds: number;
+    // 정성 항목(지원동기·배운점 등) 중 실제로 채운 필드의 **키** 목록. 사용자가 쓴 내용은
+    // 절대 싣지 않는다(PII 금지 — 타입이 string[] 인 것은 키 목록이라는 뜻이다).
+    // 정의서의 archive_field_completed 를 이벤트로 만들지 않고 여기 속성으로 접었다:
+    // 필드마다 쏘면 볼륨이 폭증하는데 답해야 할 질문("정성 기록이 실제로 일어나는가")은
+    // 같은 값으로 더 싸게 답한다.
+    qualitative_fields_filled: string[];
+  };
+  // 섹션 하나를 채운 시점. sections_done 이 "몇 개 했나"라면 section_index 는 "폼의 어디를
+  // 하고 있나"다 — 둘이 벌어지면 사용자가 순서를 건너뛰며 채운다는 뜻이라 서로 못 대신한다.
+  archive_section_completed: {
+    section_key: string;
+    section_index: number;
+    sections_done: number;
+    sections_total: number;
+  };
+  // 임시저장한 기록을 다시 열어 이어쓰기 시작한 시점. "재방문 의도가 있는 이탈"이 실제로
+  // 회수되는지를 보는 유일한 신호다(draft 저장 자체는 record_created{status:"draft"} 가 센다).
+  archive_entry_resumed: { experience_type: string };
   // 첨부 "여부"만 본다 — 파일명·URL 원문은 PII 위험이라 절대 싣지 않는다(타입으로 봉인).
   archive_attachment_added: { attachment_type: AttachmentType };
   first_record_created: { experience_type: string };
@@ -95,6 +187,19 @@ export interface AnalyticsEventProps {
   // 실패한 분석의 재시도 요청이 접수된 시점. 재시도 결과(성공/재실패)는
   // analysis_completed 와 status 로 따로 관측한다.
   analysis_retried: { analysis_type: AnalysisKind };
+  // 결과를 한 번 열어 본 사건. **매 조회마다** 발화하므로 조회 횟수는 이 이벤트를 세면 되고,
+  // 체류는 속성으로 함께 온다(정의서 권고 그대로 — 별도 카운터 이벤트를 만들지 않는다).
+  // view_duration_seconds 는 "처음 화면을 벗어나기까지 실제로 보인 시간"이다(useDwell).
+  // 0 은 유효한 값 — 열자마자 나간 조회가 가장 중요한 신호다.
+  analysis_viewed: {
+    analysis_type: ViewableAnalysisKind;
+    analysis_id: string;
+    view_duration_seconds: number;
+  };
+  // 실행 버튼을 누른 시점(요청 함수를 부르기 **직전**). analysis_completed 와의 건수 차이가
+  // "눌렀는데 요청이 안 나간" 기술적 실패다 — 그 실패는 스스로 아무 흔적도 남기지 않는다.
+  analysis_execute_button_clicked: { analysis_type: AnalysisKind };
+  export_execute_button_clicked: { export_type: ExportType };
   // experience_count — 사용자가 레쥬메에 넣기로 고른 경험 수(FRT-109). 선택 UI 가 꺼져 있으면
   // "고른" 개념 자체가 없으므로 싣지 않는다(0 이 아니라 부재).
   // 익스포트 종류마다 의미 있는 속성이 다르다 — 레쥬메는 언어(국문/영문), 자소서는 문항 수다.
@@ -144,6 +249,28 @@ export interface AnalyticsEventProps {
     // 있기 때문이다: "안 실린 것"과 "못 담은 것(null)"은 다른 사실이라 뭉치면 안 된다.
     storage_tier?: DraftTier | null;
   };
+  // FRT-107: 자소서 상세 화면은 FRT-140 에서 기능이 생겼는데도 계측이 하나도 없었다.
+  // 레쥬메(resume_edited/_edit_saved/_downloaded)와 **같은 축**으로 맞춰 둘을 나란히
+  // 비교할 수 있게 한다 — "AI 초안을 얼마나 고쳐 쓰는가"는 두 기능에 같은 질문이다.
+  //
+  // question_index — 자소서는 문항이 여럿이라(보통 3~5) 어느 문항에서 손을 대기 시작했는지가
+  // 레쥬메의 section 에 해당한다. 문항 **내용**은 PII 위험이라 절대 싣지 않는다(번호만).
+  cover_letter_edited: { cover_letter_id: string; question_index: number };
+  // 저장 시도의 결말. resume_edit_saved 와 같은 뜻이지만 유니온을 따로 두는 이유는
+  // CoverLetterExportFormat 과 같다 — 지금 값이 같다고 남의 축에 얹으면, 한쪽 기능의
+  // 저장 경로가 바뀔 때 다른 쪽 계약이 조용히 따라 움직인다.
+  cover_letter_edit_saved: {
+    outcome: CoverLetterSaveOutcome;
+    // 편집이 **어디든**(서버든 로컬 임시저장이든) 남았는가. false 가 진짜 유실이다.
+    persisted: boolean;
+    question_count: number;
+    // 임시 저장이 어느 계층까지 내려갔는가(FRT-261). 서버 저장 경로처럼 임시 저장을 거치지
+    // 않는 호출부가 있어 optional 이다 — "안 실린 것"과 "못 담은 것(null)"은 다른 사실이다.
+    storage_tier?: DraftTier | null;
+  };
+  // 자소서를 실제로 꺼내간 시점. 지금은 인쇄뿐이라 format 값이 하나지만, 그래도 싣는다 —
+  // 나중에 PDF 가 생겼을 때 "그전에는 어떻게 꺼내갔나"를 되짚을 수 있어야 한다.
+  cover_letter_downloaded: { format: CoverLetterExportFormat };
   // 인앱 피드백 응답. PII 금지 — comment 원문·analysis_id 는 절대 싣지 않는다(서버에만 남긴다).
   // 리터럴 유니온을 인라인한다: lib/feedback/types.ts 가 이미 이 파일(AnalysisKind)을 import 하므로
   // 여기서 feedback 타입을 역참조하면 analytics ↔ feedback 순환이 된다. campaign_id 는 구조적으로
