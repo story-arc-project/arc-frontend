@@ -395,3 +395,61 @@ export const UnknownColumnType: Story = {
     await expect(canvas.getByLabelText("미래 유형")).toHaveValue("이미 입력된 값")
   },
 }
+
+/** 여러 줄 텍스트 컬럼 — 프로젝트 기록의 '내가 한 일' 같은 긴 서술 칸. */
+const textareaBlock: Block = {
+  id: "rc-textarea",
+  type: "repeatable-cell",
+  label: "미션 / 프로젝트",
+  value: {
+    type: "repeatable-cell",
+    columns: [
+      {
+        key: "work",
+        label: "내가 한 일",
+        blockType: "textarea",
+        placeholder: "예: 촬영과 편집을 담당했습니다",
+      },
+    ],
+    rows: [],
+  },
+}
+
+/**
+ * 길게 쓰면 칸 안에서 스크롤하는 대신 칸이 내용만큼 자란다(노션 UI 피드백).
+ * 클래스 단언으로는 못 잡는다 — jsdom 에는 레이아웃이 없으므로 실브라우저에서 실측한다.
+ */
+export const TextareaGrowsWithContent: Story = {
+  render: () => <Interactive initial={textareaBlock} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const box = canvas.getByLabelText("내가 한 일") as HTMLTextAreaElement
+    const before = box.getBoundingClientRect().height
+
+    await userEvent.type(box, "첫 줄{enter}둘째 줄{enter}셋째 줄{enter}넷째 줄{enter}다섯째 줄")
+
+    // 칸이 자랐고, 자란 만큼 내부 스크롤이 사라졌다 — 피드백이 요구한 것의 핵심.
+    // `scrollHeight <= clientHeight` 는 테두리 보정까지 맞아야 성립한다(useAutoResizeTextarea 참고).
+    await expect(box.getBoundingClientRect().height).toBeGreaterThan(before)
+    await expect(box.scrollHeight).toBeLessThanOrEqual(box.clientHeight)
+  },
+}
+
+/** 다시 비우면 최소 높이로 돌아온다 — `min-h-[64px]` 가 살아 있다는 회귀 잠금. */
+export const TextareaShrinksBackToMinHeight: Story = {
+  render: () => <Interactive initial={textareaBlock} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const box = canvas.getByLabelText("내가 한 일") as HTMLTextAreaElement
+    const before = box.getBoundingClientRect().height
+
+    await userEvent.type(box, "첫 줄{enter}둘째 줄{enter}셋째 줄{enter}넷째 줄")
+    await expect(box.getBoundingClientRect().height).toBeGreaterThan(before)
+
+    await userEvent.clear(box)
+
+    // 값이 비면 행이 다시 자리표시로 접힐 수 있어 같은 요소라고 가정하지 않는다.
+    const after = canvas.getByLabelText("내가 한 일") as HTMLTextAreaElement
+    await expect(after.getBoundingClientRect().height).toBe(before)
+  },
+}
