@@ -11,11 +11,20 @@ import {
   deleteExperience as apiDeleteExperience,
   duplicateExperience as apiDuplicateExperience,
 } from "@/lib/api/experience-api";
-import type { Experience, ExperienceSavePayload, ExperienceUpdatePayload } from "@/types/experience";
+import type {
+  ExperienceListData,
+  ExperienceSavePayload,
+  ExperienceUpdatePayload,
+} from "@/types/experience";
+
+const EMPTY_LIST: ExperienceListData = { count: 0, contents: [] };
 
 export function useExperiences() {
-  const [experiences, setExperiences] = useState<Experience[]>([]);
-  const [count, setCount] = useState(0);
+  // 목록과 개수는 **한 상태**다 — 따로 두면 "정말 새로 넣었는가"를 목록 업데이터의
+  // 부수효과로 판정하고 개수는 그 밖에서 올리게 되는데, React 가 업데이터를 dispatch
+  // 시점에 동기 실행해 준다는 보장은 조건부라 판정이 통째로 유실된다(FRT-237).
+  // 한 업데이터 안에서 함께 움직이면 그 어긋남 자체가 표현 불가능해진다.
+  const [list, setList] = useState<ExperienceListData>(EMPTY_LIST);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -34,8 +43,7 @@ export function useExperiences() {
     try {
       const data = await getExperiences();
       if (!mountedRef.current) return;
-      setExperiences(data.contents);
-      setCount(data.count);
+      setList({ count: data.count, contents: data.contents });
       setIsLoading(false);
     } catch (err) {
       if (!mountedRef.current) return;
@@ -53,8 +61,7 @@ export function useExperiences() {
       try {
         const data = await getExperiences();
         if (cancelled) return;
-        setExperiences(data.contents);
-        setCount(data.count);
+        setList({ count: data.count, contents: data.contents });
         setIsLoading(false);
       } catch (err) {
         if (cancelled) return;
@@ -112,13 +119,11 @@ export function useExperiences() {
       // retry, which would create multiple copies.
       try {
         const created = await getExperience(newId);
-        let inserted = false;
-        setExperiences((prev) => {
-          if (prev.some((e) => e.id === created.id)) return prev;
-          inserted = true;
-          return [created, ...prev];
+        setList((prev) => {
+          // 새로고침이 먼저 실어 왔을 수 있다 — 그때는 목록도 개수도 건드리지 않는다.
+          if (prev.contents.some((e) => e.id === created.id)) return prev;
+          return { count: prev.count + 1, contents: [created, ...prev.contents] };
         });
-        if (inserted) setCount((c) => c + 1);
       } catch {
         try {
           await refetch();
@@ -133,8 +138,8 @@ export function useExperiences() {
   );
 
   return {
-    experiences,
-    count,
+    experiences: list.contents,
+    count: list.count,
     isLoading,
     error,
     refetch,
