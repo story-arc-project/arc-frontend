@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll, afterEach } from "vitest";
+import { describe, it, expect, afterAll, afterEach, beforeEach } from "vitest";
 import { render, cleanup } from "@testing-library/react";
 
 import { useAutoResizeTextarea } from "./useAutoResizeTextarea";
@@ -55,52 +55,112 @@ Object.defineProperty(HTMLTextAreaElement.prototype, "clientWidth", {
   },
 });
 
-/** 훅이 등록한 콜백을 테스트가 직접 당길 수 있도록 잡아 두는 가짜 옵저버. */
+/**
+ * 훅이 등록한 콜백을 테스트가 직접 당길 수 있도록 잡아 두는 가짜 옵저버.
+ *
+ * 실제 `ResizeObserver` 는 `observe()` 하면 **지금 크기로 콜백을 한 번 준다**. 훅이 바로 그 첫 통지로
+ * 기준 너비를 잡으므로 가짜도 똑같이 준다 — 안 그러면 "기준을 언제 잡는가"가 테스트에서 통째로 빠진다.
+ */
 class FakeResizeObserver implements ResizeObserver {
   static instances: FakeResizeObserver[] = [];
   private readonly callback: ResizeObserverCallback;
+  private target: HTMLTextAreaElement | null = null;
 
   constructor(callback: ResizeObserverCallback) {
     this.callback = callback;
     FakeResizeObserver.instances.push(this);
   }
 
-  observe() {}
+  observe(target: Element) {
+    this.target = target as HTMLTextAreaElement;
+    this.fire();
+  }
+
   unobserve() {}
   disconnect() {}
 
-  /** 브라우저가 크기 변화를 통지하는 순간을 흉내낸다. */
-  fire() {
-    this.callback([], this);
+  /**
+   * 브라우저가 크기 변화를 통지하는 순간을 흉내낸다.
+   * `width` 를 주면 그 너비로, 없으면 지금 요소의 너비로 통지한다.
+   */
+  fire(width?: number) {
+    const el = this.target;
+    if (!el) throw new Error("observe() 하기 전에는 통지할 수 없다");
+    const entry = { contentRect: { width: width ?? widthOf(el) } };
+    this.callback([entry] as unknown as ResizeObserverEntry[], this);
   }
 }
 
 globalThis.ResizeObserver = FakeResizeObserver;
+
+/**
+ * jsdom 에는 `document.fonts` 가 **아예 없다**(속성 자체가 undefined). 늦게 도착한 웹폰트가 글꼴을
+ * 밀어내는 순간을 재현하려면 최소한의 가짜를 심어야 한다. `ready` 는 테스트가 직접 풀 수 있게
+ * 보류 상태로 시작한다 — 그래야 "풀리기 전"과 "풀린 뒤"를 갈라 볼 수 있다.
+ */
+class FakeFontFaceSet extends EventTarget {
+  readonly ready: Promise<void>;
+  private settle!: () => void;
+
+  constructor() {
+    super();
+    this.ready = new Promise<void>(resolve => {
+      this.settle = resolve;
+    });
+  }
+
+  /** 최초 폰트 로딩이 끝나는 순간. */
+  settleReady() {
+    this.settle();
+  }
+
+  /** 서브셋 조각이 하나 더 도착해 글꼴이 교체되는 순간. */
+  finishLoading() {
+    this.dispatchEvent(new Event("loadingdone"));
+  }
+}
+
+let fakeFonts = new FakeFontFaceSet();
+Object.defineProperty(document, "fonts", {
+  configurable: true,
+  get: () => fakeFonts,
+});
+
+beforeEach(() => {
+  // `ready` 는 한 번 풀리면 되돌릴 수 없다 — 테스트마다 새로 심는다.
+  fakeFonts = new FakeFontFaceSet();
+});
 
 afterEach(cleanup);
 afterEach(() => {
   FakeResizeObserver.instances = [];
 });
 
+/** 대기 중인 마이크로태스크(`fonts.ready.then`)를 흘려보낸다. */
+function flush() {
+  return new Promise<void>(resolve => setTimeout(resolve, 0));
+}
+
 /**
  * jsdom 은 `scrollHeight`·`clientWidth` 접근자를 `Element.prototype` 에 둔다 — `HTMLTextAreaElement`
  * 에는 원래 자기 소유 프로퍼티가 없으므로 "원본 descriptor 를 되돌린다"가 성립하지 않는다.
  * 우리가 덮어쓴 것을 **지워야** 상속이 되살아난다.
  */
-function restoreTextareaProp(prop: string, original: PropertyDescriptor | undefined) {
+function restoreOwnProp(obj: object, prop: string, original: PropertyDescriptor | undefined) {
   if (original) {
-    Object.defineProperty(HTMLTextAreaElement.prototype, prop, original);
+    Object.defineProperty(obj, prop, original);
     return;
   }
-  Reflect.deleteProperty(HTMLTextAreaElement.prototype, prop);
+  Reflect.deleteProperty(obj, prop);
 }
 
 // 되돌리는 것은 파일이 끝날 때 한 번이다. `afterEach` 로 하면 첫 테스트가 끝나는 순간 스텁이 사라져
 // 나머지 테스트가 맨 jsdom(=scrollHeight 0, ResizeObserver 없음) 위에서 돌게 된다.
 // 그래도 파일 밖으로는 새지 않아야 한다 — 같은 워커의 다른 테스트 파일이 이 스텁을 물려받으면 안 된다.
 afterAll(() => {
-  restoreTextareaProp("scrollHeight", originalScrollHeight);
-  restoreTextareaProp("clientWidth", originalClientWidth);
+  restoreOwnProp(HTMLTextAreaElement.prototype, "scrollHeight", originalScrollHeight);
+  restoreOwnProp(HTMLTextAreaElement.prototype, "clientWidth", originalClientWidth);
+  restoreOwnProp(document, "fonts", undefined);
   if (originalResizeObserver) {
     globalThis.ResizeObserver = originalResizeObserver;
   } else {
@@ -139,6 +199,9 @@ function textareaIn(container: HTMLElement) {
 function heightOf(container: HTMLElement) {
   return parseFloat(textareaIn(container).style.height);
 }
+
+/** 훅이 다시 쟀는지를 눈에 보이게 하려고 일부러 엉뚱한 값을 박아 둔다. */
+const SENTINEL_HEIGHT = "999px";
 
 describe("useAutoResizeTextarea", () => {
   it("마운트 직후부터 내용 높이에 맞춰져 있다 — 저장된 긴 값을 불러오는 경로", () => {
@@ -192,10 +255,62 @@ describe("useAutoResizeTextarea", () => {
     const { container } = render(<Probe value="한 줄" widthPx={1000} />);
     const el = textareaIn(container);
 
-    // 훅이 다시 쟀는지 여부를 눈에 보이게 하려고 일부러 엉뚱한 값을 박아 둔다.
-    el.style.height = "999px";
+    el.style.height = SENTINEL_HEIGHT;
     FakeResizeObserver.instances[0].fire();
 
-    expect(el.style.height).toBe("999px");
+    expect(el.style.height).toBe(SENTINEL_HEIGHT);
+  });
+
+  it("정수로 반올림하면 같아지는 소수점 너비 변화도 잡는다 — clientWidth 로 보면 놓친다", () => {
+    // 반응형 그리드에서 칸 너비는 소수점으로 떨어진다. `clientWidth` 는 그걸 정수로 반올림하므로
+    // 300.4 → 300.6 은 둘 다 300 으로 보인다. 하필 그 사이에 줄바꿈 경계가 있으면 줄이 하나 늘어나는데
+    // 가드가 "그대로"라고 판단해 삼켜 버리고, 늘어난 줄은 `overflow-hidden` 에 잘린다.
+    const { container } = render(<Probe value="한 줄" widthPx={1000} />);
+    const el = textareaIn(container);
+    const observer = FakeResizeObserver.instances[0];
+
+    observer.fire(300.4);
+    el.style.height = SENTINEL_HEIGHT;
+    observer.fire(300.6);
+
+    expect(el.style.height).not.toBe(SENTINEL_HEIGHT);
+  });
+
+  it("늦게 도착한 웹폰트가 글꼴을 바꾸면 다시 잰다 — 값도 너비도 그대로인데 줄 수만 달라진다", () => {
+    // 이 앱은 Pretendard 를 CDN 에서 받는다(app/layout.tsx). Apple SD Gothic Neo 가 없는 환경에서는
+    // 대체 글꼴로 먼저 그린 뒤 폰트가 도착하면 글리프 폭이 바뀐다 — `value` 도 너비도 그대로라
+    // 앞의 두 트리거 중 어느 것도 걸리지 않는다.
+    const { container } = render(<Probe value="한 줄" widthPx={1000} />);
+    const el = textareaIn(container);
+    el.style.height = SENTINEL_HEIGHT;
+
+    fakeFonts.finishLoading();
+
+    expect(el.style.height).not.toBe(SENTINEL_HEIGHT);
+  });
+
+  it("구독보다 폰트 로딩이 먼저 끝났어도 놓치지 않는다 — ready 가 그 창을 닫는다", async () => {
+    // 'loadingdone' 은 지나간 일을 알려주지 않는다. 마운트가 폰트 도착보다 늦으면 이벤트는 영영 안 온다.
+    const { container } = render(<Probe value="한 줄" widthPx={1000} />);
+    const el = textareaIn(container);
+    el.style.height = SENTINEL_HEIGHT;
+
+    fakeFonts.settleReady();
+    await flush();
+
+    expect(el.style.height).not.toBe(SENTINEL_HEIGHT);
+  });
+
+  it("언마운트한 뒤 폰트가 도착하면 아무것도 건드리지 않는다", async () => {
+    const { container, unmount } = render(<Probe value="한 줄" widthPx={1000} />);
+    const el = textareaIn(container);
+
+    unmount();
+    el.style.height = SENTINEL_HEIGHT;
+    fakeFonts.finishLoading();
+    fakeFonts.settleReady();
+    await flush();
+
+    expect(el.style.height).toBe(SENTINEL_HEIGHT);
   });
 });
