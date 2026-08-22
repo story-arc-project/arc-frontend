@@ -11,6 +11,7 @@ import { useBasePath } from "@/lib/utils/use-base-path";
 import { formatDateTime, formatRelativeTime } from "@/lib/utils/date-utils";
 import type { ResumeListItem } from "@/types/resume";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
+import { ListRefreshErrorBanner } from "./ListRefreshErrorBanner";
 
 interface RecentResumeListProps {
   onCreateClick: () => void;
@@ -65,8 +66,10 @@ export function RecentResumeList({
       setItems(data.filter((r) => !deletedIdsRef.current.has(r.version_id)));
     } catch (err) {
       if (!mountedRef.current || seq !== seqRef.current) return;
+      // FRT-319 — 실패를 "목록이 비었다"로 기록하지 않는다. 자기소개서 목록과 같은 결함인데
+      // 여긴 더 나쁘다: 폴링이 없어 **되돌려 줄 다음 조회조차 없다**. 한 번 지워지면 사용자가
+      // '다시 시도'를 직접 누르거나 새로고침할 때까지 빈 화면이 남는다.
       setError(err as Error);
-      setItems([]);
     }
   }, []);
 
@@ -101,7 +104,8 @@ export function RecentResumeList({
     }
   };
 
-  if (items === null) {
+  // 첫 조회가 아직 안 끝났다 — 아직 성공도 실패도 아니다.
+  if (items === null && !error) {
     return (
       <div className="space-y-2">
         {[0, 1].map((i) => (
@@ -114,7 +118,9 @@ export function RecentResumeList({
     );
   }
 
-  if (error && items.length === 0) {
+  // FRT-319 — 전체 에러 화면은 **첫 조회 실패**에만 쓴다. 목록을 한 번이라도 받아 뒀다면
+  // 그것을 지울 이유가 없다(그 뒤의 실패는 아래 배너로 알린다).
+  if (items === null) {
     return (
       <div className="rounded-lg border border-border bg-surface-secondary p-5 text-center">
         <p className="text-body-sm text-text-secondary">
@@ -129,28 +135,32 @@ export function RecentResumeList({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-surface-secondary p-8 text-center">
-        <FileText size={28} className="mx-auto text-text-tertiary" />
-        <p className="text-body text-text-primary mt-3">
-          아직 만든 레쥬메가 없어요.
-        </p>
-        <p className="text-body-sm text-text-secondary mt-1">
-          첫 레쥬메를 만들어볼까요?
-        </p>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={onCreateClick}
-          className="mt-4"
-        >
-          새 레쥬메 만들기
-        </Button>
-      </div>
+      <>
+        {error && <ListRefreshErrorBanner onRetry={load} />}
+        <div className="rounded-xl border border-dashed border-border bg-surface-secondary p-8 text-center">
+          <FileText size={28} className="mx-auto text-text-tertiary" />
+          <p className="text-body text-text-primary mt-3">
+            아직 만든 레쥬메가 없어요.
+          </p>
+          <p className="text-body-sm text-text-secondary mt-1">
+            첫 레쥬메를 만들어볼까요?
+          </p>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onCreateClick}
+            className="mt-4"
+          >
+            새 레쥬메 만들기
+          </Button>
+        </div>
+      </>
     );
   }
 
   return (
     <>
+    {error && <ListRefreshErrorBanner onRetry={load} />}
     <ul className="flex flex-col gap-2">
       {items.map((item) => {
         // status 가 없으면(구 백엔드) 기존처럼 이동 가능. 있으면 completed 만 이동 허용 —

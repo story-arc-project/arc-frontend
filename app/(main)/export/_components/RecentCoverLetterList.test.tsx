@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { CoverLetterListItem } from "@/types/cover-letter";
@@ -246,5 +254,105 @@ describe("RecentCoverLetterList — 만든 시각", () => {
     const relative = await screen.findByText(/전$|^—$/);
     expect(relative.className).not.toMatch(/\bhidden\b/);
     expect(relative.className).not.toMatch(/\bsm:inline\b/);
+  });
+});
+
+/**
+ * FRT-319 — 조회 한 번이 실패했다고 보이던 목록을 지우지 않는다.
+ *
+ * 실패를 `setItems([])` 로 기록하면 두 가지가 한꺼번에 무너진다. ① 잘 떠 있던 목록이
+ * 사라지고 에러 박스로 바뀐다 — 사용자는 아무것도 안 했는데 자기 기록이 화면에서 없어진다.
+ * ② `items` 가 비면 `hasPending` 도 false 가 돼 폴링이 꺼지는데, 폴링은 스스로
+ * 되살아나지 않는다 — '생성 중' 자기소개서가 완성돼도 영영 목록에 나타나지 않는다.
+ * 즉 일시적 실패 한 번이 "화면 초기화 + 진행 관측 중단"이라는 영구 상태로 굳는다.
+ */
+describe("RecentCoverLetterList — 조회 실패", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("재조회가 실패해도 마지막으로 성공한 목록이 화면에 남는다", async () => {
+    mockGetCoverLetterList
+      .mockReset()
+      .mockResolvedValueOnce([item()])
+      .mockRejectedValueOnce(new Error("offline"));
+
+    const { rerender } = render(
+      <RecentCoverLetterList onCreateClick={() => {}} reloadToken={0} />,
+    );
+    await screen.findByText("지원 자기소개서");
+
+    rerender(<RecentCoverLetterList onCreateClick={() => {}} reloadToken={1} />);
+    await screen.findByRole("status");
+
+    // 목록은 그대로 남고, 실패는 목록을 **대체하지 않는** 배너로 알린다.
+    expect(screen.getByText("지원 자기소개서")).toBeTruthy();
+    expect(screen.queryByText("목록을 불러오지 못했어요.")).toBeNull();
+  });
+
+  it("보여줄 이전 목록이 없는 첫 조회 실패만 전체 에러 화면을 쓴다", async () => {
+    mockGetCoverLetterList.mockReset().mockRejectedValue(new Error("offline"));
+
+    render(<RecentCoverLetterList onCreateClick={() => {}} />);
+
+    expect(await screen.findByText("목록을 불러오지 못했어요.")).toBeTruthy();
+    // 로딩 스켈레톤에 영원히 갇히지 않는다.
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+  });
+
+  it("배너의 '다시 시도'를 누르면 목록을 다시 읽고 배너가 사라진다", async () => {
+    mockGetCoverLetterList
+      .mockReset()
+      .mockResolvedValueOnce([item()])
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce([item(), item({ id: "c3", title: "새 자기소개서" })]);
+
+    const { rerender } = render(
+      <RecentCoverLetterList onCreateClick={() => {}} reloadToken={0} />,
+    );
+    await screen.findByText("지원 자기소개서");
+    rerender(<RecentCoverLetterList onCreateClick={() => {}} reloadToken={1} />);
+    const banner = await screen.findByRole("status");
+
+    fireEvent.click(within(banner).getByRole("button", { name: "다시 시도" }));
+
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(screen.getByText("새 자기소개서")).toBeTruthy();
+  });
+
+  // 이 목록의 폴링은 `hasPending`(= processing 행이 있는가)으로 재예약을 결정한다. 실패가
+  // 목록을 비우면 그 판정이 "정말 다 끝났다"와 구분되지 않아 폴링이 꺼진 채 굳는다.
+  it("폴링 tick 이 한 번 실패해도 다음 tick 이 예약돼 '생성 중'이 완료로 갱신된다", async () => {
+    vi.useFakeTimers();
+
+    mockGetCoverLetterList
+      .mockReset()
+      .mockResolvedValueOnce([
+        item({ id: "c2", title: "만드는 중 자기소개서", status: "processing" }),
+      ])
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce([
+        item({ id: "c2", title: "만드는 중 자기소개서", status: "completed" }),
+      ]);
+
+    render(<RecentCoverLetterList onCreateClick={() => {}} />);
+    await act(async () => {});
+    expect(screen.getByText("생성 중")).toBeTruthy();
+
+    // 실패하는 tick — '생성 중' 행이 살아남아야 다음 tick 이 예약된다.
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+    });
+    await act(async () => {});
+    expect(screen.getByText("생성 중")).toBeTruthy();
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+    });
+    await act(async () => {});
+
+    expect(mockGetCoverLetterList).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText("생성 중")).toBeNull();
+    expect(screen.getByText("만드는 중 자기소개서")).toBeTruthy();
   });
 });

@@ -15,6 +15,7 @@ import { useBasePath } from "@/lib/utils/use-base-path";
 import { formatDateTime, formatRelativeTime } from "@/lib/utils/date-utils";
 import type { CoverLetterListItem } from "@/types/cover-letter";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
+import { ListRefreshErrorBanner } from "./ListRefreshErrorBanner";
 
 interface RecentCoverLetterListProps {
   onCreateClick: () => void;
@@ -79,8 +80,12 @@ export function RecentCoverLetterList({
       setItems(data.filter((c) => !deletedIdsRef.current.has(c.id)));
     } catch (err) {
       if (!mountedRef.current || seq !== seqRef.current) return;
+      // FRT-319 — 실패를 "목록이 비었다"로 기록하지 않는다. `setItems([])` 은 두 가지를
+      // 한꺼번에 무너뜨린다. ① 잘 떠 있던 목록이 사라지고 에러 박스로 바뀐다 — 성공했던
+      // 직전 응답을 남길 수 있는데도 버린다. ② `items` 가 비면 `hasPending` 도 false 가 돼
+      // **폴링이 꺼진다** — 폴링은 스스로 되살아나지 않으므로 '생성 중' 행이 완성돼도 영영
+      // 갱신되지 않는다. 마지막 성공분은 그대로 두고 실패는 배너로만 알린다.
       setError(err as Error);
-      setItems([]);
     }
   }, []);
 
@@ -160,7 +165,8 @@ export function RecentCoverLetterList({
     }
   };
 
-  if (items === null) {
+  // 첫 조회가 아직 안 끝났다 — 아직 성공도 실패도 아니다.
+  if (items === null && !error) {
     return (
       <div className="space-y-2">
         {[0, 1].map((i) => (
@@ -173,11 +179,13 @@ export function RecentCoverLetterList({
     );
   }
 
-  if (error && items.length === 0) {
+  // FRT-319 — 전체 에러 화면은 **첫 조회 실패**에만 쓴다. 목록을 한 번이라도 받아 뒀다면
+  // 그것을 지울 이유가 없다(그 뒤의 실패는 아래 배너로 알린다).
+  if (items === null) {
     return (
       <div className="rounded-lg border border-border bg-surface-secondary p-5 text-center">
         <p className="text-body-sm text-text-secondary">목록을 불러오지 못했어요.</p>
-        <Button variant="ghost" size="sm" onClick={load} className="mt-2">
+        <Button variant="ghost" size="sm" onClick={handleManualReload} className="mt-2">
           다시 시도
         </Button>
       </div>
@@ -186,21 +194,25 @@ export function RecentCoverLetterList({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-surface-secondary p-8 text-center">
-        <PenLine size={28} className="mx-auto text-text-tertiary" />
-        <p className="mt-3 text-body text-text-primary">아직 만든 자기소개서가 없어요.</p>
-        <p className="mt-1 text-body-sm text-text-secondary">
-          문항을 넣으면 기록을 바탕으로 초안을 만들어요.
-        </p>
-        <Button variant="primary" size="sm" onClick={onCreateClick} className="mt-4">
-          새 자기소개서 만들기
-        </Button>
-      </div>
+      <>
+        {error && <ListRefreshErrorBanner onRetry={handleManualReload} />}
+        <div className="rounded-xl border border-dashed border-border bg-surface-secondary p-8 text-center">
+          <PenLine size={28} className="mx-auto text-text-tertiary" />
+          <p className="mt-3 text-body text-text-primary">아직 만든 자기소개서가 없어요.</p>
+          <p className="mt-1 text-body-sm text-text-secondary">
+            문항을 넣으면 기록을 바탕으로 초안을 만들어요.
+          </p>
+          <Button variant="primary" size="sm" onClick={onCreateClick} className="mt-4">
+            새 자기소개서 만들기
+          </Button>
+        </div>
+      </>
     );
   }
 
   return (
     <>
+      {error && <ListRefreshErrorBanner onRetry={handleManualReload} />}
       {pollExhausted && hasPending && (
         <p className="mb-2 flex flex-wrap items-center gap-1.5 text-caption text-text-secondary">
           생성이 예상보다 오래 걸리고 있어요.
