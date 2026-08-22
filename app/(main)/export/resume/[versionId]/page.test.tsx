@@ -893,6 +893,59 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     expect(captured("resume_edit_saved")).toHaveLength(1);
   });
 
+  // 다른 버전으로 옮기는 창(loading)에서는 versionId 는 이미 B 인데 resume/dirty 는 아직
+  // A 것이다(FRT-238). 여기서 담으면 A 의 편집이 B 의 키로 들어가, B 가 열리자마자 남의
+  // 내용을 복원하라고 권한다. A 의 편집은 버전이 바뀌는 순간 언마운트 cleanup 이 A 키로
+  // 이미 남겼으니, 이 창에서는 아무것도 쓰지 않는 것이 맞다.
+  it("다른 버전으로 옮기는 중에는 옛 버전 편집을 새 버전 키로 담지 않는다", async () => {
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    route.resolve("A", named("A유저"));
+    await flush();
+    await userEvent.setup().type(screen.getByLabelText("이름"), "!");
+
+    await navigateTo(result, "B");
+    expect(loadingShown()).toBe(true);
+    fireHidden();
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:resume-draft:B")).toBeNull();
+    expect(window.localStorage.getItem("arc:resume-draft:A")).not.toBeNull();
+  });
+
+  // 숨겨질 때 담아 둔 편집을 돌아와서 되돌리면 화면은 깨끗한데 저장소에는 스냅샷이 남는다.
+  // dirty 가 풀려 어떤 이탈 경로도 손대지 않으므로, 다음 진입에 버린 편집을 복원하라고
+  // 권하게 된다 — 담은 쪽이 치운다.
+  it("숨겨질 때 담아 둔 편집을 되돌려 깨끗해지면 그 스냅샷도 지운다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    await user.type(screen.getByLabelText("이름"), "!");
+    fireHidden();
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+
+    setVisibility("visible");
+    await user.type(screen.getByLabelText("이름"), "{Backspace}");
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).toBeNull();
+  });
+
+  // 같은 레쥬메를 두 탭에서 열면 탭을 오갈 때마다 hidden 이 온다. 그 사이 손대지 않은 탭이
+  // 같은 내용을 더 새 시각으로 다시 쓰면, 다른 탭이 방금 남긴 편집을 덮는다.
+  it("손대지 않은 채 다시 숨겨지면 같은 편집을 다시 쓰지 않는다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    await user.type(screen.getByLabelText("이름"), "!");
+    fireHidden();
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+
+    // 다른 탭이 더 새 편집을 남긴 상황.
+    window.localStorage.setItem("arc:resume-draft:v1", "other-tab");
+    setVisibility("visible");
+    fireHidden();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).toBe("other-tab");
+  });
+
   // 한 시도에 결말은 하나다 — 저장 요청이 떠 있는 동안 탭을 닫으면 편집은 남기되
   // exit_draft 는 쏘지 않는다. 쏘면 늦게 온 응답이 server/failed 를 또 남겨 한 시도가
   // 두 결말로 세진다(자소서 상세와 같은 규칙).

@@ -974,6 +974,59 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
     expect(editSavedCalls()).toHaveLength(1);
   });
+
+  // 다른 문서로 옮기는 창(loading)에서는 id 는 이미 B 인데 result/dirty 는 아직 A 것이다
+  // (FRT-238). 여기서 담으면 A 의 편집이 B 의 키로 들어가 B 가 남의 내용을 복원하라고
+  // 권한다. A 의 편집은 문서가 바뀌는 순간 언마운트 cleanup 이 A 키로 이미 남겼다.
+  it("다른 문서로 옮기는 중에는 옛 문서 편집을 새 문서 키로 담지 않는다", async () => {
+    const route = routeById();
+    const view = await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+    await userEvent.setup().type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+
+    await navigateTo(view, "B");
+    expect(loadingShown()).toBe(true);
+    fireHidden();
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:cover-letter-draft:B")).toBeNull();
+    expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  });
+
+  // 숨겨질 때 담아 둔 편집을 돌아와서 되돌리면 화면은 깨끗한데 저장소에는 스냅샷이 남아,
+  // 다음 진입에 버린 편집을 복원하라고 권하게 된다 — 담은 쪽이 치운다.
+  it("숨겨질 때 담아 둔 편집을 되돌려 깨끗해지면 그 스냅샷도 지운다", async () => {
+    await renderEdited();
+    fireHidden();
+    expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+
+    setVisibility("visible");
+    await userEvent.setup().type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "{Backspace}",
+    );
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+  });
+
+  // 같은 문서를 두 탭에서 열면 탭을 오갈 때마다 hidden 이 온다. 손대지 않은 탭이 같은
+  // 내용을 더 새 시각으로 다시 쓰면 다른 탭이 방금 남긴 편집을 덮는다.
+  it("손대지 않은 채 다시 숨겨지면 같은 편집을 다시 쓰지 않는다", async () => {
+    await renderEdited();
+    fireHidden();
+    expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+
+    // 다른 탭이 더 새 편집을 남긴 상황.
+    window.localStorage.setItem(DRAFT_KEY, "other-tab");
+    setVisibility("visible");
+    fireHidden();
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).toBe("other-tab");
+  });
 });
 
 describe("FRT-193 — 본문을 전부 지워도 편집을 이어갈 수 있다", () => {

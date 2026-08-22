@@ -112,6 +112,10 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // effect 가 문서 전환마다 리셋해야 하므로, 그 effect보다 먼저 선언해 둔다.
   // '나가기'는 스스로 이동을 일으켜 언마운트로 이어진다 — 이미 쐈으면 두 번 세지 않는다.
   const exitDraftFiredRef = useRef(false);
+  // 탭이 숨겨질 때 이 탭이 마지막으로 담아 둔 편집(FRT-329). 손대지 않은 채 다시 숨겨지면
+  // 같은 것을 다시 쓰지 않고(같은 문서를 연 다른 탭이 남긴 편집을 덮지 않도록), 그 편집을
+  // 되돌려 깨끗해지면 담아 둔 것도 치운다(레쥬메 상세와 같은 규칙).
+  const hiddenSnapshotRef = useRef<CoverLetterResult | null>(null);
 
   useEffect(() => {
     // 늦게 도착한 답이 무엇 하나라도 건드리면 id 와 본문이 어긋난다. 응답 이후의 갱신은
@@ -122,6 +126,9 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     // FRT-238). 이 ref 를 문서 전환마다 안 내리면, 한 번이라도 이탈이 잡힌 뒤로는 이 인스턴스가
     // 재사용하는 모든 다음 문서의 exit_draft 가 영영 안 잡힌다.
     exitDraftFiredRef.current = false;
+    // 이전 문서에서 담아 둔 것은 이전 문서의 키에 있다 — 이 문서가 깨끗하다고 그 키를 지우면
+    // 안 된다.
+    hiddenSnapshotRef.current = null;
 
     // 생성 시 입력한 글자수 제한은 출력 계약에 없다 — 서버가 안 준 문항만 로컬 저장분으로
     // 채운다(서버 값이 정본). 없으면 상한 없이 글자수만 보여주는 현재 동작 그대로다.
@@ -410,16 +417,33 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // 과 같은 이유 — 한 시도에 결말 하나). 토스트는 띄우지 않는다 — 볼 사람이 없는 화면이고,
   // 실패는 persisted:false 로 지표에 남는다. "머무르기"를 고르면 pagehide 가 오지 않으므로
   // 경고 다이얼로그와 순서가 얽히지 않는다. 레쥬메 상세와 같은 훅·같은 규칙이다.
+  //
+  // 다른 문서로 옮기는 창(loading)에서는 걸지 않는다 — id 는 이미 다음 문서인데 result/dirty
+  // 는 아직 이전 문서 것이라(FRT-238), 여기서 담으면 이전 문서의 편집이 다음 문서의 키로
+  // 들어간다. 이전 문서의 편집은 문서가 바뀌는 순간 위 언마운트 cleanup 이 이전 키로 이미
+  // 남겼다(handleSave 가 loading 을 가드하는 것과 같은 이유).
+  useEffect(() => {
+    if (loading || dirty || hiddenSnapshotRef.current === null) return;
+    hiddenSnapshotRef.current = null;
+    clearDraft(id);
+  }, [dirty, loading, id]);
+
   usePersistOnUnload({
-    enabled: dirty,
+    enabled: dirty && !loading,
     onPersist: (reason) => {
       if (!dirtyRef.current || !resultRef.current) return;
-      const tier = writeDraft(id, resultRef.current);
-      if (reason !== "pagehide") return;
+      const snapshot = resultRef.current;
+      if (reason === "hidden") {
+        if (snapshot === hiddenSnapshotRef.current) return;
+        hiddenSnapshotRef.current = snapshot;
+        writeDraft(id, snapshot);
+        return;
+      }
+      const tier = writeDraft(id, snapshot);
       if (exitDraftFiredRef.current || savingRef.current) return;
       // 한 이탈은 한 번만 센다 — '뒤로'가 이미 셌거나, 이 뒤에 언마운트가 이어져도.
       exitDraftFiredRef.current = true;
-      captureEditSaved("exit_draft", tier !== null, resultRef.current, tier, true);
+      captureEditSaved("exit_draft", tier !== null, snapshot, tier, true);
     },
   });
 
