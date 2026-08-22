@@ -576,8 +576,12 @@ describe("isCardComplete / computeFormProgress", () => {
     cell.value = { ...cell.value, rows: [{ id: "row-1", cells: {} }] }
     expect(isCardComplete(repeat)).toBe(false)
     // 필수 셀을 모두 채운 행이 있으면 완료
+    // 열 유형에 맞는 값을 넣는다 — 기간 열은 "값" 같은 자유 문자열을 채워짐으로 세지 않는다
+    // (`cellFilledForColumn`). 아무 문자열이나 넣으면 판정이 아니라 채움값이 틀린 게 된다.
     const filledCells: Record<string, string> = {}
-    for (const k of requiredKeys) filledCells[k] = "값"
+    for (const c of cell.value.columns.filter(c => c.required)) {
+      filledCells[c.key] = c.blockType === "period" ? "2024.03 ~ 2024.06" : "값"
+    }
     cell.value = { ...cell.value, rows: [{ id: "row-1", cells: filledCells }] }
     expect(isCardComplete(repeat)).toBe(true)
   })
