@@ -575,6 +575,23 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     expect(labels).not.toContain("피드백/질문과 대응")
   })
 
+  // 반복 기록 표의 '세부 기간' 은 기간을 **고르는** 칸이다. 가이드가 이미 "선택해주세요" 라
+  // 쓰여 있는데 blockType 만 text 로 남아 자유 입력이 됐다(노션 유저테스트 피드백). 형제 표들
+  // (어학 '기간'·프로젝트 '기간')은 처음부터 period 였으므로, 같은 규칙을 전 유형에 걸어 둔다.
+  it("반복 기록 표의 기간 컬럼은 어느 유형에서든 기간 선택이다", () => {
+    const periodColumns: Array<[ExperienceTypeId, string, string]> = [
+      ["academic-society", "society-projects", "프로젝트/연구활동"],
+      ["career", "career-tasks", "프로젝트/담당 업무"],
+      ["language", "lang-records", "경험 상세 기록"],
+      ["personal-project", "project-tasks", "세부 작업"],
+    ]
+    for (const [typeId, sectionId, blockLabel] of periodColumns) {
+      const column = columnsOf(typeId, sectionId, blockLabel).find(c => c.key === "period")
+      expect(column, `${typeId}/${sectionId} 에 period 컬럼이 없다`).toBeDefined()
+      expect(column?.blockType, `${typeId}/${sectionId} 의 ${column?.label}`).toBe("period")
+    }
+  })
+
   it("인턴 '협업 / 팀원'은 여러 줄 입력이고 문서 가이드·예시를 갖는다", () => {
     const block = detailOf("career")!.blocks.find(b => b.label === "협업 / 팀원")!
     expect(block.type).toBe("textarea")

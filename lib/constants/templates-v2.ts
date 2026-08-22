@@ -776,7 +776,7 @@ function academicSocietyExtensions(): TemplateSection[] {
             {
               key: 'period',
               label: '세부 기간',
-              blockType: 'text',
+              blockType: 'period',
               required: true,
               guide: '이 프로젝트가 진행된 기간을 선택해주세요.',
             },
@@ -1169,7 +1169,7 @@ function careerExtensions(): TemplateSection[] {
           {
             key: 'period',
             label: '세부 기간',
-            blockType: 'text',
+            blockType: 'period',
             guide: '이 프로젝트가 진행된 기간을 선택해주세요.',
           },
           {
