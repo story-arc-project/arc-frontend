@@ -219,9 +219,15 @@ export default function ExperienceCard({
     >
       {/* Top row: type badge + status */}
       <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <Badge variant="brand">{typeInfo?.label ?? "경험"}</Badge>
-          <Badge variant={experience.status === "complete" ? "success" : "warning"}>
+        {/* 좁아지면 배지가 눌려 라벨이 음절 중간에서 갈린다 — 알약은 통째로 다음 줄로 넘긴다. */}
+        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+          <Badge variant="brand" className="whitespace-nowrap">
+            {typeInfo?.label ?? "경험"}
+          </Badge>
+          <Badge
+            variant={experience.status === "complete" ? "success" : "warning"}
+            className="whitespace-nowrap"
+          >
             {experience.status === "complete" ? "완료" : "작성 중"}
           </Badge>
           {experience.importance !== undefined && (

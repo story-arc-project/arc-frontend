@@ -420,7 +420,8 @@ export default function DashboardPage() {
                         <span className="text-body-sm text-text-primary font-medium truncate">
                           {exp.title || "제목 없음"}
                         </span>
-                        <Badge variant="default">
+                        {/* 눌려서 음절 중간에 줄이 갈리면 안 된다 — 잘릴 쪽은 제목이다. */}
+                        <Badge variant="default" className="shrink-0 whitespace-nowrap">
                           {typeInfo?.label ?? exp.typeId}
                         </Badge>
                       </div>

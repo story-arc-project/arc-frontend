@@ -82,4 +82,12 @@ describe("ExperienceDetailV2", () => {
     expect(screen.queryByText("경험명")).toBeNull()
     expect(screen.queryByText("한 줄 요약")).toBeNull()
   })
+
+  // 배지는 알약이다 — 좁아지면 통째로 다음 줄로 넘어가야지, 라벨이 음절 중간에서
+  // 갈리면 안 된다("인턴 및 업무 경·력"). 대시보드 최근 경험에서 실제로 깨졌던 모양이다.
+  it("유형·상태 배지 라벨이 음절 중간에서 갈리지 않는다", () => {
+    renderDetail(careerV2())
+    expect(screen.getByText("인턴 및 업무 경력")).toHaveClass("whitespace-nowrap")
+    expect(screen.getByText("완료")).toHaveClass("whitespace-nowrap")
+  })
 })

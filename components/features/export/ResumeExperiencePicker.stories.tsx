@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs";
+import { expect, within } from "storybook/test";
 
 import { ResumeExperiencePicker } from "./ResumeExperiencePicker";
 import type { ExperienceTypeId, ExperienceV2 } from "@/types/archive";
@@ -59,6 +60,12 @@ type Story = StoryObj<typeof ResumeExperiencePicker>;
 /** 기본 상태 — 모달을 열면 전부 선택되어 있다(아무것도 안 하면 현행과 결과가 같다). */
 export const AllSelected: Story = {
   args: { experiences: few, excludedIds: new Set<string>() },
+  play: async ({ canvasElement }) => {
+    // 유형 배지는 알약이다 — 목록이 좁아져도 라벨이 음절 중간에서 갈리면 안 된다
+    // ("인턴 및 업무 경·력"). 눌릴 쪽은 배지가 아니라 잘릴 수 있는 제목이다.
+    const badge = within(canvasElement).getByText("인턴 및 업무 경력");
+    await expect(getComputedStyle(badge).whiteSpace).toBe("nowrap");
+  },
 };
 
 /** 일부를 뺀 상태. 헤더 카운트가 줄고 토글이 '전체 선택'으로 바뀐다. */

@@ -45,6 +45,11 @@ export const Default: Story = {
   play: async ({ canvasElement }) => {
     const card = cardRoot(canvasElement)
     await expect(getComputedStyle(card, "::before").content).toBe("none")
+
+    // 배지는 알약이다 — 카드가 좁아져도 라벨이 음절 중간에서 갈리면 안 된다
+    // ("인턴 및 업무 경·력"). 줄이 모자라면 알약이 통째로 다음 줄로 넘어간다.
+    const badge = within(card).getByText("인턴 및 업무 경력")
+    await expect(getComputedStyle(badge).whiteSpace).toBe("nowrap")
   },
 }
 
