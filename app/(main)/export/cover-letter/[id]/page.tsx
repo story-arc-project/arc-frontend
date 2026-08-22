@@ -353,7 +353,23 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     );
   }
 
-  const empty = isEmptyCoverLetter(result);
+  // FRT-193 — 편집기가 설 자리는 **렌더할 문항이 있는가**로 정한다. 본문이 비었는지로
+  // 가르면 마지막 글자를 지우는 순간 편집기가 통째로 언마운트돼, 그 화면에서 다시 쓸
+  // 방법이 사라진다(문항이 1개면 즉시, 페이지를 나갔다 와야 복구됐다). 형제인
+  // `CoverLetterPreview` 가 이미 쓰는 규칙과 같다.
+  const hasQuestions = result.answers.length > 0;
+
+  // "생성 결과가 부실하다"는 안내다. 그러므로 재는 대상은 편집 중인 `result` 가 아니라
+  // 서버가 만들어 준 `original` 이다 — 사용자가 스스로 지운 것은 여기 해당하지 않는다.
+  // 안내는 편집기를 **치우는 대신 그 위에 선다**: 배타 분기로 두는 한, 기준만 고쳐도
+  // 빠져나올 수 없는 화면은 다른 조건으로 또 만들어진다.
+  //
+  // 그 자리에서 직접 써 넣기 시작하면 물러난다(`result` 조건). 기준선을 아직 모르면
+  // (`original === null`) 안내하지 않는다 — 모르는 것을 단정하느니 편집기만 세운다.
+  const generatedEmpty =
+    original !== null &&
+    isEmptyCoverLetter(original) &&
+    isEmptyCoverLetter(result);
 
   return (
     // 높이는 **한 번만** 정한다. 예전에는 아래 패널 행이 스스로 `100dvh - gnb (- 3.5rem)` 을
@@ -441,14 +457,16 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
               </div>
             )}
 
-            {empty ? (
+            {generatedEmpty && (
               <div className="rounded-xl border border-dashed border-border p-8 text-center">
                 <p className="text-body text-text-primary">본문이 비어 있어요.</p>
                 <p className="mt-1 text-body-sm text-text-secondary">
                   기록이 부족하면 초안이 짧게 나올 수 있어요. 경험을 더 남기고 다시 만들어보세요.
                 </p>
               </div>
-            ) : (
+            )}
+
+            {hasQuestions && (
               <CoverLetterEditorPanel
                 result={result}
                 onChange={setResult}
