@@ -300,9 +300,17 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
     expect(err).not.toBeInstanceOf(ApiError);
   });
 
-  it("응답 자체가 본문이 아닐 때(null·원시값)도 같은 타입으로 말한다", async () => {
-    mockGet.mockResolvedValue({ status: "success", message: "ok", data: null });
-    await expect(getResume("res-6")).rejects.toBeInstanceOf(ResumeNotReadyError);
+  // 래퍼조차 없는 응답(null·원시값·배열)은 "만드는 중"이 아니다. 생성 중이라는 증거는
+  // **래퍼가 존재한다는 사실** 자체인데 그것이 없으므로, 재시도로 풀릴 수 없는 형식 오류다.
+  // 여기서 "다 만들어지면 다시 시도"를 보여주면 오지 않을 완료를 기다리게 된다(codex P2).
+  it("응답 자체가 본문이 아니면(null·원시값·배열) '만드는 중'으로 말하지 않는다", async () => {
+    for (const data of [null, "oops", 42, []]) {
+      mockGet.mockResolvedValue({ status: "success", message: "ok", data });
+
+      const err = await getResume("res-6").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(ResumeNotReadyError);
+    }
   });
 
   // 본문이 없다고 다 "만드는 중"은 아니다. 래퍼의 status 가 **끝났다**고 말하는데 본문이
