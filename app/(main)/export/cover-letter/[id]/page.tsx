@@ -102,10 +102,20 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
 
   const handleRetry = useCallback(() => setSeq((s) => s + 1), []);
 
+  // AI 초안에 처음 손댄 시점·저장 없이 나간 시점(FRT-107)을 지키는 두 플래그. 아래 조회
+  // effect 가 문서 전환마다 리셋해야 하므로, 그 effect보다 먼저 선언해 둔다.
+  // '나가기'는 스스로 이동을 일으켜 언마운트로 이어진다 — 이미 쐈으면 두 번 세지 않는다.
+  const exitDraftFiredRef = useRef(false);
+
   useEffect(() => {
     // 늦게 도착한 답이 무엇 하나라도 건드리면 id 와 본문이 어긋난다. 응답 이후의 갱신은
     // 전부 이 가드 안에 둔다 — 절반만 가드하면 절반만 고쳐진 버그가 된다.
     let ignore = false;
+
+    // 다른 문서를 열면 그 문서의 exit_draft 는 아직 한 번도 안 쐈다(레쥬메 상세와 같은 이유,
+    // FRT-238). 이 ref 를 문서 전환마다 안 내리면, 한 번이라도 이탈이 잡힌 뒤로는 이 인스턴스가
+    // 재사용하는 모든 다음 문서의 exit_draft 가 영영 안 잡힌다.
+    exitDraftFiredRef.current = false;
 
     // 생성 시 입력한 글자수 제한은 출력 계약에 없다 — 서버가 안 준 문항만 로컬 저장분으로
     // 채운다(서버 값이 정본). 없으면 상한 없이 글자수만 보여주는 현재 동작 그대로다.
@@ -174,9 +184,6 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // AI 초안에 처음 손댄 시점(FRT-107). 레쥬메의 resume_edited 와 같은 축이다 —
   // "AI 결과물을 얼마나 고쳐 쓰는가"는 두 기능에 같은 질문이고, 자소서 쪽만 이 관측이
   // 통째로 비어 있었다. 문서(requestKey)당 1회 — 키 입력마다 쏘면 이벤트가 폭증한다.
-  // '나가기'는 스스로 이동을 일으켜 언마운트로 이어진다 — 이미 쐈으면 두 번 세지 않는다.
-  const exitDraftFiredRef = useRef(false);
-
   const editedFiredKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!dirty || editedFiredKeyRef.current === requestKey) return;
