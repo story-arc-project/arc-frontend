@@ -32,6 +32,7 @@ import { ResumePreview } from "./_components/ResumePreview";
 import { EnglishReadOnlyNotice } from "./_components/EnglishReadOnlyNotice";
 import { RemainingExperiencesNotice } from "./_components/RemainingExperiencesNotice";
 import { draftTierWarning, type DraftTier } from "@/lib/export/draft-storage";
+import { usePersistOnUnload } from "@/lib/export/use-persist-on-unload";
 import { reserveClientIds } from "./_components/editors/shared";
 import { changedResumeSections } from "./_components/resume-diff";
 import {
@@ -184,14 +185,19 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // 로컬로 떨어진 경우 **어느 계층**에 담겼는지. 같은 "보관됨"이라도 브라우저를 닫으면
       // 사라지는 보관이 섞여 있어, 이걸 안 나누면 유실 규모를 과소 보고한다(FRT-261).
       storageTier?: DraftTier | null,
+      // 화면이 사라지는 순간(탭 닫기)에 쏘는가. 기본 경로는 배치 큐라 페이지와 함께
+      // 사라진다 — 그때만 sendBeacon 경로를 고른다(FRT-329).
+      atUnload = false,
     ) => {
-      capture("resume_edit_saved", {
+      const props = {
         outcome,
         persisted,
         sections: changed,
         section_count: changed.length,
         ...(storageTier === undefined ? {} : { storage_tier: storageTier }),
-      });
+      };
+      if (atUnload) capture("resume_edit_saved", props, { atUnload: true });
+      else capture("resume_edit_saved", props);
     },
     [],
   );
@@ -557,7 +563,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [handleSave, resume, dirty]);
 
-  // beforeunload when dirty
+  // beforeunload when dirty — 경고만 띄운다. 저장은 아래 pagehide 가 맡는다(bfcache).
   useEffect(() => {
     if (!dirty) return;
     const handler = (e: BeforeUnloadEvent) => {
@@ -567,6 +573,32 @@ export default function ResumeDetailPage({ params }: PageProps) {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
+
+  // 탭을 닫거나 새로고침해도 편집을 남긴다(FRT-329). 위 언마운트 cleanup 은 진짜 페이지
+  // 언로드에서는 실행되지 않아, 사용자가 경고에서 "나가기"를 고르면 편집이 그대로 사라졌다.
+  //
+  // 탭이 숨겨질 때(hidden)는 **조용히 담아 두기만** 한다 — 탭 전환은 이탈이 아니고 돌아와서
+  // 계속 쓰지만, 모바일은 이 뒤에 pagehide 없이 탭을 죽이는 일이 잦다. pagehide 는 진짜
+  // 떠남이라 같은 exit_draft 로 센다. 토스트는 띄우지 않는다 — 볼 사람이 없는 화면이고,
+  // 실패는 persisted:false 로 지표에 남는다. "머무르기"를 고르면 pagehide 가 오지 않으므로
+  // 경고 다이얼로그와 순서가 얽히지 않는다.
+  usePersistOnUnload({
+    enabled: dirty,
+    onPersist: (reason) => {
+      if (!dirtyRef.current || !resumeRef.current) return;
+      const tier = writeDraft(versionId, resumeRef.current);
+      if (reason !== "pagehide" || exitDraftFiredRef.current) return;
+      // 한 이탈은 한 번만 센다 — '나가기'가 이미 셌거나, 이 뒤에 언마운트가 이어져도.
+      exitDraftFiredRef.current = true;
+      captureEditSaved(
+        "exit_draft",
+        tier !== null,
+        changedResumeSections(initialRef.current, resumeRef.current),
+        tier,
+        true,
+      );
+    },
+  });
 
   if (loading) return <ResumeDetailSkeleton />;
 

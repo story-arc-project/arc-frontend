@@ -753,6 +753,147 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
  * FRT-147 — 영문 레쥬메는 편집 사이드바를 통째로 감춘다. 파싱 경고 배너가 그 사이드바
  * 안에만 있으면 "어떤 경험을 못 읽었는지"를 영문 사용자만 영영 못 보게 된다.
  */
+/**
+ * FRT-329 — 탭을 닫거나 새로고침하면 편집이 저장 없이 사라졌다.
+ *
+ * 임시 저장은 언마운트 cleanup 에서 일어나는데 진짜 페이지 언로드에서는 그 cleanup 이
+ * 실행되지 않는다. beforeunload 는 경고만 띄울 뿐 아무것도 남기지 않았다.
+ * 이제 pagehide 가 편집을 남기고, 탭이 숨겨질 때는 조용히 담아 두기만 한다.
+ */
+describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
+  function setVisibility(state: DocumentVisibilityState): void {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => state,
+    });
+  }
+  function fireHidden(): void {
+    setVisibility("hidden");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+  }
+  function firePageHide(): void {
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+  }
+  const exitDraftProps = {
+    outcome: "exit_draft",
+    persisted: true,
+    storage_tier: "local",
+    sections: ["personal_info"],
+    section_count: 1,
+  };
+
+  afterEach(() => setVisibility("visible"));
+
+  it("pagehide 에 편집을 임시 저장하고 exit_draft 를 언로드 전송으로 1회 남긴다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+    // 배치 큐에 담으면 페이지와 함께 사라진다 — sendBeacon 경로를 고르는 옵션이 실려야 한다.
+    expect(captured("resume_edit_saved")).toEqual([
+      ["resume_edit_saved", exitDraftProps, { atUnload: true }],
+    ]);
+  });
+
+  it("편집이 없으면 pagehide 에 아무것도 남기지 않는다", async () => {
+    await renderLoaded();
+
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).toBeNull();
+    expect(captured("resume_edit_saved")).toEqual([]);
+  });
+
+  // 탭 전환은 이탈이 아니다 — 돌아와서 계속 쓴다. 다만 모바일은 이 뒤에 pagehide 없이
+  // 탭을 죽이는 일이 잦아 편집만 먼저 담아 둔다. 지표는 쏘지 않는다.
+  it("탭이 숨겨지면 조용히 임시 저장만 하고 지표는 쏘지 않는다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    fireHidden();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+    expect(captured("resume_edit_saved")).toEqual([]);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  // 볼 사람이 없는 화면에 경고를 띄우지 않는다. 실패는 persisted:false 로 지표에만 남는다.
+  it("pagehide 저장이 실패해도 토스트는 띄우지 않고 지표에만 남긴다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    vi.mocked(toast.error).mockClear();
+    draftWrite.forceFailure = true;
+    try {
+      firePageHide();
+    } finally {
+      draftWrite.forceFailure = false;
+    }
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(captured("resume_edit_saved")).toEqual([
+      [
+        "resume_edit_saved",
+        { ...exitDraftProps, persisted: false, storage_tier: null },
+        { atUnload: true },
+      ],
+    ]);
+  });
+
+  // 중복 발화 가드와의 상호작용 — 한 이탈은 한 번만 센다.
+  it("pagehide 뒤에 언마운트가 이어져도 exit_draft 는 한 번이다", async () => {
+    const user = userEvent.setup();
+    const { unmount } = await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    firePageHide();
+    unmount();
+
+    expect(captured("resume_edit_saved")).toHaveLength(1);
+  });
+
+  it("'나가기'가 이미 센 이탈은 pagehide 가 다시 세지 않는다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "익스포트로 돌아가기" }));
+    await waitFor(() => expect(mockPush).toHaveBeenCalled());
+    firePageHide();
+
+    expect(captured("resume_edit_saved")).toHaveLength(1);
+  });
+
+  // 반대쪽 못 — 저장에 성공해 dirty 가 풀리면 pagehide 는 손대지 않는다. 이게 없으면
+  // "저장했는데 다음 진입에 복원 배너가 뜬다"(FRT-191)가 탭 닫기 경로로 되살아난다.
+  it("저장에 성공한 뒤 pagehide 는 draft 를 다시 만들지 않는다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockImplementation(async (_id, data) => data);
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() =>
+      expect(captured("resume_edit_saved").map(([, p]) => p)).toEqual([
+        expect.objectContaining({ outcome: "server" }),
+      ]),
+    );
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).toBeNull();
+    expect(captured("resume_edit_saved")).toHaveLength(1);
+  });
+});
+
 describe("영문 읽기 전용 — 보완 안내", () => {
   function enResume(파싱경고: string[]): ResumeVersion {
     return resumeFixture({

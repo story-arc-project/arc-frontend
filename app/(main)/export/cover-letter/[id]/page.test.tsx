@@ -807,6 +807,175 @@ describe("FRT-107 — 복원은 새 편집이 아니다", () => {
  * 사용자가 지운 것은 "생성 결과가 부실하다"가 아니다. ② 안내는 편집기를 **치우는 대신
  * 그 위에 선다** — 배타 분기로 두는 한, 기준만 고쳐서는 빠져나올 수 없는 화면이 또 생긴다.
  */
+/**
+ * FRT-329 — 탭을 닫거나 새로고침하면 편집이 저장 없이 사라졌다.
+ *
+ * 임시 저장은 언마운트 cleanup 에서 일어나는데 진짜 페이지 언로드에서는 그 cleanup 이
+ * 실행되지 않는다. beforeunload 는 경고만 띄울 뿐 아무것도 남기지 않았다.
+ * 이제 pagehide 가 편집을 남기고, 탭이 숨겨질 때는 조용히 담아 두기만 한다.
+ * 레쥬메 상세와 같은 훅을 쓰므로 단언도 대칭이다.
+ */
+describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
+  const DRAFT_KEY = "arc:cover-letter-draft:A";
+
+  function setVisibility(state: DocumentVisibilityState): void {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => state,
+    });
+  }
+  function fireHidden(): void {
+    setVisibility("hidden");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+  }
+  function firePageHide(): void {
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+  }
+  function editSavedCalls(): unknown[][] {
+    return vi
+      .mocked(capture)
+      .mock.calls.filter(([name]) => name === "cover_letter_edit_saved");
+  }
+
+  async function renderEdited() {
+    const route = routeById();
+    const view = await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+    await userEvent.setup().type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    vi.mocked(capture).mockClear();
+    vi.mocked(toast.error).mockClear();
+    return view;
+  }
+
+  afterEach(() => setVisibility("visible"));
+
+  it("pagehide 에 편집을 임시 저장하고 exit_draft 를 언로드 전송으로 1회 남긴다", async () => {
+    await renderEdited();
+
+    firePageHide();
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+    // 배치 큐에 담으면 페이지와 함께 사라진다 — sendBeacon 경로를 고르는 옵션이 실려야 한다.
+    expect(editSavedCalls()).toEqual([
+      [
+        "cover_letter_edit_saved",
+        {
+          outcome: "exit_draft",
+          persisted: true,
+          storage_tier: "local",
+          question_count: 1,
+        },
+        { atUnload: true },
+      ],
+    ]);
+  });
+
+  it("편집이 없으면 pagehide 에 아무것도 남기지 않는다", async () => {
+    const route = routeById();
+    await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+    vi.mocked(capture).mockClear();
+
+    firePageHide();
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(editSavedCalls()).toEqual([]);
+  });
+
+  // 탭 전환은 이탈이 아니다 — 돌아와서 계속 쓴다. 다만 모바일은 이 뒤에 pagehide 없이
+  // 탭을 죽이는 일이 잦아 편집만 먼저 담아 둔다. 지표는 쏘지 않는다.
+  it("탭이 숨겨지면 조용히 임시 저장만 하고 지표는 쏘지 않는다", async () => {
+    await renderEdited();
+
+    fireHidden();
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+    expect(editSavedCalls()).toEqual([]);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  // 볼 사람이 없는 화면에 경고를 띄우지 않는다. 실패는 persisted:false 로 지표에만 남는다.
+  it("pagehide 저장이 웹 스토리지에 못 담겨도 토스트는 띄우지 않는다", async () => {
+    await renderEdited();
+    const setItem = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(function (this: Storage) {
+        throw new DOMException("quota exceeded", "QuotaExceededError");
+      });
+    try {
+      firePageHide();
+    } finally {
+      setItem.mockRestore();
+    }
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(editSavedCalls().map(([, p]) => p)).toEqual([
+      expect.objectContaining({ outcome: "exit_draft", storage_tier: "memory" }),
+    ]);
+  });
+
+  // 중복 발화 가드와의 상호작용 — 한 이탈은 한 번만 센다.
+  it("pagehide 뒤에 언마운트가 이어져도 exit_draft 는 한 번이다", async () => {
+    const view = await renderEdited();
+
+    firePageHide();
+    view.unmount();
+
+    expect(editSavedCalls()).toHaveLength(1);
+  });
+
+  it("'뒤로'가 이미 센 이탈은 pagehide 가 다시 세지 않는다", async () => {
+    await renderEdited();
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "익스포트" }));
+    firePageHide();
+
+    expect(editSavedCalls()).toHaveLength(1);
+  });
+
+  // 저장이 도는 중이면 그 요청이 곧 server/failed 로 결말을 낸다 — 한 시도에 결말 하나.
+  it("저장이 도는 중에 탭을 닫으면 편집은 남기되 exit_draft 는 쏘지 않는다", async () => {
+    const save = deferred<CoverLetterResult>();
+    mockUpdateCoverLetter.mockImplementation(() => save.promise);
+    await renderEdited();
+    await userEvent.setup().click(screen.getByRole("button", { name: "저장" }));
+    vi.mocked(capture).mockClear();
+
+    firePageHide();
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+    expect(editSavedCalls()).toEqual([]);
+  });
+
+  // 반대쪽 못 — 저장에 성공해 dirty 가 풀리면 pagehide 는 손대지 않는다. 이게 없으면
+  // "저장했는데 다음 진입에 복원 배너가 뜬다"(FRT-191)가 탭 닫기 경로로 되살아난다.
+  it("저장에 성공한 뒤 pagehide 는 draft 를 다시 만들지 않는다", async () => {
+    mockUpdateCoverLetter.mockImplementation(async () => fixture("서버 본문!"));
+    await renderEdited();
+    await userEvent.setup().click(screen.getByRole("button", { name: "저장" }));
+    await flush();
+    expect(editSavedCalls().map(([, p]) => p)).toEqual([
+      expect.objectContaining({ outcome: "server" }),
+    ]);
+
+    firePageHide();
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(editSavedCalls()).toHaveLength(1);
+  });
+});
+
 describe("FRT-193 — 본문을 전부 지워도 편집을 이어갈 수 있다", () => {
   it("문항 1개짜리에서 본문을 전부 지워도 편집기가 남아 계속 입력된다", async () => {
     const route = routeById();
