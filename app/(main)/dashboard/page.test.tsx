@@ -201,3 +201,58 @@ describe("유형 분포 — 은퇴 id 접기 (FRT-291 리뷰)", () => {
     expect(within(section).getByText("3개")).toBeInTheDocument();
   });
 });
+
+/**
+ * 최근 경험 — 유형 배지 줄바꿈 (노션 UI 피드백).
+ *
+ * 배지는 알약(pill)이다. 제목과 한 행에 놓인 배지가 `flex-shrink` 로 눌리면 라벨이
+ * **음절 중간에서** 끊겨("동아리/교내 단·체") 두 줄이 되고, `leading-none` 탓에 두 줄이
+ * 알약 안에서 서로 붙는다. 줄어들 쪽은 배지가 아니라 잘릴 수 있는 제목이다.
+ */
+describe("최근 경험 — 유형 배지는 줄바꿈되지 않는다", () => {
+  function exp(id: string, type: string, title: string) {
+    // 제목은 `content.title` 에서 온다 — 최상위 `title` 은 화면에 닿지 않는다.
+    return { id, type, content: { title }, updated_at: "2024-01-01T00:00:00Z" };
+  }
+
+  const LONG_TITLE = "서울대학교 국제학생대사 SSA(SNU Student Ambassador)";
+
+  it("긴 유형 라벨이 눌려 음절 중간에서 끊기지 않는다", async () => {
+    getSummary.mockResolvedValue(summary());
+    experiencesState.experiences = [
+      exp("e1", "club", LONG_TITLE),
+      exp(
+        "e2",
+        "research",
+        "바르톨로메 에스테반 무리요의 <작은 새와 성가족>에서 드러나는 보호와 보살핌",
+      ),
+    ];
+    experiencesState.count = 2;
+
+    render(<DashboardPage />);
+    await flush();
+
+    const section = screen.getByRole("heading", { name: "최근 경험" }).parentElement!;
+
+    for (const label of ["동아리/교내 단체", "연구 경험/논문"]) {
+      const badge = within(section).getByText(label);
+      // 알약 안에서 줄이 갈리지 않는다.
+      expect(badge).toHaveClass("whitespace-nowrap");
+      // 제목이 길어도 배지가 대신 눌리지 않는다 — 잘릴 쪽은 제목이다.
+      expect(badge).toHaveClass("shrink-0");
+    }
+  });
+
+  it("제목이 길면 배지 대신 제목이 잘린다", async () => {
+    getSummary.mockResolvedValue(summary());
+    experiencesState.experiences = [exp("e1", "club", LONG_TITLE)];
+    experiencesState.count = 1;
+
+    render(<DashboardPage />);
+    await flush();
+
+    const section = screen.getByRole("heading", { name: "최근 경험" }).parentElement!;
+
+    expect(within(section).getByText(LONG_TITLE)).toHaveClass("truncate");
+  });
+});

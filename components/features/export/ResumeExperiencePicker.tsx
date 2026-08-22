@@ -70,7 +70,9 @@ export function ResumeExperiencePicker({
                     {exp.title.trim() === "" ? "제목 없음" : exp.title}
                   </span>
                   <span className="flex items-center gap-1.5 text-caption text-text-tertiary">
-                    {typeLabel && <Badge>{typeLabel}</Badge>}
+                    {typeLabel && (
+                      <Badge className="shrink-0 whitespace-nowrap">{typeLabel}</Badge>
+                    )}
                     {formatDate(exp.updatedAt)}
                   </span>
                 </span>

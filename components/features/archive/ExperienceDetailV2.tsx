@@ -54,8 +54,13 @@ export default function ExperienceDetailV2({
       <div className="flex items-start justify-between mb-5 gap-4">
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="brand">{typeInfo?.label ?? "경험"}</Badge>
-            <Badge variant={experience.status === "complete" ? "success" : "warning"}>
+            <Badge variant="brand" className="whitespace-nowrap">
+              {typeInfo?.label ?? "경험"}
+            </Badge>
+            <Badge
+              variant={experience.status === "complete" ? "success" : "warning"}
+              className="whitespace-nowrap"
+            >
               {experience.status === "complete" ? "완료" : "작성 중"}
             </Badge>
             <ImportanceSelector
