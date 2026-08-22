@@ -109,7 +109,7 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
 }
 
 /**
- * 아직 본문이 없는 레쥬메(생성 중·실패)를 **네트워크 장애와 구별해** 말한다.
+ * 아직 본문이 **만들어지는 중**인 레쥬메를 네트워크 장애·생성 실패와 구별해 말한다.
  *
  * 맨 `Error` 로 던지면 상세 화면의 에러 분기가 이것을 일반 실패로 뭉개, 정상적으로 생성
  * 중인 것을 "불러오지 못했어요"로 읽게 만든다(FRT-326). 자소서는 이미 전용 타입
@@ -155,14 +155,23 @@ function unwrapResumeVersion(data: unknown): ResumeVersion {
     // result 부재 = ① 백엔드가 §3 통일로 data 를 본문으로 평탄화(dual-compat) 또는
     // ② 아직 생성이 안 끝났거나 실패한 레쥬메 래퍼(result:null). 전자는 본문 마커
     // (meta)를 갖고 후자는 갖지 않는다. meta 없는 래퍼를 ResumeVersion 으로 반환하면
-    // 상세 페이지가 resume.meta.language 에서 크래시하므로, 본문일 때만 폴백하고
-    // 아니면 ResumeNotReadyError → 호출부(상세 페이지)가 "아직 만들고 있어요"를 보여준다.
+    // 상세 페이지가 resume.meta.language 에서 크래시하므로, 본문일 때만 폴백한다.
+    // 본문이 아니면 아래에서 래퍼의 status 로 "만드는 중"과 "실패"를 다시 가른다.
     if (
       root.meta !== null &&
       typeof root.meta === "object" &&
       !Array.isArray(root.meta)
     ) {
       return root as unknown as ResumeVersion;
+    }
+
+    // 본문이 없다고 다 "만드는 중"은 아니다. 래퍼의 status 가 **끝났다**(success·failed)고
+    // 말하는데 본문이 없으면 그건 실패다 — "다 만들어지면 다시 시도" 로 안내하면 영영 오지
+    // 않을 완료를 기다리며 재시도만 누르게 된다. 끝났다는 **증거가 있을 때만** 실패로 가른다:
+    // status 부재·미지 값은 증거가 아니므로 아래 준비 안 됨으로 떨어뜨린다(FRT-326 원래 증상 방지).
+    const status = mapResumeStatus(root.status);
+    if (status === "completed" || status === "failed") {
+      throw new Error("resume result missing");
     }
   }
   throw new ResumeNotReadyError();

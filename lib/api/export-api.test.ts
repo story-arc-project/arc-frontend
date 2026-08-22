@@ -304,6 +304,51 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
     mockGet.mockResolvedValue({ status: "success", message: "ok", data: null });
     await expect(getResume("res-6")).rejects.toBeInstanceOf(ResumeNotReadyError);
   });
+
+  // 본문이 없다고 다 "만드는 중"은 아니다. 래퍼의 status 가 **끝났다**고 말하는데 본문이
+  // 없으면 그건 실패다 — "아직 만들고 있어요 / 다 만들어지면 다시 시도" 로 안내하면
+  // 영영 오지 않을 완료를 기다리며 재시도만 누르게 된다(codex P2).
+  it("status:failed 래퍼는 '만드는 중'이 아니다 - ResumeNotReadyError 로 말하지 않는다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-7", status: "failed", result: null },
+    });
+
+    const err = await getResume("res-7").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ResumeNotReadyError);
+  });
+
+  it("status:success 인데 본문이 없으면 실패다 - '만드는 중'으로 말하지 않는다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-8", status: "success", result: null },
+    });
+
+    const err = await getResume("res-8").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ResumeNotReadyError);
+  });
+
+  // 반대쪽 회귀: status 를 안 주거나 모르는 값이면 **끝났다는 증거가 없다.** 여기서 실패로
+  // 단정하면 정상 생성 중인 레쥬메가 다시 "불러오지 못했어요"가 된다(FRT-326 원래 증상).
+  it("status 가 없거나 미지 값이면 여전히 ResumeNotReadyError 다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-9", result: null },
+    });
+    await expect(getResume("res-9")).rejects.toBeInstanceOf(ResumeNotReadyError);
+
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-10", status: "weird", result: null },
+    });
+    await expect(getResume("res-10")).rejects.toBeInstanceOf(ResumeNotReadyError);
+  });
 });
 
 // 백엔드(ai_analyst/src/ai/resume.py `_SYS_KO`)는 인적사항.링크를 문자열 배열로 낸다.
