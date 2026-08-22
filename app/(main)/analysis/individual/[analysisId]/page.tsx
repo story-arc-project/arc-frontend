@@ -58,7 +58,9 @@ export default function IndividualAnalysisDetailPage() {
 
   // 이 결과를 얼마나 봤는가(FRT-107). 개별 분석은 백엔드가 자동 생성해 "실행" 이벤트가
   // 없지만, 조회는 사람이 하므로 종합·키워드와 같은 축에서 비교할 수 있다.
-  useAnalysisViewed({ analysisType: "individual", analysisId, ready: !!data });
+  // ready 는 data 가 아니라 hasResultBody 다 — 대기·실패 안내 화면을 본 시간은 결과를
+  // 본 시간이 아니다(comprehensive 와 같은 규칙).
+  useAnalysisViewed({ analysisType: "individual", analysisId, ready: !!data?.hasResultBody });
 
   if (unsupported) {
     return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/individual" />;

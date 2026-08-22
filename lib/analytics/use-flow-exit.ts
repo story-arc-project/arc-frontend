@@ -34,11 +34,19 @@ export function useFlowExit({ active, onExit }: FlowExitOptions): FlowExitResult
 
   const shouldFire = useCallback(() => !completedRef.current, []);
 
+  // 흐름이 새로 시작되면 완료 표식도 함께 비운다. 안 비우면 한 번 저장한 인스턴스가
+  // 그 뒤 다루는 모든 흐름을 "이미 완료"로 봐서 이탈을 영영 안 쏜다 — 시계는 새로
+  // 잡히는데 판정만 옛것이 남는, 눈에 안 보이는 어긋남이다.
+  const handleStart = useCallback(() => {
+    completedRef.current = false;
+  }, []);
+
   const { elapsedSeconds } = useExitSignal({
     active,
     onHidden: false,
     shouldFire,
     onFire: onExit,
+    onStart: handleStart,
   });
 
   const markCompleted = useCallback(() => {

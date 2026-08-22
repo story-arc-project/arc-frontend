@@ -58,7 +58,9 @@ export default function KeywordDetailPage() {
   }, [analysisId]);
 
   // 이 결과를 얼마나 봤는가(FRT-107). 결과가 화면에 실제로 있는 동안만 잰다.
-  useAnalysisViewed({ analysisType: "keyword", analysisId, ready: !!data });
+  // ready 는 data 가 아니라 hasResultBody 다 — 대기·실패 안내 화면을 본 시간은 결과를
+  // 본 시간이 아니다(comprehensive 와 같은 규칙).
+  useAnalysisViewed({ analysisType: "keyword", analysisId, ready: !!data?.hasResultBody });
 
   if (unsupported) {
     return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/keyword" />;

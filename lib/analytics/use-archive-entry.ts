@@ -37,6 +37,12 @@ export interface ArchiveEntryAnalyticsOptions {
    * 이탈로 세지 않으려면 로드가 끝난 뒤에 켜야 한다.
    */
   active: boolean;
+  /**
+   * 지금 다루고 있는 기록의 정체(수정 화면의 레코드 id). 라우트 파라미터만 바뀌고
+   * 페이지 컴포넌트는 재사용되는 전환(FRT-238)에서, 이 값이 바뀌면 앞 기록의 진행 자취를
+   * 물려주지 않는다. 없으면(신규 작성) 한 화면이 곧 한 세션이다.
+   */
+  sessionKey?: string;
 }
 
 export interface ArchiveEntryAnalytics {
@@ -51,12 +57,19 @@ export interface ArchiveEntryAnalytics {
 export function useArchiveEntryAnalytics({
   mode,
   active,
+  sessionKey,
 }: ArchiveEntryAnalyticsOptions): ArchiveEntryAnalytics {
   // 발화는 언마운트 이후다 — state 로 들면 옛 진행률이 굳어 "아무것도 안 채우고 나갔다"가 된다.
   const snapshotRef = useRef<FormCompletionSnapshot>(EMPTY_SNAPSHOT);
   // 한 번 완료로 관측한 섹션은 다시 세지 않는다. 값을 지웠다 다시 채우면 카드가 미완료로
   // 돌아갔다 오는데, 그때마다 쏘면 "섹션을 몇 번 완료했나"가 타이핑 횟수에 가까워진다.
   const emittedSectionsRef = useRef<Set<string>>(new Set());
+  // 수정 화면은 **이미 완료된 기록을 들고 시작한다.** 첫 스냅샷을 그대로 세면 기록을 열기만
+  // 해도 그 기록의 완료 섹션 전부가 발화하고, 이 이벤트에는 mode 가 없어 진짜 완료와
+  // 구분조차 안 된다 — 지표가 "사용자가 무엇을 했나"가 아니라 "무엇을 열었나"가 된다.
+  // 그래서 도착 시점의 완료분은 세지 않고 기준선으로만 깔아 둔다.
+  const baselinedRef = useRef(mode === "new");
+  const sessionRef = useRef<string | undefined>(sessionKey);
 
   const { markCompleted, elapsedSeconds } = useFlowExit({
     active,
@@ -81,22 +94,46 @@ export function useArchiveEntryAnalytics({
     },
   });
 
-  const handleCompletionChange = useCallback((snapshot: FormCompletionSnapshot) => {
-    snapshotRef.current = snapshot;
-    const emitted = emittedSectionsRef.current;
-    for (const id of snapshot.completedSectionIds) {
-      if (emitted.has(id)) continue;
-      emitted.add(id);
-      capture("archive_section_completed", {
-        section_key: id,
-        // sections_done 이 "몇 개 했나"라면 이쪽은 "폼의 어디를 하고 있나"다.
-        // 둘이 벌어지면 사용자가 순서를 건너뛰며 채운다는 뜻이라 서로 못 대신한다.
-        section_index: snapshot.sectionIds.indexOf(id),
-        sections_done: snapshot.completedSectionIds.length,
-        sections_total: snapshot.sectionIds.length,
-      });
-    }
-  }, []);
+  const handleCompletionChange = useCallback(
+    (snapshot: FormCompletionSnapshot) => {
+      // 다루는 기록이 바뀌었으면 앞 기록의 자취를 물려주지 않는다. 폼이 새 스냅샷을 보내는
+      // 시점(자식 effect)이 페이지 effect 보다 먼저라, 판정은 여기서 해야 늦지 않는다.
+      if (sessionRef.current !== sessionKey) {
+        sessionRef.current = sessionKey;
+        snapshotRef.current = EMPTY_SNAPSHOT;
+        emittedSectionsRef.current = new Set();
+        baselinedRef.current = mode === "new";
+      }
+      snapshotRef.current = snapshot;
+
+      // 기준선은 폼이 자리를 잡은 첫 스냅샷이다 — 수정 모드는 템플릿이 실린 뒤에야 섹션이
+      // 다 모이므로(확장 섹션은 마운트 이후 effect 에서 채워진다) 빈 스냅샷으로 잡으면
+      // 뒤늦게 도착한 완료분이 그대로 오탐이 된다. 폼이 dirty 기준선을 잡는 시점과 같다.
+      if (!baselinedRef.current) {
+        if (snapshot.sectionIds.length === 0) return;
+        baselinedRef.current = true;
+        for (const id of snapshot.completedSectionIds) {
+          emittedSectionsRef.current.add(id);
+        }
+        return;
+      }
+
+      const emitted = emittedSectionsRef.current;
+      for (const id of snapshot.completedSectionIds) {
+        if (emitted.has(id)) continue;
+        emitted.add(id);
+        capture("archive_section_completed", {
+          section_key: id,
+          // sections_done 이 "몇 개 했나"라면 이쪽은 "폼의 어디를 하고 있나"다.
+          // 둘이 벌어지면 사용자가 순서를 건너뛰며 채운다는 뜻이라 서로 못 대신한다.
+          section_index: snapshot.sectionIds.indexOf(id),
+          sections_done: snapshot.completedSectionIds.length,
+          sections_total: snapshot.sectionIds.length,
+        });
+      }
+    },
+    [mode, sessionKey],
+  );
 
   const progressProps = useCallback((): ArchiveEntryProgressProps => {
     const snapshot = snapshotRef.current;

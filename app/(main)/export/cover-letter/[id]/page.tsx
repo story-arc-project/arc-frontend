@@ -186,6 +186,11 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // 통째로 비어 있었다. 문서(requestKey)당 1회 — 키 입력마다 쏘면 이벤트가 폭증한다.
   const editedFiredKeyRef = useRef<string | null>(null);
   useEffect(() => {
+    // 아직 이 문서를 다 못 불러왔으면 result/initial 은 **앞 문서의 것**이다(A→B 전환에서
+    // id·requestKey 만 먼저 바뀐다). 그 상태로 쏘면 B 의 id 에 A 의 수정 문항이 실리고,
+    // B 의 키가 발화 완료로 찍혀 **B 의 진짜 수정이 영영 안 잡힌다.** 저장 경로가 이미
+    // 같은 이유로 이 창을 기다린다(loadedKey).
+    if (loading) return;
     if (!dirty || editedFiredKeyRef.current === requestKey) return;
     const questionIndex = firstChangedAnswerIndex(result, initial);
     // 본문이 아니라 다른 무엇이 달라진 경우(-1)는 "고쳐 썼다"가 아니다.
@@ -195,7 +200,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       cover_letter_id: id,
       question_index: questionIndex,
     });
-  }, [dirty, result, initial, requestKey, id]);
+  }, [dirty, result, initial, requestKey, id, loading]);
   // requestKeyRef 는 여기서 갱신하지 않는다 — 아래 effect(커밋 단계)에서만 움직인다.
 
   const handleSave = useCallback(async () => {

@@ -178,4 +178,59 @@ describe("useFlowExit — 완료하지 못하고 떠났는가(FRT-107)", () => {
 
     expect(seen).toEqual([3]);
   });
+  // ── 리뷰(Codex P2)에서 드러난 것 ───────────────────────────────────────────────
+  // active 는 false→true 로만 간다고 상정했지만, 온보딩은 스텝 state 하나라 「← 이전」으로
+  // 흐름을 벗어나도 컴포넌트가 안 죽는다. 그때 예약된 발화를 취소해 버리면 진짜 이탈이
+  // 통째로 사라진다 — 계측이 조용히 줄어드는 쪽으로 틀리는 종류다.
+  it("흐름 밖으로 나가면(active true→false) 언마운트 없이도 이탈로 센다", () => {
+    const onExit = vi.fn();
+    const { rerender } = renderHook(
+      ({ active }) => useFlowExit({ active, onExit }),
+      { initialProps: { active: true } },
+    );
+
+    vi.advanceTimersByTime(9_000);
+    rerender({ active: false });
+    settle();
+
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(onExit).toHaveBeenCalledWith(9);
+  });
+
+  it("잠깐 꺼졌다 같은 틱에 다시 켜지면 이탈이 아니다 — 시계도 이어 쓴다", () => {
+    const onExit = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ active }) => useFlowExit({ active, onExit }),
+      { initialProps: { active: true } },
+    );
+
+    vi.advanceTimersByTime(4_000);
+    rerender({ active: false });
+    rerender({ active: true });
+    settle();
+
+    expect(onExit).not.toHaveBeenCalled();
+    expect(result.current.elapsedSeconds()).toBe(4);
+  });
+
+  it("흐름이 새로 시작되면 완료 표식이 풀린다 — 한 번 저장한 뒤 다음 흐름이 영영 안 잡히면 안 된다", () => {
+    const onExit = vi.fn();
+    const { rerender, result } = renderHook(
+      ({ active }) => useFlowExit({ active, onExit }),
+      { initialProps: { active: true } },
+    );
+
+    act(() => result.current.markCompleted());
+    rerender({ active: false });
+    settle();
+    expect(onExit).not.toHaveBeenCalled(); // 완료했으므로 이탈 아님
+
+    rerender({ active: true }); // 다음 기록
+    vi.advanceTimersByTime(6_000);
+    rerender({ active: false });
+    settle();
+
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(onExit).toHaveBeenCalledWith(6);
+  });
 });

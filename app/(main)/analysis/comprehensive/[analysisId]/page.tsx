@@ -75,7 +75,10 @@ export default function ComprehensiveDetailPage() {
   useAnalysisViewed({
     analysisType: "comprehensive",
     analysisId,
-    ready: !!data,
+    // 응답이 왔다고 결과가 있는 건 아니다 — 대기·실패는 아래 AnalysisResultUnavailable
+    // 안내가 뜬다. 그 화면을 본 시간을 결과 조회로 세면 view_duration 이 "결과를 못 본
+    // 시간"과 뒤섞인다.
+    ready: !!data?.hasResultBody,
   });
 
   if (unsupported) {

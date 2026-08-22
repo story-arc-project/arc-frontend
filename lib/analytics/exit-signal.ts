@@ -19,7 +19,9 @@ import { useCallback, useEffect, useRef } from "react";
 
 export interface ExitSignalOptions {
   // 잴 준비가 됐는가. false 인 동안은 시계가 돌지 않는다.
-  // false → true 로 한 번 켜지는 쓰임만 상정한다. 껐다 다시 켜면 시계는 그때부터 다시 잰다.
+  // **끄는 것도 떠나는 것이다** — 흐름 밖으로 나갔는데 컴포넌트가 안 죽는 화면이 있다
+  // (온보딩은 스텝 state 하나라 「← 이전」으로 흐름을 벗어나도 언마운트가 없다).
+  // 다시 켜면 시계는 그때부터 새로 잰다.
   active: boolean;
   // 탭이 숨겨지는 순간도 "떠남"으로 칠 것인가.
   // 체류시간은 true(백그라운드로 넘어간 시간은 본 시간이 아니다),
@@ -28,6 +30,9 @@ export interface ExitSignalOptions {
   // 발화 직전의 마지막 거부권. 완료한 흐름을 이탈로 세지 않기 위한 것.
   shouldFire: () => boolean;
   onFire: (elapsedSeconds: number) => void;
+  // 새 세션이 시작된 순간(시계를 0부터 다시 잡은 순간). 호출부가 세션에 매인 자기 상태를
+  // 같은 시점에 비우기 위한 것 — "언제가 새 세션인가"의 판정을 여기 한 곳에만 둔다.
+  onStart?: () => void;
 }
 
 export interface ExitSignalResult {
@@ -42,14 +47,17 @@ export function useExitSignal({
   onHidden,
   shouldFire,
   onFire,
+  onStart,
 }: ExitSignalOptions): ExitSignalResult {
   // 발화는 언마운트 이후에도 일어난다 — 그때 옛 클로저가 굳지 않도록 커밋마다 최신값으로
   // 갈아둔다(렌더 중 ref 쓰기는 금지 — ExperienceFormV2 의 onProgressChangeRef 와 같은 패턴).
   const shouldFireRef = useRef(shouldFire);
   const onFireRef = useRef(onFire);
+  const onStartRef = useRef(onStart);
   useEffect(() => {
     shouldFireRef.current = shouldFire;
     onFireRef.current = onFire;
+    onStartRef.current = onStart;
   });
 
   const startedAtRef = useRef<number | null>(null);
@@ -57,10 +65,14 @@ export function useExitSignal({
   const deferredRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // 직전 언마운트가 예약해 둔 발화가 있으면 먼저 취소한다 — StrictMode 의 모사 언마운트거나
-    // active 가 잠깐 꺼진 것이지, 사용자가 떠난 게 아니다.
+    // 직전 언마운트가 예약해 둔 발화가 있고 **지금도 흐름 안**이면 취소한다 — StrictMode 의
+    // 모사 언마운트라 사용자가 떠난 게 아니다.
+    //
+    // ⚠️ active 가 꺼진 채로 다시 돌아온 경우는 취소하지 않는다. 예약을 무조건 지우면
+    // "컴포넌트는 살아 있는데 흐름 밖으로 나갔다"(온보딩 「← 이전」)가 영영 관측되지 않는다.
+    // 취소 조건에 active 를 빠뜨리면 이탈 관측이 조용히 사라지는 쪽으로 틀린다.
     const resumed = deferredRef.current !== null;
-    if (resumed) {
+    if (resumed && active) {
       clearTimeout(deferredRef.current as ReturnType<typeof setTimeout>);
       deferredRef.current = null;
     }
@@ -68,6 +80,7 @@ export function useExitSignal({
     if (!resumed) {
       firedRef.current = false;
       startedAtRef.current = Date.now();
+      onStartRef.current?.();
     }
 
     const fire = (): void => {

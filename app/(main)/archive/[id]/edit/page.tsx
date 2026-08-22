@@ -45,10 +45,17 @@ export default function ArchiveEditPage() {
     [experience],
   )
 
+  // 지금 라우트가 가리키는 그 기록을 실제로 들고 있는가. useExperience 는 새 id 의 응답이
+  // 올 때까지 **앞 기록을 그대로 돌려주므로**(초기화하지 않는다), 이 확인 없이는 A→B 전환
+  // 중에 A 의 데이터가 B 의 것으로 계측된다.
+  const loadedId = experienceV2?.id === id ? id : null
+
   // FRT-107: 기록을 불러오는 동안은 폼이 없다 — 그 시간을 이탈로 세면 로딩이 곧 포기가 된다.
   const entryAnalytics = useArchiveEntryAnalytics({
     mode: "edit",
-    active: !!experienceV2,
+    active: !!loadedId,
+    // 기록마다 한 세션. 페이지가 재사용돼도 앞 기록의 시계·완료 자취를 물려받지 않는다.
+    sessionKey: loadedId ?? undefined,
   })
 
   // 임시저장을 다시 열어 이어쓰기 시작한 시점(FRT-107). **draft 일 때만** 센다 —
@@ -56,11 +63,13 @@ export default function ArchiveEditPage() {
   // 평범한 편집에 묻힌다. 문서(id)당 1회: 폼 재시드(key={id})와 같은 축으로 묶는다.
   const resumeCapturedRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!experienceV2 || experienceV2.status !== "draft") return
-    if (resumeCapturedRef.current === id) return
-    resumeCapturedRef.current = id
+    // 아직 이 id 의 기록이 아니면(전환 중 앞 기록) 판단하지 않는다 — 앞 기록이 draft 라는
+    // 이유로 지금 id 를 발화 완료로 찍으면, 정작 이 기록의 이어쓰기가 영영 안 잡힌다.
+    if (!loadedId || !experienceV2 || experienceV2.status !== "draft") return
+    if (resumeCapturedRef.current === loadedId) return
+    resumeCapturedRef.current = loadedId
     capture("archive_entry_resumed", { experience_type: experienceV2.typeId })
-  }, [experienceV2, id])
+  }, [experienceV2, loadedId])
 
   async function handleSave(exp: ExperienceV2) {
     setSaving(true)
