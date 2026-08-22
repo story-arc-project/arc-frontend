@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PenLine, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
+import { isAnalysisInFlight } from "@/lib/analysis/use-analysis-progress-watch";
 import { ApiError } from "@/lib/api/client";
 import {
   CoverLetterMutationUnsupportedError,
@@ -100,10 +101,17 @@ export function RecentCoverLetterList({
     load();
   }, [load, reloadToken]);
 
-  // 생성은 비동기다 — 만들고 목록으로 돌아오면 첫 조회가 대개 'queued' 를 본다. 여기서
+  // 생성은 비동기다 — 만들고 목록으로 돌아오면 첫 조회가 대개 진행 중(pending/queued)을 본다. 여기서
   // 멈추면 그 행은 **서버가 다 만든 뒤에도** '생성 중'에 고착돼 열 수 없다(전체 새로고침만
   // 탈출구다). 그래서 진행 중인 행이 있을 때만 유한 횟수 다시 읽는다.
-  const hasPending = (items ?? []).some((i) => i.status === "processing");
+  // FRT-181 — 진행 중 판정은 `processing` 하나가 아니다. 매퍼가 백엔드의 `pending` 을 그대로
+  // 보존하고(mapCoverLetterStatus) 렌더도 '생성 중'으로 잘 그리는데, 이 게이트만 그 상태를
+  // 모르면 pending 으로 시작한 행은 **폴링이 아예 걸리지 않아** 서버가 다 만든 뒤에도 열리지
+  // 않는다(예산 소진 안내조차 못 뜬다 — 소진될 폴링이 없다). 분석 목록이 이미 쓰는 판정을
+  // 공유해 규칙이 두 벌로 갈라지지 않게 한다.
+  const hasPending = (items ?? []).some(
+    (i) => i.status !== undefined && isAnalysisInFlight(i.status),
+  );
 
   // 사람이 눌러 다시 읽으면 폴링 예산도 처음부터 다시 센다.
   const handleManualReload = useCallback(() => {

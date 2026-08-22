@@ -21,6 +21,7 @@ import {
   deleteResume,
   getResume,
   getResumeList,
+  ResumeNotReadyError,
   updateResume,
 } from "./export-api";
 import { isEmptySection } from "@/types/resume";
@@ -258,7 +259,8 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
       },
     });
 
-    await expect(getResume("res-3")).rejects.toBeInstanceOf(Error);
+    // FRT-326 - 맨 Error 로 던지면 상세 화면이 "아직 만드는 중"과 "못 불러왔다"를 못 가른다.
+    await expect(getResume("res-3")).rejects.toBeInstanceOf(ResumeNotReadyError);
   });
 
   it("result 가 배열 센티넬([])이면 본문으로 오인하지 않고 throw 한다 (codex xhigh)", async () => {
@@ -277,7 +279,83 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
       },
     });
 
-    await expect(getResume("res-4")).rejects.toBeInstanceOf(Error);
+    await expect(getResume("res-4")).rejects.toBeInstanceOf(ResumeNotReadyError);
+  });
+
+  // FRT-326 - 자소서(CoverLetterNotReadyError)와 같은 모양으로 갈라 놓는다. 소거법("ApiError 가
+  // 아니면 준비 중")으로 판정하면 네트워크 장애·파싱 실패까지 "아직 만들고 있어요"가 되므로,
+  // 준비 안 됨은 **전용 타입으로만** 말한다.
+  it("아직 준비 안 된 레쥬메는 ResumeNotReadyError 로 말한다 - 일반 실패와 갈린다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-5", status: "queued", result: null },
+    });
+
+    const err = await getResume("res-5").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ResumeNotReadyError);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).name).toBe("ResumeNotReadyError");
+    // ApiError 가 아니다 - 상세 화면의 404 분기(status 판정)에 걸리면 안 된다.
+    expect(err).not.toBeInstanceOf(ApiError);
+  });
+
+  // 래퍼조차 없는 응답(null·원시값·배열)은 "만드는 중"이 아니다. 생성 중이라는 증거는
+  // **래퍼가 존재한다는 사실** 자체인데 그것이 없으므로, 재시도로 풀릴 수 없는 형식 오류다.
+  // 여기서 "다 만들어지면 다시 시도"를 보여주면 오지 않을 완료를 기다리게 된다(codex P2).
+  it("응답 자체가 본문이 아니면(null·원시값·배열) '만드는 중'으로 말하지 않는다", async () => {
+    for (const data of [null, "oops", 42, []]) {
+      mockGet.mockResolvedValue({ status: "success", message: "ok", data });
+
+      const err = await getResume("res-6").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(ResumeNotReadyError);
+    }
+  });
+
+  // 본문이 없다고 다 "만드는 중"은 아니다. 래퍼의 status 가 **끝났다**고 말하는데 본문이
+  // 없으면 그건 실패다 — "아직 만들고 있어요 / 다 만들어지면 다시 시도" 로 안내하면
+  // 영영 오지 않을 완료를 기다리며 재시도만 누르게 된다(codex P2).
+  it("status:failed 래퍼는 '만드는 중'이 아니다 - ResumeNotReadyError 로 말하지 않는다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-7", status: "failed", result: null },
+    });
+
+    const err = await getResume("res-7").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ResumeNotReadyError);
+  });
+
+  it("status:success 인데 본문이 없으면 실패다 - '만드는 중'으로 말하지 않는다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-8", status: "success", result: null },
+    });
+
+    const err = await getResume("res-8").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ResumeNotReadyError);
+  });
+
+  // 반대쪽 회귀: status 를 안 주거나 모르는 값이면 **끝났다는 증거가 없다.** 여기서 실패로
+  // 단정하면 정상 생성 중인 레쥬메가 다시 "불러오지 못했어요"가 된다(FRT-326 원래 증상).
+  it("status 가 없거나 미지 값이면 여전히 ResumeNotReadyError 다", async () => {
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-9", result: null },
+    });
+    await expect(getResume("res-9")).rejects.toBeInstanceOf(ResumeNotReadyError);
+
+    mockGet.mockResolvedValue({
+      status: "success",
+      message: "ok",
+      data: { id: "res-10", status: "weird", result: null },
+    });
+    await expect(getResume("res-10")).rejects.toBeInstanceOf(ResumeNotReadyError);
   });
 });
 

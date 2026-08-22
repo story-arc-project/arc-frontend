@@ -356,3 +356,67 @@ describe("RecentCoverLetterList — 조회 실패", () => {
     expect(screen.getByText("만드는 중 자기소개서")).toBeTruthy();
   });
 });
+
+
+/**
+ * FRT-181 - 폴링 게이트가 "진행 중"을 `processing` 하나로만 판정했다.
+ *
+ * 매퍼는 백엔드의 `pending` 을 **그대로 보존**하고(`mapCoverLetterStatus`), 렌더도 `pending` 을
+ * '생성 중'·비활성으로 잘 그린다. 게이트만 그 상태를 몰라서, `pending` 으로 시작한 행은
+ * 폴링이 **아예 시작되지 않는다** - 서버가 다 만든 뒤에도 열리지 않고, 예산 소진 안내(수동
+ * 새로고침)조차 뜨지 않는다(폴링이 없으니 예산도 소진되지 않는다). 전체 새로고침만 탈출구다.
+ *
+ * 판정은 분석 목록이 이미 쓰는 `isAnalysisInFlight`(pending || processing)와 같은 것을 쓴다.
+ */
+describe("RecentCoverLetterList - FRT-181 pending 행도 진행 중이다", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("pending 으로 시작한 행도 폴링을 걸어 완료되면 열린다", async () => {
+    vi.useFakeTimers();
+
+    mockGetCoverLetterList
+      .mockReset()
+      // 첫 조회가 pending 을 본다 - 생성 직후 흔한 응답이다.
+      .mockResolvedValueOnce([
+        item({ id: "c2", title: "만드는 중 자기소개서", status: "pending" }),
+      ])
+      .mockResolvedValue([
+        item({ id: "c2", title: "만드는 중 자기소개서", status: "completed" }),
+      ]);
+
+    render(<RecentCoverLetterList onCreateClick={() => {}} />);
+    await act(async () => {});
+    expect(screen.getByText("생성 중")).toBeTruthy();
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    // 폴링이 돌았다면 두 번째 GET 이 있었고, 그 응답으로 행이 열린다.
+    expect(mockGetCoverLetterList).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("생성 중")).toBeNull();
+    expect(screen.getByRole("link", { name: /만드는 중 자기소개서/ })).toBeTruthy();
+  });
+
+  it("완료·실패만 있으면 폴링을 걸지 않는다 - 끝난 목록을 계속 두드리지 않는다", async () => {
+    vi.useFakeTimers();
+
+    mockGetCoverLetterList
+      .mockReset()
+      .mockResolvedValue([
+        item({ id: "c1", status: "completed" }),
+        item({ id: "c3", title: "실패한 자기소개서", status: "failed" }),
+      ]);
+
+    render(<RecentCoverLetterList onCreateClick={() => {}} />);
+    await act(async () => {});
+
+    await act(async () => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    expect(mockGetCoverLetterList).toHaveBeenCalledTimes(1);
+  });
+});
