@@ -122,26 +122,45 @@ function SignupForm() {
   const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
   const isOnboarding = onboardingIndex >= 0;
 
+  // 온보딩 스텝을 **그리고 있다**고 온보딩 중인 사람인 건 아니다. 이미 마친 사용자가 stale
+  // 링크·뒤로가기로 이 URL 에 닿으면 리다이렉트가 화면을 걷어낼 때까지 스텝이 잠깐 렌더되는데,
+  // 그 찰나를 세면 스텝 조회가 부풀고 곧이어 이탈까지 한 건 남는다 — 아무도 헤맨 적 없는 자리에.
+  //
+  // 판정이 끝나기 전(isAuthLoading)에도 시작하지 않는다. 미리 시작해 두면 판정이 "자격 없음"으로
+  // 끝나는 순간 그 비활성화가 **그대로 이탈로 발화한다**(떠난 게 아니라 애초에 못 들어온 건데도).
+  // 계측 전용 축이라 진행 점(isOnboarding)과 분리한다 — 화면은 지금대로 둔다.
+  const isOnboardingActive = isOnboarding && !isAuthLoading && !shouldRedirect;
+
   // FRT-107: 온보딩은 라우트가 하나(step state)라 스텝 진입이 **어떤 방법으로도** 관측되지
   // 않는다 — capture_pageview 를 켜더라도 URL 이 안 바뀐다. 어느 스텝에서 오래 머물고
   // 어디서 그만두는지는 이 두 이벤트에만 남는다.
   //
   // 같은 스텝이 연속으로 다시 발화하지 않게만 막는다(StrictMode 이중 마운트). 뒤로 갔다
   // 다시 온 재진입은 진짜 재조회라 그대로 센다 — 그게 "이 스텝에서 헤맸다"는 신호다.
-  const lastViewedStepRef = useRef<Step | null>(null);
+  //
+  // 이 ref 는 중복 방지 겸 **마지막으로 머물렀던 온보딩 스텝**이다(아래 onExit). 둘은 같은
+  // 값이라 따로 두면 갈릴 뿐이다 — 온보딩 밖 값으로는 절대 덮이지 않는 게 핵심이다.
+  const lastOnboardingStepRef = useRef<Step | null>(null);
   useEffect(() => {
-    if (!isOnboarding) return;
-    if (lastViewedStepRef.current === step) return;
-    lastViewedStepRef.current = step;
+    if (!isOnboardingActive) return;
+    if (lastOnboardingStepRef.current === step) return;
+    lastOnboardingStepRef.current = step;
     capture("onboarding_step_viewed", { step, step_index: onboardingIndex });
-  }, [step, isOnboarding, onboardingIndex]);
+  }, [step, isOnboardingActive, onboardingIndex]);
 
   const { markCompleted: markOnboardingCompleted } = useFlowExit({
-    active: isOnboarding,
+    active: isOnboardingActive,
     onExit: (elapsedSeconds) => {
       capture(
         "onboarding_abandoned",
-        { last_step: step, elapsed_seconds: elapsedSeconds },
+        {
+          // ⚠️ `step` 이 아니다. 흐름을 끄면서 떠나는 경우(「← 이전」으로 온보딩 밖 스텝으로
+          // 나가기) 발화는 한 틱 미뤄지는데, 그 사이 렌더가 이 콜백을 **이탈 후 step** 을 쥔
+          // 것으로 갈아끼운다. 그대로 쓰면 last_step 이 온보딩에 있지도 않은 "verify" 가 되어
+          // 정작 사용자가 그만둔 자리를 가린다. 마지막으로 **머물렀던** 스텝을 새겨 두고 쓴다.
+          last_step: lastOnboardingStepRef.current ?? step,
+          elapsed_seconds: elapsedSeconds,
+        },
         // 온보딩 완료는 하드 내비게이션(window.location.assign)이라, 배치 큐에 담으면
         // 이탈이든 완료든 페이지와 함께 사라진다.
         { atUnload: true },

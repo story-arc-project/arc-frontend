@@ -306,10 +306,18 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
 
   const handleRestoreDraft = useCallback(() => {
     if (!pendingDraft) return;
+    // 복원은 사용자의 편집이 아니라 **지난 세션 편집의 복구**다. 여기서 표식을 미리 세우지
+    // 않으면 setResult 가 initial(서버본) 과 갈라져 dirty 를 세우고, 위 effect 가 그것을
+    // "방금 고쳐 썼다"로 읽어 아무 타건 없이 cover_letter_edited 를 쏜다.
+    //
+    // 표식을 **소진**하는 것이지 잠깐 미루는 게 아니다 — 복원 직후 이어지는 진짜 편집도 다시
+    // 첫 편집으로 잡지 않는다. 배너가 떴다는 건 이 문서에 손댄 사실이 지난 세션에 이미
+    // 세어졌다는 뜻이라, 또 쏘면 한 문서가 두 번 잡힌다. 레쥬메가 같은 자리에서 같은 판단을 한다.
+    editedFiredKeyRef.current = requestKey;
     setResult(pendingDraft.data);
     setPendingDraft(null);
     clearDraft(id);
-  }, [pendingDraft, id]);
+  }, [pendingDraft, id, requestKey]);
 
   const handleDiscardDraft = useCallback(() => {
     clearDraft(id);
