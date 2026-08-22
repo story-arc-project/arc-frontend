@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { ResumeListItem } from "@/types/resume";
@@ -264,5 +272,64 @@ describe("RecentResumeList — 만든 시각", () => {
     // `hidden sm:inline` 이면 sm 미만에서 display:none 이라 값이 통째로 사라진다.
     expect(relative.className).not.toMatch(/\bhidden\b/);
     expect(relative.className).not.toMatch(/\bsm:inline\b/);
+  });
+});
+
+/**
+ * FRT-319 — 조회 한 번이 실패했다고 보이던 목록을 지우지 않는다.
+ *
+ * 자기소개서 목록과 같은 결함이다. 여긴 폴링이 없어 "관측이 멈춘다"는 없지만, 실패를
+ * `setItems([])` 로 기록하면 잘 떠 있던 레쥬메가 통째로 사라지고 에러 박스로 바뀌는 것은
+ * 똑같다 — 게다가 되돌려 줄 다음 조회조차 없어 새로고침 전까지 빈 화면이 남는다.
+ */
+describe("RecentResumeList — 조회 실패", () => {
+  it("재조회가 실패해도 마지막으로 성공한 목록이 화면에 남는다", async () => {
+    mockGetResumeList
+      .mockReset()
+      .mockResolvedValueOnce([item()])
+      .mockRejectedValueOnce(new Error("offline"));
+
+    const { rerender } = render(
+      <RecentResumeList onCreateClick={() => {}} reloadToken={0} />,
+    );
+    await screen.findByText("지원용 레쥬메");
+
+    rerender(<RecentResumeList onCreateClick={() => {}} reloadToken={1} />);
+    await screen.findByRole("status");
+
+    expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
+    expect(screen.queryByText("목록을 불러오지 못했어요.")).toBeNull();
+  });
+
+  it("보여줄 이전 목록이 없는 첫 조회 실패만 전체 에러 화면을 쓴다", async () => {
+    mockGetResumeList.mockReset().mockRejectedValue(new Error("offline"));
+
+    render(<RecentResumeList onCreateClick={() => {}} />);
+
+    expect(await screen.findByText("목록을 불러오지 못했어요.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+  });
+
+  it("배너의 '다시 시도'를 누르면 목록을 다시 읽고 배너가 사라진다", async () => {
+    mockGetResumeList
+      .mockReset()
+      .mockResolvedValueOnce([item()])
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce([
+        item(),
+        item({ version_id: "v9", title: "새 레쥬메" }),
+      ]);
+
+    const { rerender } = render(
+      <RecentResumeList onCreateClick={() => {}} reloadToken={0} />,
+    );
+    await screen.findByText("지원용 레쥬메");
+    rerender(<RecentResumeList onCreateClick={() => {}} reloadToken={1} />);
+    const banner = await screen.findByRole("status");
+
+    fireEvent.click(within(banner).getByRole("button", { name: "다시 시도" }));
+
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    expect(screen.getByText("새 레쥬메")).toBeTruthy();
   });
 });

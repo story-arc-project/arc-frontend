@@ -5,6 +5,7 @@ import { CornerUpLeft, ExternalLink, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { RequiredDot } from "@/components/ui/required-dot"
 import { useProjectLink } from "@/contexts/ProjectLinkContext"
+import { useAutoResizeTextarea } from "@/hooks/useAutoResizeTextarea"
 import type {
   Block,
   RepeatableCellBlockValue,
@@ -958,6 +959,39 @@ function LegacyCellText({ text, note }: { text: string; note?: string }) {
   )
 }
 
+/**
+ * 여러 줄 텍스트 셀. 길게 쓰면 칸 안에서 스크롤하는 대신 칸이 내용만큼 자란다(노션 UI 피드백).
+ *
+ * `CellInput` 의 switch 안에서 훅을 부르면 조건부 호출이라 rules-of-hooks 에 걸리고,
+ * `CellInput` 최상단으로 올리면 date·link·tags 등 이 기능이 필요 없는 모든 셀이 매 렌더
+ * ref 와 layout effect 를 떠안는다. 이 셀 타입만 감싸는 컴포넌트가 양쪽을 다 피한다.
+ */
+function AutoGrowCellTextarea({
+  value,
+  placeholder,
+  ariaLabel,
+  onChange,
+}: {
+  value: string
+  placeholder?: string
+  ariaLabel?: string
+  onChange: (value: CellValue) => void
+}) {
+  const ref = useAutoResizeTextarea(value)
+  return (
+    <textarea
+      ref={ref}
+      aria-label={ariaLabel}
+      // `min-h-[64px]` 는 훅의 `height="auto"` 리셋과 무관하게 살아 있어 빈 칸의 최소 높이를 지킨다.
+      // `overflow-hidden` 이 없으면 훅이 아직 재기 전인 찰나(하이드레이션 직후)에 스크롤바가 번쩍인다.
+      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none overflow-hidden min-h-[64px]"
+      placeholder={placeholder}
+      value={value}
+      onChange={e => onChange(e.target.value)}
+    />
+  )
+}
+
 function CellInput({
   column,
   value,
@@ -1028,12 +1062,11 @@ function CellInput({
 
     case "textarea":
       return (
-        <textarea
-          aria-label={ariaLabel}
-          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none min-h-[64px]"
-          placeholder={column.placeholder}
+        <AutoGrowCellTextarea
           value={strVal}
-          onChange={e => onChange(e.target.value)}
+          placeholder={column.placeholder}
+          ariaLabel={ariaLabel}
+          onChange={onChange}
         />
       )
 

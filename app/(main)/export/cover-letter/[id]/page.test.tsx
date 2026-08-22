@@ -753,3 +753,85 @@ describe("FRT-107 — 복원은 새 편집이 아니다", () => {
     );
   });
 });
+
+/**
+ * FRT-193 — "비어 있다"를 **편집 중인 본문**으로 판정하면, 마지막 글자를 지우는 순간
+ * 편집기가 통째로 언마운트돼 그 화면에서 다시 쓸 방법이 사라진다(문항이 1개면 즉시).
+ *
+ * 그래서 두 가지를 함께 못 박는다. ① 판정 기준은 **서버가 만들어 준 원본**이다 —
+ * 사용자가 지운 것은 "생성 결과가 부실하다"가 아니다. ② 안내는 편집기를 **치우는 대신
+ * 그 위에 선다** — 배타 분기로 두는 한, 기준만 고쳐서는 빠져나올 수 없는 화면이 또 생긴다.
+ */
+describe("FRT-193 — 본문을 전부 지워도 편집을 이어갈 수 있다", () => {
+  it("문항 1개짜리에서 본문을 전부 지워도 편집기가 남아 계속 입력된다", async () => {
+    const route = routeById();
+    await renderId("A");
+    route.resolve("A", fixture("원래 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.clear(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+    );
+
+    // 예전에는 여기서 편집기가 사라져 null 이었다 — 페이지를 나갔다 와야 복구됐다.
+    expect(shownBody()).toBe("");
+
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "다시 쓴다",
+    );
+    expect(shownBody()).toBe("다시 쓴다");
+  });
+
+  it("사용자가 지운 것뿐이면 생성 결과 안내를 띄우지 않는다", async () => {
+    const route = routeById();
+    await renderId("A");
+    route.resolve("A", fixture("원래 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.clear(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+    );
+
+    expect(screen.queryByText("본문이 비어 있어요.")).toBeNull();
+  });
+
+  it("생성 결과가 비어 있으면 안내와 편집기를 함께 보여준다", async () => {
+    const route = routeById();
+    await renderId("A");
+    route.resolve("A", fixture(""));
+    await flush();
+
+    expect(screen.queryByText("본문이 비어 있어요.")).not.toBeNull();
+    // 안내만 띄우고 끝내면 사용자가 그 자리에서 직접 쓸 길이 없다.
+    expect(shownBody()).toBe("");
+  });
+
+  it("비어 있던 자소서에 직접 써 넣으면 안내가 물러난다", async () => {
+    const route = routeById();
+    await renderId("A");
+    route.resolve("A", fixture(""));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "직접 쓴 본문",
+    );
+
+    expect(shownBody()).toBe("직접 쓴 본문");
+    expect(screen.queryByText("본문이 비어 있어요.")).toBeNull();
+  });
+
+  it("문항이 하나도 없으면 편집기 없이 안내만 보여준다", async () => {
+    const route = routeById();
+    await renderId("A");
+    route.resolve("A", { ...fixture(""), answers: [] });
+    await flush();
+
+    expect(screen.queryByText("본문이 비어 있어요.")).not.toBeNull();
+    expect(shownBody()).toBeNull();
+  });
+});
