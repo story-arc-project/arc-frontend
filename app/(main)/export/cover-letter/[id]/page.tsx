@@ -18,6 +18,7 @@ import {
 } from "@/lib/api/cover-letter-api";
 import {
   clearDraft,
+  isStoredDraft,
   isDraftNewer,
   readDraft,
   writeDraft,
@@ -274,6 +275,10 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
         // 없는 낡은 스냅샷을 되돌리면서 방금 쓴 최신 저장까지 지운다 — 배너 하나가 편집을
         // 두 번 잃게 만든다(FRT-148).
         setPendingDraft(null);
+        // 이 draft 의 주인은 이제 저장 경로다. 탭이 숨겨졌을 때 담아 둔 표시가 남아 있으면,
+        // 아래 미지원 갈래가 기준선을 바꿔 깨끗해지는 순간 그 표시가 방금 쓴 **유일한**
+        // 보관본을 치운다.
+        hiddenSnapshotRef.current = null;
       }
 
       if (err instanceof CoverLetterMutationUnsupportedError) {
@@ -422,10 +427,15 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // 는 아직 이전 문서 것이라(FRT-238), 여기서 담으면 이전 문서의 편집이 다음 문서의 키로
   // 들어간다. 이전 문서의 편집은 문서가 바뀌는 순간 위 언마운트 cleanup 이 이전 키로 이미
   // 남겼다(handleSave 가 loading 을 가드하는 것과 같은 이유).
+  //
+  // 치우는 것은 **내가 담은 그 스냅샷일 때만**이다. 같은 문서를 연 다른 탭이 그 사이 같은
+  // 키에 더 새 편집을 남겼으면, 그것은 이 탭이 치울 것이 아니다 — "담았다"는 기억은 저장소에
+  // 있는 것이 아직 내 것이라는 증거가 못 된다.
   useEffect(() => {
     if (loading || dirty || hiddenSnapshotRef.current === null) return;
+    const snapshot = hiddenSnapshotRef.current;
     hiddenSnapshotRef.current = null;
-    clearDraft(id);
+    if (isStoredDraft(id, snapshot)) clearDraft(id);
   }, [dirty, loading, id]);
 
   usePersistOnUnload({
@@ -440,8 +450,13 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
         return;
       }
       const tier = writeDraft(id, snapshot);
-      if (exitDraftFiredRef.current || savingRef.current) return;
       // 한 이탈은 한 번만 센다 — '뒤로'가 이미 셌거나, 이 뒤에 언마운트가 이어져도.
+      //
+      // 저장이 도는 중이어도 여기서는 **쏜다**. 언마운트 cleanup 은 응답 핸들러가 살아 있어
+      // 그쪽에 결말을 맡기지만(savingRef 가드), 진짜 언로드는 문서를 먼저 거둬 떠 있던 PATCH
+      // 의 핸들러가 돌지 않는다 — 여기서 건너뛰면 그 시도는 어느 결말도 못 남긴다. 언로드를
+      // 견디는(sendBeacon) 결말은 이 한 번뿐이다.
+      if (exitDraftFiredRef.current) return;
       exitDraftFiredRef.current = true;
       captureEditSaved("exit_draft", tier !== null, snapshot, tier, true);
     },

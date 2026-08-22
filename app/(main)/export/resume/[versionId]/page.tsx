@@ -38,6 +38,7 @@ import { changedResumeSections } from "./_components/resume-diff";
 import {
   clearDraft,
   isDraftNewer,
+  isStoredDraft,
   readDraft,
   writeDraft,
   type ResumeDraft,
@@ -151,9 +152,6 @@ export default function ResumeDetailPage({ params }: PageProps) {
   }, [versionId, requestKey]);
 
   const dirtyRef = useRef(false);
-  // 저장 요청이 떠 있는 동안 탭을 닫으면 exit_draft 를 쏘지 않는다 — 늦게 온 응답이
-  // server/failed 를 남겨 한 시도가 두 결말로 세진다(자소서 상세와 같은 규칙).
-  const savingRef = useRef(false);
   const resumeRef = useRef<ResumeVersion | null>(null);
   const initialRef = useRef<ResumeVersion | null>(null);
   // 이 인스턴스가 **지금** 답하고 있는 질문. 비동기 저장의 클로저는 시작 당시의 것을 쥐고
@@ -182,7 +180,6 @@ export default function ResumeDetailPage({ params }: PageProps) {
   // Sync refs during render so the unmount handler sees the latest values
   // even when client navigation fires before passive effects flush.
   dirtyRef.current = dirty;
-  savingRef.current = saving;
   resumeRef.current = resume;
   initialRef.current = initial;
   // requestKeyRef 는 여기서 갱신하지 않는다 — 아래 effect(커밋 단계)에서만 움직인다.
@@ -599,10 +596,15 @@ export default function ResumeDetailPage({ params }: PageProps) {
   // resume/dirty 는 아직 이전 버전 것이라(FRT-238), 여기서 담으면 이전 버전의 편집이 다음
   // 버전의 키로 들어간다. 이전 버전의 편집은 버전이 바뀌는 순간 위 언마운트 cleanup 이 이전
   // 키로 이미 남겼다(handleSave 가 loading 을 가드하는 것과 같은 이유).
+  //
+  // 치우는 것은 **내가 담은 그 스냅샷일 때만**이다. 같은 레쥬메를 연 다른 탭이 그 사이 같은
+  // 키에 더 새 편집을 남겼으면, 그것은 이 탭이 치울 것이 아니다 — "담았다"는 기억은 저장소에
+  // 있는 것이 아직 내 것이라는 증거가 못 된다.
   useEffect(() => {
     if (loading || dirty || hiddenSnapshotRef.current === null) return;
+    const snapshot = hiddenSnapshotRef.current;
     hiddenSnapshotRef.current = null;
-    clearDraft(versionId);
+    if (isStoredDraft(versionId, snapshot)) clearDraft(versionId);
   }, [dirty, loading, versionId]);
 
   usePersistOnUnload({
@@ -618,8 +620,12 @@ export default function ResumeDetailPage({ params }: PageProps) {
       }
       const tier = writeDraft(versionId, snapshot);
       // 한 이탈은 한 번만 센다 — '나가기'가 이미 셌거나, 이 뒤에 언마운트가 이어져도.
-      // 저장이 도는 중이면 이 시도의 결말은 응답 쪽이 남긴다.
-      if (exitDraftFiredRef.current || savingRef.current) return;
+      //
+      // 저장이 도는 중이어도 여기서는 **쏜다**. 언마운트 cleanup 은 응답 핸들러가 살아 있어
+      // 그쪽에 결말을 맡기지만(savingRef 가드), 진짜 언로드는 문서를 먼저 거둬 떠 있던 PATCH
+      // 의 핸들러가 돌지 않는다 — 여기서 건너뛰면 그 시도는 어느 결말도 못 남긴다. 언로드를
+      // 견디는(sendBeacon) 결말은 이 한 번뿐이다.
+      if (exitDraftFiredRef.current) return;
       exitDraftFiredRef.current = true;
       captureEditSaved(
         "exit_draft",

@@ -946,18 +946,13 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     expect(window.localStorage.getItem("arc:resume-draft:v1")).toBe("other-tab");
   });
 
-  // 한 시도에 결말은 하나다 — 저장 요청이 떠 있는 동안 탭을 닫으면 편집은 남기되
-  // exit_draft 는 쏘지 않는다. 쏘면 늦게 온 응답이 server/failed 를 또 남겨 한 시도가
-  // 두 결말로 세진다(자소서 상세와 같은 규칙).
-  it("저장 요청이 떠 있는 동안 pagehide 는 draft 만 남기고 exit_draft 는 쏘지 않는다", async () => {
+  // 언마운트(앱 내 이동)와 달리 진짜 언로드에서는 떠 있는 PATCH 의 응답 핸들러가 돌지
+  // 않는다 — 문서가 먼저 사라진다. 여기서 "저장 쪽이 결말을 낸다"며 건너뛰면 그 시도는
+  // 어느 결말도 못 남겨 저장 퍼널이 기운다. 언로드를 견디는 결말은 이 한 번뿐이다
+  // (자소서 상세와 같은 규칙).
+  it("저장 요청이 떠 있는 동안 탭을 닫아도 exit_draft 를 언로드 전송으로 남긴다", async () => {
     const user = userEvent.setup();
-    let resolveSave: ((value: unknown) => void) | undefined;
-    mockUpdateResume.mockImplementation(
-      (_id, data) =>
-        new Promise((resolve) => {
-          resolveSave = () => resolve(data);
-        }),
-    );
+    mockUpdateResume.mockImplementation(() => new Promise(() => {}));
     await renderLoaded();
 
     await user.type(screen.getByLabelText("이름"), "!");
@@ -966,16 +961,33 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     firePageHide();
 
     expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
-    expect(captured("resume_edit_saved")).toEqual([]);
+    expect(captured("resume_edit_saved")).toEqual([
+      [
+        "resume_edit_saved",
+        expect.objectContaining({ outcome: "exit_draft", persisted: true }),
+        { atUnload: true },
+      ],
+    ]);
+  });
 
-    await act(async () => {
-      resolveSave?.(undefined);
+  // 담아 둔 뒤 다른 탭이 같은 키에 더 새 편집을 남겼으면, 이 탭이 되돌려 깨끗해져도 그것은
+  // 이 탭이 치울 것이 아니다 — 저장소에 있는 것이 내가 담은 그 스냅샷일 때만 지운다.
+  it("되돌려 깨끗해져도 다른 탭이 남긴 더 새 draft 는 지우지 않는다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    await user.type(screen.getByLabelText("이름"), "!");
+    fireHidden();
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+
+    const otherTab = JSON.stringify({
+      data: named("다른 탭"),
+      updated_at: "2099-01-01T00:00:00.000Z",
     });
-    await waitFor(() =>
-      expect(captured("resume_edit_saved").map(([, p]) => p)).toEqual([
-        expect.objectContaining({ outcome: "server" }),
-      ]),
-    );
+    window.localStorage.setItem("arc:resume-draft:v1", otherTab);
+    setVisibility("visible");
+    await user.type(screen.getByLabelText("이름"), "{Backspace}");
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).toBe(otherTab);
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { readDraft, writeDraft } from "./resume-draft";
+import { isStoredDraft, readDraft, writeDraft } from "./resume-draft";
 import type { ResumeVersion } from "@/types/resume";
 
 function resume(링크: unknown): ResumeVersion {
@@ -96,5 +96,28 @@ describe("readDraft — 링크 정규화 (codex P2)", () => {
 
   it("저장된 값이 없으면 null 을 그대로 돌려준다", () => {
     expect(readDraft("missing")).toBeNull();
+  });
+});
+
+/**
+ * `true` 는 호출부에서 `clearDraft` 로 이어진다 — 저장소의 draft 가 "내가 담은 그 본문"일 때만
+ * 참이어야 다른 탭이 같은 키에 남긴 더 새 편집을 치우지 않는다.
+ */
+describe("isStoredDraft — 저장소의 draft 가 이 본문인가", () => {
+  it("같은 본문을 담았으면 참이다(정규화를 거치지 않고 원문 그대로 비교한다)", () => {
+    const data = resume([]);
+    writeDraft("v1", data);
+    expect(isStoredDraft("v1", data)).toBe(true);
+  });
+
+  it("다른 본문이 담겨 있거나, 아무것도 없거나, 깨진 값이면 거짓이다", () => {
+    const mine = resume([]);
+    expect(isStoredDraft("v1", mine)).toBe(false);
+
+    writeDraft("v1", { ...mine, 자기소개_요약: "다른 탭" });
+    expect(isStoredDraft("v1", mine)).toBe(false);
+
+    window.localStorage.setItem("arc:resume-draft:v1", "{broken");
+    expect(isStoredDraft("v1", mine)).toBe(false);
   });
 });

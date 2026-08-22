@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+import { CoverLetterMutationUnsupportedError } from "@/lib/api/cover-letter-api";
 import type { CoverLetterResult } from "@/types/cover-letter";
 
 /**
@@ -944,8 +945,10 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     expect(editSavedCalls()).toHaveLength(1);
   });
 
-  // 저장이 도는 중이면 그 요청이 곧 server/failed 로 결말을 낸다 — 한 시도에 결말 하나.
-  it("저장이 도는 중에 탭을 닫으면 편집은 남기되 exit_draft 는 쏘지 않는다", async () => {
+  // 언마운트(앱 내 이동)와 달리 진짜 언로드에서는 떠 있는 PATCH 의 응답 핸들러가 돌지
+  // 않는다 — 문서가 먼저 사라진다. 여기서 "저장 쪽이 결말을 낸다"며 건너뛰면 그 시도는
+  // 어느 결말도 못 남겨 저장 퍼널이 기운다. 언로드를 견디는 결말은 이 한 번뿐이다.
+  it("저장이 도는 중에 탭을 닫아도 exit_draft 를 언로드 전송으로 남긴다", async () => {
     const save = deferred<CoverLetterResult>();
     mockUpdateCoverLetter.mockImplementation(() => save.promise);
     await renderEdited();
@@ -955,7 +958,13 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     firePageHide();
 
     expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
-    expect(editSavedCalls()).toEqual([]);
+    expect(editSavedCalls()).toEqual([
+      [
+        "cover_letter_edit_saved",
+        expect.objectContaining({ outcome: "exit_draft", persisted: true }),
+        { atUnload: true },
+      ],
+    ]);
   });
 
   // 반대쪽 못 — 저장에 성공해 dirty 가 풀리면 pagehide 는 손대지 않는다. 이게 없으면
@@ -1026,6 +1035,48 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     fireHidden();
 
     expect(window.localStorage.getItem(DRAFT_KEY)).toBe("other-tab");
+  });
+
+  // 담아 둔 뒤 다른 탭이 같은 키에 더 새 편집을 남겼으면, 이 탭이 되돌려 깨끗해져도 그것은
+  // 이 탭이 치울 것이 아니다 — 저장소에 있는 것이 내가 담은 그 스냅샷일 때만 지운다.
+  it("되돌려 깨끗해져도 다른 탭이 남긴 더 새 draft 는 지우지 않는다", async () => {
+    await renderEdited();
+    fireHidden();
+    expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+
+    const otherTab = JSON.stringify({
+      data: fixture("다른 탭 본문"),
+      updated_at: "2099-01-01T00:00:00.000Z",
+    });
+    window.localStorage.setItem(DRAFT_KEY, otherTab);
+    setVisibility("visible");
+    await userEvent.setup().type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "{Backspace}",
+    );
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).toBe(otherTab);
+  });
+
+  // 서버에 저장 경로가 없으면(미지원) 편집을 로컬에만 남기고 그것을 새 기준선으로 삼는다.
+  // 그 직전에 탭이 숨겨졌었다면 hidden 표시가 남아 있는데, 기준선이 바뀌어 깨끗해지는
+  // 순간 그 표시가 방금 쓴 **유일한** 보관본을 치운다 — 저장 경로가 draft 를 갈아끼웠으면
+  // hidden 표시는 더 이상 그 draft 의 주인이 아니다.
+  it("숨겨졌던 탭이 미지원 저장으로 로컬에 남긴 편집은 깨끗해져도 지우지 않는다", async () => {
+    mockUpdateCoverLetter.mockImplementation(async () => {
+      throw new CoverLetterMutationUnsupportedError(501);
+    });
+    await renderEdited();
+    fireHidden();
+    setVisibility("visible");
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "저장" }));
+    await flush();
+
+    expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+    // 기준선이 바뀌어 깨끗해졌고, 그 뒤 탭을 닫아도 보관본은 그대로다.
+    firePageHide();
+    expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
   });
 });
 
