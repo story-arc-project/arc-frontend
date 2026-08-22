@@ -138,13 +138,23 @@ function SignupForm() {
   // 같은 스텝이 연속으로 다시 발화하지 않게만 막는다(StrictMode 이중 마운트). 뒤로 갔다
   // 다시 온 재진입은 진짜 재조회라 그대로 센다 — 그게 "이 스텝에서 헤맸다"는 신호다.
   //
-  // 이 ref 는 중복 방지 겸 **마지막으로 머물렀던 온보딩 스텝**이다(아래 onExit). 둘은 같은
-  // 값이라 따로 두면 갈릴 뿐이다 — 온보딩 밖 값으로는 절대 덮이지 않는 게 핵심이다.
+  // ⚠️ 아래 두 ref 는 값이 같아 보여도 **수명이 다르다.** 하나로 합치면, 흐름을 나갔다
+  // 되돌아온 새 세션의 첫 스텝이 직전 세션의 값과 같다는 이유로 조회가 통째로 삼켜진다 —
+  // 이탈만 남고 그에 대응하는 스텝 조회가 없는 데이터가 된다.
+  //   · lastViewedStepRef      — 중복 방지. 흐름이 꺼지면 **비운다**(다음 진입은 새 세션이다).
+  //   · lastOnboardingStepRef  — last_step 스냅샷. 이탈 발화가 읽어야 하므로 **절대 안 비운다**.
+  const lastViewedStepRef = useRef<Step | null>(null);
   const lastOnboardingStepRef = useRef<Step | null>(null);
   useEffect(() => {
-    if (!isOnboardingActive) return;
-    if (lastOnboardingStepRef.current === step) return;
+    if (!isOnboardingActive) {
+      lastViewedStepRef.current = null;
+      return;
+    }
+    // 스냅샷은 조회 발화 여부와 무관하게 갱신한다 — 중복이라 조회를 건너뛴 스텝도
+    // 사용자가 머문 자리인 건 같다.
     lastOnboardingStepRef.current = step;
+    if (lastViewedStepRef.current === step) return;
+    lastViewedStepRef.current = step;
     capture("onboarding_step_viewed", { step, step_index: onboardingIndex });
   }, [step, isOnboardingActive, onboardingIndex]);
 

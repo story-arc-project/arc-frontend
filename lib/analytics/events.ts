@@ -206,10 +206,14 @@ export interface AnalyticsEventProps {
     analysis_id: string;
     view_duration_seconds: number;
   };
-  // 서버가 분석 요청을 **받은** 시점(생성 응답 성공 직후). 이미 있는
-  // analysis_target_selected(누름)와의 건수 차이가 "눌렀는데 요청이 안 나간" 기술적 실패다.
-  // 그 실패는 스스로 아무 흔적도 남기지 않는다.
-  analysis_requested: { analysis_type: AnalysisKind };
+  // 분석 생성 요청이 **왕복을 마친** 시점. 이미 있는 analysis_target_selected(누름)와 짝을
+  // 이룬다.
+  //
+  // accepted 로 두 실패를 가른다. 이게 없으면 "성공했을 때만 발화"가 되어 서버가 거절한
+  // 요청과 요청이 아예 안 나간 경우가 한 덩어리가 되고, 정작 재려던 기술적 실패를 못 짚는다.
+  //   · 누름 − requested(전체)   = 요청이 브라우저를 못 떠났다(네트워크·예외).
+  //   · requested{accepted:false} = 나갔는데 서버가 거절했다.
+  analysis_requested: { analysis_type: AnalysisKind; accepted: boolean };
   // 엑스포트 실행 버튼을 누른 시점(요청 함수를 부르기 **직전**). export_completed(실체는
   // 접수)와의 차이가 같은 질문을 엑스포트에서 답한다.
   export_execute_button_clicked: { export_type: ExportType };

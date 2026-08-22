@@ -151,6 +151,26 @@ describe("온보딩 스텝 계측 — 누구를 세는가(FRT-107)", () => {
     });
   });
 
+  // 중복 방지 값과 last_step 스냅샷을 한 ref 로 합치면 여기서 걸린다. 되돌아온 새 세션의
+  // 첫 스텝이 직전 세션의 마지막 스텝과 같다는 이유로 조회가 삼켜져, 이탈만 있고 그에
+  // 대응하는 스텝 조회가 없는 데이터가 된다.
+  it("흐름을 나갔다 되돌아오면 같은 스텝이어도 새 세션의 조회를 다시 잡는다", () => {
+    const view = render(<SignupPage />);
+    expect(eventNames().filter((n) => n === "onboarding_step_viewed")).toHaveLength(1);
+
+    // 온보딩 밖(verify)으로 나갔다가 —
+    fireEvent.click(screen.getByRole("button", { name: "← 이전" }));
+    settle();
+
+    // 인증이 끝나 첫 온보딩 스텝으로 다시 들어온다(page.tsx 의 verify 강제 이탈 effect).
+    authState.isAuthenticated = true;
+    act(() => {
+      view.rerender(<SignupPage />);
+    });
+
+    expect(eventNames().filter((n) => n === "onboarding_step_viewed")).toHaveLength(2);
+  });
+
   it("흐름 밖으로 되돌아가 그만두면 last_step 은 이탈 후가 아니라 머물렀던 스텝이다", () => {
     render(<SignupPage />);
 

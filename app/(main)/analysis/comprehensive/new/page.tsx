@@ -68,7 +68,7 @@ export default function ComprehensiveNewPage() {
       // 서버가 요청을 받았다(FRT-107). 위 analysis_target_selected(누름)와의 건수 차이가
       // "눌렀는데 요청이 안 나간" 기술적 실패다 — analysis_completed 로는 못 가른다.
       // 그건 분석이 끝났다는 뜻이라 "접수됐지만 도는 중"과 한 덩어리가 되기 때문이다.
-      capture("analysis_requested", { analysis_type: "comprehensive" });
+      capture("analysis_requested", { analysis_type: "comprehensive", accepted: true });
       toast("분석을 시작했어요. 목록에서 진행 상황을 확인하세요.", "success");
       if (!mountedRef.current) return;
       // 방금 만든 분석 id 를 목록에 알려준다 — 빨리 끝나는 분석은 목록의 첫 조회 시점에 이미
@@ -80,6 +80,9 @@ export default function ComprehensiveNewPage() {
           : "/analysis/comprehensive",
       );
     } catch {
+      // 요청이 나가서 거절당한 것도 왕복은 끝난 것이다. 여기서 안 쏘면 이 실패가
+      // "요청이 아예 안 나갔다"와 뭉개져, 위 차이 계산이 재려던 것을 못 짚는다(FRT-107).
+      capture("analysis_requested", { analysis_type: "comprehensive", accepted: false });
       if (!mountedRef.current) return;
       setSubmitting(false);
       setPhase("error");
