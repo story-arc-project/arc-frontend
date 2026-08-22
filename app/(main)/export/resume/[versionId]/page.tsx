@@ -143,6 +143,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
   }, [versionId, requestKey]);
 
   const dirtyRef = useRef(false);
+  // 저장 요청이 떠 있는 동안 탭을 닫으면 exit_draft 를 쏘지 않는다 — 늦게 온 응답이
+  // server/failed 를 남겨 한 시도가 두 결말로 세진다(자소서 상세와 같은 규칙).
+  const savingRef = useRef(false);
   const resumeRef = useRef<ResumeVersion | null>(null);
   const initialRef = useRef<ResumeVersion | null>(null);
   // 이 인스턴스가 **지금** 답하고 있는 질문. 비동기 저장의 클로저는 시작 당시의 것을 쥐고
@@ -171,6 +174,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   // Sync refs during render so the unmount handler sees the latest values
   // even when client navigation fires before passive effects flush.
   dirtyRef.current = dirty;
+  savingRef.current = saving;
   resumeRef.current = resume;
   initialRef.current = initial;
   // requestKeyRef 는 여기서 갱신하지 않는다 — 아래 effect(커밋 단계)에서만 움직인다.
@@ -587,8 +591,10 @@ export default function ResumeDetailPage({ params }: PageProps) {
     onPersist: (reason) => {
       if (!dirtyRef.current || !resumeRef.current) return;
       const tier = writeDraft(versionId, resumeRef.current);
-      if (reason !== "pagehide" || exitDraftFiredRef.current) return;
+      if (reason !== "pagehide") return;
       // 한 이탈은 한 번만 센다 — '나가기'가 이미 셌거나, 이 뒤에 언마운트가 이어져도.
+      // 저장이 도는 중이면 이 시도의 결말은 응답 쪽이 남긴다.
+      if (exitDraftFiredRef.current || savingRef.current) return;
       exitDraftFiredRef.current = true;
       captureEditSaved(
         "exit_draft",

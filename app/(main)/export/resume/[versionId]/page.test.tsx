@@ -892,6 +892,38 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     expect(window.localStorage.getItem("arc:resume-draft:v1")).toBeNull();
     expect(captured("resume_edit_saved")).toHaveLength(1);
   });
+
+  // 한 시도에 결말은 하나다 — 저장 요청이 떠 있는 동안 탭을 닫으면 편집은 남기되
+  // exit_draft 는 쏘지 않는다. 쏘면 늦게 온 응답이 server/failed 를 또 남겨 한 시도가
+  // 두 결말로 세진다(자소서 상세와 같은 규칙).
+  it("저장 요청이 떠 있는 동안 pagehide 는 draft 만 남기고 exit_draft 는 쏘지 않는다", async () => {
+    const user = userEvent.setup();
+    let resolveSave: ((value: unknown) => void) | undefined;
+    mockUpdateResume.mockImplementation(
+      (_id, data) =>
+        new Promise((resolve) => {
+          resolveSave = () => resolve(data);
+        }),
+    );
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(mockUpdateResume).toHaveBeenCalledTimes(1));
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+    expect(captured("resume_edit_saved")).toEqual([]);
+
+    await act(async () => {
+      resolveSave?.(undefined);
+    });
+    await waitFor(() =>
+      expect(captured("resume_edit_saved").map(([, p]) => p)).toEqual([
+        expect.objectContaining({ outcome: "server" }),
+      ]),
+    );
+  });
 });
 
 describe("영문 읽기 전용 — 보완 안내", () => {
