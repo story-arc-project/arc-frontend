@@ -18,6 +18,7 @@ import {
 } from "@/lib/api/cover-letter-api";
 import {
   clearDraft,
+  isStoredDraft,
   isDraftNewer,
   readDraft,
   writeDraft,
@@ -26,6 +27,7 @@ import {
 import { capture, type CoverLetterSaveOutcome } from "@/lib/analytics";
 import { firstChangedAnswerIndex } from "@/lib/export/cover-letter-diff";
 import { draftTierWarning, type DraftTier } from "@/lib/export/draft-storage";
+import { usePersistOnUnload } from "@/lib/export/use-persist-on-unload";
 import {
   applyBaseline,
   readBaseline,
@@ -54,13 +56,18 @@ function captureEditSaved(
   // 로컬로 떨어진 경우 **어느 계층**에 담겼는지. 같은 "보관됨"이라도 브라우저를 닫으면
   // 사라지는 보관이 섞여 있어, 이걸 안 나누면 유실 규모를 과소 보고한다(FRT-261).
   storageTier?: DraftTier | null,
+  // 화면이 사라지는 순간(탭 닫기)에 쏘는가. 기본 경로는 배치 큐라 페이지와 함께 사라진다 —
+  // 그때만 sendBeacon 경로를 고른다(FRT-329).
+  atUnload = false,
 ): void {
-  capture("cover_letter_edit_saved", {
+  const props = {
     outcome,
     persisted,
     question_count: snapshot?.answers?.length ?? 0,
     ...(storageTier === undefined ? {} : { storage_tier: storageTier }),
-  });
+  };
+  if (atUnload) capture("cover_letter_edit_saved", props, { atUnload: true });
+  else capture("cover_letter_edit_saved", props);
 }
 
 interface PageProps {
@@ -106,6 +113,10 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // effect 가 문서 전환마다 리셋해야 하므로, 그 effect보다 먼저 선언해 둔다.
   // '나가기'는 스스로 이동을 일으켜 언마운트로 이어진다 — 이미 쐈으면 두 번 세지 않는다.
   const exitDraftFiredRef = useRef(false);
+  // 탭이 숨겨질 때 이 탭이 마지막으로 담아 둔 편집(FRT-329). 손대지 않은 채 다시 숨겨지면
+  // 같은 것을 다시 쓰지 않고(같은 문서를 연 다른 탭이 남긴 편집을 덮지 않도록), 그 편집을
+  // 되돌려 깨끗해지면 담아 둔 것도 치운다(레쥬메 상세와 같은 규칙).
+  const hiddenSnapshotRef = useRef<CoverLetterResult | null>(null);
 
   useEffect(() => {
     // 늦게 도착한 답이 무엇 하나라도 건드리면 id 와 본문이 어긋난다. 응답 이후의 갱신은
@@ -116,6 +127,9 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     // FRT-238). 이 ref 를 문서 전환마다 안 내리면, 한 번이라도 이탈이 잡힌 뒤로는 이 인스턴스가
     // 재사용하는 모든 다음 문서의 exit_draft 가 영영 안 잡힌다.
     exitDraftFiredRef.current = false;
+    // 이전 문서에서 담아 둔 것은 이전 문서의 키에 있다 — 이 문서가 깨끗하다고 그 키를 지우면
+    // 안 된다.
+    hiddenSnapshotRef.current = null;
 
     // 생성 시 입력한 글자수 제한은 출력 계약에 없다 — 서버가 안 준 문항만 로컬 저장분으로
     // 채운다(서버 값이 정본). 없으면 상한 없이 글자수만 보여주는 현재 동작 그대로다.
@@ -261,6 +275,10 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
         // 없는 낡은 스냅샷을 되돌리면서 방금 쓴 최신 저장까지 지운다 — 배너 하나가 편집을
         // 두 번 잃게 만든다(FRT-148).
         setPendingDraft(null);
+        // 이 draft 의 주인은 이제 저장 경로다. 탭이 숨겨졌을 때 담아 둔 표시가 남아 있으면,
+        // 아래 미지원 갈래가 기준선을 바꿔 깨끗해지는 순간 그 표시가 방금 쓴 **유일한**
+        // 보관본을 치운다.
+        hiddenSnapshotRef.current = null;
       }
 
       if (err instanceof CoverLetterMutationUnsupportedError) {
@@ -384,7 +402,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [handleSave, result, dirty]);
 
-  // 탭을 그대로 닫는 경우(cleanup 미실행)까지 막는다.
+  // 탭을 그대로 닫는 경우(cleanup 미실행)에 경고만 띄운다. 저장은 아래 pagehide 가 맡는다(bfcache).
   useEffect(() => {
     if (!dirty) return;
     const handler = (e: BeforeUnloadEvent) => {
@@ -394,6 +412,60 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
+
+  // 탭을 닫거나 새로고침해도 편집을 남긴다(FRT-329). 위 언마운트 cleanup 은 진짜 페이지
+  // 언로드에서는 실행되지 않아, 사용자가 경고에서 "나가기"를 고르면 편집이 그대로 사라졌다.
+  //
+  // 탭이 숨겨질 때(hidden)는 **조용히 담아 두기만** 한다 — 탭 전환은 이탈이 아니고 돌아와서
+  // 계속 쓰지만, 모바일은 이 뒤에 pagehide 없이 탭을 죽이는 일이 잦다. pagehide 는 진짜
+  // 떠남이라 같은 exit_draft 로 센다. 단 저장이 도는 중이면 계측은 건너뛴다(언마운트 cleanup
+  // 과 같은 이유 — 한 시도에 결말 하나). 토스트는 띄우지 않는다 — 볼 사람이 없는 화면이고,
+  // 실패는 persisted:false 로 지표에 남는다. "머무르기"를 고르면 pagehide 가 오지 않으므로
+  // 경고 다이얼로그와 순서가 얽히지 않는다. 레쥬메 상세와 같은 훅·같은 규칙이다.
+  //
+  // 다른 문서로 옮기는 창(loading)에서는 걸지 않는다 — id 는 이미 다음 문서인데 result/dirty
+  // 는 아직 이전 문서 것이라(FRT-238), 여기서 담으면 이전 문서의 편집이 다음 문서의 키로
+  // 들어간다. 이전 문서의 편집은 문서가 바뀌는 순간 위 언마운트 cleanup 이 이전 키로 이미
+  // 남겼다(handleSave 가 loading 을 가드하는 것과 같은 이유).
+  //
+  // 치우는 것은 **내가 담은 그 스냅샷일 때만**이다. 같은 문서를 연 다른 탭이 그 사이 같은
+  // 키에 더 새 편집을 남겼으면, 그것은 이 탭이 치울 것이 아니다 — "담았다"는 기억은 저장소에
+  // 있는 것이 아직 내 것이라는 증거가 못 된다.
+  useEffect(() => {
+    if (loading || dirty || hiddenSnapshotRef.current === null) return;
+    const snapshot = hiddenSnapshotRef.current;
+    hiddenSnapshotRef.current = null;
+    if (isStoredDraft(id, snapshot)) clearDraft(id);
+  }, [dirty, loading, id]);
+
+  usePersistOnUnload({
+    enabled: dirty && !loading,
+    onPersist: (reason) => {
+      if (!dirtyRef.current || !resultRef.current) return;
+      const snapshot = resultRef.current;
+      if (reason === "hidden") {
+        if (snapshot === hiddenSnapshotRef.current) return;
+        hiddenSnapshotRef.current = snapshot;
+        writeDraft(id, snapshot);
+        return;
+      }
+      const tier = writeDraft(id, snapshot);
+      // 한 이탈은 한 번만 센다 — '뒤로'가 이미 셌거나, 이 뒤에 언마운트가 이어져도.
+      //
+      // 저장이 도는 중이어도 여기서는 **쏜다**. 언마운트 cleanup 은 응답 핸들러가 살아 있어
+      // 그쪽에 결말을 맡기지만(savingRef 가드), 진짜 언로드는 문서를 먼저 거둬 떠 있던 PATCH
+      // 의 핸들러가 돌지 않는다 — 여기서 건너뛰면 그 시도는 어느 결말도 못 남긴다. 언로드를
+      // 견디는(sendBeacon) 결말은 이 한 번뿐이다.
+      if (exitDraftFiredRef.current) return;
+      exitDraftFiredRef.current = true;
+      captureEditSaved("exit_draft", tier !== null, snapshot, tier, true);
+    },
+    // bfcache 에서 되살아났다 — 위 pagehide 는 끝이 아니었다. 이어 고치고 다시 떠나면 그것은
+    // 새 이탈이므로 "한 번만" 가드를 되돌린다(편집·dirty 는 인스턴스와 함께 그대로 살아 있다).
+    onRestore: () => {
+      exitDraftFiredRef.current = false;
+    },
+  });
 
   if (loading) {
     return (

@@ -56,6 +56,29 @@ export function clearDraft(id: string): void {
 }
 
 /**
+ * 저장소에 지금 담긴 draft 가 `data` 와 **같은 본문**인가.
+ *
+ * `true` 는 호출부에서 `clearDraft` 로 이어진다. 탭이 숨겨질 때 담아 둔 스냅샷을 되돌려
+ * 치울 때, 그 사이 다른 탭이 같은 키에 더 새 편집을 남겼으면 그것은 이 탭이 치울 것이
+ * 아니다 — "내가 담았다"는 기억만으로는 저장소에 있는 것이 아직 내 것인지 알 수 없다.
+ *
+ * 정규화를 거치지 않고 원문을 그대로 비교한다. 같은 객체를 같은 직렬화로 썼으니 왕복한
+ * 문자열이 같고, 정규화는 키 순서를 바꿀 수 있어 내 것도 남의 것으로 보이게 한다.
+ */
+export function isStoredDraft(id: string, data: CoverLetterResult): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = readRaw(key(id));
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as Partial<CoverLetterDraft> | null;
+    if (!parsed?.data) return false;
+    return JSON.stringify(parsed.data) === JSON.stringify(data);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 임시 저장이 서버 본문보다 새로운가.
  *
  * **false 는 "draft 를 버려도 된다"는 뜻이다** — 호출부가 그 신호로 `clearDraft` 를 부른다.

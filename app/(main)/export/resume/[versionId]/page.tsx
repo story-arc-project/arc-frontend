@@ -32,11 +32,13 @@ import { ResumePreview } from "./_components/ResumePreview";
 import { EnglishReadOnlyNotice } from "./_components/EnglishReadOnlyNotice";
 import { RemainingExperiencesNotice } from "./_components/RemainingExperiencesNotice";
 import { draftTierWarning, type DraftTier } from "@/lib/export/draft-storage";
+import { usePersistOnUnload } from "@/lib/export/use-persist-on-unload";
 import { reserveClientIds } from "./_components/editors/shared";
 import { changedResumeSections } from "./_components/resume-diff";
 import {
   clearDraft,
   isDraftNewer,
+  isStoredDraft,
   readDraft,
   writeDraft,
   type ResumeDraft,
@@ -71,6 +73,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
   // '나가기'는 스스로 router.push 를 해 곧바로 언마운트로 이어진다 — 두 출구가 각각 쏘면
   // 한 번의 이탈이 두 건으로 잡힌다. 먼저 쏜 쪽이 이 플래그로 뒤쪽을 막는다.
   const exitDraftFiredRef = useRef(false);
+  // 탭이 숨겨질 때 이 탭이 마지막으로 담아 둔 편집(FRT-329). 두 가지를 판정한다 —
+  // 손대지 않은 채 다시 숨겨지면 같은 것을 다시 쓰지 않고(같은 문서를 연 다른 탭이 그 사이
+  // 남긴 편집을 덮지 않도록), 그 편집을 되돌려 깨끗해지면 담아 둔 것도 치운다(안 치우면
+  // dirty 가 풀려 아무 경로도 손대지 않아, 다음 진입에 버린 편집을 복원하라고 권한다).
+  const hiddenSnapshotRef = useRef<ResumeVersion | null>(null);
 
   // FRT-238 — App Router 는 versionId 만 바뀌면 이 인스턴스를 재사용한다. 그래서 이전 버전의
   // 조회가 아직 날아다니는 채로 다음 조회가 시작되고, 늦게 도착한 쪽이 화면을 덮으면 **보고 있는
@@ -108,6 +115,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
     // 다른 버전을 열면 그 버전의 초안은 아직 손대지 않은 상태다.
     editedFiredRef.current = false;
     exitDraftFiredRef.current = false;
+    // 이전 버전에서 담아 둔 것은 이전 버전의 키에 있다 — 이 버전이 깨끗하다고 그 키를 지우면
+    // 안 되고, 이 버전에 같은 객체가 다시 올 일도 없다.
+    hiddenSnapshotRef.current = null;
 
     getResume(versionId)
       .then((data) => {
@@ -184,14 +194,19 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // 로컬로 떨어진 경우 **어느 계층**에 담겼는지. 같은 "보관됨"이라도 브라우저를 닫으면
       // 사라지는 보관이 섞여 있어, 이걸 안 나누면 유실 규모를 과소 보고한다(FRT-261).
       storageTier?: DraftTier | null,
+      // 화면이 사라지는 순간(탭 닫기)에 쏘는가. 기본 경로는 배치 큐라 페이지와 함께
+      // 사라진다 — 그때만 sendBeacon 경로를 고른다(FRT-329).
+      atUnload = false,
     ) => {
-      capture("resume_edit_saved", {
+      const props = {
         outcome,
         persisted,
         sections: changed,
         section_count: changed.length,
         ...(storageTier === undefined ? {} : { storage_tier: storageTier }),
-      });
+      };
+      if (atUnload) capture("resume_edit_saved", props, { atUnload: true });
+      else capture("resume_edit_saved", props);
     },
     [],
   );
@@ -557,7 +572,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [handleSave, resume, dirty]);
 
-  // beforeunload when dirty
+  // beforeunload when dirty — 경고만 띄운다. 저장은 아래 pagehide 가 맡는다(bfcache).
   useEffect(() => {
     if (!dirty) return;
     const handler = (e: BeforeUnloadEvent) => {
@@ -567,6 +582,65 @@ export default function ResumeDetailPage({ params }: PageProps) {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
+
+  // 탭을 닫거나 새로고침해도 편집을 남긴다(FRT-329). 위 언마운트 cleanup 은 진짜 페이지
+  // 언로드에서는 실행되지 않아, 사용자가 경고에서 "나가기"를 고르면 편집이 그대로 사라졌다.
+  //
+  // 탭이 숨겨질 때(hidden)는 **조용히 담아 두기만** 한다 — 탭 전환은 이탈이 아니고 돌아와서
+  // 계속 쓰지만, 모바일은 이 뒤에 pagehide 없이 탭을 죽이는 일이 잦다. pagehide 는 진짜
+  // 떠남이라 같은 exit_draft 로 센다. 토스트는 띄우지 않는다 — 볼 사람이 없는 화면이고,
+  // 실패는 persisted:false 로 지표에 남는다. "머무르기"를 고르면 pagehide 가 오지 않으므로
+  // 경고 다이얼로그와 순서가 얽히지 않는다.
+  //
+  // 다른 버전으로 옮기는 창(loading)에서는 걸지 않는다 — versionId 는 이미 다음 버전인데
+  // resume/dirty 는 아직 이전 버전 것이라(FRT-238), 여기서 담으면 이전 버전의 편집이 다음
+  // 버전의 키로 들어간다. 이전 버전의 편집은 버전이 바뀌는 순간 위 언마운트 cleanup 이 이전
+  // 키로 이미 남겼다(handleSave 가 loading 을 가드하는 것과 같은 이유).
+  //
+  // 치우는 것은 **내가 담은 그 스냅샷일 때만**이다. 같은 레쥬메를 연 다른 탭이 그 사이 같은
+  // 키에 더 새 편집을 남겼으면, 그것은 이 탭이 치울 것이 아니다 — "담았다"는 기억은 저장소에
+  // 있는 것이 아직 내 것이라는 증거가 못 된다.
+  useEffect(() => {
+    if (loading || dirty || hiddenSnapshotRef.current === null) return;
+    const snapshot = hiddenSnapshotRef.current;
+    hiddenSnapshotRef.current = null;
+    if (isStoredDraft(versionId, snapshot)) clearDraft(versionId);
+  }, [dirty, loading, versionId]);
+
+  usePersistOnUnload({
+    enabled: dirty && !loading,
+    onPersist: (reason) => {
+      if (!dirtyRef.current || !resumeRef.current) return;
+      const snapshot = resumeRef.current;
+      if (reason === "hidden") {
+        if (snapshot === hiddenSnapshotRef.current) return;
+        hiddenSnapshotRef.current = snapshot;
+        writeDraft(versionId, snapshot);
+        return;
+      }
+      const tier = writeDraft(versionId, snapshot);
+      // 한 이탈은 한 번만 센다 — '나가기'가 이미 셌거나, 이 뒤에 언마운트가 이어져도.
+      //
+      // 저장이 도는 중이어도 여기서는 **쏜다**. 언마운트 cleanup 은 응답 핸들러가 살아 있어
+      // 그쪽에 결말을 맡기지만(savingRef 가드), 진짜 언로드는 문서를 먼저 거둬 떠 있던 PATCH
+      // 의 핸들러가 돌지 않는다 — 여기서 건너뛰면 그 시도는 어느 결말도 못 남긴다. 언로드를
+      // 견디는(sendBeacon) 결말은 이 한 번뿐이다.
+      if (exitDraftFiredRef.current) return;
+      exitDraftFiredRef.current = true;
+      captureEditSaved(
+        "exit_draft",
+        tier !== null,
+        changedResumeSections(initialRef.current, snapshot),
+        tier,
+        true,
+      );
+    },
+    // bfcache 에서 되살아났다 — 위 pagehide 는 끝이 아니었다. 이어 고치고 다시 떠나면 그것은
+    // 새 이탈이므로 "한 번만" 가드를 되돌린다(편집·dirty 는 인스턴스와 함께 그대로 살아 있다).
+    onRestore: () => {
+      exitDraftFiredRef.current = false;
+    },
+  });
 
   if (loading) return <ResumeDetailSkeleton />;
 
