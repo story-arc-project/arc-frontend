@@ -109,6 +109,24 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
 }
 
 /**
+ * 아직 본문이 없는 레쥬메(생성 중·실패)를 **네트워크 장애와 구별해** 말한다.
+ *
+ * 맨 `Error` 로 던지면 상세 화면의 에러 분기가 이것을 일반 실패로 뭉개, 정상적으로 생성
+ * 중인 것을 "불러오지 못했어요"로 읽게 만든다(FRT-326). 자소서는 이미 전용 타입
+ * `CoverLetterNotReadyError` 로 갈라 놓았다 - 같은 모양을 맞춘다.
+ *
+ * 판정을 **전용 타입으로만** 한다는 점이 요체다. 소거법("ApiError 가 아니면 준비 중")으로
+ * 가르면 파싱 실패·네트워크 장애까지 "아직 만들고 있어요"가 되어, 사용자는 고칠 수 있는
+ * 것을 못 고친 채 기다리기만 한다.
+ */
+export class ResumeNotReadyError extends Error {
+  constructor() {
+    super("resume result not ready");
+    this.name = "ResumeNotReadyError";
+  }
+}
+
+/**
  * 백엔드 GET /export/resume/{id} 는 본문을 data.result 한 겹에 감싸 돌려준다
  * (data = { id, title, language, status, created_at, updated_at, result }).
  * ResumeVersion 은 본문(인적사항/학력/경력…) 타입이므로 result 를 벗겨 반환한다.
@@ -138,7 +156,7 @@ function unwrapResumeVersion(data: unknown): ResumeVersion {
     // ② 아직 생성이 안 끝났거나 실패한 레쥬메 래퍼(result:null). 전자는 본문 마커
     // (meta)를 갖고 후자는 갖지 않는다. meta 없는 래퍼를 ResumeVersion 으로 반환하면
     // 상세 페이지가 resume.meta.language 에서 크래시하므로, 본문일 때만 폴백하고
-    // 아니면 throw → 호출부(상세 페이지)가 제어된 로딩/에러 상태를 보여준다.
+    // 아니면 ResumeNotReadyError → 호출부(상세 페이지)가 "아직 만들고 있어요"를 보여준다.
     if (
       root.meta !== null &&
       typeof root.meta === "object" &&
@@ -147,7 +165,7 @@ function unwrapResumeVersion(data: unknown): ResumeVersion {
       return root as unknown as ResumeVersion;
     }
   }
-  throw new Error("resume result not ready");
+  throw new ResumeNotReadyError();
 }
 
 // 서버 응답: data = { count, contents: [{ id, created_at, updated_at }] }

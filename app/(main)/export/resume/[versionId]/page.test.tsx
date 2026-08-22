@@ -96,6 +96,7 @@ vi.mock("./_components/resume-draft", async (importOriginal) => {
 
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
+import { ResumeNotReadyError } from "@/lib/api/export-api";
 import { writeDraft } from "./_components/resume-draft";
 import { __resetMemoryDrafts } from "@/lib/export/draft-storage";
 import ResumeDetailPage from "./page";
@@ -1406,5 +1407,77 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
 
     // 배너가 가리키는 임시 저장이 사라지면 되돌릴 길이 없어진다.
     expect(draftName("A")).toBe("에이!");
+  });
+});
+
+
+/**
+ * FRT-326 - 생성은 비동기다. 그 사이 상세로 들어오면 서버는 200 에 `result: null` 을 준다.
+ *
+ * 그 상태를 "불러오지 못했어요"로 그리면 사용자는 **정상 진행을 실패로 읽는다** - 자소서 상세는
+ * 이미 갈라 놓았으므로(CoverLetterNotReadyError) 한 화면 안에서 두 기능이 다른 말을 한다.
+ *
+ * 안내 문구는 자소서를 그대로 베끼지 않는다: 자소서 목록에는 폴링이 있어 "완료되면 목록에서
+ * 열 수 있어요"가 참이지만, **레쥬메 목록에는 폴링이 없다**(FRT-325). 지킬 수 없는 약속 대신
+ * 이 화면에 실재하는 탈출구('다시 시도')를 가리킨다.
+ */
+describe("FRT-326 - 아직 만들고 있는 레쥬메", () => {
+  it("준비 안 된 레쥬메는 실패가 아니라 '아직 만들고 있어요'로 말한다", async () => {
+    const route = routeByVersion();
+    await renderVersion("A");
+    route.reject("A", new ResumeNotReadyError());
+    await flush();
+
+    expect(screen.getByText("아직 만들고 있어요")).toBeTruthy();
+    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+  });
+
+  it("그 화면은 이 자리에서 이을 길('다시 시도')을 가리킨다", async () => {
+    const route = routeByVersion();
+    await renderVersion("A");
+    route.reject("A", new ResumeNotReadyError());
+    await flush();
+
+    // 목록은 스스로 갱신되지 않으므로 "목록에서 열 수 있어요"라고 말하면 안 된다.
+    expect(screen.getByText(/'다시 시도'를 눌러/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+  });
+
+  it("'다시 시도'로 완성된 레쥬메를 그 자리에서 연다", async () => {
+    const route = routeByVersion();
+    await renderVersion("A");
+    route.reject("A", new ResumeNotReadyError());
+    await flush();
+    await screen.findByText("아직 만들고 있어요");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    route.resolve("A", named("다 됐다"), 1);
+    await flush();
+
+    expect(shownName()).toBe("다 됐다");
+    expect(screen.queryByText("아직 만들고 있어요")).toBeNull();
+  });
+
+  // 소거법("ApiError 가 아니면 준비 중")으로 판정하면 네트워크 장애·파싱 실패까지
+  // "아직 만들고 있어요"가 된다 - 사용자는 고칠 수 있는 것을 못 고친 채 기다린다.
+  it("일반 실패는 여전히 '불러오지 못했어요'다", async () => {
+    const route = routeByVersion();
+    await renderVersion("A");
+    route.reject("A", new Error("boom"));
+    await flush();
+
+    expect(screen.getByText("레쥬메를 불러오지 못했어요")).toBeTruthy();
+    expect(screen.queryByText("아직 만들고 있어요")).toBeNull();
+  });
+
+  it("404 는 여전히 '찾을 수 없어요'다 - 준비 중이 그 판정을 가리지 않는다", async () => {
+    const route = routeByVersion();
+    await renderVersion("A");
+    route.reject("A", new ApiError(404, "not found"));
+    await flush();
+
+    expect(screen.getByText("레쥬메를 찾을 수 없어요")).toBeTruthy();
+    expect(screen.queryByText("아직 만들고 있어요")).toBeNull();
   });
 });

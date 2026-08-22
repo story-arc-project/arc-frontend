@@ -11,6 +11,7 @@ import { ApiError } from "@/lib/api/client";
 import {
   createResume,
   getResume,
+  ResumeNotReadyError,
   updateResume,
 } from "@/lib/api/export-api";
 import { capture, type ResumeSaveOutcome } from "@/lib/analytics";
@@ -589,17 +590,29 @@ export default function ResumeDetailPage({ params }: PageProps) {
   if (error || !resume) {
     const status = error instanceof ApiError ? error.status : 500;
     const isNotFound = status === 404;
+    // FRT-326 — 본문이 아직 없는 것(생성 중)과 못 불러온 것은 다른 상태다. 생성은 비동기라
+    // 만들자마자 들어오면 이 경로가 정상이며, 실패로 그리면 사용자가 정상 진행을 실패로 읽는다.
+    // 소거법으로 판정하면 네트워크 장애까지 "생성 중"이 되므로 전용 타입으로만 좁힌다
+    // (자소서 상세와 같은 판정 — CoverLetterNotReadyError).
+    const notReady = error instanceof ResumeNotReadyError;
     return (
       <div className="flex min-h-[calc(100dvh-var(--gnb-h))] flex-col items-center justify-center gap-4 px-6 text-center">
         <h2 className="text-title text-text-primary">
           {isNotFound
             ? "레쥬메를 찾을 수 없어요"
-            : "레쥬메를 불러오지 못했어요"}
+            : notReady
+              ? "아직 만들고 있어요"
+              : "레쥬메를 불러오지 못했어요"}
         </h2>
         <p className="text-body-sm text-text-secondary">
           {isNotFound
             ? "삭제되었거나 주소가 잘못된 것 같아요."
-            : "잠시 후 다시 시도해주세요."}
+            : notReady
+              ? // 자소서는 "완료되면 목록에서 열 수 있어요"라고 말한다 — 그쪽 목록에는 폴링이
+                // 있어 참인 말이다. 레쥬메 목록에는 폴링이 없으므로(FRT-325) 그대로 베끼면
+                // 지킬 수 없는 약속이 된다. 이 화면에 실재하는 탈출구를 가리킨다.
+                "다 만들어지면 '다시 시도'를 눌러 열 수 있어요."
+              : "잠시 후 다시 시도해주세요."}
         </p>
         <div className="flex gap-2">
           <Button asChild variant="ghost" size="sm">
