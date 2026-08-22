@@ -271,3 +271,52 @@ export function computeFormProgress(
 ): { done: number; total: number } {
   return { total: cards.length, done: cards.filter(c => isCardComplete(c, hiddenKeys)).length }
 }
+
+/**
+ * FRT-107: 이탈·진행 계측이 읽는 폼의 진행 자취. 값은 전부 비식별(카드 id·블록 키)이다.
+ * 화면은 이 값을 쓰지 않는다 — 진행도 바가 쓰는 건 `computeFormProgress` 쪽이다.
+ */
+export interface FormCompletionSnapshot {
+  /** 표시된 고정 카드 id 전체 — 폼 순서. 이탈 지점을 자리로 읽으려면 순서가 필요하다. */
+  sectionIds: string[]
+  /** 그중 완료된 카드 id — 폼 순서 유지. */
+  completedSectionIds: string[]
+  /** 값이 들어간 정성 항목(「경험 상세」)의 블록 키. 사용자가 쓴 내용은 담지 않는다. */
+  qualitativeFieldsFilled: string[]
+}
+
+/**
+ * FRT-107: 완료된 카드의 id — **폼 순서 그대로**.
+ *
+ * `computeFormProgress` 의 done 과 같은 판정을 쓴다(같은 `isCardComplete`). 개수만으로는
+ * "어디서 멈췄나"를 못 묻기 때문에 자리를 남기는 것이 요점이고, 그래서 판정이 진행도 바와
+ * 갈리면 안 된다 — 갈리면 화면이 60% 라고 말하는 순간 계측은 다른 이야기를 남긴다.
+ */
+export function completedCardIds(cards: FormCardModel[], hiddenKeys: string[] = []): string[] {
+  return cards.filter(c => isCardComplete(c, hiddenKeys)).map(c => c.id)
+}
+
+/**
+ * FRT-107: 정성 항목(「경험 상세」) 중 실제로 값이 들어간 블록의 **키**.
+ *
+ * "정성적 맥락을 기록한다"는 ARC 의 근본 가설이 실제 행동에서 지켜지는지 보는 값이다.
+ * 정의서는 이걸 `archive_field_completed` 이벤트로 두자고 했지만, 필드마다 쏘면 볼륨이
+ * 폭증하는 데 비해 같은 질문을 이 목록 하나가 더 싸게 답한다 — 그래서 이벤트가 아니라
+ * 속성이다.
+ *
+ * 키가 없는 블록은 싣지 않는다. 템플릿 블록의 키는 `${sectionId}.${label}` 로 템플릿이
+ * 소유한 라벨이지만, 키가 없는 블록은 사용자가 직접 붙인 이름일 수 있어 PII 위험이 있다.
+ * (사용자가 추가한 섹션 자체는 애초에 카드에 들어오지 않는다 — `computeFormCards` 는
+ * 코어와 템플릿 확장만 재구성한다.)
+ */
+export function filledQualitativeKeys(
+  cards: FormCardModel[],
+  hiddenKeys: string[] = []
+): string[] {
+  const hidden = new Set(hiddenKeys)
+  return cards
+    .filter(c => c.category === "detail")
+    .flatMap(c => c.blocks)
+    .filter(b => !!b.key && !hidden.has(b.key) && isBlockFilledForProgress(b))
+    .map(b => b.key as string)
+}

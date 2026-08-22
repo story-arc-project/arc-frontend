@@ -33,12 +33,34 @@ let internalTagPending = false;
 // 마운트마다 다시 심으면 그때마다 $set 이벤트가 쌓인다 — 식별된 사용자당 1회로 묶는다.
 let internalTagSent = false;
 
+// FRT-107: 화면이 사라지는 순간에 쏘는 이벤트(이탈·체류)용 전송 옵션.
+// 기본 경로는 배치 큐라, 언마운트·탭 종료 직전에 담으면 페이지와 함께 사라진다.
+// sendBeacon 은 언로드 중에도 브라우저가 대신 보내주고, send_instantly 는 큐를 건너뛴다
+// (transport 만으로는 배치 간격을 기다린다 — posthog-js 문서).
+const UNLOAD_TRANSPORT = {
+  transport: "sendBeacon",
+  send_instantly: true,
+} as const;
+
+export interface CaptureOptions {
+  // 이 이벤트가 화면이 사라지는 순간에 발화하는가. 호출부가 posthog 전송 방식을 알 필요는
+  // 없으므로 "언제 쏘는가"만 말하게 하고, 그 뜻을 여기서 한 번만 옮긴다.
+  atUnload?: boolean;
+}
+
 // 타입드 capture — 이벤트명과 속성이 events.ts 의 계약과 어긋나면 컴파일 에러.
 export function capture<E extends keyof AnalyticsEventProps>(
   event: E,
   props: AnalyticsEventProps[E],
+  options?: CaptureOptions,
 ): void {
   if (!isActive()) return;
+  // 세 번째 인자를 undefined 로라도 넘기지 않는다 — 기본 호출부의 전송 경로를 건드리지 않기
+  // 위해서다(기존 계약 무변경).
+  if (options?.atUnload) {
+    posthog.capture(event, props, UNLOAD_TRANSPORT);
+    return;
+  }
   posthog.capture(event, props);
 }
 

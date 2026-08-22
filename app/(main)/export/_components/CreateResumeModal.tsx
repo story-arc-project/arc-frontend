@@ -115,6 +115,12 @@ export function CreateResumeModal({
       controller.abort();
     }, GENERATION_TIMEOUT_MS);
 
+    // 눌렀다는 사실(FRT-107). 아래 resume_experience_selected 는 선택 UI 플래그가 꺼지면
+    // 아예 안 떠서 누름의 대역이 못 된다 — 그래서 별도로, 조건 없이 남긴다.
+    // export_completed(이름과 달리 실체는 접수)와의 건수 차이가 "눌렀는데 요청이 안 나간"
+    // 기술적 실패다.
+    capture("export_execute_button_clicked", { export_type: "resume" });
+
     // 실행 직전 최종 선택 = "내 어떤 경험을 이력서에 낼 만하다고 판단했나"(FRT-114).
     // 요청 **앞**에 둔다 — 뒤에 두면 생성이 실패한 사용자의 선택이 통째로 사라지고,
     // export_completed 는 성공했을 때만 뜨므로 그 drop-off 를 볼 곳이 없어진다.

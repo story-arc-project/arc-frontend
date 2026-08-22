@@ -52,9 +52,16 @@ vi.mock("@/lib/api/cover-letter-api", async (importOriginal) => {
   };
 });
 
+// capture 만 가짜다 — 계측이 **언제** 발화하는지가 단언 대상이라 나머지는 진짜여야 한다.
+vi.mock("@/lib/analytics", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/analytics")>();
+  return { ...actual, capture: vi.fn() };
+});
+
 import { writeDraft } from "@/lib/export/cover-letter-draft";
 import { __resetMemoryDrafts } from "@/lib/export/draft-storage";
 import { toast } from "@/components/ui/toast";
+import { capture } from "@/lib/analytics";
 import CoverLetterDetailPage from "./page";
 
 interface Deferred<T> {
@@ -658,6 +665,137 @@ describe("이탈 경로에서 임시 저장이 위태로우면 사용자에게 �
     spy.mockRestore();
 
     expect(toast.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * FRT-107 — `cover_letter_edited` 는 "AI 초안을 사람이 고쳐 썼는가"를 묻는다.
+ *
+ * 임시 저장 복원은 그 질문의 답이 아니다. 지난 세션의 편집을 되돌려 놓는 것이라 그 편집은
+ * 이미 한 번 세어졌고, 이번 세션에서 사용자는 아무것도 치지 않았다. 그런데 복원은 result 만
+ * 갈아끼워 initial(서버본)과 갈라놓으므로 dirty 가 서고, 계측이 그것을 방금 친 것으로 읽는다.
+ * 레쥬메가 같은 자리에서 같은 이유로 표식을 미리 소비한다 — 자소서에만 그 처리가 빠져 있었다.
+ */
+describe("FRT-107 — 복원은 새 편집이 아니다", () => {
+  /** 서버 created_at(2026-07-21)보다 뒤인 draft — 복원 배너가 뜬다. */
+  function seedNewerDraft(id: string, body: string) {
+    window.localStorage.setItem(
+      `arc:cover-letter-draft:${id}`,
+      JSON.stringify({
+        data: fixture(body),
+        updated_at: "2026-07-22T00:00:00Z",
+      }),
+    );
+  }
+
+  it("임시 저장을 복원해도 cover_letter_edited 를 쏘지 않는다", async () => {
+    const route = routeById();
+    seedNewerDraft("A", "지난 세션에 고친 본문");
+    await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+
+    // 배너가 실재하는 상태에서 출발했음을 먼저 못박는다 — 없으면 단언이 공허하게 통과한다.
+    expect(screen.getByRole("button", { name: "복원" })).toBeTruthy();
+    vi.mocked(capture).mockClear();
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "복원" }));
+    await flush();
+
+    const fired = vi.mocked(capture).mock.calls.map(([name]) => name);
+    expect(fired).not.toContain("cover_letter_edited");
+  });
+
+  // 복원 직후 이어지는 편집도 첫 편집으로 다시 잡지 않는다. 이 이벤트는 "이 문서에 손댔다"를
+  // 문서당 한 번 세는 것이고, 복원 배너가 떴다는 건 그 손댐이 **지난 세션에 이미 세어졌다**는
+  // 뜻이다. 여기서 다시 쏘면 한 문서가 두 번 잡혀 "몇 개의 초안이 고쳐지는가"가 부풀어 오른다.
+  // 레쥬메가 같은 이유로 표식을 소진한다 — 두 기능이 갈리면 나란히 못 놓는다.
+  it("복원 뒤 이어지는 편집도 첫 편집으로 다시 세지 않는다", async () => {
+    const route = routeById();
+    seedNewerDraft("A", "지난 세션에 고친 본문");
+    await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "복원" }));
+    await flush();
+    vi.mocked(capture).mockClear();
+
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    await flush();
+
+    const fired = vi.mocked(capture).mock.calls.map(([name]) => name);
+    expect(fired).not.toContain("cover_letter_edited");
+  });
+
+  // 한 번의 저장 시도에는 결말이 하나여야 한다. 저장이 도는 중에 떠나면 그 요청이 곧
+  // server/failed 를 쏘는데, 이탈 경로가 exit_draft 까지 쏘면 배타적인 두 결말이 실린다.
+  // 게다가 exit_draft 는 "저장을 누르지 않고 떠났다"는 뜻이라 방금 누른 사용자에겐 거짓이다.
+  it("저장이 도는 중에 떠나면 exit_draft 를 쏘지 않고 결말은 저장 쪽이 낸다", async () => {
+    const route = routeById();
+    const save = deferred<CoverLetterResult>();
+    mockUpdateCoverLetter.mockImplementation(() => save.promise);
+    const view = await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    vi.mocked(capture).mockClear();
+
+    // 응답이 아직 안 온 채로 GNB 링크 등으로 떠난다.
+    view.unmount();
+
+    const outcomes = vi
+      .mocked(capture)
+      .mock.calls.filter(([name]) => name === "cover_letter_edit_saved")
+      .map(([, props]) => (props as { outcome: string }).outcome);
+    expect(outcomes).not.toContain("exit_draft");
+
+    // 편집을 지키는 쪽은 그대로다 — 계측만 건너뛴다.
+    expect(
+      window.localStorage.getItem("arc:cover-letter-draft:A"),
+    ).not.toBeNull();
+
+    await act(async () => {
+      save.resolve(fixture("서버 본문!"));
+    });
+    await flush();
+
+    const settled = vi
+      .mocked(capture)
+      .mock.calls.filter(([name]) => name === "cover_letter_edit_saved")
+      .map(([, props]) => (props as { outcome: string }).outcome);
+    expect(settled).toEqual(["server"]);
+  });
+
+  // 반대쪽 못 — 배너가 없는 평범한 진입에서는 첫 편집이 그대로 잡혀야 한다. 이게 없으면
+  // 위 두 단언은 "아무 때도 안 쏜다"로도 통과한다.
+  it("복원 배너가 없는 진입에서는 첫 편집을 그대로 잡는다", async () => {
+    const route = routeById();
+    await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+    vi.mocked(capture).mockClear();
+
+    await userEvent.setup().type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    await flush();
+
+    expect(capture).toHaveBeenCalledWith(
+      "cover_letter_edited",
+      expect.objectContaining({ cover_letter_id: "A" }),
+    );
   });
 });
 

@@ -352,6 +352,10 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const handleRegenerate = useCallback(async () => {
     if (!resume || regenerating) return;
     setRegenerating(true);
+    // 이 경로도 아래에서 export_completed 를 쏜다. 누름을 여기서 안 잡으면 그 완료 하나가
+    // 짝 없이 총계에 얹혀, "눌렀는데 요청이 안 나갔다"를 재는 **누름 − 완료** 차이가
+    // 재생성 건수만큼 깎인다(FRT-107). 완료를 쏘는 자리마다 누름도 있어야 뺄셈이 성립한다.
+    capture("export_execute_button_clicked", { export_type: "resume" });
     try {
       await createResume({ language: resume.meta.language });
       // '다시 만들기'도 새 레쥬메 버전이 만들어진 익스포트 완료다 — 모달 생성 경로만
