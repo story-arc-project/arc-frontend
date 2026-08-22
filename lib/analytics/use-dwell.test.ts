@@ -137,4 +137,34 @@ describe("useDwell — 화면을 처음 벗어나기까지 보인 시간(FRT-107
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
   });
+
+  // 숨은 탭에서 결과가 도착하는 경우. visibilitychange 는 **지나간 전환을 재생하지 않으므로**,
+  // 시작 시점의 visibilityState 를 안 보면 배경에 있던 시간이 통째로 "봤다"로 들어간다.
+  it("숨어 있는 동안 시작하면 그 배경 시간은 체류에 안 들어간다", () => {
+    const onLeave = vi.fn();
+    setVisibility("hidden");
+    renderHook(() => useDwell({ active: true, onLeave }));
+
+    // 배경에 30초 — 사용자는 아직 이 화면을 본 적이 없다.
+    vi.advanceTimersByTime(30_000);
+    fireVisibilityChange("visible");
+    vi.advanceTimersByTime(4_000);
+    fireVisibilityChange("hidden");
+
+    expect(onLeave).toHaveBeenCalledTimes(1);
+    expect(onLeave).toHaveBeenCalledWith(4);
+  });
+
+  it("숨은 채로 시작해 끝내 보이지 않으면 조회로 세지 않는다", () => {
+    const onLeave = vi.fn();
+    setVisibility("hidden");
+    const { unmount } = renderHook(() => useDwell({ active: true, onLeave }));
+
+    vi.advanceTimersByTime(30_000);
+    unmount();
+    settle();
+
+    // 0초짜리 조회를 남기는 것도 틀렸다 — 조회는 아예 일어나지 않았다.
+    expect(onLeave).not.toHaveBeenCalled();
+  });
 });

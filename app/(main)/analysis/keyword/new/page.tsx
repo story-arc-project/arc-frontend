@@ -11,6 +11,7 @@ import {
   getKeywordSuggestions,
   createKeywordAnalysis,
 } from "@/lib/api/analysis-api";
+import { ApiError } from "@/lib/api/client";
 import { capture } from "@/lib/analytics";
 import KeywordSelector from "@/components/features/analysis/KeywordSelector";
 
@@ -81,10 +82,13 @@ export default function KeywordNewPage() {
       router.push(
         id ? `/analysis/keyword?started=${encodeURIComponent(id)}` : "/analysis/keyword",
       );
-    } catch {
-      // 요청이 나가서 거절당한 것도 왕복은 끝난 것이다. 여기서 안 쏘면 이 실패가
-      // "요청이 아예 안 나갔다"와 뭉개진다(FRT-107, 종합분석과 같은 축).
-      capture("analysis_requested", { analysis_type: "keyword", accepted: false });
+    } catch (err) {
+      // 서버가 **응답을 돌려준** 실패만 여기 실린다 — 오프라인·DNS·연결 끊김은 응답이 없어
+      // raw 예외로 오고, 그건 접수가 아니라 "요청이 브라우저를 못 떠났다"다(FRT-107,
+      // 종합분석과 같은 축이라 세 갈래 해석도 그대로 성립한다).
+      if (err instanceof ApiError) {
+        capture("analysis_requested", { analysis_type: "keyword", accepted: false });
+      }
       if (!mountedRef.current) return;
       setSubmitting(false);
       setPhase("error");

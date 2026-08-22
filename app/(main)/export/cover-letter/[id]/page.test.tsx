@@ -732,6 +732,51 @@ describe("FRT-107 — 복원은 새 편집이 아니다", () => {
     expect(fired).not.toContain("cover_letter_edited");
   });
 
+  // 한 번의 저장 시도에는 결말이 하나여야 한다. 저장이 도는 중에 떠나면 그 요청이 곧
+  // server/failed 를 쏘는데, 이탈 경로가 exit_draft 까지 쏘면 배타적인 두 결말이 실린다.
+  // 게다가 exit_draft 는 "저장을 누르지 않고 떠났다"는 뜻이라 방금 누른 사용자에겐 거짓이다.
+  it("저장이 도는 중에 떠나면 exit_draft 를 쏘지 않고 결말은 저장 쪽이 낸다", async () => {
+    const route = routeById();
+    const save = deferred<CoverLetterResult>();
+    mockUpdateCoverLetter.mockImplementation(() => save.promise);
+    const view = await renderId("A");
+    route.resolve("A", fixture("서버 본문"));
+    await flush();
+
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "!",
+    );
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    vi.mocked(capture).mockClear();
+
+    // 응답이 아직 안 온 채로 GNB 링크 등으로 떠난다.
+    view.unmount();
+
+    const outcomes = vi
+      .mocked(capture)
+      .mock.calls.filter(([name]) => name === "cover_letter_edit_saved")
+      .map(([, props]) => (props as { outcome: string }).outcome);
+    expect(outcomes).not.toContain("exit_draft");
+
+    // 편집을 지키는 쪽은 그대로다 — 계측만 건너뛴다.
+    expect(
+      window.localStorage.getItem("arc:cover-letter-draft:A"),
+    ).not.toBeNull();
+
+    await act(async () => {
+      save.resolve(fixture("서버 본문!"));
+    });
+    await flush();
+
+    const settled = vi
+      .mocked(capture)
+      .mock.calls.filter(([name]) => name === "cover_letter_edit_saved")
+      .map(([, props]) => (props as { outcome: string }).outcome);
+    expect(settled).toEqual(["server"]);
+  });
+
   // 반대쪽 못 — 배너가 없는 평범한 진입에서는 첫 편집이 그대로 잡혀야 한다. 이게 없으면
   // 위 두 단언은 "아무 때도 안 쏜다"로도 통과한다.
   it("복원 배너가 없는 진입에서는 첫 편집을 그대로 잡는다", async () => {

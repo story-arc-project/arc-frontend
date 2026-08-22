@@ -77,10 +77,27 @@ export function useExitSignal({
       deferredRef.current = null;
     }
     if (!active) return;
-    if (!resumed) {
+
+    const beginSession = (): void => {
       firedRef.current = false;
       startedAtRef.current = Date.now();
       onStartRef.current?.();
+    };
+
+    if (!resumed) {
+      // ⚠️ 체류(onHidden)는 **보인 시간**을 잰다. 시작하는 지금 이미 숨어 있다면 시계를
+      // 걸지 않는다 — visibilitychange 는 **지나간 전환을 재생해 주지 않아서**, 여기서
+      // 그냥 시작하면 배경에 있던 시간이 통째로 "봤다"로 들어간다. 돌아오지 않으면 아예
+      // 본 적 없는 화면에 조회가 찍힌다. 처음 보이는 순간이 이 세션의 시작이다(아래).
+      //
+      // 이탈(onHidden=false)은 반대다. 탭을 옮겼다고 흐름을 놓은 게 아니고 시계도
+      // "포기까지 붙들고 있던 벽시계"라, 숨어 있어도 그대로 시작한다.
+      if (onHidden && document.visibilityState === "hidden") {
+        firedRef.current = false;
+        startedAtRef.current = null;
+      } else {
+        beginSession();
+      }
     }
 
     const fire = (): void => {
@@ -93,7 +110,12 @@ export function useExitSignal({
     };
 
     const handleVisibility = (): void => {
-      if (document.visibilityState === "hidden") fire();
+      if (document.visibilityState === "hidden") {
+        fire();
+        return;
+      }
+      // 숨은 채로 시작해 시계를 안 걸어 둔 세션이라면, 화면이 처음 보이는 지금이 시작이다.
+      if (startedAtRef.current === null && !firedRef.current) beginSession();
     };
 
     if (onHidden) {

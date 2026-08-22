@@ -11,6 +11,7 @@ import {
   getSelectableExperiences,
   createComprehensiveAnalysis,
 } from "@/lib/api/analysis-api";
+import { ApiError } from "@/lib/api/client";
 import { capture } from "@/lib/analytics";
 import ExperienceSelector from "@/components/features/analysis/ExperienceSelector";
 
@@ -79,10 +80,17 @@ export default function ComprehensiveNewPage() {
           ? `/analysis/comprehensive?started=${encodeURIComponent(id)}`
           : "/analysis/comprehensive",
       );
-    } catch {
-      // 요청이 나가서 거절당한 것도 왕복은 끝난 것이다. 여기서 안 쏘면 이 실패가
-      // "요청이 아예 안 나갔다"와 뭉개져, 위 차이 계산이 재려던 것을 못 짚는다(FRT-107).
-      capture("analysis_requested", { analysis_type: "comprehensive", accepted: false });
+    } catch (err) {
+      // 서버가 **응답을 돌려준** 실패만 여기 실린다(FRT-107). ApiError 는 HTTP 응답이
+      // 왔다는 증거다 — 오프라인·DNS·연결 끊김은 응답 자체가 없어 raw 예외로 오고, 그건
+      // 접수가 아니라 "요청이 브라우저를 못 떠났다"라 세 갈래가 이렇게 갈린다:
+      //   누름 − requested(전체)      = 요청이 브라우저를 못 떠났다
+      //   requested{accepted:false}   = 나갔는데 서버가 거절했다
+      //   requested{accepted:true}    = 접수됐다
+      // 조건 없이 쏘면 첫 갈래가 영영 비어, 정작 재려던 기술적 실패를 못 짚는다.
+      if (err instanceof ApiError) {
+        capture("analysis_requested", { analysis_type: "comprehensive", accepted: false });
+      }
       if (!mountedRef.current) return;
       setSubmitting(false);
       setPhase("error");

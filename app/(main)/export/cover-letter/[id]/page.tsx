@@ -157,6 +157,7 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
 
   const dirtyRef = useRef(false);
   const resultRef = useRef<CoverLetterResult | null>(null);
+  const savingRef = useRef(false);
   // '뒤로' 버튼이 이미 이 이탈을 알렸으면 뒤이은 언마운트 cleanup 은 같은 경고를 또
   // 띄우지 않는다 — router.push 가 이 컴포넌트를 곧바로 언마운트시키므로, 가드가 없으면
   // 저장 계층 경고(tierWarning)가 사용자에게 두 번 뜬다(FRT-261 회귀).
@@ -180,6 +181,9 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
   // 핸들러가 최신 값을 본다(레쥬메 상세와 같은 이유).
   dirtyRef.current = dirty;
   resultRef.current = result;
+  // 언마운트 시점에 "저장이 아직 도는 중인가". 그 요청이 곧 자기 결말을 쏘므로 이탈
+  // 계측과 겹치면 안 된다(아래 cleanup).
+  savingRef.current = saving;
 
   // AI 초안에 처음 손댄 시점(FRT-107). 레쥬메의 resume_edited 와 같은 축이다 —
   // "AI 결과물을 얼마나 고쳐 쓰는가"는 두 기능에 같은 질문이고, 자소서 쪽만 이 관측이
@@ -350,7 +354,13 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       const tier = writeDraft(id, resultRef.current);
       // 상단 '뒤로'만 출구가 아니다 — GNB 링크로 떠나도 페이지는 조용히 임시 저장한다.
       // 그 편집도 어디까지 갔는지는 같은 질문이라 같은 이벤트로 남긴다(FRT-107).
-      if (!exitDraftFiredRef.current) {
+      //
+      // ⚠️ 저장이 아직 도는 중이면 **계측만** 건너뛴다. 그 요청은 곧 server/failed 로 자기
+      // 결말을 쏘는데, 여기서 exit_draft 까지 쏘면 한 번의 저장 시도에 서로 배타적인 결말이
+      // 둘 실린다. 게다가 exit_draft 는 "저장을 누르지 않고 떠났다"는 뜻이라, 방금 누른
+      // 사용자에게는 거짓이다. 임시 저장(writeDraft)은 그대로 남긴다 — 응답이 늦게 오거나
+      // 실패할 수 있으니 편집을 지키는 쪽은 건드리지 않는다.
+      if (!exitDraftFiredRef.current && !savingRef.current) {
         exitDraftFiredRef.current = true;
         captureEditSaved("exit_draft", tier !== null, resultRef.current, tier);
       }
