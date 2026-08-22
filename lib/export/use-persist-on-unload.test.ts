@@ -30,6 +30,10 @@ function firePageHide(): void {
   window.dispatchEvent(new Event("pagehide"));
 }
 
+function firePageShow(persisted: boolean): void {
+  window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted }));
+}
+
 describe("usePersistOnUnload — 언로드 시점에도 편집을 남긴다(FRT-329)", () => {
   it("pagehide 가 오면 reason='pagehide' 로 1회 부른다", () => {
     const onPersist = vi.fn();
@@ -125,6 +129,34 @@ describe("usePersistOnUnload — 언로드 시점에도 편집을 남긴다(FRT-
     window.dispatchEvent(new Event("beforeunload"));
 
     expect(onPersist).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  // Chrome·Safari 는 beforeunload 가 있어도 bfcache 에 넣는다 — pagehide 뒤에 같은 인스턴스가
+  // 되살아날 수 있다. 호출부의 "한 이탈 한 번" 가드를 되돌릴 신호가 필요하다.
+  it("bfcache 에서 되살아나면(pageshow.persisted) onRestore 를 부른다", () => {
+    const onPersist = vi.fn();
+    const onRestore = vi.fn();
+    const { unmount } = renderHook(() =>
+      usePersistOnUnload({ enabled: true, onPersist, onRestore }),
+    );
+
+    firePageHide();
+    firePageShow(true);
+
+    expect(onRestore).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it("첫 진입의 pageshow(persisted=false) 에는 onRestore 를 부르지 않는다", () => {
+    const onRestore = vi.fn();
+    const { unmount } = renderHook(() =>
+      usePersistOnUnload({ enabled: true, onPersist: vi.fn(), onRestore }),
+    );
+
+    firePageShow(false);
+
+    expect(onRestore).not.toHaveBeenCalled();
     unmount();
   });
 });

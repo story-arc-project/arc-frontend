@@ -836,6 +836,11 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
       window.dispatchEvent(new Event("pagehide"));
     });
   }
+  function firePageShowRestored(): void {
+    act(() => {
+      window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    });
+  }
   function editSavedCalls(): unknown[][] {
     return vi
       .mocked(capture)
@@ -1077,6 +1082,26 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     // 기준선이 바뀌어 깨끗해졌고, 그 뒤 탭을 닫아도 보관본은 그대로다.
     firePageHide();
     expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  });
+
+  // Chrome·Safari 는 beforeunload 가 있어도 bfcache 에 넣는다 — 뒤로 갔다 앞으로 오면 같은
+  // 인스턴스가 되살아난다. 그 뒤 이어 고치고 다시 떠나면 그것은 새 이탈인데, 첫 pagehide 가
+  // 세운 "한 번만" 가드가 남아 두 번째 exit_draft 가 조용히 빠진다.
+  it("bfcache 에서 되살아난 뒤 다시 떠나면 exit_draft 를 또 남긴다", async () => {
+    await renderEdited();
+
+    firePageHide();
+    firePageShowRestored();
+    await userEvent.setup().type(
+      screen.getByRole("textbox", { name: "문항 1 자기소개서 본문" }),
+      "?",
+    );
+    firePageHide();
+
+    expect(editSavedCalls().map(([, p]) => p)).toEqual([
+      expect.objectContaining({ outcome: "exit_draft" }),
+      expect.objectContaining({ outcome: "exit_draft" }),
+    ]);
   });
 });
 

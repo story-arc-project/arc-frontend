@@ -460,6 +460,11 @@ export default function CoverLetterDetailPage({ params }: PageProps) {
       exitDraftFiredRef.current = true;
       captureEditSaved("exit_draft", tier !== null, snapshot, tier, true);
     },
+    // bfcache 에서 되살아났다 — 위 pagehide 는 끝이 아니었다. 이어 고치고 다시 떠나면 그것은
+    // 새 이탈이므로 "한 번만" 가드를 되돌린다(편집·dirty 는 인스턴스와 함께 그대로 살아 있다).
+    onRestore: () => {
+      exitDraftFiredRef.current = false;
+    },
   });
 
   if (loading) {

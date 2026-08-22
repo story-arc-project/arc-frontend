@@ -778,6 +778,11 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
       window.dispatchEvent(new Event("pagehide"));
     });
   }
+  function firePageShowRestored(): void {
+    act(() => {
+      window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    });
+  }
   const exitDraftProps = {
     outcome: "exit_draft",
     persisted: true,
@@ -988,6 +993,25 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     await user.type(screen.getByLabelText("이름"), "{Backspace}");
 
     expect(window.localStorage.getItem("arc:resume-draft:v1")).toBe(otherTab);
+  });
+
+  // Chrome·Safari 는 beforeunload 가 있어도 bfcache 에 넣는다 — 뒤로 갔다 앞으로 오면 같은
+  // 인스턴스가 되살아난다. 그 뒤 이어 고치고 다시 떠나면 그것은 새 이탈인데, 첫 pagehide 가
+  // 세운 "한 번만" 가드가 남아 두 번째 exit_draft 가 조용히 빠진다.
+  it("bfcache 에서 되살아난 뒤 다시 떠나면 exit_draft 를 또 남긴다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    firePageHide();
+    firePageShowRestored();
+    await user.type(screen.getByLabelText("이름"), "?");
+    firePageHide();
+
+    expect(captured("resume_edit_saved").map(([, p]) => p)).toEqual([
+      expect.objectContaining({ outcome: "exit_draft" }),
+      expect.objectContaining({ outcome: "exit_draft" }),
+    ]);
   });
 });
 
