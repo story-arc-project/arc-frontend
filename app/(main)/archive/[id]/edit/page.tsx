@@ -56,6 +56,7 @@ export default function ArchiveEditPage() {
     active: !!loadedId,
     // 기록마다 한 세션. 페이지가 재사용돼도 앞 기록의 시계·완료 자취를 물려받지 않는다.
     sessionKey: loadedId ?? undefined,
+    saving,
   })
 
   // 임시저장을 다시 열어 이어쓰기 시작한 시점(FRT-107). **draft 일 때만** 센다 —

@@ -46,7 +46,7 @@ export default function ArchiveNewPage() {
 
   // 진입 23 → 저장 4(180일 실측). 사라진 83% 가 **이 화면 안에서** 사라져 퍼널로는
   // 어디서 멈췄는지 볼 수 없다 — 멈춘 자리·진행률·경과를 여기서 남긴다(FRT-107).
-  const entryAnalytics = useArchiveEntryAnalytics({ mode: "new", active: true })
+  const entryAnalytics = useArchiveEntryAnalytics({ mode: "new", active: true, saving })
 
   async function handleSave(exp: ExperienceV2) {
     setSaving(true)

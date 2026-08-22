@@ -34,12 +34,15 @@ import {
   createComprehensiveAnalysis,
 } from "@/lib/api/analysis-api";
 import { toast } from "@/components/ui/toast";
+import { ApiError } from "@/lib/api/api-error";
+import { capture } from "@/lib/analytics";
 
 import ComprehensiveNewPage from "./page";
 
 const getExperiences = vi.mocked(getSelectableExperiences);
 const createAnalysis = vi.mocked(createComprehensiveAnalysis);
 const toastMock = vi.mocked(toast);
+const captureMock = vi.mocked(capture);
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
 afterEach(cleanup);
@@ -115,6 +118,44 @@ describe("새 종합 분석 — 걸어두고 목록으로 (FRT-176)", () => {
 
     expect(push).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent("분석 요청에 실패했습니다.");
+  });
+
+  it("서버가 받았는데(2xx) 본문만 깨진 건 거절이 아니다 — accepted 는 응답 상태로 가른다", async () => {
+    await renderAndSelectTwo();
+    createAnalysis.mockRejectedValue(new ApiError(200, "응답 형식이 올바르지 않아요.", "INVALID_JSON"));
+
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    await flush();
+
+    expect(captureMock).toHaveBeenCalledWith("analysis_requested", {
+      analysis_type: "comprehensive",
+      accepted: true,
+    });
+  });
+
+  it("서버가 거절하면(4xx/5xx) accepted:false 로 남는다", async () => {
+    await renderAndSelectTwo();
+    createAnalysis.mockRejectedValue(new ApiError(500, "오류가 발생했어요."));
+
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    await flush();
+
+    expect(captureMock).toHaveBeenCalledWith("analysis_requested", {
+      analysis_type: "comprehensive",
+      accepted: false,
+    });
+  });
+
+  it("응답 자체가 없으면(raw 예외) requested 를 아예 쏘지 않는다", async () => {
+    await renderAndSelectTwo();
+    createAnalysis.mockRejectedValue(new Error("network"));
+
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    await flush();
+
+    expect(
+      captureMock.mock.calls.filter((c) => c[0] === "analysis_requested"),
+    ).toHaveLength(0);
   });
 
   it("요청이 나가 있는 동안 버튼을 다시 누를 수 없다", async () => {

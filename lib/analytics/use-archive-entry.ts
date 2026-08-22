@@ -8,7 +8,7 @@
 //
 // 신규 작성과 수정을 한 이벤트에 싣되 mode 로 가른다 — 수정 중 이탈은 이미 저장된 기록이
 // 있어서 뜻이 다르지만, 같은 폼·같은 자리라 나란히 봐야 "이 화면이 어렵다"를 읽을 수 있다.
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import type { FormCompletionSnapshot } from "@/lib/utils/form-cards";
 
@@ -43,6 +43,13 @@ export interface ArchiveEntryAnalyticsOptions {
    * 물려주지 않는다. 없으면(신규 작성) 한 화면이 곧 한 세션이다.
    */
   sessionKey?: string;
+  /**
+   * 저장 요청이 서버에 나가 있는가. 이 동안 화면을 떠나면 이탈을 **쏘지 않는다** — 응답이
+   * 돌아와 record_created 가 찍히면 한 시도가 "포기"와 "완료" 둘로 남기 때문이다. 응답이
+   * 실패로 끝나 다시 편집하게 되면(saving=false) 그 뒤의 이탈은 다시 센다.
+   * 자소서 편집(exit_draft)이 같은 자리에서 같은 판단을 한다.
+   */
+  saving?: boolean;
 }
 
 export interface ArchiveEntryAnalytics {
@@ -58,7 +65,14 @@ export function useArchiveEntryAnalytics({
   mode,
   active,
   sessionKey,
+  saving = false,
 }: ArchiveEntryAnalyticsOptions): ArchiveEntryAnalytics {
+  // 발화는 언마운트 이후라 클로저의 saving 은 옛 값이다 — 커밋마다 ref 로 맞춘다.
+  // (언마운트 발화는 한 틱 미뤄지므로 effect 동기화가 늦지 않는다.)
+  const savingRef = useRef(saving);
+  useEffect(() => {
+    savingRef.current = saving;
+  }, [saving]);
   // 발화는 언마운트 이후다 — state 로 들면 옛 진행률이 굳어 "아무것도 안 채우고 나갔다"가 된다.
   const snapshotRef = useRef<FormCompletionSnapshot>(EMPTY_SNAPSHOT);
   // 한 번 완료로 관측한 섹션은 다시 세지 않는다. 값을 지웠다 다시 채우면 카드가 미완료로
@@ -74,6 +88,8 @@ export function useArchiveEntryAnalytics({
   const { markCompleted, elapsedSeconds } = useFlowExit({
     active,
     onExit: (elapsed) => {
+      // 저장이 도는 중이면 이 시도의 결말은 응답이 정한다 — 여기서 한 번 더 정하지 않는다.
+      if (savingRef.current) return;
       const snapshot = snapshotRef.current;
       const done = snapshot.completedSectionIds;
       capture(

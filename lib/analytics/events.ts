@@ -214,6 +214,8 @@ export interface AnalyticsEventProps {
   //   · 누름 − requested(전체)    = 요청이 브라우저를 못 떠났다.
   //   · requested{accepted:false} = 나갔는데 서버가 거절했다.
   //   · requested{accepted:true}  = 접수됐다.
+  // accepted 의 기준은 **HTTP 상태**(<400)다 — 2xx 인데 본문만 깨진 응답(INVALID_JSON)은
+  // 화면엔 실패로 보여도 서버가 받은 것이라 접수로 센다.
   // 실패면 무조건 쏘도록 두면 첫 갈래가 영영 비고, 성공에만 쏘면 앞 두 갈래가 뭉개진다.
   analysis_requested: { analysis_type: AnalysisKind; accepted: boolean };
   // 엑스포트 실행 버튼을 누른 시점(요청 함수를 부르기 **직전**). export_completed(실체는

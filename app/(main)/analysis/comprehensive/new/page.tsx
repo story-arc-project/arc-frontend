@@ -88,8 +88,11 @@ export default function ComprehensiveNewPage() {
       //   requested{accepted:false}   = 나갔는데 서버가 거절했다
       //   requested{accepted:true}    = 접수됐다
       // 조건 없이 쏘면 첫 갈래가 영영 비어, 정작 재려던 기술적 실패를 못 짚는다.
+      // 거절의 기준은 **응답 상태**다. 2xx 인데 본문만 깨진 경우(INVALID_JSON)도 ApiError 로
+      // 오는데, 그건 서버가 받고 답한 것이라 거절이 아니다 — 화면은 실패로 보여 주더라도
+      // 계측은 "접수됐다"가 맞다.
       if (err instanceof ApiError) {
-        capture("analysis_requested", { analysis_type: "comprehensive", accepted: false });
+        capture("analysis_requested", { analysis_type: "comprehensive", accepted: err.status < 400 });
       }
       if (!mountedRef.current) return;
       setSubmitting(false);

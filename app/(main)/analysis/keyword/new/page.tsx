@@ -86,8 +86,11 @@ export default function KeywordNewPage() {
       // 서버가 **응답을 돌려준** 실패만 여기 실린다 — 오프라인·DNS·연결 끊김은 응답이 없어
       // raw 예외로 오고, 그건 접수가 아니라 "요청이 브라우저를 못 떠났다"다(FRT-107,
       // 종합분석과 같은 축이라 세 갈래 해석도 그대로 성립한다).
+      // 거절의 기준은 **응답 상태**다. 2xx 인데 본문만 깨진 경우(INVALID_JSON)도 ApiError 로
+      // 오는데, 그건 서버가 받고 답한 것이라 거절이 아니다 — 화면은 실패로 보여 주더라도
+      // 계측은 "접수됐다"가 맞다.
       if (err instanceof ApiError) {
-        capture("analysis_requested", { analysis_type: "keyword", accepted: false });
+        capture("analysis_requested", { analysis_type: "keyword", accepted: err.status < 400 });
       }
       if (!mountedRef.current) return;
       setSubmitting(false);

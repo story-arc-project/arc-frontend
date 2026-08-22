@@ -95,6 +95,39 @@ describe("useArchiveEntryAnalytics — 입력 폼 이탈·진행(FRT-107)", () =
     ).toHaveLength(0);
   });
 
+  it("저장 요청이 도는 중에 떠나면 이탈로 세지 않는다 — 한 시도에 결말은 하나다", () => {
+    const { result, rerender, unmount } = renderHook(
+      ({ saving }) => useArchiveEntryAnalytics({ mode: "new", active: true, saving }),
+      { initialProps: { saving: false } },
+    );
+
+    act(() => result.current.handleCompletionChange(snapshot(["basic"])));
+    rerender({ saving: true });
+    unmount();
+    settle();
+
+    expect(
+      captureMock.mock.calls.filter((c) => c[0] === "archive_entry_abandoned"),
+    ).toHaveLength(0);
+  });
+
+  it("저장이 실패로 끝나 다시 편집하다 떠나면 이탈이다", () => {
+    const { result, rerender, unmount } = renderHook(
+      ({ saving }) => useArchiveEntryAnalytics({ mode: "new", active: true, saving }),
+      { initialProps: { saving: false } },
+    );
+
+    act(() => result.current.handleCompletionChange(snapshot(["basic"])));
+    rerender({ saving: true });
+    rerender({ saving: false });
+    unmount();
+    settle();
+
+    expect(
+      captureMock.mock.calls.filter((c) => c[0] === "archive_entry_abandoned"),
+    ).toHaveLength(1);
+  });
+
   it("이탈 스냅샷은 마지막 진행을 쓴다 (옛 진행률이 굳지 않는다)", () => {
     const { result, unmount } = renderHook(() =>
       useArchiveEntryAnalytics({ mode: "edit", active: true }),
