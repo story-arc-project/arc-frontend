@@ -9,8 +9,9 @@ interface ImagePreviewProps {
 }
 
 export default function ImagePreview({ name, url, onDelete }: ImagePreviewProps) {
+  // flex-col 부모(FileBlock) 안에서 stretch 되면 이미지 옆에 긴 회색 여백이 남는다 → self-start
   return (
-    <figure className="group relative inline-block max-w-full overflow-hidden rounded-md border border-border bg-surface-tertiary">
+    <figure className="group relative inline-block max-w-full self-start overflow-hidden rounded-md border border-border bg-surface-tertiary">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={url}
