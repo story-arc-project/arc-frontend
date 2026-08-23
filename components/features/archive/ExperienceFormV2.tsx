@@ -33,7 +33,13 @@ import {
   uid,
 } from "@/lib/utils/block-utils"
 import { capture } from "@/lib/analytics"
-import { computeFormCards, computeFormProgress } from "@/lib/utils/form-cards"
+import {
+  completedCardIds,
+  computeFormCards,
+  computeFormProgress,
+  filledQualitativeKeys,
+  type FormCompletionSnapshot,
+} from "@/lib/utils/form-cards"
 import { normalizeHiddenKeys, resolveHiddenBlocks } from "@/lib/utils/hidden-fields"
 import { conditionHiddenKeys, partitionByCondition } from "@/lib/utils/conditional-fields"
 import { onEnterCommit } from "@/lib/utils/keyboard"
@@ -55,6 +61,19 @@ interface ExperienceFormV2Props {
   onVisibleSectionsChange?: (sections: { id: string; label: string }[]) => void
   /** 고정 카드 진행도(완료 카드 수/전체) 변경 알림. 값 입력마다 갱신된다. */
   onProgressChange?: (progress: { done: number; total: number }) => void
+  /**
+   * FRT-107: 진행 **자취** 알림. onProgressChange 가 개수만 주는 것과 갈린다 —
+   * 계측이 "어디서 멈췄나"를 물으려면 어느 카드가 채워졌는지와 정성 항목이 실제로
+   * 쓰였는지가 필요하다. 화면은 이 값을 쓰지 않는다(계측 전용).
+   */
+  onCompletionChange?: (snapshot: FormCompletionSnapshot) => void
+}
+
+/** 유형 미선택(템플릿 없음) 상태의 진행 자취 — 아무것도 진행되지 않았다. */
+const EMPTY_COMPLETION: FormCompletionSnapshot = {
+  sectionIds: [],
+  completedSectionIds: [],
+  qualitativeFieldsFilled: [],
 }
 
 /** detail 카드의 공통 기본 안내 — 유형별 문구가 없을 때만 쓴다. */
@@ -89,6 +108,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   hideInlineActions,
   onVisibleSectionsChange,
   onProgressChange,
+  onCompletionChange,
 }: ExperienceFormV2Props, ref) {
   const [typeId, setTypeId] = useState<ExperienceTypeId | null>(
     initialExperience?.typeId ?? null
@@ -98,7 +118,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     initialExperience?.coreBlocks ?? []
   )
   const [extensionSections, setExtensionSections] = useState<
-    { id: string; label: string; category: SectionCategory; collapsed?: boolean; blocks: Block[] }[]
+    { id: string; label: string; category: SectionCategory; standalone?: boolean; description?: string; collapsed?: boolean; blocks: Block[] }[]
   >([])
   const [customBlocks, setCustomBlocks] = useState<Block[]>(
     initialExperience?.customBlocks ?? []
@@ -160,6 +180,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
           id: ext.id,
           label: ext.label,
           category: ext.category,
+          standalone: ext.standalone,
+          description: ext.description,
           collapsed: ext.collapsed,
           blocks: cloneBlocks(ext.blocks),
         }))
@@ -201,6 +223,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             id: ext.id,
             label: ext.label,
             category: ext.category,
+            standalone: ext.standalone,
+            description: ext.description,
             collapsed: ext.collapsed,
             blocks: ext.blocks.map(tb => {
               const saved = (tb.key ? savedByKey.get(tb.key) : undefined) ?? savedByLabel.get(tb.label)
@@ -534,7 +558,8 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   // ── Visible sections callback (고정 4카드 + 사용자 섹션) ──────────────────────────────────────
   // 앵커 라벨은 카드 라벨(오버라이드 반영)과 동일 소스를 쓴다 → 앵커=카드헤더 일치.
   const fixedSections = useMemo(
-    () => (formCards?.cards ?? []).map(c => ({ id: c.category as string, label: c.label })),
+    // 분할 카드(FRT-320)는 category 가 겹치므로 앵커 id 는 카드 고유 id 를 쓴다.
+    () => (formCards?.cards ?? []).map(c => ({ id: c.id, label: c.label })),
     [formCards]
   )
   const allNavSections = useMemo(
@@ -574,6 +599,32 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     emit(template ? progress : { done: 0, total: 0 })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- emit read from ref; depend only on progress/template
   }, [progress.done, progress.total, template])
+
+  // ── Completion snapshot (FRT-107 계측 전용) ──────────────────────────────────────
+  // 진행도와 **같은 판정·같은 숨김 목록**을 쓴다. 여기서 갈리면 화면이 60% 라고 말하는
+  // 순간 계측은 다른 이야기를 남긴다. 값 하나가 바뀔 때마다 재계산되므로 문자열 키로
+  // 얕게 비교해, 같은 자취를 두 번 흘려보내지 않는다(발화가 카드 완료마다 1회여야 한다).
+  const completion = useMemo<FormCompletionSnapshot>(() => {
+    const cards = formCards?.cards ?? []
+    const hidden = [...effectiveHiddenKeys, ...conditionKeys]
+    return {
+      sectionIds: cards.map(c => c.id),
+      completedSectionIds: completedCardIds(cards, hidden),
+      qualitativeFieldsFilled: filledQualitativeKeys(cards, hidden),
+    }
+  }, [formCards, effectiveHiddenKeys, conditionKeys])
+  const completionKey = `${completion.sectionIds.join(",")}|${completion.completedSectionIds.join(",")}|${completion.qualitativeFieldsFilled.join(",")}`
+  const onCompletionChangeRef = useRef(onCompletionChange)
+  useEffect(() => {
+    onCompletionChangeRef.current = onCompletionChange
+  })
+  useEffect(() => {
+    const emit = onCompletionChangeRef.current
+    if (!emit) return
+    // 템플릿이 아직 없으면(유형 미선택) 진행 자취도 없다 — onProgressChange 와 같은 규칙.
+    emit(template ? completion : EMPTY_COMPLETION)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- emit read from ref; depend only on completionKey/template
+  }, [completionKey, template])
 
   const titleValue = formCards?.titleBlock?.value
   const titleText = titleValue?.type === "text" ? titleValue.text : ""
@@ -661,6 +712,12 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
         <ProjectLinkProvider value={projectLink}>
         <RoleHistoryProvider value={roleHistory}>
         <div className="flex flex-col gap-5 archive-input-14">
+          {/* Tags — FRT-301: 경험 유형 아래·기본 정보 위. 태그를 폼 진입 직후 먼저 붙일 수 있게 한다. */}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor={tagInputId} className="text-field-label text-text-primary">태그</label>
+            <TagInput inputId={tagInputId} tags={tags} onChange={setTags} />
+          </div>
+
           {formCards.cards.map(card => {
             // 숨김은 카드 모델이 아니라 이 렌더 층에서 가른다 — 카드 자체와 하단 되살리기
             // 토글은 남겨야 마지막 필드를 숨겨도 되돌릴 길이 사라지지 않는다.
@@ -673,16 +730,23 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             const { visible, hidden } = resolveHiddenBlocks(shown, effectiveHiddenKeys)
             return (
               <FormSection
-                key={card.category}
+                key={card.id}
                 variant="card"
-                sectionId={card.category}
+                sectionId={card.id}
                 label={card.label}
                 blocks={visible}
                 hiddenBlocks={hidden}
                 onHide={handleHideBlock}
                 onUnhide={handleUnhideBlock}
                 optional={card.optional}
-                description={sectionDescription(typeId, card.category)}
+                // 분할 카드(FRT-320, id≠category)는 섹션이 실어 온 안내만 쓴다 — 카테고리 키
+                // 오버라이드/기본 문구를 그대로 태우면 같은 카테고리의 여러 카드에 같은 안내가
+                // 반복돼 붙는다.
+                description={
+                  card.id === card.category
+                    ? sectionDescription(typeId, card.category)
+                    : card.description
+                }
                 onChange={writeBackBlocks}
               />
             )
@@ -731,12 +795,6 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
             블록 추가
           </button>
 
-          {/* Tags */}
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={tagInputId} className="text-field-label text-text-primary">태그</label>
-            <TagInput inputId={tagInputId} tags={tags} onChange={setTags} />
-          </div>
-
           {/* Action buttons — 입력 뷰 셸에서는 sticky 바로 이관되어 숨겨진다(hideInlineActions). */}
           {!hideInlineActions && (
             <div className="flex gap-2 pt-6 border-t border-border">
@@ -775,25 +833,28 @@ function TagInput({ inputId, tags, onChange }: { inputId?: string; tags: string[
   }
 
   return (
-    <div>
-      <div className="flex flex-wrap gap-1.5 mb-2">
-        {tags.map(tag => (
-          <span
-            key={tag}
-            className="inline-flex items-center gap-1 bg-surface-brand text-brand-dark rounded-full pl-2.5 pr-1.5 py-0.5 text-caption font-medium"
-          >
-            {tag}
-            <button
-              type="button"
-              onClick={() => onChange(tags.filter(t => t !== tag))}
-              className="rounded-full p-0.5 hover:bg-brand-light transition-colors text-brand-dark"
-              aria-label={`${tag} 삭제`}
+    <div className="flex flex-col gap-2">
+      {/* FRT-301: 태그가 있을 때만 chip 줄을 렌더 — 빈 상태에서 공간을 차지하지 않는다. */}
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map(tag => (
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 bg-surface-brand text-brand-dark rounded-full pl-2.5 pr-1.5 py-0.5 text-caption font-medium"
             >
-              ×
-            </button>
-          </span>
-        ))}
-      </div>
+              {tag}
+              <button
+                type="button"
+                onClick={() => onChange(tags.filter(t => t !== tag))}
+                className="rounded-full p-0.5 hover:bg-brand-light transition-colors text-brand-dark"
+                aria-label={`${tag} 삭제`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex gap-2">
         <input
           id={inputId}
@@ -804,6 +865,13 @@ function TagInput({ inputId, tags, onChange }: { inputId?: string; tags: string[
           onChange={e => setInput(e.target.value)}
           onKeyDown={onEnterCommit(add)}
         />
+        <button
+          type="button"
+          onClick={add}
+          className="h-9 rounded-md border border-border bg-surface px-3 text-body-sm text-text-secondary hover:bg-surface-secondary transition-colors"
+        >
+          추가
+        </button>
       </div>
     </div>
   )

@@ -20,12 +20,47 @@ function isActive(): boolean {
 // 식별하지 못하게 취소한다.
 let identifyToken = 0;
 
+// FRT-139: 팀 계정 행동을 지표에서 제외하기 위한 person 표식.
+// PostHog 가 내부/테스트 사용자 필터(프로젝트 test_account_filters → 코호트)에 쓰는 표준 속성이라,
+// 이 값만 심으면 대시보드 쪽 배선은 이미 되어 있다. 전송을 막지 않고 표식만 남기는 이유는
+// 되돌릴 수 있어서다 — 필터를 끄면 팀 행동도 다시 보인다.
+const INTERNAL_USER_PROPERTY = "$internal_or_test_user";
+
+// 팀원 판정(/api/admin/status)과 identify(/auth/me → 해시)는 서로 다른 왕복이라 도착 순서가
+// 정해져 있지 않다. person_profiles 가 identified_only 라 식별 전에는 속성을 심어도 붙을 person 이
+// 없으므로, 판정이 먼저 오면 보류했다가 identify 직후에 흘려보낸다.
+let internalTagPending = false;
+// 마운트마다 다시 심으면 그때마다 $set 이벤트가 쌓인다 — 식별된 사용자당 1회로 묶는다.
+let internalTagSent = false;
+
+// FRT-107: 화면이 사라지는 순간에 쏘는 이벤트(이탈·체류)용 전송 옵션.
+// 기본 경로는 배치 큐라, 언마운트·탭 종료 직전에 담으면 페이지와 함께 사라진다.
+// sendBeacon 은 언로드 중에도 브라우저가 대신 보내주고, send_instantly 는 큐를 건너뛴다
+// (transport 만으로는 배치 간격을 기다린다 — posthog-js 문서).
+const UNLOAD_TRANSPORT = {
+  transport: "sendBeacon",
+  send_instantly: true,
+} as const;
+
+export interface CaptureOptions {
+  // 이 이벤트가 화면이 사라지는 순간에 발화하는가. 호출부가 posthog 전송 방식을 알 필요는
+  // 없으므로 "언제 쏘는가"만 말하게 하고, 그 뜻을 여기서 한 번만 옮긴다.
+  atUnload?: boolean;
+}
+
 // 타입드 capture — 이벤트명과 속성이 events.ts 의 계약과 어긋나면 컴파일 에러.
 export function capture<E extends keyof AnalyticsEventProps>(
   event: E,
   props: AnalyticsEventProps[E],
+  options?: CaptureOptions,
 ): void {
   if (!isActive()) return;
+  // 세 번째 인자를 undefined 로라도 넘기지 않는다 — 기본 호출부의 전송 경로를 건드리지 않기
+  // 위해서다(기존 계약 무변경).
+  if (options?.atUnload) {
+    posthog.capture(event, props, UNLOAD_TRANSPORT);
+    return;
+  }
   posthog.capture(event, props);
 }
 
@@ -37,6 +72,26 @@ export async function identifyUser(emailSeed: string): Promise<void> {
   // 해시 대기 중 reset(로그아웃·탈퇴)이 끼어들었거나 비활성 전환되면 식별을 취소한다.
   if (token !== identifyToken || !isActive()) return;
   posthog.identify(distinctId);
+  // 이제 붙일 person 이 생겼으니 보류된 내부 표식을 흘려보낸다.
+  flushInternalUserTag();
+}
+
+// 이 사용자를 팀(운영자) 계정으로 표시한다 — 판정 소스는 서버 전용 ADMIN_EMAILS 이고,
+// 클라이언트는 /api/admin/status 가 내려준 boolean 만 안다(운영자 이메일은 번들에 노출되지 않는다).
+export function markInternalUser(): void {
+  if (internalTagSent) return;
+  internalTagPending = true;
+  flushInternalUserTag();
+}
+
+// 식별이 끝나 있을 때만 실제로 심는다. 아니면 예약 상태로 두고 identifyUser 가 다시 부른다.
+function flushInternalUserTag(): void {
+  if (!internalTagPending || internalTagSent) return;
+  // isIdentified 는 비활성(미초기화·데모)일 때 posthog 를 건드리지 않고 false 를 준다.
+  if (!isIdentified()) return;
+  posthog.setPersonProperties({ [INTERNAL_USER_PROPERTY]: true });
+  internalTagPending = false;
+  internalTagSent = true;
 }
 
 // posthog 가 아직 특정 사용자로 식별된 상태인지. distinct_id 는 localStorage 에 남으므로
@@ -52,6 +107,10 @@ export function isIdentified(): boolean {
 export function resetUser(): void {
   // 진행 중인 identify 를 먼저 무효화한다(비활성 상태여도 토큰은 올린다).
   identifyToken++;
+  // 내부 표식도 여기서 비운다 — 비활성 상태여도 비워야, 같은 브라우저의 다음 사용자가
+  // 팀원의 보류분을 물려받아 '내부 사용자'로 잘못 표시되지 않는다.
+  internalTagPending = false;
+  internalTagSent = false;
   if (!isActive()) return;
   posthog.reset();
 }

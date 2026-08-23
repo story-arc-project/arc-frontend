@@ -7,11 +7,18 @@ import { ArrowLeft, ExternalLink, AlertTriangle } from "lucide-react";
 import type {
   IndividualAnalysisResult,
   IndividualWeakness,
+  IndividualStrength,
+  IndividualStrengthLevel,
   WeaknessSeverity,
   SynergyPriority,
 } from "@/types/analysis";
-import { weaknessSeverityLabel, synergyPriorityLabel } from "@/types/analysis";
+import {
+  weaknessSeverityLabel,
+  synergyPriorityLabel,
+  individualStrengthLevelLabel,
+} from "@/types/analysis";
 import { getIndividualAnalysisResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
+import { useAnalysisViewed } from "@/lib/analytics";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { Badge } from "@/components/ui"
 import BookmarkToggle from "@/components/features/analysis/common/BookmarkToggle";
@@ -48,6 +55,12 @@ export default function IndividualAnalysisDetailPage() {
       active = false;
     };
   }, [analysisId]);
+
+  // 이 결과를 얼마나 봤는가(FRT-107). 개별 분석은 백엔드가 자동 생성해 "실행" 이벤트가
+  // 없지만, 조회는 사람이 하므로 종합·키워드와 같은 축에서 비교할 수 있다.
+  // ready 는 data 가 아니라 hasResultBody 다 — 대기·실패 안내 화면을 본 시간은 결과를
+  // 본 시간이 아니다(comprehensive 와 같은 규칙).
+  useAnalysisViewed({ analysisType: "individual", analysisId, ready: !!data?.hasResultBody });
 
   if (unsupported) {
     return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/individual" />;
@@ -163,6 +176,10 @@ export default function IndividualAnalysisDetailPage() {
 
         <StarFormatSection star={result.starFormat} />
 
+        {/* 강점 → 진단(약점) 순서. 백엔드 프롬프트의 앵커링 저항 원칙과 같은 배치이며,
+            종합분석 상세도 strength_diagnosis 를 critical_diagnosis 앞에 둔다. */}
+        <ItemStrengthsSection strengths={result.itemStrengths} />
+
         <ItemDiagnosisSection diagnosis={result.itemDiagnosis} />
 
         <SynergySection items={result.synergyRecommendations} />
@@ -179,11 +196,7 @@ function DeepAnalysisSection({
   deep: IndividualAnalysisResult["result"]["deepAnalysis"];
 }) {
   const hasAny =
-    deep.careerValue ||
-    deep.marketValue ||
-    deep.strengths.length > 0 ||
-    deep.limitations.length > 0 ||
-    deep.applicableRoles.length > 0;
+    deep.careerValue || deep.marketValue || deep.applicableRoles.length > 0;
   if (!hasAny) return null;
 
   return (
@@ -197,12 +210,6 @@ function DeepAnalysisSection({
           <InfoBlock label="시장 가치" body={deep.marketValue} />
         )}
       </div>
-      {deep.strengths.length > 0 && (
-        <BulletBlock label="강점" items={deep.strengths} tone="success" />
-      )}
-      {deep.limitations.length > 0 && (
-        <BulletBlock label="한계" items={deep.limitations} tone="warning" />
-      )}
       {deep.applicableRoles.length > 0 && (
         <div className="space-y-2">
           <p className="text-label text-text-tertiary">적합한 직무</p>
@@ -252,6 +259,95 @@ function StarFormatSection({
   );
 }
 
+// 개별분석 전용 등급 표 — 종합분석의 strengthLevelVariant 와 어휘가 달라 공유하지 않는다
+// (개별: outstanding|notable|moderate / 종합: outstanding|strong|notable).
+const individualStrengthLevelVariant: Record<
+  IndividualStrengthLevel,
+  "brand" | "success" | "default"
+> = {
+  outstanding: "brand",
+  notable: "success",
+  moderate: "default",
+};
+
+function ItemStrengthsSection({
+  strengths,
+}: {
+  strengths: IndividualAnalysisResult["result"]["itemStrengths"];
+}) {
+  const hasCards = strengths.strengths.length > 0;
+  // hasGenuineStrengths 는 판정에 넣지 않는다 — 방어 파싱의 기본값(false)이 아니라
+  // "서술이 하나라도 왔는가"로 그려야 구 레코드에서 빈 껍데기 섹션이 뜨지 않는다.
+  const empty =
+    !hasCards &&
+    !strengths.oneLineVerdict &&
+    !strengths.noStrengthReason &&
+    !strengths.strongestAsset &&
+    !strengths.positioningTip &&
+    strengths.summarizedStrengths.length === 0;
+  if (empty) return null;
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-title text-text-primary">강점</h2>
+
+      {strengths.oneLineVerdict && (
+        <div className="bg-surface-brand text-brand-dark rounded-lg p-4">
+          <p className="text-body-sm font-medium leading-relaxed">
+            {strengths.oneLineVerdict}
+          </p>
+        </div>
+      )}
+
+      {strengths.summarizedStrengths.length > 0 && (
+        <BulletBlock label="한눈에" items={strengths.summarizedStrengths} tone="success" />
+      )}
+
+      {hasCards && (
+        <ul className="space-y-3">
+          {strengths.strengths.map((s) => (
+            <StrengthCard key={s.id} strength={s} />
+          ))}
+        </ul>
+      )}
+
+      {/* 강점이 없을 때만 사유를 안내한다 — 빈 섹션 대신 다음 행동이 보이게(제품 원칙). */}
+      {!hasCards && strengths.noStrengthReason && (
+        <InfoBlock label="지금 상태" body={strengths.noStrengthReason} />
+      )}
+
+      {strengths.strongestAsset && (
+        <InfoBlock label="가장 강한 자산" body={strengths.strongestAsset} />
+      )}
+
+      {strengths.positioningTip && (
+        <InfoBlock label="이렇게 내세우세요" body={strengths.positioningTip} />
+      )}
+    </section>
+  );
+}
+
+function StrengthCard({ strength }: { strength: IndividualStrength }) {
+  return (
+    <li className="bg-surface border border-border rounded-lg p-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant={individualStrengthLevelVariant[strength.level]}>
+          {individualStrengthLevelLabel[strength.level]}
+        </Badge>
+        {strength.category && <Badge variant="outline">{strength.category}</Badge>}
+        <h3 className="text-body-sm font-medium text-text-primary">{strength.title}</h3>
+      </div>
+      {strength.analysis && <Field label="분석" value={strength.analysis} />}
+      {strength.evidence && <Field label="근거" value={strength.evidence} />}
+      {strength.careerImpact && <Field label="영향" value={strength.careerImpact} />}
+      {strength.leverageAction && <Field label="활용 방법" value={strength.leverageAction} />}
+      {strength.showcaseExample && (
+        <Field label="표현 예시" value={strength.showcaseExample} />
+      )}
+    </li>
+  );
+}
+
 const severityVariant: Record<WeaknessSeverity, "error" | "warning" | "default"> = {
   critical: "error",
   major: "warning",
@@ -267,6 +363,7 @@ function ItemDiagnosisSection({
     !diagnosis.oneLineVerdict &&
     !diagnosis.rewriteSuggestion &&
     diagnosis.weaknesses.length === 0 &&
+    diagnosis.limitations.length === 0 &&
     diagnosis.missingElements.length === 0;
   if (empty) return null;
 
@@ -289,6 +386,11 @@ function ItemDiagnosisSection({
             ))}
           </ul>
         </div>
+      )}
+
+      {/* 백엔드는 한계를 item_diagnosis 안에 둔다 — 약점 카드보다 가벼운 서술이라 뒤에 붙인다. */}
+      {diagnosis.limitations.length > 0 && (
+        <BulletBlock label="한계" items={diagnosis.limitations} tone="warning" />
       )}
 
       {diagnosis.missingElements.length > 0 && (

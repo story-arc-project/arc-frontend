@@ -49,6 +49,10 @@ export default function NewCoverLetterPage() {
     abortRef.current = controller;
     const timeoutId = window.setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
 
+    // 눌렀다는 사실(FRT-107). 요청 **앞**에 둔다 — export_completed(이름과 달리 실체는
+    // 접수)와의 건수 차이가 "눌렀는데 요청이 안 나간" 기술적 실패다.
+    capture("export_execute_button_clicked", { export_type: "cover_letter" });
+
     // 빈 문항은 보내지 않는다 — 명세상 빈 목록이면 백엔드가 자유 형식 1건을 만든다.
     // 여기서 "(자유 형식)" 문자열을 지어 보내면 그 문구가 문항 제목으로 굳어 버린다.
     const asked = questions.filter((q) => q.question.trim() !== "");

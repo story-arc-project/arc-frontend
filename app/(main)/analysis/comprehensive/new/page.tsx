@@ -11,6 +11,7 @@ import {
   getSelectableExperiences,
   createComprehensiveAnalysis,
 } from "@/lib/api/analysis-api";
+import { ApiError } from "@/lib/api/client";
 import { capture } from "@/lib/analytics";
 import ExperienceSelector from "@/components/features/analysis/ExperienceSelector";
 
@@ -65,6 +66,10 @@ export default function ComprehensiveNewPage() {
     capture("analysis_target_selected", { analysis_type: "comprehensive", count: selected.length });
     try {
       const { analysisId: id } = await createComprehensiveAnalysis(selected);
+      // 서버가 요청을 받았다(FRT-107). 위 analysis_target_selected(누름)와의 건수 차이가
+      // "눌렀는데 요청이 안 나간" 기술적 실패다 — analysis_completed 로는 못 가른다.
+      // 그건 분석이 끝났다는 뜻이라 "접수됐지만 도는 중"과 한 덩어리가 되기 때문이다.
+      capture("analysis_requested", { analysis_type: "comprehensive", accepted: true });
       toast("분석을 시작했어요. 목록에서 진행 상황을 확인하세요.", "success");
       if (!mountedRef.current) return;
       // 방금 만든 분석 id 를 목록에 알려준다 — 빨리 끝나는 분석은 목록의 첫 조회 시점에 이미
@@ -75,7 +80,20 @@ export default function ComprehensiveNewPage() {
           ? `/analysis/comprehensive?started=${encodeURIComponent(id)}`
           : "/analysis/comprehensive",
       );
-    } catch {
+    } catch (err) {
+      // 서버가 **응답을 돌려준** 실패만 여기 실린다(FRT-107). ApiError 는 HTTP 응답이
+      // 왔다는 증거다 — 오프라인·DNS·연결 끊김은 응답 자체가 없어 raw 예외로 오고, 그건
+      // 접수가 아니라 "요청이 브라우저를 못 떠났다"라 세 갈래가 이렇게 갈린다:
+      //   누름 − requested(전체)      = 요청이 브라우저를 못 떠났다
+      //   requested{accepted:false}   = 나갔는데 서버가 거절했다
+      //   requested{accepted:true}    = 접수됐다
+      // 조건 없이 쏘면 첫 갈래가 영영 비어, 정작 재려던 기술적 실패를 못 짚는다.
+      // 거절의 기준은 **응답 상태**다. 2xx 인데 본문만 깨진 경우(INVALID_JSON)도 ApiError 로
+      // 오는데, 그건 서버가 받고 답한 것이라 거절이 아니다 — 화면은 실패로 보여 주더라도
+      // 계측은 "접수됐다"가 맞다.
+      if (err instanceof ApiError) {
+        capture("analysis_requested", { analysis_type: "comprehensive", accepted: err.status < 400 });
+      }
       if (!mountedRef.current) return;
       setSubmitting(false);
       setPhase("error");

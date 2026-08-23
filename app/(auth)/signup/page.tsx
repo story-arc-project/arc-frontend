@@ -8,7 +8,7 @@ import { Button, DatePicker, Input, toast } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
 import { api, ApiError } from "@/lib/api/client";
-import { capture, markSignupCompletedIfUnseen } from "@/lib/analytics";
+import { capture, markSignupCompletedIfUnseen, useFlowExit } from "@/lib/analytics";
 import { useAuth } from "@/hooks/useAuth";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { VerifyEmailResponse } from "@/types/auth";
@@ -118,6 +118,65 @@ function SignupForm() {
       goTo(FIRST_ONBOARDING_STEP);
     }
   }, [step, isAuthenticated, isAuthLoading]);
+
+  const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
+  const isOnboarding = onboardingIndex >= 0;
+
+  // 온보딩 스텝을 **그리고 있다**고 온보딩 중인 사람인 건 아니다. 이미 마친 사용자가 stale
+  // 링크·뒤로가기로 이 URL 에 닿으면 리다이렉트가 화면을 걷어낼 때까지 스텝이 잠깐 렌더되는데,
+  // 그 찰나를 세면 스텝 조회가 부풀고 곧이어 이탈까지 한 건 남는다 — 아무도 헤맨 적 없는 자리에.
+  //
+  // 판정이 끝나기 전(isAuthLoading)에도 시작하지 않는다. 미리 시작해 두면 판정이 "자격 없음"으로
+  // 끝나는 순간 그 비활성화가 **그대로 이탈로 발화한다**(떠난 게 아니라 애초에 못 들어온 건데도).
+  // 계측 전용 축이라 진행 점(isOnboarding)과 분리한다 — 화면은 지금대로 둔다.
+  const isOnboardingActive = isOnboarding && !isAuthLoading && !shouldRedirect;
+
+  // FRT-107: 온보딩은 라우트가 하나(step state)라 스텝 진입이 **어떤 방법으로도** 관측되지
+  // 않는다 — capture_pageview 를 켜더라도 URL 이 안 바뀐다. 어느 스텝에서 오래 머물고
+  // 어디서 그만두는지는 이 두 이벤트에만 남는다.
+  //
+  // 같은 스텝이 연속으로 다시 발화하지 않게만 막는다(StrictMode 이중 마운트). 뒤로 갔다
+  // 다시 온 재진입은 진짜 재조회라 그대로 센다 — 그게 "이 스텝에서 헤맸다"는 신호다.
+  //
+  // ⚠️ 아래 두 ref 는 값이 같아 보여도 **수명이 다르다.** 하나로 합치면, 흐름을 나갔다
+  // 되돌아온 새 세션의 첫 스텝이 직전 세션의 값과 같다는 이유로 조회가 통째로 삼켜진다 —
+  // 이탈만 남고 그에 대응하는 스텝 조회가 없는 데이터가 된다.
+  //   · lastViewedStepRef      — 중복 방지. 흐름이 꺼지면 **비운다**(다음 진입은 새 세션이다).
+  //   · lastOnboardingStepRef  — last_step 스냅샷. 이탈 발화가 읽어야 하므로 **절대 안 비운다**.
+  const lastViewedStepRef = useRef<Step | null>(null);
+  const lastOnboardingStepRef = useRef<Step | null>(null);
+  useEffect(() => {
+    if (!isOnboardingActive) {
+      lastViewedStepRef.current = null;
+      return;
+    }
+    // 스냅샷은 조회 발화 여부와 무관하게 갱신한다 — 중복이라 조회를 건너뛴 스텝도
+    // 사용자가 머문 자리인 건 같다.
+    lastOnboardingStepRef.current = step;
+    if (lastViewedStepRef.current === step) return;
+    lastViewedStepRef.current = step;
+    capture("onboarding_step_viewed", { step, step_index: onboardingIndex });
+  }, [step, isOnboardingActive, onboardingIndex]);
+
+  const { markCompleted: markOnboardingCompleted } = useFlowExit({
+    active: isOnboardingActive,
+    onExit: (elapsedSeconds) => {
+      capture(
+        "onboarding_abandoned",
+        {
+          // ⚠️ `step` 이 아니다. 흐름을 끄면서 떠나는 경우(「← 이전」으로 온보딩 밖 스텝으로
+          // 나가기) 발화는 한 틱 미뤄지는데, 그 사이 렌더가 이 콜백을 **이탈 후 step** 을 쥔
+          // 것으로 갈아끼운다. 그대로 쓰면 last_step 이 온보딩에 있지도 않은 "verify" 가 되어
+          // 정작 사용자가 그만둔 자리를 가린다. 마지막으로 **머물렀던** 스텝을 새겨 두고 쓴다.
+          last_step: lastOnboardingStepRef.current ?? step,
+          elapsed_seconds: elapsedSeconds,
+        },
+        // 온보딩 완료는 하드 내비게이션(window.location.assign)이라, 배치 큐에 담으면
+        // 이탈이든 완료든 페이지와 함께 사라진다.
+        { atUnload: true },
+      );
+    },
+  });
 
   function toggleInterest(opt: string) {
     setInterests((prev) =>
@@ -310,6 +369,9 @@ function SignupForm() {
       // 온보딩 완료 확정 지점(성공 응답). DUPLICATE_ONBOARDING(이미 완료 재진입)은
       // 아래 catch 에서 별도 처리하며 중복 발화하지 않는다.
       capture("onboarding_completed", {});
+      // 여기서부터 이 온보딩은 이탈이 아니다(FRT-107). 아래 하드 내비게이션이 pagehide 를
+      // 부르므로, 이 표시가 먼저 서야 완료가 이탈로도 집계되지 않는다.
+      markOnboardingCompleted();
       // 하드 내비게이션으로 AuthProvider를 재마운트·refetch해야 온보딩 직후 GNB 계정 메뉴가 노출된다.
       window.location.assign("/dashboard");
     } catch (e) {
@@ -320,6 +382,9 @@ function SignupForm() {
           toast.error("로그인 정보가 정확하지 않아요. 다시 로그인해주세요.")
         } else if (e.code === "DUPLICATE_ONBOARDING") {
           // 이미 온보딩 완료 — 대시보드로 이동 (하드 내비게이션으로 auth 재동기화)
+          // 완료 이벤트는 중복이라 안 쏘지만 이탈도 아니다. 표시를 안 세우면 이 재진입이
+          // 곧바로 onboarding_abandoned 로 잡혀 이탈률이 부풀어 오른다(FRT-107).
+          markOnboardingCompleted();
           window.location.assign("/dashboard");
         } else if (e.code === "INVALID_INPUT") {
           toast.error("입력 정보를 다시 확인해주세요.");
@@ -339,9 +404,6 @@ function SignupForm() {
     name.trim().length > 0 &&
     birthValid &&
     phone.length === 11;
-  const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
-  const isOnboarding = onboardingIndex >= 0;
-
   if (shouldRedirect) return null;
 
   return (
@@ -602,10 +664,21 @@ function SignupForm() {
                 </div>
 
                 {/* 현재 상태 (선택) */}
-                <div className="mb-5">
-                  <label className="block text-label text-text-primary mb-2">
+                {/* 선택 여부가 색상으로만 바뀌면 스크린리더에는 아무것도 전달되지 않는다(FRT-296).
+                    다시 눌러 해제되는 토글이라 radio 가 아니라 aria-pressed 로 상태를 노출한다.
+                    묶음 이름이 없으면 "무엇에 대한 선택인지"가 여전히 들리지 않아 group 으로 감싼다. */}
+                <div
+                  className="mb-5"
+                  role="group"
+                  aria-labelledby="signup-affiliation-label"
+                  aria-describedby="signup-affiliation-hint"
+                >
+                  <span
+                    id="signup-affiliation-label"
+                    className="block text-label text-text-primary mb-2"
+                  >
                     현재 상태
-                  </label>
+                  </span>
                   <div className="grid grid-cols-4 gap-2">
                     {AFFILIATION_OPTIONS.map((opt) => {
                       const active = affiliation === opt.value;
@@ -613,6 +686,7 @@ function SignupForm() {
                         <button
                           key={opt.value}
                           type="button"
+                          aria-pressed={active}
                           onClick={() => {
                             setAffiliation(active ? "" : opt.value);
                             setSchool("");
@@ -634,7 +708,12 @@ function SignupForm() {
                       );
                     })}
                   </div>
-                  <p className="mt-1.5 text-caption text-text-tertiary">선택 사항이에요</p>
+                  <p
+                    id="signup-affiliation-hint"
+                    className="mt-1.5 text-caption text-text-tertiary"
+                  >
+                    선택 사항이에요
+                  </p>
                 </div>
 
                 {/* 상태별 조건부 입력 */}
@@ -706,17 +785,23 @@ function SignupForm() {
             {/* ── q1 ───────────────────────────────── */}
             {step === "q1" && (
               <div>
-                <h1 className="text-heading-2 text-text-primary mb-1">
+                <h1 id="signup-q1-heading" className="text-heading-2 text-text-primary mb-1">
                   요즘 가장 고민되는 게 뭐예요?
                 </h1>
-                <p className="text-body text-text-secondary mb-8">
+                <p id="signup-q1-hint" className="text-body text-text-secondary mb-8">
                   복수 선택 가능해요 · 솔직하게 골라도 괜찮아요 😊
                 </p>
-                <div className="grid grid-cols-2 gap-2.5 mb-6">
+                <div
+                  className="grid grid-cols-2 gap-2.5 mb-6"
+                  role="group"
+                  aria-labelledby="signup-q1-heading"
+                  aria-describedby="signup-q1-hint"
+                >
                   {Q1_OPTIONS.map((opt) => (
                     <button
                       key={opt}
                       type="button"
+                      aria-pressed={worries.includes(opt)}
                       onClick={() => toggleWorry(opt)}
                       className={[
                         "h-12 rounded-xl border-2 text-body font-semibold",
@@ -749,17 +834,23 @@ function SignupForm() {
             {/* ── q2 ───────────────────────────────── */}
             {step === "q2" && (
               <div>
-                <h1 className="text-heading-2 text-text-primary mb-1">
+                <h1 id="signup-q2-heading" className="text-heading-2 text-text-primary mb-1">
                   관심 있는 분야를 골라보세요
                 </h1>
-                <p className="text-body text-text-secondary mb-8">
+                <p id="signup-q2-hint" className="text-body text-text-secondary mb-8">
                   복수 선택 가능해요
                 </p>
-                <div className="grid grid-cols-2 gap-2.5 mb-6">
+                <div
+                  className="grid grid-cols-2 gap-2.5 mb-6"
+                  role="group"
+                  aria-labelledby="signup-q2-heading"
+                  aria-describedby="signup-q2-hint"
+                >
                   {INTEREST_OPTIONS.map((opt) => (
                     <button
                       key={opt}
                       type="button"
+                      aria-pressed={interests.includes(opt)}
                       onClick={() => toggleInterest(opt)}
                       className={[
                         "h-12 rounded-xl border-2 text-body font-semibold",

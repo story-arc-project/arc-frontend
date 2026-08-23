@@ -72,6 +72,9 @@ export default function BlockEditModal({
   }
 
   const needsOptions = blockType === "single-select" || blockType === "checklist"
+  const needsColumns = blockType === "repeatable-cell"
+  const needsTableCols = blockType === "table"
+  const needsPlaceholder = blockType === "text" || blockType === "textarea"
   // 단일선택은 옵션이 0개가 되면 고를 값이 없는 드롭다운이 된다 → 마지막 하나는 남긴다(FRT-158).
   // 체크리스트는 인라인 편집기와 마찬가지로 0개를 허용한다.
   const lockLastOption = blockType === "single-select" && options.length <= 1
@@ -84,14 +87,12 @@ export default function BlockEditModal({
       // 빈 배열도 그대로 넘긴다 — `undefined` 로 접으면 BlockList 가 "옵션을 안 건드렸다"로 읽어
       // 사용자가 지운 옵션이 되살아난다(FRT-158 형제 결함).
       options: needsOptions ? options : undefined,
-      columns: columns.length > 0 ? columns : undefined,
-      tableColumns: tableColumns.length > 0 ? tableColumns : undefined,
+      // 열 목록도 같은 규칙이다 — `length > 0` 으로 접으면 열을 전부 지운 편집이 통째로
+      // 무시되고 옛 열이 되살아난다. 어느 목록을 보낼지는 **개수가 아니라 블록 타입**이 정한다.
+      columns: needsColumns ? columns : undefined,
+      tableColumns: needsTableCols ? tableColumns : undefined,
     })
   }
-
-  const needsColumns = blockType === "repeatable-cell"
-  const needsTableCols = blockType === "table"
-  const needsPlaceholder = blockType === "text" || blockType === "textarea"
 
   if (!open || !blockType) return null
 

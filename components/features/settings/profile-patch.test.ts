@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildProfilePatch, type ProfileFormState } from "./profile-patch";
+import {
+  buildProfilePatch,
+  partitionByOptions,
+  type ProfileFormState,
+} from "./profile-patch";
 
 const base: ProfileFormState = {
   name: "홍길동",
@@ -74,5 +78,95 @@ describe("buildProfilePatch", () => {
     const current: ProfileFormState = { ...initial, affiliation: "" };
     const patch = buildProfilePatch(initial, current);
     expect(patch).toEqual({});
+  });
+});
+
+/* ── FRT-260: 옵션 목록 밖 값 보존 ────────────────────────────
+ * PATCH /auth/profile 은 필드가 실리면 값 전체를 교체한다(backend auth.py:
+ * `if body.worry is not None: user_profile.worry = body.worry`).
+ * 화면은 현재 옵션 목록만 렌더하므로, 걸러진 값을 저장 시 다시 합치지 않으면
+ * 사용자가 본 적도 없는 값이 무관한 칩 하나를 토글하는 순간 영구 삭제된다.
+ */
+describe("partitionByOptions", () => {
+  const OPTIONS = ["진로/방향성", "취업/인턴"] as const;
+
+  it("옵션 목록에 있는 값과 없는 값을 갈라 담는다", () => {
+    const { known, unknown } = partitionByOptions(
+      ["진로/방향성", "개편전-고민", "취업/인턴"],
+      OPTIONS
+    );
+    expect(known).toEqual(["진로/방향성", "취업/인턴"]);
+    expect(unknown).toEqual(["개편전-고민"]);
+  });
+
+  it("전부 옵션 안 값이면 unknown 은 비어 있다", () => {
+    const { known, unknown } = partitionByOptions(["취업/인턴"], OPTIONS);
+    expect(known).toEqual(["취업/인턴"]);
+    expect(unknown).toEqual([]);
+  });
+
+  it("빈 배열을 넣으면 양쪽 다 비어 있다", () => {
+    const { known, unknown } = partitionByOptions([], OPTIONS);
+    expect(known).toEqual([]);
+    expect(unknown).toEqual([]);
+  });
+});
+
+describe("buildProfilePatch — 옵션 밖 값 보존(FRT-260)", () => {
+  const preserved = { worry: ["개편전-고민"], interest: ["개편전-관심사"] };
+
+  it("worry 가 바뀌면 화면에 없는 레거시 값을 합쳐 보낸다", () => {
+    const patch = buildProfilePatch(
+      base,
+      { ...base, worry: ["진로/방향성", "취업/인턴"] },
+      preserved
+    );
+    expect(patch.worry).toEqual([
+      "진로/방향성",
+      "취업/인턴",
+      "개편전-고민",
+    ]);
+  });
+
+  it("interest 가 바뀌면 화면에 없는 레거시 값을 합쳐 보낸다", () => {
+    const patch = buildProfilePatch(
+      base,
+      { ...base, interest: ["디자인/UX"] },
+      preserved
+    );
+    expect(patch.interest).toEqual(["디자인/UX", "개편전-관심사"]);
+  });
+
+  it("화면에서 칩을 전부 해제해도 레거시 값은 남는다", () => {
+    const patch = buildProfilePatch(base, { ...base, worry: [] }, preserved);
+    expect(patch.worry).toEqual(["개편전-고민"]);
+  });
+
+  it("worry 만 바뀌면 interest 는 실리지 않는다 — 레거시 값이 있어도 dirty 가 되지 않는다", () => {
+    const patch = buildProfilePatch(
+      base,
+      { ...base, worry: ["취업/인턴"] },
+      preserved
+    );
+    expect(patch.interest).toBeUndefined();
+    expect(Object.keys(patch)).toEqual(["worry"]);
+  });
+
+  it("아무것도 바뀌지 않으면 레거시 값이 있어도 빈 객체다", () => {
+    expect(buildProfilePatch(base, { ...base }, preserved)).toEqual({});
+  });
+
+  it("preserved 를 생략하면 기존 동작 그대로다", () => {
+    const patch = buildProfilePatch(base, { ...base, worry: [] });
+    expect(patch).toEqual({ worry: [] });
+  });
+
+  it("레거시 값이 화면 값과 겹쳐도 중복으로 싣지 않는다", () => {
+    const patch = buildProfilePatch(
+      base,
+      { ...base, worry: ["진로/방향성", "취업/인턴"] },
+      { worry: ["취업/인턴"], interest: [] }
+    );
+    expect(patch.worry).toEqual(["진로/방향성", "취업/인턴"]);
   });
 });

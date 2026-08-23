@@ -44,6 +44,24 @@ export const WithGuide: Story = {
   },
 }
 
+/**
+ * 인턴 ① '직무 / 포지션' (FRT-130). 5 카테고리 15종 단일 선택 —
+ * 고르면 입력칸 값이 그 값으로 대체되고 패널이 닫힌다. 목록에 없으면 직접 쳐도 된다.
+ */
+export const WithQuickPick: Story = {
+  args: {
+    block: {
+      ...emptyTextBlock,
+      label: "직무 / 포지션",
+      guide: "빠른 선택에서 고르거나 직접 적어주세요.",
+      placeholder: "예: 브랜드 마케팅 인턴",
+      required: true,
+      quickPick: "job-function",
+    },
+    readOnly: false,
+  },
+}
+
 export const ReadOnly: Story = {
   args: {
     block: textBlock,

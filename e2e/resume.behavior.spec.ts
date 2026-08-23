@@ -272,6 +272,37 @@ test.describe("FRT-148 저장 실패와 복원 배너", () => {
     // 사유를 말해주더라도 편집은 여전히 붙들어야 한다.
     await expectEditKept(page);
   });
+
+  /**
+   * FRT-329 — 탭을 닫거나 새로고침하면 편집이 저장 없이 사라졌다.
+   *
+   * 임시 저장은 언마운트 cleanup 에만 있었고 진짜 페이지 언로드에서는 그 cleanup 이
+   * 실행되지 않는다. 브라우저 경고에서 "나가기"를 고르면 편집은 그대로 없어졌다.
+   * 새로고침이 pagehide 를 일으키므로, 저장 없이 새로고침해도 복원 배너가 떠야 한다.
+   */
+  test("저장 없이 새로고침해도 다음 진입에 복원 배너로 편집을 되살릴 수 있다", async ({
+    page,
+  }) => {
+    await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/export/resume/resume-e2e-1");
+    await expect(page.getByText("저장하지 못한 편집 내용이 있어요")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "자기소개", exact: true }).click();
+    await page
+      .getByPlaceholder("간단한 자기소개를 적어주세요.")
+      .fill("새로고침 직전 편집 내용");
+
+    // dirty 라 beforeunload 경고가 뜬다 — 사용자가 "나가기"를 고르는 상황이다.
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.reload();
+
+    await expect(page.getByText("저장하지 못한 편집 내용이 있어요")).toBeVisible();
+    await page.getByRole("button", { name: "복원", exact: true }).click();
+    await page.getByRole("button", { name: "자기소개", exact: true }).click();
+    await expect(
+      page.getByPlaceholder("간단한 자기소개를 적어주세요."),
+    ).toHaveValue("새로고침 직전 편집 내용");
+  });
 });
 
 /**

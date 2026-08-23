@@ -1,6 +1,12 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { isDraftNewer, readDraft, writeDraft, type CoverLetterDraft } from "./cover-letter-draft";
+import {
+  isDraftNewer,
+  isStoredDraft,
+  readDraft,
+  writeDraft,
+  type CoverLetterDraft,
+} from "./cover-letter-draft";
 import type { CoverLetterResult } from "@/types/cover-letter";
 
 function result(createdAt?: unknown): CoverLetterResult {
@@ -23,6 +29,9 @@ function draft(updatedAt: string): CoverLetterDraft {
 
 beforeEach(() => {
   window.localStorage.clear();
+  // draft 는 이제 아래 계층으로도 떨어진다 — 여기를 안 비우면 앞 테스트의 draft 가
+  // 다음 테스트의 readDraft 에 잡힌다.
+  window.sessionStorage.clear();
 });
 
 /**
@@ -76,8 +85,31 @@ describe("readDraft — 복원도 정규화를 통과한다", () => {
   });
 
   it("정상 draft 는 왕복해도 본문이 보존된다", () => {
-    expect(writeDraft("cl-2", result("2026-07-24T00:00:00.000Z"))).toBe(true);
+    expect(writeDraft("cl-2", result("2026-07-24T00:00:00.000Z"))).toBe("local");
     expect(readDraft("cl-2")?.data.answers[0].cover_letter).toContain("데이터 분석 동아리");
+  });
+
+  // localStorage 가 막힌 환경(프라이빗 모드·용량 초과)에서도 편집은 살아야 한다(FRT-261).
+  // 계층 자체는 draft-storage 가 검증한다 — 여기서 보는 것은 아래 계층으로 떨어진 draft 도
+  // **정규화를 태워 돌아오는가**다. 두 관심사가 갈리면 복원이 조용히 화면을 깨뜨린다.
+  it("localStorage 가 막혀도 아래 계층으로 담기고, 읽을 때 정규화를 거친다", () => {
+    const realSetItem = Storage.prototype.setItem;
+    const spy = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(function (this: Storage, k: string, v: string) {
+        if (this === window.localStorage) {
+          throw new DOMException("quota exceeded", "QuotaExceededError");
+        }
+        return realSetItem.call(this, k, v);
+      });
+
+    expect(writeDraft("cl-fallback", result("2026-07-24T00:00:00.000Z"))).toBe("session");
+    spy.mockRestore();
+
+    const restored = readDraft("cl-fallback");
+    expect(restored?.data.answers[0].cover_letter).toContain("데이터 분석 동아리");
+    // 정규화가 보장하는 필드가 채워져 돌아온다.
+    expect(Array.isArray(restored?.data.answers)).toBe(true);
   });
 
   it("updated_at 없는 저장물은 draft 로 인정하지 않는다", () => {
@@ -90,5 +122,28 @@ describe("readDraft — 복원도 정규화를 통과한다", () => {
 
   it("저장된 값이 없으면 null 을 돌려준다", () => {
     expect(readDraft("missing")).toBeNull();
+  });
+});
+
+/**
+ * `true` 는 호출부에서 `clearDraft` 로 이어진다 — 저장소의 draft 가 "내가 담은 그 본문"일 때만
+ * 참이어야 다른 탭이 같은 키에 남긴 더 새 편집을 치우지 않는다.
+ */
+describe("isStoredDraft — 저장소의 draft 가 이 본문인가", () => {
+  it("같은 본문을 담았으면 참이다(정규화를 거치지 않고 원문 그대로 비교한다)", () => {
+    const data = result("2026-07-01T00:00:00Z");
+    writeDraft("id-1", data);
+    expect(isStoredDraft("id-1", data)).toBe(true);
+  });
+
+  it("다른 본문이 담겨 있거나, 아무것도 없거나, 깨진 값이면 거짓이다", () => {
+    const mine = result("2026-07-01T00:00:00Z");
+    expect(isStoredDraft("id-1", mine)).toBe(false);
+
+    writeDraft("id-1", { ...mine, answers: [{ ...mine.answers[0], cover_letter: "다른 탭" }] });
+    expect(isStoredDraft("id-1", mine)).toBe(false);
+
+    window.localStorage.setItem("arc:cover-letter-draft:id-1", "{broken");
+    expect(isStoredDraft("id-1", mine)).toBe(false);
   });
 });

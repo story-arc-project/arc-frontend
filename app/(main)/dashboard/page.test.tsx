@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { AnalysisHomeSummary, AnalysisSnapshot, AnalysisType } from "@/types/analysis";
 
 // FRT-169: 대시보드도 `getAnalysisHomeSummary` 를 소비한다. 부분 실패가 무음이던 시절엔
@@ -161,5 +161,98 @@ describe("대시보드 — 분석 요약 부분 실패 안내 (FRT-169)", () => 
     await flush();
 
     expect(screen.getByText("분석 데이터를 불러오지 못했습니다.")).toBeInTheDocument();
+  });
+});
+
+/**
+ * 유형 분포 집계 (FRT-291 리뷰).
+ *
+ * `personal-project` 와 `team-project` 는 확정본 통합으로 **화면에서 같은 '프로젝트'** 다.
+ * 그런데 집계가 원시 `exp.type` 으로 묶으면 구분되지 않는 막대가 둘 뜨고 개수가 쪼개진다 —
+ * 어느 쪽이 무엇인지 사용자는 알 방법이 없고, 유형이 많으면 쪼개진 탓에 한쪽이 '기타'로
+ * 밀려 들어가기까지 한다.
+ *
+ * ⚠️ 필터(`matchesFilter`)와 URL 파싱은 `canonicalTypeId` 로 접었는데 **집계만 놓쳤다** —
+ * "id 를 값으로 비교·집계하는 경로를 전수로 세라"고 정해 놓고 세다 만 자리다.
+ */
+describe("유형 분포 — 은퇴 id 접기 (FRT-291 리뷰)", () => {
+  function exp(id: string, type: string) {
+    return { id, type, title: id, updated_at: "2024-01-01T00:00:00Z" };
+  }
+
+  it("구 팀 프로젝트와 새 프로젝트가 한 막대로 합쳐진다", async () => {
+    getSummary.mockResolvedValue(summary());
+    experiencesState.experiences = [
+      exp("e1", "personal-project"),
+      exp("e2", "team-project"),
+      exp("e3", "team-project"),
+    ];
+    experiencesState.count = 3;
+
+    render(<DashboardPage />);
+    await flush();
+
+    // '프로젝트'라는 글자는 최근 경험 목록에도 뜨므로 분포 섹션 안으로 범위를 좁힌다.
+    const section = screen.getByRole("heading", { name: "경험 유형 분포" }).parentElement!;
+    const labels = within(section).getAllByText("프로젝트");
+
+    expect(labels).toHaveLength(1);
+    // 쪼개지면 1개·2개 두 줄이 된다 — 합쳐졌는지는 개수로 확인해야 확실하다.
+    expect(within(section).getByText("3개")).toBeInTheDocument();
+  });
+});
+
+/**
+ * 최근 경험 — 유형 배지 줄바꿈 (노션 UI 피드백).
+ *
+ * 배지는 알약(pill)이다. 제목과 한 행에 놓인 배지가 `flex-shrink` 로 눌리면 라벨이
+ * **음절 중간에서** 끊겨("동아리/교내 단·체") 두 줄이 되고, `leading-none` 탓에 두 줄이
+ * 알약 안에서 서로 붙는다. 줄어들 쪽은 배지가 아니라 잘릴 수 있는 제목이다.
+ */
+describe("최근 경험 — 유형 배지는 줄바꿈되지 않는다", () => {
+  function exp(id: string, type: string, title: string) {
+    // 제목은 `content.title` 에서 온다 — 최상위 `title` 은 화면에 닿지 않는다.
+    return { id, type, content: { title }, updated_at: "2024-01-01T00:00:00Z" };
+  }
+
+  const LONG_TITLE = "서울대학교 국제학생대사 SSA(SNU Student Ambassador)";
+
+  it("긴 유형 라벨이 눌려 음절 중간에서 끊기지 않는다", async () => {
+    getSummary.mockResolvedValue(summary());
+    experiencesState.experiences = [
+      exp("e1", "club", LONG_TITLE),
+      exp(
+        "e2",
+        "research",
+        "바르톨로메 에스테반 무리요의 <작은 새와 성가족>에서 드러나는 보호와 보살핌",
+      ),
+    ];
+    experiencesState.count = 2;
+
+    render(<DashboardPage />);
+    await flush();
+
+    const section = screen.getByRole("heading", { name: "최근 경험" }).parentElement!;
+
+    for (const label of ["동아리/교내 단체", "연구 경험/논문"]) {
+      const badge = within(section).getByText(label);
+      // 알약 안에서 줄이 갈리지 않는다.
+      expect(badge).toHaveClass("whitespace-nowrap");
+      // 제목이 길어도 배지가 대신 눌리지 않는다 — 잘릴 쪽은 제목이다.
+      expect(badge).toHaveClass("shrink-0");
+    }
+  });
+
+  it("제목이 길면 배지 대신 제목이 잘린다", async () => {
+    getSummary.mockResolvedValue(summary());
+    experiencesState.experiences = [exp("e1", "club", LONG_TITLE)];
+    experiencesState.count = 1;
+
+    render(<DashboardPage />);
+    await flush();
+
+    const section = screen.getByRole("heading", { name: "최근 경험" }).parentElement!;
+
+    expect(within(section).getByText(LONG_TITLE)).toHaveClass("truncate");
   });
 });

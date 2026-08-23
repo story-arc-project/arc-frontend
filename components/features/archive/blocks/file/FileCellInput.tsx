@@ -14,6 +14,15 @@ interface FileCellInputProps {
   value: FileCellValue | undefined
   readOnly?: boolean
   ariaLabel?: string
+  /**
+   * 업로드가 진행 중인지 상위에 알린다 (`FileBlock.onBusyChange` 와 같은 계약).
+   *
+   * 업로드 중에는 셀 값(`fileId`)이 아직 비어 있어 "아무것도 안 고른 칸"과 구분되지 않는다.
+   * 그때 이 셀을 없애는 조작(결과물 삭제 등)이 통과하면 컴포넌트가 언마운트되며 요청이
+   * abort 되고, 늦게 온 결과도 `mountedRef` 가드에서 버려져 **고른 파일이 조용히 사라진다**.
+   * 값으로는 알 수 없는 상태이므로 신호로 흘려 그 순간에만 막게 한다.
+   */
+  onBusyChange?: (busy: boolean) => void
   onChange: (value: FileCellValue) => void
 }
 
@@ -49,7 +58,13 @@ function refreshDelayMs(expiresAt: string | undefined): number {
  * 표의 한 칸에 들어갈 분량이 아니다. 설명이 필요하면 템플릿이 별도 텍스트 컬럼을 두면 된다.
  * 업로드 배선(presign→PUT→confirm)은 `useFileUpload` 를 그대로 재사용한다.
  */
-export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: FileCellInputProps) {
+export default function FileCellInput({
+  value,
+  readOnly,
+  ariaLabel,
+  onBusyChange,
+  onChange,
+}: FileCellInputProps) {
   const val = value ?? EMPTY_FILE_CELL
   const { state, progress, error, start, cancel, reset } = useFileUpload()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -64,6 +79,14 @@ export default function FileCellInput({ value, readOnly, ariaLabel, onChange }: 
   useEffect(() => {
     onChangeRef.current = onChange
   })
+
+  // 언마운트되면 반드시 busy 를 내려 준다 — 안 그러면 상위가 '업로드 중'으로 굳은 채 남아
+  // 삭제 버튼이 영영 돌아오지 않는다(FileBlock 과 같은 처방).
+  const busy = state === "uploading"
+  useEffect(() => {
+    onBusyChange?.(busy)
+    return () => onBusyChange?.(false)
+  }, [busy, onBusyChange])
 
   // 언마운트 뒤 완료된 업로드가 사라진 셀에 onChange 를 때리지 않게 한다(FileBlock 과 같은 이유).
   const mountedRef = useRef(true)

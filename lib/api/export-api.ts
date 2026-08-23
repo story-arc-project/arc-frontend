@@ -109,6 +109,24 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
 }
 
 /**
+ * 아직 본문이 **만들어지는 중**인 레쥬메를 네트워크 장애·생성 실패와 구별해 말한다.
+ *
+ * 맨 `Error` 로 던지면 상세 화면의 에러 분기가 이것을 일반 실패로 뭉개, 정상적으로 생성
+ * 중인 것을 "불러오지 못했어요"로 읽게 만든다(FRT-326). 자소서는 이미 전용 타입
+ * `CoverLetterNotReadyError` 로 갈라 놓았다 - 같은 모양을 맞춘다.
+ *
+ * 판정을 **전용 타입으로만** 한다는 점이 요체다. 소거법("ApiError 가 아니면 준비 중")으로
+ * 가르면 파싱 실패·네트워크 장애까지 "아직 만들고 있어요"가 되어, 사용자는 고칠 수 있는
+ * 것을 못 고친 채 기다리기만 한다.
+ */
+export class ResumeNotReadyError extends Error {
+  constructor() {
+    super("resume result not ready");
+    this.name = "ResumeNotReadyError";
+  }
+}
+
+/**
  * 백엔드 GET /export/resume/{id} 는 본문을 data.result 한 겹에 감싸 돌려준다
  * (data = { id, title, language, status, created_at, updated_at, result }).
  * ResumeVersion 은 본문(인적사항/학력/경력…) 타입이므로 result 를 벗겨 반환한다.
@@ -116,38 +134,54 @@ export async function getResume(versionId: string): Promise<ResumeVersion> {
  * result 부재 시 data 그대로 폴백한다(dual-compat).
  */
 function unwrapResumeVersion(data: unknown): ResumeVersion {
-  if (data !== null && typeof data === "object") {
-    const root = data as Record<string, unknown>;
-    // 배열은 본문 레코드가 아니다. result:[] 를 큐잉/플레이스홀더 센티넬로 쓰는 백엔드가
-    // 있으면 스프레드가 {} 로 뭉개져 meta 없는 껍데기를 ResumeVersion 으로 반환 → 상세
-    // 페이지가 resume.meta.language 에서 크래시한다(이 함수가 막으려던 바로 그 실패).
-    // 형제 언랩/가드(assertRenderableSchema·unwrapKeywordBody·unwrapList)와 동일하게 배열을 제외한다.
-    if (
-      root.result !== null &&
-      typeof root.result === "object" &&
-      !Array.isArray(root.result)
-    ) {
-      const content = root.result as ResumeVersion;
-      // 래퍼의 id 를 본문 version_id 로 보존(본문에 없을 수 있음).
-      if (content.version_id === undefined && typeof root.id === "string") {
-        return { ...content, version_id: root.id };
-      }
-      return content;
-    }
-    // result 부재 = ① 백엔드가 §3 통일로 data 를 본문으로 평탄화(dual-compat) 또는
-    // ② 아직 생성이 안 끝났거나 실패한 레쥬메 래퍼(result:null). 전자는 본문 마커
-    // (meta)를 갖고 후자는 갖지 않는다. meta 없는 래퍼를 ResumeVersion 으로 반환하면
-    // 상세 페이지가 resume.meta.language 에서 크래시하므로, 본문일 때만 폴백하고
-    // 아니면 throw → 호출부(상세 페이지)가 제어된 로딩/에러 상태를 보여준다.
-    if (
-      root.meta !== null &&
-      typeof root.meta === "object" &&
-      !Array.isArray(root.meta)
-    ) {
-      return root as unknown as ResumeVersion;
-    }
+  // 래퍼조차 없으면(null·원시값·배열) "만드는 중"이라 말할 근거가 없다. 생성 중이라는
+  // 증거는 **레쥬메 래퍼가 존재한다는 사실** 자체인데, 그것이 없는 응답은 재시도로 풀릴
+  // 수 없는 형식 오류다 - not-ready 로 뭉개면 오지 않을 완료를 기다리게 된다.
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("resume payload malformed");
   }
-  throw new Error("resume result not ready");
+
+  const root = data as Record<string, unknown>;
+  // 배열은 본문 레코드가 아니다. result:[] 를 큐잉/플레이스홀더 센티넬로 쓰는 백엔드가
+  // 있으면 스프레드가 {} 로 뭉개져 meta 없는 껍데기를 ResumeVersion 으로 반환 → 상세
+  // 페이지가 resume.meta.language 에서 크래시한다(이 함수가 막으려던 바로 그 실패).
+  // 형제 언랩/가드(assertRenderableSchema·unwrapKeywordBody·unwrapList)와 동일하게 배열을 제외한다.
+  if (
+    root.result !== null &&
+    typeof root.result === "object" &&
+    !Array.isArray(root.result)
+  ) {
+    const content = root.result as ResumeVersion;
+    // 래퍼의 id 를 본문 version_id 로 보존(본문에 없을 수 있음).
+    if (content.version_id === undefined && typeof root.id === "string") {
+      return { ...content, version_id: root.id };
+    }
+    return content;
+  }
+
+  // result 부재 = ① 백엔드가 §3 통일로 data 를 본문으로 평탄화(dual-compat) 또는
+  // ② 아직 생성이 안 끝났거나 실패한 레쥬메 래퍼(result:null). 전자는 본문 마커
+  // (meta)를 갖고 후자는 갖지 않는다. meta 없는 래퍼를 ResumeVersion 으로 반환하면
+  // 상세 페이지가 resume.meta.language 에서 크래시하므로, 본문일 때만 폴백한다.
+  // 본문이 아니면 아래에서 래퍼의 status 로 "만드는 중"과 "실패"를 다시 가른다.
+  if (
+    root.meta !== null &&
+    typeof root.meta === "object" &&
+    !Array.isArray(root.meta)
+  ) {
+    return root as unknown as ResumeVersion;
+  }
+
+  // 본문이 없다고 다 "만드는 중"은 아니다. 래퍼의 status 가 **끝났다**(success·failed)고
+  // 말하는데 본문이 없으면 그건 실패다 — "다 만들어지면 다시 시도" 로 안내하면 영영 오지
+  // 않을 완료를 기다리며 재시도만 누르게 된다. 끝났다는 **증거가 있을 때만** 실패로 가른다:
+  // status 부재·미지 값은 증거가 아니므로 아래 준비 안 됨으로 떨어뜨린다(FRT-326 원래 증상 방지).
+  const status = mapResumeStatus(root.status);
+  if (status === "completed" || status === "failed") {
+    throw new Error("resume result missing");
+  }
+
+  throw new ResumeNotReadyError();
 }
 
 // 서버 응답: data = { count, contents: [{ id, created_at, updated_at }] }

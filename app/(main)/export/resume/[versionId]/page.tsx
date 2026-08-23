@@ -11,6 +11,7 @@ import { ApiError } from "@/lib/api/client";
 import {
   createResume,
   getResume,
+  ResumeNotReadyError,
   updateResume,
 } from "@/lib/api/export-api";
 import { capture, type ResumeSaveOutcome } from "@/lib/analytics";
@@ -30,11 +31,14 @@ import { ResumeEditorPanel } from "./_components/ResumeEditorPanel";
 import { ResumePreview } from "./_components/ResumePreview";
 import { EnglishReadOnlyNotice } from "./_components/EnglishReadOnlyNotice";
 import { RemainingExperiencesNotice } from "./_components/RemainingExperiencesNotice";
+import { draftTierWarning, type DraftTier } from "@/lib/export/draft-storage";
+import { usePersistOnUnload } from "@/lib/export/use-persist-on-unload";
 import { reserveClientIds } from "./_components/editors/shared";
 import { changedResumeSections } from "./_components/resume-diff";
 import {
   clearDraft,
   isDraftNewer,
+  isStoredDraft,
   readDraft,
   writeDraft,
   type ResumeDraft,
@@ -69,6 +73,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
   // '나가기'는 스스로 router.push 를 해 곧바로 언마운트로 이어진다 — 두 출구가 각각 쏘면
   // 한 번의 이탈이 두 건으로 잡힌다. 먼저 쏜 쪽이 이 플래그로 뒤쪽을 막는다.
   const exitDraftFiredRef = useRef(false);
+  // 탭이 숨겨질 때 이 탭이 마지막으로 담아 둔 편집(FRT-329). 두 가지를 판정한다 —
+  // 손대지 않은 채 다시 숨겨지면 같은 것을 다시 쓰지 않고(같은 문서를 연 다른 탭이 그 사이
+  // 남긴 편집을 덮지 않도록), 그 편집을 되돌려 깨끗해지면 담아 둔 것도 치운다(안 치우면
+  // dirty 가 풀려 아무 경로도 손대지 않아, 다음 진입에 버린 편집을 복원하라고 권한다).
+  const hiddenSnapshotRef = useRef<ResumeVersion | null>(null);
 
   // FRT-238 — App Router 는 versionId 만 바뀌면 이 인스턴스를 재사용한다. 그래서 이전 버전의
   // 조회가 아직 날아다니는 채로 다음 조회가 시작되고, 늦게 도착한 쪽이 화면을 덮으면 **보고 있는
@@ -106,6 +115,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
     // 다른 버전을 열면 그 버전의 초안은 아직 손대지 않은 상태다.
     editedFiredRef.current = false;
     exitDraftFiredRef.current = false;
+    // 이전 버전에서 담아 둔 것은 이전 버전의 키에 있다 — 이 버전이 깨끗하다고 그 키를 지우면
+    // 안 되고, 이 버전에 같은 객체가 다시 올 일도 없다.
+    hiddenSnapshotRef.current = null;
 
     getResume(versionId)
       .then((data) => {
@@ -142,6 +154,16 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const dirtyRef = useRef(false);
   const resumeRef = useRef<ResumeVersion | null>(null);
   const initialRef = useRef<ResumeVersion | null>(null);
+  // 이 인스턴스가 **지금** 답하고 있는 질문. 비동기 저장의 클로저는 시작 당시의 것을 쥐고
+  // 있어, 응답이 늦게 오면 둘이 갈린다(아래 handleSave). versionId 가 아니라 requestKey 인
+  // 것은 A→B→A 때문이다 — 돌아오면 versionId 는 같아지지만 그 사이 재조회가 끼어들어
+  // resumeRef 는 **저장 전** 본문으로 되돌아가 있다. 세대까지 봐야 그 왕복이 잡힌다.
+  //
+  // 언마운트하면 null 이 된다(아래 effect) — 언마운트는 seq 를 올리지 않으므로, 같은
+  // 레쥬메로 다시 들어온 **새 인스턴스**의 키(seq 가 0 부터 다시 시작)와 겹친다. 그 상태로
+  // 늦게 끝난 옛 저장이 가드를 통과하면, 새 인스턴스가 **복원하라고 띄워 둔 draft 를 지운다**
+  // — 배너는 화면에 남아 있는데 되돌릴 내용은 사라진 상태가 된다.
+  const requestKeyRef = useRef<string | null>(requestKey);
 
   // FRT-147 — 영문 레쥬메는 읽기·내보내기 전용이다(매핑이 단방향이라 저장하면 영문 전용
   // 값이 사라진다). 편집 UI 를 숨기는 것만으로 막으면 그 바깥에서 setResume 을 부르는
@@ -160,17 +182,31 @@ export default function ResumeDetailPage({ params }: PageProps) {
   dirtyRef.current = dirty;
   resumeRef.current = resume;
   initialRef.current = initial;
+  // requestKeyRef 는 여기서 갱신하지 않는다 — 아래 effect(커밋 단계)에서만 움직인다.
 
   // 저장의 결말들(서버 저장·백엔드 미수용·그 외 오류·저장 없이 이탈)이 사용자에겐 거의
   // 같아 보이지만 데이터로는 전혀 다른 사실이다. 한 곳에서 같은 모양으로 싣는다(FRT-114).
   const captureEditSaved = useCallback(
-    (outcome: ResumeSaveOutcome, persisted: boolean, changed: string[]) => {
-      capture("resume_edit_saved", {
+    (
+      outcome: ResumeSaveOutcome,
+      persisted: boolean,
+      changed: string[],
+      // 로컬로 떨어진 경우 **어느 계층**에 담겼는지. 같은 "보관됨"이라도 브라우저를 닫으면
+      // 사라지는 보관이 섞여 있어, 이걸 안 나누면 유실 규모를 과소 보고한다(FRT-261).
+      storageTier?: DraftTier | null,
+      // 화면이 사라지는 순간(탭 닫기)에 쏘는가. 기본 경로는 배치 큐라 페이지와 함께
+      // 사라진다 — 그때만 sendBeacon 경로를 고른다(FRT-329).
+      atUnload = false,
+    ) => {
+      const props = {
         outcome,
         persisted,
         sections: changed,
         section_count: changed.length,
-      });
+        ...(storageTier === undefined ? {} : { storage_tier: storageTier }),
+      };
+      if (atUnload) capture("resume_edit_saved", props, { atUnload: true });
+      else capture("resume_edit_saved", props);
     },
     [],
   );
@@ -240,10 +276,31 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const updated = await updateResume(versionId, snapshot);
       setInitial(updated);
       setResume((current) => (current === snapshot ? updated : current));
-      // Only clear the draft when no newer edits arrived during save.
-      // Otherwise the unmount handler may have just persisted a fresher draft we must keep.
-      if (resumeRef.current === snapshot) {
+      // 응답이 도는 동안 화면이 이 요청을 떠났을 수 있다. 그때 아래 정리를 그대로 실행하면
+      // **지금 화면이 쓰고 있는 draft 를 지운다** — 배너는 남고 되돌릴 내용만 사라진다.
+      // App Router 는 versionId 만 바뀌면 이 인스턴스를 재사용하고(FRT-238), 언마운트해도
+      // seq 는 0 부터 다시 시작하므로 "떠났다"를 id 만으로는 알 수 없다.
+      //
+      // 그래서 판정은 versionId 가 아니라 **requestKey**(버전 + 세대)다. A→B→A 로 돌아오면
+      // versionId 는 다시 같아지지만 그 사이 재조회가 끼어들어 화면은 **저장 전** 본문을 들고
+      // 있고, 그때 저장소에 있는 draft 는 이 저장이 지울 것이 아니다.
+      //
+      // 이 버전의 편집분은 화면이 떠나던 순간의 cleanup 이 이미 같은 키에 남겼다. 떠난
+      // 뒤에는 **아무것도 하지 않는 것**이 옳다 — pendingDraft 도 지금은 다음 요청의 배너다.
+      if (requestKeyRef.current === requestKey) {
+        // 규칙은 하나다 — **저장에 성공하면 이 버전의 draft 는 없다.**
+        //
+        // 요청이 도는 동안 이어 고쳤더라도 여기서 그 최신본으로 "갈아끼우지" 않는다. 그렇게
+        // 만든 draft 는 그 자체가 다음 사고의 씨앗이다: 사용자가 그 편집을 곧바로 되돌려도
+        // draft 는 저장소에 남아(dirty 가 false 로 돌아가 이탈 경로들이 손대지 않는다) 다음
+        // 진입 때 **지운 편집을 되살리라고 권한다**. 이어 고친 편집은 화면과 dirty 에 그대로
+        // 살아 있어 나가기·언마운트 cleanup·Ctrl+S 가 남긴다 — 저장 시점의 스냅샷을 하나 더
+        // 만들 이유가 없다.
         clearDraft(versionId);
+        // 배너도 같은 이유로 지운다. 그 스냅샷은 서버 최신본보다 낡았고, 남겨 두면 '복원'이
+        // 방금 저장한 내용을 그것으로 덮고 clearDraft 까지 불러 되돌릴 길도 없앤다 — 실패
+        // 갈래에서만 막아 둔 것을 성공 갈래에서도 막는다(FRT-191).
+        setPendingDraft(null);
       }
       toast.success("저장됐어요");
       captureEditSaved("server", true, sections);
@@ -254,7 +311,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // 탭을 그대로 닫았을 때(cleanup 미실행) 고친 내용이 통째로 사라진다.
       // dirty 는 그대로 두어 다음 저장/이탈 경로가 계속 살아 있게 한다.
       const latest = resumeRef.current ?? snapshot;
-      const saved = writeDraft(versionId, latest);
+      const tier = writeDraft(versionId, latest);
+      const saved = tier !== null;
+      const tierWarning = draftTierWarning(tier);
       if (saved) {
         // 방금 쓴 임시 저장이 곧 지금 편집 중인 내용이다. 배너를 그대로 두면 '복원'이
         // 화면에 없는 낡은 스냅샷(pendingDraft)을 되돌리면서 clearDraft 로 방금 쓴
@@ -280,20 +339,39 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // 서버도 로컬도 못 남긴 = 편집 유실 직전. 그렇다고 사유를 빼면 안 된다 — 사유가
       // 곧 탈출구다(제목 길이 초과라면 고쳐서 바로 저장하면 위기 자체가 사라진다).
       // 둘 다 말한다: 무엇이 잘못됐는지, 그리고 지금 닫으면 잃는다는 것.
+      // 담긴 계층이 오래 못 버티면 그것도 함께 말한다 — "저장됐다"고 읽히면 사용자는
+      // 탭을 닫고, 그 순간 임시 보관분까지 사라진다(FRT-261).
       toast.error(
-        saved ? detail : `${detail} 임시 저장도 안 됐으니 페이지를 닫지 마세요.`,
+        saved
+          ? tierWarning
+            ? `${detail} ${tierWarning}`
+            : detail
+          : `${detail} 임시 저장도 안 됐으니 페이지를 닫지 마세요.`,
       );
       // 섹션은 **실제로 보관된 값(latest)** 기준이다 — 요청이 도는 동안 이어서 고친
       // 섹션이 draft 에는 들어갔는데 지표에서만 빠지면 보관된 편집을 과소 보고한다.
-      captureEditSaved("failed", saved, changedResumeSections(initial, latest));
+      captureEditSaved("failed", saved, changedResumeSections(initial, latest), tier);
     } finally {
       setSaving(false);
     }
-  }, [resume, dirty, saving, loading, versionId, initial, captureEditSaved]);
+  }, [
+    resume,
+    dirty,
+    saving,
+    loading,
+    versionId,
+    requestKey,
+    initial,
+    captureEditSaved,
+  ]);
 
   const handleRegenerate = useCallback(async () => {
     if (!resume || regenerating) return;
     setRegenerating(true);
+    // 이 경로도 아래에서 export_completed 를 쏜다. 누름을 여기서 안 잡으면 그 완료 하나가
+    // 짝 없이 총계에 얹혀, "눌렀는데 요청이 안 나갔다"를 재는 **누름 − 완료** 차이가
+    // 재생성 건수만큼 깎인다(FRT-107). 완료를 쏘는 자리마다 누름도 있어야 뺄셈이 성립한다.
+    capture("export_execute_button_clicked", { export_type: "resume" });
     try {
       await createResume({ language: resume.meta.language });
       // '다시 만들기'도 새 레쥬메 버전이 만들어진 익스포트 완료다 — 모달 생성 경로만
@@ -380,16 +458,17 @@ export default function ResumeDetailPage({ params }: PageProps) {
 
   const handleBack = useCallback(() => {
     if (dirty && resume) {
-      const saved = writeDraft(versionId, resume);
+      const tier = writeDraft(versionId, resume);
       // 저장 버튼을 누른 적은 없지만 사용자에게는 "임시 저장했어요"라고 **말한다**.
       // 여기서 안 쏘면 안전하게 보관된 편집이 유실된 편집과 데이터상 구별되지 않고,
       // 실패(=편집 유실 직전)한 순간은 아예 어디에도 남지 않는다(FRT-114).
       captureEditSaved(
         "exit_draft",
-        saved,
+        tier !== null,
         changedResumeSections(initial, resume),
+        tier,
       );
-      if (!saved) {
+      if (tier === null) {
         toast.error("임시 저장에 실패했어요. 저장 후 나가주세요.");
         // 실패한 '나가기'는 이탈이 아니다 — 사용자는 화면에 그대로 남는다. 여기서
         // 중복 방지 플래그를 세우면 뒤이어 **진짜로** 떠날 때 보관된 편집이 안 남는다.
@@ -397,7 +476,11 @@ export default function ResumeDetailPage({ params }: PageProps) {
       }
       // 이동이 확정된 뒤에만 세운다 — 곧 이어질 언마운트가 같은 이탈을 또 세지 않도록.
       exitDraftFiredRef.current = true;
-      toast("변경사항을 임시 저장했어요", "info");
+      // 담기긴 했으니 붙잡지 않는다. 이 환경에서는 아무리 눌러도 영구 저장이 성공하지
+      // 않아 막으면 출구 없는 화면이 된다 — 대신 무엇을 조심할지 알린다(FRT-261).
+      const tierWarning = draftTierWarning(tier);
+      if (tierWarning) toast.error(tierWarning);
+      else toast("변경사항을 임시 저장했어요", "info");
     }
     router.push(`${basePath}/export`);
   }, [
@@ -427,22 +510,51 @@ export default function ResumeDetailPage({ params }: PageProps) {
     setPendingDraft(null);
   }, [versionId]);
 
+  // 화면이 **실제로** 답하고 있는 요청을 새긴다. 다른 ref 들과 달리 렌더 중에 쓰지 않는 이유는
+  // 커밋되지 않는 렌더가 있기 때문이다 — 다른 버전으로 가던 전환이 중간에 취소되면 화면은 이
+  // 버전에 남는데 렌더 중 갱신한 키만 그 버전으로 바뀐다. 그 상태로 저장이 끝나면 가드가
+  // "떠났다"고 오판해 낡은 draft 와 배너를 그대로 두고, 저장에 성공했는데도 '복원'이 그것을
+  // 되돌릴 수 있다 — FRT-191 그 자체가 되살아난다. 커밋된 렌더만 이 키를 움직인다.
+  //
+  // cleanup 이 곧 무효화다. 버전이 바뀌면 다음 effect 가 새 키를 새기고, **언마운트면 null 로
+  // 남는다** — 언마운트는 seq 를 올리지 않아 같은 레쥬메로 다시 들어온 새 인스턴스의 키와
+  // 겹치기 때문이다. 아래 draft 보관 effect 보다 먼저 선언해 cleanup 도 먼저 돌게 둔다.
+  useEffect(() => {
+    const ref = requestKeyRef;
+    ref.current = requestKey;
+    return () => {
+      ref.current = null;
+    };
+  }, [requestKey]);
+
   // Persist draft on any client-side navigation (unmount)
   useEffect(() => {
     return () => {
       if (dirtyRef.current && resumeRef.current) {
-        const saved = writeDraft(versionId, resumeRef.current);
+        // '나가기' 버튼이 이미 이 이탈을 처리했는지를 먼저 본다 — router.push 가 곧바로
+        // 이 effect 의 cleanup 을 부르므로, 나중에 세우면 handleBack 이 방금 띄운 경고
+        // 토스트를 여기서 또 띄우게 된다(FRT-261 회귀).
+        const alreadyHandled = exitDraftFiredRef.current;
+        const tier = writeDraft(versionId, resumeRef.current);
         // 상단 '나가기'만 출구가 아니다 — GNB 링크로 떠나도 페이지는 조용히 임시 저장한다.
         // 그 편집도 어디까지 갔는지는 같은 질문이라 같은 이벤트로 남긴다. 단 '나가기'는
         // 스스로 이동을 일으켜 여기로 이어지므로, 이미 쐈으면 두 번 세지 않는다.
-        if (!exitDraftFiredRef.current) {
+        if (!alreadyHandled) {
           exitDraftFiredRef.current = true;
           captureEditSaved(
             "exit_draft",
-            saved,
+            tier !== null,
             changedResumeSections(initialRef.current, resumeRef.current),
+            tier,
           );
         }
+        // 이 경로가 기댈 안전망은 이것 하나뿐이다. 결과를 지표에만 남기고 사용자에게 안
+        // 알리면 저장 실패가 **아무에게도 안 알려진 채** 편집이 사라진다(FRT-261).
+        // toast 는 모듈 전역 pub/sub 라 이 컴포넌트가 죽은 뒤에도 다음 화면에서 뜬다.
+        // 다만 '나가기'가 이미 같은 경고를 띄웠으면 중복이니 여기서는 건너뛴다.
+        if (alreadyHandled) return;
+        const tierWarning = draftTierWarning(tier);
+        if (tierWarning) toast.error(tierWarning);
       }
     };
   }, [versionId, captureEditSaved]);
@@ -460,7 +572,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
     return () => window.removeEventListener("keydown", handler);
   }, [handleSave, resume, dirty]);
 
-  // beforeunload when dirty
+  // beforeunload when dirty — 경고만 띄운다. 저장은 아래 pagehide 가 맡는다(bfcache).
   useEffect(() => {
     if (!dirty) return;
     const handler = (e: BeforeUnloadEvent) => {
@@ -470,6 +582,65 @@ export default function ResumeDetailPage({ params }: PageProps) {
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirty]);
+
+  // 탭을 닫거나 새로고침해도 편집을 남긴다(FRT-329). 위 언마운트 cleanup 은 진짜 페이지
+  // 언로드에서는 실행되지 않아, 사용자가 경고에서 "나가기"를 고르면 편집이 그대로 사라졌다.
+  //
+  // 탭이 숨겨질 때(hidden)는 **조용히 담아 두기만** 한다 — 탭 전환은 이탈이 아니고 돌아와서
+  // 계속 쓰지만, 모바일은 이 뒤에 pagehide 없이 탭을 죽이는 일이 잦다. pagehide 는 진짜
+  // 떠남이라 같은 exit_draft 로 센다. 토스트는 띄우지 않는다 — 볼 사람이 없는 화면이고,
+  // 실패는 persisted:false 로 지표에 남는다. "머무르기"를 고르면 pagehide 가 오지 않으므로
+  // 경고 다이얼로그와 순서가 얽히지 않는다.
+  //
+  // 다른 버전으로 옮기는 창(loading)에서는 걸지 않는다 — versionId 는 이미 다음 버전인데
+  // resume/dirty 는 아직 이전 버전 것이라(FRT-238), 여기서 담으면 이전 버전의 편집이 다음
+  // 버전의 키로 들어간다. 이전 버전의 편집은 버전이 바뀌는 순간 위 언마운트 cleanup 이 이전
+  // 키로 이미 남겼다(handleSave 가 loading 을 가드하는 것과 같은 이유).
+  //
+  // 치우는 것은 **내가 담은 그 스냅샷일 때만**이다. 같은 레쥬메를 연 다른 탭이 그 사이 같은
+  // 키에 더 새 편집을 남겼으면, 그것은 이 탭이 치울 것이 아니다 — "담았다"는 기억은 저장소에
+  // 있는 것이 아직 내 것이라는 증거가 못 된다.
+  useEffect(() => {
+    if (loading || dirty || hiddenSnapshotRef.current === null) return;
+    const snapshot = hiddenSnapshotRef.current;
+    hiddenSnapshotRef.current = null;
+    if (isStoredDraft(versionId, snapshot)) clearDraft(versionId);
+  }, [dirty, loading, versionId]);
+
+  usePersistOnUnload({
+    enabled: dirty && !loading,
+    onPersist: (reason) => {
+      if (!dirtyRef.current || !resumeRef.current) return;
+      const snapshot = resumeRef.current;
+      if (reason === "hidden") {
+        if (snapshot === hiddenSnapshotRef.current) return;
+        hiddenSnapshotRef.current = snapshot;
+        writeDraft(versionId, snapshot);
+        return;
+      }
+      const tier = writeDraft(versionId, snapshot);
+      // 한 이탈은 한 번만 센다 — '나가기'가 이미 셌거나, 이 뒤에 언마운트가 이어져도.
+      //
+      // 저장이 도는 중이어도 여기서는 **쏜다**. 언마운트 cleanup 은 응답 핸들러가 살아 있어
+      // 그쪽에 결말을 맡기지만(savingRef 가드), 진짜 언로드는 문서를 먼저 거둬 떠 있던 PATCH
+      // 의 핸들러가 돌지 않는다 — 여기서 건너뛰면 그 시도는 어느 결말도 못 남긴다. 언로드를
+      // 견디는(sendBeacon) 결말은 이 한 번뿐이다.
+      if (exitDraftFiredRef.current) return;
+      exitDraftFiredRef.current = true;
+      captureEditSaved(
+        "exit_draft",
+        tier !== null,
+        changedResumeSections(initialRef.current, snapshot),
+        tier,
+        true,
+      );
+    },
+    // bfcache 에서 되살아났다 — 위 pagehide 는 끝이 아니었다. 이어 고치고 다시 떠나면 그것은
+    // 새 이탈이므로 "한 번만" 가드를 되돌린다(편집·dirty 는 인스턴스와 함께 그대로 살아 있다).
+    onRestore: () => {
+      exitDraftFiredRef.current = false;
+    },
+  });
 
   if (loading) return <ResumeDetailSkeleton />;
 
@@ -497,17 +668,29 @@ export default function ResumeDetailPage({ params }: PageProps) {
   if (error || !resume) {
     const status = error instanceof ApiError ? error.status : 500;
     const isNotFound = status === 404;
+    // FRT-326 — 본문이 아직 없는 것(생성 중)과 못 불러온 것은 다른 상태다. 생성은 비동기라
+    // 만들자마자 들어오면 이 경로가 정상이며, 실패로 그리면 사용자가 정상 진행을 실패로 읽는다.
+    // 소거법으로 판정하면 네트워크 장애까지 "생성 중"이 되므로 전용 타입으로만 좁힌다
+    // (자소서 상세와 같은 판정 — CoverLetterNotReadyError).
+    const notReady = error instanceof ResumeNotReadyError;
     return (
       <div className="flex min-h-[calc(100dvh-var(--gnb-h))] flex-col items-center justify-center gap-4 px-6 text-center">
         <h2 className="text-title text-text-primary">
           {isNotFound
             ? "레쥬메를 찾을 수 없어요"
-            : "레쥬메를 불러오지 못했어요"}
+            : notReady
+              ? "아직 만들고 있어요"
+              : "레쥬메를 불러오지 못했어요"}
         </h2>
         <p className="text-body-sm text-text-secondary">
           {isNotFound
             ? "삭제되었거나 주소가 잘못된 것 같아요."
-            : "잠시 후 다시 시도해주세요."}
+            : notReady
+              ? // 자소서는 "완료되면 목록에서 열 수 있어요"라고 말한다 — 그쪽 목록에는 폴링이
+                // 있어 참인 말이다. 레쥬메 목록에는 폴링이 없으므로(FRT-325) 그대로 베끼면
+                // 지킬 수 없는 약속이 된다. 이 화면에 실재하는 탈출구를 가리킨다.
+                "다 만들어지면 '다시 시도'를 눌러 열 수 있어요."
+              : "잠시 후 다시 시도해주세요."}
         </p>
         <div className="flex gap-2">
           <Button asChild variant="ghost" size="sm">

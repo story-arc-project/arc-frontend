@@ -21,9 +21,10 @@ import type {
   BlockType,
   BlockValue,
   ChecklistBlockValue,
+  RepeatableCellBlockValue,
   SingleSelectBlockValue,
 } from "@/types/archive"
-import { createBlock, cloneBlock } from "@/lib/utils/block-utils"
+import { createBlock, cloneBlock, isUnrenderableBlock } from "@/lib/utils/block-utils"
 import { canHideBlock } from "@/lib/utils/hidden-fields"
 import BlockRenderer from "./BlockRenderer"
 import BlockTypePicker from "./BlockTypePicker"
@@ -131,7 +132,29 @@ export default function BlockList({
             }
           }
           if (b.type === "repeatable-cell" && config.columns) {
-            updated.value = { ...b.value, columns: config.columns } as unknown as BlockValue
+            // 지운 열의 셀도 함께 쳐낸다 — 인라인 `RepeatableCellBlock.removeColumn` 이 이미
+            // 지키는 규칙인데 모달 경로만 빠져 있었다(위 옵션 삭제와 같은 형태의 누락).
+            // 남겨 두면 `rowHasContent` 가 그 값을 계속 세므로, 열을 전부 지운 블록이
+            // `isBlockEmpty` 에선 "내용 있음"으로 굳어 상세뷰에 빈 껍데기로 남는다.
+            //
+            // 행 자체는 지우지 않는다 — `extraFields`·`artifacts`·`roleTags` 는 열이 아니라
+            // **행에 붙은 사용자 값**이라, 열을 지웠다는 이유로 함께 버리면 안 된다.
+            const val = b.value as RepeatableCellBlockValue
+            const keptKeys = new Set(config.columns.map(c => c.key))
+            updated.value = {
+              ...val,
+              columns: config.columns,
+              rows: (Array.isArray(val.rows) ? val.rows : []).map(r => {
+                // 저장된 행에 `cells` 가 없거나 객체가 아닐 수 있다(FRT-200).
+                const cells = r.cells && typeof r.cells === "object" ? r.cells : {}
+                return {
+                  ...r,
+                  cells: Object.fromEntries(
+                    Object.entries(cells).filter(([k]) => keptKeys.has(k))
+                  ),
+                }
+              }),
+            } as BlockValue
           }
           if (b.type === "table" && config.tableColumns) {
             const val = b.value as { type: "table"; columns: string[]; rows: string[][] }
@@ -139,12 +162,18 @@ export default function BlockList({
             updated.value = {
               ...val,
               columns: newCols,
-              rows: val.rows.map(row => {
-                const newRow = [...row]
-                // Extend or trim rows to match new column count
-                while (newRow.length < newCols.length) newRow.push("")
-                return newRow.slice(0, newCols.length)
-              }),
+              // 열이 하나도 안 남으면 행도 함께 거둔다. 칸이 없어진 행은 이미 `[]` 라 담을
+              // 값이 없는데, `isBlockEmpty` 는 표를 **`rows.length` 로만** 판정하므로 껍데기
+              // 행이 남으면 빈 표가 상세뷰에 계속 그려지고 열을 다시 만들 때 빈 행이 되살아난다.
+              rows:
+                newCols.length === 0
+                  ? []
+                  : val.rows.map(row => {
+                      const newRow = [...row]
+                      // Extend or trim rows to match new column count
+                      while (newRow.length < newCols.length) newRow.push("")
+                      return newRow.slice(0, newCols.length)
+                    }),
             } as BlockValue
           }
           return updated
@@ -201,19 +230,32 @@ export default function BlockList({
   }
 
   // Build initial config for modal from existing block
+  /**
+   * ⚠️ **저장분에서 온 값이라 타입이 약속한 모양대로 오지 않는다.** 모달은 받은 목록을 곧장
+   * `.join()`·`.map()` 하므로, 여기서 거르지 않으면 손상값 하나가 **렌더 도중 throw** 해
+   * 화면을 통째로 에러 화면으로 바꾼다 — 이 PR 이 막으려는 바로 그 고장이다.
+   * `??` 는 `{}` 같은 객체를 통과시키므로 "있음"이 아니라 **"배열인가"** 를 물어야 한다.
+   */
   function getEditConfig(block: Block): BlockEditConfig {
     const config: BlockEditConfig = { label: block.label, placeholder: block.placeholder }
+    const val = (block.value ?? {}) as unknown as Record<string, unknown>
+    // ⚠️ **배열이면 걸러 쓰고, 배열이 아닐 때만 폴백한다** — `normalizeBlockValue` 의
+    // `optionsOf` 와 같은 규칙이다. 통째로 물리면 원소 하나가 깨졌다는 이유로 사용자가
+    // 만든 선택지 전체가 템플릿 기본값으로 되돌아가고, 확인 한 번에 그대로 저장된다.
+    const stringList = (x: unknown, fallback?: unknown): string[] => {
+      const src = Array.isArray(x) ? x : Array.isArray(fallback) ? fallback : []
+      return src.filter((i): i is string => typeof i === "string")
+    }
     if (block.type === "single-select" || block.type === "checklist") {
-      const val = block.value as { options?: string[] }
-      config.options = val.options ?? block.options ?? []
+      config.options = stringList(val.options, block.options)
     }
     if (block.type === "repeatable-cell") {
-      const val = block.value as { columns?: { key: string; label: string; blockType: string }[] }
-      config.columns = (val.columns ?? []) as BlockEditConfig["columns"]
+      // 원소까지 검사하지는 않는다 — 아는 타입의 열은 `normalizeBlock` 이 이미 보정하고,
+      // 모르는 값을 담은 블록은 위에서 연필 자체가 안 붙는다. 증명되지 않은 가드는 안 넣는다.
+      config.columns = (Array.isArray(val.columns) ? val.columns : []) as BlockEditConfig["columns"]
     }
     if (block.type === "table") {
-      const val = block.value as { columns?: string[] }
-      config.tableColumns = val.columns ?? []
+      config.tableColumns = stringList(val.columns)
     }
     return config
   }
@@ -234,7 +276,13 @@ export default function BlockList({
       block={block}
       allowReorder={allowReorder}
       allowDelete={allowDelete}
-      allowEdit={editEnabled}
+      // ⚠️ 입력 칸을 잠그는 것만으로는 부족하다 — 이 연필은 그 칸 **바깥**에 있어서
+      // 그대로 두면 모르는 값 위에 설정 모달이 열리고, 확인 한 번이 보존해 둔 값을 덮는다.
+      allowEdit={editEnabled && !isUnrenderableBlock(block)}
+      // 블록 **안**의 인라인 옵션 편집도 같은 문을 쓴다(FRT-322) — 커스텀 블록만 열리고,
+      // 템플릿이 소유한 확정본 선택지는 고칠 수 없다. 연필과 같은 술어라 두 편집 경로가
+      // 한쪽만 열린 채 남지 않는다.
+      allowOptionEdit={editEnabled && !isUnrenderableBlock(block)}
       onChange={handleBlockChange}
       onHide={onHide && canHideBlock(block) ? () => onHide(block) : undefined}
       onDelete={() => handleDeleteBlock(block.id)}
@@ -290,6 +338,7 @@ function SortableBlockItem({
   allowReorder,
   allowDelete,
   allowEdit,
+  allowOptionEdit,
   onChange,
   onHide,
   onDelete,
@@ -300,6 +349,7 @@ function SortableBlockItem({
   allowReorder: boolean
   allowDelete: boolean
   allowEdit: boolean
+  allowOptionEdit: boolean
   onChange: (blockId: string, value: BlockValue) => void
   onHide?: () => void
   onDelete: () => void
@@ -355,6 +405,7 @@ function SortableBlockItem({
           onChange={onChange}
           hideSlot={!!onHide}
           onBusyChange={setUploading}
+          allowOptionEdit={allowOptionEdit}
         />
         {onHide && !uploading && (
           <button

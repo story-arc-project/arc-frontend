@@ -51,6 +51,11 @@ import { hasResidualValue, isBlockEmpty, isRequiredBlock } from "@/lib/utils/blo
  * 치울 수도 채울 수도 없는 카드를 얻는다 — 위 증빙 카드에서 이미 한 번 겪은 실패다.
  */
 function hostsAttachment(block: Block): boolean {
+  // FRT-291: 파일은 열에만 있는 게 아니다 — 행 첨부(`BlockRow.artifacts`)를 켠 블록도 파일을
+  // 담는다. 열만 보면 그 표는 이 검사를 그냥 통과해, 업로드 중에 × 로 치우면 정확히 이 함수가
+  // 막으려던 유실이 새 경로로 되살아난다. **파일을 담을 수 있는가**로 묻지 파일 열이 있는가로
+  // 묻지 않는다.
+  if (block.allowRowArtifacts === true) return true
   const v = block.value
   if (v.type === "repeatable-cell") return v.columns.some(c => c.blockType === "file")
   return false
@@ -69,6 +74,27 @@ export function canHideBlock(block: Block): boolean {
     isBlockEmpty(block) &&
     !hasResidualValue(block) &&
     !hostsAttachment(block)
+  )
+}
+
+/**
+ * 첨부를 담는다는 **한 가지 이유만으로** 숨길 수 없는, 아직 빈 블록인지 (FRT-291 리뷰).
+ *
+ * `canHideBlock` 이 거절하는 이유는 여럿이지만 나머지는 전부 사용자가 손쓸 수 있는 것이다 —
+ * 필수는 채우면 되고, 값이 있으면 지우면 된다. 첨부만은 다르다: 비어 있는데도 × 가 붙지 않아
+ * **치울 수도 채울 수도 없는 칸**이 되고, 진행도가 그걸 남은 일로 세면 첨부가 애초에 없는
+ * 경험은 그 카드를 영영 완료하지 못한다.
+ *
+ * 그래서 이 술어는 `canHideBlock` 의 부정이 아니라 **그 한 조건만 뒤집은 것**이다. 부정으로
+ * 물으면 필수 블록·값이 남은 블록까지 "손쓸 수 없음"으로 접혀 진행도가 거짓으로 완료된다.
+ */
+export function isUnhideableAttachmentHost(block: Block): boolean {
+  return (
+    !isRequiredBlock(block) &&
+    !!block.key &&
+    isBlockEmpty(block) &&
+    !hasResidualValue(block) &&
+    hostsAttachment(block)
   )
 }
 

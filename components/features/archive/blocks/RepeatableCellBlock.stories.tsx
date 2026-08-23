@@ -4,6 +4,7 @@ import { useState } from "react"
 
 import type { Block, RepeatableCellBlockValue } from "@/types/archive"
 import RepeatableCellBlock from "./RepeatableCellBlock"
+import { longFileName } from "../__fixtures__/archive.fixtures"
 
 const meta: Meta<typeof RepeatableCellBlock> = {
   title: "Features/Archive/Blocks/RepeatableCellBlock",
@@ -319,6 +320,56 @@ export const FileColumnReadOnly: Story = {
 }
 
 /**
+ * FRT-318: 셀의 `file` 열도 긴 파일명으로 부모 폭을 밀어내지 않는다.
+ *
+ * 파일 행 마크업은 블록 층위(`FileBlock`)와 표 층위(`FileCellInput`)가 같은 카드를 공유하므로,
+ * 한쪽만 재면 다른 쪽 회귀를 못 잡는다. 넘침은 레이아웃 결과라 실브라우저에서 폭으로 단언한다.
+ */
+export const FileColumnLongFileName: Story = {
+  decorators: [
+    Story => (
+      <div data-testid="frt318-cell-container" className="w-[545px]">
+        <Story />
+      </div>
+    ),
+  ],
+  args: {
+    block: {
+      ...fileBlock,
+      value: {
+        ...(fileBlock.value as RepeatableCellBlockValue),
+        rows: [
+          {
+            id: "r1",
+            cells: {
+              name: "학회 정기 세미나 발표",
+              output: {
+                type: "file",
+                fileId: "file-frt318-cell",
+                fileName: longFileName,
+                size: 45_000_000,
+              },
+            },
+          },
+        ],
+      },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    // 파일명만 기다리면 너무 이르다 — `getFileUrl` 전에는 '다운로드'(고정폭)가 없는 좁은
+    // 카드가 먼저 그려지고 이름은 두 상태에 다 있다. 가장 넓어지는 최종 상태를 재야 한다.
+    await canvas.findByRole("link", { name: `${longFileName} 다운로드` })
+
+    const container = canvasElement.querySelector<HTMLElement>(
+      '[data-testid="frt318-cell-container"]',
+    )
+    expect(container).not.toBeNull()
+    expect(container!.scrollWidth).toBeLessThanOrEqual(container!.clientWidth)
+  },
+}
+
+/**
  * 저장된 값의 columns 가 템플릿보다 우선 채택되므로, 타입에 없는 유형이 런타임에 올 수 있다.
  * 예전처럼 조용히 텍스트칸이 되지 않고 화면에 알리는지 가드한다(FRT-213 요구사항 3).
  */
@@ -342,5 +393,63 @@ export const UnknownColumnType: Story = {
     await expect(canvas.getByText(/아직 지원하지 않는 입력 유형/)).toBeInTheDocument()
     // 값은 잃지 않는다.
     await expect(canvas.getByLabelText("미래 유형")).toHaveValue("이미 입력된 값")
+  },
+}
+
+/** 여러 줄 텍스트 컬럼 — 프로젝트 기록의 '내가 한 일' 같은 긴 서술 칸. */
+const textareaBlock: Block = {
+  id: "rc-textarea",
+  type: "repeatable-cell",
+  label: "미션 / 프로젝트",
+  value: {
+    type: "repeatable-cell",
+    columns: [
+      {
+        key: "work",
+        label: "내가 한 일",
+        blockType: "textarea",
+        placeholder: "예: 촬영과 편집을 담당했습니다",
+      },
+    ],
+    rows: [],
+  },
+}
+
+/**
+ * 길게 쓰면 칸 안에서 스크롤하는 대신 칸이 내용만큼 자란다(노션 UI 피드백).
+ * 클래스 단언으로는 못 잡는다 — jsdom 에는 레이아웃이 없으므로 실브라우저에서 실측한다.
+ */
+export const TextareaGrowsWithContent: Story = {
+  render: () => <Interactive initial={textareaBlock} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const box = canvas.getByLabelText("내가 한 일") as HTMLTextAreaElement
+    const before = box.getBoundingClientRect().height
+
+    await userEvent.type(box, "첫 줄{enter}둘째 줄{enter}셋째 줄{enter}넷째 줄{enter}다섯째 줄")
+
+    // 칸이 자랐고, 자란 만큼 내부 스크롤이 사라졌다 — 피드백이 요구한 것의 핵심.
+    // `scrollHeight <= clientHeight` 는 테두리 보정까지 맞아야 성립한다(useAutoResizeTextarea 참고).
+    await expect(box.getBoundingClientRect().height).toBeGreaterThan(before)
+    await expect(box.scrollHeight).toBeLessThanOrEqual(box.clientHeight)
+  },
+}
+
+/** 다시 비우면 최소 높이로 돌아온다 — `min-h-[64px]` 가 살아 있다는 회귀 잠금. */
+export const TextareaShrinksBackToMinHeight: Story = {
+  render: () => <Interactive initial={textareaBlock} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const box = canvas.getByLabelText("내가 한 일") as HTMLTextAreaElement
+    const before = box.getBoundingClientRect().height
+
+    await userEvent.type(box, "첫 줄{enter}둘째 줄{enter}셋째 줄{enter}넷째 줄")
+    await expect(box.getBoundingClientRect().height).toBeGreaterThan(before)
+
+    await userEvent.clear(box)
+
+    // 값이 비면 행이 다시 자리표시로 접힐 수 있어 같은 요소라고 가정하지 않는다.
+    const after = canvas.getByLabelText("내가 한 일") as HTMLTextAreaElement
+    await expect(after.getBoundingClientRect().height).toBe(before)
   },
 }

@@ -10,10 +10,17 @@ import type {
 import type { Experience } from "@/types/experience"
 import { getTemplateForType, TEMPLATE_VERSION } from "@/lib/constants/templates-v2"
 import {
+  mergeSavedIntoTemplate,
   toExperienceV2,
   toSavePayload,
 } from "@/lib/utils/experience-mapper"
-import { cloneBlocks, createGroupBlock, createTextField, isBlockEmpty } from "@/lib/utils/block-utils"
+import {
+  cloneBlocks,
+  createGroupBlock,
+  createTextField,
+  isBlockEmpty,
+  isUnrenderableBlock,
+} from "@/lib/utils/block-utils"
 import { computeFormCards } from "@/lib/utils/form-cards"
 import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
 
@@ -167,6 +174,63 @@ describe("toExperienceV2", () => {
     // 템플릿 기본 타입(textarea) 유지 — text 값 주입 생략
     expect(v2.coreBlocks.find(b => b.key === "core.핵심 성과")?.value.type).toBe("textarea")
   })
+
+  /**
+   * ⚠️ **처방이 매퍼까지 닿는지 가정하지 말고 재라.** `injectValue` 는 판별자가 미지면 값을
+   * 그대로 실어 보내는데(새 스키마 보존), 빈 판별자까지 미지로 세면 그 글자는 잠긴 빈 칸이
+   * 되어 사용자가 영원히 못 고친다. `normalizeBlockValue` 를 **먼저** 부르므로 거기서
+   * 되살아나야 이 경로가 함께 낫는다 — 그 사실 자체를 못으로 박는다.
+   */
+  it("v2: 판별자가 빈 값도 템플릿 타입으로 되살려 글자를 지킨다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "T",
+          summary: "",
+          status: "draft",
+          tags: [],
+          fields: { "core.핵심 성과": { type: "", text: "저장된 값" } },
+          custom: [],
+        },
+      }),
+    )
+    const block = v2.coreBlocks.find(b => b.key === "core.핵심 성과")
+    expect(block?.value).toEqual({ type: "textarea", text: "저장된 값" })
+  })
+
+  /**
+   * FRT-300 — 확정본에서 내려간 유형(sports/journal/goal)은 **선택지에서만** 빠졌다.
+   * `hasTemplate` 이 `EXPERIENCE_TYPE_MAP` 조회로 v2 여부를 판정하므로, 은퇴 id 를 map(=파생
+   * 소스인 `EXPERIENCE_TYPES` 배열)에서 지우면 이 레코드가 통째로 v1 으로 떨어져 값이 템플릿
+   * 자리에 주입되지 않는다. "기존 기록은 그대로 열린다"를 이 층에서 못 박는다.
+   */
+  it.each(["sports", "journal", "goal"])(
+    "확정본에서 내려간 유형(%s)으로 저장된 v2 레코드도 템플릿 자리에 값이 실린다",
+    typeId => {
+      const v2 = toExperienceV2(
+        makeExperience({
+          type: typeId,
+          content: {
+            schema_version: 2,
+            template_version: TEMPLATE_VERSION,
+            title: "지난 기록",
+            summary: "",
+            status: "draft",
+            tags: [],
+            fields: { "core.핵심 성과": { type: "textarea", text: "저장해 둔 값" } },
+            custom: [],
+          },
+        }),
+      )
+      expect(v2.coreBlocks.find(b => b.key === "core.핵심 성과")?.value).toEqual({
+        type: "textarea",
+        text: "저장해 둔 값",
+      })
+      expect(v2.title).toBe("지난 기록")
+    },
+  )
 
   it("v1 레거시: 저장된 블록 배열에 레지스트리 라벨매칭으로 안정키를 주입한다", () => {
     const v2 = toExperienceV2(
@@ -589,6 +653,35 @@ describe("toExperienceV2", () => {
       custom: Array<{ label: string; value: unknown }>
     }
     expect(content.custom.find(c => c.label === "결과/성과")?.value).toEqual(textarea("보존될 성과"))
+  })
+
+  it("v1: 블록 정의가 깨진 체크리스트도 템플릿 선택지로 되살아난다", () => {
+    // `options: {}` 는 저장 JSONB 라 올 수 있는 모양이다. `??` 로 고르면 그 객체가 "있는 정의"가
+    // 되어 선택지가 `[]` 로 굳고, 병합은 그 빈 배열을 사용자가 다 지운 것으로 존중한다 —
+    // 체크박스가 하나도 안 그려져 **이미 고른 값을 끌 수조차 없고** 그대로 재저장된다.
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "extracurricular",
+        content: {
+          extensionBlocks: [
+            {
+              id: "b1",
+              type: "checklist",
+              label: "활동 성격",
+              options: {},
+              value: { type: "checklist", checked: ["🤝 팀 협업"] },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const all = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks]
+    const block = all.find(b => b.label === "활동 성격")
+    expect(block?.value.type).toBe("checklist")
+    const value = block?.value as { options: string[]; checked: string[] }
+    expect(value.options).toContain("🤝 팀 협업")
+    expect(value.options.length).toBeGreaterThan(1)
+    expect(value.checked).toEqual(["🤝 팀 협업"])
   })
 })
 
@@ -3136,5 +3229,1057 @@ describe("확정본 전면 교체 값 보존 (FRT-269 연구논문)", () => {
 
     expect(v2.hiddenKeys).toContain("research-paper.역할 / 기여도")
     expect(v2.hiddenKeys).not.toContain("research-info.역할")
+  })
+})
+
+describe("확정본 전면 교체 값 보존 (FRT-291 프로젝트 — 개인·팀 통합)", () => {
+  /**
+   * ⚠️ 픽스처는 **그 시점의 렌더 경로가 실제로 만들어낼 수 있는 값**이어야 한다. 개인·팀은 구
+   * 템플릿이 서로 달라 코어의 상태가 갈린다 — 그게 이 유형의 핵심이다:
+   *  · `core.기간` — 개인·팀 **둘 다** 구 섹션에 '기간'(동명) 앵커가 있어 dedup 이 빈 코어를 화면에서
+   *    지웠다 → 채울 방법이 없었으므로 항상 비어 있다.
+   *  · `core.내 역할/기여도` — 팀에는 `tp-info.내 역할`(role 등재)이 있어 비어 있지만, **개인에는
+   *    role 앵커가 하나도 없어 그 코어 칸이 실제로 렌더됐다** → 값이 들어 있을 수 있다.
+   *  · `core.핵심 성과` — 개인에는 `pp-decisions.성과`(achievement 등재)가 있어 비어 있지만,
+   *    **팀에는 없어** 값이 들어 있을 수 있다(개인과 정반대).
+   *  · `core.증빙 자료` — `isEvidenceBlock` 이라 dedup 을 안 타고 항상 보였다 → 값이 있을 수 있다.
+   */
+  function legacyPersonalContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "캠퍼스 중고거래 앱",
+      summary: "단톡방 거래의 불편을 앱으로",
+      status: "complete",
+      tags: [],
+      fields: {
+        "core.기간": { type: "period", start: "", end: "", isCurrent: false },
+        "core.핵심 성과": textarea(""),
+        // 개인 프로젝트에만 있는 상태 — role 앵커가 없어 이 칸이 화면에 떴다.
+        "core.내 역할/기여도": textarea("기획부터 배포까지 전 과정을 혼자 맡았습니다."),
+        // 질문도 타입도 같아 새 키로 이관되는 것들.
+        "pp-info.프로젝트명": text("캠퍼스 중고거래 앱 개발"),
+        "pp-info.기간": { type: "period", start: "2024-03", end: "2024-06", isCurrent: false },
+        "pp-info.기술/도구": { type: "tags", tags: ["React Native", "Firebase"] },
+        "pp-info.목표/만들고 싶었던 이유": textarea("단톡방 거래가 불편해서 직접 만들었습니다."),
+        // 타입이 달라 옮길 수 없는 것 — ② '핵심 성과'는 개조식이다.
+        "pp-decisions.성과": textarea("베타 2주 만에 DAU 150명"),
+        // 확정본에 대응 칸이 없는 것들.
+        "pp-info.한 줄 설명": text("캠퍼스 한정 중고거래"),
+        "pp-info.대상 사용자/사용 상황": textarea("기숙사생이 방 정리할 때"),
+        "pp-info.주요 기능": { type: "checklist", options: ["채팅", "결제"], checked: ["채팅"] },
+        "pp-info.다음 개선 계획": textarea("결제 연동"),
+      },
+      custom: [],
+    }
+  }
+
+  function legacyTeamContent(): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "교내 공모전 출품작",
+      summary: "5인 팀 프로젝트",
+      status: "complete",
+      tags: [],
+      fields: {
+        "core.기간": { type: "period", start: "", end: "", isCurrent: false },
+        "core.내 역할/기여도": textarea(""),
+        // 팀 프로젝트에만 있는 상태 — achievement 앵커가 없어 이 칸이 화면에 떴다.
+        "core.핵심 성과": textarea("공모전 우수상"),
+        "tp-info.프로젝트명": text("교내 창업 공모전 출품작"),
+        "tp-info.기간": { type: "period", start: "2024-09", end: "2024-11", isCurrent: false },
+        "tp-info.팀 구성": textarea("기획 2, 개발 2, 디자인 1"),
+        "tp-info.목표/문제 정의": textarea("교내 유휴 공간을 어떻게 쓸까에서 출발했습니다."),
+        "tp-tasks.갈등/의견 차이와 조율": textarea("범위를 두고 갈려 투표로 정했습니다."),
+        // 여러 줄이라 한 줄 text 로 옮기면 개행이 지워진다 → 옮기지 않는다.
+        "tp-info.내 역할": textarea("백엔드 API 설계\n배포 자동화 구축"),
+        // 열 구성이 달라 옮기지 않는 표.
+        "tp-tasks.작업 기록": {
+          type: "repeatable-cell",
+          columns: [
+            { key: "task", label: "작업/이슈명", blockType: "text", required: true },
+            { key: "work", label: "내가 한 일", blockType: "textarea", required: true },
+          ],
+          rows: [{ id: "r1", cells: { task: "로그인 API", work: "JWT 발급 구현" } }],
+        },
+        // 묻는 것이 더 넓어 옮기지 않는 것.
+        "tp-tasks.회고 (잘된 점/아쉬운 점/다음엔)": textarea("일정 관리가 아쉬웠습니다."),
+        // 확정본에 대응 칸이 없는 것들.
+        "tp-info.협업 방식": textarea("주 2회 스크럼"),
+        "tp-info.역할 분담표": textarea("A-기획 / B-개발"),
+      },
+      custom: [],
+    }
+  }
+
+  const loadPersonal = () =>
+    toExperienceV2(makeExperience({ type: "personal-project", content: legacyPersonalContent() }))
+  const loadTeam = () =>
+    toExperienceV2(makeExperience({ type: "team-project", content: legacyTeamContent() }))
+
+  it("개인 프로젝트의 질문·타입이 같은 필드는 확정본 자리로 이관된다", () => {
+    const v2 = loadPersonal()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("project-info.프로젝트명")?.value).toEqual(text("캠퍼스 중고거래 앱 개발"))
+    expect(byKey("project-info.진행 기간")?.value).toMatchObject({ start: "2024-03", end: "2024-06" })
+    expect(byKey("project-info.사용 기술 / 툴")?.value).toMatchObject({
+      tags: ["React Native", "Firebase"],
+    })
+    expect(byKey("project-detail.기획 배경 / 동기")?.value).toEqual(
+      textarea("단톡방 거래가 불편해서 직접 만들었습니다."),
+    )
+
+    // 옮긴 구 키는 '기타' 에 중복으로 되살아나지 않는다.
+    for (const oldKey of [
+      "pp-info.프로젝트명",
+      "pp-info.기간",
+      "pp-info.기술/도구",
+      "pp-info.목표/만들고 싶었던 이유",
+    ]) {
+      expect(v2.customBlocks.find(b => b.key === oldKey), oldKey).toBeUndefined()
+    }
+  })
+
+  it("팀 프로젝트도 같은 확정본 자리로 이관된다 — 두 세대가 한 폼으로 합쳐진다", () => {
+    const v2 = loadTeam()
+    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+
+    expect(byKey("project-info.프로젝트명")?.value).toEqual(text("교내 창업 공모전 출품작"))
+    expect(byKey("project-info.진행 기간")?.value).toMatchObject({ start: "2024-09", end: "2024-11" })
+    expect(byKey("project-info.팀원")?.value).toEqual(textarea("기획 2, 개발 2, 디자인 1"))
+    expect(byKey("project-detail.기획 배경 / 동기")?.value).toEqual(
+      textarea("교내 유휴 공간을 어떻게 쓸까에서 출발했습니다."),
+    )
+    expect(byKey("project-detail.어려움 / 문제 해결")?.value).toEqual(
+      textarea("범위를 두고 갈려 투표로 정했습니다."),
+    )
+  })
+
+  /**
+   * `isInjectableInto` 는 text↔textarea 를 허용하지만 `TextBlock` 은 `<input>` 이라 브라우저가
+   * 개행을 지운다 — 문단으로 적은 답이 구분자 없이 붙고 한 글자만 고쳐도 그대로 저장된다
+   * (FRT-247 ①·FRT-267 ⑭). 저장 형식이 아니라 **그 값을 그리는 컨트롤**로 판정한 결과다.
+   */
+  it("여러 줄로 적은 구 '내 역할'은 한 줄 '역할'로 옮기지 않고 '기타'에 원본으로 남긴다", () => {
+    const v2 = loadTeam()
+
+    expect(v2.customBlocks.find(b => b.key === "tp-info.내 역할")?.value).toEqual(
+      textarea("백엔드 API 설계\n배포 자동화 구축"),
+    )
+    expect(v2.extensionBlocks.find(b => b.key === "project-info.역할")?.value).toEqual(text(""))
+  })
+
+  it("열 구성이 다른 구 작업 기록 표는 통째로 '기타'에 원본으로 남는다", () => {
+    const v2 = loadTeam()
+    const kept = v2.customBlocks.find(b => b.key === "tp-tasks.작업 기록")
+
+    expect(kept?.value).toMatchObject({
+      rows: [{ cells: { task: "로그인 API", work: "JWT 발급 구현" } }],
+    })
+    // 확정본 표는 비어 있어야 한다 — 열이 다른 값이 실리면 어느 답이 어느 질문의 답인지 사라진다.
+    const target = v2.extensionBlocks.find(b => b.key === "project-tasks.세부 작업")
+    expect(target?.value).toMatchObject({ rows: [] })
+  })
+
+  it("확정본에 대응 칸이 없는 값은 전부 '기타'에 보존된다", () => {
+    const personal = loadPersonal()
+    for (const key of [
+      "pp-info.한 줄 설명",
+      "pp-info.대상 사용자/사용 상황",
+      "pp-info.주요 기능",
+      "pp-info.다음 개선 계획",
+      "pp-decisions.성과",
+    ]) {
+      expect(personal.customBlocks.find(b => b.key === key), key).toBeTruthy()
+    }
+
+    const team = loadTeam()
+    for (const key of [
+      "tp-info.협업 방식",
+      "tp-info.역할 분담표",
+      "tp-tasks.회고 (잘된 점/아쉬운 점/다음엔)",
+    ]) {
+      expect(team.customBlocks.find(b => b.key === key), key).toBeTruthy()
+    }
+  })
+
+  /**
+   * 개인 프로젝트에는 구 role 앵커가 없어 코어 '내 역할/기여도'가 실제로 렌더됐다 — `CORE_EXCLUDE`
+   * 에 넣었다면 이 값이 '기타'로 밀렸을 것이다. 확정본 '역할'이 새 앵커가 되므로 dedup 이 **빈 것만**
+   * 숨기고, 값이 든 이 칸은 그대로 남는다(FRT-267 ① 과 같은 판정).
+   */
+  it("값이 든 코어 '내 역할/기여도'는 개인 프로젝트에서 그대로 남는다", () => {
+    const v2 = loadPersonal()
+    expect(v2.coreBlocks.find(b => b.label === "내 역할/기여도")?.value).toEqual(
+      textarea("기획부터 배포까지 전 과정을 혼자 맡았습니다."),
+    )
+  })
+
+  /**
+   * 반대로 '핵심 성과'는 확정본 ② 가 **정확히 같은 라벨**을 쓴다. 코어를 남기면 값이 든 코어와
+   * 확정본 칸이 나란히 서서 권위 있는 칸이 둘이 되고, `pickValue` 가 정확 라벨인 코어를 먼저 골라
+   * 사용자가 새 칸을 고쳐도 옛 값이 발행된다(FRT-267 ⑫). 목적지가 개조식이라 값 이관은 타입이
+   * 막으므로, 빼서 '기타'에 원본으로 남긴다 — 칸은 하나, 값은 보존.
+   */
+  it("값이 든 코어 '핵심 성과'는 팀 프로젝트에서 '기타'로 보존된다 — 같은 라벨 두 칸을 만들지 않는다", () => {
+    const v2 = loadTeam()
+
+    expect(v2.coreBlocks.find(b => b.label === "핵심 성과")).toBeUndefined()
+    expect(v2.customBlocks.find(b => b.key === "core.핵심 성과")?.value).toEqual(
+      textarea("공모전 우수상"),
+    )
+  })
+
+  it("숨겨 둔 구 키의 숨김 상태가 확정본 자리로 따라간다", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "personal-project",
+        content: { ...legacyPersonalContent(), hidden: ["pp-info.기술/도구"] },
+      }),
+    )
+
+    expect(v2.hiddenKeys).toContain("project-info.사용 기술 / 툴")
+    expect(v2.hiddenKeys).not.toContain("pp-info.기술/도구")
+  })
+})
+
+// ─── FRT-200: 저장된 값이 타입이 약속한 모양대로 오지 않을 때 ──────────
+//
+// `content` 는 서버 JSONB 라 `Block.value` 가 non-nullable 로 선언돼 있어도 런타임엔 null·결측
+// 필드가 도착한다. 그 값이 매퍼를 그대로 통과해 판정·렌더에서 화면을 통째로 죽였다.
+//
+// ⚠️ 픽스처는 `as unknown as` 로 타입 안전망을 우회한다 — 타입이 허용하는 리터럴로만 쓰면
+// 컴파일러가 그 입력을 막아 결함을 재현하지 못하고, 통과하는 테스트가 그물이 아니게 된다.
+// ⚠️ 키는 하드코딩하지 않고 템플릿에서 읽는다 — 라벨이 바뀌면 테스트가 조용히 무의미해진다.
+
+/**
+ * 헤더 코어는 `fields` 가 아니라 `content.title`/`summary` 로 저장되므로 아래 헬퍼에서 제외한다
+ * — 이걸 고르면 왕복 검사가 `fields[key]` 에서 영원히 undefined 를 본다.
+ */
+const HEADER_KEYS = ["core.경험명", "core.한 줄 요약"]
+
+/** career 템플릿에서 그 타입의 첫 블록 키. 없으면 실패시킨다(빈 컬렉션 위양성 차단). */
+function firstKeyOfType(type: Block["type"]): string {
+  const tmpl = getTemplateForType("career")
+  const all = [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)]
+  // 제외 목록이 실제 템플릿과 어긋나면(라벨 개명 등) 조용히 헤더를 고르게 되므로 함께 잠근다.
+  for (const headerKey of HEADER_KEYS) {
+    if (!all.some(b => b.key === headerKey)) {
+      throw new Error(`career 템플릿에 헤더 키 ${headerKey} 가 없다 — 테스트 전제가 깨졌다`)
+    }
+  }
+  const found = all.find(b => b.type === type && b.key && !HEADER_KEYS.includes(b.key))?.key
+  if (!found) throw new Error(`career 템플릿에 ${type} 블록이 없다 — 테스트 전제가 깨졌다`)
+  return found
+}
+
+/** v2 저장 레코드. `fields`/`custom` 에 타입이 허용하지 않는 손상 값을 실을 수 있다. */
+function makeV2Content(fields: unknown, custom: unknown = []): Experience["content"] {
+  return {
+    schema_version: 2,
+    template_version: TEMPLATE_VERSION,
+    title: "회사",
+    summary: "요약",
+    status: "draft",
+    tags: [],
+    fields,
+    custom,
+  } as unknown as Experience["content"]
+}
+
+describe("toExperienceV2 — 손상된 저장 값 (FRT-200)", () => {
+  it("템플릿 필드 값이 통째로 null 이어도 경험을 연다", () => {
+    const periodKey = firstKeyOfType("period")
+    const exp = makeExperience({ content: makeV2Content({ [periodKey]: null }) })
+
+    expect(() => toExperienceV2(exp)).not.toThrow()
+    const v2 = toExperienceV2(exp)
+    // 값이 없으면 템플릿이 준 빈 값 그대로여야 한다 — 블록이 사라지면 안 된다.
+    const block = v2.coreBlocks.find(b => b.key === periodKey)
+    expect(block).toBeDefined()
+    expect(isBlockEmpty(block!)).toBe(true)
+  })
+
+  /**
+   * 핵심 단언. "죽지 않는다"만 물으면 **손상 값을 통째로 비우는 오구현도 통과한다** —
+   * 그 구현은 살아 있는 `start` 를 지운다. 살아남은 값을 함께 물어야 그물이 된다.
+   */
+  it("한쪽 필드만 깨진 템플릿 값은 살아 있는 쪽을 보존한다", () => {
+    const periodKey = firstKeyOfType("period")
+    const exp = makeExperience({
+      content: makeV2Content({ [periodKey]: { type: "period", start: "2023.01", end: null } }),
+    })
+
+    const v2 = toExperienceV2(exp)
+    const block = v2.coreBlocks.find(b => b.key === periodKey)
+    expect(block?.value).toMatchObject({ type: "period", start: "2023.01", end: "" })
+    expect(isBlockEmpty(block!)).toBe(false)
+  })
+
+  /**
+   * custom 은 **사용자가 만든 칸 자체가 정보**다. 형제 `orphanFieldsToBlocks` 처럼 버리면
+   * 값이 없다는 이유로 사용자가 만든 필드가 화면에서 사라진다. 존재·개수를 함께 단언하지
+   * 않으면 그 오구현이 통과한다.
+   */
+  it("커스텀 필드 값이 null 이어도 그 필드는 사라지지 않고 빈 값으로 복구된다", () => {
+    const exp = makeExperience({
+      content: makeV2Content({}, [
+        { key: "c1", entryType: "field", type: "date", label: "직접 만든 날짜", value: null },
+      ]),
+    })
+
+    expect(() => toExperienceV2(exp)).not.toThrow()
+    const v2 = toExperienceV2(exp)
+    expect(v2.customBlocks).toHaveLength(1)
+    expect(v2.customBlocks[0].label).toBe("직접 만든 날짜")
+    expect(v2.customBlocks[0].value).toEqual({ type: "date", date: "" })
+  })
+
+  /**
+   * 경계 고정. orphan 은 `value.type` 이 유일한 타입 신호라 그것이 없으면 복구할 근거가 없다 —
+   * custom 을 고쳤다고 orphan 까지 되살리면 안 된다(현행 드롭 유지).
+   */
+  it("템플릿이 안 쓰는 잔재 키의 값이 null 이면 지금처럼 버린다", () => {
+    const exp = makeExperience({ content: makeV2Content({ "구템플릿.사라진필드": null }) })
+
+    const v2 = toExperienceV2(exp)
+    expect(v2.customBlocks.find(b => b.key === "구템플릿.사라진필드")).toBeUndefined()
+  })
+
+  it("v1 레거시 저장 블록이 손상돼 있어도 경험을 열고 살아 있는 값을 지킨다", () => {
+    const exp = makeExperience({
+      content: {
+        coreBlocks: [
+          {
+            id: "b1",
+            key: "core.기간",
+            type: "period",
+            label: "기간",
+            value: { type: "period", start: "2022.03", end: null },
+          },
+          { id: "b2", type: "date", label: "깨진 날짜", value: null },
+        ],
+        extensionBlocks: [],
+        customBlocks: [],
+      } as unknown as Experience["content"],
+    })
+
+    expect(() => toExperienceV2(exp)).not.toThrow()
+    const v2 = toExperienceV2(exp)
+    const all = [...v2.coreBlocks, ...v2.extensionBlocks, ...v2.customBlocks]
+    const period = all.find(b => b.label === "기간")
+    expect(period?.value).toMatchObject({ type: "period", start: "2022.03", end: "" })
+  })
+})
+
+describe("저장 왕복 — 손상된 값 정규화 (FRT-200)", () => {
+  it("손상된 값은 빈 값으로 정규화돼 저장되고, 멀쩡한 값은 그대로 간다", () => {
+    const periodKey = firstKeyOfType("period")
+    const textKey = firstKeyOfType("text")
+    const exp = makeExperience({
+      content: makeV2Content(
+        {
+          [periodKey]: { type: "period", start: "2023.01", end: null },
+          [textKey]: { type: "text", text: "멀쩡한 값" },
+        },
+        [{ key: "c1", entryType: "field", type: "date", label: "직접 만든 날짜", value: null }],
+      ),
+    })
+
+    const payload = toSavePayload(toExperienceV2(exp))
+    const content = payload.content as {
+      fields: Record<string, unknown>
+      custom: Array<{ key: string; value: unknown }>
+    }
+    expect(content.fields[periodKey]).toMatchObject({
+      type: "period",
+      start: "2023.01",
+      end: "",
+    })
+    expect(content.fields[textKey]).toMatchObject({ type: "text", text: "멀쩡한 값" })
+    const custom = content.custom.find(c => c.key === "c1")
+    expect(custom).toBeDefined()
+    expect(custom).toMatchObject({ entryType: "field", value: { type: "date", date: "" } })
+  })
+
+  /**
+   * `type` 만 빠진 값은 **버릴 값이 아니다.** 블록이 선언한 타입이 복구 근거가 되는데,
+   * 빈 값으로 갈아치우면 열었다 저장하는 것만으로 살아 있던 입력이 영구히 사라진다.
+   */
+  it("type 만 빠진 템플릿 값도 알맹이가 살아남아 그대로 재저장된다", () => {
+    const periodKey = firstKeyOfType("period")
+    const exp = makeExperience({
+      content: makeV2Content({ [periodKey]: { start: "2023.01", end: "2023.12" } }),
+    })
+
+    const v2 = toExperienceV2(exp)
+    const block = v2.coreBlocks.find(b => b.key === periodKey)
+    expect(block?.value).toMatchObject({ type: "period", start: "2023.01", end: "2023.12" })
+
+    const content = toSavePayload(v2).content as { fields: Record<string, unknown> }
+    expect(content.fields[periodKey]).toMatchObject({ start: "2023.01", end: "2023.12" })
+  })
+
+  /**
+   * 열 정의(`columns`)도 선택지(`options`)와 같다 — 사용자가 친 값이 아니라 템플릿이 주는
+   * 정의다. 결측이라고 `[]` 로 두면 표에 그릴 칸이 하나도 없어 입력한 행을 볼 수도 고칠 수도 없다.
+   */
+  it("표 값이 열 정의를 잃어도 템플릿 열로 되살리고 행은 지킨다", () => {
+    const cellKey = firstKeyOfType("repeatable-cell")
+    const exp = makeExperience({
+      content: makeV2Content({
+        [cellKey]: {
+          type: "repeatable-cell",
+          columns: null,
+          rows: [{ id: "r1", cells: {} }],
+        } as unknown as BlockValue,
+      }),
+    })
+
+    const v2 = toExperienceV2(exp)
+    const block = [...v2.coreBlocks, ...v2.extensionBlocks]
+      .flatMap(b => [b, ...(b.children ?? [])])
+      .find(b => b.key === cellKey)
+    expect(block).toBeDefined()
+    const value = block!.value as unknown as { type: string; columns: unknown[]; rows: unknown[] }
+    expect(value.type).toBe("repeatable-cell")
+    expect(value.columns.length).toBeGreaterThan(0)
+    expect(value.rows).toHaveLength(1)
+  })
+
+  it("커스텀 필드도 type 만 빠지면 entry 의 타입으로 되살려 알맹이를 지킨다", () => {
+    const exp = makeExperience({
+      content: makeV2Content({}, [
+        {
+          key: "c1",
+          entryType: "field",
+          type: "period",
+          label: "직접 만든 기간",
+          value: { start: "2022.03", end: "" } as unknown as BlockValue,
+        },
+      ]),
+    })
+
+    const v2 = toExperienceV2(exp)
+    const block = v2.customBlocks.find(b => b.key === "c1")
+    expect(block?.value).toMatchObject({ type: "period", start: "2022.03" })
+  })
+})
+
+/**
+ * 완료 저장의 "빈 섹션 정리"는 **삭제** 결정이다. 이 코드가 모르는 타입의 자식은 그리지 못할
+ * 뿐인데 섹션째 지우면 그 값이 영구히 사라진다 (FRT-200 리뷰).
+ */
+describe("toSavePayload — 모르는 타입을 담은 사용자 섹션 (FRT-200)", () => {
+  it("완료 저장의 빈 섹션 정리가 모르는 타입의 자식을 담은 섹션을 지우지 않는다", () => {
+    const group: Block = {
+      id: "g1",
+      key: "custom.사용자 섹션",
+      type: "group",
+      label: "사용자 섹션",
+      value: { type: "group" },
+      children: [
+        {
+          id: "c1",
+          key: "custom.신규칸",
+          type: "text",
+          label: "신규 칸",
+          value: { type: "brand-new-in-v3", payload: "미래 스키마" } as unknown as BlockValue,
+        },
+      ],
+    }
+    const payload = toSavePayload(
+      makeExperienceV2({ status: "complete", customBlocks: [group] }),
+    )
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom.find(c => c.label === "사용자 섹션")).toBeDefined()
+  })
+
+  it("정말로 빈 사용자 섹션은 종전대로 완료 저장에서 정리된다", () => {
+    const group: Block = {
+      id: "g2",
+      key: "custom.빈 섹션",
+      type: "group",
+      label: "빈 섹션",
+      value: { type: "group" },
+      children: [
+        { id: "c2", key: "custom.빈칸", type: "text", label: "빈 칸", value: { type: "text", text: "" } },
+      ],
+    }
+    const payload = toSavePayload(
+      makeExperienceV2({ status: "complete", customBlocks: [group] }),
+    )
+    const custom = (payload.content as unknown as { custom: CustomEntry[] }).custom
+    expect(custom.find(c => c.label === "빈 섹션")).toBeUndefined()
+  })
+})
+
+/**
+ * v1 은 템플릿 병합이 **나중에**(ExperienceFormV2 → mergeSavedIntoTemplate) 일어난다. 그래서
+ * 로드 시점 보정이 결측 정의를 `[]` 로 굳혀 버리면, 뒤이은 병합은 그 `[]` 를 "사용자가 다
+ * 지웠다"로 읽어 **현재 템플릿 정의를 되살리지 못한다**. 값은 남는데 그릴 컨트롤이 없다.
+ */
+describe("toExperienceV2 v1 — 정의가 결측인 값 (FRT-200)", () => {
+  function repeatableTemplateBlock(): Block {
+    const tmpl = getTemplateForType("career")
+    const all = [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)]
+    const found = all.find(b => b.type === "repeatable-cell")
+    if (!found) throw new Error("career 템플릿에 repeatable-cell 블록이 없다 — 테스트 전제가 깨졌다")
+    return found
+  }
+
+  /**
+   * ⚠️ **커스텀 라벨은 템플릿 신원이 아니다.** 사용자가 우연히 템플릿과 같은 이름으로 만든
+   * 칸에 템플릿 선택지를 밀어 넣으면, 매칭된 적도 없는데 사용자의 칸이 조용히 바뀐다.
+   */
+  it("커스텀 블록에는 라벨이 같아도 템플릿 정의를 넣지 않는다", () => {
+    const tmpl = getTemplateForType("career")
+    const all = [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)]
+    const tplSelect = all.find(b => b.type === "single-select" && (b.options?.length ?? 0) > 0)
+    if (!tplSelect) throw new Error("career 템플릿에 선택지 있는 single-select 가 없다 — 전제가 깨졌다")
+
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          customBlocks: [
+            {
+              id: "c1",
+              type: "single-select",
+              label: tplSelect.label, // 우연히 같은 라벨
+              value: { type: "single-select", selected: "내가 쓴 값" },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const custom = v1.customBlocks.find(b => b.label === tplSelect.label)
+    expect(custom).toBeDefined()
+    expect((custom!.value as unknown as { options: unknown[] }).options).toEqual([])
+  })
+
+  /**
+   * ⚠️ 배열마다 따로 보정하면 각 배열의 첫 블록이 **같은 폴백 id** 를 받는다. 폼은 core·extension
+   * 을 하나의 id 맵으로 합쳐 쓰므로, 한쪽을 고치면 다른 쪽이 엉뚱한 객체로 바뀐다.
+   */
+  it("v1 core·extension 블록의 보정 id 가 서로 겹치지 않는다", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          // ⚠️ id 를 **아예 못 살리는** 경우여야 폴백이 쓰인다. 숫자 id 는 글자로 살아나므로
+          //    그걸로 쓰면 폴백에 닿지 못해 검사가 공허하게 통과한다(실제로 그렇게 썼다가 잡았다).
+          coreBlocks: [
+            { type: "text", label: "코어", value: { type: "text", text: "가" } },
+          ],
+          extensionBlocks: [
+            { type: "text", label: "확장", value: { type: "text", text: "나" } },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const ids = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks].map(b => b.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  /** 폴백을 안 쓰는 경우 — **이미 같은 id 를 든** 두 블록은 배열 안에서만 보면 둘 다 성해 보인다. */
+  it("core·extension 이 이미 같은 id 를 들고 있어도 갈라 준다", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          coreBlocks: [{ id: "same", type: "text", label: "코어", value: { type: "text", text: "가" } }],
+          extensionBlocks: [
+            { id: "same", type: "text", label: "확장", value: { type: "text", text: "나" } },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const ids = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks].map(b => b.id)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
+  /** 라벨이 낡았어도 **안정키가 살아 있으면** 그게 더 확실한 신원이다. */
+  it("라벨이 낡아도 안정키로 템플릿 열을 되찾는다", () => {
+    const tplBlock = repeatableTemplateBlock()
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          extensionBlocks: [
+            {
+              id: "b1",
+              key: tplBlock.key,
+              type: "repeatable-cell",
+              label: "옛 라벨(개명 전)",
+              value: { type: "repeatable-cell", rows: [{ id: "r1", cells: { any: "값" } }] },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const block = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks]
+      .flatMap(b => [b, ...(b.children ?? [])])
+      .find(b => b.key === tplBlock.key)
+    expect(block).toBeDefined()
+    expect((block!.value as unknown as { columns: unknown[] }).columns.length).toBeGreaterThan(0)
+  })
+
+  /** 키가 **엉뚱한 유형**을 가리키면 거기서 멈추지 말고 라벨로 되짚어야 한다. */
+  it("키가 다른 유형을 가리키면 라벨로 되짚어 템플릿 열을 되찾는다", () => {
+    const tplBlock = repeatableTemplateBlock()
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          extensionBlocks: [
+            {
+              id: "b1",
+              key: firstKeyOfType("text"), // 손상된 키 — 다른 유형의 템플릿 필드를 가리킨다
+              type: "repeatable-cell",
+              label: tplBlock.label, // 라벨은 정확하다
+              value: { type: "repeatable-cell", rows: [{ id: "r1", cells: { any: "값" } }] },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    const block = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks]
+      .flatMap(b => [b, ...(b.children ?? [])])
+      .find(b => b.label === tplBlock.label && b.type === "repeatable-cell")
+    expect(block).toBeDefined()
+    expect((block!.value as unknown as { columns: unknown[] }).columns.length).toBeGreaterThan(0)
+  })
+
+  /**
+   * ⚠️ 아는 타입끼리 어긋나도 **값은 복구 가능한 정보**다. 저장 경로에서 비우면 열었다
+   * 저장하는 것만으로 사라진다 — 모양 맞추기는 저장되지 않는 렌더 관문의 몫이다.
+   */
+  it("v1 블록 타입과 값 타입이 어긋나도 값이 저장 왕복에서 살아남는다", () => {
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          extensionBlocks: [
+            {
+              id: "b1",
+              type: "text",
+              label: "어긋난 칸",
+              value: { type: "date", date: "2026-08-11" },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+    expect(JSON.stringify(toSavePayload(v1).content)).toContain("2026-08-11")
+  })
+
+  it("열 정의를 잃은 v1 표는 템플릿 열을 되찾고 행은 지킨다", () => {
+    const tplBlock = repeatableTemplateBlock()
+    const v1 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          extensionBlocks: [
+            {
+              id: "b1",
+              type: "repeatable-cell",
+              label: tplBlock.label,
+              value: { type: "repeatable-cell", rows: [{ id: "r1", cells: { any: "값" } }] },
+            },
+          ],
+        } as unknown as Experience["content"],
+      }),
+    )
+
+    const saved = [...v1.coreBlocks, ...v1.extensionBlocks, ...v1.customBlocks].find(
+      b => b.label === tplBlock.label,
+    )
+    expect(saved).toBeDefined()
+
+    // 병합 뒤 열이 살아 있어야 입력·조회 컨트롤이 생긴다.
+    const merged = mergeSavedIntoTemplate(tplBlock, saved!)
+    const value = merged.value as unknown as { columns: unknown[]; rows: unknown[] }
+    expect(value.columns.length).toBeGreaterThan(0)
+    expect(value.rows).toHaveLength(1)
+  })
+})
+
+/**
+ * 새 스키마가 쓴 값을 **구 프론트가 지우면 안 된다.** orphan 안전망은 모르는 키를 보존하는데,
+ * 모르는 *타입*을 "비어 있음"으로 보고 버리면 그 안전망이 무력해진다 (FRT-200 리뷰).
+ */
+describe("toExperienceV2 — 이 코드가 모르는 타입 (FRT-200)", () => {
+  /**
+   * ⚠️ 템플릿이 **아는 키**에 모르는 판별자가 실려 오는 경우. 보정은 값을 지키도록 고쳤지만,
+   * 주입 단계가 타입 불일치로 보고 템플릿 기본값을 돌려주면 그 키는 소비된 것으로 처리돼
+   * 저장 때 새 스키마 값이 **템플릿 빈 값으로 덮인다.**
+   */
+  it("템플릿이 아는 키에 실린 모르는 판별자도 왕복에서 지킨다", () => {
+    const textKey = firstKeyOfType("text")
+    const exp = makeExperience({
+      content: makeV2Content({
+        [textKey]: { type: "brand-new-in-v3", payload: "미래 스키마" } as unknown as BlockValue,
+      }),
+    })
+
+    const content = toSavePayload(toExperienceV2(exp)).content as { fields: Record<string, unknown> }
+    expect(content.fields[textKey]).toMatchObject({
+      type: "brand-new-in-v3",
+      payload: "미래 스키마",
+    })
+  })
+
+  /**
+   * ⚠️ 이관은 **덮어쓰기 결정**이다. 목적지에 이미 새 스키마가 쓴 값이 있으면 "비어 있다"고
+   * 보고 레거시 값으로 덮어선 안 된다 — 다음 저장에서 그 값이 영구히 사라진다.
+   */
+  it("이관 목적지에 모르는 판별자의 값이 있으면 덮어쓰지 않는다", () => {
+    // ⚠️ **실제 이관 쌍**을 써야 한다. 원본 키가 없으면 이관 자체가 안 돌아 검사가
+    //    공허하게 통과한다(실제로 그렇게 썼다가 잡았다).
+    const exp = makeExperience({
+      type: "overseas",
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "제목",
+        summary: "요약",
+        status: "draft",
+        tags: [],
+        fields: {
+          "core.증빙 자료": {
+            type: "file",
+            fileName: "옛 증빙.pdf",
+            description: "",
+            evidenceType: "",
+          },
+          "overseas-program.증빙 자료": {
+            type: "brand-new-in-v3",
+            payload: "새 스키마가 쓴 값",
+          },
+        },
+        custom: [],
+      } as unknown as Experience["content"],
+    })
+
+    const content = toSavePayload(toExperienceV2(exp)).content as { fields: Record<string, unknown> }
+    expect(content.fields["overseas-program.증빙 자료"]).toMatchObject({
+      type: "brand-new-in-v3",
+      payload: "새 스키마가 쓴 값",
+    })
+  })
+
+  /**
+   * ⚠️ **"부속 값만 남은 목적지"는 차지된 게 아니다.** 이관은 원본을 먼저 지우므로, 여기서
+   * "차지됨"으로 오판하면 실제 첨부가 옮겨지지도 보존되지도 않고 사라진다.
+   */
+  it("목적지에 설명만 남아 있으면 실제 첨부 이관을 막지 않는다", () => {
+    const exp = makeExperience({
+      type: "overseas",
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "제목",
+        summary: "요약",
+        status: "draft",
+        tags: [],
+        fields: {
+          // ⚠️ **개명 경로**(원본을 먼저 지운다)를 써야 한다 — scoped migration 은 건너뛸 때
+          //    원본을 남겨 orphan 으로 살아나므로 검사가 공허하게 통과한다(그렇게 썼다가 잡았다).
+          "overseas-challenges.증빙": {
+            type: "file",
+            fileName: "진짜 첨부.pdf",
+            fileId: "f1",
+            description: "",
+            evidenceType: "",
+          },
+          "overseas-program.증빙 자료": {
+            type: "file",
+            fileName: "",
+            description: "설명만 적어 둠",
+            evidenceType: "",
+          },
+        },
+        custom: [],
+      } as unknown as Experience["content"],
+    })
+
+    const content = toSavePayload(toExperienceV2(exp)).content as {
+      fields: Record<string, unknown>
+      custom: Array<{ key?: string; value?: unknown }>
+    }
+    const dest = content.fields["overseas-program.증빙 자료"]
+    const survived =
+      JSON.stringify(dest).includes("진짜 첨부.pdf") ||
+      JSON.stringify(content.custom).includes("진짜 첨부.pdf")
+    expect(survived).toBe(true)
+  })
+
+  /**
+   * ⚠️ **"차지됨" 판정도 정규화와 같은 눈으로 봐야 한다.** 원소가 전부 깨진 배열은 길이만 보면
+   * 채워진 것 같지만 정규화하면 빈 배열이 된다 — 그 사이에 레거시 원본은 이미 지워진다.
+   */
+  it("목적지 배열의 원소가 전부 깨졌으면 레거시 값이 살아남는다", () => {
+    const exp = makeExperience({
+      type: "creative-work",
+      content: {
+        schema_version: 2,
+        template_version: TEMPLATE_VERSION,
+        title: "제목",
+        summary: "요약",
+        status: "draft",
+        tags: [],
+        fields: {
+          "cw-info.사용 도구": { type: "tags", tags: ["피그마", "블렌더"] },
+          "creative-info.사용 툴 / 기술": { type: "tags", tags: [{}] },
+        },
+        custom: [],
+      } as unknown as Experience["content"],
+    })
+
+    const payload = toSavePayload(toExperienceV2(exp))
+    expect(JSON.stringify(payload.content)).toContain("피그마")
+  })
+
+  /**
+   * ⚠️ v2 템플릿 키에 **다른 아는 타입**이 실려 온 경우. 주입을 생략하면 그 키는 소비된 것으로
+   * 처리돼 orphan 으로도 안 남고, 저장 때 템플릿 빈 값이 그 자리를 덮는다.
+   */
+  it("템플릿 키에 다른 아는 타입이 실려 있어도 왕복에서 값이 산다", () => {
+    const textKey = firstKeyOfType("text")
+    const exp = makeExperience({
+      content: makeV2Content({
+        [textKey]: { type: "date", date: "2026-08-11" } as unknown as BlockValue,
+      }),
+    })
+    expect(JSON.stringify(toSavePayload(toExperienceV2(exp)).content)).toContain("2026-08-11")
+  })
+
+  it("모르는 type 의 orphan 값을 버리지 않고 왕복에서 지킨다", () => {
+    const exp = makeExperience({
+      content: makeV2Content({
+        "future.신규칸": {
+          type: "brand-new-in-v3",
+          payload: "미래 스키마가 쓴 값",
+        } as unknown as BlockValue,
+      }),
+    })
+
+    const v2 = toExperienceV2(exp)
+    const block = [...v2.customBlocks, ...v2.extensionBlocks].find(b => b.key === "future.신규칸")
+    expect(block).toBeDefined()
+
+    const payload = toSavePayload(v2)
+    const content = payload.content as {
+      fields: Record<string, unknown>
+      custom: Array<{ key: string; value: unknown }>
+    }
+    const survived =
+      content.fields["future.신규칸"] ?? content.custom.find(c => c.key === "future.신규칸")?.value
+    expect(survived).toMatchObject({ type: "brand-new-in-v3", payload: "미래 스키마가 쓴 값" })
+  })
+
+  /**
+   * ⚠️ v2 의 `custom[]` 은 **`normalizeBlocks` 를 지나지 않는다**(v1 배열만 지난다).
+   * 그래서 `normalizeBlock` 이 하는 "블록 타입이 비었으면 값의 판별자로 되살린다"가
+   * 이 경로에만 적용되지 않고 있었다 — 깨진 타입이 그대로 블록에 실린다.
+   */
+  describe("v2 커스텀 항목의 깨진 블록 타입 (FRT-200)", () => {
+    const customContent = (entry: unknown) => makeV2Content({}, [entry])
+
+    it("타입이 비어 있어도 값의 판별자로 되살아난다", () => {
+      const v2 = toExperienceV2(
+        makeExperience({
+          content: customContent({
+            key: "c-1",
+            entryType: "field",
+            type: null,
+            label: "내가 만든 칸",
+            value: { type: "text", text: "저장된 값" },
+          }),
+        }),
+      )
+
+      const block = v2.customBlocks.find(b => b.label === "내가 만든 칸")
+      expect(block?.type).toBe("text")
+      expect(block?.value).toEqual({ type: "text", text: "저장된 값" })
+    })
+
+    it("되살아난 블록은 잠기지 않는다 — 사용자가 만든 칸을 계속 고칠 수 있다", () => {
+      const v2 = toExperienceV2(
+        makeExperience({
+          content: customContent({
+            key: "c-1",
+            entryType: "field",
+            type: "",
+            label: "내가 만든 칸",
+            value: { type: "textarea", text: "저장된 값" },
+          }),
+        }),
+      )
+
+      const block = v2.customBlocks.find(b => b.label === "내가 만든 칸")
+      expect(isUnrenderableBlock(block!)).toBe(false)
+    })
+
+    it("되살아난 타입이 저장 왕복에서도 유지된다 — 깨진 타입을 다시 싣지 않는다", () => {
+      const v2 = toExperienceV2(
+        makeExperience({
+          content: customContent({
+            key: "c-1",
+            entryType: "field",
+            type: null,
+            label: "내가 만든 칸",
+            value: { type: "text", text: "저장된 값" },
+          }),
+        }),
+      )
+
+      const content = toSavePayload(v2).content as { custom: Array<{ label: string; type: unknown }> }
+      expect(content.custom.find(c => c.label === "내가 만든 칸")?.type).toBe("text")
+    })
+
+    /** 경계 — **모르는 *이름*의 타입은 신호 없음이 아니다.** 새 스키마의 흔적이라 그대로 둔다. */
+    it("모르는 이름의 타입은 되살리지 않고 그대로 지킨다", () => {
+      const v2 = toExperienceV2(
+        makeExperience({
+          content: customContent({
+            key: "c-1",
+            entryType: "field",
+            type: "rating-v3",
+            label: "내가 만든 칸",
+            value: { type: "text", text: "저장된 값" },
+          }),
+        }),
+      )
+
+      const block = v2.customBlocks.find(b => b.label === "내가 만든 칸")
+      expect(block?.type).toBe("rating-v3")
+      expect(block?.value).toEqual({ type: "text", text: "저장된 값" })
+    })
+  })
+})
+
+/**
+ * 유형 통합으로 **id 가 답이던 질문**이 생긴 자리 (FRT-291 리뷰).
+ *
+ * 확정본은 개인·팀을 한 유형으로 합치고 '개인 / 팀' 이라는 칸으로 그 구분을 옮겼다. 그런데
+ * 통합 이전 레코드는 그 칸이 없던 시절에 저장됐다 — 그리고 남은 id `personal-project` 는 이제
+ * **새 팀 프로젝트도 쓰는 일반 id** 라, 그 레코드가 '개인'이었다는 사실이 스키마 어디에도 남지
+ * 않는다. 우리가 아는 답을 사용자에게 다시 묻는 셈이다(FRT-249 Codex P1 과 같은 양식).
+ *
+ * ⚠️ 팀 레코드는 **일부러 안 채운다.** 새 선택지가 팀 규모로 갈리는데(2~5명 / 6명 이상) 구
+ * 데이터에 규모가 없다 — 둘 중 하나를 고르면 답이 둔갑한다(`carrySelectValue` 와 같은 판단).
+ * 게다가 `team-project` id 는 은퇴했을 뿐 그대로 남아 '팀이었다'는 사실을 여전히 담고 있다.
+ */
+describe("통합된 유형의 판별자 되돌리기 (FRT-291 리뷰)", () => {
+  function projectRecord(type: string, templateVersion: number, fields: Record<string, BlockValue> = {}) {
+    return toExperienceV2({
+      id: "e1",
+      user_id: "u1",
+      type,
+      importance: null,
+      content: {
+        schema_version: 2,
+        template_version: templateVersion,
+        title: "구 레코드",
+        summary: "",
+        status: "complete",
+        tags: [],
+        fields,
+        custom: [],
+      },
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-02T00:00:00Z",
+    } as unknown as Experience)
+  }
+
+  function collabOf(v2: ExperienceV2): SingleSelectBlockValue | undefined {
+    const block = v2.extensionBlocks.find(b => b.label === "개인 / 팀")
+    return block?.value.type === "single-select" ? block.value : undefined
+  }
+
+  it("통합 이전 개인 프로젝트는 '개인 프로젝트'로 되살아난다", () => {
+    expect(collabOf(projectRecord("personal-project", 7))?.selected).toBe("개인 프로젝트")
+  })
+
+  it("선택지는 템플릿 것이 그대로 살아 있다 — 되살린 값이 목록을 좁히지 않는다", () => {
+    const collab = collabOf(projectRecord("personal-project", 7))
+    expect(collab?.options ?? []).toContain("팀 프로젝트(2~5명)")
+  })
+
+  it("통합 이전 팀 프로젝트는 비워 둔다 — 팀 규모를 모른다", () => {
+    expect(collabOf(projectRecord("team-project", 7))?.selected).toBe("")
+  })
+
+  /**
+   * 통합 이후 저장된 레코드에서 이 칸이 비어 있는 것은 **사용자의 상태**(아직 안 골랐다)이지
+   * 우리가 아는 사실이 아니다. 여기가 무너지면 팀 프로젝트를 만들다 만 사용자가 다음 진입에
+   * '개인 프로젝트'라는 답을 받아 든다.
+   */
+  it("통합 이후 레코드의 빈 칸은 대신 정하지 않는다", () => {
+    expect(collabOf(projectRecord("personal-project", TEMPLATE_VERSION))?.selected).toBe("")
+  })
+
+  it("이미 고른 답은 덮어쓰지 않는다", () => {
+    const saved = projectRecord("personal-project", 7, {
+      "project-info.개인 / 팀": {
+        type: "single-select",
+        options: [],
+        selected: "팀 프로젝트(6명 이상)",
+      },
+    })
+    expect(collabOf(saved)?.selected).toBe("팀 프로젝트(6명 이상)")
+  })
+
+  /**
+   * schema v1(FRT-69 이전) 레코드는 v2 분기에 못 들어와 심기가 통째로 빠져 있었다(Codex P2 3차).
+   * v1 은 **정의상 통합 이전**이다 — schema v2 도입이 유형 통합(템플릿 8)보다 앞서므로,
+   * template_version 숫자가 없어도 '통합 이전'이 참이다. 여기가 빠지면 폼이 빈 템플릿 칸을
+   * 병합하고, 저장이 스키마를 v2·현재 템플릿으로 굳혀 이후엔 영영 심을 수 없다.
+   */
+  function v1ProjectRecord(type: string, extensionBlocks: unknown[] = []) {
+    return toExperienceV2({
+      id: "e1",
+      user_id: "u1",
+      type,
+      importance: null,
+      content: {
+        title: "v1 구 레코드",
+        summary: "",
+        status: "complete",
+        tags: [],
+        coreBlocks: [],
+        extensionBlocks,
+        customBlocks: [],
+      },
+      created_at: "2023-01-01T00:00:00Z",
+      updated_at: "2023-01-02T00:00:00Z",
+    } as unknown as Experience)
+  }
+
+  it("schema v1 개인 프로젝트도 '개인 프로젝트'로 되살아난다", () => {
+    const collab = collabOf(v1ProjectRecord("personal-project"))
+    expect(collab?.selected).toBe("개인 프로젝트")
+    // 선택지도 템플릿 것 그대로 — 빈 목록이면 드롭다운이 통째로 빈다(v2 심기와 같은 함정).
+    expect(collab?.options ?? []).toContain("팀 프로젝트(2~5명)")
+  })
+
+  it("schema v1 팀 프로젝트는 비워 둔다 — 팀 규모를 모른다", () => {
+    expect(collabOf(v1ProjectRecord("team-project"))?.selected ?? "").toBe("")
+  })
+
+  it("schema v1 에 이미 답이 있으면 덮지 않는다", () => {
+    const saved = v1ProjectRecord("personal-project", [
+      {
+        id: "b1",
+        type: "single-select",
+        label: "개인 / 팀",
+        value: { type: "single-select", options: [], selected: "팀 프로젝트(6명 이상)" },
+      },
+    ])
+    expect(collabOf(saved)?.selected).toBe("팀 프로젝트(6명 이상)")
   })
 })

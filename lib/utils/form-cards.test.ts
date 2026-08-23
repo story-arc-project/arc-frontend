@@ -1,8 +1,21 @@
 import { describe, it, expect } from "vitest"
-import { computeFormCards, isCardComplete, computeFormProgress } from "@/lib/utils/form-cards"
+import {
+  completedCardIds,
+  computeFormCards,
+  filledQualitativeKeys,
+  isCardComplete,
+  computeFormProgress,
+  equivalentLabels,
+} from "@/lib/utils/form-cards"
 import { partitionByCondition } from "@/lib/utils/conditional-fields"
-import { getTemplateForType } from "@/lib/constants/templates-v2"
-import { cloneBlocks } from "@/lib/utils/block-utils"
+import { ALL_EXPERIENCE_TYPES, getTemplateForType } from "@/lib/constants/templates-v2"
+import {
+  cloneBlocks,
+  createSelectField,
+  createTextareaField,
+  isRequiredBlock,
+} from "@/lib/utils/block-utils"
+import { canHideBlock } from "@/lib/utils/hidden-fields"
 import type { FormCardSection, FormCardModel } from "@/lib/utils/form-cards"
 import type { Block } from "@/types/archive"
 import { SECTION_LABEL_OVERRIDES } from "@/types/archive"
@@ -11,9 +24,39 @@ function sectionsFor(typeId: Parameters<typeof getTemplateForType>[0]): { core: 
   const t = getTemplateForType(typeId)
   return {
     core: cloneBlocks(t.commonCore.blocks),
-    sections: t.extensions.map(e => ({ id: e.id, category: e.category, blocks: cloneBlocks(e.blocks) })),
+    sections: t.extensions.map(e => ({
+      id: e.id,
+      label: e.label,
+      standalone: e.standalone,
+      description: e.description,
+      category: e.category,
+      blocks: cloneBlocks(e.blocks),
+    })),
   }
 }
+
+describe("동의어 등록 — 코어를 뺀 자리를 이어받은 라벨 (FRT-291)", () => {
+  /**
+   * `CORE_EXCLUDE` 로 코어를 빼는 것과 그 자리를 이어받은 라벨을 `SEMANTIC_GROUPS` 에 넣는 것은
+   * **한 쌍**이다(FRT-269 리뷰). 앞만 하면 폴백이던 코어까지 함께 사라져 발행 경로가 값을 못 찾는다.
+   *
+   * ⚠️ 이 테스트는 표를 직접 본다 — **동작 테스트로는 잡히지 않기 때문**이다. 프로젝트의 발행
+   * 기간은 `TYPE_PERIOD_KEY` 가 안정키로 먼저 집으므로, 이 등록을 지워도 지금은 아무 발행물이
+   * 바뀌지 않는다(회귀 주입에서 유일하게 GREEN 이었던 자리). 그래서 지금은 **방어선이자 의도
+   * 표기**다 — 훗날 우선 조회 키가 빠지거나 라벨이 또 바뀌면 그때 범용 폴백이 유일한 경로가 되고,
+   * 그 순간 이 등록이 없으면 기간이 조용히 빈다. 못 잡는 걸 잡는 척하지 않고, 무엇을 지키는지
+   * 아는 층위에서 고정한다.
+   */
+  it("확정본 '진행 기간'이 코어 '기간'의 동의어로 등록돼 있다", () => {
+    expect(equivalentLabels("기간")).toContain("진행 기간")
+  })
+
+  it("확정본 '팀원'·'기획 배경 / 동기'도 구 라벨과 같은 그룹이다", () => {
+    expect(equivalentLabels("팀 구성")).toContain("팀원")
+    expect(equivalentLabels("목표/만들고 싶었던 이유")).toContain("기획 배경 / 동기")
+    expect(equivalentLabels("목표/문제 정의")).toContain("기획 배경 / 동기")
+  })
+})
 
 describe("computeFormCards", () => {
   it("헤더(경험명/요약)를 key 로 추출하고 카드에 넣지 않는다", () => {
@@ -271,6 +314,67 @@ describe("computeFormCards", () => {
     expect(hidden.map(b => b.label)).not.toContain("역할")
   })
 
+  /**
+   * 프로젝트(FRT-291)는 창작물과 같은 조합인데 **코어 역할을 안 뺐다는 점이 다르다** —
+   * 구 개인 프로젝트 템플릿에 role 앵커가 하나도 없어 그 코어 칸이 실제로 렌더됐기 때문이다.
+   * 그래서 "신규 개인 프로젝트에는 역할 칸이 0개"(확정본대로)와 "구 레코드의 코어 역할 값은
+   * 남는다"(유실 없음)가 **동시에** 성립해야 한다. 함수 하나가 아니라 화면이 보는 마지막 층까지
+   * 이어 붙여 센다(FRT-267 ⑩).
+   */
+  it("프로젝트: 개인/팀 값에 따라 화면에 남는 역할 칸이 갈리고, 값은 어느 쪽에서도 안 사라진다", () => {
+    const roleFieldsFor = (collab: string, coreRole = "") => {
+      const { core, sections } = sectionsFor("personal-project")
+      const withCore = core.map(b =>
+        b.label === "내 역할/기여도" && coreRole
+          ? { ...b, value: { type: "textarea" as const, text: coreRole } }
+          : b,
+      )
+      const withCollab = sections.map(s => ({
+        ...s,
+        blocks: s.blocks.map(b =>
+          b.label === "개인 / 팀" && collab
+            ? { ...b, value: { type: "single-select" as const, selected: collab, options: [] } }
+            : b,
+        ),
+      }))
+      const r = computeFormCards(withCore, withCollab, SECTION_LABEL_OVERRIDES["personal-project"])
+      const cardBlocks = r.cards.flatMap(c => c.blocks)
+      const allFlat = [...withCore, ...withCollab.flatMap(s => s.blocks)]
+      return partitionByCondition(cardBlocks, allFlat)
+        .visible.map(b => b.label)
+        .filter(l => l.includes("역할") || l.includes("기여"))
+    }
+
+    // 아직 안 고른 신규 기록 · '개인 프로젝트' — 확정본대로 역할을 묻지 않는다(사용자 확인).
+    expect(roleFieldsFor("")).toEqual([])
+    expect(roleFieldsFor("개인 프로젝트")).toEqual([])
+    // 팀 프로젝트 — 확정본 '역할' 하나만. 코어가 함께 나와 두 칸이 되면 안 된다.
+    expect(roleFieldsFor("팀 프로젝트(2~5명)")).toEqual(["역할"])
+    // 구 개인 프로젝트 레코드가 코어에 남긴 값은 '개인 프로젝트'에서도 화면에 남는다(= 유실 없음).
+    expect(roleFieldsFor("개인 프로젝트", "기획부터 배포까지 혼자")).toEqual(["내 역할/기여도"])
+  })
+
+  /** 확정본 5섹션이 고정 4카테고리로 접힌다 — ④ 공개/배포와 ⑤ 결과물이 한 카드다. */
+  it("프로젝트: 확정본 5섹션이 4카드로 접히고 ④⑤ 가 한 카드에 순서대로 든다", () => {
+    const { core, sections } = sectionsFor("personal-project")
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES["personal-project"])
+
+    expect(r.cards.map(c => c.label)).toEqual([
+      "기본 정보",
+      "프로젝트 상세",
+      "세부 작업 기록",
+      "공개 / 배포 · 결과물",
+    ])
+    const evidence = r.cards.find(c => c.category === "evidence")!
+    expect(evidence.blocks.map(b => b.label)).toEqual([
+      "배포 / 공개 채널",
+      "사용자 수 / 반응",
+      "외부 노출 이력",
+      "서비스 운영 상태",
+      "결과물 링크 / 파일",
+    ])
+  })
+
   // ── FRT-178: 동아리가 확정본 4카드로 그려지는지 (문서 ①~④) ──
   it("동아리: 4카드가 모두 보이고 범용 확장 카드가 걷힌다", () => {
     const { core, sections } = sectionsFor("club")
@@ -474,19 +578,40 @@ describe("isCardComplete / computeFormProgress", () => {
     cell.value = { ...cell.value, rows: [{ id: "row-1", cells: {} }] }
     expect(isCardComplete(repeat)).toBe(false)
     // 필수 셀을 모두 채운 행이 있으면 완료
+    // 열 유형에 맞는 값을 넣는다 — 기간 열은 "값" 같은 자유 문자열을 채워짐으로 세지 않는다
+    // (`cellFilledForColumn`). 아무 문자열이나 넣으면 판정이 아니라 채움값이 틀린 게 된다.
     const filledCells: Record<string, string> = {}
-    for (const k of requiredKeys) filledCells[k] = "값"
+    for (const c of cell.value.columns.filter(c => c.required)) {
+      filledCells[c.key] = c.blockType === "period" ? "2024.03 ~ 2024.06" : "값"
+    }
     cell.value = { ...cell.value, rows: [{ id: "row-1", cells: filledCells }] }
     expect(isCardComplete(repeat)).toBe(true)
   })
 
-  it("필수 컬럼 repeatable + optional 형제(팀프로젝트 작업 기록): optional 만 채우면 미완료", () => {
+  it("필수 컬럼 repeatable + optional 형제: optional 만 채우면 미완료", () => {
     // Codex P2: block.required 는 false 지만 필수 컬럼을 가진 repeatable-cell 은 필수로 취급해야 한다.
-    const { core, sections } = sectionsFor("team-project")
-    const r = computeFormCards(core, sections)
-    const repeat = r.cards.find(c => c.category === "repeat")!
-    const cell = repeat.blocks.find(b => b.value.type === "repeatable-cell")!
-    const sibling = repeat.blocks.find(b => b.value.type !== "repeatable-cell")!
+    //
+    // ⚠️ 카드를 **직접 구성**한다. 원래는 팀 프로젝트 '작업 기록' 카드를 픽스처로 썼는데, 확정본
+    // 정렬(FRT-291)로 그 카드가 사라졌고 **지금은 이 모양을 가진 유형이 하나도 없다**(필수 컬럼
+    // 표와 표 아닌 형제가 같은 repeat 카드에 있는 조합). 다른 유형으로 갈아타면 그 유형이 개편될
+    // 때 이 테스트가 다시 죽거나, 더 나쁘게는 모양이 조용히 달라져 **아무것도 검증하지 않는
+    // 그물**이 된다. 검증 대상은 `isCardComplete` 의 판정 규칙이지 특정 템플릿의 생김새가 아니다.
+    const cell: Block = {
+      id: "cell", key: "t.표", type: "repeatable-cell", label: "작업 기록",
+      value: {
+        type: "repeatable-cell",
+        columns: [
+          { key: "task", label: "작업명", blockType: "text", required: true },
+          { key: "memo", label: "메모", blockType: "textarea" },
+        ],
+        rows: [],
+      },
+    }
+    const sibling: Block = {
+      id: "sib", key: "t.메모", type: "textarea", label: "회고",
+      value: { type: "textarea", text: "" },
+    }
+    const repeat: FormCardModel = { id: "repeat", category: "repeat", label: "반복 기록", blocks: [cell, sibling] }
     if (cell.value.type !== "repeatable-cell") throw new Error("expected repeatable-cell")
     expect(cell.value.columns.some(c => c.required)).toBe(true)
     expect(cell.required).toBeFalsy()
@@ -585,5 +710,312 @@ describe("isCardComplete / computeFormProgress", () => {
     const basic = r.cards.find(c => c.category === "basic")!
     const someKey = basic.blocks.map(b => b.key).filter((k): k is string => !!k)[0]
     expect(computeFormProgress(r.cards, [someKey]).done).toBe(0)
+  })
+})
+
+/**
+ * 치울 수도 채울 수도 없는 칸이 카드를 영영 미완료로 붙잡는 자리 (FRT-291 리뷰).
+ *
+ * `hostsAttachment` 는 파일을 담는 블록에서 × 를 뗀다 — 업로드가 도는 순간 값이 비어 보여
+ * 숨김이 통과하면 고른 파일이 사라지기 때문이다(hidden-fields.ts). 그 대가로 **빈 첨부 표는
+ * 사용자가 없앨 수단이 없다.** 필수가 있는 카드에 살면 무해하지만(`isCardComplete` 이 필수만
+ * 본다), 필수가 하나도 없는 카드에서는 `some(채워짐)` 기준으로 내려가 배포도 결과물도 없는
+ * 프로젝트가 100% 에 닿을 방법을 잃는다.
+ *
+ * ⚠️ 이건 새 규칙이 아니라 **이미 한 번 겪고 되돌린 실패의 재발**이다 — 블록 층위 `file` 을
+ * 통째로 제외했던 초안이 코어 증빙 카드에서 정확히 같은 덫을 만들었다(hidden-fields.ts 주석).
+ * 그때는 제외를 거둬 풀었지만 표 쪽은 업로드 상태를 흘릴 배선이 없어 제외가 남았으므로,
+ * 이번엔 진행도 쪽에서 "사용자가 손쓸 수 있는 칸"만 세는 것으로 푼다.
+ *
+ * 프로브로 18유형 전수를 훑어 이 모양(필수 0 + 못 치우는 블록)을 가진 카드는 프로젝트 2종
+ * 뿐임을 확인했다 — 다른 유형의 진행도는 이 변경에 영향받지 않는다.
+ */
+describe("못 치우는 빈 첨부 표는 진행도를 막지 않는다 (FRT-291 리뷰)", () => {
+  function evidenceCardOf(typeId: Parameters<typeof getTemplateForType>[0]) {
+    const { core, sections } = sectionsFor(typeId)
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES[typeId])
+    return r.cards.find(c => c.category === "evidence")!
+  }
+
+  it("프로젝트 증빙 카드는 필수가 없고 결과물 표를 치울 수 없다 — 전제 확인", () => {
+    const card = evidenceCardOf("personal-project")
+    expect(card.blocks.filter(isRequiredBlock)).toHaveLength(0)
+    const stuck = card.blocks.filter(b => !canHideBlock(b))
+    expect(stuck.map(b => b.label)).toEqual(["결과물 링크 / 파일"])
+  })
+
+  it("치울 수 있는 칸을 전부 숨기면 결과물이 없어도 카드가 완료된다", () => {
+    const card = evidenceCardOf("personal-project")
+    const hideable = card.blocks
+      .filter(canHideBlock)
+      .map(b => b.key)
+      .filter((k): k is string => !!k)
+    expect(hideable.length).toBeGreaterThan(0) // 픽스처가 분기를 실제로 거치는지
+
+    expect(isCardComplete(card, hideable)).toBe(true)
+  })
+
+  it("은퇴 id 도 같은 템플릿을 받으므로 판정이 같다", () => {
+    const card = evidenceCardOf("team-project")
+    const hideable = card.blocks
+      .filter(canHideBlock)
+      .map(b => b.key)
+      .filter((k): k is string => !!k)
+
+    expect(isCardComplete(card, hideable)).toBe(true)
+  })
+
+  /**
+   * 완화는 "손쓸 수 없는 칸"에만 닿아야 한다 — 아직 치울 수 있는 빈 칸이 남아 있으면 그 카드는
+   * 여전히 할 일이 있는 카드다. 여기가 무너지면 첨부 표가 있는 카드가 전부 처음부터 완료로
+   * 세어져 진행도가 거짓말을 한다.
+   */
+  it("치울 수 있는 빈 칸이 남아 있으면 여전히 미완료다", () => {
+    const card = evidenceCardOf("personal-project")
+    expect(isCardComplete(card, [])).toBe(false)
+  })
+
+  /**
+   * 제외는 **빈** 첨부 표에만 닿아야 한다(`isBlockEmpty` 조건). 여기가 무너지면 결과물을 실제로
+   * 채운 사용자의 그 칸이 actionable 에서 빠져, 다른 칸이 빈 카드가 근거를 다 채우고도 영영
+   * 미완료로 남는다 — 이 조건만 무력화하면 기존 그물 전부가 GREEN 이었다(/code-review high).
+   */
+  it("결과물 표에 실제 내용을 채우면 그 칸이 곧 완료 근거다", () => {
+    const card = evidenceCardOf("personal-project")
+    const stuck = card.blocks.find(b => !canHideBlock(b))!
+    expect(stuck.value.type).toBe("repeatable-cell") // 픽스처가 전제(첨부 표)를 실제로 갖는지
+    const filled = {
+      ...card,
+      blocks: card.blocks.map(b =>
+        b === stuck && b.value.type === "repeatable-cell"
+          ? {
+              ...b,
+              value: {
+                ...b.value,
+                rows: [{ id: "r1", cells: { link: "https://github.com/arc/demo" } }],
+              },
+            }
+          : b,
+      ),
+    }
+    expect(isCardComplete(filled, [])).toBe(true)
+  })
+})
+
+/**
+ * FRT-320 — standalone 섹션의 자기 카드 분할.
+ *
+ * '나는 누구인가?' 확정본은 7섹션인데 카드가 카테고리당 1장이면 detail 섹션 6개가 구분 없이
+ * 한 카드에 합쳐진다. 그래서 **`standalone: true` 를 명시한 섹션만** 자기 카드로 선다.
+ * ⚠️ "같은 카테고리 2개 이상이면 분할" 같은 개수 추론이 아니다 — 프로젝트는 evidence 섹션
+ * 2개가 한 카드('공개 / 배포 · 결과물')로 합쳐지는 것이 확정본이라, 추론 규칙은 기존 유형을
+ * 깨뜨린다(아래 병합 단언과 전칭 단언이 그 경계다).
+ */
+describe("standalone 섹션 분할 (FRT-320)", () => {
+  const section = (
+    id: string,
+    label: string,
+    category: FormCardSection["category"],
+    blockLabels: string[],
+    standalone = false,
+  ): FormCardSection => ({
+    id,
+    label,
+    category,
+    ...(standalone ? { standalone: true } : {}),
+    blocks: blockLabels.map(l => createTextareaField(l)),
+  })
+
+  it("standalone 섹션은 자기 카드로 선다 — id·라벨은 섹션 것", () => {
+    const r = computeFormCards([], [
+      section("a-one", "하나", "detail", ["A"], true),
+      section("a-two", "둘", "detail", ["B"], true),
+    ])
+    expect(r.cards.map(c => [c.id, c.label, c.category])).toEqual([
+      ["a-one", "하나", "detail"],
+      ["a-two", "둘", "detail"],
+    ])
+  })
+
+  it("standalone 이 아니면 같은 카테고리 여러 섹션도 현행대로 한 카드에 합쳐진다", () => {
+    const r = computeFormCards([], [
+      section("a-one", "하나", "detail", ["A"]),
+      section("a-two", "둘", "detail", ["B"]),
+    ])
+    expect(r.cards.map(c => [c.id, c.label])).toEqual([["detail", "경험 상세"]])
+    expect(r.cards[0].blocks.map(b => b.label)).toEqual(["A", "B"])
+  })
+
+  it("분할은 카테고리별로 독립이다 — basic 은 현행, standalone detail 만 가른다", () => {
+    const r = computeFormCards([], [
+      section("b", "기본", "basic", ["말머리"]),
+      section("d-one", "하나", "detail", ["A"], true),
+      section("d-two", "둘", "detail", ["B"], true),
+    ])
+    expect(r.cards.map(c => c.id)).toEqual(["basic", "d-one", "d-two"])
+  })
+
+  /**
+   * extended(설정) 블록은 카테고리 버킷으로 흘러 왔다 — 분할돼도 그 시각적 위치(카테고리의
+   * 맨 아래)를 유지해야 하므로 그 카테고리의 **마지막 카드**에 붙는다. 자기 카드를 새로 만들면
+   * '설정' 한 칸짜리 카드가 생기고, 첫 카드에 붙으면 설정이 본문 중간에 낀다.
+   */
+  it("extended(설정) 잔여 블록은 분할된 카테고리의 마지막 카드에 붙는다", () => {
+    const r = computeFormCards([], [
+      { id: "extended", label: "설정", category: "detail", blocks: [createSelectField("공개 설정", ["공개", "비공개"])] },
+      section("d-one", "하나", "detail", ["A"], true),
+      section("d-two", "둘", "detail", ["B"], true),
+    ])
+    const last = r.cards[r.cards.length - 1]
+    expect(last.id).toBe("d-two")
+    expect(last.blocks.map(b => b.label)).toEqual(["B", "공개 설정"])
+    const first = r.cards.find(c => c.id === "d-one")!
+    expect(first.blocks.map(b => b.label)).toEqual(["A"])
+  })
+
+  it("값이 채워진 core 잔여 블록도 분할된 카테고리의 마지막 카드에 붙는다", () => {
+    const core = cloneBlocks([createTextareaField("내 역할/기여도")])
+    core[0].value = { type: "textarea", text: "리드" }
+    core[0].category = "detail"
+    const r = computeFormCards(core, [
+      section("d-one", "하나", "detail", ["A"], true),
+      section("d-two", "둘", "detail", ["B"], true),
+    ])
+    const last = r.cards[r.cards.length - 1]
+    expect(last.blocks.map(b => b.label)).toEqual(["B", "내 역할/기여도"])
+  })
+
+  it("standalone 카드는 섹션의 description 을 카드 설명으로 실어 나른다", () => {
+    const r = computeFormCards([], [
+      { ...section("d-one", "하나", "detail", ["A"], true), description: "하나 안내" },
+      section("d-two", "둘", "detail", ["B"], true),
+    ])
+    expect(r.cards.find(c => c.id === "d-one")!.description).toBe("하나 안내")
+    expect(r.cards.find(c => c.id === "d-two")!.description).toBeUndefined()
+  })
+
+  it("visibleCategories 는 분할돼도 카테고리를 중복 나열하지 않는다", () => {
+    const r = computeFormCards([], [
+      section("d-one", "하나", "detail", ["A"], true),
+      section("d-two", "둘", "detail", ["B"], true),
+    ])
+    expect(r.visibleCategories).toEqual(["detail"])
+  })
+
+  /**
+   * 분할 규칙의 파급 경계 — 기존 유형은 전부 카테고리당 섹션 1개라 **분할 경로에 아예 들어가지
+   * 않는다.** 이 전칭 단언이 무너지는 날(어떤 유형이 카테고리당 2섹션이 되는 날)은 그 유형의
+   * 카드 id·라벨이 바뀌는 날이므로, 의도적으로 여기서 소리가 나야 한다.
+   */
+  it("전칭: self-identity 외 모든 유형은 분할되지 않는다 — 카드 id=카테고리 불변", () => {
+    for (const t of ALL_EXPERIENCE_TYPES) {
+      if (t.id === "self-identity") continue
+      const { core, sections } = sectionsFor(t.id)
+      const r = computeFormCards(core, sections)
+      for (const c of r.cards) {
+        expect(c.id, `${t.id}/${c.label}`).toBe(c.category)
+      }
+    }
+  })
+
+  it("나는 누구인가: 확정본 7카드가 문서 순서로 선다", () => {
+    const { core, sections } = sectionsFor("self-identity")
+    const r = computeFormCards(core, sections, SECTION_LABEL_OVERRIDES["self-identity"])
+    expect(r.cards.map(c => [c.id, c.label])).toEqual([
+      ["basic", "나를 소개한다면"],
+      ["self-values", "가치관과 동기"],
+      ["self-worklife", "업무 스타일과 협업"],
+      ["self-relations", "관계와 환경"],
+      ["self-interests", "관심 분야와 나의 적합성"],
+      ["self-direction", "방향과 지향점"],
+      ["self-reflection", "인생 회고"],
+    ])
+    // 설정(공개 설정)은 마지막 카드(인생 회고) 맨 아래에 붙는다.
+    const last = r.cards[r.cards.length - 1]
+    expect(last.blocks[last.blocks.length - 1].label).toBe("공개 설정")
+  })
+})
+
+describe("진행 자취 — 어디까지 채웠는가 (FRT-107)", () => {
+  /**
+   * 진행도 바는 개수만 준다. "어디서 멈췄나"를 물으려면 **어느 카드**가 채워졌는지가
+   * 필요하고, 그 판정은 진행도 바와 한 치도 달라선 안 된다 — 다르면 화면이 60% 라고
+   * 말하는 순간 계측은 다른 이야기를 남긴다.
+   */
+  it("completedCardIds 는 폼 순서를 유지하고 개수는 진행도와 일치한다", () => {
+    const { core, sections } = sectionsFor("career")
+    const r = computeFormCards(core, sections)
+    // 아무것도 안 채운 상태에서도 필수 없는 카드는 완료로 잡힐 수 있다 —
+    // 그 판정 자체는 isCardComplete 의 몫이고, 여기서는 두 함수가 어긋나지 않는지만 본다.
+    const ids = completedCardIds(r.cards)
+    expect(ids.length).toBe(computeFormProgress(r.cards).done)
+    // 폼 순서 유지 — 이탈 지점을 "폼의 어디"로 읽으려면 자리가 살아 있어야 한다.
+    const order = r.cards.map(c => c.id)
+    expect(ids).toEqual(order.filter(id => ids.includes(id)))
+  })
+
+  it("completedCardIds 는 hiddenKeys 를 진행도와 같은 방식으로 반영한다", () => {
+    const { core, sections } = sectionsFor("career")
+    const r = computeFormCards(core, sections)
+    const hidden = r.cards.flatMap(c => c.blocks.map(b => b.key).filter((k): k is string => !!k))
+    expect(completedCardIds(r.cards, hidden).length).toBe(
+      computeFormProgress(r.cards, hidden).done,
+    )
+  })
+
+  it("빈 폼에는 정성 항목이 하나도 없다 — '정성 기록이 일어났는가'의 기준선", () => {
+    const { core, sections } = sectionsFor("career")
+    const r = computeFormCards(core, sections)
+    expect(filledQualitativeKeys(r.cards)).toEqual([])
+  })
+
+  it("filledQualitativeKeys 는 값이 들어간 '경험 상세' 블록만, 상세가 아닌 카드는 세지 않는다", () => {
+    const emptyDetail = createTextareaField("지원 동기")
+    emptyDetail.key = "detail.지원 동기"
+    const filledDetail = createTextareaField("배운 점")
+    filledDetail.key = "detail.배운 점"
+    filledDetail.value = { type: "text", text: "성장했다" }
+    // 같은 값이 들어가도 basic 카드는 정성 항목이 아니다 — 회사명을 적은 것은
+    // "정성적 맥락을 기록했다"가 아니다.
+    const filledBasic = createTextareaField("회사명")
+    filledBasic.key = "basic.회사명"
+    filledBasic.value = { type: "text", text: "회사" }
+
+    const cards: FormCardModel[] = [
+      { id: "basic", category: "basic", label: "기본 정보", blocks: [filledBasic] },
+      { id: "detail", category: "detail", label: "경험 상세", blocks: [emptyDetail, filledDetail] },
+    ]
+
+    expect(filledQualitativeKeys(cards)).toEqual(["detail.배운 점"])
+  })
+
+  it("filledQualitativeKeys 는 사용자가 치운 항목(hiddenKeys)을 세지 않는다", () => {
+    const filledDetail = createTextareaField("배운 점")
+    filledDetail.key = "detail.배운 점"
+    filledDetail.value = { type: "text", text: "성장했다" }
+    const cards: FormCardModel[] = [
+      { id: "detail", category: "detail", label: "경험 상세", blocks: [filledDetail] },
+    ]
+
+    expect(filledQualitativeKeys(cards, ["detail.배운 점"])).toEqual([])
+  })
+
+  it("filledQualitativeKeys 는 키 없는 블록을 싣지 않는다 (사용자 작성 라벨 유출 차단)", () => {
+    const cards: FormCardModel[] = [
+      {
+        id: "detail",
+        category: "detail",
+        label: "경험 상세",
+        blocks: [
+          {
+            id: "b1",
+            label: "내가 직접 붙인 이름",
+            type: "textarea",
+            value: { type: "text", text: "내용" },
+          } as Block,
+        ],
+      },
+    ]
+    expect(filledQualitativeKeys(cards)).toEqual([])
   })
 })

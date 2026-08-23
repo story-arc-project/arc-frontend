@@ -16,9 +16,24 @@ import { isImportanceLevel, SCHEMA_VERSION_V2 } from "@/types/archive"
 import {
   EXPERIENCE_TYPE_MAP,
   getTemplateForType,
+  PROJECT_COLLAB_KEY,
+  PROJECT_SOLO_OPTION,
+  PROJECT_TYPE_MERGE_VERSION,
   TEMPLATE_VERSION,
 } from "@/lib/constants/templates-v2"
-import { uid, cloneBlocks, createGroupBlock, isBlockDiscardable, isBlockEmpty } from "@/lib/utils/block-utils"
+import {
+  uid,
+  cloneBlocks,
+  createGroupBlock,
+  isBlockDiscardable,
+  dedupeBlockIdsAcross,
+  isFilledText,
+  isKnownBlockType,
+  isValueOccupied,
+  normalizeBlockValue,
+  normalizeBlocks,
+  type BlockDefs,
+} from "@/lib/utils/block-utils"
 import { normalizeHiddenKeys, parseHiddenKeys } from "@/lib/utils/hidden-fields"
 
 /**
@@ -74,17 +89,37 @@ function textualCompatValue(block: Block, value: BlockValue): BlockValue | null 
 
 function injectValue(block: Block, value: BlockValue | undefined): Block {
   if (value === undefined) return block
-  // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)면 주입을 생략해 위젯 렌더 깨짐을 막는다.
-  // 단 text↔textarea 는 값 모양이 같아 변환해 싣는다.
-  if (value.type !== block.type) {
-    const compat = textualCompatValue(block, value)
-    return compat ? { ...block, value: compat } : block
+  // 저장 값이 통째로 깨졌으면(null·비객체) 주입을 **생략**한다 (FRT-200) — 되살릴 알맹이가 없다.
+  // ⚠️ 여기서 빈 값으로 덮으면 안 된다: 템플릿 블록의 value 는 드롭다운 `options`·표 `columns`
+  // 같은 정의를 들고 있어서, 빈 값으로 갈면 선택지·열이 통째로 사라진다.
+  if (!value || typeof value !== "object") return block
+  // 객체면 `type` 이 깨져 있어도 싣는다 — 블록이 선언한 타입이 복구 근거가 되고, 알맹이를
+  // 버리면 열었다 저장하는 것만으로 사용자 입력이 지워진다. 값이 온전하면 같은 참조가 돌아온다.
+  const templateColumns =
+    block.value?.type === "repeatable-cell" ? block.value.columns : undefined
+  const safe = normalizeBlockValue(block.type, value, {
+    options: block.options,
+    columns: templateColumns,
+  })
+  // ⚠️ **모르는 판별자는 불일치가 아니라 "내가 모르는 것"이다** — 새 스키마가 쓴 값이 템플릿이
+  // 아는 키에 실려 온 경우다. 여기서 템플릿 블록을 돌려주면 그 키는 소비된 것으로 처리돼
+  // 저장 때 템플릿 빈 값이 새 스키마 값을 덮는다. 그대로 실어 보내고, 그릴 모양은 저장되지 않는
+  // 렌더 관문(`normalizeBlockForRender`)이 맡는다.
+  if (!isKnownBlockType(safe.type)) return { ...block, value: safe }
+  // 타입 불일치(손상된 레거시 데이터·키 충돌 잔재 등)여도 **값은 싣는다.**
+  // ⚠️ 예전엔 주입을 생략해 위젯 렌더 깨짐을 막았는데, 그러면 그 키가 소비된 것으로 처리돼
+  // orphan 으로도 안 남고 **저장 때 템플릿 빈 값이 그 자리를 덮는다.** 렌더 깨짐은 이제
+  // 렌더 관문이 모양을 맞추고 **읽기 전용**으로 그려 막으므로, 여기서 값을 버릴 이유가 없다.
+  // 단 text↔textarea 는 값 모양이 같아 판별자를 바꿔 싣는다(무손실).
+  if (safe.type !== block.type) {
+    const compat = textualCompatValue(block, safe)
+    return { ...block, value: compat ?? safe }
   }
   // 컬럼을 손댄 레코드는 잠금을 풀어 열 관리 UI 를 돌려준다(FRT-104).
-  if (block.lockColumns && !columnsMatchTemplate(block.value, value)) {
-    return { ...block, value, lockColumns: false }
+  if (block.lockColumns && !columnsMatchTemplate(block.value, safe)) {
+    return { ...block, value: safe, lockColumns: false }
   }
-  return { ...block, value }
+  return { ...block, value: safe }
 }
 
 /**
@@ -101,6 +136,42 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
 export function mergeSavedIntoTemplate(templateBlock: Block, saved: Block): Block {
   const merged = injectValue(templateBlock, saved.value)
   return merged === templateBlock ? saved : merged
+}
+
+/**
+ * v1 저장 블록의 정의(선택지·열) 출처 — 현재 템플릿에서 **라벨로** 찾는다.
+ *
+ * v1 은 안정키가 없어 라벨이 유일한 연결고리다. 라벨이 안 걸리면 `undefined` 를 돌려
+ * 블록 자신이 든 정의만 쓰게 한다 — 없는 정의를 지어내지 않는다.
+ */
+function templateDefsResolver(
+  expType: string,
+  typeId: ExperienceTypeId,
+): ((block: Block) => BlockDefs | undefined) | undefined {
+  if (!hasTemplate(expType)) return undefined
+  const tmpl = getTemplateForType(typeId)
+  const byLabel = new Map<string, Block>()
+  // ⚠️ **안정키가 살아 있으면 그게 더 확실한 신원이다** — 라벨은 개명으로 낡을 수 있고,
+  // 라벨만 보면 못 찾아 정의가 `[]` 로 굳는다(그 뒤 템플릿 병합이 되살리지 못한다).
+  const byKey = new Map<string, Block>()
+  for (const b of [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)]) {
+    for (const t of [b, ...(b.children ?? [])]) {
+      if (!byLabel.has(t.label)) byLabel.set(t.label, t)
+      if (t.key && !byKey.has(t.key)) byKey.set(t.key, t)
+    }
+  }
+  return block => {
+    // ⚠️ 키가 **엉뚱한 유형**을 가리키면 거기서 멈추지 말고 라벨로 되짚는다 — 손상된 키 하나가
+    // 라벨로 확정되는 정의까지 못 찾게 만들면, 정의가 `[]` 로 굳어 셀을 볼 수도 고칠 수도 없다.
+    const byKeyMatch = block.key ? byKey.get(block.key) : undefined
+    const match =
+      byKeyMatch && byKeyMatch.type === block.type ? byKeyMatch : byLabel.get(block.label)
+    if (!match || match.type !== block.type) return undefined
+    return {
+      options: match.options,
+      columns: match.value?.type === "repeatable-cell" ? match.value.columns : undefined,
+    }
+  }
 }
 
 /**
@@ -134,12 +205,24 @@ function customEntriesToBlocks(entries: CustomEntry[], depth = 0): Block[] {
   const out: Block[] = []
   for (const e of entries) {
     if (e.entryType === 'field') {
+      // ⚠️ **이 경로는 `normalizeBlocks` 를 지나지 않는다** — v1 저장 배열만 지난다. 그래서
+      // `normalizeBlock` 의 "블록 타입이 비었으면 값의 판별자로 되살린다"를 여기서 같은 경계로
+      // 되풀이해야 한다. 안 하면 깨진 타입이 그대로 실려 `isUnrenderableBlock` 이 그 칸을 잠그고
+      // (입력도 연필도 죽는다) `blockToCustomEntry` 가 깨진 타입을 다시 저장한다 —
+      // **사용자가 직접 만든 칸이 영구히 편집 불가**가 된다.
+      // 모르는 *이름*의 타입은 새 스키마의 흔적이라 그대로 둔다(보존 규칙과 같은 경계).
+      const fromValue = (e.value as { type?: unknown } | null | undefined)?.type
+      const type = !isFilledText(e.type) && isKnownBlockType(fromValue) ? fromValue : e.type
       out.push({
         id: uid('blk'),
         key: e.key,
-        type: e.type,
+        type,
         label: e.label,
-        value: e.value,
+        // ⚠️ 형제 `orphanFieldsToBlocks` 의 가드를 복사하면 안 된다 (FRT-200). 그쪽은 값이
+        // 깨졌으면 블록을 통째로 버리는데, 여기서 그러면 **사용자가 직접 만든 칸이 사라진다** —
+        // custom 은 값이 아니라 필드의 존재 자체가 정보다. 게다가 여긴 `e.type` 이 값과 별도로
+        // 남아 있어 복구할 근거가 있다(orphan 은 `value.type` 이 유일한 타입 신호라 근거가 없다).
+        value: normalizeBlockValue(type, e.value, { options: e.options }),
         ...(e.required ? { required: true } : {}),
         ...(e.options ? { options: e.options } : {}),
       })
@@ -304,6 +387,47 @@ const RENAMED_FIELD_KEYS: Record<string, string> = {
   // 목적지 `research-paper.연구 기간` 은 이번에 새로 생긴 키라 항상 비어 있어
   // `applyRenamedKeys` 의 "목적지가 차 있으면 진다" 규칙에 걸리지 않는다.
   'research-info.기간': 'research-paper.연구 기간',
+  // 프로젝트 확정본(FRT-291) — 개인·팀 두 구 템플릿(24필드)에서 **질문도 타입도 같은 것만** 옮긴다.
+  // 두 출발점이 한 목적지를 공유하는 줄이 있지만(목표/기획 배경) 한 레코드는 pp- 나 tp- 중 한쪽만
+  // 갖고 있어 충돌하지 않는다.
+  //
+  // 옮기지 않는 것과 이유 — 값은 전부 orphan '기타' 카드에 원본 그대로 남는다:
+  //  · `tp-info.내 역할`(required textarea) → '역할'(한 줄 text) 은 **위젯이 값을 못 지킨다.**
+  //    `isInjectableInto` 는 text↔textarea 를 허용하지만 `TextBlock` 은 `<input>` 이라 브라우저가
+  //    개행을 지운다 — 문단으로 적은 답이 구분자 없이 붙고, 한 글자만 고쳐도 그대로 저장된다
+  //    (FRT-247 ①·FRT-267 ⑭ 가 같은 자리에서 내린 결론). 게다가 확정본 '역할'은 `예: PM` 짜리라
+  //    **묻는 granularity 자체가 다르다.**
+  //  · `pp-decisions.성과`(textarea) → ② '핵심 성과'(outcome-list) 는 타입이 달라 injectValue 가
+  //    못 싣는다. 한 덩이 문장을 개조식 행으로 쪼개는 건 해석이라 시스템이 대신 정하지 않는다.
+  //  · `tp-tasks.작업 기록`(4열 표) → ③ '세부 작업'(5열 표) 은 타입은 같지만 **열 구성이 다르다.**
+  //    억지로 실으면 열 구조가 뒤엉켜 어느 답이 어느 질문의 답인지 알 수 없게 된다 — 표 전체를
+  //    '기타'에 원본으로 남겨 사용자가 보고 옮기게 둔다(창작물 '제작 과정' 표와 같은 처리).
+  //  · `tp-tasks.회고 (잘된 점/아쉬운 점/다음엔)` → '이 프로젝트가 나에게 남긴 것' 은 **묻는 것이
+  //    더 넓다.** 확정본은 새로 익힌 것·관점 변화·이어갈 방향을 묻지 '아쉬운 점'을 묻지 않아,
+  //    옮기면 답이 칸의 질문과 어긋난다(FRT-211 의 '개명 vs 대체').
+  //  · `tp-tasks.결과물 링크`(link)·`pp-decisions.데모/배포 링크`·`저장소 링크`(link)·
+  //    `스크린샷/영상`(file) → ⑤ '결과물 링크 / 파일'(repeatable-cell) 은 타입이 달라 못 싣는다
+  //    (창작물 '공개 링크'와 같은 자리).
+  //  · `pp-info.한 줄 설명` 은 코어 '한 줄 요약'으로 보내면 헤더 요약이 사용자 모르게 덮인다.
+  //  · `pp-info.대상 사용자/사용 상황`·`주요 기능`·`pp-decisions.설계/결정`·`다음 개선 계획`·
+  //    `tp-info.협업 방식`·`역할 분담표` 는 확정본에 대응 칸이 없다(사용자 확인 완료).
+  'pp-info.프로젝트명': 'project-info.프로젝트명',
+  'tp-info.프로젝트명': 'project-info.프로젝트명',
+  // 목적지 `project-info.진행 기간` 은 이번에 새로 생긴 키라 항상 비어 있어
+  // `applyRenamedKeys` 의 "목적지가 차 있으면 진다" 규칙에 걸리지 않는다. period→period.
+  'pp-info.기간': 'project-info.진행 기간',
+  'tp-info.기간': 'project-info.진행 기간',
+  'pp-info.기술/도구': 'project-info.사용 기술 / 툴',
+  // 확정본 '팀원' 가이드가 "함께한 팀원과 각자의 역할"이라 구 '팀 구성'과 같은 질문이다
+  // (SEMANTIC_GROUPS.team 이 이미 둘을 동의어로 묶는다). textarea→textarea.
+  'tp-info.팀 구성': 'project-info.팀원',
+  // 확정본 '기획 배경 / 동기' 가이드가 "시작하게 된 이유나 문제 의식"이라 구 두 라벨과 같은
+  // 질문이다(SEMANTIC_GROUPS.motivation 등재). 둘 다 textarea.
+  'pp-info.목표/만들고 싶었던 이유': 'project-detail.기획 배경 / 동기',
+  'tp-info.목표/문제 정의': 'project-detail.기획 배경 / 동기',
+  // 확정본 '어려움 / 문제 해결' 가이드가 "기술적 문제, **팀 갈등**, 방향 전환 등 무엇이든"이라
+  // 구 '갈등/의견 차이와 조율'을 명시적으로 포함한다. textarea→textarea.
+  'tp-tasks.갈등/의견 차이와 조율': 'project-detail.어려움 / 문제 해결',
 }
 
 /**
@@ -469,6 +593,55 @@ function carryIntoSingleLine(
  * 전역 쪽은 목적지가 차 있으면 구 키를 보존 없이 delete 해서 값이 조용히 사라지는데
  * (FRT-247 에서 확인), 여기서는 구 키가 남아 orphan '기타' 카드로 흘러 사용자가 볼 수 있다.
  */
+/**
+ * 유형 통합으로 **id 가 답이던 질문**이 생겼을 때, 구 레코드에 그 답을 되돌려 준다 (FRT-291 리뷰).
+ *
+ * 개인·팀 프로젝트가 한 유형으로 합쳐지면서 그 구분은 ① '개인 / 팀' 칸으로 옮겨 갔다. 그런데
+ * 통합 이전 레코드는 그 칸이 없던 시절에 저장됐고, 남은 id `personal-project` 는 이제 **새 팀
+ * 프로젝트도 쓰는 일반 id** 라 "이건 개인 작업이었다"는 사실이 스키마 어디에도 남지 않는다.
+ * 우리가 이미 아는 답을 사용자에게 다시 묻게 되는 자리다(FRT-249 Codex P1 과 같은 양식).
+ *
+ * ⚠️ **팀 레코드는 일부러 채우지 않는다.** 새 선택지가 팀 규모로 갈리는데(2~5명 / 6명 이상)
+ * 구 데이터에 규모가 없어, 둘 중 하나를 고르면 답이 둔갑한다(`carrySelectValue` 와 같은 판단).
+ * 게다가 `team-project` id 는 은퇴했을 뿐 그대로 남아 '팀이었다'는 사실을 여전히 담고 있다.
+ *
+ * ⚠️ `options` 는 **템플릿 블록에서 그대로 복사한다.** `injectValue` 는 저장값의 목록을 그대로
+ * 실으므로 빈 배열을 넣으면 선택지 없는 드롭다운이 되고, 여기 목록을 손으로 적으면 확정본이
+ * 선택지를 고칠 때 조용히 어긋난다(`applyScopedMigrations` 의 정규화와 같은 이유).
+ */
+function seedMergedTypeAnswer(
+  fields: Record<string, BlockValue>,
+  rawType: string,
+  preMerge: boolean,
+  templateByKey: Map<string, Block>,
+): Record<string, BlockValue> {
+  if (rawType !== "personal-project") return fields
+  // 통합 이후 저장된 레코드에서 이 칸이 빈 것은 **사용자의 상태**(아직 안 골랐다)이지 우리가
+  // 아는 사실이 아니다 — 대신 정하면 팀 프로젝트를 만들다 만 사람이 '개인'이라는 답을 받는다.
+  if (!preMerge) return fields
+  const current = fields[PROJECT_COLLAB_KEY]
+  // 이미 답이 있으면 손대지 않는다. `isBlockEmpty` 가 아니라 값의 모양을 직접 보는 이유는
+  // 이 판정이 **보정 전 원본**에도 닿기 때문이다(FRT-200).
+  if (current && current.type === "single-select" && typeof current.selected === "string" && current.selected.trim()) {
+    return fields
+  }
+  const templateValue = templateByKey.get(PROJECT_COLLAB_KEY)?.value
+  const options = templateValue?.type === "single-select" ? templateValue.options : []
+  return {
+    ...fields,
+    [PROJECT_COLLAB_KEY]: { type: "single-select", options, selected: PROJECT_SOLO_OPTION },
+  }
+}
+
+/**
+ * v2 레코드의 '통합 이전' 판정. 버전 **미기재는 모르는 것**이므로 이전으로 치지 않는다 —
+ * 심기는 확신이 있을 때만 한다. (v1 레코드는 이 판정을 쓰지 않는다: schema v2 도입이
+ * 유형 통합(템플릿 8)보다 앞서, v1 은 버전 숫자 없이도 정의상 통합 이전이다.)
+ */
+function isPreMergeTemplateVersion(templateVersion: unknown): boolean {
+  return typeof templateVersion === "number" && templateVersion < PROJECT_TYPE_MERGE_VERSION
+}
+
 function applyScopedMigrations(
   fields: Record<string, BlockValue>,
   rules: ScopedMigration[],
@@ -481,8 +654,9 @@ function applyScopedMigrations(
     const carried = carry(templateByKey.get(to), legacy)
     if (!carried) continue
     const current = out[to]
-    const currentFilled =
-      current && !isBlockEmpty({ id: '', type: current.type, label: '', value: current })
+    // ⚠️ 이관은 **덮어쓰기 결정**이다 — `isBlockEmpty` 로 물으면 모르는 판별자의 값이
+    // "비어 있음"으로 분류돼 레거시 값에 덮이고, 다음 저장에서 영구히 사라진다.
+    const currentFilled = current && isValueOccupied(current)
     if (currentFilled) continue
     if (out === fields) out = { ...fields }
     delete out[from]
@@ -549,8 +723,9 @@ function applyRenamedKeys(fields: Record<string, BlockValue>): Record<string, Bl
     if (out === fields) out = { ...fields }
     delete out[oldKey]
     const current = out[newKey]
-    const currentFilled =
-      current && !isBlockEmpty({ id: '', type: current.type, label: '', value: current })
+    // ⚠️ 이관은 **덮어쓰기 결정**이다 — `isBlockEmpty` 로 물으면 모르는 판별자의 값이
+    // "비어 있음"으로 분류돼 레거시 값에 덮이고, 다음 저장에서 영구히 사라진다.
+    const currentFilled = current && isValueOccupied(current)
     if (!currentFilled) out[newKey] = legacy
   }
   return out
@@ -652,9 +827,14 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) templateByKey.set(b.key, b)
     // 전역 개명 별칭 뒤에 유형 스코프 이관을 얹는다 — 순서가 규칙이다. 유형 섹션 쪽 값이 먼저
     // 목적지를 차지하고, 코어 잔재는 목적지가 비었을 때만 들어간다.
-    const fields = applyScopedMigrations(
-      applyRenamedKeys(content.fields ?? {}),
-      [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
+    const fields = seedMergedTypeAnswer(
+      applyScopedMigrations(
+        applyRenamedKeys(content.fields ?? {}),
+        [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
+        templateByKey,
+      ),
+      exp.type,
+      isPreMergeTemplateVersion(content.template_version),
       templateByKey,
     )
     const coreBlocks = tmpl.commonCore.blocks.map(b => {
@@ -679,9 +859,25 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
   }
 
   // ── v1 레거시: 저장된 블록 배열 통과 + 레지스트리 라벨매칭으로 안정키 주입 ──
-  const savedCore = content.coreBlocks ?? []
-  const savedExt = content.extensionBlocks ?? []
-  const savedCustom = content.customBlocks ?? []
+  // ⚠️ v1 은 저장 배열을 그대로 통과시키므로 손상 값이 무검증으로 들어온다 (FRT-200).
+  // 아래 이관·dedup 로직이 곧바로 `isBlockDiscardable`(=isBlockEmpty)을 부르므로,
+  // **여기서 즉시** 보정해야 한다 — 한 줄이라도 늦으면 그 판정에서 먼저 죽는다.
+  // ⚠️ 템플릿 정의를 함께 넘긴다. v1 은 템플릿 병합이 **나중에**(ExperienceFormV2 →
+  // mergeSavedIntoTemplate) 일어나는데, 여기서 결측 정의를 `[]` 로 굳혀 버리면 그 병합은
+  // 빈 배열을 "사용자가 다 지웠다"로 읽어 현재 템플릿의 선택지·열을 되살리지 못한다 —
+  // 값은 남는데 그릴 컨트롤이 없는 칸이 된다.
+  const defsOf = templateDefsResolver(exp.type, typeId)
+  // ⚠️ 커스텀 블록에는 **정의를 넘기지 않는다.** 커스텀 라벨은 템플릿 신원이 아니라 사용자가
+  // 지은 이름이라, 우연히 같은 이름이라고 템플릿 선택지·열을 밀어 넣으면 매칭된 적도 없는
+  // 사용자의 칸이 조용히 바뀐다. 블록 자신이 든 정의만 쓴다.
+  //
+  // ⚠️ id 유일성은 **세 배열에 걸쳐** 물어야 한다 — 폼이 하나의 id 맵으로 합쳐 쓰므로
+  // 배열 안에서만 유일해선 부족하다(이미 같은 id 를 든 두 블록은 폴백도 안 쓴다).
+  const [savedCore, savedExt, savedCustom] = dedupeBlockIdsAcross([
+    normalizeBlocks(content.coreBlocks ?? [], defsOf, 'core'),
+    normalizeBlocks(content.extensionBlocks ?? [], defsOf, 'ext'),
+    normalizeBlocks(content.customBlocks ?? [], undefined, 'custom'),
+  ])
 
   if (!hasTemplate(exp.type)) {
     return { ...base, coreBlocks: savedCore, extensionBlocks: savedExt, customBlocks: savedCustom }
@@ -811,6 +1007,25 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     consolidatedCore.set(source, coreTpl ? cloneBlocks([coreTpl])[0] : undefined)
   }
 
+  // 유형 통합의 판별자 심기는 v1 에도 건다(Codex P2 3차) — v2 분기에만 걸면 v1 레코드는 폼이
+  // 빈 템플릿 칸을 병합한 채 열리고, 저장이 스키마를 v2·현재 템플릿으로 굳혀 **이후엔 영영 심을
+  // 수 없다**('개인이었다'는 사실이 일반 id 속으로 사라진다). v1 은 **정의상 통합 이전**이다 —
+  // schema v2 도입(FRT-69)이 유형 통합(템플릿 8)보다 앞서므로 버전 숫자 없이 preMerge=true.
+  // 값 구성은 seedMergedTypeAnswer 한 곳에 두고 여기서는 블록으로 옮겨 싣기만 한다 — 구성을
+  // 복제하면 선택지 목록 같은 세부가 세대별로 어긋난다(options 복사 함정과 같은 이유).
+  if (exp.type === "personal-project") {
+    const tb = extTemplateByKey.get(PROJECT_COLLAB_KEY)
+    const idx = matchedExt.findIndex(b => b.key === PROJECT_COLLAB_KEY)
+    const current: Record<string, BlockValue> =
+      idx >= 0 ? { [PROJECT_COLLAB_KEY]: matchedExt[idx].value } : {}
+    const seeded = seedMergedTypeAnswer(current, exp.type, true, extTemplateByKey)
+    if (seeded !== current && tb) {
+      const dest = injectValue(cloneBlocks([tb])[0], seeded[PROJECT_COLLAB_KEY])
+      if (idx >= 0) matchedExt[idx] = dest
+      else matchedExt.push(dest)
+    }
+  }
+
   // v2 는 코어를 현재 템플릿에서 다시 짜므로 `CORE_EXCLUDE` 가 저절로 적용되지만, v1 은 저장된
   // 코어 배열을 그대로 통과시켜 **확정본이 뺀 칸이 되살아난다.** 빈 코어 '증빙 자료' 하나가
   // `computeFormCards` 에서 dedup 없이 evidence 버킷으로 직행해(코어 증빙은 항상 그 카드에 넣는다)
@@ -860,9 +1075,12 @@ export function toSavePayload(exp: ExperienceV2): ExperienceSavePayload {
     else custom.push(blockToCustomEntry(b)) // 키 없는(사용자 추가) 블록은 custom 으로 보존
   }
   // 완료 저장 시 완전히 빈 사용자 섹션(group)은 정리한다. 초안은 보존(돌아와 채울 수 있게).
+  // ⚠️ 판정은 `isBlockEmpty` 가 아니라 `isBlockDiscardable` 이다 — 이건 **삭제** 결정이고,
+  // "그릴 게 없다"와 "버려도 된다"는 다른 질문이다. 이 코드가 모르는 타입의 자식을 담은
+  // 섹션은 그리지 못할 뿐이지, 지우면 그 값이 영구히 사라진다 (FRT-200 리뷰).
   const customSource =
     exp.status === "complete"
-      ? exp.customBlocks.filter(b => !(b.type === "group" && isBlockEmpty(b)))
+      ? exp.customBlocks.filter(b => !(b.type === "group" && isBlockDiscardable(b)))
       : exp.customBlocks
   for (const b of customSource) {
     custom.push(blockToCustomEntry(b))

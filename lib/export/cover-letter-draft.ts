@@ -1,8 +1,10 @@
+import { clearRaw, readRaw, writeRaw, type DraftTier } from "./draft-storage";
 import { normalizeCoverLetter } from "./cover-letter-normalize";
 import type { CoverLetterResult } from "@/types/cover-letter";
 
 // 서버 저장(PATCH)이 아직 없어(BAC-62 미착수) 편집은 이 로컬 임시 저장이 유일한 보관처다.
 // 레쥬메 resume-draft 와 같은 구조·같은 이유다.
+// 어느 저장소에 어떻게 담기는지는 draft-storage 가 안다 — 여기는 자소서 스키마만 안다.
 
 const STORAGE_PREFIX = "arc:cover-letter-draft:";
 
@@ -18,7 +20,7 @@ function key(id: string): string {
 export function readDraft(id: string): CoverLetterDraft | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(key(id));
+    const raw = readRaw(key(id));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CoverLetterDraft;
     if (!parsed?.data || !parsed?.updated_at) return null;
@@ -30,24 +32,49 @@ export function readDraft(id: string): CoverLetterDraft | null {
   }
 }
 
-export function writeDraft(id: string, data: CoverLetterResult): boolean {
-  if (typeof window === "undefined") return false;
+/**
+ * **반환값은 "저장됐다/아니다"가 아니라 "얼마나 오래 버티는가"다.**
+ *
+ * `"local"` 만 브라우저를 닫아도 남는다. `"session"`·`"memory"` 는 임시 보관이고 `null` 은
+ * 아예 담지 못했다는 뜻이라, 호출부는 그 차이를 사용자에게 알려야 한다 — 조용히 넘기면
+ * 사용자는 저장된 줄 알고 탭을 닫는다(FRT-261).
+ */
+export function writeDraft(id: string, data: CoverLetterResult): DraftTier | null {
+  if (typeof window === "undefined") return null;
   const draft: CoverLetterDraft = { data, updated_at: new Date().toISOString() };
   try {
-    window.localStorage.setItem(key(id), JSON.stringify(draft));
-    return true;
+    return writeRaw(key(id), JSON.stringify(draft));
   } catch {
-    // 용량 초과·프라이빗 모드 — 호출부가 "저장 실패"를 사용자에게 알려야 한다.
-    return false;
+    // 직렬화 자체가 실패하는 경우(순환 참조 등) — 저장할 것이 없다.
+    return null;
   }
 }
 
 export function clearDraft(id: string): void {
   if (typeof window === "undefined") return;
+  clearRaw(key(id));
+}
+
+/**
+ * 저장소에 지금 담긴 draft 가 `data` 와 **같은 본문**인가.
+ *
+ * `true` 는 호출부에서 `clearDraft` 로 이어진다. 탭이 숨겨질 때 담아 둔 스냅샷을 되돌려
+ * 치울 때, 그 사이 다른 탭이 같은 키에 더 새 편집을 남겼으면 그것은 이 탭이 치울 것이
+ * 아니다 — "내가 담았다"는 기억만으로는 저장소에 있는 것이 아직 내 것인지 알 수 없다.
+ *
+ * 정규화를 거치지 않고 원문을 그대로 비교한다. 같은 객체를 같은 직렬화로 썼으니 왕복한
+ * 문자열이 같고, 정규화는 키 순서를 바꿀 수 있어 내 것도 남의 것으로 보이게 한다.
+ */
+export function isStoredDraft(id: string, data: CoverLetterResult): boolean {
+  if (typeof window === "undefined") return false;
   try {
-    window.localStorage.removeItem(key(id));
+    const raw = readRaw(key(id));
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as Partial<CoverLetterDraft> | null;
+    if (!parsed?.data) return false;
+    return JSON.stringify(parsed.data) === JSON.stringify(data);
   } catch {
-    // ignore
+    return false;
   }
 }
 

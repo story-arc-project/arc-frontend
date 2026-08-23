@@ -12,6 +12,20 @@ vi.mock("@/lib/api/files-api", async () => {
 vi.mock("@/lib/analytics", () => ({ capture: vi.fn() }))
 const { capture } = await import("@/lib/analytics")
 
+// 업로드 진행 중에만 존재하는 상태를 테스트가 정할 수 있어야 한다 — 값(fileId)만 보면
+// '고르는 중'과 '아직 안 고름'이 구분되지 않는다(FileCellInput.test.tsx 와 같은 방식).
+let uploadState: "idle" | "uploading" | "error" = "idle"
+vi.mock("@/hooks/useFileUpload", () => ({
+  useFileUpload: () => ({
+    state: uploadState,
+    progress: 0,
+    error: null,
+    start: vi.fn(async () => null),
+    cancel: vi.fn(),
+    reset: vi.fn(),
+  }),
+}))
+
 import RepeatableCellBlock from "./RepeatableCellBlock"
 import { isBlockEmpty } from "@/lib/utils/block-utils"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
@@ -19,15 +33,22 @@ import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
 afterEach(cleanup)
-beforeEach(() => vi.mocked(capture).mockClear())
+beforeEach(() => {
+  vi.mocked(capture).mockClear()
+  uploadState = "idle"
+})
 
-function makeBlock(rows: BlockRow[], opts?: { allowRowExtras?: boolean }): Block {
+function makeBlock(
+  rows: BlockRow[],
+  opts?: { allowRowExtras?: boolean; allowRowArtifacts?: boolean },
+): Block {
   return {
     id: "b1",
     type: "repeatable-cell",
     label: "프로젝트 / 과제",
     lockColumns: true,
     ...(opts?.allowRowExtras ? { allowRowExtras: true } : {}),
+    ...(opts?.allowRowArtifacts ? { allowRowArtifacts: true } : {}),
     value: {
       type: "repeatable-cell",
       columns: [
@@ -240,6 +261,199 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
     await user.click(screen.getByRole("button", { name: "수상 항목 삭제" }))
     await user.click(screen.getByRole("button", { name: "지우기" }))
     expect(latest?.rows[0].extraFields).toEqual([])
+  })
+
+  /**
+   * 행 결과물(FRT-291 `BlockRow.artifacts`)은 형제(`RowExtraFieldsEditor`)와 **같은 손실 모양**을
+   * 가진다 — 값을 적어 둔 첨부를 실수로 지우면 되돌릴 경로가 없다. 그래서 확인 절차도 같아야 한다.
+   * 두 편집기가 같은 자리에 나란히 있으므로, 한쪽만 확인을 물으면 사용자는 어느 쪽이 즉시 지워지는지
+   * 알 수 없다.
+   */
+  it("값이 든 결과물은 한 번 확인한 뒤에야 지워진다 — 취소하면 값이 남는다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1", desc: "시연 영상" }] }],
+          { allowRowArtifacts: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
+    expect(latest).toBeUndefined() // 아직 아무것도 지우지 않았다
+    await user.click(screen.getByRole("button", { name: "취소" }))
+    expect(screen.getByDisplayValue("시연 영상")).toBeDefined()
+
+    await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
+    await user.click(screen.getByRole("button", { name: "지우기" }))
+    expect(latest?.rows[0].artifacts).toEqual([])
+  })
+
+  it("값이 빈 결과물은 확인 없이 삭제된다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1" }] }],
+          { allowRowArtifacts: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
+
+    expect(latest?.rows[0].artifacts).toEqual([])
+    expect(screen.queryByRole("button", { name: "지우기" })).toBeNull()
+  })
+
+  /**
+   * 업로드가 도는 동안에는 결과물을 지울 수 없어야 한다.
+   *
+   * 파일을 고른 직후 `fileId` 는 아직 비어 있어 `artifactFilled` 가 false 다 → 확인 절차를 그냥
+   * 지나 즉시 삭제되고, 언마운트된 `FileCellInput` 의 `mountedRef` 가드가 **완료된 업로드까지
+   * 조용히 버린다**. 사용자가 방금 고른 파일이 아무 흔적 없이 사라지는 자리다. 값이 아니라
+   * 업로드 상태로만 알 수 있으므로 `onBusyChange` 신호로 그 순간에만 막는다(FileBlock 과 같은 처방).
+   */
+  it("파일 업로드가 도는 동안에는 결과물을 지울 수 없다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    uploadState = "uploading"
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1" }] }],
+          { allowRowArtifacts: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
+
+    // 값이 비어 확인 절차도 안 거치는 경로였다 — 지워지지 않아야 한다.
+    expect(latest).toBeUndefined()
+    expect(screen.getByLabelText("결과물 1 링크")).toBeInTheDocument()
+  })
+
+  /**
+   * ×만 막으면 부족하다 — 확인 UI 가 **떠 있는 동안에도** `FileCellInput` 은 계속 렌더돼 있어
+   * 사용자가 파일을 고를 수 있고, 그 뒤 '지우기'를 누르면 같은 언마운트 경로로 업로드가 유실된다.
+   * ×(진입)와 '지우기'(확정)는 같은 손실의 두 문이라 같은 신호로 잠가야 한다(/code-review high).
+   */
+  it("확인 단계의 '지우기'도 업로드 중에는 눌리지 않는다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1", desc: "시연 영상" }] }],
+          { allowRowArtifacts: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
+    // 확인 UI 가 뜬 채로 업로드가 시작된다 — 설명 입력이 리렌더를 일으켜 신호가 반영된다.
+    uploadState = "uploading"
+    await user.type(screen.getByLabelText("결과물 1 설명"), "!")
+
+    await user.click(screen.getByRole("button", { name: "지우기" }))
+
+    expect(latest?.rows[0].artifacts).toHaveLength(1)
+  })
+
+  /**
+   * 결과물의 × 만 막는 것으로는 부족하다 — **행 전체를 지우는 버튼**이 바로 위에 있고, 그쪽으로
+   * 지워도 `FileCellInput` 은 똑같이 언마운트돼 고른 파일이 사라진다. 첫 수정이 놓친 형제 경로다.
+   * 처방이 닿아야 할 경로를 세다 만 자리이므로, 셀의 file 열도 같은 축에서 함께 막는다.
+   */
+  it("결과물 업로드가 도는 동안에는 행 전체도 지울 수 없다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    uploadState = "uploading"
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1" }] }],
+          { allowRowArtifacts: true },
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "행 삭제" }))
+
+    expect(latest).toBeUndefined()
+    expect(screen.getByLabelText("결과물 1 링크")).toBeInTheDocument()
+  })
+
+  it("셀의 file 열 업로드 중에도 행을 지울 수 없다", async () => {
+    const user = userEvent.setup()
+    let latest: RepeatableCellBlockValue | undefined
+    uploadState = "uploading"
+    render(
+      <Harness
+        block={makeBlockWithColumns(
+          [{ key: "out", label: "결과물", blockType: "file" as const }],
+          [{ id: "r1", cells: {} }],
+        )}
+        onValue={v => { latest = v }}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "행 삭제" }))
+
+    expect(latest).toBeUndefined()
+  })
+
+  /**
+   * 결과물 링크도 `LinkCellInput`(FRT-113 계측)과 같은 대접을 받아야 한다. 표 셀의 링크와 파일
+   * 첨부는 둘 다 `archive_attachment_added` 를 쏘는데 결과물 링크만 안 쏘면, "프로젝트 결과물은
+   * 링크로 남긴다"는 가장 흔한 경로가 지표에서 통째로 빠진다(FRT-291 리뷰).
+   */
+  it("결과물 링크를 입력하고 나가면 첨부 계측이 한 번 발화한다", async () => {
+    const user = userEvent.setup()
+    render(
+      <Harness
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1" }] }],
+          { allowRowArtifacts: true },
+        )}
+      />,
+    )
+
+    await user.type(screen.getByLabelText("결과물 1 링크"), "https://github.com/me/repo")
+    await user.tab()
+
+    expect(capture).toHaveBeenCalledWith("archive_attachment_added", { attachment_type: "url" })
+    expect(vi.mocked(capture).mock.calls.filter(c => c[0] === "archive_attachment_added")).toHaveLength(1)
+  })
+
+  /**
+   * 열 수 없는 주소라고 값을 숨기면 안 된다 — `artifactFilled` 은 그 첨부를 '채워진 것'으로 세는데
+   * 화면에는 '결과물 N' 제목만 남아, 사용자는 자기가 적은 주소가 사라졌다고 읽는다. 표의 link 셀은
+   * 이미 "anchor 는 안 만들되 글자로는 보여 준다"로 처리하고 있다 — 같은 값이 두 화면에서 다르게
+   * 취급되면 안 된다(FRT-291 리뷰).
+   */
+  it("조회 화면에서 열 수 없는 결과물 주소도 글자로는 남는다", () => {
+    render(
+      <Harness
+        readOnly
+        block={makeBlock(
+          [{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1", url: "javascript:alert(1)" }] }],
+          { allowRowArtifacts: true },
+        )}
+      />,
+    )
+
+    expect(screen.queryByRole("link")).not.toBeInTheDocument()
+    expect(screen.getByText("javascript:alert(1)")).toBeInTheDocument()
   })
 
   it("셀을 수정해도 추가 항목이 보존된다 — 행 재구성 회귀 (FRT-178 교훈)", async () => {
@@ -800,5 +1014,27 @@ describe("RepeatableCellBlock — 링크 열", () => {
     await user.tab()
 
     expect(capture).not.toHaveBeenCalledWith("archive_attachment_added", expect.anything())
+  })
+})
+
+describe("입력 필드 배치 — 한 필드당 한 행 (FRT-315)", () => {
+  // 결과 집합으로 못박는다: 유형별 예외(isWide)를 세는 대신 "편집 폼 어디에도 다단 그리드가
+  // 없다"를 단언해, 새 blockType 이 추가돼도 잘림(placeholder·가이드라인) 회귀를 그물이 잡는다.
+  it("편집 폼은 어떤 열 유형이든 다단 그리드 없이 필드를 세로로 쌓는다", () => {
+    const columns: RepeatableCellBlockValue["columns"] = [
+      { key: "venue", label: "저널 / 학회명", blockType: "text", placeholder: "예: 한국소비자학회 / Journal of Consumer Research" },
+      { key: "status", label: "게재 상태", blockType: "single-select", options: ["게재 완료", "심사 중"] },
+      { key: "date", label: "게재 / 발표일", blockType: "date" },
+      { key: "url", label: "링크", blockType: "link" },
+      { key: "award", label: "수상 내역", blockType: "text", guide: "이 발표나 논문으로 받은 수상이 있다면 적어주세요." },
+      { key: "desc", label: "설명", blockType: "textarea" },
+    ]
+    const { container } = render(
+      <Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: {} }])} />,
+    )
+
+    expect(screen.getByLabelText("저널 / 학회명")).toBeInTheDocument()
+    expect(container.querySelector('[class*="grid-cols-2"]')).toBeNull()
+    expect(container.querySelector('[class*="col-span-2"]')).toBeNull()
   })
 })

@@ -1,22 +1,26 @@
 "use client"
 
-import { useRef, useState, type ReactNode } from "react"
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react"
 import { CornerUpLeft, ExternalLink, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { RequiredDot } from "@/components/ui/required-dot"
 import { useProjectLink } from "@/contexts/ProjectLinkContext"
+import { useAutoResizeTextarea } from "@/hooks/useAutoResizeTextarea"
 import type {
   Block,
   RepeatableCellBlockValue,
   BlockRow,
   BlockColumnDef,
   CellValue,
+  RowArtifact,
   RowExtraField,
   RowExtraFieldType,
 } from "@/types/archive"
 import {
+  artifactFilled,
   cellFilled,
   cellText,
+  createEmptyArtifact,
   createEmptyRow,
   isFileCellValue,
   rowHasContent,
@@ -55,6 +59,9 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
   // FRT-145: 행마다 '항목 추가'. 열 잠금과 무관하다 — 열은 계속 템플릿이 소유하고(모든 행에 적용),
   // 여기서 열리는 건 그 행 하나에만 붙는 항목이다.
   const allowRowExtras = block.allowRowExtras === true
+
+  // FRT-291: 행마다 결과물(링크·파일·설명)을 여러 건. 열이 아니라 행에 붙으므로 열 잠금과 무관하다.
+  const allowRowArtifacts = block.allowRowArtifacts === true
 
   // FRT-210: 이 행이 형제 섹션의 개조식 리스트에서 연결돼 생겼는지(역방향 배지).
   // provider 밖(상세뷰·스토리북)에서는 null 이라 배지가 자동으로 숨는다 — 정방향 링크 UI 와 대칭.
@@ -99,6 +106,24 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
     if (isPlaceholderRow(rowId)) {
       // 표시용 행에서 항목을 추가하는 경로. 이름이 비면 애초에 항목이 만들어지지 않으므로
       // "실제로 채워졌을 때만 커밋"은 그대로 성립한다.
+      const row = materializeWith(rowId, patch)
+      if (row) onChange({ ...val, rows: [row] })
+      return
+    }
+    onChange({
+      ...val,
+      rows: val.rows.map(r => (r.id === rowId ? { ...r, ...patch(r) } : r)),
+    })
+  }
+
+  /**
+   * FRT-291: 행에 붙은 결과물만 갈아끼운다. `updateRowExtras` 와 같은 이유로 행을 다시 짜지
+   * 않는다 — 그러면 그때 존재하는 다른 행 필드(linkedProjectRowId·roleTags·extraFields)가
+   * 조용히 날아간다.
+   */
+  function updateRowArtifacts(rowId: string, next: (list: RowArtifact[]) => RowArtifact[]) {
+    const patch = (row: BlockRow) => ({ artifacts: next(row.artifacts ?? []) })
+    if (isPlaceholderRow(rowId)) {
       const row = materializeWith(rowId, patch)
       if (row) onChange({ ...val, rows: [row] })
       return
@@ -218,6 +243,39 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
                         </span>
                       </div>
                     ))}
+                  {/* FRT-291: 이 행에 붙은 결과물. 값이 빈 첨부는 감춘다(위 항목과 같은 철학). */}
+                  {(row.artifacts ?? []).filter(artifactFilled).map((a, ai) => (
+                    <div key={a.id} className="flex flex-col gap-0.5">
+                      <span className="text-caption text-text-tertiary font-medium">
+                        결과물 {ai + 1}
+                      </span>
+                      {/* 열 수 없는 주소(스킴 없음·javascript: 등)는 anchor 로 만들지 않되 **글자로는
+                          남긴다** — `artifactFilled` 이 채워진 것으로 세는 값이라, 안 그리면 화면엔
+                          제목만 남아 사용자는 자기가 적은 주소를 잃은 것으로 읽는다. 같은 파일의
+                          link 셀이 이미 쓰는 처리다(FRT-291 리뷰). */}
+                      {a.url?.trim() ? (
+                        getSafeHref(a.url) ? (
+                          <a
+                            href={getSafeHref(a.url) ?? undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-body-sm text-brand underline underline-offset-2 break-all hover:text-brand-dark"
+                          >
+                            <span className="break-all">{a.url}</span>
+                            <ExternalLink size={13} className="shrink-0" aria-hidden />
+                          </a>
+                        ) : (
+                          <span className="text-body-sm text-text-primary break-all">{a.url}</span>
+                        )
+                      ) : null}
+                      {a.file?.fileId?.trim() ? (
+                        <FileCellInput value={a.file} readOnly ariaLabel={`결과물 ${ai + 1} 파일`} onChange={() => {}} />
+                      ) : null}
+                      {a.desc?.trim() ? (
+                        <span className="text-body-sm text-text-primary whitespace-pre-wrap">{a.desc}</span>
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
@@ -309,9 +367,11 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
               columns={val.columns}
               isPlaceholder={isPlaceholderRow(row.id)}
               allowRowExtras={allowRowExtras}
+              allowRowArtifacts={allowRowArtifacts}
               incomingLink={projectLink?.getIncomingLink(row.id) ?? null}
               onCellChange={(colKey, cellVal) => updateCell(row.id, colKey, cellVal)}
               onExtrasChange={next => updateRowExtras(row.id, next)}
+              onArtifactsChange={next => updateRowArtifacts(row.id, next)}
               onRemove={() => removeRow(row.id)}
             />
           ))}
@@ -341,9 +401,11 @@ function RowEditor({
   columns,
   isPlaceholder,
   allowRowExtras,
+  allowRowArtifacts,
   incomingLink,
   onCellChange,
   onExtrasChange,
+  onArtifactsChange,
   onRemove,
 }: {
   row: BlockRow
@@ -353,12 +415,52 @@ function RowEditor({
   isPlaceholder?: boolean
   /** FRT-145: 이 행에 사용자가 항목을 추가할 수 있는가(블록 층위 opt-in). */
   allowRowExtras?: boolean
+  /** FRT-291: 이 행에 결과물을 여러 건 붙일 수 있는가(블록 층위 opt-in). */
+  allowRowArtifacts?: boolean
   /** FRT-210: 이 행을 만든 개조식 리스트가 있으면 그 블록 라벨. 없으면 null. */
   incomingLink?: { sourceLabel: string } | null
   onCellChange: (colKey: string, value: CellValue) => void
   onExtrasChange: (next: (fields: RowExtraField[]) => RowExtraField[]) => void
+  onArtifactsChange?: (next: (list: RowArtifact[]) => RowArtifact[]) => void
   onRemove: () => void
 }) {
+  /**
+   * 이 행 안에서 업로드가 하나라도 도는가 (FRT-291 리뷰).
+   *
+   * 결과물의 × 만 막는 것으로는 부족했다 — **행 전체를 지우는 버튼**이 바로 위에 있고, 그쪽으로
+   * 지워도 `FileCellInput` 이 똑같이 언마운트돼 고른 파일이 사라진다. 셀의 `file` 열도 같은
+   * 경로이므로 둘을 한 자리에서 센다.
+   *
+   * 핸들러는 키마다 **메모해서** 돌려준다. 인라인으로 만들면 `onBusyChange` 의 effect 가 렌더마다
+   * 정리(false)→재실행(true)을 반복하고, 그 false 가 상태를 실제로 바꿔 다시 렌더를 부른다 —
+   * 무한 루프가 된다.
+   */
+  const [busyKeys, setBusyKeys] = useState<ReadonlySet<string>>(() => new Set())
+  // 신호를 보내는 칸의 목록을 **문자열로 굳혀** 메모 기준으로 쓴다. 배열째 의존하면 사용자가
+  // 설명 한 글자만 고쳐도(= artifacts 배열이 새로 생겨도) 핸들러 신원이 바뀌어, 업로드 도중에
+  // false→true 로 한 번 깜빡이는 창이 열린다. 목록이 실제로 달라질 때만 다시 만든다.
+  const busySignature = [
+    ...columns.filter(c => c.blockType === "file").map(c => `cell:${c.key}`),
+    ...(row.artifacts ?? []).map(a => `artifact:${a.id}`),
+  ].join("|")
+  const busyHandlers = useMemo(() => {
+    const map = new Map<string, (busy: boolean) => void>()
+    for (const key of busySignature.split("|").filter(Boolean)) {
+      map.set(key, (busy: boolean) =>
+        setBusyKeys(prev => {
+          if (prev.has(key) === busy) return prev
+          const next = new Set(prev)
+          if (busy) next.add(key)
+          else next.delete(key)
+          return next
+        }),
+      )
+    }
+    return map
+  }, [busySignature])
+  const busyHandler = (key: string) => busyHandlers.get(key)
+  const uploading = busyKeys.size > 0
+
   return (
     // data-row-id: FRT-76 '프로젝트로 연결' 스크롤 앵커(전역 유일 row.id 로 scrollIntoView).
     <div data-row-id={row.id} className="scroll-mt-20 bg-surface-secondary border border-border rounded-lg p-4">
@@ -375,27 +477,22 @@ function RowEditor({
         {!isPlaceholder && (
           <button
             type="button"
+            disabled={uploading}
             onClick={onRemove}
-            className="text-text-tertiary hover:text-error transition-colors p-1 rounded"
+            className="text-text-tertiary hover:text-error transition-colors p-1 rounded disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-text-tertiary"
             aria-label="행 삭제"
+            title={uploading ? "파일을 올리는 중이에요. 잠시 후 지울 수 있어요." : undefined}
           >
             <Trash2 size={14} />
           </button>
         )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {/* 한 필드당 한 행(FRT-315) — 반 칸에서는 placeholder·가이드라인·입력값이 잘린다. */}
+      <div className="flex flex-col gap-3">
         {columns.map(col => {
           const cellVal = row.cells[col.key]
-          const isWide =
-            col.blockType === "textarea" ||
-            col.blockType === "tags" ||
-            col.blockType === "checklist" ||
-            // 기간은 월 입력 2개+체크박스, 파일은 카드라 반 칸에 눌리면 읽을 수 없다(FRT-213).
-            col.blockType === "period" ||
-            col.blockType === "file"
-
           return (
-            <div key={col.key} className={`flex flex-col gap-1.5 ${isWide ? "sm:col-span-2" : ""}`}>
+            <div key={col.key} className="flex flex-col gap-1.5">
               <label className="text-caption text-text-secondary">
                 {col.label}
                 {col.required && <RequiredDot />}
@@ -407,6 +504,7 @@ function RowEditor({
                 column={col}
                 value={cellVal}
                 ariaLabel={col.label}
+                onBusyChange={busyHandler(`cell:${col.key}`)}
                 onChange={(v) => onCellChange(col.key, v)}
               />
             </div>
@@ -416,6 +514,169 @@ function RowEditor({
       {allowRowExtras && (
         <RowExtraFieldsEditor fields={row.extraFields ?? []} onChange={onExtrasChange} />
       )}
+      {allowRowArtifacts && onArtifactsChange && (
+        <RowArtifactsEditor
+          artifacts={row.artifacts ?? []}
+          onChange={onArtifactsChange}
+          busyHandler={busyHandler}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * 행 하나에 붙는 결과물 목록 (FRT-291). 확정본의 'artifact-blocks (파일 or 링크 + 설명)' 다중 등록.
+ *
+ * 표 셀이 아니라 행 아래 별도 묶음으로 그린다 — 열이 아니므로 다른 행의 모양을 바꾸지 않고,
+ * 첨부가 없는 행은 버튼 한 줄만 차지한다(입력 허들 최소화).
+ */
+function RowArtifactsEditor({
+  artifacts,
+  onChange,
+  busyHandler,
+}: {
+  artifacts: RowArtifact[]
+  onChange: (next: (list: RowArtifact[]) => RowArtifact[]) => void
+  /** 첨부별 업로드 신호를 행에 모아 주는 발급기 — 키마다 같은 함수를 돌려준다(RowEditor). */
+  busyHandler: (key: string) => ((busy: boolean) => void) | undefined
+}) {
+  function patch(id: string, fields: Partial<RowArtifact>) {
+    onChange(list => list.map(a => (a.id === id ? { ...a, ...fields } : a)))
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3">
+      <span className="text-caption text-text-secondary font-medium">결과물</span>
+      {artifacts.map((a, i) => (
+        <ArtifactCard
+          key={a.id}
+          artifact={a}
+          index={i}
+          onBusyChange={busyHandler(`artifact:${a.id}`)}
+          onPatch={fields => patch(a.id, fields)}
+          onRemove={() => onChange(list => list.filter(x => x.id !== a.id))}
+        />
+      ))}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => onChange(list => [...list, createEmptyArtifact()])}
+        className="self-start text-text-secondary"
+      >
+        <Plus size={14} className="mr-1" />
+        결과물 추가
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * 결과물 한 건의 카드.
+ *
+ * 목록이 아니라 **카드가** 컴포넌트인 이유는 상태 둘이 첨부마다 따로 살아야 해서다:
+ * 삭제 확인(`pendingDelete`)과 업로드 진행 여부(`uploading`). 특히 후자는 `FileCellInput` 에
+ * 넘기는 콜백이 **매 렌더 같은 함수여야** 한다 — 인라인 화살표를 주면 `onBusyChange` 의 effect 가
+ * 렌더마다 정리(false)→재실행(true)을 반복해 상태가 진동한다. `useState` 의 setter 는 그 자체로
+ * 안정적이라 이 구조가 가장 단순한 답이다.
+ */
+function ArtifactCard({
+  artifact: a,
+  index,
+  onBusyChange,
+  onPatch,
+  onRemove,
+}: {
+  artifact: RowArtifact
+  index: number
+  /** 행에도 같은 신호를 흘린다 — 행 삭제 버튼이 이 카드 바깥에 있기 때문이다. */
+  onBusyChange?: (busy: boolean) => void
+  onPatch: (fields: Partial<RowArtifact>) => void
+  onRemove: () => void
+}) {
+  // FRT-145 형제(RowExtraFieldsEditor)와 같은 이유로, 값이 든 결과물은 한 번 확인한 뒤에 지운다 —
+  // 되돌리는 경로가 없는 손실이라서다.
+  const [pendingDelete, setPendingDelete] = useState(false)
+  // 업로드가 도는 동안 지우면 `FileCellInput` 이 언마운트되며 완료된 업로드가 버려진다 —
+  // 그때 값(`fileId`)은 아직 비어 있어 위 확인 절차조차 지나가 버린다. 값으로는 알 수 없는
+  // 상태라 신호로 받는다(`FileBlock`·`BlockList` 가 블록 층위에서 쓰는 것과 같은 처방).
+  const [uploading, setUploading] = useState(false)
+  // 두 곳이 같은 신호를 본다: 이 카드의 × 와 행 삭제 버튼. 한 콜백으로 묶어 두 소비처의
+  // 기준이 갈리지 않게 하고, `useCallback` 으로 신원을 고정해 effect 진동을 막는다.
+  const handleBusyChange = useCallback(
+    (busy: boolean) => {
+      setUploading(busy)
+      onBusyChange?.(busy)
+    },
+    [onBusyChange],
+  )
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-caption text-text-tertiary">결과물 #{index + 1}</span>
+        {pendingDelete ? (
+          <span className="flex items-center gap-1.5 text-caption text-text-tertiary">
+            지워집니다
+            {/* ×(진입)만 막으면 부족하다 — 확인 UI 가 떠 있는 동안에도 FileCellInput 은 렌더돼
+                있어 업로드를 시작할 수 있고, 여기서 확정하면 같은 언마운트 경로로 유실된다. */}
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => {
+                setPendingDelete(false)
+                onRemove()
+              }}
+              className="rounded px-1.5 py-0.5 text-error hover:bg-surface-tertiary transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              title={uploading ? "파일을 올리는 중이에요. 잠시 후 지울 수 있어요." : undefined}
+            >
+              지우기
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingDelete(false)}
+              className="rounded px-1.5 py-0.5 text-text-secondary hover:bg-surface-tertiary transition-colors"
+            >
+              취소
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => (artifactFilled(a) ? setPendingDelete(true) : onRemove())}
+            className="text-text-tertiary hover:text-error transition-colors p-1 rounded disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-text-tertiary"
+            aria-label={`결과물 ${index + 1} 삭제`}
+            title={uploading ? "파일을 올리는 중이에요. 잠시 후 지울 수 있어요." : undefined}
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
+      </div>
+      {/* 원시 input 이 아니라 링크 셀을 쓴다 — 첨부 계측(FRT-113)이 여기에도 붙어야 한다.
+          표의 link 셀과 파일 첨부는 이미 `archive_attachment_added` 를 쏘므로, 결과물 링크만
+          빠지면 "프로젝트 결과물을 링크로 남긴다"는 가장 흔한 경로가 지표에서 사라진다. */}
+      <LinkCellInput
+        value={a.url ?? ""}
+        placeholder="Figma, Notion, GitHub 등"
+        ariaLabel={`결과물 ${index + 1} 링크`}
+        onChange={v => onPatch({ url: v })}
+      />
+      <FileCellInput
+        value={a.file}
+        ariaLabel={`결과물 ${index + 1} 파일`}
+        onBusyChange={handleBusyChange}
+        onChange={v => onPatch({ file: v })}
+      />
+      <input
+        type="text"
+        value={a.desc ?? ""}
+        onChange={e => onPatch({ desc: e.target.value })}
+        placeholder="결과물 설명 (예: 와이어프레임, ERD, 테스트 결과서)"
+        aria-label={`결과물 ${index + 1} 설명`}
+        className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-disabled focus:border-brand focus:outline-none"
+      />
     </div>
   )
 }
@@ -698,16 +959,52 @@ function LegacyCellText({ text, note }: { text: string; note?: string }) {
   )
 }
 
+/**
+ * 여러 줄 텍스트 셀. 길게 쓰면 칸 안에서 스크롤하는 대신 칸이 내용만큼 자란다(노션 UI 피드백).
+ *
+ * `CellInput` 의 switch 안에서 훅을 부르면 조건부 호출이라 rules-of-hooks 에 걸리고,
+ * `CellInput` 최상단으로 올리면 date·link·tags 등 이 기능이 필요 없는 모든 셀이 매 렌더
+ * ref 와 layout effect 를 떠안는다. 이 셀 타입만 감싸는 컴포넌트가 양쪽을 다 피한다.
+ */
+function AutoGrowCellTextarea({
+  value,
+  placeholder,
+  ariaLabel,
+  onChange,
+}: {
+  value: string
+  placeholder?: string
+  ariaLabel?: string
+  onChange: (value: CellValue) => void
+}) {
+  const ref = useAutoResizeTextarea(value)
+  return (
+    <textarea
+      ref={ref}
+      aria-label={ariaLabel}
+      // `min-h-[64px]` 는 훅의 `height="auto"` 리셋과 무관하게 살아 있어 빈 칸의 최소 높이를 지킨다.
+      // `overflow-hidden` 이 없으면 훅이 아직 재기 전인 찰나(하이드레이션 직후)에 스크롤바가 번쩍인다.
+      className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none overflow-hidden min-h-[64px]"
+      placeholder={placeholder}
+      value={value}
+      onChange={e => onChange(e.target.value)}
+    />
+  )
+}
+
 function CellInput({
   column,
   value,
   ariaLabel,
+  onBusyChange,
   onChange,
 }: {
   column: BlockColumnDef
   value: CellValue | undefined
   /** 라벨이 `<label htmlFor>` 로 묶여 있지 않아 입력칸에 접근 가능한 이름이 없다 — 직접 준다. */
   ariaLabel?: string
+  /** `file` 열의 업로드 진행 여부를 행에 알린다 — 그동안 행 삭제를 막는다(FRT-291 리뷰). */
+  onBusyChange?: (busy: boolean) => void
   onChange: (value: CellValue) => void
 }) {
   // 열 타입이 변경되어 기존 값(string ↔ string[])이 불일치할 때 UI에서 값이 사라지지 않도록 정규화한다.
@@ -752,6 +1049,7 @@ function CellInput({
           <FileCellInput
             value={isFileCellValue(value) ? value : undefined}
             onChange={onChange}
+            onBusyChange={onBusyChange}
             ariaLabel={ariaLabel}
           />
           {legacy && <LegacyCellText text={legacy} note="파일을 올리면 이 값은 지워져요" />}
@@ -764,12 +1062,11 @@ function CellInput({
 
     case "textarea":
       return (
-        <textarea
-          aria-label={ariaLabel}
-          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none resize-none min-h-[64px]"
-          placeholder={column.placeholder}
+        <AutoGrowCellTextarea
           value={strVal}
-          onChange={e => onChange(e.target.value)}
+          placeholder={column.placeholder}
+          ariaLabel={ariaLabel}
+          onChange={onChange}
         />
       )
 

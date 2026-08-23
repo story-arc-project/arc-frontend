@@ -1,6 +1,9 @@
 "use client"
 
+import { useState } from "react"
+import { Plus } from "lucide-react"
 import type { Block, ChecklistBlockValue } from "@/types/archive"
+import { onEnterCommit } from "@/lib/utils/keyboard"
 
 interface MoodTagBlockProps {
   block: Block
@@ -32,6 +35,7 @@ export default function MoodTagBlock({ block, readOnly, onChange }: MoodTagBlock
   const val = block.value as ChecklistBlockValue
   const options = moodTagOptions(block)
   const checked = Array.isArray(val?.checked) ? val.checked : []
+  const [newTag, setNewTag] = useState("")
 
   function toggle(option: string) {
     const next = checked.includes(option)
@@ -39,6 +43,18 @@ export default function MoodTagBlock({ block, readOnly, onChange }: MoodTagBlock
       : [...checked, option]
     // 복원한 프리셋을 그대로 저장한다 — 다음 로드에서도 같은 목록이 보이도록.
     onChange({ type: "checklist", options, checked: next })
+  }
+
+  /**
+   * 직접 추가 (FRT-320, `allowCustomTag` opt-in). `options`(프리셋)는 건드리지 않고
+   * `checked` 에만 넣는다 — 다음 렌더는 `moodTagOptions()` 의 기존 "checked 에만 남은 값도
+   * 뒤에 붙인다" 폴백이 선택된 pill 로 그려 준다.
+   */
+  function addCustomTag() {
+    const trimmed = newTag.trim()
+    if (!trimmed || checked.includes(trimmed)) return
+    onChange({ type: "checklist", options, checked: [...checked, trimmed] })
+    setNewTag("")
   }
 
   if (readOnly) {
@@ -93,6 +109,26 @@ export default function MoodTagBlock({ block, readOnly, onChange }: MoodTagBlock
           )
         })}
       </div>
+      {block.allowCustomTag && (
+        <div className="flex gap-2 mt-1">
+          <input
+            type="text"
+            className="h-9 flex-1 min-w-0 rounded-full border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+            placeholder="나만의 키워드 직접 추가..."
+            value={newTag}
+            onChange={e => setNewTag(e.target.value)}
+            onKeyDown={onEnterCommit(addCustomTag)}
+          />
+          <button
+            type="button"
+            onClick={addCustomTag}
+            aria-label="직접 추가"
+            className="h-9 rounded-full border border-border bg-surface px-3 text-body-sm text-text-secondary hover:bg-surface-tertiary transition-colors"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+      )}
     </fieldset>
   )
 }

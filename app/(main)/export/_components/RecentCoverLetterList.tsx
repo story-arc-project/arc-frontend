@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PenLine, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
+import { isAnalysisInFlight } from "@/lib/analysis/use-analysis-progress-watch";
 import { ApiError } from "@/lib/api/client";
 import {
   CoverLetterMutationUnsupportedError,
@@ -15,6 +16,7 @@ import { useBasePath } from "@/lib/utils/use-base-path";
 import { formatDateTime, formatRelativeTime } from "@/lib/utils/date-utils";
 import type { CoverLetterListItem } from "@/types/cover-letter";
 import { DeleteConfirmDialog } from "./DeleteConfirmDialog";
+import { ListRefreshErrorBanner } from "./ListRefreshErrorBanner";
 
 interface RecentCoverLetterListProps {
   onCreateClick: () => void;
@@ -47,25 +49,69 @@ export function RecentCoverLetterList({
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [pollExhausted, setPollExhausted] = useState(false);
 
+  // FRT-258 — 이 목록의 로딩 게이트는 `items === null`, 즉 첫 조회에만 걸린다. 그래서 재조회는
+  // **목록이 조작 가능한 채로** 뒤에서 돌고, 그 사이 사용자가 만든 변경(삭제)을 늦게 도착한
+  // 응답이 통째로 덮는다. 방어는 두 갈래다.
+  //   ① 요청 세대(seqRef) — 더 새 요청이 시작됐으면 옛 응답은 쓰지 않는다
+  //      (전례: hooks/useAdminCustomers.ts).
+  //   ② 지운 id 집합 — 삭제는 요청을 만들지 않아 ①이 못 잡는다. 그렇다고 삭제가 세대를
+  //      올려 응답을 **버리면**, 그 응답에 실려 온 새 항목(방금 만든 자소서·상태 갱신)까지
+  //      함께 사라진다. 버리지 말고 지운 것만 빼서 적용한다.
+  const seqRef = useRef(0);
+  const mountedRef = useRef(true);
+  const deletedIdsRef = useRef<Set<string>>(new Set());
+
+  // load 보다 앞에 선언한다 — 마운트 effect 순서상 이쪽이 먼저 true 를 세워야 한다.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const load = useCallback(async () => {
+    const seq = ++seqRef.current;
     try {
       const data = await getCoverLetterList();
+      // 가드는 **쓰기보다 앞**이어야 한다. 언마운트됐거나 이 응답이 떠난 뒤 더 새 요청이
+      // 시작됐으면 화면에 쓰지 않는다.
+      if (!mountedRef.current || seq !== seqRef.current) return;
       setError(null);
-      setItems(data);
+      // 이 응답이 떠난 뒤 사용자가 지운 행은 서버가 아직 모를 수 있다 — 빼고 그린다.
+      setItems(data.filter((c) => !deletedIdsRef.current.has(c.id)));
     } catch (err) {
+      if (!mountedRef.current || seq !== seqRef.current) return;
+      // FRT-319 — 실패를 "목록이 비었다"로 기록하지 않는다. `setItems([])` 은 두 가지를
+      // 한꺼번에 무너뜨린다. ① 잘 떠 있던 목록이 사라지고 에러 박스로 바뀐다 — 성공했던
+      // 직전 응답을 남길 수 있는데도 버린다. ② `items` 가 비면 `hasPending` 도 false 가 돼
+      // **폴링이 꺼진다** — 폴링은 스스로 되살아나지 않으므로 '생성 중' 행이 완성돼도 영영
+      // 갱신되지 않는다. 마지막 성공분은 그대로 두고 실패는 배너로만 알린다.
       setError(err as Error);
-      setItems([]);
     }
   }, []);
+
+  // 집합 기록과 화면 제거를 한 몸으로 묶는다 — 둘 중 하나만 하면 그 순간 떠 있던
+  // 재조회가 지운 행을 되살린다.
+  const removeLocally = (id: string) => {
+    deletedIdsRef.current.add(id);
+    setItems((prev) => (prev ?? []).filter((c) => c.id !== id));
+  };
 
   useEffect(() => {
     load();
   }, [load, reloadToken]);
 
-  // 생성은 비동기다 — 만들고 목록으로 돌아오면 첫 조회가 대개 'queued' 를 본다. 여기서
+  // 생성은 비동기다 — 만들고 목록으로 돌아오면 첫 조회가 대개 진행 중(pending/queued)을 본다. 여기서
   // 멈추면 그 행은 **서버가 다 만든 뒤에도** '생성 중'에 고착돼 열 수 없다(전체 새로고침만
   // 탈출구다). 그래서 진행 중인 행이 있을 때만 유한 횟수 다시 읽는다.
-  const hasPending = (items ?? []).some((i) => i.status === "processing");
+  // FRT-181 — 진행 중 판정은 `processing` 하나가 아니다. 매퍼가 백엔드의 `pending` 을 그대로
+  // 보존하고(mapCoverLetterStatus) 렌더도 '생성 중'으로 잘 그리는데, 이 게이트만 그 상태를
+  // 모르면 pending 으로 시작한 행은 **폴링이 아예 걸리지 않아** 서버가 다 만든 뒤에도 열리지
+  // 않는다(예산 소진 안내조차 못 뜬다 — 소진될 폴링이 없다). 분석 목록이 이미 쓰는 판정을
+  // 공유해 규칙이 두 벌로 갈라지지 않게 한다.
+  const hasPending = (items ?? []).some(
+    (i) => i.status !== undefined && isAnalysisInFlight(i.status),
+  );
 
   // 사람이 눌러 다시 읽으면 폴링 예산도 처음부터 다시 센다.
   const handleManualReload = useCallback(() => {
@@ -108,7 +154,7 @@ export function RecentCoverLetterList({
     setDeletingId(id);
     try {
       await deleteCoverLetter(id);
-      setItems((prev) => (prev ?? []).filter((c) => c.id !== id));
+      removeLocally(id);
       toast.success("자기소개서를 삭제했어요");
     } catch (err) {
       if (err instanceof CoverLetterMutationUnsupportedError) {
@@ -116,7 +162,7 @@ export function RecentCoverLetterList({
         toast("삭제 기능은 곧 제공될 예정이에요", "info");
       } else if (err instanceof ApiError && err.status === 404) {
         // 이미 없는 것을 지우려 한 것뿐이다 — 사용자가 원한 결과와 같으므로 목록에서 뺀다.
-        setItems((prev) => (prev ?? []).filter((c) => c.id !== id));
+        removeLocally(id);
       } else {
         toast.error("삭제에 실패했어요");
       }
@@ -127,7 +173,8 @@ export function RecentCoverLetterList({
     }
   };
 
-  if (items === null) {
+  // 첫 조회가 아직 안 끝났다 — 아직 성공도 실패도 아니다.
+  if (items === null && !error) {
     return (
       <div className="space-y-2">
         {[0, 1].map((i) => (
@@ -140,11 +187,13 @@ export function RecentCoverLetterList({
     );
   }
 
-  if (error && items.length === 0) {
+  // FRT-319 — 전체 에러 화면은 **첫 조회 실패**에만 쓴다. 목록을 한 번이라도 받아 뒀다면
+  // 그것을 지울 이유가 없다(그 뒤의 실패는 아래 배너로 알린다).
+  if (items === null) {
     return (
       <div className="rounded-lg border border-border bg-surface-secondary p-5 text-center">
         <p className="text-body-sm text-text-secondary">목록을 불러오지 못했어요.</p>
-        <Button variant="ghost" size="sm" onClick={load} className="mt-2">
+        <Button variant="ghost" size="sm" onClick={handleManualReload} className="mt-2">
           다시 시도
         </Button>
       </div>
@@ -153,21 +202,25 @@ export function RecentCoverLetterList({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-surface-secondary p-8 text-center">
-        <PenLine size={28} className="mx-auto text-text-tertiary" />
-        <p className="mt-3 text-body text-text-primary">아직 만든 자기소개서가 없어요.</p>
-        <p className="mt-1 text-body-sm text-text-secondary">
-          문항을 넣으면 기록을 바탕으로 초안을 만들어요.
-        </p>
-        <Button variant="primary" size="sm" onClick={onCreateClick} className="mt-4">
-          새 자기소개서 만들기
-        </Button>
-      </div>
+      <>
+        {error && <ListRefreshErrorBanner onRetry={handleManualReload} />}
+        <div className="rounded-xl border border-dashed border-border bg-surface-secondary p-8 text-center">
+          <PenLine size={28} className="mx-auto text-text-tertiary" />
+          <p className="mt-3 text-body text-text-primary">아직 만든 자기소개서가 없어요.</p>
+          <p className="mt-1 text-body-sm text-text-secondary">
+            문항을 넣으면 기록을 바탕으로 초안을 만들어요.
+          </p>
+          <Button variant="primary" size="sm" onClick={onCreateClick} className="mt-4">
+            새 자기소개서 만들기
+          </Button>
+        </div>
+      </>
     );
   }
 
   return (
     <>
+      {error && <ListRefreshErrorBanner onRetry={handleManualReload} />}
       {pollExhausted && hasPending && (
         <p className="mb-2 flex flex-wrap items-center gap-1.5 text-caption text-text-secondary">
           생성이 예상보다 오래 걸리고 있어요.

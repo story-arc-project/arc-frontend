@@ -53,11 +53,33 @@ describe("experienceToPost", () => {
     expect(post.id).toBe("exp-1");
     expect(post.title).toBe("주가 예측 프로젝트");
     expect(post.period).toBe("2026.02 – 2026.05");
-    expect(post.category).toBe("개인 프로젝트");
+    // 확정본 정렬(FRT-291)로 개인·팀이 한 유형이 되면서 라벨이 '프로젝트' 하나가 됐다.
+    expect(post.category).toBe("프로젝트");
     expect(post.summary).toBe("LLM 뉴스 감성 분석");
     expect(post.contribution).toBe("전 과정 독립 수행");
     expect(post.achievement).toBe("백테스팅 시각화 완성");
     expect(post.keywords).toEqual(["LLM", "NLP"]);
+  });
+
+  /**
+   * FRT-320 — '나는 누구인가?'는 기간·역할·성과 개념 자체가 없는 유형이다(코어 4종 전부
+   * CORE_EXCLUDE, TYPE_PERIOD_KEY 미등록). 발행 경로가 죽지 않고 제목·요약은 정상 발행되며,
+   * 기간이 빈 문자열인 것은 **의도된 결과**임을 여기 고정한다.
+   */
+  it("기간 없는 유형(self-identity)도 발행이 죽지 않는다 — 기간은 빈 문자열", () => {
+    const exp = makeExp({ type: "self-identity" });
+    const content = exp.content as { title: string; summary: string; coreBlocks: Block[] };
+    content.title = "나는 누구인가";
+    content.summary = "자기 인식 프로필";
+    content.coreBlocks = [
+      blk("c1", "text", "경험명", { type: "text", text: "나는 누구인가" }),
+      blk("c3", "text", "한 줄 요약", { type: "text", text: "자기 인식 프로필" }),
+    ];
+    const post = experienceToPost(exp);
+    expect(post.title).toBe("나는 누구인가");
+    expect(post.summary).toBe("자기 인식 프로필");
+    expect(post.period).toBe("");
+    expect(post.category).toBe("나는 누구인가?");
   });
 
   it("진행 중(period.isCurrent)이면 종료를 '현재'로 표기한다", () => {
@@ -1014,5 +1036,147 @@ describe("FRT-211 단일 날짜 유형의 발행 기간", () => {
       );
       expect(post.contribution).toBe("학습 멘토");
     });
+  });
+
+  /**
+   * 프로젝트(FRT-291)는 창작물·연구논문과 같은 자리인데 **orphan 이 하나 더 많다** — 개인·팀이
+   * 합쳐지면서 구 `pp-info.기간` 과 `tp-info.기간` 둘 다 옛 값으로 남을 수 있다. 새 라벨이
+   * '진행 기간'이라 코어와 정확히 같은 이름이 아니므로, `TYPE_PERIOD_KEY` 등록을 빠뜨리면
+   * 정확-라벨 우선 정렬에서 orphan `core.기간` 이 확정본 값을 이긴다.
+   */
+  describe("프로젝트는 '진행 기간'을 발행 기간으로 쓴다 (FRT-291)", () => {
+    function projectExp(fields: Record<string, unknown>, type = "personal-project"): Experience {
+      return makeExp({
+        type,
+        content: {
+          schema_version: SCHEMA_VERSION_V2,
+          title: "캠퍼스 중고거래 앱",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields,
+        } as unknown as Experience["content"],
+      });
+    }
+
+    const RUN_PERIOD = { type: "period", start: "2024-03-01", end: "2024-06-30", isCurrent: false };
+    const OLD_CORE_PERIOD = {
+      type: "period",
+      start: "2019-01-01",
+      end: "2019-02-28",
+      isCurrent: false,
+    };
+    const OLD_SECTION_PERIOD = {
+      type: "period",
+      start: "2020-05-01",
+      end: "2020-08-31",
+      isCurrent: false,
+    };
+
+    it("새로 채운 '진행 기간'이 orphan 된 옛 기간들을 모두 이긴다", () => {
+      const post = experienceToPost(
+        projectExp({
+          "core.기간": OLD_CORE_PERIOD,
+          "pp-info.기간": OLD_SECTION_PERIOD,
+          "project-info.진행 기간": RUN_PERIOD,
+        }),
+      );
+      expect(post.period).toBe("2024.03 – 2024.06");
+    });
+
+    /**
+     * 은퇴한 `team-project` 도 같은 템플릿을 받으므로 같은 우선 조회 키를 등록해야 한다 —
+     * 한쪽만 넣으면 같은 폼인데 팀 레코드만 옛 기간이 발행된다.
+     */
+    it("은퇴한 팀 프로젝트 레코드도 '진행 기간'을 쓴다", () => {
+      const post = experienceToPost(
+        projectExp(
+          {
+            "core.기간": OLD_CORE_PERIOD,
+            "tp-info.기간": OLD_SECTION_PERIOD,
+            "project-info.진행 기간": RUN_PERIOD,
+          },
+          "team-project",
+        ),
+      );
+      expect(post.period).toBe("2024.03 – 2024.06");
+    });
+
+    it("'진행 기간'이 비면 옛 기간으로 폴백한다 — 있는 정보를 지우지 않는다", () => {
+      const post = experienceToPost(projectExp({ "core.기간": OLD_CORE_PERIOD }));
+      expect(post.period).toBe("2019.01 – 2019.02");
+    });
+
+    /** 드리프트 가드 — 매퍼가 베껴 적은 안정키를 실제 템플릿에서 뽑아 대조한다. */
+    it("프로젝트 기간 폴백 키가 실제 템플릿 안정키와 일치한다", () => {
+      const key = getTemplateForType("personal-project")
+        .extensions.flatMap(s => s.blocks)
+        .find(b => b.label === "진행 기간")?.key;
+      expect(key).toBeTruthy();
+      expect(experienceToPost(projectExp({ [key as string]: RUN_PERIOD })).period).toBe(
+        "2024.03 – 2024.06",
+      );
+    });
+
+    /**
+     * `CORE_EXCLUDE` 가 코어 '핵심 성과'를 빼도 확정본 ② '핵심 성과'가 같은 라벨이라 발행이
+     * 비지 않는다. 개조식이라 값 이관은 못 하지만 **발행 조회는 닿아야 한다.**
+     */
+    it("코어 성과를 빼도 확정본 '핵심 성과'가 성과로 발행된다", () => {
+      const post = experienceToPost(
+        projectExp({
+          "project-detail.핵심 성과": {
+            type: "repeatable-cell",
+            columns: [{ key: "item", label: "성과", blockType: "text" }],
+            rows: [{ id: "r1", cells: { item: "베타 2주 만에 DAU 150명" } }],
+          },
+        }),
+      );
+      expect(post.achievement).toContain("베타 2주 만에 DAU 150명");
+    });
+  });
+});
+
+// ─── FRT-200: 손상된 저장 값이 발행을 막지 않는다 ────────────────────
+//
+// 포트폴리오 빌드는 `typePeriodOf` 에서 `isBlockEmpty(b)` 를 부르고 `block.value.type` 을 직접
+// 읽는다 — 렌더 관문(BlockRenderer)을 거치지 않는 경로다. 방어는 매퍼(`toExperienceV2`)가
+// 하므로 이 테스트는 "매퍼를 거친 값은 안전하다"는 전제를 잠근다.
+
+describe("손상된 저장 값 (FRT-200)", () => {
+  /** 코어 '기간'의 종료월만 깨뜨린다 — 시작월은 살아 있어야 한다. */
+  function withBrokenPeriod(id: string): Experience {
+    const base = makeExp({ id });
+    const content = base.content as Record<string, unknown>;
+    const core = (content.coreBlocks as Block[]).map((b) =>
+      b.label === "기간"
+        ? {
+            ...b,
+            value: { type: "period", start: "2026-02-01", end: null } as unknown as Block["value"],
+          }
+        : b,
+    );
+    return { ...base, content: { ...content, coreBlocks: core } };
+  }
+
+  it("기간 값이 깨진 경험이 섞여도 나머지 경험까지 발행된다", () => {
+    const broken = withBrokenPeriod("broken");
+    const intact = makeExp({ id: "intact" });
+
+    expect(() => buildPortfolio("demo-portfolio-1", [broken, intact], profile)).not.toThrow();
+    const result = buildPortfolio("demo-portfolio-1", [broken, intact], profile);
+    expect(result.posts.map((p) => p.id)).toEqual(["broken", "intact"]);
+  });
+
+  it("기간 값이 통째로 null 이어도 발행 파이프라인이 죽지 않는다", () => {
+    const base = makeExp({ id: "null-period" });
+    const content = base.content as Record<string, unknown>;
+    const core = (content.coreBlocks as Block[]).map((b) =>
+      b.label === "기간" ? { ...b, value: null as unknown as Block["value"] } : b,
+    );
+    const exp: Experience = { ...base, content: { ...content, coreBlocks: core } };
+
+    expect(() => buildPortfolio("demo-portfolio-1", [exp], profile)).not.toThrow();
+    expect(buildPortfolio("demo-portfolio-1", [exp], profile).posts).toHaveLength(1);
   });
 });

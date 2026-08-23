@@ -16,6 +16,7 @@ import type {
 } from "@/types/analysis";
 import { getKeywordResult, UnsupportedSchemaError } from "@/lib/api/analysis-api";
 import { formatDateTime } from "@/lib/utils/date-utils";
+import { useAnalysisViewed } from "@/lib/analytics";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { isAnalysisRetryEnabled } from "@/lib/analysis/flags";
 import { Badge } from "@/components/ui";
@@ -55,6 +56,11 @@ export default function KeywordDetailPage() {
       active = false;
     };
   }, [analysisId]);
+
+  // 이 결과를 얼마나 봤는가(FRT-107). 결과가 화면에 실제로 있는 동안만 잰다.
+  // ready 는 data 가 아니라 hasResultBody 다 — 대기·실패 안내 화면을 본 시간은 결과를
+  // 본 시간이 아니다(comprehensive 와 같은 규칙).
+  useAnalysisViewed({ analysisType: "keyword", analysisId, ready: !!data?.hasResultBody });
 
   if (unsupported) {
     return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/keyword" />;

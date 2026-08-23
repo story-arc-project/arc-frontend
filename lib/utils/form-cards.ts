@@ -2,19 +2,20 @@ import type { Block, BlockColumnDef, CellValue, SectionCategory } from "@/types/
 import { SECTION_CATEGORIES } from "@/types/archive"
 import { cellFilled, cellText, isBlockEmpty, isRequiredBlock, rowHasContent } from "@/lib/utils/block-utils"
 import { isRealMonth, parsePeriodString, truncateToMonth } from "@/lib/utils/period-format"
+import { isUnhideableAttachmentHost } from "@/lib/utils/hidden-fields"
 
 // 같은 그룹의 라벨은 같은 질문으로 간주 — core/type/extended 간 중복 필드를 숨긴다.
 const SEMANTIC_GROUPS: Record<string, string[]> = {
   // 구 라벨("읽은 기간/완독일")은 확정본 개편 후에도 남긴다 — 구 레코드의 값은 orphan 블록으로
   // 보존되고 build-portfolio 가 아직 그 라벨로 동의어 폴백 조회를 한다(FRT-236).
-  period: ["기간", "재직기간", "근무 기간", "활동 기간", "읽은 기간/완독일", "독서 기간", "제작 기간", "작업 기간", "준비 기간", "학습 기간"],
+  period: ["기간", "재직기간", "근무 기간", "활동 기간", "읽은 기간/완독일", "독서 기간", "제작 기간", "작업 기간", "준비 기간", "학습 기간", "진행 기간"],
   // 확정본으로 코어를 뺀 유형(CORE_EXCLUDE)은 그 자리를 이어받은 새 라벨을 **반드시 여기 등록**한다.
   // 코어를 빼는 것과 새 라벨을 동의어로 넣는 것은 한 쌍이다 — 앞만 하면 폴백이던 코어까지 함께
   // 사라져 발행 경로(build-portfolio)가 값을 못 찾고 포트폴리오가 조용히 빈다(FRT-269 리뷰).
   role: ["내 역할/기여도", "내 역할/기여", "내 역할", "내가 맡은 파트", "직책/역할", "역할/직책", "역할 / 직책", "역할", "직무 / 포지션", "참여 역할 / 포지션", "역할 / 기여도"],
   achievement: ["핵심 성과", "핵심 성과 기록", "결과/성과", "성과", "성과/산출물", "반응/성과", "반응 / 피드백", "변화/성과", "임팩트/변화", "단체 활동 / 성과", "개인 활동 / 성과", "나의 담당 업무 / 주요 성과", "주요 성과", "주요 발견 / 결과"],
-  team: ["협업/팀", "팀/조직", "팀 구성", "협업 방식", "협업/커뮤니케이션 방식", "협업 / 팀원"],
-  motivation: ["지원 동기", "참여 동기", "수강 동기", "읽은 이유", "독서 이유", "목표/만들고 싶었던 이유"],
+  team: ["협업/팀", "팀/조직", "팀 구성", "협업 방식", "협업/커뮤니케이션 방식", "협업 / 팀원", "팀원"],
+  motivation: ["지원 동기", "참여 동기", "수강 동기", "읽은 이유", "독서 이유", "목표/만들고 싶었던 이유", "목표/문제 정의", "기획 배경 / 동기"],
   // 구 라벨("봉사 확인서")은 확정본 개편 후에도 남긴다 — 구 레코드의 값이 orphan 블록으로
   // 보존되므로 동의어 관계가 끊기면 안 된다(FRT-247, 독서의 '읽은 기간/완독일'과 같은 이유).
   evidence: ["증빙 자료", "증빙", "활동 인증서", "활동 인증서/수료 증빙", "수상 증빙", "자격증 증빙", "봉사 확인서", "봉사 확인서 첨부", "꾸준함 증거"],
@@ -54,10 +55,29 @@ function isSummary(b: Block): boolean { return b.key === SUMMARY_KEY || b.label 
 /** 코어 증빙 자료 블록은 항상 evidence 카드에 표시 — dedup 대상에서 제외. */
 function isEvidenceBlock(b: Block): boolean { return b.key === EVIDENCE_KEY || b.label === "증빙 자료" }
 
-export interface FormCardSection { id: string; category: SectionCategory; blocks: Block[] }
+export interface FormCardSection {
+  id: string
+  category: SectionCategory
+  blocks: Block[]
+  /** 이 섹션이 자기 카드로 선다 (FRT-320). TemplateSection.standalone 을 넘긴다. */
+  standalone?: boolean
+  /** 섹션 이름 — standalone 카드의 제목이 된다. TemplateSection.label 을 넘긴다. */
+  label?: string
+  /** 섹션 안내 문구 — standalone 카드의 카드 설명이 된다. TemplateSection.description 을 넘긴다. */
+  description?: string
+}
 export interface FormCardModel {
+  /**
+   * 카드의 고유 식별자 (FRT-320). React key·앵커·`data-section-id` 가 이 값을 쓴다.
+   * standalone 이 아닌 카드(기존 전 유형)는 category 와 같고, standalone 카드는 섹션 id 다 —
+   * 같은 카테고리 카드가 여러 장일 수 있으므로 category 는 더 이상 카드를 유일하게
+   * 가리키지 못한다.
+   */
+  id: string
   category: SectionCategory
   label: string
+  /** standalone 카드의 안내 문구. 나머지 카드는 기존 SECTION_DESCRIPTION_OVERRIDES 경로를 쓴다. */
+  description?: string
   blocks: Block[]
   optional?: boolean
 }
@@ -83,18 +103,67 @@ export function computeFormCards(
   const anchorLabels = new Set<string>()
   for (const s of typeSections) for (const b of s.blocks) anchorLabels.add(b.label)
 
-  // core 블록(헤더·증빙 제외) 분류 + dedup
-  const buckets: Record<SectionCategory, Block[]> = { basic: [], detail: [], repeat: [], evidence: [] }
+  // ── 카드 골격 (FRT-320) ─────────────────────────────────────────
+  // `standalone: true` 를 명시한 섹션만 자기 카드로 선다('나는 누구인가?'의 7섹션 확정본).
+  // ⚠️ "같은 카테고리 2개 이상이면 분할" 같은 개수 추론은 쓰지 않는다 — 프로젝트는 evidence
+  // 섹션 2개가 한 카드('공개 / 배포 · 결과물')로 합쳐지는 것이 확정본이라, 추론 규칙은 기존
+  // 유형을 깨뜨린다. 켜지 않은 섹션(기존 전 유형)은 현행 카테고리당 1카드(id=category)
+  // 그대로다 — form-cards.test.ts 의 전칭 단언("self-identity 외 전 유형 카드 id=카테고리")이
+  // 이 경계를 지킨다.
+  const cards: FormCardModel[] = []
+  const cardBySection = new Map<string, FormCardModel>()
+  const lastCardByCat = {} as Record<SectionCategory, FormCardModel>
+  for (const { id: cat, label: defaultLabel } of SECTION_CATEGORIES) {
+    const own = typeSections.filter(s => s.category === cat)
+    const standalone = own.filter(s => s.standalone)
+    for (const s of standalone) {
+      const card: FormCardModel = {
+        id: s.id,
+        category: cat,
+        // standalone 카드의 이름은 섹션이 정한다 — 카테고리 키인 labelOverrides 를 여기
+        // 적용하면 같은 카테고리의 모든 카드가 한 이름으로 겹쳐 불린다.
+        label: s.label ?? defaultLabel,
+        ...(s.description ? { description: s.description } : {}),
+        blocks: [],
+        optional: cat === "detail" || undefined,
+      }
+      cards.push(card)
+      cardBySection.set(s.id, card)
+      lastCardByCat[cat] = card
+    }
+    // 카테고리 카드는 standalone 이 아닌 섹션이 있거나, standalone 카드가 하나도 없을 때만
+    // 만든다 — 전부 standalone 인 카테고리에 빈 카테고리 카드를 두면 잔여(설정) 블록이 거기
+    // 고여 '경험 상세' 한 칸짜리 카드가 생긴다(잔여는 마지막 standalone 카드에 붙는 것이 현행
+    // 시각 위치와 같다).
+    if (standalone.length === 0 || own.some(s => !s.standalone)) {
+      const card: FormCardModel = {
+        id: cat,
+        category: cat,
+        label: labelOverrides?.[cat] ?? defaultLabel,
+        blocks: [],
+        optional: cat === "detail" || undefined,
+      }
+      cards.push(card)
+      lastCardByCat[cat] = card
+    }
+  }
+  // 목적지 카드. 자기 섹션이 standalone 카드를 가지면 그 카드, 아니면(코어·extended·다른
+  // 섹션에서 category 로 넘어온 블록) 그 카테고리의 **마지막** 카드 — 설정(공개 설정) 같은
+  // 잔여 블록이 분할돼도 현행 시각 위치(카테고리 맨 아래)를 유지한다.
+  const dest = (cat: SectionCategory, sectionId?: string): FormCardModel => {
+    const own = sectionId !== undefined ? cardBySection.get(sectionId) : undefined
+    return own && own.category === cat ? own : lastCardByCat[cat]
+  }
 
-  // 코어 증빙 자료는 항상 evidence 버킷에 직접 추가 (dedup 없음)
-  if (coreEvidenceBlock) buckets.evidence.push(coreEvidenceBlock)
+  // 코어 증빙 자료는 항상 evidence 카드에 직접 추가 (dedup 없음)
+  if (coreEvidenceBlock) dest("evidence").blocks.push(coreEvidenceBlock)
 
   const keepCoreOrExtended = (b: Block, others: Set<string>) =>
     !isBlockEmpty(b) || !hasEquivalentIn(b.label, others)
 
   // 1) type-specific 섹션 블록 → category 그대로 (anchor 이므로 dedup 대상 아님)
   for (const s of typeSections) {
-    for (const b of s.blocks) buckets[b.category ?? s.category].push(b)
+    for (const b of s.blocks) dest(b.category ?? s.category, s.id).blocks.push(b)
   }
 
   // 2) core 블록(헤더·증빙 제외) → block.category, anchor 와 중복 dedup
@@ -102,7 +171,7 @@ export function computeFormCards(
   const survivingCore: Block[] = []
   for (const b of coreNonHeader) {
     if (keepCoreOrExtended(b, anchorLabels)) {
-      buckets[b.category ?? "detail"].push(b)
+      dest(b.category ?? "detail").blocks.push(b)
       survivingCore.push(b)
     }
   }
@@ -112,26 +181,17 @@ export function computeFormCards(
   for (const b of survivingCore) usedLabels.add(b.label)
   const extended = sections.find(s => s.id === "extended")
   for (const b of extended?.blocks ?? []) {
-    if (keepCoreOrExtended(b, usedLabels)) buckets[b.category ?? "detail"].push(b)
+    if (keepCoreOrExtended(b, usedLabels)) dest(b.category ?? "detail").blocks.push(b)
   }
 
-  const cards: FormCardModel[] = []
-  for (const { id, label } of SECTION_CATEGORIES) {
-    const blocks = buckets[id]
-    if (blocks.length === 0) continue
-    cards.push({
-      category: id,
-      label: labelOverrides?.[id] ?? label,
-      blocks,
-      optional: id === "detail" || undefined,
-    })
-  }
+  const visibleCards = cards.filter(c => c.blocks.length > 0)
 
   return {
     titleBlock,
     summaryBlock,
-    cards,
-    visibleCategories: cards.map(c => c.category),
+    cards: visibleCards,
+    // 분할로 같은 카테고리 카드가 여러 장이어도 카테고리는 한 번만 나열한다.
+    visibleCategories: [...new Set(visibleCards.map(c => c.category))],
   }
 }
 
@@ -195,8 +255,13 @@ export function isCardComplete(card: FormCardModel, hiddenKeys: string[] = []): 
   const required = blocks.filter(isRequiredBlock)
   if (required.length > 0) return required.every(isBlockFilledForProgress)
   // 치울 것을 다 치워 남은 칸이 없으면 이 카드에서 할 일은 끝났다.
-  if (blocks.length === 0) return true
-  return blocks.some(isBlockFilledForProgress)
+  //
+  // 빈 첨부 표는 × 가 붙지 않아 숨김 목록으로 사라지지 않는다 — 남은 일로 세면 사용자가
+  // 손쓸 방법이 없는 칸 하나가 카드를 영원히 미완료로 붙잡는다(FRT-291 리뷰). "치울 것을
+  // 다 치웠다"의 뜻을 **사용자가 치울 수 있었던 것**으로 읽는다.
+  const actionable = blocks.filter(b => !isUnhideableAttachmentHost(b))
+  if (actionable.length === 0) return true
+  return actionable.some(isBlockFilledForProgress)
 }
 
 /** 표시된 고정 카드들의 진행도(완료 카드 수 / 전체 카드 수). 사용자 추가 섹션은 제외. */
@@ -205,4 +270,53 @@ export function computeFormProgress(
   hiddenKeys: string[] = []
 ): { done: number; total: number } {
   return { total: cards.length, done: cards.filter(c => isCardComplete(c, hiddenKeys)).length }
+}
+
+/**
+ * FRT-107: 이탈·진행 계측이 읽는 폼의 진행 자취. 값은 전부 비식별(카드 id·블록 키)이다.
+ * 화면은 이 값을 쓰지 않는다 — 진행도 바가 쓰는 건 `computeFormProgress` 쪽이다.
+ */
+export interface FormCompletionSnapshot {
+  /** 표시된 고정 카드 id 전체 — 폼 순서. 이탈 지점을 자리로 읽으려면 순서가 필요하다. */
+  sectionIds: string[]
+  /** 그중 완료된 카드 id — 폼 순서 유지. */
+  completedSectionIds: string[]
+  /** 값이 들어간 정성 항목(「경험 상세」)의 블록 키. 사용자가 쓴 내용은 담지 않는다. */
+  qualitativeFieldsFilled: string[]
+}
+
+/**
+ * FRT-107: 완료된 카드의 id — **폼 순서 그대로**.
+ *
+ * `computeFormProgress` 의 done 과 같은 판정을 쓴다(같은 `isCardComplete`). 개수만으로는
+ * "어디서 멈췄나"를 못 묻기 때문에 자리를 남기는 것이 요점이고, 그래서 판정이 진행도 바와
+ * 갈리면 안 된다 — 갈리면 화면이 60% 라고 말하는 순간 계측은 다른 이야기를 남긴다.
+ */
+export function completedCardIds(cards: FormCardModel[], hiddenKeys: string[] = []): string[] {
+  return cards.filter(c => isCardComplete(c, hiddenKeys)).map(c => c.id)
+}
+
+/**
+ * FRT-107: 정성 항목(「경험 상세」) 중 실제로 값이 들어간 블록의 **키**.
+ *
+ * "정성적 맥락을 기록한다"는 ARC 의 근본 가설이 실제 행동에서 지켜지는지 보는 값이다.
+ * 정의서는 이걸 `archive_field_completed` 이벤트로 두자고 했지만, 필드마다 쏘면 볼륨이
+ * 폭증하는 데 비해 같은 질문을 이 목록 하나가 더 싸게 답한다 — 그래서 이벤트가 아니라
+ * 속성이다.
+ *
+ * 키가 없는 블록은 싣지 않는다. 템플릿 블록의 키는 `${sectionId}.${label}` 로 템플릿이
+ * 소유한 라벨이지만, 키가 없는 블록은 사용자가 직접 붙인 이름일 수 있어 PII 위험이 있다.
+ * (사용자가 추가한 섹션 자체는 애초에 카드에 들어오지 않는다 — `computeFormCards` 는
+ * 코어와 템플릿 확장만 재구성한다.)
+ */
+export function filledQualitativeKeys(
+  cards: FormCardModel[],
+  hiddenKeys: string[] = []
+): string[] {
+  const hidden = new Set(hiddenKeys)
+  return cards
+    .filter(c => c.category === "detail")
+    .flatMap(c => c.blocks)
+    .filter(b => !!b.key && !hidden.has(b.key) && isBlockFilledForProgress(b))
+    .map(b => b.key as string)
 }

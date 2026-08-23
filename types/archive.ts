@@ -153,6 +153,37 @@ export interface BlockRow {
    * 노출 여부는 블록 층위 `Block.allowRowExtras` 로 템플릿이 opt-in 한다.
    */
   extraFields?: RowExtraField[]
+  /**
+   * 이 행에만 붙은 결과물 첨부 목록 (FRT-291).
+   *
+   * 확정본 프로젝트 ③ 은 세부 작업마다 결과물을 **여러 개** 등록한다. 셀 값(`CellValue`)은
+   * 단일 값이라 목록을 담을 수 없고 `BlockColumnDef.blockType` 은 `repeatable-cell` 을
+   * 제외하므로, 열을 늘리는 대신 `extraFields`·`roleTags`·`linkedProjectRowId` 와 같은
+   * **행 필드**로 얹는다(additive·무마이그레이션, value(JSONB) 경로로 직렬화).
+   * 노출 여부는 블록 층위 `Block.allowRowArtifacts` 로 템플릿이 opt-in 한다.
+   *
+   * ⚠️ 파일을 담으므로 `hostsAttachment`(hidden-fields.ts)의 업로드 유실 불변식이 이 경로에도
+   * 서야 한다 — 그 함수는 `file` **열**만 보므로 행 첨부는 그냥 두면 검사를 통과해 버린다.
+   */
+  artifacts?: RowArtifact[]
+}
+
+/**
+ * 행 첨부 한 건 (FRT-291). 확정본의 'artifact-blocks (파일 or 링크 + 설명)' 한 줄에 대응한다.
+ *
+ * 링크와 파일을 **둘 다** 담을 수 있게 둔 것은 확정본 ⑤ '결과물 링크 / 파일'(link·file·desc
+ * 3컬럼 표)과 같은 모양을 유지하기 위해서다 — 같은 질문을 층위만 달리해 묻는데 담는 것이
+ * 달라지면, 나중에 둘 사이에 값을 옮길 때 한쪽이 조용히 버려진다.
+ *
+ * 파일은 `FileCellValue` 를 그대로 재사용한다(신규 값 타입을 만들지 않는다) — 업로드·다운로드
+ * 배선이 그 모양에 이미 맞춰져 있고, 모양이 갈리면 `cellFilled` 같은 공유 술어가 한쪽을 못 읽는다.
+ */
+export interface RowArtifact {
+  id: string
+  /** 사용자가 적는 링크. 만료되는 presigned URL(`FileCellValue`)과 다른 층이다. */
+  url?: string
+  file?: FileCellValue
+  desc?: string
 }
 
 /**
@@ -212,6 +243,13 @@ export type BlockValue =
   | TableBlockValue
   | GroupBlockValue
 
+/**
+ * '＋ 빠른 선택' 그룹 픽커 프리셋 식별자 (FRT-130).
+ * 실제 카테고리·항목 목록은 `lib/constants/quick-pick-presets.ts` 가 소유한다 —
+ * 여기엔 id 만 두어 타입 층(의존성 최하층)이 상수 모듈을 참조하지 않게 한다.
+ */
+export type QuickPickPresetId = 'industry' | 'job-function'
+
 // ─── Section Category (입력 폼 4섹션 분류, FRT-70) ───────────────
 export type SectionCategory = "basic" | "detail" | "repeat" | "evidence"
 
@@ -255,9 +293,56 @@ export interface Block {
    * 프리셋이라 체크리스트의 옵션 추가·삭제 UI 를 숨긴다(FRT-177).
    * `'role-history'` 는 `repeatable-cell` 을 접이식 역할 이력 패널(RoleHistoryBlock)로 렌더한다.
    * 이 블록의 역할명이 폼 안의 모든 역할 칩 선택지가 된다(FRT-178).
+   * `'binary-choice'` 는 `single-select` 를 두 카드 나란히 양자택일 UI(BinaryChoiceBlock)로
+   * 렌더한다(FRT-320) — 옵션이 정확히 2개일 때만 이 UI 가 뜨고, 아니면(사용자가 옵션 편집으로
+   * 늘린 저장값 등) 값이 숨지 않도록 SingleSelectBlock 드롭다운으로 폴백한다.
    * 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다 — 로드 시 레지스트리에서 재공급된다.
    */
-  variant?: 'outcome-list' | 'mood-tag' | 'role-history'
+  variant?: 'outcome-list' | 'mood-tag' | 'role-history' | 'binary-choice'
+  /**
+   * 이모티콘/키워드 태그에 사용자가 직접 새 태그를 추가할 수 있게 한다 (FRT-320, '나는
+   * 누구인가?' ① 키워드). `variant: 'mood-tag'` 블록에서만 의미가 있고, `roleTags` 와 같은
+   * 인스턴스별 opt-in 규약이다 — 켜지 않은 블록(대외활동·동아리 등)의 동작은 완전히 그대로다.
+   * 저장 shape 은 바뀌지 않는다: 새 태그는 `options`(프리셋)를 건드리지 않고 `checked` 에만
+   * 추가되고, `moodTagOptions()` 의 기존 "checked 에만 남은 값도 뒤에 붙인다" 폴백이 다음
+   * 렌더에서 그대로 그려 준다. 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
+   */
+  allowCustomTag?: boolean
+  /**
+   * '＋ 빠른 선택' 그룹 픽커를 켠다 (FRT-130, 인턴 ① 산업·직무). 값은 어느 프리셋 목록을 쓸지
+   * 가리키는 id 이고, 실제 목록은 `lib/constants/quick-pick-presets.ts` 가 소유한다.
+   * `allowCustomTag`·`roleTags` 와 같은 인스턴스별 opt-in 규약이다 — 켜지 않은 블록의 동작은
+   * 완전히 그대로다.
+   *
+   * ⚠️ **입력 보조일 뿐 저장 shape 을 바꾸지 않는다.** `tags` 블록이면 고른 항목이 `tags` 배열에,
+   * `text` 블록이면 `text` 문자열에 그냥 들어간다 — 픽커에 없는 값도 자유 입력으로 계속 들어오고,
+   * 목록을 나중에 바꿔도 기존 레코드는 살아 있다. 라벨을 안 바꾸므로 안정키도 무변경이다.
+   *
+   * ⚠️ 모르는 id 는 픽커를 켜지 않고 기존 자유 입력 UI 로 폴백한다(`getQuickPickPreset` → null).
+   * 새 프론트가 추가한 프리셋을 구 프론트가 만났을 때 입력이 막히면 안 된다.
+   *
+   * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다
+   * (로드 시 레지스트리에서 재공급).
+   */
+  quickPick?: QuickPickPresetId
+  /**
+   * 프리셋의 '기타'를 고르면 그 자리에서 직접 입력하게 한다 (FRT-322, 확정본 15개 필드).
+   * `variant`·`allowCustomTag`·`quickPick` 과 같은 인스턴스별 opt-in 규약이다 — 켜지 않은
+   * 블록의 동작은 완전히 그대로다. 템플릿이 소유한 드롭다운은 인라인 옵션 편집이 막혀 있으므로
+   * 이것이 프리셋 밖 값을 넣는 **유일한 통로**다.
+   *
+   * ⚠️ **저장 shape 을 바꾸지 않는다.** 입력한 값은 `selected` 에 원문 그대로 들어간다
+   * ("기타"가 아니라 "항공"). 새 값 필드를 만들면 `selected` 문자열만 읽는 소비처
+   * (포트폴리오 공개 판정 build-portfolio.ts, 백엔드 분석)가 그 값을 못 본다 —
+   * 저장은 id 가 아니라 이름이라는 FRT-178 규약과 같은 이유다.
+   * 다시 열 때 `selected` 가 프리셋 밖이면 '기타' 모드로 복원한다.
+   *
+   * ⚠️ 옵션 목록에 '기타'가 없으면 아무 일도 하지 않는다 — 플래그만 켜진 블록에서 UI 가 열려
+   * 값을 덮는 일이 없어야 한다.
+   *
+   * 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다(로드 시 레지스트리에서 재공급).
+   */
+  allowOther?: boolean
   /**
    * '프로젝트로 연결' 링크 설정 (FRT-76). OutcomeList 인스턴스별로 opt-in 한다 —
    * 있으면 각 활동 행에 링크 버튼이 노출되고, 없으면 미노출(설정 가능한 on/off).
@@ -288,6 +373,15 @@ export interface Block {
    * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
    */
   allowRowExtras?: boolean
+  /**
+   * 각 행에 결과물(링크·파일·설명)을 **여러 건** 붙일 수 있게 한다 (FRT-291).
+   * `allowRowExtras` 와 같은 인스턴스별 opt-in 규약이고, 값은 `BlockRow.artifacts` 에 저장된다.
+   * 열이 아니라 행에 붙으므로 `lockColumns` 와도 충돌하지 않는다.
+   *
+   * ⚠️ 켜는 순간 그 블록은 파일을 담을 수 있게 된다 → `canHideBlock` 이 × 를 막아야 한다
+   * (업로드 중 언마운트로 고른 파일이 조용히 사라지는 것을 막는 불변식, hidden-fields.ts).
+   */
+  allowRowArtifacts?: boolean
   /**
    * 조건부 노출 (FRT-211). 다른 블록(트리거)의 현재 값에 따라 이 필드를 보이거나 숨긴다 —
    * 수상경력 확정본의 "'개인 / 팀'에서 '팀 수상'을 고르면 '팀에서 내가 맡은 역할'이 나타난다".
@@ -352,12 +446,23 @@ export type ExperienceTypeId =
   | 'reading'
   | 'journal'
   | 'goal'
+  | 'self-identity'
 
 export interface ExperienceTypeInfo {
   id: ExperienceTypeId
   label: string
   icon: string
   category: 'academic' | 'career' | 'project' | 'personal'
+}
+
+/**
+ * 프로젝트는 개인·팀 두 id 가 **같은 템플릿**을 공유하므로(FRT-291) 표시 오버라이드도 같아야 한다.
+ * 한쪽만 등록하면 같은 폼인데 저장된 유형에 따라 카드 이름이 갈린다.
+ */
+const PROJECT_SECTION_LABELS: Partial<Record<SectionCategory, string>> = {
+  detail: '프로젝트 상세',
+  repeat: '세부 작업 기록',
+  evidence: '공개 / 배포 · 결과물',
 }
 
 /**
@@ -394,6 +499,27 @@ export const SECTION_LABEL_OVERRIDES: Partial<
   // 연구논문 확정본 ②③④(FRT-269). basic 은 오버라이드하지 않는다 — 확정본 ① 의 이름이 기본
   // 라벨과 같은 '기본 정보'이고, 헤더 코어(경험명·한 줄 요약)도 함께 드는 카드다.
   'research': { detail: '연구 내용', repeat: '게재 / 발표 이력', evidence: '연구 증빙' },
+  // 프로젝트 확정본 ②③④⑤(FRT-291). basic 은 오버라이드하지 않는다 — 헤더 코어(경험명·한 줄
+  // 요약)와 코어 '내 역할/기여도'가 함께 드는 카드라 기본 라벨 '기본 정보'가 맞다.
+  // evidence 이름이 둘을 합친 것인 이유는 확정본 5섹션이 고정 4카테고리로 접히기 때문이다
+  // (④ 공개/배포 + ⑤ 결과물/증빙 → 한 카드, templates-v2 `projectExtensions` 주석 참조).
+  'personal-project': PROJECT_SECTION_LABELS,
+  'team-project': PROJECT_SECTION_LABELS,
+  // '나는 누구인가?' 확정본 ① (FRT-320). basic 카드에는 헤더 코어(경험명·한 줄 요약)가 카드
+  // 밖(헤더)으로 빠지고 ① 필드만 남으므로 확정본 이름을 그대로 쓴다. detail 카드들은 섹션당
+  // 1카드로 분할되어 각 섹션의 label(②~⑦ 이름)이 카드 제목이 된다 — 카테고리 키인 이 표로는
+  // 여섯 카드에 이름을 따로 줄 수 없어 여기엔 basic 만 둔다.
+  'self-identity': { basic: '나를 소개한다면' },
+}
+
+/** 프로젝트 안내 문구 — 개인·팀 두 id 공유(FRT-291). */
+const PROJECT_SECTION_DESCRIPTIONS: Partial<Record<SectionCategory, string>> = {
+  detail:
+    '이 프로젝트가 무엇이었는지, 어떻게 진행했는지, 무엇을 얻었는지 항목별로 기록해주세요.',
+  repeat:
+    '이 프로젝트를 단계별·기능별로 더 자세히 남기고 싶다면 기록해주세요. 기획, 개발, 디자인, 검증 등 원하는 단위로 추가할 수 있어요.',
+  evidence:
+    '어디에 공개했고 어떤 반응이 있었는지, 그리고 프로젝트를 직접 확인할 수 있는 링크나 파일을 남겨주세요.',
 }
 
 /**
@@ -455,6 +581,18 @@ export const SECTION_DESCRIPTION_OVERRIDES: Partial<
     evidence:
       '연구 참여 확인서, 상장, IRB 승인서 등 이 연구를 증명할 수 있는 자료를 첨부해주세요.',
   },
+  // 프로젝트 확정본 ②③ 의 섹션 안내는 문서 문구 그대로다(FRT-291). evidence 는 ④⑤ 가 한 카드로
+  // 합쳐진 자리라 확정본 ⑤ 의 안내에 ④ 를 포함해 다시 썼다 — 문서의 한 문장을 그대로 쓰면
+  // 카드 절반(배포 이력)을 설명하지 못한다.
+  'personal-project': PROJECT_SECTION_DESCRIPTIONS,
+  'team-project': PROJECT_SECTION_DESCRIPTIONS,
+  // '나는 누구인가?' 상단 가이드 배너 (FRT-320). 확정본은 페이지 최상단 독립 배너를 그리지만
+  // 폼 셸에 그런 슬롯이 없어 첫 카드(①)의 안내 문단으로 근사한다. ⑤⑦ 의 섹션 안내는
+  // 분할 카드라 이 표(카테고리 키)가 아니라 TemplateSection.description 이 싣는다.
+  'self-identity': {
+    basic:
+      '이 페이지는 천천히, 오래 두고 채워가세요. 한 번에 다 채울 필요 없어요 — 면접 준비, 자소서 작성, 일상의 단상에서 하나씩 추가해도 좋아요. 여기 적어둔 내용이 자기소개서·면접 답변을 생성할 때 "나다운 결"을 잡는 핵심 재료가 됩니다.',
+  },
 }
 
 // ─── Templates ──────────────────────────────────────────────────
@@ -464,6 +602,20 @@ export interface TemplateSection {
   label: string
   /** 입력 폼 4섹션 분류 (FRT-70). 섹션 블록은 기본적으로 이 category 로 묶인다. */
   category: SectionCategory
+  /**
+   * 이 섹션이 카테고리 버킷에 합쳐지지 않고 **자기 카드**로 선다 (FRT-320).
+   * ⚠️ 개수로 추론하지 않고 명시로만 켠다 — "같은 카테고리 2개 이상이면 분할" 같은 파생
+   * 규칙은 이미 프로젝트(evidence 섹션 2개가 한 카드 '공개 / 배포 · 결과물'로 합쳐지는 것이
+   * 확정본)를 깨뜨린다. 켜지 않은 섹션(기존 전 유형)은 현행 카테고리당 1카드 그대로다.
+   * 켠 카드의 제목은 `label`, 안내는 `description` 이 담당한다(카테고리 키 오버라이드는
+   * 같은 카테고리의 여러 카드를 구분하지 못하므로).
+   */
+  standalone?: boolean
+  /**
+   * 섹션 카드 제목 아래 안내 문단 (FRT-320). `standalone` 카드에서만 쓰인다 — 카테고리
+   * 카드는 기존 `SECTION_DESCRIPTION_OVERRIDES` 경로를 그대로 쓴다.
+   */
+  description?: string
   collapsed?: boolean
   blocks: Block[]
 }

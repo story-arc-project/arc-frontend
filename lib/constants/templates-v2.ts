@@ -1,11 +1,11 @@
 import type { TemplateV2, TemplateSection, ExperienceTypeInfo, ExperienceTypeId, SectionCategory } from '@/types/archive'
 import {
+  createBinaryChoiceField,
   createTextField,
   createTextareaField,
   createDateField,
   createPeriodField,
   createSelectField,
-  createChecklistField,
   createMoodTagField,
   createTagsField,
   createLinkField,
@@ -30,20 +30,82 @@ export const EXPERIENCE_TYPES: ExperienceTypeInfo[] = [
   { id: 'certification', label: '보유 자격증', icon: 'BadgeCheck', category: 'career' },
   { id: 'language', label: '어학 능력', icon: 'Languages', category: 'career' },
   // Project
-  { id: 'personal-project', label: '개인 프로젝트', icon: 'Rocket', category: 'project' },
-  { id: 'team-project', label: '팀 프로젝트', icon: 'UsersRound', category: 'project' },
+  // 확정본은 개인/팀을 **유형이 아니라 항목**으로 묻는다(① '개인 / 팀' 드롭다운) → 유형은 하나다.
+  // id 를 'project' 로 새로 만들지 않고 기존 'personal-project' 를 쓰는 이유: `type` 문자열은
+  // 생성 요청으로 백엔드에 그대로 저장되고 분석 파이프라인이 그 값을 읽는데, 한 번도 보낸 적 없는
+  // 값을 새로 보내는 것은 검증할 수 없는 계약 변경이다. 이미 받고 있는 값을 쓰면 그 위험이 0이다.
+  { id: 'personal-project', label: '프로젝트', icon: 'Rocket', category: 'project' },
   { id: 'creative-work', label: '창작물/작업물', icon: 'Palette', category: 'project' },
   // Personal
+  // 확정본 14종에 없는 `sports`·`journal`·`goal` 은 아래 `RETIRED_EXPERIENCE_TYPES` 로 옮겼다(FRT-300).
   { id: 'volunteer', label: '봉사활동', icon: 'Heart', category: 'personal' },
   { id: 'overseas', label: '해외 경험', icon: 'Globe', category: 'personal' },
-  { id: 'sports', label: '운동 및 신체 역량', icon: 'Dumbbell', category: 'personal' },
   { id: 'reading', label: '독서', icon: 'BookMarked', category: 'personal' },
+  // '나는 누구인가?'(FRT-320) — 경험이 아니라 자기 인식 프로필. 아이콘은 lucide 에 실재하는
+  // 이름이어야 한다(TypeSelector.getIcon 이 오탈자면 FileText 로 조용히 폴백한다).
+  { id: 'self-identity', label: '나는 누구인가?', icon: 'Fingerprint', category: 'personal' },
+]
+
+/**
+ * 선택 목록에서는 내렸지만 **저장된 레코드에는 남아 있는** 유형 (FRT-291 · FRT-300).
+ *
+ * 내려간 사정이 둘로 갈리고, 그 차이가 아래 `RETIRED_TYPE_ALIAS` 에 실릴지를 가른다:
+ *  · **흡수** — `team-project` 는 확정본이 개인/팀을 한 유형으로 합치면서 자리를 `personal-project`
+ *    에게 넘겼다. 라벨·아이콘을 현행 프로젝트와 같게 맞추고 alias 로 접어, 사용자에게는 애초에
+ *    한 유형이었던 것처럼 보이게 한다.
+ *  · **폐기** — `sports`·`journal`·`goal` 은 확정본 14종에 들지 못했고 **대신할 유형이 없다.**
+ *    그래서 alias 를 걸지 않는다 — 접을 곳이 없는데 접으면 남의 유형으로 둔갑한다. 자기 라벨과
+ *    자기 템플릿을 그대로 둔 채 '새로 고를 수 없는 유형'이 될 뿐이다.
+ *
+ * 어느 쪽이든 `EXPERIENCE_TYPE_MAP` 에서 빼면 두 가지가 동시에 깨진다:
+ *  (ㄱ) `hasTemplate`(experience-mapper) 이 map 존재 여부로 v2 경로를 판정하므로, 그 유형으로 저장된
+ *       기존 레코드가 통째로 v1 경로로 떨어져 확정본 템플릿을 못 받는다.
+ *  (ㄴ) 라벨 조회(대시보드·카드·상세·레쥬메 선택)가 전부 `EXPERIENCE_TYPE_MAP[id]` 라 이름이 사라진다.
+ * 그래서 목록에서만 내리고 해석은 계속 되게 둔다.
+ */
+const RETIRED_EXPERIENCE_TYPES: ExperienceTypeInfo[] = [
+  { id: 'team-project', label: '프로젝트', icon: 'Rocket', category: 'project' },
+  { id: 'sports', label: '운동 및 신체 역량', icon: 'Dumbbell', category: 'personal' },
   { id: 'journal', label: '기록 (일지/회고)', icon: 'NotebookPen', category: 'personal' },
   { id: 'goal', label: '목표/계획', icon: 'Target', category: 'personal' },
 ]
 
+/**
+ * 선택지 + 은퇴 = 저장될 수 있는 유형 전체. **저장된 id 를 해석해야 하는 경로만** 쓴다
+ * (유형 선택기가 '이미 그 유형으로 저장된 기록'의 현재 유형을 되살릴 때 등).
+ * 새로 고를 수 있는 유형을 그리는 목록은 `EXPERIENCE_TYPES` 다.
+ */
+export const ALL_EXPERIENCE_TYPES: ExperienceTypeInfo[] = [
+  ...EXPERIENCE_TYPES,
+  ...RETIRED_EXPERIENCE_TYPES,
+]
+
 export const EXPERIENCE_TYPE_MAP: Record<ExperienceTypeId, ExperienceTypeInfo> =
-  Object.fromEntries(EXPERIENCE_TYPES.map(t => [t.id, t])) as Record<ExperienceTypeId, ExperienceTypeInfo>
+  Object.fromEntries(
+    ALL_EXPERIENCE_TYPES.map(t => [t.id, t]),
+  ) as Record<ExperienceTypeId, ExperienceTypeInfo>
+
+/**
+ * 은퇴한 id → 지금 그 자리를 대신하는 현행 id.
+ *
+ * 라벨 조회는 `EXPERIENCE_TYPE_MAP` 이 계속 해 주지만, **id 를 값으로 비교하는 소비처**는 그것만으로
+ * 부족하다. 유형 목록에서 내린 id 는 필터 칩이 만들어지지 않아 사용자가 그 값을 고를 수 없는데,
+ * 저장된 레코드에는 남아 있다 → 정확 일치로 거르는 순간 옛 기록이 목록에서 빠지고 **되돌릴 칩이
+ * 없다**. 사용자에게 이미 같은 이름의 한 유형이므로(둘 다 '프로젝트') 비교 전에 접어서 같게 만든다.
+ *
+ * **흡수된 유형만 여기 올린다.** 폐기된 `sports`·`journal`·`goal` 은 대신할 유형이 없어 접으면
+ * 남의 유형으로 둔갑하므로 빠져 있고, `canonicalTypeId` 를 지나도 자기 id 그대로 나온다.
+ */
+const RETIRED_TYPE_ALIAS: Partial<Record<ExperienceTypeId, ExperienceTypeId>> = {
+  'team-project': 'personal-project',
+}
+
+export const RETIRED_TYPE_IDS: ExperienceTypeId[] = RETIRED_EXPERIENCE_TYPES.map(t => t.id)
+
+/** id 로 유형을 **비교·집계**하는 모든 경로는 이걸 통과시킨 값으로 비교한다. */
+export function canonicalTypeId(typeId: ExperienceTypeId): ExperienceTypeId {
+  return RETIRED_TYPE_ALIAS[typeId] ?? typeId
+}
 
 export const TYPE_CATEGORIES = [
   { key: 'academic', label: '학업' },
@@ -124,6 +186,33 @@ const CORE_EXCLUDE: Partial<Record<ExperienceTypeId, string[]>> = {
   //    '파일 설명' + '증빙 유형' 세 칸이 FileBlockValue 와 1:1) — 빼면 첨부 수단이 통째로 사라진다.
   //    봉사·어학·해외는 유형 섹션이 자기 증빙 칸을 따로 가져서 뺐던 것이라 결론이 반대다.
   research: ['기간', '내 역할/기여도', '핵심 성과'],
+  // 프로젝트 확정본(FRT-291) — 유형이 합쳐졌으므로 판정식("구 섹션에 동명 또는 SEMANTIC_GROUPS
+  // 동의어 앵커가 있었나")을 **개인·팀 두 구 템플릿에 각각** 돌렸고, 필드마다 답이 갈렸다.
+  //  · '기간' — 구 `pp-info.기간`·`tp-info.기간` **둘 다 동명**. dedup 이 빈 코어를 지워 왔으므로
+  //    값은 코어가 아니라 유형 섹션 쪽에 있다 → 제외 안전. 확정본 ① 이 '진행 기간'을 갖는다.
+  //  · '핵심 성과' — 개인은 구 `pp-decisions.성과`(achievement 등재)로 앵커가 있었지만 **팀에는
+  //    없다**(`tp-tasks.결과` 는 표 컬럼이라 블록 라벨이 아니다) → 팀 레코드의 코어에는 값이 남아
+  //    있을 수 있다. 그런데 확정본 ② 의 라벨이 코어와 **정확히 같아**, 남기면 값이 든 코어와
+  //    확정본 칸이 나란히 서서 권위 있는 칸이 둘이 된다(FRT-267 ⑫ 의 무음 오염). 목적지가
+  //    outcome-list 라 값 이관은 타입이 막으므로(창작물 코어 증빙과 같은 자리), **빼서 '기타'에
+  //    원본 그대로 남긴다** — 칸은 하나가 되고 값은 잃지 않는다.
+  //  · '증빙 자료' — 확정본 ⑤ '결과물 링크 / 파일'이 그 자리다. 남기면 같은 카드에 파일 입력칸이
+  //    두 벌 생긴다(창작물·봉사·어학과 같은 처리).
+  //  · ⚠️ '내 역할/기여도'는 **빼지 않는다.** 구 개인 프로젝트 템플릿에는 role 동의어 앵커가
+  //    하나도 없어(팀에는 `tp-info.내 역할` 이 있었다) 그 코어 칸이 실제로 렌더됐고 값이 들어
+  //    있을 수 있다 — 빼면 '기타'로 밀린다. 확정본 '역할'이 새 앵커가 되므로 dedup 이 빈 것만
+  //    숨긴다: 신규 개인 프로젝트에는 역할 칸이 0개(확정본대로), 구 레코드의 값은 그대로 남는다.
+  'personal-project': ['기간', '핵심 성과', '증빙 자료'],
+  // 은퇴 id 도 같은 템플릿을 받으므로 판정도 같아야 한다 — 다르면 같은 폼인데 레코드 세대에 따라
+  // 카드 구성이 갈린다.
+  'team-project': ['기간', '핵심 성과', '증빙 자료'],
+  // '나는 누구인가?' 확정본(FRT-320) — 프로필 성격의 유형이라 core 4종(기간·역할·성과·증빙)이
+  // 전부 성립하지 않는 질문이다(education 과 같은 전부 제외). 신규 유형이라 구 레코드 판정
+  // (FRT-249 Codex P1 "구 섹션에 동명 앵커가 있었나")은 물을 대상이 없다.
+  // ⚠️ TYPE_PERIOD_KEY(build-portfolio) 미등록은 **의도**다 — 대체할 '시점' 필드 자체가 없는
+  // 유형이라, 발행 기간이 비고 기간순 정렬에서 맨 뒤로 가는 것이 맞는 동작이다(overseas 류는
+  // 대체 필드가 있어 등록했고, 이쪽은 등록할 것이 없다).
+  'self-identity': ['기간', '내 역할/기여도', '핵심 성과', '증빙 자료'],
 }
 
 /**
@@ -261,6 +350,7 @@ function educationExtensions(): TemplateSection[] {
         // 2단 배치는 FRT-144 라 지금은 형제 블록으로 펼쳐지므로, 한 문장을 첫 칸에만 남기면
         // 학점 칸이 성적·증빙까지 받는 것처럼 읽힌다. 문구를 각 칸이 받는 값으로 좁힌다.
         createSelectField('학점', ['1학점', '2학점', '3학점', '4학점', '기타'], {
+          allowOther: true,
           guide: '이수 학점을 선택해주세요.',
         }),
         createSelectField(
@@ -431,7 +521,7 @@ function extracurricularExtensions(): TemplateSection[] {
             '해외 프로그램 / 교환',
             '기타',
           ],
-          { required: true, guide: '이 활동의 유형을 선택해주세요.' },
+          { allowOther: true, required: true, guide: '이 활동의 유형을 선택해주세요.' },
         ),
         createTextField('기수 / 차수', {
           guide: '이 활동의 기수나 차수가 있다면 적어주세요.',
@@ -686,7 +776,7 @@ function academicSocietyExtensions(): TemplateSection[] {
             {
               key: 'period',
               label: '세부 기간',
-              blockType: 'text',
+              blockType: 'period',
               required: true,
               guide: '이 프로젝트가 진행된 기간을 선택해주세요.',
             },
@@ -791,7 +881,7 @@ function clubExtensions(): TemplateSection[] {
             '연합 동아리',
             '기타',
           ],
-          { required: true, guide: '이 단체의 성격을 선택해주세요.' },
+          { allowOther: true, required: true, guide: '이 단체의 성격을 선택해주세요.' },
         ),
         createTextField('소속 학교', {
           guide:
@@ -805,7 +895,7 @@ function clubExtensions(): TemplateSection[] {
         createSelectField(
           '소속 단위',
           ['중앙 동아리', '단과대 동아리', '학과 (과 동아리)', '연합 동아리', '학생회', '기타'],
-          { guide: '중앙 동아리인지, 학과·단과대 소속인지, 연합 동아리인지 알려주세요.' },
+          { allowOther: true, guide: '중앙 동아리인지, 학과·단과대 소속인지, 연합 동아리인지 알려주세요.' },
         ),
         createPeriodField('활동 기간', {
           required: true,
@@ -968,8 +1058,8 @@ function clubExtensions(): TemplateSection[] {
 }
 
 // 인턴 — 프로토타입 확정본(2026-07). 학회(FRT-90)와 동일한 3섹션 구조(basic/detail/repeat).
-// 산업/직무 '＋빠른 선택' 그룹 픽커는 후속 이슈(FRT-130) — 이번엔 태그·텍스트로 근사한다.
-// 그래서 문서의 "아래에서 선택해주세요" 류 안내는 싣지 않는다(없는 UI를 가리키게 된다).
+// 산업/직무는 '＋빠른 선택' 그룹 픽커를 켠다(FRT-130) — 저장은 여전히 태그·텍스트 그대로이고
+// 픽커는 그 위에 얹힌 입력 보조라, 목록에 없는 값도 직접 입력으로 계속 들어온다.
 // 지원 동기 예시문장 삽입·성장/변화 회고 카드·프로젝트 감정 태깅은 FRT-132.
 function careerExtensions(): TemplateSection[] {
   return [
@@ -983,18 +1073,20 @@ function careerExtensions(): TemplateSection[] {
           guide: '인턴으로 근무한 회사의 이름을 적어주세요.',
           placeholder: '예: OO주식회사',
         }),
-        // 산업/회사 종류 — 문서상 6카테고리 그룹 픽커. 이번엔 자유 태그로 근사(픽커는 FRT-130).
+        // 산업/회사 종류 — 6카테고리 그룹 픽커(다중 선택). "스타트업 + IT" 처럼 조합해 고른다.
         createTagsField('산업 / 회사 종류', {
-          guide: '이 회사가 속한 산업이나 종류를 자유롭게 입력해주세요. 여러 개 가능해요.',
+          quickPick: 'industry',
+          guide: '빠른 선택에서 고르거나 직접 입력해주세요. 여러 개 고를 수 있어요.',
         }),
         createTextField('부서 / 팀', {
           guide: '소속된 부서와 팀 이름을 적어주세요.',
           placeholder: '예: 마케팅본부 브랜드전략팀',
         }),
-        // 직무/포지션 — 문서상 단일선택 픽커(15종). 픽커는 FRT-130, 지금은 자유 입력 텍스트.
+        // 직무/포지션 — 5카테고리 15종 픽커(단일 선택). 텍스트 칸이라 고르면 값이 대체된다.
         createTextField('직무 / 포지션', {
           required: true,
-          guide: '담당한 직무나 포지션을 적어주세요.',
+          quickPick: 'job-function',
+          guide: '빠른 선택에서 고르거나 직접 적어주세요.',
           placeholder: '예: 브랜드 마케팅 인턴',
         }),
         createPeriodField('근무 기간', {
@@ -1077,7 +1169,7 @@ function careerExtensions(): TemplateSection[] {
           {
             key: 'period',
             label: '세부 기간',
-            blockType: 'text',
+            blockType: 'period',
             guide: '이 프로젝트가 진행된 기간을 선택해주세요.',
           },
           {
@@ -1170,6 +1262,7 @@ function awardExtensions(): TemplateSection[] {
           placeholder: '예: 2024 전국 대학생 창업 경진대회',
         }),
         createSelectField('대회 유형', [...AWARD_TYPE_OPTIONS], {
+          allowOther: true,
           required: true,
           guide: '이 상의 성격을 선택해주세요.',
         }),
@@ -1293,6 +1386,7 @@ function certificationExtensions(): TemplateSection[] {
           placeholder: '예: 정보처리기사, ADsP, CFA Level 1',
         }),
         createSelectField('자격증 분야', [...CERTIFICATION_FIELD_OPTIONS], {
+          allowOther: true,
           required: true,
           guide:
             '이 자격증이 속한 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
@@ -1412,6 +1506,7 @@ function languageExtensions(): TemplateSection[] {
       label: '언어 개요',
       blocks: [
         createSelectField('언어', [...LANGUAGE_OPTIONS], {
+          allowOther: true,
           required: true,
           guide: '이 경험과 관련된 언어를 선택해주세요.',
         }),
@@ -1615,6 +1710,7 @@ function researchExtensions(): TemplateSection[] {
           placeholder: '예: 대학생의 SNS 사용 패턴이 학업 몰입도에 미치는 영향',
         }),
         createSelectField('유형', [...RESEARCH_TYPE_OPTIONS], {
+          allowOther: true,
           required: true,
           guide: '이 연구/논문의 유형을 선택해주세요.',
         }),
@@ -1632,7 +1728,7 @@ function researchExtensions(): TemplateSection[] {
         // month~month 는 코어 '기간' 과 같은 period 위젯이라 구 `research-info.기간` 값을
         // 그대로 실을 수 있다(RENAMED_FIELD_KEYS).
         createPeriodField('연구 기간', { required: true }),
-        createSelectField('역할 / 기여도', [...RESEARCH_ROLE_OPTIONS]),
+        createSelectField('역할 / 기여도', [...RESEARCH_ROLE_OPTIONS], { allowOther: true }),
         createTextareaField('공저자 / 팀원', {
           guide: '함께 연구를 진행한 공저자나 팀원을 적어주세요.',
           placeholder: '예: OOO 교수 (지도), OOO (공동 1저자), OOO (데이터 분석)',
@@ -1764,74 +1860,290 @@ function researchExtensions(): TemplateSection[] {
   ]
 }
 
-function personalProjectExtensions(): TemplateSection[] {
-  return [
-    {
-      id: 'pp-info',
-      category: 'basic',
-      label: '프로젝트 정보',
-      blocks: [
-        createTextField('프로젝트명', { required: true }),
-        createPeriodField('기간', { required: true }),
-        createTextField('한 줄 설명', { required: true }),
-        createTextareaField('목표/만들고 싶었던 이유'),
-        createTextareaField('대상 사용자/사용 상황'),
-        createChecklistField('주요 기능', []),
-        createTagsField('기술/도구'),
-      ],
-    },
-    {
-      id: 'pp-decisions',
-      category: 'repeat',
-      label: '설계/결정 기록',
-      collapsed: true,
-      blocks: [
-        createRepeatableCell('설계/결정', [
-          { key: 'topic', label: '결정 주제', blockType: 'text', required: true },
-          { key: 'alternatives', label: '대안 비교', blockType: 'textarea' },
-          { key: 'reason', label: '선택 이유', blockType: 'textarea' },
-          { key: 'result', label: '결과/배운 점', blockType: 'textarea' },
-        ]),
-        createTextareaField('성과'),
-        createLinkField('데모/배포 링크'),
-        createLinkField('저장소 링크'),
-        createFileField('스크린샷/영상'),
-        createTextareaField('다음 개선 계획'),
-      ],
-    },
-  ]
-}
+// ─── 프로젝트 (확정본 `프로젝트_final`, FRT-291) ──────────────────
 
-function teamProjectExtensions(): TemplateSection[] {
+const PROJECT_TYPE_OPTIONS = [
+  '앱/웹 서비스 개발',
+  '데이터 분석/모델링',
+  '기획/전략 프로젝트',
+  '디자인 프로젝트',
+  '해커톤',
+  '스터디 결과물',
+  '비즈니스 아이디어 실험',
+  '콘텐츠/미디어 제작',
+  '기타',
+] as const
+
+const PROJECT_COLLAB_OPTIONS = [
+  '개인 프로젝트',
+  '팀 프로젝트(2~5명)',
+  '팀 프로젝트(6명 이상)',
+] as const
+
+/** ① '개인 / 팀' 의 안정키. 라벨을 바꾸면 이 문자열도 함께 바꿔야 한다(조건부 노출 트리거). */
+export const PROJECT_COLLAB_KEY = 'project-info.개인 / 팀'
+
+/** ① '개인 / 팀' 에서 "혼자 했다"를 뜻하는 선택지. 구 개인 프로젝트 레코드의 이관 목적지다. */
+export const PROJECT_SOLO_OPTION = PROJECT_COLLAB_OPTIONS[0]
+
+/**
+ * 개인·팀 프로젝트가 한 유형으로 합쳐진 템플릿 세대 (FRT-291).
+ *
+ * ⚠️ **`TEMPLATE_VERSION` 을 참조하지 말 것.** 이건 "지금 몇 세대인가"가 아니라 "id 가 개인/팀의
+ * 답이던 마지막 지점이 어디인가"를 가리키는 **고정된 이정표**다. 여기에 `TEMPLATE_VERSION` 을
+ * 쓰면 다음 개편으로 9가 되는 순간, 통합 이후에 저장돼 **사용자가 일부러 비워 둔** 레코드까지
+ * 구 레코드로 오인해 답을 대신 정해 버린다.
+ */
+export const PROJECT_TYPE_MERGE_VERSION = 8
+
+const PROJECT_SERVICE_STATUS_OPTIONS = [
+  '운영 중',
+  '종료(아카이브 공개)',
+  '종료(비공개)',
+  '개발 중/준비 중',
+] as const
+
+const PROJECT_GROWTH_OPTIONS = [
+  '🗺️ 기획/설계',
+  '⚡ 실행력',
+  '🧠 문제 해결력',
+  '🤝 협업/팀워크',
+  '🚩 리더십',
+  '⚙️ 기술 역량',
+  '👤 사용자 이해',
+  '📊 데이터 감각',
+  '🗣️ 커뮤니케이션',
+  '🎯 우선순위 판단',
+] as const
+
+/**
+ * 확정본은 5섹션인데 폼 카드는 고정 4카테고리다(`SECTION_CATEGORIES`) — 같은 category 의 섹션은
+ * `computeFormCards` 가 한 카드로 합친다. 그래서 ④ 공개/배포와 ⑤ 결과물/증빙을 evidence 한 장에
+ * 싣는다. 둘을 붙인 이유는 자리가 없어서만이 아니라 **읽는 순서가 이어지기 때문**이다 —
+ * 어디에 내놨고 · 반응이 어땠고 · 지금 살아 있고 · 여기 그 증거. ②(프로젝트 상세)를 서술 질문만으로
+ * 남겨 두는 편이 ④ 를 거기 끼워 넣는 것보다 카드의 뜻이 분명하다.
+ * (확정본 §7 "사이드 네비: 섹션 5개 앵커"는 이 구조에서 4개가 된다 — 선행 유형과 같은 미반영.)
+ */
+function projectExtensions(): TemplateSection[] {
   return [
     {
-      id: 'tp-info',
+      // 블록 순서는 확정본 ① 표 그대로다: 프로젝트명 → 유형 → 개인/팀 → ↳역할 → 진행 기간 →
+      // 사용 기술/툴 → 팀원. 시점 필드를 코어에 맡기지 않고 섹션이 소유해야 이 순서가 지켜진다.
+      id: 'project-info',
       category: 'basic',
-      label: '프로젝트 정보',
+      label: '프로젝트 기본 정보',
       blocks: [
-        createTextField('프로젝트명', { required: true }),
-        createPeriodField('기간', { required: true }),
-        createTextareaField('팀 구성'),
-        createTextareaField('내 역할', { required: true }),
-        createTextareaField('목표/문제 정의'),
-        createTextareaField('협업 방식'),
-        createTextareaField('역할 분담표'),
+        createTextField('프로젝트명', {
+          required: true,
+          guide: '이 프로젝트의 이름을 적어주세요.',
+          placeholder: '예: 캠퍼스 중고거래 앱 개발, 소상공인 브랜딩 사이드 프로젝트',
+        }),
+        createSelectField('프로젝트 유형', [...PROJECT_TYPE_OPTIONS], {
+          allowOther: true,
+          required: true,
+          guide: '이 프로젝트의 성격을 선택해주세요.',
+        }),
+        // 확정본이 가이드라인을 '—' 로 비운 칸 — 없는 문구를 지어내지 않는다.
+        createSelectField('개인 / 팀', [...PROJECT_COLLAB_OPTIONS]),
+        {
+          ...createTextField('역할', {
+            guide: '팀에서 내가 맡은 역할을 적어주세요.',
+            placeholder: '예: PM, 기획·발표 담당, 프론트엔드 개발, 디자인 총괄',
+          }),
+          // 확정본 §4 — "'개인 프로젝트' 외 선택 시 역할 필드 노출". `VisibilityCondition` 에 부정이
+          // 없어 양성 값을 열거하되, 손으로 적지 않고 **파생**시킨다 — 선택지가 늘었는데 조건을
+          // 안 늘리는 드리프트가 원리적으로 불가능하다(창작물 FRT-267 ⑥ 과 같은 수법).
+          visibleWhen: {
+            key: PROJECT_COLLAB_KEY,
+            equals: PROJECT_COLLAB_OPTIONS.filter(o => o !== '개인 프로젝트'),
+          },
+          // ⚠️ required 금지 — 조건부 노출이라 '개인 프로젝트'를 고르면 화면에 없는 칸이 완료 저장을
+          // 막는다(FRT-211).
+          //
+          // ⚠️ 라벨 '역할'은 `SEMANTIC_GROUPS.role` 동의어라, `computeFormCards` 가 `visibleWhen` 을
+          // 보지 않고 이 라벨을 앵커로 삼아 **빈 코어 '내 역할/기여도'를 항상 dedup 한다** →
+          // '개인 프로젝트'에서는 역할 칸이 하나도 남지 않는다. 확정본이 정한 그대로이고 사용자가
+          // 확인한 결과다(FRT-291). 값이 든 코어는 `keepCoreOrExtended` 가 남기므로 구 개인
+          // 프로젝트 레코드의 역할 값은 잃지 않는다 — 그래서 `CORE_EXCLUDE` 에 역할을 넣지 않았다.
+        },
+        // 확정본이 가이드라인을 '—' 로 비운 칸. month~month + '진행 중' 은 period 위젯이 그대로 받는다.
+        createPeriodField('진행 기간', { required: true }),
+        createTagsField('사용 기술 / 툴', {
+          guide: '이 프로젝트에서 사용한 기술 스택, 툴, 언어를 태그로 추가해주세요.',
+        }),
+        createTextareaField('팀원', {
+          guide: '함께한 팀원과 각자의 역할을 간략히 적어주세요.',
+          placeholder: '예: OOO(백엔드 개발), OOO(디자인), OOO(기획)',
+        }),
       ],
     },
     {
-      id: 'tp-tasks',
-      category: 'repeat',
-      label: '작업 기록',
+      id: 'project-detail',
+      category: 'detail',
+      label: '프로젝트 상세',
+      // 확정본 ② 는 "(필수)" 섹션인데 여섯 칸이 **모두** *(선택, 필드 삭제 가능)* 이다.
+      // 연구논문(FRT-269)과 같은 모순이라 같게 읽는다 — 카드를 지나가되 특정 칸을 강요하지
+      // 않는 것으로 보고 required 를 하나도 두지 않는다(사용자 확인 완료).
       blocks: [
-        createRepeatableCell('작업 기록', [
-          { key: 'task', label: '작업/이슈명', blockType: 'text', required: true },
-          { key: 'period', label: '기간', blockType: 'text' },
-          { key: 'work', label: '내가 한 일', blockType: 'textarea', required: true },
-          { key: 'result', label: '결과', blockType: 'textarea' },
-        ]),
-        createTextareaField('갈등/의견 차이와 조율'),
-        createLinkField('결과물 링크'),
-        createTextareaField('회고 (잘된 점/아쉬운 점/다음엔)'),
+        createTextareaField('기획 배경 / 동기', {
+          guide: '이 프로젝트를 시작하게 된 이유나 문제 의식이 있었나요?',
+          placeholder:
+            '예: 캠퍼스 내 중고거래가 단톡방에서 이루어지는 불편함을 직접 겪어 앱으로 해결하고자 시작했습니다',
+        }),
+        // 확정본 ② "핵심 성과 + ＋세부 기록 버튼 → ③ 에 블록 생성·스크롤" 은 학회·독서·어학이
+        // 쓰는 FRT-76 링크 그대로다 — 새 배선을 만들지 않는다.
+        // ⚠️ 라벨이 코어 '핵심 성과'와 **정확히 같다**(확정본 표기 유지, 사용자 확인). 값이 든 코어가
+        // 남으면 권위 있는 칸이 둘이 되어 사용자가 새 칸을 고쳐도 옛 값이 발행된다(FRT-267 ⑫) —
+        // 목적지가 outcome-list 라 값 이관은 타입이 막으므로, `CORE_EXCLUDE` 로 코어를 빼서
+        // 구 값이 '기타'에 원본 그대로 남게 한다(칸은 하나, 값은 보존).
+        createOutcomeList('핵심 성과', {
+          guide:
+            '이 프로젝트를 통해 만들어낸 결과나 임팩트를 리스트업해주세요. 수치, 반응, 채택 여부 등 무엇이든 괜찮아요. 더 자세히 남기고 싶은 항목은 ＋ 세부 기록으로 아래에 펼칠 수 있어요.',
+          placeholder: '예: 베타 출시 2주 만에 DAU 150명 달성',
+          itemLabel: '성과',
+          link: { targetSectionId: 'project-tasks', titleColumnKey: 'task', label: '＋ 세부 기록' },
+        }),
+        createTextareaField('어려움 / 문제 해결', {
+          guide:
+            '진행하면서 막혔던 지점이 있었나요? 어떻게 돌파했는지 적어주세요. 기술적 문제, 팀 갈등, 방향 전환 등 무엇이든 괜찮아요.',
+          placeholder:
+            '예: 초반 기획한 기능이 구현 일정과 맞지 않아, MVP 범위를 절반으로 줄이고 핵심 기능 2개에 집중하는 방향으로 피벗했습니다',
+        }),
+        createTextareaField('이 프로젝트가 나에게 남긴 것', {
+          guide: '새로 익힌 기술, 관점의 변화, 다음 프로젝트에 이어갈 방향 — 무엇이든 괜찮아요.',
+          placeholder:
+            '예: 완성도보다 빠른 출시와 검증이 중요하다는 걸 몸으로 배웠고, 이후 모든 프로젝트에서 MVP부터 정의하는 습관이 생겼습니다',
+        }),
+        // 확정본 ② 'Reflect 카드(10종 + 직접 추가)'. §4 는 "이모지 태그: 없음"이라 적었지만 선택지가
+        // 이모지 10종이라 문서가 스스로 어긋난다 — 기존 이모지 태그 위젯으로 받는다(사용자 확인).
+        // §7 의 "카드 클릭 시 하단에 textarea 자동 생성"은 넣지 않는다: 10개를 고르면 빈 칸 10개가
+        // 생겨 입력 허들 최소화 원칙과 정면으로 어긋난다(사용자 확인).
+        createMoodTagField('성장 / 변화', [...PROJECT_GROWTH_OPTIONS], {
+          guide: '이 프로젝트를 통해 성장하거나 변화한 부분을 골라주세요.',
+        }),
+      ],
+    },
+    {
+      id: 'project-tasks',
+      category: 'repeat',
+      label: '세부 작업 기록',
+      blocks: [
+        createRepeatableCell(
+          '세부 작업',
+          [
+            {
+              key: 'task',
+              label: '작업 단위명',
+              blockType: 'text',
+              required: true,
+              guide: '이 세부 작업의 이름을 적어주세요.',
+              placeholder: '예: 사용자 리서치, 핵심 기능 개발, UI 디자인, 베타 테스트',
+            },
+            // 확정본이 가이드라인을 '—' 로 비운 칸. month~month.
+            { key: 'period', label: '기간', blockType: 'period', placeholder: 'YYYY-MM' },
+            {
+              key: 'work',
+              label: '내가 한 일',
+              blockType: 'textarea',
+              required: true,
+              guide: '이 단계에서 내가 직접 맡아서 한 일을 적어주세요.',
+              placeholder: '예: Figma로 와이어프레임 3종 작성 후 팀원 피드백 반영, 최종 프로토타입 완성',
+            },
+            {
+              key: 'result',
+              label: '성과 / 결과',
+              blockType: 'textarea',
+              guide: '이 단계에서 만들어낸 산출물이나 성과가 있다면 적어주세요.',
+              placeholder: '예: 사용성 테스트 5명 통과, 핵심 플로우 오류율 0% 달성',
+            },
+            {
+              key: 'trouble',
+              label: '어려움 / 문제 해결',
+              blockType: 'textarea',
+              guide: '이 단계에서 막혔던 지점과 어떻게 돌파했는지 적어주세요.',
+              placeholder: '예: API 응답 지연 문제로 UX가 깨졌고, 로딩 스켈레톤 + 캐싱 처리로 해결했습니다',
+            },
+          ],
+          {
+            guide:
+              '이 프로젝트를 단계별·기능별로 더 자세히 남기고 싶다면 기록해주세요. 기획, 개발, 디자인, 검증 등 원하는 단위로 추가할 수 있어요.',
+            // 확정본 ③ '결과물' — 세부 작업 **하나당 여러 건**이라 열로는 담을 수 없다(셀 값은 단일).
+            // 행 첨부로 받는다(FRT-291). 열이 아니므로 `lockColumns` 와 충돌하지 않는다.
+            allowRowArtifacts: true,
+          },
+        ),
+      ],
+    },
+    {
+      id: 'project-release',
+      category: 'evidence',
+      label: '공개 / 배포 이력',
+      blocks: [
+        // 확정본은 채널명만 받는 불릿인데, 실제 주소(배포 URL·GitHub)를 남길 자리가 필요하다는
+        // 요청으로 채널+링크 2열 표로 받는다(FRT-291, 확정본 초과 결정). 칸을 새로 늘리지 않고
+        // 같은 질문 안에서 받아 입력 단계가 늘지 않게 했다.
+        // ⚠️ 컬럼에 required 금지 — 하나라도 붙으면 `isRequiredBlock` 이 표 전체를 필수로 보고
+        // `canHideBlock` 이 숨기지도 못해, 배포한 적 없는 프로젝트가 카드를 영영 완료 못 한다(FRT-236).
+        createRepeatableCell(
+          '배포 / 공개 채널',
+          [
+            {
+              key: 'channel',
+              label: '채널',
+              blockType: 'text',
+              placeholder: '예: App Store 출시, GitHub 오픈소스 공개',
+            },
+            {
+              key: 'link',
+              label: '링크',
+              blockType: 'link',
+              placeholder: 'https://',
+            },
+          ],
+          { guide: '어디에 배포하거나 공개했는지 채널과 주소를 적어주세요.' },
+        ),
+        createTextareaField('사용자 수 / 반응', {
+          guide: '실제 사용자 수, 다운로드 수, 조회수, 별점, 피드백 등 반응을 적어주세요.',
+          placeholder: '예: 베타 출시 3주 만에 누적 다운로드 500회 / 앱 스토어 평점 4.3',
+        }),
+        createOutcomeList('외부 노출 이력', {
+          guide: '언론 보도, 커뮤니티 바이럴, 공모전 수상, SNS 공유 등 외부에서 주목받은 사례를 적어주세요.',
+          placeholder: '예: OO 매체 취재',
+          itemLabel: '노출 이력',
+        }),
+        // 확정본 라벨은 '현재 운영 상태'인데 상단 진행 상태 토글(진행 중/완료)과 겹쳐 읽혀
+        // '서비스 운영 상태'로 바꿨다(FRT-291, 확정본 초과 결정). 앞은 "내 기록이 끝났나",
+        // 이쪽은 "그 서비스가 지금 살아 있나"로 서로 다른 질문이다.
+        createSelectField('서비스 운영 상태', [...PROJECT_SERVICE_STATUS_OPTIONS], {
+          guide: '이 프로젝트로 만든 것이 지금 어떤 상태인지 선택해주세요.',
+        }),
+      ],
+    },
+    {
+      id: 'project-artifacts',
+      category: 'evidence',
+      label: '결과물 / 증빙',
+      blocks: [
+        // 확정본 ⑤ 'artifact-blocks (다중 등록 가능)' — 창작물 '작품 링크 / 파일'과 같은 3컬럼 표.
+        // 확정본이 이 칸에만 *(선택)* 표기를 빠뜨렸지만 필수로 두지 않는다: 링크도 파일도 없는
+        // 프로젝트가 카드를 영영 완료할 수 없게 된다(사용자 확인 완료).
+        createRepeatableCell(
+          '결과물 링크 / 파일',
+          [
+            { key: 'link', label: '링크', blockType: 'link', placeholder: 'https://' },
+            { key: 'file', label: '파일', blockType: 'file' },
+            {
+              key: 'desc',
+              label: '설명',
+              blockType: 'text',
+              placeholder: '설명 (예: 최종 시연 영상, 기획서, GitHub 저장소)',
+            },
+          ],
+          {
+            guide:
+              '프로젝트를 직접 확인할 수 있는 링크나 파일을 첨부해주세요. 결과물, 시연 영상, 발표 자료, 코드 등을 채널별로 남길 수 있어요.',
+          },
+        ),
       ],
     },
   ]
@@ -1889,6 +2201,7 @@ function volunteerExtensions(): TemplateSection[] {
           placeholder: '예: OO아동복지센터 학습 멘토링, 지역 노인복지관 급식 봉사',
         }),
         createSelectField('봉사 분야', [...VOLUNTEER_FIELD_OPTIONS], {
+          allowOther: true,
           required: true,
           guide:
             '이 봉사의 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
@@ -2000,6 +2313,7 @@ function overseasExtensions(): TemplateSection[] {
       label: '해외경험 정보',
       blocks: [
         createSelectField('경험 유형', [...OVERSEAS_KIND_OPTIONS], {
+          allowOther: true,
           required: true,
           guide:
             '해외 경험의 유형을 선택해주세요. 여러 개 해당된다면 가장 대표되는 유형 기준으로 선택해주세요.',
@@ -2152,6 +2466,7 @@ function creativeWorkExtensions(): TemplateSection[] {
           placeholder: '예: 브랜드 리뉴얼 프로젝트, 단편 소설 〈OO〉, 개인 웹사이트',
         }),
         createSelectField('유형 / 매체', [...CREATIVE_MEDIUM_OPTIONS], {
+          allowOther: true,
           required: true,
           guide:
             '이 작품의 유형을 선택해주세요. 여러 매체가 결합된 작업이라면 가장 대표되는 유형 기준으로 선택해주세요.',
@@ -2340,6 +2655,7 @@ function readingExtensions(): TemplateSection[] {
           placeholder: '예: 유발 하라리',
         }),
         createSelectField('장르 / 분야', [...READING_GENRE_OPTIONS], {
+          allowOther: true,
           guide:
             '이 책이 속한 분야를 선택해주세요. 여러 분야에 걸쳐 있다면 가장 대표되는 분야 기준으로 선택해주세요.',
         }),
@@ -2470,7 +2786,7 @@ function goalExtensions(): TemplateSection[] {
       blocks: [
         createTextField('목표명', { required: true }),
         createPeriodField('기간', { required: true }),
-        createSelectField('목표 유형', ['학습', '커리어', '건강', '프로젝트', '기타']),
+        createSelectField('목표 유형', ['학습', '커리어', '건강', '프로젝트', '기타'], { allowOther: true }),
         createSelectField('목표 수준', ['상', '중', '하']),
         createTextareaField('성공 기준', { required: true, placeholder: '어떻게 되면 성공인가?' }),
       ],
@@ -2507,6 +2823,269 @@ function goalExtensions(): TemplateSection[] {
   ]
 }
 
+// ─── '나는 누구인가?' (FRT-320, 나는누구인가_final) ─────────────────
+
+/** ① '나를 표현하는 키워드' — 확정본 20종, 이모지 없는 고정 프리셋 + 직접 추가. */
+const SELF_IDENTITY_KEYWORD_TAGS = [
+  '꼼꼼한', '추진력 있는', '관계 중심', '분석적인', '감성적인',
+  '도전적인', '신중한', '유연한', '책임감 강한', '아이디어가 많은',
+  '성실한', '공감 잘하는', '논리적인', '행동파', '호기심 많은',
+  '독립적인', '낙관적인', '끈기 있는', '배우는 걸 좋아하는', '정리 잘하는',
+]
+
+/** ② '삶에서 가장 중요하게 생각하는 가치관' — 확정본 15종 이모지 태그. */
+const SELF_IDENTITY_VALUE_TAGS = [
+  '🌱 성장', '🕊️ 자율성', '🏠 안정감', '⚖️ 공정함', '🎨 창의성',
+  '🔬 전문성', '🌍 영향력', '🤝 팀워크', '💎 진정성', '⚡ 효율',
+  '🔥 도전', '🌏 사회 기여', '👏 인정', '⏰ 균형(워라밸)', '🎯 몰입',
+]
+
+/**
+ * ③ '나의 업무 성향' — 확정본 5행 양자택일, [행 라벨, [왼쪽, 오른쪽]].
+ * ⚠️ 행 라벨은 확정본에 이름이 없어 구현이 명명했다. 안정키(`self-worklife.실행 방식` 등)의
+ * 일부가 되므로 머지 전 리뷰에서 확정하고, 머지 후에는 breaking change 다(TEMPLATE_VERSION 규약).
+ */
+const SELF_IDENTITY_WORK_STYLE_PAIRS: [string, [string, string]][] = [
+  ['실행 방식', ['계획을 세운 뒤 실행', '상황에 맞게 유연하게 대응']],
+  ['협업 방식', ['혼자 집중해서 작업', '함께 논의하며 진행']],
+  ['관점 순서', ['큰 방향부터 잡고 내려가기', '디테일부터 쌓아 올리기']],
+  ['실행 속도', ['빠르게 실행하고 수정', '충분히 검토 후 실행']],
+  ['우선순위', ['팀워크와 합의를 우선', '개인의 전문성과 성과를 우선']],
+]
+
+/** ③ '팀에서 자연스럽게 맡게 되는 역할' — 확정본 8종 이모지 태그. */
+const SELF_IDENTITY_TEAM_ROLE_TAGS = [
+  '🚩 리더', '⚡ 실행자', '🗺️ 기획자', '🤝 조율자',
+  '📊 분석가', '🎨 크리에이터', '🛡️ 서포터', '🧠 문제 해결사',
+]
+
+/** ④ '선호하는 조직 문화' — 확정본 10종 이모지 태그. */
+const SELF_IDENTITY_CULTURE_TAGS = [
+  '🤝 수평적', '📋 체계적', '🕊️ 자율적', '📈 성과 중심', '🔄 과정 중심',
+  '🚀 빠른 실행', '💬 깊은 논의', '☕ 따뜻한 분위기', '🔬 전문성 존중', '🎉 재미/유머',
+]
+
+/**
+ * '나는 누구인가?' — 다른 유형이 "무엇을 했는가"를 기록한다면 이 유형은 "나는 어떤 사람인가"를
+ * 기록하는 자기 인식 프로필이다(AI 분석이 "이 사람의 결"을 잡는 핵심 맥락).
+ *
+ * 구조가 다른 유형과 다른 점 셋:
+ *  · 확정본 7섹션이 **전부 자기 카드**로 선다 — ②~⑦ 이 모두 detail 이라 computeFormCards 의
+ *    섹션당 1카드 분할(FRT-320)을 타고, 카드 제목은 섹션 label, ⑤⑦ 안내는 description 이 싣는다.
+ *  · ⑤(관심 분야)도 repeat 이 아니라 **detail** 이다 — 카드가 카테고리 순서로 서므로 repeat 으로
+ *    두면 ⑤ 가 ⑥⑦ 뒤로 밀려 문서 순서가 깨진다. 표 반복 입력이라는 사실은 블록 타입
+ *    (repeatable-cell)이 이미 담고 있다.
+ *  · 전 필드가 선택이다 — 상단 배너가 "천천히, 오래 두고 채워가세요"를 약속하므로 필수를 하나라도
+ *    두면 그 약속이 거짓이 된다(진행도는 값 하나로 카드 완료).
+ */
+function selfIdentityExtensions(): TemplateSection[] {
+  return [
+    {
+      id: 'self-intro',
+      category: 'basic',
+      label: '나를 소개한다면',
+      blocks: [
+        createTextareaField('내가 나라는 사람을 스스로 정의한다면', {
+          guide: '직업, 학교, 스펙이 아닌 — 사람으로서 나는 어떤 사람인가요?',
+          placeholder:
+            '예: 무언가를 제대로 이해하지 못하면 넘어가지 못하는 사람. 느리더라도 뿌리를 잡고 싶어하고, 그래서 생각보다 깊이 파고드는 편입니다.',
+        }),
+        createTextareaField('주변 사람들이 나를 어떻게 평가하는지', {
+          guide: '친구, 선후배, 동료가 나를 다른 사람에게 소개한다면 어떻게 말할까요?',
+          placeholder: '예: 맡은 일은 끝까지 해내는 사람이라고 해요. 꼼꼼하지만 속도도 빠르다는 피드백을 자주 받습니다.',
+        }),
+        createTextareaField('성격적 강점', {
+          guide: '스스로 인식하는 강점을 적어주세요.',
+          placeholder: '예: 논리적으로 구조화하는 능력. 마감 압박 속에서도 집중력을 유지하는 편입니다.',
+        }),
+        createTextareaField('보완하고 있는 약점', {
+          guide: '인식하고 있는 약점과, 어떻게 보완하려 하는지 함께 적어주세요.',
+          placeholder:
+            '예: 완벽주의 성향이 있어 속도를 희생할 때가 있습니다. 최근엔 MVP 사고로 전환하려 의식적으로 노력 중이에요.',
+        }),
+        createMoodTagField('나를 표현하는 키워드', SELF_IDENTITY_KEYWORD_TAGS, {
+          guide: '나를 잘 설명하는 키워드를 골라보세요. 여러 개 가능해요.',
+          allowCustomTag: true,
+        }),
+      ],
+    },
+    {
+      id: 'self-values',
+      category: 'detail',
+      standalone: true,
+      label: '가치관과 동기',
+      blocks: [
+        createMoodTagField('삶에서 가장 중요하게 생각하는 가치관', SELF_IDENTITY_VALUE_TAGS, {
+          guide: '일할 때, 의사결정할 때 기준이 되는 가치를 골라주세요.',
+        }),
+        createTextareaField('이 가치가 중요한 이유', {
+          guide: '이 가치가 왜 중요한지 한두 줄이면 충분해요',
+        }),
+        createTextareaField('가장 열정을 갖고 임하는 일', {
+          guide: '의무가 아니어도 자발적으로 몰입하게 되는 일이 있다면 적어주세요.',
+          placeholder:
+            '예: 복잡한 데이터를 구조화해서 한눈에 보이게 정리하는 일. 툴이 뭐든 구조 잡는 과정 자체에 몰입합니다.',
+        }),
+      ],
+    },
+    {
+      id: 'self-worklife',
+      category: 'detail',
+      standalone: true,
+      label: '업무 스타일과 협업',
+      blocks: [
+        // 확정본 '나의 업무 성향' 5행. 안내는 첫 행에만 — 다섯 행에 같은 문장이 반복되면 소음이다.
+        ...SELF_IDENTITY_WORK_STYLE_PAIRS.map(([label, pair], i) =>
+          createBinaryChoiceField(label, pair, i === 0
+            ? { guide: '각 항목에서 나에게 더 가까운 쪽을 클릭해주세요.' }
+            : undefined),
+        ),
+        createMoodTagField('팀에서 자연스럽게 맡게 되는 역할', SELF_IDENTITY_TEAM_ROLE_TAGS, {
+          guide: '팀에서 자연스럽게 맡게 되는 포지션이 있다면 골라주세요.',
+        }),
+        createTextareaField('동료와 의견 충돌이 생겼을 때 대처 방식', {
+          guide: '실제로 겪었던 상황을 떠올리며 적어보세요.',
+          placeholder:
+            '예: 양쪽 근거를 정리한 뒤, 공통 목표 기준으로 어느 안이 더 효과적인지 데이터를 가지고 논의하는 편입니다.',
+        }),
+        createTextareaField('가장 힘들었던 피드백 경험과 대응', {
+          guide: '받아들이기 어려웠던 피드백이 있었나요? 그때 어떻게 반응하고 어떻게 소화했는지 적어주세요.',
+          placeholder: '예: 발표 직후 교수님이 논리 구조를 전면 재구성하라고 하셨는데...',
+        }),
+        createTextareaField('에너지를 얻는 순간', {
+          guide: '어떤 상황에서 일하는 재미와 활력을 느끼나요?',
+          placeholder: '예: 팀원이 내 제안을 발전시켜줄 때, 결과물이 눈에 보이기 시작할 때',
+        }),
+        createTextareaField('에너지를 잃는 순간', {
+          guide: '반대로, 의욕이 떨어지거나 소진되는 상황이 있다면 솔직하게 적어주세요.',
+          placeholder: '예: 근거 없이 방향이 바뀔 때, 준비한 내용이 고려되지 않을 때',
+        }),
+      ],
+    },
+    {
+      id: 'self-relations',
+      category: 'detail',
+      standalone: true,
+      label: '관계와 환경',
+      blocks: [
+        createTextareaField('함께 일하고 싶은 사람', {
+          guide: '어떤 사람과 함께할 때 가장 좋은 결과를 만들 수 있었나요?',
+          placeholder:
+            '예: 서로 솔직하게 피드백을 주고받을 수 있는 사람. 결과에 대한 책임감을 함께 나눌 수 있는 사람.',
+        }),
+        createTextareaField('함께 일하기 어려운 유형', {
+          guide: '반대로, 협업이 어려웠던 경험이 있다면 어떤 상황이었나요?',
+          placeholder:
+            '예: 합의된 일정을 반복적으로 지키지 않는 경우, 근거 없이 감으로 의사결정을 밀어붙이는 경우',
+        }),
+        createMoodTagField('선호하는 조직 문화', SELF_IDENTITY_CULTURE_TAGS, {
+          guide: '어떤 분위기의 조직에서 가장 잘 맞았나요?',
+        }),
+        createTextareaField('조직문화가 나와 맞지 않을 때 적응 방식', {
+          guide: '환경이 기대와 달랐을 때 어떻게 대응했거나, 어떻게 대응할 것 같은지 적어주세요.',
+          placeholder:
+            '예: 먼저 그 문화가 왜 그런 방식으로 운영되는지 이해하려 하고, 내 방식과의 접점을 찾아 조율합니다.',
+        }),
+      ],
+    },
+    {
+      id: 'self-interests',
+      category: 'detail',
+      standalone: true,
+      label: '관심 분야와 나의 적합성',
+      description:
+        "관심 있는 분야별로 '왜 나인가'를 정리해두세요. 분야마다 다른 이유가 있을 수 있으니 블록을 여러 개 추가해도 좋아요.",
+      blocks: [
+        // 카드 안내가 곧 표의 안내라 블록 guide 를 따로 달지 않는다 — 같은 문장이 카드 제목
+        // 아래와 표 위에 두 번 뜬다(연구논문 ③ 과 같은 처리).
+        createRepeatableCell('관심 분야와 나의 적합성', [
+          {
+            key: 'field',
+            label: '관심 분야 / 직무',
+            blockType: 'text',
+            guide: '어떤 분야에 관심이 있나요?',
+            placeholder: '예: UX 리서치, 브랜드 마케팅, 데이터 분석, 서비스 기획',
+          },
+          {
+            key: 'motive',
+            label: '이 분야에 관심을 갖게 된 계기',
+            blockType: 'textarea',
+            guide: '단순한 흥미가 아닌, 어떤 경험이나 이유로 이 분야를 선택하게 됐는지 적어주세요.',
+            placeholder:
+              '예: 팀 프로젝트에서 사용자 인터뷰를 처음 진행했을 때, 사람마다 서비스를 전혀 다르게 이해하고 있다는 사실을 처음 알았습니다.',
+          },
+          {
+            key: 'fit',
+            label: '이 분야에 나라는 사람이 필요한 이유',
+            blockType: 'textarea',
+            guide: '이 분야에서 내가 기여할 수 있는 고유한 강점이나 관점은 무엇인가요?',
+            placeholder:
+              '예: 정량 데이터와 정성 인사이트를 연결해 실행 가능한 제안으로 만드는 능력이 저만의 강점이라고 생각합니다.',
+          },
+          {
+            key: 'evidence',
+            label: '관련 경험 / 근거',
+            blockType: 'textarea',
+            guide: '위의 주장을 뒷받침하는 구체적인 경험이 있다면 간략히 적어주세요.',
+            placeholder: '예: OO 대외활동에서 A/B 테스트 설계 및 분석을 단독으로 진행한 경험',
+          },
+        ]),
+      ],
+    },
+    {
+      id: 'self-direction',
+      category: 'detail',
+      standalone: true,
+      label: '방향과 지향점',
+      blocks: [
+        createTextareaField('1~2년 안에 이루고 싶은 것', {
+          guide: '가까운 미래의 구체적인 목표가 있다면 적어주세요.',
+          placeholder: '예: UX 리서치 직무로 취업해서 실제 서비스의 사용자 데이터를 직접 다뤄보고 싶습니다.',
+        }),
+        createTextareaField('장기적으로 되고 싶은 모습', {
+          guide: '5년, 10년 뒤의 모습을 생각해본다면?',
+          placeholder: '예: 주니어가 성장할 수 있는 환경을 만드는 시니어가 되고 싶습니다.',
+        }),
+        createTextareaField('나의 성장에서 빠질 수 없는 경험 하나', {
+          guide: '모든 경험 중 딱 하나만 고른다면? 지금의 나를 만든 결정적 경험을 떠올려보세요.',
+          placeholder:
+            '예: 창업 동아리에서 직접 서비스를 만들어 출시했던 경험. 처음으로 사용자라는 개념을 체감했고, 진로 방향이 완전히 바뀌었습니다.',
+        }),
+      ],
+    },
+    {
+      id: 'self-reflection',
+      category: 'detail',
+      standalone: true,
+      label: '인생 회고',
+      description:
+        '시기별로 나의 이야기를 자유롭게 풀어보세요. 잘 정리된 글이 아니어도 좋아요. 기억나는 장면, 감정, 사람, 선택 — 떠오르는 대로 적어주세요.',
+      blocks: [
+        // 시기별 필드 1개로 의도적으로 간소화(확정본 설계 노트) — 구조가 많을수록 회고를 못 쓴다.
+        createTextareaField('🧒 유년기', {
+          guide: '초등학교 이전 ~ 초등학교 시절. 어떤 아이였나요?',
+          placeholder:
+            '예: 혼자 책 읽는 걸 좋아했고, 레고로 집 짓는 걸 몇 시간이고 했어요. 조용하지만 고집이 세다는 말을 많이 들었습니다.',
+        }),
+        createTextareaField('🎒 중학생', {
+          guide: '무엇에 빠져들었고, 어떤 사람이 되어갔나요?',
+          placeholder: '예: 처음으로 기타를 잡은 게 중2였는데 3개월 동안 손에서 놓지 않았어요.',
+        }),
+        createTextareaField('📚 고등학생', {
+          guide: '어떤 선택을 했고, 그때의 나는 무엇이 중요했나요?',
+          placeholder:
+            '예: 이과를 선택했지만 사실 문과에 가까운 사람이었어요. 수능 직후 처음으로 내가 뭘 하고 싶은지 진지하게 생각했고, 그 막막함이 지금도 생생합니다.',
+        }),
+        createTextareaField('🎓 대학생', {
+          guide: '어떻게 달라졌고, 무엇이 지금의 나를 만들었나요?',
+          placeholder:
+            '예: 전공 수업보다 대외활동에서 더 많이 배웠어요. UX 수업에서 처음으로 사람이 어떻게 사고하는지를 배웠고, 그 뒤로 모든 서비스를 다르게 보기 시작했습니다.',
+        }),
+      ],
+    },
+  ]
+}
+
 // ─── Template assembly ──────────────────────────────────────────
 
 const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
@@ -2519,8 +3098,10 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
   'certification': certificationExtensions,
   'language': languageExtensions,
   'research': researchExtensions,
-  'personal-project': personalProjectExtensions,
-  'team-project': teamProjectExtensions,
+  // 확정본이 개인/팀을 한 유형으로 합쳤다(FRT-291) → 두 id 가 **같은 템플릿**을 받는다.
+  // 은퇴한 `team-project` 도 여기 남겨 둬야 기존 팀 프로젝트 레코드가 확정본 폼으로 열린다.
+  'personal-project': projectExtensions,
+  'team-project': projectExtensions,
   'volunteer': volunteerExtensions,
   'overseas': overseasExtensions,
   'creative-work': creativeWorkExtensions,
@@ -2528,6 +3109,7 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
   'reading': readingExtensions,
   'journal': journalExtensions,
   'goal': goalExtensions,
+  'self-identity': selfIdentityExtensions,
 }
 
 /**
@@ -2546,13 +3128,16 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
  *     `creative-detail` 로 갈아치웠다.
  * 7 — 연구논문 확정본 정렬(FRT-269). 같은 이유 — `research-info` 를 `research-paper`/
  *     `research-content`/`research-publication` 으로 갈아치웠다.
+ * 8 — 프로젝트 확정본 정렬(FRT-291). 같은 이유 — `pp-*`/`tp-*` 를 `project-info`/`project-detail`/
+ *     `project-tasks`/`project-release`/`project-artifacts` 로 갈아치웠고, 개인·팀 두 유형이
+ *     하나의 템플릿을 공유하게 됐다.
  *
  * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
  * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
  * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
  * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 7
+export const TEMPLATE_VERSION = 8
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.
@@ -2589,7 +3174,12 @@ function buildTemplate(typeId: ExperienceTypeId): TemplateV2 {
   }
 }
 
-export const SYSTEM_TEMPLATES_V2: TemplateV2[] = EXPERIENCE_TYPES.map(t => buildTemplate(t.id))
+/**
+ * 선택지가 아니라 **전체 레지스트리**에서 만든다 — 은퇴 유형(FRT-291 · FRT-300)으로 저장된 기록도
+ * 자기 템플릿으로 열려야 하기 때문이다. 선택지만 돌면 `TEMPLATE_MAP[은퇴 id]` 가 undefined 가 되어,
+ * 유형을 목록에서 내리는 것이 조용히 '템플릿을 없애는 일'로 번진다.
+ */
+export const SYSTEM_TEMPLATES_V2: TemplateV2[] = ALL_EXPERIENCE_TYPES.map(t => buildTemplate(t.id))
 
 export const TEMPLATE_MAP: Record<ExperienceTypeId, TemplateV2> =
   Object.fromEntries(SYSTEM_TEMPLATES_V2.map(t => [t.typeId, t])) as Record<ExperienceTypeId, TemplateV2>

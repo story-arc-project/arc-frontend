@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import posthog from "posthog-js";
 
 import { isDemoMode } from "@/lib/demo/state";
-import { capture, identifyUser, isIdentified, resetUser } from "@/lib/analytics/client";
+import {
+  capture,
+  identifyUser,
+  isIdentified,
+  markInternalUser,
+  resetUser,
+} from "@/lib/analytics/client";
 import { hashUserId } from "@/lib/analytics/hash";
 
 vi.mock("posthog-js", () => ({
@@ -13,6 +19,7 @@ vi.mock("posthog-js", () => ({
     identify: vi.fn(),
     reset: vi.fn(),
     _isIdentified: vi.fn(() => false),
+    setPersonProperties: vi.fn(),
   },
 }));
 
@@ -26,7 +33,16 @@ const ph = posthog as unknown as {
   identify: ReturnType<typeof vi.fn>;
   reset: ReturnType<typeof vi.fn>;
   _isIdentified: ReturnType<typeof vi.fn>;
+  setPersonProperties: ReturnType<typeof vi.fn>;
 };
+
+// 실제 posthog 는 identify 이후 _isIdentified() 가 true 가 된다 — mock 에서도 그 전이를 재현해야
+// "식별 전 보류 → identify 직후 전송" 순서를 검증할 수 있다.
+function identifyFlipsIdentifiedFlag(): void {
+  ph.identify.mockImplementation(() => {
+    ph._isIdentified.mockReturnValue(true);
+  });
+}
 
 describe("analytics client — capture/identify/reset 가드(FRT-19)", () => {
   beforeEach(() => {
@@ -44,6 +60,26 @@ describe("analytics client — capture/identify/reset 가드(FRT-19)", () => {
       experience_type: "society",
       status: "complete",
     });
+  });
+
+  // FRT-107: 이탈·체류 이벤트는 화면이 사라지는 순간에 발화한다. 기본 경로는 배치 큐라
+  // 그대로 두면 페이지와 함께 사라진다.
+  it("atUnload 면 sendBeacon 으로 즉시 보낸다", () => {
+    capture("onboarding_abandoned", { last_step: "q1", elapsed_seconds: 12 }, {
+      atUnload: true,
+    });
+    expect(ph.capture).toHaveBeenCalledWith(
+      "onboarding_abandoned",
+      { last_step: "q1", elapsed_seconds: 12 },
+      { transport: "sendBeacon", send_instantly: true },
+    );
+  });
+
+  // 기존 호출부는 한 글자도 바뀌지 않았다 — 세 번째 인자가 undefined 로라도 실리면
+  // 배치 큐 대신 다른 경로를 타게 되므로 인자 수까지 그대로여야 한다.
+  it("atUnload 가 없으면 전송 옵션 인자 자체를 넘기지 않는다", () => {
+    capture("onboarding_completed", {});
+    expect(ph.capture).toHaveBeenCalledWith("onboarding_completed", {});
   });
 
   it("PostHog 미초기화(__loaded=false)면 아무것도 전송하지 않는다", () => {
@@ -105,5 +141,82 @@ describe("analytics client — capture/identify/reset 가드(FRT-19)", () => {
     await pending;
     expect(ph.identify).not.toHaveBeenCalled();
     expect(ph.reset).toHaveBeenCalledTimes(1);
+  });
+});
+
+// FRT-139: 팀 계정 행동을 지표에서 제외한다.
+// 전송을 막는 대신 person 에 `$internal_or_test_user` 를 심어, PostHog 가 이 용도로 제공하는
+// 내부/테스트 사용자 필터(프로젝트 test_account_filters → 코호트)가 그대로 걸리게 한다.
+// 차단이 아니라 표식이라 되돌릴 수 있다(필터만 끄면 팀 행동도 다시 보인다).
+describe("analytics client — 내부 사용자 표식(FRT-139)", () => {
+  beforeEach(() => {
+    // 표식 상태는 모듈 레벨이라 테스트 간에 새어나간다 — reset 으로 먼저 비운 뒤 mock 을 지운다.
+    ph.__loaded = true;
+    vi.mocked(isDemoMode).mockReturnValue(false);
+    resetUser();
+    vi.clearAllMocks();
+    ph._isIdentified.mockReturnValue(false);
+  });
+
+  it("이미 식별된 사용자에게는 즉시 내부 표식을 심는다", () => {
+    ph._isIdentified.mockReturnValue(true);
+    markInternalUser();
+    expect(ph.setPersonProperties).toHaveBeenCalledWith({ $internal_or_test_user: true });
+  });
+
+  it("아직 식별 전이면 보류했다가 identifyUser 직후에 심는다", async () => {
+    identifyFlipsIdentifiedFlag();
+
+    // 판정(/api/admin/status)이 identify 보다 먼저 끝나는 순서 — 익명 상태에선 person 이 없어
+    // (identified_only) 표식이 붙을 곳이 없다.
+    markInternalUser();
+    expect(ph.setPersonProperties).not.toHaveBeenCalled();
+
+    await identifyUser("team@story-arc.org");
+    expect(ph.setPersonProperties).toHaveBeenCalledWith({ $internal_or_test_user: true });
+  });
+
+  it("PostHog 미초기화면 표식을 심지 않는다", () => {
+    ph.__loaded = false;
+    ph._isIdentified.mockReturnValue(true);
+    markInternalUser();
+    expect(ph.setPersonProperties).not.toHaveBeenCalled();
+  });
+
+  it("데모 모드에서는 표식을 심지 않는다", () => {
+    vi.mocked(isDemoMode).mockReturnValue(true);
+    ph._isIdentified.mockReturnValue(true);
+    markInternalUser();
+    expect(ph.setPersonProperties).not.toHaveBeenCalled();
+  });
+
+  it("같은 사용자에게 두 번 심지 않는다(마운트마다 $set 이벤트가 늘지 않게)", () => {
+    ph._isIdentified.mockReturnValue(true);
+    markInternalUser();
+    markInternalUser();
+    markInternalUser();
+    expect(ph.setPersonProperties).toHaveBeenCalledTimes(1);
+  });
+
+  it("로그아웃하면 보류된 표식이 다음 사용자에게 붙지 않는다", async () => {
+    identifyFlipsIdentifiedFlag();
+
+    markInternalUser(); // 팀원 판정은 났지만 아직 식별 전 — 보류 상태
+    resetUser(); // 로그아웃: 보류를 버려야 한다
+    ph._isIdentified.mockReturnValue(false);
+
+    await identifyUser("someone-else@example.com");
+    expect(ph.setPersonProperties).not.toHaveBeenCalled();
+  });
+
+  it("로그아웃 뒤 다시 팀원으로 판정되면 표식을 새로 심는다", () => {
+    ph._isIdentified.mockReturnValue(true);
+    markInternalUser();
+    resetUser();
+    vi.clearAllMocks();
+    ph._isIdentified.mockReturnValue(true);
+
+    markInternalUser();
+    expect(ph.setPersonProperties).toHaveBeenCalledWith({ $internal_or_test_user: true });
   });
 });

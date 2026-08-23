@@ -75,9 +75,30 @@ vi.mock("@/lib/export/resume-docx", () => ({
   renderResumeDocx: (...args: unknown[]) => mockRenderDocx(...args),
 }));
 
+/**
+ * 임시 저장이 **아무 계층에도** 못 담기는 상태(`null`)를 주입하는 훅.
+ *
+ * 계층 폴백이 생긴 뒤로(FRT-261) 메모리 계층이 거의 항상 받아내므로, 브라우저 환경에서
+ * `null` 을 실제로 만들 방법이 사실상 없다. 그래도 그 분기는 코드에 살아 있고 "담지 못했으면
+ * 이탈이 아니다"라는 불변식이 걸려 있어, 주입으로만 지킬 수 있다.
+ */
+const draftWrite = vi.hoisted(() => ({ forceFailure: false }));
+
+vi.mock("./_components/resume-draft", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("./_components/resume-draft")>();
+  return {
+    ...actual,
+    writeDraft: (...args: Parameters<typeof actual.writeDraft>) =>
+      draftWrite.forceFailure ? null : actual.writeDraft(...args),
+  };
+});
+
 import { toast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api/client";
+import { ResumeNotReadyError } from "@/lib/api/export-api";
 import { writeDraft } from "./_components/resume-draft";
+import { __resetMemoryDrafts } from "@/lib/export/draft-storage";
 import ResumeDetailPage from "./page";
 
 function resumeFixture(overrides: Partial<ResumeVersion> = {}): ResumeVersion {
@@ -145,6 +166,10 @@ beforeEach(() => {
   // 다음 테스트로 새면 "왜 이 응답이 오지"를 한참 쫓게 된다.
   mockGetResume.mockReset();
   window.localStorage.clear();
+  // draft 는 이제 아래 계층으로도 떨어진다(FRT-261) — 셋 다 비워야 테스트가 격리된다.
+  window.sessionStorage.clear();
+  __resetMemoryDrafts();
+  draftWrite.forceFailure = false;
   window.print = vi.fn();
   mockGetResume.mockResolvedValue(resumeFixture());
   mockRenderPdf.mockResolvedValue(new Blob(["pdf"]));
@@ -293,6 +318,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
         expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
           outcome: "failed",
           persisted: true,
+          storage_tier: "local",
           sections: ["personal_info"],
           section_count: 1,
         }),
@@ -374,8 +400,10 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     );
   });
 
-  // 서버도 로컬도 못 남긴 = **편집 유실**. outcome 만으로는 이 최악의 경우가 안 보인다.
-  it("임시저장까지 실패하면 draft_saved=false 로 유실을 드러낸다", async () => {
+  // 서버도 웹 스토리지도 못 남긴 상태. 예전에는 그대로 **편집 유실**이었지만 이제 메모리
+  // 계층이 받아낸다(FRT-261) — 편집은 살아 있되 새로고침이면 잃는다. outcome 만으로는 그
+  // 차이가 안 보이므로 어느 계층에 담겼는지를 함께 남긴다.
+  it("웹 스토리지가 다 막히면 storage_tier='memory' 로 위태로움을 드러낸다", async () => {
     const user = userEvent.setup();
     mockUpdateResume.mockRejectedValue(new ApiError(500, "server error"));
     const setItem = vi
@@ -394,7 +422,8 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
           "resume_edit_saved",
           expect.objectContaining({
             outcome: "failed",
-            persisted: false,
+            persisted: true,
+            storage_tier: "memory",
           }),
         ),
       );
@@ -425,7 +454,8 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       await waitFor(() => expect(toast.error).toHaveBeenCalled());
       const message = vi.mocked(toast.error).mock.calls.at(-1)?.[0] as string;
       expect(message).toContain("제목은 100자를 넘을 수 없어요.");
-      expect(message).toContain("페이지를 닫지 마세요");
+      // 위기 신호도 함께다. 편집은 메모리 계층이 받아냈지만(FRT-261) 새로고침이면 잃는다.
+      expect(message).toContain("새로고침");
     } finally {
       setItem.mockRestore();
     }
@@ -461,6 +491,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       expect(mockCapture).toHaveBeenCalledWith("resume_edit_saved", {
         outcome: "failed",
         persisted: true,
+        storage_tier: "local",
         sections: ["personal_info", "summary"],
         section_count: 2,
       }),
@@ -496,6 +527,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
           {
             outcome: "exit_draft",
             persisted: true,
+            storage_tier: "local",
             sections: ["personal_info"],
             section_count: 1,
           },
@@ -503,9 +535,10 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       ]);
     });
 
-    // 임시 저장이 실패하면 페이지는 이동을 막고 "저장 후 나가주세요"를 띄운다 —
-    // 편집 유실 직전이라는 뜻인데, 지금까지 이 순간은 데이터에 전혀 남지 않았다.
-    it("임시 저장이 실패하면 persisted=false 로 남기고 이동하지 않는다", async () => {
+    // 웹 스토리지가 다 막혀도 메모리 계층이 받아낸다(FRT-261). 담긴 이상 붙잡지 않는다 —
+    // 이 환경에서는 아무리 다시 눌러도 영구 저장이 성공하지 않아, 막으면 출구가 없다.
+    // 대신 무엇을 조심해야 하는지(새로고침) 알린 뒤 보낸다.
+    it("웹 스토리지가 막히면 경고하고, 이동은 막지 않는다", async () => {
       const user = userEvent.setup();
       await renderLoaded();
 
@@ -523,13 +556,15 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
         setItem.mockRestore();
       }
 
-      expect(mockPush).not.toHaveBeenCalled();
+      await waitFor(() => expect(mockPush).toHaveBeenCalled());
+      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("새로고침"));
       expect(captured("resume_edit_saved")).toEqual([
         [
           "resume_edit_saved",
           {
             outcome: "exit_draft",
-            persisted: false,
+            persisted: true,
+            storage_tier: "memory",
             sections: ["personal_info"],
             section_count: 1,
           },
@@ -563,11 +598,50 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
           {
             outcome: "exit_draft",
             persisted: true,
+            storage_tier: "local",
             sections: ["personal_info"],
             section_count: 1,
           },
         ],
       ]);
+    });
+
+    /**
+     * FRT-261 — '나가기' 버튼은 저장 실패를 알렸지만, GNB 링크·브라우저 뒤로가기로 떠나는
+     * 경로가 기댈 안전망은 언마운트 cleanup 하나뿐이었다. 그 자리는 결과를 **지표에만**
+     * 남기고 사용자에게는 아무 말도 하지 않아, 저장이 위태로워도 사용자는 알 수 없었다.
+     */
+    it("언마운트 이탈에서 웹 스토리지가 막히면 사용자에게 경고한다", async () => {
+      const user = userEvent.setup();
+      const { unmount } = await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      vi.mocked(toast.error).mockClear();
+      const setItem = vi
+        .spyOn(Storage.prototype, "setItem")
+        .mockImplementation(() => {
+          throw new Error("quota");
+        });
+      try {
+        unmount();
+      } finally {
+        setItem.mockRestore();
+      }
+
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining("새로고침"),
+      );
+    });
+
+    it("언마운트 이탈이 정상 저장되면 아무것도 경고하지 않는다", async () => {
+      const user = userEvent.setup();
+      const { unmount } = await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      vi.mocked(toast.error).mockClear();
+      unmount();
+
+      expect(toast.error).not.toHaveBeenCalled();
     });
 
     // '나가기'는 스스로 이동을 일으켜 곧바로 언마운트로 이어진다. 두 곳이 각각 쏘면
@@ -586,13 +660,16 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
       expect(captured("resume_edit_saved").length).toBe(1);
     });
 
-    // 실패한 '나가기'는 이탈이 아니다 — 사용자는 화면에 그대로 남는다. 여기서 중복
-    // 방지 플래그를 세워버리면, 뒤이어 진짜로 떠날 때 보관된 편집이 통째로 안 남는다.
-    it("나가기가 임시 저장에 실패했다면 뒤이은 이탈은 다시 남긴다", async () => {
+    // 같은 이유로 **경고 문구**도 한 번뿐이어야 한다. 계측만 접고 toast 를 안 접으면,
+    // 저장 공간이 막힌 사용자는 '나가기' 한 번에 같은 경고를 두 번 받는다 — 두 번째는
+    // 알려줄 새 사실이 없으면서 "또 실패했나" 하는 인상만 남긴다.
+    it("나가기가 이미 경고했으면 뒤따르는 언마운트는 같은 경고를 되풀이하지 않는다", async () => {
       const user = userEvent.setup();
       const { unmount } = await renderLoaded();
 
       await user.type(screen.getByLabelText("이름"), "!");
+      vi.mocked(toast.error).mockClear();
+      // 클릭과 뒤이은 언마운트가 **같은** 저장 실패 환경을 만나야 재현된다.
       const setItem = vi
         .spyOn(Storage.prototype, "setItem")
         .mockImplementation(() => {
@@ -602,11 +679,30 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
         await user.click(
           screen.getByRole("button", { name: "익스포트로 돌아가기" }),
         );
+        await waitFor(() => expect(mockPush).toHaveBeenCalled());
+        unmount();
       } finally {
         setItem.mockRestore();
       }
+
+      expect(toast.error).toHaveBeenCalledTimes(1);
+    });
+
+    // 실패한 '나가기'는 이탈이 아니다 — 사용자는 화면에 그대로 남는다. 여기서 중복
+    // 방지 플래그를 세워버리면, 뒤이어 진짜로 떠날 때 보관된 편집이 통째로 안 남는다.
+    it("나가기가 임시 저장에 실패했다면 뒤이은 이탈은 다시 남긴다", async () => {
+      const user = userEvent.setup();
+      const { unmount } = await renderLoaded();
+
+      await user.type(screen.getByLabelText("이름"), "!");
+      // 메모리 계층까지 못 담는 상태를 주입한다 — 이 분기에서만 이동이 막힌다.
+      draftWrite.forceFailure = true;
+      await user.click(
+        screen.getByRole("button", { name: "익스포트로 돌아가기" }),
+      );
       expect(mockPush).not.toHaveBeenCalled();
 
+      draftWrite.forceFailure = false;
       unmount();
 
       expect(captured("resume_edit_saved")).toEqual([
@@ -615,6 +711,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
           {
             outcome: "exit_draft",
             persisted: false,
+            storage_tier: null,
             sections: ["personal_info"],
             section_count: 1,
           },
@@ -624,6 +721,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
           {
             outcome: "exit_draft",
             persisted: true,
+            storage_tier: "local",
             sections: ["personal_info"],
             section_count: 1,
           },
@@ -655,6 +753,268 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
  * FRT-147 — 영문 레쥬메는 편집 사이드바를 통째로 감춘다. 파싱 경고 배너가 그 사이드바
  * 안에만 있으면 "어떤 경험을 못 읽었는지"를 영문 사용자만 영영 못 보게 된다.
  */
+/**
+ * FRT-329 — 탭을 닫거나 새로고침하면 편집이 저장 없이 사라졌다.
+ *
+ * 임시 저장은 언마운트 cleanup 에서 일어나는데 진짜 페이지 언로드에서는 그 cleanup 이
+ * 실행되지 않는다. beforeunload 는 경고만 띄울 뿐 아무것도 남기지 않았다.
+ * 이제 pagehide 가 편집을 남기고, 탭이 숨겨질 때는 조용히 담아 두기만 한다.
+ */
+describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
+  function setVisibility(state: DocumentVisibilityState): void {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => state,
+    });
+  }
+  function fireHidden(): void {
+    setVisibility("hidden");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+  }
+  function firePageHide(): void {
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+  }
+  function firePageShowRestored(): void {
+    act(() => {
+      window.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+    });
+  }
+  const exitDraftProps = {
+    outcome: "exit_draft",
+    persisted: true,
+    storage_tier: "local",
+    sections: ["personal_info"],
+    section_count: 1,
+  };
+
+  afterEach(() => setVisibility("visible"));
+
+  it("pagehide 에 편집을 임시 저장하고 exit_draft 를 언로드 전송으로 1회 남긴다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+    // 배치 큐에 담으면 페이지와 함께 사라진다 — sendBeacon 경로를 고르는 옵션이 실려야 한다.
+    expect(captured("resume_edit_saved")).toEqual([
+      ["resume_edit_saved", exitDraftProps, { atUnload: true }],
+    ]);
+  });
+
+  it("편집이 없으면 pagehide 에 아무것도 남기지 않는다", async () => {
+    await renderLoaded();
+
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).toBeNull();
+    expect(captured("resume_edit_saved")).toEqual([]);
+  });
+
+  // 탭 전환은 이탈이 아니다 — 돌아와서 계속 쓴다. 다만 모바일은 이 뒤에 pagehide 없이
+  // 탭을 죽이는 일이 잦아 편집만 먼저 담아 둔다. 지표는 쏘지 않는다.
+  it("탭이 숨겨지면 조용히 임시 저장만 하고 지표는 쏘지 않는다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    fireHidden();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+    expect(captured("resume_edit_saved")).toEqual([]);
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  // 볼 사람이 없는 화면에 경고를 띄우지 않는다. 실패는 persisted:false 로 지표에만 남는다.
+  it("pagehide 저장이 실패해도 토스트는 띄우지 않고 지표에만 남긴다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    vi.mocked(toast.error).mockClear();
+    draftWrite.forceFailure = true;
+    try {
+      firePageHide();
+    } finally {
+      draftWrite.forceFailure = false;
+    }
+
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(captured("resume_edit_saved")).toEqual([
+      [
+        "resume_edit_saved",
+        { ...exitDraftProps, persisted: false, storage_tier: null },
+        { atUnload: true },
+      ],
+    ]);
+  });
+
+  // 중복 발화 가드와의 상호작용 — 한 이탈은 한 번만 센다.
+  it("pagehide 뒤에 언마운트가 이어져도 exit_draft 는 한 번이다", async () => {
+    const user = userEvent.setup();
+    const { unmount } = await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    firePageHide();
+    unmount();
+
+    expect(captured("resume_edit_saved")).toHaveLength(1);
+  });
+
+  it("'나가기'가 이미 센 이탈은 pagehide 가 다시 세지 않는다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "익스포트로 돌아가기" }));
+    await waitFor(() => expect(mockPush).toHaveBeenCalled());
+    firePageHide();
+
+    expect(captured("resume_edit_saved")).toHaveLength(1);
+  });
+
+  // 반대쪽 못 — 저장에 성공해 dirty 가 풀리면 pagehide 는 손대지 않는다. 이게 없으면
+  // "저장했는데 다음 진입에 복원 배너가 뜬다"(FRT-191)가 탭 닫기 경로로 되살아난다.
+  it("저장에 성공한 뒤 pagehide 는 draft 를 다시 만들지 않는다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockImplementation(async (_id, data) => data);
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() =>
+      expect(captured("resume_edit_saved").map(([, p]) => p)).toEqual([
+        expect.objectContaining({ outcome: "server" }),
+      ]),
+    );
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).toBeNull();
+    expect(captured("resume_edit_saved")).toHaveLength(1);
+  });
+
+  // 다른 버전으로 옮기는 창(loading)에서는 versionId 는 이미 B 인데 resume/dirty 는 아직
+  // A 것이다(FRT-238). 여기서 담으면 A 의 편집이 B 의 키로 들어가, B 가 열리자마자 남의
+  // 내용을 복원하라고 권한다. A 의 편집은 버전이 바뀌는 순간 언마운트 cleanup 이 A 키로
+  // 이미 남겼으니, 이 창에서는 아무것도 쓰지 않는 것이 맞다.
+  it("다른 버전으로 옮기는 중에는 옛 버전 편집을 새 버전 키로 담지 않는다", async () => {
+    const route = routeByVersion();
+    const result = await renderVersion("A");
+    route.resolve("A", named("A유저"));
+    await flush();
+    await userEvent.setup().type(screen.getByLabelText("이름"), "!");
+
+    await navigateTo(result, "B");
+    expect(loadingShown()).toBe(true);
+    fireHidden();
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:resume-draft:B")).toBeNull();
+    expect(window.localStorage.getItem("arc:resume-draft:A")).not.toBeNull();
+  });
+
+  // 숨겨질 때 담아 둔 편집을 돌아와서 되돌리면 화면은 깨끗한데 저장소에는 스냅샷이 남는다.
+  // dirty 가 풀려 어떤 이탈 경로도 손대지 않으므로, 다음 진입에 버린 편집을 복원하라고
+  // 권하게 된다 — 담은 쪽이 치운다.
+  it("숨겨질 때 담아 둔 편집을 되돌려 깨끗해지면 그 스냅샷도 지운다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    await user.type(screen.getByLabelText("이름"), "!");
+    fireHidden();
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+
+    setVisibility("visible");
+    await user.type(screen.getByLabelText("이름"), "{Backspace}");
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).toBeNull();
+  });
+
+  // 같은 레쥬메를 두 탭에서 열면 탭을 오갈 때마다 hidden 이 온다. 그 사이 손대지 않은 탭이
+  // 같은 내용을 더 새 시각으로 다시 쓰면, 다른 탭이 방금 남긴 편집을 덮는다.
+  it("손대지 않은 채 다시 숨겨지면 같은 편집을 다시 쓰지 않는다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    await user.type(screen.getByLabelText("이름"), "!");
+    fireHidden();
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+
+    // 다른 탭이 더 새 편집을 남긴 상황.
+    window.localStorage.setItem("arc:resume-draft:v1", "other-tab");
+    setVisibility("visible");
+    fireHidden();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).toBe("other-tab");
+  });
+
+  // 언마운트(앱 내 이동)와 달리 진짜 언로드에서는 떠 있는 PATCH 의 응답 핸들러가 돌지
+  // 않는다 — 문서가 먼저 사라진다. 여기서 "저장 쪽이 결말을 낸다"며 건너뛰면 그 시도는
+  // 어느 결말도 못 남겨 저장 퍼널이 기운다. 언로드를 견디는 결말은 이 한 번뿐이다
+  // (자소서 상세와 같은 규칙).
+  it("저장 요청이 떠 있는 동안 탭을 닫아도 exit_draft 를 언로드 전송으로 남긴다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockImplementation(() => new Promise(() => {}));
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(mockUpdateResume).toHaveBeenCalledTimes(1));
+    firePageHide();
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+    expect(captured("resume_edit_saved")).toEqual([
+      [
+        "resume_edit_saved",
+        expect.objectContaining({ outcome: "exit_draft", persisted: true }),
+        { atUnload: true },
+      ],
+    ]);
+  });
+
+  // 담아 둔 뒤 다른 탭이 같은 키에 더 새 편집을 남겼으면, 이 탭이 되돌려 깨끗해져도 그것은
+  // 이 탭이 치울 것이 아니다 — 저장소에 있는 것이 내가 담은 그 스냅샷일 때만 지운다.
+  it("되돌려 깨끗해져도 다른 탭이 남긴 더 새 draft 는 지우지 않는다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    await user.type(screen.getByLabelText("이름"), "!");
+    fireHidden();
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).not.toBeNull();
+
+    const otherTab = JSON.stringify({
+      data: named("다른 탭"),
+      updated_at: "2099-01-01T00:00:00.000Z",
+    });
+    window.localStorage.setItem("arc:resume-draft:v1", otherTab);
+    setVisibility("visible");
+    await user.type(screen.getByLabelText("이름"), "{Backspace}");
+
+    expect(window.localStorage.getItem("arc:resume-draft:v1")).toBe(otherTab);
+  });
+
+  // Chrome·Safari 는 beforeunload 가 있어도 bfcache 에 넣는다 — 뒤로 갔다 앞으로 오면 같은
+  // 인스턴스가 되살아난다. 그 뒤 이어 고치고 다시 떠나면 그것은 새 이탈인데, 첫 pagehide 가
+  // 세운 "한 번만" 가드가 남아 두 번째 exit_draft 가 조용히 빠진다.
+  it("bfcache 에서 되살아난 뒤 다시 떠나면 exit_draft 를 또 남긴다", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    firePageHide();
+    firePageShowRestored();
+    await user.type(screen.getByLabelText("이름"), "?");
+    firePageHide();
+
+    expect(captured("resume_edit_saved").map(([, p]) => p)).toEqual([
+      expect.objectContaining({ outcome: "exit_draft" }),
+      expect.objectContaining({ outcome: "exit_draft" }),
+    ]);
+  });
+});
+
 describe("영문 읽기 전용 — 보완 안내", () => {
   function enResume(파싱경고: string[]): ResumeVersion {
     return resumeFixture({
@@ -1084,5 +1444,302 @@ describe("FRT-238 — 버전 전환 중 늦게 도착한 응답", () => {
     });
 
     expect(mockUpdateResume).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * FRT-191 — 저장에 **성공**해도 남던 복원 배너.
+ *
+ * 실패 갈래에는 "배너 하나가 편집을 두 번 잃게 만든다"는 이유까지 달린 `setPendingDraft(null)`
+ * 이 있는데 성공 갈래에만 빠져 있었다. 배너가 남으면 '복원'이 방금 서버에 저장한 내용을 지난
+ * 세션의 낡은 스냅샷으로 덮고, `clearDraft` 까지 불러 되돌릴 길도 없앤다.
+ */
+describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
+  const OLD_DRAFT_SUMMARY = "지난 세션에 고친 문장";
+
+  function seedOlderDraft() {
+    window.localStorage.setItem(
+      "arc:resume-draft:v1",
+      JSON.stringify({
+        data: resumeFixture({ 자기소개_요약: OLD_DRAFT_SUMMARY }),
+        // meta.generated_at(2026-07-21) 보다 뒤여야 복원 배너가 뜬다.
+        updated_at: "2026-07-22T00:00:00Z",
+      }),
+    );
+  }
+
+  function storedDraft(): { data: ResumeVersion } | null {
+    const raw = window.localStorage.getItem("arc:resume-draft:v1");
+    return raw ? (JSON.parse(raw) as { data: ResumeVersion }) : null;
+  }
+
+  it("저장에 성공하면 복원 배너가 사라진다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockImplementation(async (_id, data) => data);
+    seedOlderDraft();
+    await renderLoaded();
+
+    // 배너가 실재하는 상태에서 출발했음을 먼저 못박는다 — 이게 없으면 "원래 안 떴다"와
+    // "저장이 지웠다"가 구별되지 않아 단언이 공허하게 통과한다.
+    expect(screen.getByRole("button", { name: "복원" })).toBeTruthy();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "복원" })).toBeNull(),
+    );
+  });
+
+  it("저장에 성공하면 옛 임시저장은 저장소에도 남지 않는다", async () => {
+    const user = userEvent.setup();
+    mockUpdateResume.mockImplementation(async (_id, data) => data);
+    seedOlderDraft();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(storedDraft()).toBeNull();
+  });
+
+  // 배너를 지우는 것만으로는 부족하다. 저장이 도는 동안 이어 고쳐도 **낡은 draft 가 저장소에
+  // 남으면 안 된다** — 그 뒤 탭을 그냥 닫으면(cleanup 미실행) 다음 진입 때 그 옛 draft 가
+  // 다시 배너로 떠 같은 되돌림 사고가 재현된다. 이어 고친 편집은 화면과 dirty 에 살아 있어
+  // 이탈 경로들이 남기므로, 여기서 draft 를 새로 만들지 않는다.
+  it("저장 중에 이어 고쳐도 옛 draft 는 저장소에 남지 않는다", async () => {
+    const user = userEvent.setup();
+    let resolveSave!: (value: ResumeVersion) => void;
+    mockUpdateResume.mockImplementation(
+      () =>
+        new Promise<ResumeVersion>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    seedOlderDraft();
+    await renderLoaded();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // 요청이 도는 동안 이어서 고친다 — 서버가 받아간 스냅샷에는 이 편집이 없다.
+    await user.click(screen.getByRole("button", { name: /자기소개/ }));
+    await user.type(
+      screen.getByPlaceholderText("간단한 자기소개를 적어주세요."),
+      "x",
+    );
+
+    await act(async () => {
+      resolveSave(resumeFixture({ 인적사항: { ...resumeFixture().인적사항, 이름: "김서윤!" } }));
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "복원" })).toBeNull(),
+    );
+    // 지난 세션 문장이 남아 있으면 다음 진입에서 배너로 되살아나 방금 저장한 내용을 되돌린다.
+    expect(storedDraft()).toBeNull();
+  });
+
+  function draftName(versionId: string): string | null {
+    const raw = window.localStorage.getItem(`arc:resume-draft:${versionId}`);
+    if (!raw) return null;
+    return (JSON.parse(raw) as { data: ResumeVersion }).data.인적사항.이름;
+  }
+
+  // 저장 응답이 도는 동안 다른 버전으로 옮기면, 클로저의 versionId 는 **이전** 버전인데
+  // resumeRef 는 이미 **다음** 버전 내용이다(같은 인스턴스를 재사용하므로 — FRT-238).
+  // 그 조합으로 임시 저장을 쓰면 남의 본문이 이전 버전의 키에 심겨, 다음 진입 때 배너가
+  // 그 본문을 이 버전에 덮어쓴다 — FRT-191 이 막으려던 사고가 더 나쁜 모양으로 돌아온다.
+  it("저장 도중 다른 버전으로 옮기면 그 버전 내용이 이전 버전의 임시 저장에 심기지 않는다", async () => {
+    const user = userEvent.setup();
+    const route = routeByVersion();
+    let resolveSave!: (value: ResumeVersion) => void;
+    mockUpdateResume.mockImplementation(
+      () =>
+        new Promise<ResumeVersion>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    const result = await renderVersion("A");
+    route.resolve("A", named("에이"));
+    await flush();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // B 로 옮긴다 — 이 전환의 cleanup 이 A 의 편집을 A 의 키에 이미 남긴다.
+    await navigateTo(result, "B");
+    route.resolve("B", named("비"));
+    await flush();
+
+    // 이제서야 A 의 PATCH 응답이 도착한다.
+    await act(async () => {
+      resolveSave(named("에이!"));
+    });
+    await flush();
+
+    expect(shownName()).toBe("비");
+    // A 의 임시 저장은 전환 시점에 남긴 A 의 편집 그대로여야 한다.
+    expect(draftName("A")).toBe("에이!");
+  });
+
+  // versionId 만 보는 가드로는 **A→B→A** 왕복이 안 잡힌다. 돌아오면 versionId 는 다시
+  // 같아지지만, 그 사이 재조회가 끼어들어 resumeRef 는 **저장 전** 본문으로 되돌아가 있다.
+  // 그걸 "이어 고친 편집"으로 오인해 쓰면 전환 때 남긴 올바른 draft 를 낡은 본문으로 덮고
+  // 배너까지 지운다 — 복원할 것이 사라진 채로 저장된 편집을 잃는 길이다.
+  it("저장 도중 A→B→A 로 돌아와도 재조회한 저장 전 본문이 임시 저장을 덮지 않는다", async () => {
+    const user = userEvent.setup();
+    const route = routeByVersion();
+    let resolveSave!: (value: ResumeVersion) => void;
+    mockUpdateResume.mockImplementation(
+      () =>
+        new Promise<ResumeVersion>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    const result = await renderVersion("A");
+    route.resolve("A", named("에이"));
+    await flush();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // A→B→A. 떠나던 순간의 cleanup 이 A 의 편집을 A 의 키에 남긴다.
+    await navigateTo(result, "B");
+    route.resolve("B", named("비"));
+    await flush();
+    await navigateTo(result, "A");
+    // 두 번째 A 조회는 PATCH 가 아직 안 끝나 **저장 전** 본문을 준다.
+    route.resolve("A", named("에이"), 1);
+    await flush();
+
+    // 이제서야 A 의 PATCH 응답이 도착한다.
+    await act(async () => {
+      resolveSave(named("에이!"));
+    });
+    await flush();
+
+    expect(draftName("A")).toBe("에이!");
+    // 배너까지 지우면 그 편집으로 되돌아갈 길이 함께 사라진다.
+    expect(screen.queryByRole("button", { name: "복원" })).toBeTruthy();
+  });
+
+  // 언마운트는 seq 를 올리지 않는다 — 같은 레쥬메로 다시 들어오면 **새 인스턴스**의 키가
+  // seq 0 부터 시작해 옛 인스턴스의 키와 겹친다. 그 상태로 늦게 끝난 옛 저장이 가드를
+  // 통과하면, 새 인스턴스가 **복원하라고 띄워 둔 임시 저장을 지워버린다** — 배너는 화면에
+  // 남아 있는데 되돌릴 내용은 사라진 상태가 된다.
+  it("언마운트 뒤 늦게 끝난 저장은 새 인스턴스가 띄운 임시 저장을 지우지 않는다", async () => {
+    const user = userEvent.setup();
+    const route = routeByVersion();
+    let resolveSave!: (value: ResumeVersion) => void;
+    mockUpdateResume.mockImplementation(
+      () =>
+        new Promise<ResumeVersion>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    const first = await renderVersion("A");
+    route.resolve("A", named("에이"));
+    await flush();
+
+    await user.type(screen.getByLabelText("이름"), "!");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    // 완전한 이탈 — 언마운트 cleanup 이 A 의 편집을 A 키에 남긴다.
+    first.unmount();
+
+    // 같은 레쥬메로 다시 들어온다(새 인스턴스, seq 는 0 부터).
+    await renderVersion("A");
+    route.resolve("A", named("에이"), 1);
+    await flush();
+
+    // 새 인스턴스는 그 임시 저장을 "복원하시겠어요"로 띄운 상태다.
+    expect(screen.getByRole("button", { name: "복원" })).toBeTruthy();
+    expect(draftName("A")).toBe("에이!");
+
+    // 이제서야 옛 인스턴스의 저장이 끝난다.
+    await act(async () => {
+      resolveSave(named("에이!"));
+    });
+    await flush();
+
+    // 배너가 가리키는 임시 저장이 사라지면 되돌릴 길이 없어진다.
+    expect(draftName("A")).toBe("에이!");
+  });
+});
+
+
+/**
+ * FRT-326 - 생성은 비동기다. 그 사이 상세로 들어오면 서버는 200 에 `result: null` 을 준다.
+ *
+ * 그 상태를 "불러오지 못했어요"로 그리면 사용자는 **정상 진행을 실패로 읽는다** - 자소서 상세는
+ * 이미 갈라 놓았으므로(CoverLetterNotReadyError) 한 화면 안에서 두 기능이 다른 말을 한다.
+ *
+ * 안내 문구는 자소서를 그대로 베끼지 않는다: 자소서 목록에는 폴링이 있어 "완료되면 목록에서
+ * 열 수 있어요"가 참이지만, **레쥬메 목록에는 폴링이 없다**(FRT-325). 지킬 수 없는 약속 대신
+ * 이 화면에 실재하는 탈출구('다시 시도')를 가리킨다.
+ */
+describe("FRT-326 - 아직 만들고 있는 레쥬메", () => {
+  it("준비 안 된 레쥬메는 실패가 아니라 '아직 만들고 있어요'로 말한다", async () => {
+    const route = routeByVersion();
+    await renderVersion("A");
+    route.reject("A", new ResumeNotReadyError());
+    await flush();
+
+    expect(screen.getByText("아직 만들고 있어요")).toBeTruthy();
+    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+  });
+
+  it("그 화면은 이 자리에서 이을 길('다시 시도')을 가리킨다", async () => {
+    const route = routeByVersion();
+    await renderVersion("A");
+    route.reject("A", new ResumeNotReadyError());
+    await flush();
+
+    // 목록은 스스로 갱신되지 않으므로 "목록에서 열 수 있어요"라고 말하면 안 된다.
+    expect(screen.getByText(/'다시 시도'를 눌러/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+  });
+
+  it("'다시 시도'로 완성된 레쥬메를 그 자리에서 연다", async () => {
+    const route = routeByVersion();
+    await renderVersion("A");
+    route.reject("A", new ResumeNotReadyError());
+    await flush();
+    await screen.findByText("아직 만들고 있어요");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    route.resolve("A", named("다 됐다"), 1);
+    await flush();
+
+    expect(shownName()).toBe("다 됐다");
+    expect(screen.queryByText("아직 만들고 있어요")).toBeNull();
+  });
+
+  // 소거법("ApiError 가 아니면 준비 중")으로 판정하면 네트워크 장애·파싱 실패까지
+  // "아직 만들고 있어요"가 된다 - 사용자는 고칠 수 있는 것을 못 고친 채 기다린다.
+  it("일반 실패는 여전히 '불러오지 못했어요'다", async () => {
+    const route = routeByVersion();
+    await renderVersion("A");
+    route.reject("A", new Error("boom"));
+    await flush();
+
+    expect(screen.getByText("레쥬메를 불러오지 못했어요")).toBeTruthy();
+    expect(screen.queryByText("아직 만들고 있어요")).toBeNull();
+  });
+
+  it("404 는 여전히 '찾을 수 없어요'다 - 준비 중이 그 판정을 가리지 않는다", async () => {
+    const route = routeByVersion();
+    await renderVersion("A");
+    route.reject("A", new ApiError(404, "not found"));
+    await flush();
+
+    expect(screen.getByText("레쥬메를 찾을 수 없어요")).toBeTruthy();
+    expect(screen.queryByText("아직 만들고 있어요")).toBeNull();
   });
 });

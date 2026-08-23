@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+import InternalUserTagger from "@/components/analytics/InternalUserTagger";
 import { ToastContainer } from "@/components/ui";
 import AuthProvider from "@/contexts/AuthContext";
 import PostHogProvider from "@/contexts/PostHogProvider";
@@ -29,6 +30,8 @@ export default function RootLayout({
             {children}
             {/* 앱 전역 토스트 표시 지점 — (auth)·(main) 모두 커버 (FRT-45). */}
             <ToastContainer />
+            {/* 팀 계정을 분석에서 제외 표시 — 렌더 없음 (FRT-139). */}
+            <InternalUserTagger />
           </AuthProvider>
         </PostHogProvider>
       </body>

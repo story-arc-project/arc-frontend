@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 
 import { createExperience, getExperiences } from "@/lib/api/experience-api"
 import { toSavePayload } from "@/lib/utils/experience-mapper"
-import { capture, markFirstRecordIfUnseen } from "@/lib/analytics"
+import { capture, markFirstRecordIfUnseen, useArchiveEntryAnalytics } from "@/lib/analytics"
 import { useAuth } from "@/hooks/useAuth"
 import { useBasePath } from "@/lib/utils/use-base-path"
 import { safeReturnTo } from "@/lib/utils/archive-context"
@@ -44,6 +44,10 @@ export default function ArchiveNewPage() {
     capture("archive_entry_started", {})
   }, [])
 
+  // 진입 23 → 저장 4(180일 실측). 사라진 83% 가 **이 화면 안에서** 사라져 퍼널로는
+  // 어디서 멈췄는지 볼 수 없다 — 멈춘 자리·진행률·경과를 여기서 남긴다(FRT-107).
+  const entryAnalytics = useArchiveEntryAnalytics({ mode: "new", active: true, saving })
+
   async function handleSave(exp: ExperienceV2) {
     setSaving(true)
     try {
@@ -52,8 +56,19 @@ export default function ArchiveNewPage() {
       setError(null)
       // 저장 성공 — 미저장 플래그를 내려 beforeunload 경고 없이 목록으로 복귀한다.
       setHasUnsaved(false)
+      // 여기서부터 이 진입은 이탈이 아니다(FRT-107). 진행 속성은 이탈 이벤트와 **같은
+      // 이름·같은 시계**라, 끝낸 사람과 포기한 사람을 나란히 놓고 무엇이 달랐는지 물을 수 있다.
+      const progress = entryAnalytics.progressProps()
+      entryAnalytics.markSaved()
       // 기록 생성 완료(FRT-19). status 로 draft·complete 를 구분한다.
-      capture("record_created", { experience_type: payload.type, status: exp.status })
+      capture("record_created", {
+        experience_type: payload.type,
+        status: exp.status,
+        elapsed_seconds: progress.elapsed_seconds,
+        sections_done: progress.sections_done,
+        sections_total: progress.sections_total,
+        qualitative_fields_filled: progress.qualitative_fields_filled,
+      })
       // 최초 1회 판정: 서버 count===1 을 1차 근거로 하되, 전체 삭제 후 재생성 재발화를
       // 디바이스 마커로 막는다(markFirstRecordIfUnseen). 네비게이션을 막지 않도록 fire-and-forget.
       void getExperiences()
@@ -100,6 +115,7 @@ export default function ArchiveNewPage() {
         onUnsavedChange={setHasUnsaved}
         onVisibleSectionsChange={setSections}
         onProgressChange={setProgress}
+        onCompletionChange={entryAnalytics.handleCompletionChange}
       />
     </InputViewShell>
   )
