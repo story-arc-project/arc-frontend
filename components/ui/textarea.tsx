@@ -1,6 +1,8 @@
 "use client";
 
-import { TextareaHTMLAttributes, forwardRef, useCallback, useEffect, useRef } from "react";
+import { TextareaHTMLAttributes, forwardRef, useImperativeHandle } from "react";
+
+import { syncTextareaHeight, useAutoResizeTextarea } from "@/hooks/useAutoResizeTextarea";
 
 import { RequiredDot } from "./required-dot";
 
@@ -12,14 +14,13 @@ interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   hintPosition?: "top" | "bottom";
 }
 
-function autoResize(el: HTMLTextAreaElement) {
-  el.style.height = "auto";
-  el.style.height = el.scrollHeight + "px";
-}
-
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ label, hint, error, hintPosition = "bottom", className = "", id, onChange, value, required, ...props }, ref) => {
-    const innerRef = useRef<HTMLTextAreaElement>(null);
+    // 높이 동기화는 공용 훅에 맡긴다 — 테두리 보정·리플로우·웹폰트 교체까지 한곳에서(FRT-327).
+    // 비제어(`defaultValue`)로 쓰면 `value` 가 늘 undefined 라 마운트 한 번만 재고, 이후 타이핑은
+    // 아래 `onChange` 가 직접 다시 잰다.
+    const isControlled = value !== undefined;
+    const innerRef = useAutoResizeTextarea(isControlled ? String(value) : "");
     const textareaId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
     const hintId = textareaId ? `${textareaId}-hint` : undefined;
     const errorId = textareaId ? `${textareaId}-error` : undefined;
@@ -28,25 +29,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       <p id={hintId} className="text-caption">{hint}</p>
     ) : null;
 
-    // Sync forwarded ref + inner ref
-    const setRef = useCallback(
-      (el: HTMLTextAreaElement | null) => {
-        (innerRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
-        if (typeof ref === "function") ref(el);
-        else if (ref) (ref as React.MutableRefObject<HTMLTextAreaElement | null>).current = el;
-      },
-      [ref]
-    );
-
-    // Resize on mount (handles defaultValue)
-    useEffect(() => {
-      if (innerRef.current) autoResize(innerRef.current);
-    }, []);
-
-    // Resize when controlled value changes externally
-    useEffect(() => {
-      if (innerRef.current) autoResize(innerRef.current);
-    }, [value]);
+    // 훅이 돌려준 ref 를 그대로 요소에 물리고, 바깥에서 준 ref 에는 같은 요소를 노출한다.
+    useImperativeHandle(ref, () => innerRef.current as HTMLTextAreaElement, [innerRef]);
 
     return (
       <div className="flex flex-col gap-1.5">
@@ -58,7 +42,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         )}
         {hintPosition === "top" && hintNode}
         <textarea
-          ref={setRef}
+          ref={innerRef}
           id={textareaId}
           value={value}
           rows={3}
@@ -66,7 +50,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           aria-invalid={!!error}
           aria-describedby={describedBy}
           onChange={(e) => {
-            autoResize(e.currentTarget);
+            if (!isControlled) syncTextareaHeight(e.currentTarget);
             onChange?.(e);
           }}
           className={[

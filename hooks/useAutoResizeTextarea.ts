@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
  * 먼저 `height="auto"` 로 리셋하는 것이 핵심이다. `scrollHeight` 는 내용 높이와 현재 높이 중
  * 큰 값이라, 리셋 없이 재면 한 번 커진 칸이 영영 안 줄어든다.
  */
-function syncHeight(el: HTMLTextAreaElement) {
+export function syncTextareaHeight(el: HTMLTextAreaElement) {
   el.style.height = "auto";
   // `box-sizing: border-box`(Tailwind preflight 가 전역으로 건다) 아래서 `style.height` 는 테두리까지
   // 포함하는 값인데 `scrollHeight` 는 테두리를 빼고 잰다. 그대로 넣으면 테두리 두께만큼 칸이 모자라
@@ -44,7 +44,7 @@ export function useAutoResizeTextarea(value: string) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    syncHeight(el);
+    syncTextareaHeight(el);
   }, [value]);
 
   // (1) 칸의 너비가 바뀌면 다시 잰다.
@@ -65,7 +65,7 @@ export function useAutoResizeTextarea(value: string) {
       // 너비가 그대로면 줄바꿈도 그대로라 다시 잴 이유가 없다 — 이 가드가 되먹임 루프를 끊는다.
       if (width === lastWidth) return;
       lastWidth = width;
-      syncHeight(el);
+      syncTextareaHeight(el);
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -80,7 +80,7 @@ export function useAutoResizeTextarea(value: string) {
 
     let alive = true;
     const remeasure = () => {
-      if (alive) syncHeight(el);
+      if (alive) syncTextareaHeight(el);
     };
 
     // 동적 서브셋 폰트는 새 글리프가 필요해질 때마다 조각을 더 받는다 — 교체가 한 번으로 끝나지 않는다.
