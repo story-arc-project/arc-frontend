@@ -194,6 +194,49 @@ describe("getCoverLetter", () => {
       CoverLetterNotReadyError,
     );
   });
+
+  // FRT-332 — 레쥬메(FRT-326)와 같은 세 눈금: 래퍼 없음=실패 / 래퍼+종료 status=실패 /
+  // 래퍼+비종료·미지 status=not-ready.
+  // 래퍼조차 없는 응답(null·원시값·배열)은 "만드는 중"이 아니다. 생성 중이라는 증거는
+  // **래퍼가 존재한다는 사실** 자체인데 그것이 없으므로, 재시도로 풀릴 수 없는 형식 오류다.
+  it("응답 자체가 본문이 아니면(null·원시값·배열) '만드는 중'으로 말하지 않는다", async () => {
+    for (const data of [null, "oops", 42, []]) {
+      mockGet.mockResolvedValue(ok(data));
+
+      const err = await getCoverLetter("cl-1").catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(CoverLetterNotReadyError);
+      expect(err).not.toBeInstanceOf(ApiError);
+    }
+  });
+
+  // 본문이 없다고 다 "만드는 중"은 아니다. 래퍼의 status 가 **끝났다**고 말하는데 본문이
+  // 없으면 그건 실패다 — "완료되면 목록에서 열 수 있어요"로 안내하면 영영 오지 않을
+  // 완료를 기다리게 된다.
+  it.each([
+    ["status:failed · result:null", { id: "cl-7", status: "failed", result: null }],
+    ["status:success · result:null", { id: "cl-8", status: "success", result: null }],
+    ["status:failed · answers 없는 껍데기", { id: "cl-9", status: "failed", result: { meta: {} } }],
+  ])("%s 은 '만드는 중'이 아니다 — NotReady 로 말하지 않는다", async (_label, data) => {
+    mockGet.mockResolvedValue(ok(data));
+
+    const err = await getCoverLetter("cl-1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(CoverLetterNotReadyError);
+    expect(err).not.toBeInstanceOf(ApiError);
+  });
+
+  // 반대쪽 회귀: status 를 안 주거나 모르는 값·진행 중 값이면 **끝났다는 증거가 없다.**
+  // 여기서 실패로 단정하면 정상 생성 중인 자소서가 "불러오지 못했어요"가 된다.
+  it.each([
+    ["status 부재", { id: "cl-10", result: null }],
+    ["status 미지 값", { id: "cl-11", status: "weird", result: null }],
+    ["status:pending", { id: "cl-12", status: "pending", result: null }],
+    ["status:queued", { id: "cl-13", status: "queued", result: null }],
+  ])("%s 이면 여전히 NotReady 다", async (_label, data) => {
+    mockGet.mockResolvedValue(ok(data));
+    await expect(getCoverLetter("cl-1")).rejects.toBeInstanceOf(CoverLetterNotReadyError);
+  });
 });
 
 // ─── getCoverLetterList ─────────────────────────────────────────────
