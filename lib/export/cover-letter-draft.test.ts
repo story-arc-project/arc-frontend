@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-import { isDraftNewer, readDraft, writeDraft, type CoverLetterDraft } from "./cover-letter-draft";
+import {
+  isDraftNewer,
+  isStoredDraft,
+  readDraft,
+  writeDraft,
+  type CoverLetterDraft,
+} from "./cover-letter-draft";
 import type { CoverLetterResult } from "@/types/cover-letter";
 
 function result(createdAt?: unknown): CoverLetterResult {
@@ -116,5 +122,28 @@ describe("readDraft — 복원도 정규화를 통과한다", () => {
 
   it("저장된 값이 없으면 null 을 돌려준다", () => {
     expect(readDraft("missing")).toBeNull();
+  });
+});
+
+/**
+ * `true` 는 호출부에서 `clearDraft` 로 이어진다 — 저장소의 draft 가 "내가 담은 그 본문"일 때만
+ * 참이어야 다른 탭이 같은 키에 남긴 더 새 편집을 치우지 않는다.
+ */
+describe("isStoredDraft — 저장소의 draft 가 이 본문인가", () => {
+  it("같은 본문을 담았으면 참이다(정규화를 거치지 않고 원문 그대로 비교한다)", () => {
+    const data = result("2026-07-01T00:00:00Z");
+    writeDraft("id-1", data);
+    expect(isStoredDraft("id-1", data)).toBe(true);
+  });
+
+  it("다른 본문이 담겨 있거나, 아무것도 없거나, 깨진 값이면 거짓이다", () => {
+    const mine = result("2026-07-01T00:00:00Z");
+    expect(isStoredDraft("id-1", mine)).toBe(false);
+
+    writeDraft("id-1", { ...mine, answers: [{ ...mine.answers[0], cover_letter: "다른 탭" }] });
+    expect(isStoredDraft("id-1", mine)).toBe(false);
+
+    window.localStorage.setItem("arc:cover-letter-draft:id-1", "{broken");
+    expect(isStoredDraft("id-1", mine)).toBe(false);
   });
 });
