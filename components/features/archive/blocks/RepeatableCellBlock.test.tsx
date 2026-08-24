@@ -40,7 +40,11 @@ beforeEach(() => {
 
 function makeBlock(
   rows: BlockRow[],
-  opts?: { allowRowExtras?: boolean; allowRowArtifacts?: boolean },
+  opts?: {
+    allowRowExtras?: boolean
+    allowRowArtifacts?: boolean
+    artifactPlaceholders?: Block["artifactPlaceholders"]
+  },
 ): Block {
   return {
     id: "b1",
@@ -49,6 +53,7 @@ function makeBlock(
     lockColumns: true,
     ...(opts?.allowRowExtras ? { allowRowExtras: true } : {}),
     ...(opts?.allowRowArtifacts ? { allowRowArtifacts: true } : {}),
+    ...(opts?.artifactPlaceholders ? { artifactPlaceholders: opts.artifactPlaceholders } : {}),
     value: {
       type: "repeatable-cell",
       columns: [
@@ -290,6 +295,35 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
     await user.click(screen.getByRole("button", { name: "결과물 1 삭제" }))
     await user.click(screen.getByRole("button", { name: "지우기" }))
     expect(latest?.rows[0].artifacts).toEqual([])
+  })
+
+  // FRT-143: "결과물"의 예는 유형마다 다르다 — 학회는 케이스 발표 덱, 프로젝트는 와이어프레임.
+  // 템플릿이 문구를 주면 그걸 쓰고, 안 주면 프로젝트 확정본 문구(FRT-291)가 남는다.
+  it("결과물 빈칸 문구는 템플릿이 주면 그걸 쓰고, 없으면 기본 문구다", () => {
+    const { unmount } = render(
+      <Harness
+        block={makeBlock([{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1" }] }], {
+          allowRowArtifacts: true,
+          artifactPlaceholders: {
+            url: "링크 (Notion, Drive, YouTube 등)",
+            desc: "결과물 설명 (예: 케이스 발표 덱, 산업 분석 보고서)",
+          },
+        })}
+      />,
+    )
+    expect(screen.getByPlaceholderText("링크 (Notion, Drive, YouTube 등)")).toBeDefined()
+    expect(screen.getByPlaceholderText("결과물 설명 (예: 케이스 발표 덱, 산업 분석 보고서)")).toBeDefined()
+    unmount()
+
+    render(
+      <Harness
+        block={makeBlock([{ id: "r1", cells: { name: "A" }, artifacts: [{ id: "a1" }] }], {
+          allowRowArtifacts: true,
+        })}
+      />,
+    )
+    expect(screen.getByPlaceholderText("Figma, Notion, GitHub 등")).toBeDefined()
+    expect(screen.getByPlaceholderText("결과물 설명 (예: 와이어프레임, ERD, 테스트 결과서)")).toBeDefined()
   })
 
   it("값이 빈 결과물은 확인 없이 삭제된다", async () => {

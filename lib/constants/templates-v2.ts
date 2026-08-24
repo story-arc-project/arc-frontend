@@ -15,6 +15,20 @@ import {
   createRoleHistory,
 } from '@/lib/utils/block-utils'
 
+// ─── 결과물 행 첨부 (FRT-143) ─────────────────────────────────────
+//
+// 확정본은 프로젝트/활동 기록 한 행에 "결과물 = 파일 or 링크 + 설명"을 **여러 건** 받는다.
+// 셀 값은 단일이라 열로는 담을 수 없어 행 첨부(`allowRowArtifacts`, FRT-291)로 받는다.
+// FRT-143 이전에는 `output` 링크 **한 칸**으로 근사했다 — 저장된 레코드는 그 열을 아직 들고
+// 있으므로 로드 시 매퍼가 그 값을 행 첨부로 옮긴다(`experience-mapper`). 열 key 는 이관의
+// 판정 근거라 템플릿에서 사라진 뒤에도 여기 남긴다.
+
+/** FRT-143 이전 '결과물' 링크 한 칸의 열 key. 로드 시 행 첨부로 이관한다. */
+export const LEGACY_OUTPUT_LINK_COLUMN_KEY = 'output'
+
+/** 결과물 링크 빈칸 문구 — 확정본(학회 ③·수업 ③) 표기. */
+const ARTIFACT_URL_PLACEHOLDER = '링크 (Notion, Drive, YouTube 등)'
+
 // ─── Experience Type Registry ───────────────────────────────────
 
 export const EXPERIENCE_TYPES: ExperienceTypeInfo[] = [
@@ -455,18 +469,18 @@ function educationExtensions(): TemplateSection[] {
                 '이 프로젝트에서 내가 직접 맡은 부분은 무엇이었나요? 팀 과제라면 팀원 간 역할 분담도 함께 떠올려보세요.',
               placeholder: '예: 인터뷰 설계와 소비자 조사를 담당했고, 팀원 4명과 역할을 나눠 3주간 진행했습니다',
             },
-            {
-              key: 'output',
-              label: '결과물',
-              blockType: 'link',
-              guide: '이 프로젝트의 결과물을 첨부하거나 링크로 남겨주세요.',
-            },
+            // 확정본 ③ '결과물'(파일 or 링크 + 설명, 반복)은 열이 아니라 행 첨부로 받는다(FRT-143).
           ],
           {
             guide:
               '이 강좌에서 수행한 과제, 팀 프로젝트, 개인 제작물 등을 단위별로 기록해주세요.',
             // FRT-145: 각 프로젝트 행에 그 프로젝트에만 필요한 항목을 직접 추가할 수 있다.
             allowRowExtras: true,
+            allowRowArtifacts: true,
+            artifactPlaceholders: {
+              url: ARTIFACT_URL_PLACEHOLDER,
+              desc: '결과물 설명 (예: 케이스 발표 덱, 산업 분석 보고서)',
+            },
           },
         ),
       ],
@@ -656,19 +670,19 @@ function extracurricularExtensions(): TemplateSection[] {
               placeholder:
                 '예: 초반에 매장 섭외가 계속 거절되어 방향을 바꿔야 했고, 팀원들과 함께 근처 상권 대표 회의를 찾아가 협력 관계부터 만들었습니다.',
             },
-            {
-              // 문서는 파일+URL+설명의 '반복' 입력이지만 반복 블록 안의 반복은 중첩 1겹 제한에
-              // 걸려 아직 못 만든다. 학회와 같이 링크 한 칸으로 근사하고 정식 구현은 FRT-143.
-              key: 'output',
-              label: '결과물',
-              blockType: 'link',
-              guide: '이 미션/프로젝트의 결과물을 첨부하거나 링크로 남겨주세요.',
-            },
+            // 확정본 ③ '결과물'(파일 or 링크 + 설명, 반복)은 열이 아니라 행 첨부로 받는다(FRT-143).
           ],
           // 블록 자체 guide 는 두지 않는다 — 문서 ③의 안내 문구는 섹션(카드) 몫이고
           // (SECTION_DESCRIPTION_OVERRIDES), 여기 또 실으면 같은 문장이 두 줄 연달아 나온다.
           // FRT-145: 각 프로젝트 행에 그 프로젝트에만 필요한 항목을 직접 추가할 수 있다.
-          { allowRowExtras: true },
+          {
+            allowRowExtras: true,
+            allowRowArtifacts: true,
+            artifactPlaceholders: {
+              url: ARTIFACT_URL_PLACEHOLDER,
+              desc: '결과물 설명 (예: 콘텐츠 영상, 최종 발표 자료)',
+            },
+          },
         ),
       ],
     },
@@ -811,20 +825,17 @@ function academicSocietyExtensions(): TemplateSection[] {
               placeholder:
                 '예: 팀원 간 분석 방향 이견으로 2주간 진척이 없었고, 외부 자료 추가 조사로 합의점을 찾았습니다',
             },
-            {
-              // 문서는 파일+URL+설명의 '반복' 입력이지만 반복 블록 안의 반복은 중첩 1겹 제한에
-              // 걸려 아직 못 만든다. 지금은 링크 한 칸으로 근사하고 정식 구현은 FRT-143.
-              key: 'output',
-              label: '결과물',
-              blockType: 'link',
-              guide:
-                '이 프로젝트를 하면서 만든 것들을 링크로 남겨주세요. 발표 자료, 기획서, 보고서, 영상 등 무엇이든 괜찮아요.',
-            },
+            // 확정본 ③ '결과물'(파일 or 링크 + 설명, 반복)은 열이 아니라 행 첨부로 받는다(FRT-143).
           ],
           {
             guide: '학회 안에서 진행한 프로젝트나 연구활동을 단위별로 기록해주세요.',
             // FRT-145: 각 프로젝트 행에 그 프로젝트에만 필요한 항목을 직접 추가할 수 있다.
             allowRowExtras: true,
+            allowRowArtifacts: true,
+            artifactPlaceholders: {
+              url: ARTIFACT_URL_PLACEHOLDER,
+              desc: '결과물 설명 (예: 케이스 발표 덱, 산업 분석 보고서)',
+            },
           },
         ),
       ],
@@ -1037,20 +1048,19 @@ function clubExtensions(): TemplateSection[] {
               placeholder:
                 '예: 공연장 대관이 취소되어 3주 만에 대체 장소를 찾아야 했고, 학교 시설과 협의해 강당을 확보한 뒤 팀별 리허설 스케줄을 재편성했습니다.',
             },
-            {
-              // 문서는 파일+URL+설명의 '반복' 입력이지만 반복 블록 안의 반복은 중첩 1겹 제한에
-              // 걸린다. 대외활동과 같이 링크 한 칸으로 근사하고 정식 구현은 FRT-143.
-              key: 'output',
-              label: '결과물',
-              blockType: 'link',
-              guide:
-                '이 활동/이벤트의 결과물을 첨부하거나 링크로 남겨주세요. 공연 영상, 포스터, 사진, 후기 등 무엇이든 좋아요.',
-            },
+            // 확정본 ③ '결과물'(파일 or 링크 + 설명, 반복)은 열이 아니라 행 첨부로 받는다(FRT-143).
           ],
           // 블록 자체 guide 는 두지 않는다 — 문서 ③의 안내 문구는 섹션(카드) 몫이다
           // (SECTION_DESCRIPTION_OVERRIDES). 여기 또 실으면 같은 문장이 두 줄 연달아 나온다.
           // FRT-145: 각 활동 행에 그 활동에만 필요한 항목을 직접 추가할 수 있다.
-          { allowRowExtras: true },
+          {
+            allowRowExtras: true,
+            allowRowArtifacts: true,
+            artifactPlaceholders: {
+              url: ARTIFACT_URL_PLACEHOLDER,
+              desc: '결과물 설명 (예: 공연 영상, 포스터, 후기)',
+            },
+          },
         ),
       ],
     },
@@ -1206,15 +1216,16 @@ function careerExtensions(): TemplateSection[] {
             placeholder:
               '예: 광고 소재 심사 반려가 반복돼 일정이 밀렸고, 심사 가이드를 다시 분석해 표현을 수정하는 프로세스를 만들어 해결했습니다',
           },
-          {
-            key: 'output',
-            label: '결과물',
-            blockType: 'link',
-            guide:
-              '이 프로젝트/업무를 하면서 만든 산출물을 첨부하거나 링크로 남겨주세요. 기획서, 보고서, 콘텐츠, 대시보드 등 무엇이든 괜찮아요.',
+          // 확정본 ③ '결과물'(파일 or 링크 + 설명, 반복)은 열이 아니라 행 첨부로 받는다(FRT-143).
+        ], {
+          // FRT-145: 각 프로젝트 행에 그 프로젝트에만 필요한 항목을 직접 추가할 수 있다.
+          allowRowExtras: true,
+          allowRowArtifacts: true,
+          artifactPlaceholders: {
+            url: ARTIFACT_URL_PLACEHOLDER,
+            desc: '결과물 설명 (예: 기획서, 보고서, 대시보드)',
           },
-        // FRT-145: 각 프로젝트 행에 그 프로젝트에만 필요한 항목을 직접 추가할 수 있다.
-        ], { allowRowExtras: true }),
+        }),
       ],
     },
   ]

@@ -16,6 +16,7 @@ import { isImportanceLevel, SCHEMA_VERSION_V2 } from "@/types/archive"
 import {
   EXPERIENCE_TYPE_MAP,
   getTemplateForType,
+  LEGACY_OUTPUT_LINK_COLUMN_KEY,
   PROJECT_COLLAB_KEY,
   PROJECT_SOLO_OPTION,
   PROJECT_TYPE_MERGE_VERSION,
@@ -115,11 +116,48 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
     const compat = textualCompatValue(block, safe)
     return { ...block, value: compat ?? safe }
   }
+  // 결과물 링크 한 칸을 행 첨부로 바꾼 표(FRT-143)는 저장분의 그 열을 먼저 옮긴다 — 아래 잠금
+  // 판정보다 앞서야 한다. 옮기고 나면 열이 템플릿과 다시 같아져 잠금이 유지된다.
+  const migrated = block.allowRowArtifacts ? absorbLegacyOutputColumn(block.value, safe) : safe
   // 컬럼을 손댄 레코드는 잠금을 풀어 열 관리 UI 를 돌려준다(FRT-104).
-  if (block.lockColumns && !columnsMatchTemplate(block.value, safe)) {
-    return { ...block, value: safe, lockColumns: false }
+  if (block.lockColumns && !columnsMatchTemplate(block.value, migrated)) {
+    return { ...block, value: migrated, lockColumns: false }
   }
-  return { ...block, value: safe }
+  return { ...block, value: migrated }
+}
+
+/**
+ * FRT-143 이전 '결과물' 링크 **한 칸**(`output` 열)을 행 첨부(`artifacts`)로 옮긴다.
+ *
+ * 저장된 표는 자기 열 목록을 들고 있다. 템플릿이 그 열을 뺐는데 그대로 두면 두 가지가 한꺼번에
+ * 틀어진다 — 열이 템플릿과 어긋나 잠금이 풀리고(FRT-104), 옛 링크 칸과 새 결과물 묶음이 같은 행에
+ * 나란히 서서 권위 있는 칸이 둘이 된다. 그래서 값을 첫 번째 결과물로 옮기고 열은 지운다 —
+ * 칸은 하나가 되고 값은 잃지 않는다.
+ *
+ * 판정은 **템플릿에 없는 `output` 열**로 좁힌다 — 사용자가 잠금 이전에 직접 더한 링크 열까지
+ * 삼키면 안 된다. 그 열이 템플릿에 그대로 있는 표(이관 대상이 아닌 표)는 손대지 않는다.
+ * 이미 이관된 레코드는 그 열이 없어 그대로 돌아온다(멱등).
+ */
+function absorbLegacyOutputColumn(templateValue: BlockValue, saved: BlockValue): BlockValue {
+  if (templateValue.type !== "repeatable-cell" || saved.type !== "repeatable-cell") return saved
+  const key = LEGACY_OUTPUT_LINK_COLUMN_KEY
+  if (templateValue.columns.some(c => c.key === key)) return saved
+  if (!saved.columns.some(c => c.key === key)) return saved
+  return {
+    ...saved,
+    columns: saved.columns.filter(c => c.key !== key),
+    rows: saved.rows.map(row => {
+      const { [key]: legacy, ...cells } = row.cells
+      const url = typeof legacy === "string" ? legacy.trim() : ""
+      const existing = row.artifacts ?? []
+      // 같은 주소가 이미 결과물로 있으면 겹쳐 만들지 않는다 — 두 값이 한 레코드에 공존하는 손상
+      // 케이스의 방어이지, 정상 경로에서는 열이 지워져 두 번 오지 않는다.
+      if (!url || existing.some(a => a.url?.trim() === url)) {
+        return { ...row, cells }
+      }
+      return { ...row, cells, artifacts: [{ id: uid(), url }, ...existing] }
+    }),
+  }
 }
 
 /**
