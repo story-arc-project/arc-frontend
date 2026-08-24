@@ -78,6 +78,8 @@ const INTERNAL_KEYS = new Set([
   "required",
   "placeholder",
   "guide",
+  // repeatable-cell 의 템플릿 컬럼 정의(`BlockColumnDef[]`)일 때만 내부 키다. 표(`TableBlockValue`)의
+  // `columns: string[]` 는 사용자가 만든 열 이름이라 `renderTable` 이 먼저 집어 셀의 라벨로 쓴다(FRT-321).
   "columns",
   "schema_version",
   "template_version",
@@ -152,11 +154,47 @@ function renderEntries(
     .join(", ")
 }
 
+/**
+ * 표(`TableBlockValue`: `columns: string[]` + `rows: string[][]`)를 행마다 `열: 셀` 로 낸다.
+ *
+ * 표의 열 이름은 템플릿이 아니라 **사용자가 직접 만든 값**이다(`TableBlock.tsx` `addColumn`).
+ * `INTERNAL_KEYS` 의 `columns` 는 repeatable-cell 의 템플릿 컬럼 정의(`BlockColumnDef[]`)를
+ * 뜻하는 것이라, 표에서는 걸러내지 않고 셀의 라벨로 쓴다(FRT-321). 열 수와 셀 수가 어긋나면
+ * (LLM 이 재구성한 인용) 짝이 없는 셀은 라벨 없이 내고 빈 셀만 건너뛴다 — 값은 버리지 않는다.
+ */
+function renderTable(columns: unknown[], rows: unknown[]): string {
+  const headers = columns.map((column) => (typeof column === "string" ? column.trim() : ""))
+  return rows
+    .map((row) => {
+      if (!Array.isArray(row)) return renderValue(row)
+      return row
+        .map((cell, index) => {
+          const rendered = renderValue(cell)
+          if (!rendered) return ""
+          const header = headers[index]
+          return header ? `${header}: ${rendered}` : rendered
+        })
+        .filter(Boolean)
+        .join(", ")
+    })
+    .filter(Boolean)
+    .join(" / ")
+}
+
+const TABLE_KEYS = new Set(["columns", "rows"])
+
 function renderObject(value: Record<string, unknown>, isCells = false): string {
   // 기간으로 읽되 **형제 값은 버리지 않는다** — 조용히 사라지는 값이 읽기 어려운 값보다 나쁘다.
   if ("start" in value || "end" in value) {
     const rest = renderEntries(value, PERIOD_KEYS, isCells)
     return [renderPeriod(value), rest].filter(Boolean).join(", ")
+  }
+
+  // 행이 배열의 배열이면 표다(repeatable-cell 의 행은 객체). 열 이름을 셀에 짝지어 낸다.
+  if (!isCells && Array.isArray(value.rows) && value.rows.some(Array.isArray)) {
+    const columns = Array.isArray(value.columns) ? value.columns : []
+    const table = renderTable(columns, value.rows)
+    return [table, renderEntries(value, TABLE_KEYS)].filter(Boolean).join(", ")
   }
 
   // 대표 키는 "무엇이 이 블록의 값인가"를 고르는 장치지 형제를 버리는 장치가 아니다.

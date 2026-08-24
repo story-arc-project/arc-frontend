@@ -215,3 +215,35 @@ describe("humanizeRawFieldNotation — 문장 안에 섞여 온 경우", () => {
     expect(humanizeRawFieldNotation('  tags: ["미술사"]  ')).toBe("태그: 미술사")
   })
 })
+
+/**
+ * `TableBlockValue` 는 `columns: string[]` + `rows: string[][]` 다(`types/archive.ts`).
+ * 표의 열 이름은 템플릿이 아니라 **사용자가 직접 만든 값**이다(`TableBlock.tsx` `addColumn`) —
+ * 걸러내면 어느 값이 어느 열인지 알 수 없는 숫자 나열만 남는다(FRT-321).
+ */
+describe("humanizeRawFieldNotation — 표 블록(열 이름 + 행)", () => {
+  it("열 이름을 셀에 짝지어 내고 행 사이는 기호로 가른다", () => {
+    const raw =
+      'core.수상 이력: {"type": "table", "columns": ["연도", "성과"], "rows": [["2024", "대상"], ["2025", "우수상"]]}'
+    expect(humanizeRawFieldNotation(raw)).toBe(
+      "수상 이력: 연도: 2024, 성과: 대상 / 연도: 2025, 성과: 우수상",
+    )
+  })
+
+  /** LLM 인용은 원문 복사가 아니라 열 이름이 빠져 올 수 있다 — 그래도 행 경계는 남겨야 읽힌다. */
+  it("열 이름 없이 행만 오면 행 경계라도 가른다", () => {
+    const raw = 'core.수상 이력: {"rows": [["2024", "대상"], ["2025", "우수상"]]}'
+    expect(humanizeRawFieldNotation(raw)).toBe("수상 이력: 2024, 대상 / 2025, 우수상")
+  })
+
+  /** 열 수와 셀 수가 어긋나도(재구성된 인용) 사용자가 쓴 값은 버리지 않는다 — 빈 셀만 건너뛴다. */
+  it("열 수와 셀 수가 어긋나도 값을 버리지 않고 빈 셀만 건너뛴다", () => {
+    const raw = 'core.표: {"columns": ["연도"], "rows": [["2024", "비고"], ["", "메모"]]}'
+    expect(humanizeRawFieldNotation(raw)).toBe("표: 연도: 2024, 비고 / 메모")
+  })
+
+  it("셀 값이 하나도 없으면 열 이름만으로 지어내지 않고 원문을 남긴다", () => {
+    const raw = 'core.표: {"type": "table", "columns": ["연도", "성과"], "rows": [["", ""]]}'
+    expect(humanizeRawFieldNotation(raw)).toBe(raw)
+  })
+})
