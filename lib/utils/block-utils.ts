@@ -235,6 +235,8 @@ export function createRepeatableCell(
     allowRowExtras?: boolean
     /** 각 행에 결과물(링크·파일·설명)을 여러 건 붙인다 (FRT-291). */
     allowRowArtifacts?: boolean
+    /** 결과물 편집기의 유형별 빈칸 문구 (FRT-143). `allowRowArtifacts` 가 켜진 블록에만 실린다. */
+    artifactPlaceholders?: Block['artifactPlaceholders']
   },
 ): Block {
   const base = createBlock('repeatable-cell', label, {
@@ -248,6 +250,9 @@ export function createRepeatableCell(
     // 끈 블록에 키를 남기지 않는다 — 템플릿 스냅샷 비교(toEqual)에 잡음이 된다.
     ...(opts?.allowRowExtras ? { allowRowExtras: true } : {}),
     ...(opts?.allowRowArtifacts ? { allowRowArtifacts: true } : {}),
+    ...(opts?.allowRowArtifacts && opts.artifactPlaceholders
+      ? { artifactPlaceholders: opts.artifactPlaceholders }
+      : {}),
   }
 }
 

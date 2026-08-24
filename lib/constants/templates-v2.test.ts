@@ -323,7 +323,7 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
   it("대외활동 ③ 은 문서 7컬럼 순서·필수를 따른다", () => {
     const columns = columnsOf("extracurricular", "extra-missions", "미션 / 프로젝트")
     expect(columns.map(c => c.key)).toEqual([
-      "name", "type", "description", "work", "result", "difficulty", "output",
+      "name", "type", "description", "work", "result", "difficulty",
     ])
     // 문서상 필수: 프로젝트명·유형
     expect(columns.filter(c => c.required).map(c => c.key)).toEqual(["name", "type"])
@@ -424,6 +424,36 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     expect(results.linkConfig).toBeUndefined()
   })
 
+  // FRT-143: 확정본 ③ '결과물'은 파일 or 링크 + 설명을 **여러 건** — 링크 한 칸(`output` 열)이던
+  // 근사를 걷고 행 첨부(FRT-291)로 받는다. 열이 남아 있으면 같은 행에 결과물 입력처가 둘이 된다.
+  it("FRT-143: 프로젝트 기록 5종은 결과물을 행 첨부로 받고 링크 한 칸은 없다", () => {
+    const enabled: [ExperienceTypeId, string][] = [
+      ["academic-society", "society-projects.프로젝트/연구활동"],
+      ["education", "edu-projects.프로젝트 / 과제 / 제작물"],
+      ["extracurricular", "extra-missions.미션 / 프로젝트"],
+      ["club", "club-activities.활동 / 이벤트"],
+      ["career", "career-tasks.프로젝트/담당 업무"],
+    ]
+    for (const [typeId, key] of enabled) {
+      const block = getTemplateForType(typeId).extensions.flatMap(s => s.blocks).find(b => b.key === key)!
+      expect(block.allowRowArtifacts, `${key} 는 결과물 행 첨부를 켠다`).toBe(true)
+      const columns = block.value.type === "repeatable-cell" ? block.value.columns : []
+      expect(columns.map(c => c.key), `${key} 에 링크 한 칸이 남아 있다`).not.toContain("output")
+      // 확정본 문구 — 링크는 공통, 설명 예시는 유형이 정한다.
+      expect(block.artifactPlaceholders?.url).toBe("링크 (Notion, Drive, YouTube 등)")
+      expect(block.artifactPlaceholders?.desc, `${key} 의 설명 문구`).toMatch(/^결과물 설명 \(예: /)
+    }
+    // 확정본이 예시를 명시한 학회·수업은 그 표기 그대로다.
+    for (const typeId of ["academic-society", "education"] as const) {
+      const block = getTemplateForType(typeId).extensions.flatMap(s => s.blocks).find(b => b.allowRowArtifacts)!
+      expect(block.artifactPlaceholders?.desc).toBe("결과물 설명 (예: 케이스 발표 덱, 산업 분석 보고서)")
+    }
+    // 켜지 않은 표에는 문구도 실리지 않는다 — 템플릿 스냅샷에 잡음이 된다.
+    const langRecords = getTemplateForType("language").extensions.flatMap(s => s.blocks).find(b => b.type === "repeatable-cell")!
+    expect(langRecords.allowRowArtifacts).toBeUndefined()
+    expect(langRecords.artifactPlaceholders).toBeUndefined()
+  })
+
   it("FRT-145: 프로젝트 기록 블록만 행에 '항목 추가'를 연다", () => {
     // 켠 곳 — 확정본이 '블록 안에서 항목 추가'를 말한 프로젝트/활동 기록 5종.
     const enabled: [ExperienceTypeId, string][] = [
@@ -464,7 +494,7 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
   it("동아리 ③ 은 문서 8컬럼 순서·필수를 따르고 첫 컬럼이 역할 칩이다", () => {
     const columns = columnsOf("club", "club-activities", "활동 / 이벤트")
     expect(columns.map(c => c.key)).toEqual([
-      "role", "name", "type", "detail", "work", "result", "difficulty", "output",
+      "role", "name", "type", "detail", "work", "result", "difficulty",
     ])
     expect(columns[0].label).toBe("이 활동 때의 역할")
     expect(columns[0].variant).toBe("role-chip")
@@ -564,7 +594,7 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
   it("학회 ③ 은 문서 순서·필수·컬럼 구성을 그대로 따른다", () => {
     const columns = columnsOf("academic-society", "society-projects", "프로젝트/연구활동")
     expect(columns.map(c => c.key)).toEqual([
-      "name", "role", "period", "goal", "work", "result", "difficulty", "output",
+      "name", "role", "period", "goal", "work", "result", "difficulty",
     ])
     const required = columns.filter(c => c.required).map(c => c.key)
     // 문서상 필수: 프로젝트명·직책/역할·세부 기간·내가 한 일·핵심 성과
