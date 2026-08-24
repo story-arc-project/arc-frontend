@@ -833,6 +833,92 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
     expect(reloaded.extensionBlocks.find(b => b.key === tableKey)?.lockColumns).toBe(false)
   })
 
+  // FRT-131: 수업 ② '가장 중요했던 내용'이 소제목+설명 2컬럼에서 개조식 단일컬럼(outcome-list)으로
+  // 바뀌었다. 저장된 표는 두 열을 아직 들고 있으므로 로드 때 행마다 두 칸을 한 항목으로 합친다 —
+  // 그대로 두면 표형 폴백에 갇혀 '프로젝트로 기록' 링크가 없는 옛 UI 로 남고, 잠기지 않은
+  // 열 관리 UI 까지 노출된다.
+  describe("수업 소제목+설명 2컬럼 → 개조식 항목 이관 (FRT-131)", () => {
+    const highlightKey = "edu-detail.가장 중요했던 내용"
+    const legacyColumns = [
+      { key: "title", label: "소제목", blockType: "text" as const },
+      { key: "detail", label: "설명", blockType: "textarea" as const },
+    ]
+    function legacyValue(rows: RepeatableCellBlockValue["rows"]): RepeatableCellBlockValue {
+      return { type: "repeatable-cell", columns: legacyColumns, rows }
+    }
+    function load(value: RepeatableCellBlockValue) {
+      const reloaded = toExperienceV2(
+        makeExperience({
+          type: "education",
+          content: { schema_version: 2, fields: { [highlightKey]: value } },
+        }),
+      )
+      return reloaded.extensionBlocks.find(b => b.key === highlightKey)!
+    }
+
+    it("소제목과 설명이 한 항목으로 합쳐지고 열은 템플릿(item 단일)로 돌아온다", () => {
+      const loaded = load(
+        legacyValue([
+          { id: "r1", cells: { title: "마케팅 4P", detail: "실전 적용 사례를 배웠다" } },
+          { id: "r2", cells: { title: "소제목만", detail: "" } },
+          { id: "r3", cells: { title: "", detail: "설명만" } },
+          // 빈 행도 지우지 않는다 — 행 개수와 id 는 사용자가 만든 구조다.
+          { id: "r4", cells: {} },
+        ]),
+      )
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).toEqual(["item"])
+      expect(value.rows.map(r => r.cells.item)).toEqual([
+        "마케팅 4P — 실전 적용 사례를 배웠다",
+        "소제목만",
+        "설명만",
+        "",
+      ])
+      expect(value.rows.map(r => r.id)).toEqual(["r1", "r2", "r3", "r4"])
+    })
+
+    it("저장하면 합친 항목만 남고 옛 열은 다시 오지 않는다 (멱등)", () => {
+      const loaded = load(legacyValue([{ id: "r1", cells: { title: "A", detail: "B" } }]))
+      const tmpl = getTemplateForType("education")
+      const payload = toSavePayload(
+        makeExperienceV2({
+          typeId: "education",
+          coreBlocks: tmpl.commonCore.blocks,
+          extensionBlocks: [loaded],
+        }),
+      )
+      const saved = (payload.content as { fields: Record<string, RepeatableCellBlockValue> })
+        .fields[highlightKey]
+      expect(saved.columns.map(c => c.key)).toEqual(["item"])
+      const again = load(saved)
+      expect((again.value as RepeatableCellBlockValue).rows[0].cells.item).toBe("A — B")
+    })
+
+    it("옮길 줄 모르는 셀 모양이 있으면 통째로 물러난다 — 표형 폴백이 값을 지킨다", () => {
+      const deck = { type: "file" as const, fileId: "f-1", fileName: "정리 노트.pdf" }
+      const loaded = load(
+        legacyValue([
+          { id: "r1", cells: { title: "노트", detail: "글" } },
+          { id: "r2", cells: { title: "첨부", detail: deck } },
+        ]),
+      )
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).toEqual(["title", "detail"])
+      expect(value.rows[1].cells.detail).toEqual(deck)
+    })
+
+    it("사용자가 직접 더한 다른 열이 있으면 물러난다", () => {
+      const loaded = load({
+        type: "repeatable-cell",
+        columns: [...legacyColumns, { key: "col-x", label: "메모", blockType: "text" }],
+        rows: [{ id: "r1", cells: { title: "A", detail: "B", "col-x": "메모값" } }],
+      })
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).toEqual(["title", "detail", "col-x"])
+      expect(value.rows[0].cells["col-x"]).toBe("메모값")
+    })
+  })
+
   // FRT-143: '결과물' 링크 한 칸(`output` 열)이 행 첨부로 바뀌었다. 저장된 표는 그 열을 아직
   // 들고 있으므로 로드 때 값을 첫 번째 결과물로 옮기고 열을 지운다 — 옛 칸과 새 묶음이 나란히
   // 서지 않고, 열이 템플릿과 같아져 잠금도 유지된다.
