@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs";
+import { expect, within } from "storybook/test";
 
 import { Textarea } from "./textarea";
 
@@ -56,6 +57,11 @@ export const WithDefaultValue: Story = {
     label: "자기소개",
     defaultValue:
       "안녕하세요! 저는 프론트엔드 개발자입니다.\n\nReact와 TypeScript를 주로 사용하며, 사용자 경험을 개선하는 일에 관심이 많습니다.",
+  },
+  // 긴 기본값이 처음부터 전부 보인다 — 테두리 보정이 맞아야 성립한다(FRT-327).
+  play: async ({ canvasElement }) => {
+    const textarea = within(canvasElement).getByRole("textbox");
+    await expect(textarea.scrollHeight).toBeLessThanOrEqual(textarea.clientHeight);
   },
 };
 
