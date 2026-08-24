@@ -9,7 +9,9 @@ import type {
   ExperienceStatus,
   Block,
   BlockValue,
+  CellValue,
   CustomEntry,
+  RowArtifact,
   TemplateV2,
 } from "@/types/archive"
 import { isImportanceLevel, SCHEMA_VERSION_V2 } from "@/types/archive"
@@ -28,6 +30,7 @@ import {
   createGroupBlock,
   isBlockDiscardable,
   dedupeBlockIdsAcross,
+  isFileCellValue,
   isFilledText,
   isKnownBlockType,
   isValueOccupied,
@@ -137,27 +140,61 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
  * 판정은 **템플릿에 없는 `output` 열**로 좁힌다 — 사용자가 잠금 이전에 직접 더한 링크 열까지
  * 삼키면 안 된다. 그 열이 템플릿에 그대로 있는 표(이관 대상이 아닌 표)는 손대지 않는다.
  * 이미 이관된 레코드는 그 열이 없어 그대로 돌아온다(멱등).
+ *
+ * 저장 셀은 문자열만 오지 않는다 — 파일 셀·문자열 배열·미지 스키마 셀까지 보존돼 온다
+ * (`normalizeBlockValue` 가 열 유형과 무관하게 지킨다). 파일은 `artifacts[].file` 로, 배열은
+ * 원소마다 url 결과물로 옮기고, 옮길 줄 모르는 모양이 한 칸이라도 있으면 표를 통째로 두고
+ * 물러난다 — 잠금은 풀리지만(FRT-104) 값이 열었다 저장하는 것만으로 사라지지는 않는다(Codex P2).
  */
 function absorbLegacyOutputColumn(templateValue: BlockValue, saved: BlockValue): BlockValue {
   if (templateValue.type !== "repeatable-cell" || saved.type !== "repeatable-cell") return saved
   const key = LEGACY_OUTPUT_LINK_COLUMN_KEY
   if (templateValue.columns.some(c => c.key === key)) return saved
   if (!saved.columns.some(c => c.key === key)) return saved
+  if (saved.rows.some(row => !isConvertibleLegacyOutput(row.cells[key]))) return saved
   return {
     ...saved,
     columns: saved.columns.filter(c => c.key !== key),
     rows: saved.rows.map(row => {
       const { [key]: legacy, ...cells } = row.cells
-      const url = typeof legacy === "string" ? legacy.trim() : ""
       const existing = row.artifacts ?? []
-      // 같은 주소가 이미 결과물로 있으면 겹쳐 만들지 않는다 — 두 값이 한 레코드에 공존하는 손상
-      // 케이스의 방어이지, 정상 경로에서는 열이 지워져 두 번 오지 않는다.
-      if (!url || existing.some(a => a.url?.trim() === url)) {
-        return { ...row, cells }
-      }
-      return { ...row, cells, artifacts: [{ id: uid(), url }, ...existing] }
+      const fresh = legacyOutputToArtifacts(legacy, existing)
+      if (!fresh.length) return { ...row, cells }
+      return { ...row, cells, artifacts: [...fresh, ...existing] }
     }),
   }
+}
+
+/** 옛 `output` 칸 값 중 결과물로 옮길 줄 아는 모양인가 — 빈 칸·문자열·문자열 배열·파일 셀. */
+function isConvertibleLegacyOutput(cell: CellValue | undefined): boolean {
+  // 저장된 셀은 null 로도 온다(FRT-200) — 빈 칸과 같게 본다.
+  if (cell == null || typeof cell === "string") return true
+  if (Array.isArray(cell)) return cell.every(v => typeof v === "string")
+  return isFileCellValue(cell)
+}
+
+/**
+ * 옛 `output` 칸 값 하나를 행 첨부로 바꾼다. 이미 있는 결과물과 같은 주소·같은 파일은 겹쳐
+ * 만들지 않는다 — 두 값이 한 레코드에 공존하는 손상 케이스의 방어이지, 정상 경로에서는
+ * 열이 지워져 두 번 오지 않는다.
+ */
+function legacyOutputToArtifacts(legacy: CellValue | undefined, existing: RowArtifact[]): RowArtifact[] {
+  if (legacy == null) return []
+  if (isFileCellValue(legacy)) {
+    // 첨부를 지운 껍데기(`fileId` 없음)는 결과물이 아니다 — `cellFilled` 과 같은 기준(FRT-200).
+    if (!isFilledText(legacy.fileId)) return []
+    if (existing.some(a => a.file?.fileId === legacy.fileId)) return []
+    return [{ id: uid(), file: legacy }]
+  }
+  const urls = (Array.isArray(legacy) ? legacy : [legacy]).map(u => u.trim()).filter(Boolean)
+  const seen = new Set(existing.map(a => a.url?.trim()).filter(Boolean))
+  const fresh: RowArtifact[] = []
+  for (const url of urls) {
+    if (seen.has(url)) continue
+    seen.add(url)
+    fresh.push({ id: uid(), url })
+  }
+  return fresh
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type {
   Block,
   BlockValue,
+  CellValue,
   CustomEntry,
   ExperienceV2,
   RepeatableCellBlockValue,
@@ -914,6 +915,62 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
       expect(value.columns.map(c => c.key)).toContain("메모")
       expect(value.rows[0].cells["메모"]).toBe("https://m.example")
       expect(value.rows[0].artifacts?.map(a => a.url)).toEqual(["https://a.example"])
+      expect(loaded.lockColumns).toBe(false)
+    })
+
+    it("파일 셀로 저장된 결과물은 `artifacts[].file` 로 옮긴다 — 빈 파일 셀은 버린다 (Codex P2)", () => {
+      const deck = { type: "file" as const, fileId: "f-1", fileName: "발표 덱.pdf" }
+      const loaded = load(
+        legacyTable([
+          { id: "r1", cells: { project: "P1", output: deck } },
+          // 첨부를 지운 껍데기(fileId 없음)는 결과물이 되지 않는다.
+          { id: "r2", cells: { project: "P2", output: { type: "file", fileId: "", fileName: "" } } },
+          // 같은 파일이 이미 결과물로 있으면 겹쳐 만들지 않는다.
+          { id: "r3", cells: { project: "P3", output: deck }, artifacts: [{ id: "a1", file: deck }] },
+        ]),
+      )
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).not.toContain("output")
+      expect(loaded.lockColumns).toBe(true)
+      expect(value.rows[0].artifacts).toHaveLength(1)
+      expect(value.rows[0].artifacts?.[0].file).toEqual(deck)
+      expect(value.rows[0].artifacts?.[0].url).toBeUndefined()
+      expect(value.rows[1].artifacts).toBeUndefined()
+      expect(value.rows[2].artifacts).toHaveLength(1)
+    })
+
+    it("문자열 배열로 저장된 결과물은 원소마다 결과물이 된다", () => {
+      const loaded = load(
+        legacyTable([
+          {
+            id: "r1",
+            cells: {
+              project: "P1",
+              output: ["https://a.example", " ", "https://a.example", "https://b.example"],
+            },
+          },
+        ]),
+      )
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).not.toContain("output")
+      expect(value.rows[0].artifacts?.map(a => a.url)).toEqual(["https://a.example", "https://b.example"])
+      expect(loaded.lockColumns).toBe(true)
+    })
+
+    it("모르는 모양의 값이 한 칸이라도 있으면 표를 통째로 두고 물러난다 — 값 보존이 이관보다 먼저다 (Codex P2)", () => {
+      const opaque = { type: "rich-link", href: "https://a.example" } as unknown as CellValue
+      const loaded = load(
+        legacyTable([
+          { id: "r1", cells: { project: "P1", output: "https://plain.example" } },
+          { id: "r2", cells: { project: "P2", output: opaque } },
+        ]),
+      )
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).toContain("output")
+      expect(value.rows[0].cells.output).toBe("https://plain.example")
+      expect(value.rows[1].cells.output).toEqual(opaque)
+      expect(value.rows[0].artifacts).toBeUndefined()
+      // 열이 템플릿과 어긋난 채 남았으니 잠금은 FRT-104 대로 풀린다.
       expect(loaded.lockColumns).toBe(false)
     })
 
