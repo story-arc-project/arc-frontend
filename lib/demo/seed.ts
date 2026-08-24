@@ -25,6 +25,7 @@ import type {
   BlockValue,
   CellValue,
   ExperienceTypeId,
+  RowArtifact,
 } from "@/types/archive";
 import { SCHEMA_VERSION_V2 } from "@/types/archive";
 import { getTemplateForType, TEMPLATE_VERSION } from "@/lib/constants/templates-v2";
@@ -52,7 +53,13 @@ export function templateBlocksByKey(typeId: ExperienceTypeId): Map<string, Block
 }
 
 type RowSpec = Record<string, CellValue> & { roleTags?: never };
-type FullRowSpec = { cells: Record<string, CellValue>; roleTags?: string[] };
+/** 행 첨부(FRT-143)는 id 를 적지 않는다 — `toRow` 가 행 id 에서 정적으로 파생시킨다. */
+type ArtifactSpec = Omit<RowArtifact, "id">;
+type FullRowSpec = {
+  cells: Record<string, CellValue>;
+  roleTags?: string[];
+  artifacts?: ArtifactSpec[];
+};
 
 /** 시드가 적는 값의 축약 표기. 블록 타입에 맞춰 `materialize` 가 완성한다. */
 type FieldSpec =
@@ -76,11 +83,14 @@ function toRow(index: number, spec: RowSpec | FullRowSpec, columnKeys: Set<strin
     }
   }
   const roleTags = isFull ? (spec as FullRowSpec).roleTags : undefined;
+  const artifacts = isFull ? (spec as FullRowSpec).artifacts : undefined;
+  // 시드는 정적 id 를 쓴다 — uid() 는 호출 순서에 따라 값이 바뀌어 스냅샷이 흔들린다.
+  const id = `${where.replace(/[^a-zA-Z0-9]+/g, "-")}-r${index + 1}`;
   return {
-    // 시드는 정적 id 를 쓴다 — uid() 는 호출 순서에 따라 값이 바뀌어 스냅샷이 흔들린다.
-    id: `${where.replace(/[^a-zA-Z0-9]+/g, "-")}-r${index + 1}`,
+    id,
     cells,
     ...(roleTags ? { roleTags } : {}),
+    ...(artifacts ? { artifacts: artifacts.map((a, i) => ({ ...a, id: `${id}-a${i + 1}` })) } : {}),
   };
 }
 
@@ -279,38 +289,44 @@ const careerFields = fieldsFor("career", {
   "career-tasks.프로젝트/담당 업무": {
     rows: [
       {
-        project: "혐오 표현 레이블링 가이드라인 개정",
-        role: "가이드라인 작성 · 품질 관리",
-        period: "2025.09 ~ 2025.11",
-        goal: "레이블러마다 판단이 갈리는 경계 사례를 줄여 데이터셋의 신뢰도를 확보하는 것",
-        work: "레이블러 4명의 불일치 사례 320건을 유형별로 모아 6개 패턴으로 분류했고, 각 패턴마다 판단 기준과 예시 문장을 붙여 가이드라인을 개정했습니다. 개정 후 같은 표본으로 재측정했습니다.",
-        result:
-          "레이블러 간 일치도(Cohen's Kappa)가 0.61에서 0.78로 올랐습니다. 특히 풍자·인용 표현에서 불일치가 가장 크게 줄었습니다.",
-        difficulty:
-          "'인용된 혐오 표현'을 혐오로 볼지 의견이 갈려 2주간 결론이 나지 않았습니다. 판단을 미루는 대신 두 기준으로 각각 레이블링해 성능 차이를 재고, 그 결과를 근거로 기준을 정했습니다.",
-        output: "https://github.com/demo/hate-speech-guideline",
+        cells: {
+          project: "혐오 표현 레이블링 가이드라인 개정",
+          role: "가이드라인 작성 · 품질 관리",
+          period: "2025.09 ~ 2025.11",
+          goal: "레이블러마다 판단이 갈리는 경계 사례를 줄여 데이터셋의 신뢰도를 확보하는 것",
+          work: "레이블러 4명의 불일치 사례 320건을 유형별로 모아 6개 패턴으로 분류했고, 각 패턴마다 판단 기준과 예시 문장을 붙여 가이드라인을 개정했습니다. 개정 후 같은 표본으로 재측정했습니다.",
+          result:
+            "레이블러 간 일치도(Cohen's Kappa)가 0.61에서 0.78로 올랐습니다. 특히 풍자·인용 표현에서 불일치가 가장 크게 줄었습니다.",
+          difficulty:
+            "'인용된 혐오 표현'을 혐오로 볼지 의견이 갈려 2주간 결론이 나지 않았습니다. 판단을 미루는 대신 두 기준으로 각각 레이블링해 성능 차이를 재고, 그 결과를 근거로 기준을 정했습니다.",
+        },
+        artifacts: [{ url: "https://github.com/demo/hate-speech-guideline" }],
       },
       {
-        project: "KLUE-BERT 파인튜닝 실험 파이프라인",
-        role: "실험 설계 · 구현",
-        period: "2025.11 ~ 2026.01",
-        goal: "같은 설정이면 누가 돌려도 같은 결과가 나오도록 실험 환경을 정리하는 것",
-        work: "random seed를 고정하고 하이퍼파라미터를 JSON 설정 파일로 분리했습니다. 실행마다 설정과 지표가 자동으로 기록되도록 Weights & Biases를 붙였습니다.",
-        result:
-          "동일 설정 3회 반복 시 F1 편차가 ±0.004 이내로 줄었습니다. 멘토가 제 실험을 그대로 재현할 수 있게 되면서 리뷰 시간이 절반으로 줄었습니다.",
-        difficulty:
-          "초기에는 같은 코드인데도 결과가 매번 달라 원인을 찾지 못했습니다. 데이터 로더의 셔플 시드가 따로 놀고 있었다는 걸 로그를 하나씩 대조해 찾아냈습니다.",
-        output: "https://github.com/demo/klue-finetune-pipeline",
+        cells: {
+          project: "KLUE-BERT 파인튜닝 실험 파이프라인",
+          role: "실험 설계 · 구현",
+          period: "2025.11 ~ 2026.01",
+          goal: "같은 설정이면 누가 돌려도 같은 결과가 나오도록 실험 환경을 정리하는 것",
+          work: "random seed를 고정하고 하이퍼파라미터를 JSON 설정 파일로 분리했습니다. 실행마다 설정과 지표가 자동으로 기록되도록 Weights & Biases를 붙였습니다.",
+          result:
+            "동일 설정 3회 반복 시 F1 편차가 ±0.004 이내로 줄었습니다. 멘토가 제 실험을 그대로 재현할 수 있게 되면서 리뷰 시간이 절반으로 줄었습니다.",
+          difficulty:
+            "초기에는 같은 코드인데도 결과가 매번 달라 원인을 찾지 못했습니다. 데이터 로더의 셔플 시드가 따로 놀고 있었다는 걸 로그를 하나씩 대조해 찾아냈습니다.",
+        },
+        artifacts: [{ url: "https://github.com/demo/klue-finetune-pipeline" }],
       },
       {
-        project: "주간 논문 리뷰 세미나 발표",
-        role: "발표 · 자료 작성",
-        period: "2025.10 ~ 2026.02",
-        goal: "최신 연구를 팀 전체가 공유하고, 우리 데이터셋에 적용할 지점을 찾는 것",
-        work: "5개월간 논문 6편을 맡아 발표했습니다. 매 발표마다 우리 데이터셋에 적용했을 때의 예상 효과를 한 장으로 정리해 붙였습니다.",
-        result:
-          "제안한 focal loss 적용이 실제 실험으로 이어져, 소수 클래스 F1이 0.52에서 0.61로 올랐습니다.",
-        output: "https://github.com/demo/nlp-seminar-notes",
+        cells: {
+          project: "주간 논문 리뷰 세미나 발표",
+          role: "발표 · 자료 작성",
+          period: "2025.10 ~ 2026.02",
+          goal: "최신 연구를 팀 전체가 공유하고, 우리 데이터셋에 적용할 지점을 찾는 것",
+          work: "5개월간 논문 6편을 맡아 발표했습니다. 매 발표마다 우리 데이터셋에 적용했을 때의 예상 효과를 한 장으로 정리해 붙였습니다.",
+          result:
+            "제안한 focal loss 적용이 실제 실험으로 이어져, 소수 클래스 F1이 0.52에서 0.61로 올랐습니다.",
+        },
+        artifacts: [{ url: "https://github.com/demo/nlp-seminar-notes" }],
       },
     ],
   },
@@ -363,16 +379,18 @@ const extracurricularFields = fieldsFor("extracurricular", {
   "extra-missions.미션 / 프로젝트": {
     rows: [
       {
-        name: "재활용 쓰레기 객체 탐지 대회",
-        type: "팀 미션",
-        description:
-          "쓰레기 사진에서 10종의 재활용 품목을 찾아내는 객체 탐지 대회입니다. 5인 팀으로 3주간 진행했습니다.",
-        work: "팀 리더로 실험 분담과 일정을 관리했고, 저는 앙상블 파트를 맡아 팀원들이 각자 학습시킨 4개 모델을 WBF(Weighted Boxes Fusion)로 결합했습니다. 매일 저녁 실험 결과를 한 장으로 정리해 공유했습니다.",
-        result:
-          "단일 최고 모델 mAP 0.64 대비 앙상블로 0.68까지 올렸습니다(+4%p). 참가 21팀 중 4위로 마감했습니다.",
-        difficulty:
-          "팀원마다 실험 기록 방식이 달라 어떤 조합을 이미 돌려봤는지 추적되지 않았습니다. 공용 실험 기록 템플릿을 만들어 매일 같은 형식으로 남기게 했고, 이후 중복 실험이 사라졌습니다.",
-        output: "https://github.com/demo/trash-detection",
+        cells: {
+          name: "재활용 쓰레기 객체 탐지 대회",
+          type: "팀 미션",
+          description:
+            "쓰레기 사진에서 10종의 재활용 품목을 찾아내는 객체 탐지 대회입니다. 5인 팀으로 3주간 진행했습니다.",
+          work: "팀 리더로 실험 분담과 일정을 관리했고, 저는 앙상블 파트를 맡아 팀원들이 각자 학습시킨 4개 모델을 WBF(Weighted Boxes Fusion)로 결합했습니다. 매일 저녁 실험 결과를 한 장으로 정리해 공유했습니다.",
+          result:
+            "단일 최고 모델 mAP 0.64 대비 앙상블로 0.68까지 올렸습니다(+4%p). 참가 21팀 중 4위로 마감했습니다.",
+          difficulty:
+            "팀원마다 실험 기록 방식이 달라 어떤 조합을 이미 돌려봤는지 추적되지 않았습니다. 공용 실험 기록 템플릿을 만들어 매일 같은 형식으로 남기게 했고, 이후 중복 실험이 사라졌습니다.",
+        },
+        artifacts: [{ url: "https://github.com/demo/trash-detection" }],
       },
       {
         name: "마스크 착용 상태 이미지 분류 대회",
@@ -443,29 +461,33 @@ const clubFields = fieldsFor("club", {
   "club-activities.활동 / 이벤트": {
     rows: [
       {
-        role: ["스터디장"],
-        name: "SQL 기초 스터디 운영",
-        type: "정기 모임 / 스터디",
-        detail:
-          "데이터 분석이 처음인 학회원 17명을 대상으로 8주간 진행한 SQL 스터디입니다. 매주 실습 과제와 코드 리뷰로 구성했습니다.",
-        work: "커리큘럼을 8주로 설계하고 매주 실습 문제를 직접 만들었습니다. 과제를 제출하지 못한 사람에게는 개별로 막힌 지점을 물어 다음 주 문제 난이도를 조정했습니다.",
-        result:
-          "이전 학기 중도 이탈률 40%에서 12%로 낮췄습니다. 수료자 15명 중 5명이 다음 학기 공모전 팀에 합류했습니다.",
-        difficulty:
-          "3주차부터 난이도가 급격히 올라 이탈이 몰렸습니다. 과제를 '필수 3문제 + 선택 3문제'로 나눠 최소 진도만 따라와도 완주할 수 있게 바꿨습니다.",
-        output: "https://github.com/demo/datawave-sql-study",
+        cells: {
+          role: ["스터디장"],
+          name: "SQL 기초 스터디 운영",
+          type: "정기 모임 / 스터디",
+          detail:
+            "데이터 분석이 처음인 학회원 17명을 대상으로 8주간 진행한 SQL 스터디입니다. 매주 실습 과제와 코드 리뷰로 구성했습니다.",
+          work: "커리큘럼을 8주로 설계하고 매주 실습 문제를 직접 만들었습니다. 과제를 제출하지 못한 사람에게는 개별로 막힌 지점을 물어 다음 주 문제 난이도를 조정했습니다.",
+          result:
+            "이전 학기 중도 이탈률 40%에서 12%로 낮췄습니다. 수료자 15명 중 5명이 다음 학기 공모전 팀에 합류했습니다.",
+          difficulty:
+            "3주차부터 난이도가 급격히 올라 이탈이 몰렸습니다. 과제를 '필수 3문제 + 선택 3문제'로 나눠 최소 진도만 따라와도 완주할 수 있게 바꿨습니다.",
+        },
+        artifacts: [{ url: "https://github.com/demo/datawave-sql-study" }],
       },
       {
-        role: ["학회장"],
-        name: "2025 신입 학회원 모집 및 온보딩 개편",
-        type: "신입 부원 모집",
-        detail:
-          "학회장으로서 모집 홍보부터 첫 4주 온보딩 과정까지 다시 설계했습니다.",
-        work: "기존에는 모집 공고만 올렸는데, 재학생이 실제로 궁금해하는 것을 먼저 물었습니다. 설문 62건을 받아 '무엇을 배우는지 모르겠다'는 응답이 가장 많은 걸 확인하고, 지난 학기 결과물 8개를 정리한 소개 페이지를 만들었습니다.",
-        result: "지원자가 24명에서 41명으로 늘었고, 첫 4주 이탈이 9명에서 3명으로 줄었습니다.",
-        difficulty:
-          "홍보 채널을 늘리자는 의견과 내용을 바꾸자는 의견이 갈렸습니다. 두 학기 지원 경로 데이터를 확인해 유입은 충분한데 지원 전환이 낮다는 걸 보여주고 내용 개편을 먼저 했습니다.",
-        output: "https://datawave.hanyang.ac.kr/recruit-2025",
+        cells: {
+          role: ["학회장"],
+          name: "2025 신입 학회원 모집 및 온보딩 개편",
+          type: "신입 부원 모집",
+          detail:
+            "학회장으로서 모집 홍보부터 첫 4주 온보딩 과정까지 다시 설계했습니다.",
+          work: "기존에는 모집 공고만 올렸는데, 재학생이 실제로 궁금해하는 것을 먼저 물었습니다. 설문 62건을 받아 '무엇을 배우는지 모르겠다'는 응답이 가장 많은 걸 확인하고, 지난 학기 결과물 8개를 정리한 소개 페이지를 만들었습니다.",
+          result: "지원자가 24명에서 41명으로 늘었고, 첫 4주 이탈이 9명에서 3명으로 줄었습니다.",
+          difficulty:
+            "홍보 채널을 늘리자는 의견과 내용을 바꾸자는 의견이 갈렸습니다. 두 학기 지원 경로 데이터를 확인해 유입은 충분한데 지원 전환이 낮다는 걸 보여주고 내용 개편을 먼저 했습니다.",
+        },
+        artifacts: [{ url: "https://datawave.hanyang.ac.kr/recruit-2025" }],
       },
     ],
   },

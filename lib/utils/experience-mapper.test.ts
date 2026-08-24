@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type {
   Block,
   BlockValue,
+  CellValue,
   CustomEntry,
   ExperienceV2,
   RepeatableCellBlockValue,
@@ -537,11 +538,12 @@ describe("toExperienceV2", () => {
     // 블록 라벨이 '활동 / 이벤트'로 바뀌어 안정키가 달라졌으므로 '기타' 카드로 보존된다.
     const preserved = v2.customBlocks.find(b => b.key === "club-activities.활동 기록")
     expect(preserved?.value).toEqual(oldTable)
-    // 새 템플릿의 8컬럼 표는 빈 채로 함께 나타난다(구 레코드도 새 질문을 볼 수 있게).
+    // 새 템플릿의 7컬럼 표는 빈 채로 함께 나타난다(구 레코드도 새 질문을 볼 수 있게).
+    // 결과물은 열이 아니라 행 첨부다(FRT-143).
     const fresh = v2.extensionBlocks.find(b => b.label === "활동 / 이벤트")
     if (fresh?.value.type === "repeatable-cell") {
       expect(fresh.value.columns.map(c => c.key)).toEqual([
-        "role", "name", "type", "detail", "work", "result", "difficulty", "output",
+        "role", "name", "type", "detail", "work", "result", "difficulty",
       ])
     }
   })
@@ -829,6 +831,175 @@ describe("round-trip (toExperienceV2 → toSavePayload)", () => {
       makeExperience({ content: { schema_version: 2, fields: { [tableKey]: cleared } } }),
     )
     expect(reloaded.extensionBlocks.find(b => b.key === tableKey)?.lockColumns).toBe(false)
+  })
+
+  // FRT-143: '결과물' 링크 한 칸(`output` 열)이 행 첨부로 바뀌었다. 저장된 표는 그 열을 아직
+  // 들고 있으므로 로드 때 값을 첫 번째 결과물로 옮기고 열을 지운다 — 옛 칸과 새 묶음이 나란히
+  // 서지 않고, 열이 템플릿과 같아져 잠금도 유지된다.
+  describe("결과물 링크 한 칸 → 행 첨부 이관 (FRT-143)", () => {
+    const tableKey = "career-tasks.프로젝트/담당 업무"
+    const outputColumn = { key: "output", label: "결과물", blockType: "link" as const }
+    function legacyTable(rows: RepeatableCellBlockValue["rows"]): RepeatableCellBlockValue {
+      const tmplValue = careerBlocks().extensionBlocks.find(b => b.key === tableKey)!
+        .value as RepeatableCellBlockValue
+      return { ...tmplValue, columns: [...tmplValue.columns, outputColumn], rows }
+    }
+    function load(value: RepeatableCellBlockValue) {
+      const reloaded = toExperienceV2(
+        makeExperience({ content: { schema_version: 2, fields: { [tableKey]: value } } }),
+      )
+      return reloaded.extensionBlocks.find(b => b.key === tableKey)!
+    }
+
+    it("링크 한 칸의 값이 첫 번째 결과물이 되고 열은 사라지며 잠금은 유지된다", () => {
+      const loaded = load(
+        legacyTable([
+          { id: "r1", cells: { project: "P1", output: "https://github.com/demo/a" } },
+          { id: "r2", cells: { project: "P2", output: "" } },
+        ]),
+      )
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).not.toContain("output")
+      expect(loaded.lockColumns).toBe(true)
+      expect(value.rows[0].artifacts).toHaveLength(1)
+      expect(value.rows[0].artifacts?.[0].url).toBe("https://github.com/demo/a")
+      expect(value.rows[0].cells).not.toHaveProperty("output")
+      // 빈 칸은 빈 결과물을 만들지 않는다 — 카드가 하나 더 떠서 채우라고 재촉하는 꼴이 된다.
+      expect(value.rows[1].artifacts).toBeUndefined()
+      expect(value.rows[1].cells).not.toHaveProperty("output")
+    })
+
+    it("이미 붙어 있던 결과물은 뒤에 그대로 남고, 같은 주소는 겹쳐 만들지 않는다", () => {
+      const loaded = load(
+        legacyTable([
+          {
+            id: "r1",
+            cells: { project: "P1", output: "https://a.example" },
+            artifacts: [{ id: "a1", url: "https://b.example", desc: "기존" }],
+          },
+          {
+            id: "r2",
+            cells: { project: "P2", output: "https://b.example" },
+            artifacts: [{ id: "a2", url: "https://b.example" }],
+          },
+        ]),
+      )
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.rows[0].artifacts?.map(a => a.url)).toEqual(["https://a.example", "https://b.example"])
+      expect(value.rows[0].artifacts?.[1].desc).toBe("기존")
+      expect(value.rows[1].artifacts?.map(a => a.url)).toEqual(["https://b.example"])
+    })
+
+    it("저장하면 옮긴 결과물만 남고 링크 열은 다시 오지 않는다 (멱등)", () => {
+      const loaded = load(legacyTable([{ id: "r1", cells: { project: "P1", output: "https://a.example" } }]))
+      const { coreBlocks } = careerBlocks()
+      const payload = toSavePayload(makeExperienceV2({ coreBlocks, extensionBlocks: [loaded] }))
+      const saved = (payload.content as { fields: Record<string, RepeatableCellBlockValue> }).fields[tableKey]
+      expect(saved.columns.map(c => c.key)).not.toContain("output")
+      expect(saved.rows[0].artifacts?.[0].url).toBe("https://a.example")
+
+      const again = load(saved)
+      expect((again.value as RepeatableCellBlockValue).rows[0].artifacts).toHaveLength(1)
+      expect(again.lockColumns).toBe(true)
+    })
+
+    it("사용자가 직접 더한 다른 열은 건드리지 않는다 — 잠금은 FRT-104 대로 풀린다", () => {
+      const tmplValue = careerBlocks().extensionBlocks.find(b => b.key === tableKey)!
+        .value as RepeatableCellBlockValue
+      const loaded = load({
+        ...tmplValue,
+        columns: [...tmplValue.columns, outputColumn, { key: "메모", label: "메모", blockType: "link" }],
+        rows: [{ id: "r1", cells: { project: "P1", output: "https://a.example", 메모: "https://m.example" } }],
+      })
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).toContain("메모")
+      expect(value.rows[0].cells["메모"]).toBe("https://m.example")
+      expect(value.rows[0].artifacts?.map(a => a.url)).toEqual(["https://a.example"])
+      expect(loaded.lockColumns).toBe(false)
+    })
+
+    it("파일 셀로 저장된 결과물은 `artifacts[].file` 로 옮긴다 — 빈 파일 셀은 버린다 (Codex P2)", () => {
+      const deck = { type: "file" as const, fileId: "f-1", fileName: "발표 덱.pdf" }
+      const loaded = load(
+        legacyTable([
+          { id: "r1", cells: { project: "P1", output: deck } },
+          // 첨부를 지운 껍데기(fileId 없음)는 결과물이 되지 않는다.
+          { id: "r2", cells: { project: "P2", output: { type: "file", fileId: "", fileName: "" } } },
+          // 같은 파일이 이미 결과물로 있으면 겹쳐 만들지 않는다.
+          { id: "r3", cells: { project: "P3", output: deck }, artifacts: [{ id: "a1", file: deck }] },
+        ]),
+      )
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).not.toContain("output")
+      expect(loaded.lockColumns).toBe(true)
+      expect(value.rows[0].artifacts).toHaveLength(1)
+      expect(value.rows[0].artifacts?.[0].file).toEqual(deck)
+      expect(value.rows[0].artifacts?.[0].url).toBeUndefined()
+      expect(value.rows[1].artifacts).toBeUndefined()
+      expect(value.rows[2].artifacts).toHaveLength(1)
+    })
+
+    it("문자열 배열로 저장된 결과물은 원소마다 결과물이 된다", () => {
+      const loaded = load(
+        legacyTable([
+          {
+            id: "r1",
+            cells: {
+              project: "P1",
+              output: ["https://a.example", " ", "https://a.example", "https://b.example"],
+            },
+          },
+        ]),
+      )
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).not.toContain("output")
+      expect(value.rows[0].artifacts?.map(a => a.url)).toEqual(["https://a.example", "https://b.example"])
+      expect(loaded.lockColumns).toBe(true)
+    })
+
+    it("모르는 모양의 값이 한 칸이라도 있으면 표를 통째로 두고 물러난다 — 값 보존이 이관보다 먼저다 (Codex P2)", () => {
+      const opaque = { type: "rich-link", href: "https://a.example" } as unknown as CellValue
+      const loaded = load(
+        legacyTable([
+          { id: "r1", cells: { project: "P1", output: "https://plain.example" } },
+          { id: "r2", cells: { project: "P2", output: opaque } },
+        ]),
+      )
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).toContain("output")
+      expect(value.rows[0].cells.output).toBe("https://plain.example")
+      expect(value.rows[1].cells.output).toEqual(opaque)
+      expect(value.rows[0].artifacts).toBeUndefined()
+      // 열이 템플릿과 어긋난 채 남았으니 잠금은 FRT-104 대로 풀린다.
+      expect(loaded.lockColumns).toBe(false)
+    })
+
+    it("행 첨부를 켜지 않은 표의 `output` 열은 옮기지 않는다", () => {
+      const langKey = "lang-records.경험 상세 기록"
+      const tmpl = getTemplateForType("language").extensions.flatMap(s => s.blocks).find(b => b.key === langKey)!
+      expect(tmpl.allowRowArtifacts).toBeUndefined()
+      const tmplValue = tmpl.value as RepeatableCellBlockValue
+      const reloaded = toExperienceV2(
+        makeExperience({
+          type: "language",
+          content: {
+            schema_version: 2,
+            fields: {
+              [langKey]: {
+                ...tmplValue,
+                columns: [...tmplValue.columns, outputColumn],
+                rows: [{ id: "r1", cells: { output: "https://a.example" } }],
+              },
+            },
+          },
+        }),
+      )
+      const loaded = reloaded.extensionBlocks.find(b => b.key === langKey)!
+      const value = loaded.value as RepeatableCellBlockValue
+      expect(value.columns.map(c => c.key)).toContain("output")
+      expect(value.rows[0].cells.output).toBe("https://a.example")
+      expect(value.rows[0].artifacts).toBeUndefined()
+    })
   })
 
   it("키 없는(모호 라벨) 확장 블록은 custom 으로 보존된다 (Codex P1 회귀)", () => {

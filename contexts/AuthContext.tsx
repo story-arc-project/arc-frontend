@@ -90,6 +90,20 @@ export default function AuthProvider({
     };
   }, []);
 
+  // bfcache 에서 되살아나면(pageshow.persisted) 사용자 상태를 다시 읽는다.
+  // 온보딩 완료·로그인은 하드 내비게이션으로 떠나므로 /signup·/login 문서가 bfcache 에
+  // 통째로 남는다. 뒤로가기로 되살아난 문서는 마운트가 아니라서 위 최초 조회가 다시 돌지 않고,
+  // 옛 user(onboarded=false)로 가드(useRedirectIfAuthenticated·AuthGate)가 침묵한다 →
+  // 온보딩을 마친 사용자에게 온보딩 화면이 다시 보인다. 재조회가 user 를 갱신하면 가드가
+  // 평소처럼 /dashboard 로 돌려보낸다.
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) void refetch();
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, [refetch]);
+
   // 사용자가 확인되면(최초 로그인·재방문 모두) 해시된 이메일로 분석 식별한다(FRT-19).
   // 원본 이메일은 전송하지 않으며, 이후 퍼널 이벤트가 이 person 에 연결된다.
   useEffect(() => {

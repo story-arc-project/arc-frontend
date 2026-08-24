@@ -383,6 +383,12 @@ export interface Block {
    */
   allowRowArtifacts?: boolean
   /**
+   * 행 첨부 편집기의 빈칸 문구 (FRT-143). "결과물"의 예는 유형마다 다르다 — 학회는 케이스 발표 덱,
+   * 동아리는 공연 영상. `allowRowArtifacts` 와 같은 템플릿 전용 규약이라 value(JSONB)에는
+   * 직렬화되지 않고 로드 시 템플릿에서 재공급된다. 없으면 편집기의 기본 문구(프로젝트용)를 쓴다.
+   */
+  artifactPlaceholders?: { url?: string; desc?: string }
+  /**
    * 조건부 노출 (FRT-211). 다른 블록(트리거)의 현재 값에 따라 이 필드를 보이거나 숨긴다 —
    * 수상경력 확정본의 "'개인 / 팀'에서 '팀 수상'을 고르면 '팀에서 내가 맡은 역할'이 나타난다".
    * `roleTags`·`lockColumns` 와 같은 규약이다: 템플릿 정의에만 존재하며 value(JSONB)에는

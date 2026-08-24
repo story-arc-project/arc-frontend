@@ -62,6 +62,8 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
 
   // FRT-291: 행마다 결과물(링크·파일·설명)을 여러 건. 열이 아니라 행에 붙으므로 열 잠금과 무관하다.
   const allowRowArtifacts = block.allowRowArtifacts === true
+  // FRT-143: 결과물 빈칸 문구는 유형이 정한다(템플릿 전용, 없으면 편집기 기본 문구).
+  const artifactPlaceholders = block.artifactPlaceholders
 
   // FRT-210: 이 행이 형제 섹션의 개조식 리스트에서 연결돼 생겼는지(역방향 배지).
   // provider 밖(상세뷰·스토리북)에서는 null 이라 배지가 자동으로 숨는다 — 정방향 링크 UI 와 대칭.
@@ -368,6 +370,7 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
               isPlaceholder={isPlaceholderRow(row.id)}
               allowRowExtras={allowRowExtras}
               allowRowArtifacts={allowRowArtifacts}
+              artifactPlaceholders={artifactPlaceholders}
               incomingLink={projectLink?.getIncomingLink(row.id) ?? null}
               onCellChange={(colKey, cellVal) => updateCell(row.id, colKey, cellVal)}
               onExtrasChange={next => updateRowExtras(row.id, next)}
@@ -402,6 +405,7 @@ function RowEditor({
   isPlaceholder,
   allowRowExtras,
   allowRowArtifacts,
+  artifactPlaceholders,
   incomingLink,
   onCellChange,
   onExtrasChange,
@@ -417,6 +421,8 @@ function RowEditor({
   allowRowExtras?: boolean
   /** FRT-291: 이 행에 결과물을 여러 건 붙일 수 있는가(블록 층위 opt-in). */
   allowRowArtifacts?: boolean
+  /** FRT-143: 결과물 빈칸 문구(유형별). */
+  artifactPlaceholders?: Block["artifactPlaceholders"]
   /** FRT-210: 이 행을 만든 개조식 리스트가 있으면 그 블록 라벨. 없으면 null. */
   incomingLink?: { sourceLabel: string } | null
   onCellChange: (colKey: string, value: CellValue) => void
@@ -517,6 +523,7 @@ function RowEditor({
       {allowRowArtifacts && onArtifactsChange && (
         <RowArtifactsEditor
           artifacts={row.artifacts ?? []}
+          placeholders={artifactPlaceholders}
           onChange={onArtifactsChange}
           busyHandler={busyHandler}
         />
@@ -533,10 +540,13 @@ function RowEditor({
  */
 function RowArtifactsEditor({
   artifacts,
+  placeholders,
   onChange,
   busyHandler,
 }: {
   artifacts: RowArtifact[]
+  /** FRT-143: 유형별 빈칸 문구. 없으면 카드의 기본 문구. */
+  placeholders?: Block["artifactPlaceholders"]
   onChange: (next: (list: RowArtifact[]) => RowArtifact[]) => void
   /** 첨부별 업로드 신호를 행에 모아 주는 발급기 — 키마다 같은 함수를 돌려준다(RowEditor). */
   busyHandler: (key: string) => ((busy: boolean) => void) | undefined
@@ -553,6 +563,7 @@ function RowArtifactsEditor({
           key={a.id}
           artifact={a}
           index={i}
+          placeholders={placeholders}
           onBusyChange={busyHandler(`artifact:${a.id}`)}
           onPatch={fields => patch(a.id, fields)}
           onRemove={() => onChange(list => list.filter(x => x.id !== a.id))}
@@ -584,12 +595,15 @@ function RowArtifactsEditor({
 function ArtifactCard({
   artifact: a,
   index,
+  placeholders,
   onBusyChange,
   onPatch,
   onRemove,
 }: {
   artifact: RowArtifact
   index: number
+  /** FRT-143: 유형별 빈칸 문구. 기본값은 프로젝트 확정본(FRT-291) 표기다. */
+  placeholders?: Block["artifactPlaceholders"]
   /** 행에도 같은 신호를 흘린다 — 행 삭제 버튼이 이 카드 바깥에 있기 때문이다. */
   onBusyChange?: (busy: boolean) => void
   onPatch: (fields: Partial<RowArtifact>) => void
@@ -659,7 +673,7 @@ function ArtifactCard({
           빠지면 "프로젝트 결과물을 링크로 남긴다"는 가장 흔한 경로가 지표에서 사라진다. */}
       <LinkCellInput
         value={a.url ?? ""}
-        placeholder="Figma, Notion, GitHub 등"
+        placeholder={placeholders?.url ?? "Figma, Notion, GitHub 등"}
         ariaLabel={`결과물 ${index + 1} 링크`}
         onChange={v => onPatch({ url: v })}
       />
@@ -673,7 +687,7 @@ function ArtifactCard({
         type="text"
         value={a.desc ?? ""}
         onChange={e => onPatch({ desc: e.target.value })}
-        placeholder="결과물 설명 (예: 와이어프레임, ERD, 테스트 결과서)"
+        placeholder={placeholders?.desc ?? "결과물 설명 (예: 와이어프레임, ERD, 테스트 결과서)"}
         aria-label={`결과물 ${index + 1} 설명`}
         className="w-full rounded-md border border-border bg-surface px-3 py-2 text-body-sm text-text-primary placeholder:text-text-disabled focus:border-brand focus:outline-none"
       />

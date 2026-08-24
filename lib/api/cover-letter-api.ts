@@ -97,20 +97,24 @@ export class CoverLetterNotReadyError extends Error {
  * 그래서 본문 마커(`answers`)가 없으면 throw 해 호출부가 제어된 로딩/에러 상태를 내게 한다.
  */
 function unwrapCoverLetter(data: unknown): unknown {
-  if (data !== null && typeof data === "object" && !Array.isArray(data)) {
-    const root = data as Record<string, unknown>;
+  // 래퍼조차 없으면(null·원시값·배열) "만드는 중"이라 말할 근거가 없다. 생성 중이라는
+  // 증거는 **자소서 래퍼가 존재한다는 사실** 자체인데, 그것이 없는 응답은 재시도로 풀릴
+  // 수 없는 형식 오류다 — not-ready 로 뭉개면 오지 않을 완료를 기다리게 된다(FRT-332).
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("cover letter payload malformed");
+  }
 
-    // 배열은 본문 레코드가 아니다. result:[] 를 큐잉 센티넬로 쓰는 백엔드가 있으면
-    // 빈 껍데기를 본문으로 오인한다.
-    if (
-      root.result !== null &&
-      typeof root.result === "object" &&
-      !Array.isArray(root.result)
-    ) {
-      const content = root.result as Record<string, unknown>;
-      if (!Array.isArray(content.answers)) {
-        throw new CoverLetterNotReadyError();
-      }
+  const root = data as Record<string, unknown>;
+
+  // 배열은 본문 레코드가 아니다. result:[] 를 큐잉 센티넬로 쓰는 백엔드가 있으면
+  // 빈 껍데기를 본문으로 오인한다.
+  if (
+    root.result !== null &&
+    typeof root.result === "object" &&
+    !Array.isArray(root.result)
+  ) {
+    const content = root.result as Record<string, unknown>;
+    if (Array.isArray(content.answers)) {
       // 래퍼의 메타(id·created_at)를 본문에 보존한다 — 본문에는 없을 수 있고,
       // draft 신선도 비교(isDraftNewer)가 created_at 을 쓴다.
       return {
@@ -123,11 +127,22 @@ function unwrapCoverLetter(data: unknown): unknown {
           : {}),
       };
     }
-
+    // answers 없는 껍데기 — 아래에서 래퍼의 status 로 "만드는 중"과 "실패"를 가른다.
+  } else if (Array.isArray(root.answers)) {
     // result 부재 = ① 평탄화된 본문(dual-compat) 또는 ② 미완/실패 래퍼(result:null).
     // 전자만 본문 마커(answers)를 갖는다.
-    if (Array.isArray(root.answers)) return root;
+    return root;
   }
+
+  // 본문이 없다고 다 "만드는 중"은 아니다. 래퍼의 status 가 **끝났다**(success·failed)고
+  // 말하는데 본문이 없으면 그건 실패다 — "완료되면 목록에서 열 수 있어요"로 안내하면 영영
+  // 오지 않을 완료를 기다리게 된다. 끝났다는 **증거가 있을 때만** 실패로 가른다:
+  // status 부재·미지 값은 증거가 아니므로 준비 안 됨으로 떨어뜨린다(레쥬메 FRT-326 과 동일).
+  const status = mapCoverLetterStatus(root.status);
+  if (status === "completed" || status === "failed") {
+    throw new Error("cover letter result missing");
+  }
+
   throw new CoverLetterNotReadyError();
 }
 
