@@ -487,7 +487,7 @@ function SignupForm() {
 
                 <SocialLoginButtons onLogin={handleSocial} action="시작하기" />
                 {socialError && (
-                  <p className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
+                  <p role="alert" aria-live="polite" className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
                 )}
 
                 <p className="mt-6 text-center text-body-sm text-text-secondary">
@@ -562,8 +562,10 @@ function SignupForm() {
                       </button>
                     }
                   />
+                  {/* 가입 실패는 「가입하기」에 포커스가 머문 채 비동기로 나타난다.
+                      역할이 없으면 스크린리더에는 아무 일도 일어나지 않은 것과 같다(FRT-282). */}
                   {signupError && (
-                    <p className="text-body-sm text-error">{signupError}</p>
+                    <p role="alert" aria-live="polite" className="text-body-sm text-error">{signupError}</p>
                   )}
                   <Button onClick={handleSignup} disabled={!pwValid || isLoading}>
                     {isLoading ? "처리 중..." : "가입하기"}
@@ -591,7 +593,7 @@ function SignupForm() {
                     onKeyDown={(e) => e.key === "Enter" && verifyCode.trim() && handleVerify()}
                   />
                   {verifyError && (
-                    <p className="text-body-sm text-error">{verifyError}</p>
+                    <p role="alert" aria-live="polite" className="text-body-sm text-error">{verifyError}</p>
                   )}
                   <Button onClick={handleVerify} disabled={!verifyCode.trim() || isLoading}>
                     {isLoading ? "확인 중..." : "확인"}
