@@ -230,12 +230,18 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     const detail = detailOf("education")!
     const labels = labelsIn(detail.blocks)
     expect(labels).toEqual(["수강 동기", "수업 요약", "가장 중요했던 내용"])
-    // '가장 중요했던 내용' = 소제목+설명 2컬럼 블록반복
+    // '가장 중요했던 내용' = 개조식 단일컬럼(FRT-131) — 각 항목을 ③ 프로젝트 기록으로 연결한다.
     const important = detail.blocks.find(b => b.label === "가장 중요했던 내용")!
+    expect(important.variant).toBe("outcome-list")
     expect(important.value.type).toBe("repeatable-cell")
     if (important.value.type === "repeatable-cell") {
-      expect(important.value.columns.length).toBe(2)
+      expect(important.value.columns.map(c => c.key)).toEqual(["item"])
     }
+    expect(important.linkConfig).toEqual({
+      targetSectionId: "edu-projects",
+      titleColumnKey: "name",
+      label: "프로젝트로 기록",
+    })
   })
 
   it("대외활동 ① 은 활동 유형·기수·주최·주관·규모 식별 필드를 갖는다", () => {

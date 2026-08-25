@@ -26,6 +26,16 @@ import {
 /** FRT-143 이전 '결과물' 링크 한 칸의 열 key. 로드 시 행 첨부로 이관한다. */
 export const LEGACY_OUTPUT_LINK_COLUMN_KEY = 'output'
 
+// FRT-131 이전 수업 ② '가장 중요했던 내용'은 소제목+설명 2컬럼 블록반복이었다. 확정본의
+// ②→③ 연결을 붙이며 대외활동 ② 와 같은 개조식 단일컬럼(outcome-list)으로 정렬했다 —
+// 저장된 레코드는 두 열을 아직 들고 있으므로 로드 시 매퍼가 행마다 한 항목으로 합친다
+// (`experience-mapper`). 열 key 는 이관의 판정 근거라 템플릿에서 사라진 뒤에도 여기 남긴다.
+
+/** FRT-131 이전 소제목+설명 2컬럼의 '소제목' 열 key. */
+export const LEGACY_HIGHLIGHT_TITLE_COLUMN_KEY = 'title'
+/** FRT-131 이전 소제목+설명 2컬럼의 '설명' 열 key. */
+export const LEGACY_HIGHLIGHT_DETAIL_COLUMN_KEY = 'detail'
+
 /** 결과물 링크 빈칸 문구 — 확정본(학회 ③·수업 ③) 표기. */
 const ARTIFACT_URL_PLACEHOLDER = '링크 (Notion, Drive, YouTube 등)'
 
@@ -394,31 +404,16 @@ function educationExtensions(): TemplateSection[] {
           placeholder:
             '예: 마케팅의 기본 개념부터 소비자 행동, 시장 세분화, 브랜드 포지셔닝까지 다뤘습니다. 매주 이론 강의와 함께 실제 기업 케이스를 분석하는 방식으로 진행됐습니다',
         }),
-        // 가장 중요했던 내용 — 소제목+설명 블록 반복. ③ 연결(블록반복 링크)은 FRT-131.
-        // 소제목은 required 로 두지 않는다 — 이 블록은 optional 인 '수업 상세'(detail) 카드 안이라
-        // required 컬럼이 있으면 카드 전체가 필수로 판정돼(isRequiredBlock) 수강 동기·수업 요약만
-        // 채워도 진행도가 미완료로 오판된다.
-        createRepeatableCell(
-          '가장 중요했던 내용',
-          [
-            {
-              key: 'title',
-              label: '소제목',
-              blockType: 'text',
-              placeholder: '예: 마케팅 4P 프레임의 실전 적용',
-            },
-            {
-              key: 'detail',
-              label: '설명',
-              blockType: 'textarea',
-              placeholder: '이 내용이 왜 중요했는지, 어떤 맥락에서 배웠는지 자유롭게 적어주세요',
-            },
-          ],
-          {
-            guide:
-              '이 강좌에서 나에게 가장 깊게 남은 개념, 이론, 관점을 단위별로 기록해주세요. 하나씩 소제목과 설명을 나눠 정리할 수 있어요.',
-          },
-        ),
+        // 가장 중요했던 내용 — 확정본 ②→③ 연결(FRT-131). 소제목+설명 2컬럼을 대외활동 ② 와
+        // 같은 개조식 단일컬럼으로 정렬해 각 항목에 '프로젝트로 기록' 링크를 붙인다. 구 레코드의
+        // 2컬럼 값은 로드 시 한 항목으로 합쳐 이관한다(위 LEGACY_HIGHLIGHT_* 참고).
+        createOutcomeList('가장 중요했던 내용', {
+          itemLabel: '내용',
+          placeholder: '예: 마케팅 4P 프레임의 실전 적용',
+          guide:
+            '이 강좌에서 나에게 가장 깊게 남은 개념, 이론, 관점을 한 줄씩 기록해주세요. 프로젝트나 과제로 이어진 내용은 아래 ③ 기록으로 바로 연결할 수 있어요.',
+          link: { targetSectionId: 'edu-projects', titleColumnKey: 'name', label: '프로젝트로 기록' },
+        }),
       ],
     },
     {

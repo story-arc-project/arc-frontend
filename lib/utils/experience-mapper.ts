@@ -10,6 +10,7 @@ import type {
   Block,
   BlockValue,
   CellValue,
+  RepeatableCellBlockValue,
   CustomEntry,
   RowArtifact,
   TemplateV2,
@@ -18,6 +19,8 @@ import { isImportanceLevel, SCHEMA_VERSION_V2 } from "@/types/archive"
 import {
   EXPERIENCE_TYPE_MAP,
   getTemplateForType,
+  LEGACY_HIGHLIGHT_DETAIL_COLUMN_KEY,
+  LEGACY_HIGHLIGHT_TITLE_COLUMN_KEY,
   LEGACY_OUTPUT_LINK_COLUMN_KEY,
   PROJECT_COLLAB_KEY,
   PROJECT_SOLO_OPTION,
@@ -121,12 +124,59 @@ function injectValue(block: Block, value: BlockValue | undefined): Block {
   }
   // 결과물 링크 한 칸을 행 첨부로 바꾼 표(FRT-143)는 저장분의 그 열을 먼저 옮긴다 — 아래 잠금
   // 판정보다 앞서야 한다. 옮기고 나면 열이 템플릿과 다시 같아져 잠금이 유지된다.
-  const migrated = block.allowRowArtifacts ? absorbLegacyOutputColumn(block.value, safe) : safe
+  let migrated = block.allowRowArtifacts ? absorbLegacyOutputColumn(block.value, safe) : safe
+  // 소제목+설명 2컬럼을 개조식 단일컬럼으로 바꾼 블록(FRT-131)도 같은 자리에서 옮긴다 —
+  // 옮기고 나면 열이 템플릿과 같아져 OutcomeList 로 그려지고 링크 버튼이 산다.
+  if (block.variant === "outcome-list") {
+    migrated = absorbLegacyHighlightColumns(block.value, migrated)
+  }
   // 컬럼을 손댄 레코드는 잠금을 풀어 열 관리 UI 를 돌려준다(FRT-104).
   if (block.lockColumns && !columnsMatchTemplate(block.value, migrated)) {
     return { ...block, value: migrated, lockColumns: false }
   }
   return { ...block, value: migrated }
+}
+
+/**
+ * FRT-131 이전 수업 ② '가장 중요했던 내용'의 소제목+설명 **2컬럼**을 개조식 단일 항목으로 합친다.
+ *
+ * 저장된 표는 옛 두 열을 들고 있어 그대로 두면 표형 폴백(FRT-97)에 갇힌다 — '프로젝트로 기록'
+ * 링크가 없는 옛 UI 로 남고, outcome-list 는 열을 잠그지 않아 열 관리 UI 까지 노출된다.
+ * 그래서 행마다 두 칸을 "소제목 — 설명" 한 항목으로 합치고 열은 템플릿(단일 `item`)로 되돌린다.
+ *
+ * 판정은 **소제목+설명 열만 든 표**로 좁힌다 — 사용자가 직접 더한 열(`col-` uid)이 섞여 있으면
+ * 통째로 물러나 표형 폴백에 맡긴다. 셀도 문자열(또는 빈 값)일 때만 옮긴다 — 열 유형을 바꿔 만든
+ * 파일 셀 같은 모양이 한 칸이라도 있으면 물러난다(FRT-143 과 같은 원칙: 값이 열었다 저장하는
+ * 것만으로 사라지지 않는다). 이미 이관된 레코드는 옛 열이 없어 그대로 돌아온다(멱등).
+ */
+function absorbLegacyHighlightColumns(templateValue: BlockValue, saved: BlockValue): BlockValue {
+  if (templateValue.type !== "repeatable-cell" || saved.type !== "repeatable-cell") return saved
+  // 목적지가 단일 `item` 개조식일 때만 — 다른 모양의 outcome-list 변형은 이 이관의 대상이 아니다.
+  if (templateValue.columns.length !== 1 || templateValue.columns[0].key !== "item") return saved
+  const titleKey = LEGACY_HIGHLIGHT_TITLE_COLUMN_KEY
+  const detailKey = LEGACY_HIGHLIGHT_DETAIL_COLUMN_KEY
+  const keys = saved.columns.map(c => c.key)
+  if (!keys.includes(titleKey) && !keys.includes(detailKey)) return saved
+  if (keys.some(k => k !== titleKey && k !== detailKey)) return saved
+  const textish = (cell: CellValue | undefined | null): cell is string | undefined | null =>
+    cell == null || typeof cell === "string"
+  const cellsOf = (row: RepeatableCellBlockValue["rows"][number]) =>
+    [row.cells[titleKey], row.cells[detailKey]]
+  if (saved.rows.some(row => cellsOf(row).some(cell => !textish(cell)))) return saved
+  return {
+    ...saved,
+    columns: templateValue.columns,
+    rows: saved.rows.map(row => {
+      const [title, detail] = cellsOf(row).map(cell =>
+        typeof cell === "string" ? cell.trim() : "",
+      )
+      const rest = Object.fromEntries(
+        Object.entries(row.cells).filter(([k]) => k !== titleKey && k !== detailKey),
+      )
+      const item = title && detail ? `${title} — ${detail}` : title || detail
+      return { ...row, cells: { ...rest, item } }
+    }),
+  }
 }
 
 /**
