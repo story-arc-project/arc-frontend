@@ -79,6 +79,9 @@ const post = vi.mocked(api.post);
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
 afterEach(cleanup);
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -105,12 +108,23 @@ async function typeInto(label: string, value: string) {
   });
 }
 
-/** 실패 문구가 "즉시 읽어주는" 라이브 영역으로 노출되는지 — 문구가 아니라 그 자리의 역할을 본다. */
+/**
+ * 실패 문구가 "즉시 읽어주는" 라이브 영역으로 노출되는지 — 문구가 아니라 그 자리의 역할을 본다.
+ *
+ * 역할만 보면 부족하다. `role="alert"` 의 암묵 `aria-live` 는 assertive 인데 polite 를 **명시**하면
+ * 그 값이 이겨서 낭독이 다른 발화 뒤로 밀린다 — 역할은 그대로라 role 검사만으로는 안 잡힌다.
+ */
 function assertAnnounced(message: string) {
-  const announced = screen
+  const alert = screen
     .getAllByRole("alert")
-    .some((el) => el.textContent?.includes(message));
-  expect(announced).toBe(true);
+    .find((el) => el.textContent?.includes(message));
+  expect(alert).toBeDefined();
+  expect(alert?.getAttribute("aria-live")).not.toBe("polite");
+}
+
+/** 지금 화면에 낭독될 실패 문구가 하나도 없다 — 리마운트로 지난 실패가 되살아나지 않았는지 본다. */
+function assertNothingAnnounced() {
+  expect(screen.queryAllByRole("alert")).toHaveLength(0);
 }
 
 describe("회원가입 — 실패를 보조기술에 알린다", () => {
@@ -137,11 +151,33 @@ describe("회원가입 — 실패를 보조기술에 알린다", () => {
 
   // 소셜 로그인 실패도 버튼에 포커스가 머문 채 문구만 나타난다 — 같은 무반응이다.
   it("Google 로그인을 쓸 수 없으면 그 사실이 즉시 읽히는 영역으로 노출된다", async () => {
+    // 이 분기는 클라이언트 ID 가 **없을 때**만 탄다. 환경에 값이 있으면(개발자 로컬·CI)
+    // OAuth 리다이렉트로 빠져 문구가 아예 뜨지 않는다 — 환경에 기대지 않도록 못 박는다.
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "");
     await renderStep("start");
 
     await clickButton(/Google/);
 
     assertAnnounced("Google 로그인을 사용할 수 없어요");
+  });
+
+  // 실패 문구를 남겨둔 채 스텝을 벗어났다 돌아오면 요소가 리마운트되고, role="alert" 는
+  // 마운트되는 순간을 "새 알림"으로 읽는다 — 아직 아무것도 다시 시도하지 않았는데
+  // 지난 실패가 다시 낭독되는 건 알려주는 게 아니라 속이는 것이다.
+  it("실패한 뒤 되돌아갔다 다시 들어오면 지난 실패를 다시 읽지 않는다", async () => {
+    post.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await renderStep("password");
+
+    await typeInto("비밀번호", "arcpass123");
+    await typeInto("비밀번호 확인", "arcpass123");
+    await clickButton("가입하기");
+    assertAnnounced(NETWORK_MESSAGE);
+
+    await clickButton("← 이전"); // password → start
+    await typeInto("이메일", "test@example.com"); // 「이메일로 계속하기」는 값이 있어야 열린다
+    await clickButton("이메일로 계속하기"); // start → password (리마운트)
+
+    assertNothingAnnounced();
   });
 
   // 동의 제출 실패도 같은 결함이다(CONSENT_ENABLED off 라 화면에는 아직 안 걸려 있다).

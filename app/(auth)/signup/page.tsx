@@ -191,6 +191,14 @@ function SignupForm() {
   }
 
   function goTo(next: Step, direction = 1) {
+    // 실패 문구는 그 스텝에서의 그 시도에 매인 진술이다. 스텝을 벗어나면 진술도 끝난다.
+    // 남겨두면 「← 이전」으로 되돌아왔다 다시 들어올 때 요소가 리마운트되면서
+    // role="alert" 가 **지난 실패를 다시 낭독한다** — 아직 아무것도 시도하지 않았는데도(FRT-282).
+    // 에러는 실패 경로에서만 세팅되고 그 경로는 goTo 를 부르지 않으므로, 여기서 지워도 지금 띄운 실패는 살아남는다.
+    setSignupError(null);
+    setVerifyError(null);
+    setSocialError(null);
+    setConsentError(null);
     setDir(direction);
     setStep(next);
   }
@@ -487,7 +495,7 @@ function SignupForm() {
 
                 <SocialLoginButtons onLogin={handleSocial} action="시작하기" />
                 {socialError && (
-                  <p role="alert" aria-live="polite" className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
+                  <p role="alert" className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
                 )}
 
                 <p className="mt-6 text-center text-body-sm text-text-secondary">
@@ -563,9 +571,11 @@ function SignupForm() {
                     }
                   />
                   {/* 가입 실패는 「가입하기」에 포커스가 머문 채 비동기로 나타난다.
-                      역할이 없으면 스크린리더에는 아무 일도 일어나지 않은 것과 같다(FRT-282). */}
+                      역할이 없으면 스크린리더에는 아무 일도 일어나지 않은 것과 같다(FRT-282).
+                      aria-live 는 일부러 쓰지 않는다 — role="alert" 의 암묵값이 assertive 인데
+                      polite 를 명시하면 그걸 덮어써서 낭독이 뒤로 밀린다. */}
                   {signupError && (
-                    <p role="alert" aria-live="polite" className="text-body-sm text-error">{signupError}</p>
+                    <p role="alert" className="text-body-sm text-error">{signupError}</p>
                   )}
                   <Button onClick={handleSignup} disabled={!pwValid || isLoading}>
                     {isLoading ? "처리 중..." : "가입하기"}
@@ -593,7 +603,7 @@ function SignupForm() {
                     onKeyDown={(e) => e.key === "Enter" && verifyCode.trim() && handleVerify()}
                   />
                   {verifyError && (
-                    <p role="alert" aria-live="polite" className="text-body-sm text-error">{verifyError}</p>
+                    <p role="alert" className="text-body-sm text-error">{verifyError}</p>
                   )}
                   <Button onClick={handleVerify} disabled={!verifyCode.trim() || isLoading}>
                     {isLoading ? "확인 중..." : "확인"}
