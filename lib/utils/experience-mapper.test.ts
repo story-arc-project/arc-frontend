@@ -1775,12 +1775,19 @@ describe("확정본 전면 교체 값 보존 (FRT-210 어학능력)", () => {
   const loadLegacy = () =>
     toExperienceV2(makeExperience({ type: "language", content: legacyLanguageContent() }))
 
-  it("질문·타입이 같은 두 필드는 확정본 ④ 자리로 이관된다", () => {
+  /**
+   * FRT-341 이후 목적지는 평면 필드가 아니라 ④ 반복 표의 **첫 행**이다. 이관은 두 단계를 거친다:
+   * `applyRenamedKeys` 가 `lang-info.*` 를 `lang-certificate.*` 로 정규화하고,
+   * `foldLegacyLanguageCertificate` 가 그것을 표의 행으로 접는다.
+   */
+  it("질문·타입이 같은 두 필드는 확정본 ④ 표의 첫 행으로 이관된다", () => {
     const v2 = loadLegacy()
-    const byKey = (k: string) => v2.extensionBlocks.find(b => b.key === k)
+    const table = v2.extensionBlocks.find(b => b.key === "lang-certificate.어학 자격증")
 
-    expect(byKey("lang-certificate.시험 / 자격증명")?.value).toEqual(text("TOEIC"))
-    expect(byKey("lang-certificate.점수 / 등급")?.value).toEqual(text("920점"))
+    expect(table?.value.type === "repeatable-cell" && table.value.rows[0].cells).toMatchObject({
+      name: "TOEIC",
+      score: "920점",
+    })
     // 옮긴 구 키는 '기타' 에 중복으로 되살아나지 않는다.
     expect(v2.customBlocks.find(b => b.key === "lang-info.시험/인증명")).toBeUndefined()
     expect(v2.customBlocks.find(b => b.key === "lang-info.점수/등급")).toBeUndefined()
@@ -1819,9 +1826,10 @@ describe("확정본 전면 교체 값 보존 (FRT-210 어학능력)", () => {
     const payload = toSavePayload(first)
     const second = toExperienceV2(makeExperience({ type: "language", content: payload.content }))
 
-    expect(
-      second.extensionBlocks.find(b => b.key === "lang-certificate.시험 / 자격증명")?.value,
-    ).toEqual(text("TOEIC"))
+    const table = second.extensionBlocks.find(b => b.key === "lang-certificate.어학 자격증")
+    expect(table?.value.type === "repeatable-cell" && table.value.rows[0].cells).toMatchObject({
+      name: "TOEIC",
+    })
     expect(second.customBlocks.find(b => b.key === "lang-info.언어")?.value).toEqual(text("영어"))
     expect(second.customBlocks.find(b => b.key === OLD_TABLE_KEY)?.type).toBe("repeatable-cell")
   })
@@ -1866,12 +1874,22 @@ describe("확정본 전면 교체 값 보존 (FRT-210 어학능력)", () => {
       expect(v1.customBlocks.find(b => b.label === "유효기간")?.value).toEqual(text("2026-03-10"))
     })
 
-    it("타입이 호환되는 라벨은 그대로 이관된다 (과잉 차단이 아니다)", () => {
+    /**
+     * FRT-341 로 ④ 가 반복 표가 되면서 `RENAMED_FIELD_KEYS` 의 목적지(`lang-certificate.시험 /
+     * 자격증명`)는 템플릿에서 사라졌다. v1 은 저장 블록 배열을 그대로 통과시켜 **키를 접을
+     * `fields` 맵이 없으므로**, 표로 접는 이관이 닿지 않는다.
+     *
+     * 그래서 이 값은 '기타' 카드로 간다 — 값은 온전히 남고(무음 손실 없음) 사용자가 표로 옮길지
+     * 직접 판단한다. v1 어학 레코드에만 남는 한 세대 뒤처짐이라, v2 경로를 복잡하게 만들면서까지
+     * 맞출 값은 아니다.
+     */
+    it("확정본에서 사라진 목적지 키는 '기타' 로 보존된다 (무음 손실 없음)", () => {
       const v1 = loadV1()
 
-      expect(v1.extensionBlocks.find(b => b.key === "lang-certificate.시험 / 자격증명")?.value).toEqual(
-        text("TOEIC"),
-      )
+      expect(
+        v1.extensionBlocks.find(b => b.key === "lang-certificate.시험 / 자격증명"),
+      ).toBeUndefined()
+      expect(v1.customBlocks.find(b => b.label === "시험/인증명")?.value).toEqual(text("TOEIC"))
     })
 
     it("v1 → 저장 → 재로드 왕복에서 값이 사라지지 않는다", () => {
@@ -4538,5 +4556,262 @@ describe("통합된 유형의 판별자 되돌리기 (FRT-291 리뷰)", () => {
       },
     ])
     expect(collabOf(saved)?.selected).toBe("팀 프로젝트(6명 이상)")
+  })
+})
+
+/**
+ * FRT-341 — 어학 ④ 를 평면 5필드에서 반복 표로 바꿨다. 저장된 한 건은 표의 **첫 행**으로 접는다.
+ *
+ * 접지 않으면 값이 사라지지는 않지만('기타' 카드 안전망) 사용자는 이미 적어 둔 토익 점수를 다시
+ * 타이핑해야 한다 — 이 개편이 하려던 일("토플도 함께 쓴다")의 정반대다.
+ *
+ * ⚠️ **성적표 파일만은 접지 않는다.** 블록 층위 `FileBlockValue` 는 `description`·`evidenceType`
+ * 을 담는데 셀 값 `FileCellValue` 에는 그 자리가 없다(FRT-213). 옮기면 사용자가 적은 설명과 고른
+ * 증빙 유형이 **무음으로 잘린다** — 옮기지 못하는 값은 '기타' 로 보내 사용자가 직접 판단하게 둔다.
+ */
+describe("어학 ④ 자격증 반복 표 이관 (FRT-341)", () => {
+  const TABLE_KEY = "lang-certificate.어학 자격증"
+
+  function langContent(fields: Record<string, unknown>): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      template_version: TEMPLATE_VERSION,
+      title: "영어",
+      summary: "",
+      status: "complete",
+      tags: [],
+      fields,
+      custom: [],
+    }
+  }
+
+  const load = (fields: Record<string, unknown>) =>
+    toExperienceV2(makeExperience({ type: "language", content: langContent(fields) }))
+
+  const tableOf = (exp: ExperienceV2): RepeatableCellBlockValue | undefined => {
+    const b = exp.extensionBlocks.find(x => x.key === TABLE_KEY)
+    return b?.value.type === "repeatable-cell" ? b.value : undefined
+  }
+
+  const FLAT_RECORD = {
+    "lang-certificate.시험 / 자격증명": text("TOEIC"),
+    "lang-certificate.점수 / 등급": text("920점"),
+    "lang-certificate.취득일": { type: "date", date: "2024-03-10" },
+    "lang-certificate.유효기간": { type: "date", date: "2026-03-10" },
+  }
+
+  it("평면 5필드로 저장된 자격증 한 건이 표의 첫 행이 된다", () => {
+    const table = tableOf(load(FLAT_RECORD))
+
+    expect(table?.rows).toHaveLength(1)
+    expect(table?.rows[0].cells).toMatchObject({
+      name: "TOEIC",
+      score: "920점",
+      acquired: "2024-03-10",
+      expires: "2026-03-10",
+    })
+  })
+
+  it("접힌 구 키는 '기타' 카드에 중복으로 되살아나지 않는다", () => {
+    const v2 = load(FLAT_RECORD)
+    for (const key of Object.keys(FLAT_RECORD)) {
+      expect(v2.customBlocks.find(b => b.key === key)).toBeUndefined()
+    }
+  })
+
+  /**
+   * 구 키를 걷어내는 유일한 이유는 **중복 방지**다. 그런데 모르는 판별자의 값은 애초에 표에
+   * 실리지 않으므로 중복이 아니다 — 그런데도 지우면 열어 보기만 한 사용자가 저장하는 순간
+   * 값이 영구히 사라진다. 옮길 수 있는 모양인지부터 묻고 지운다.
+   */
+  it("접을 수 없는 모양의 구 값은 지우지 않고 '기타' 카드로 보존한다", () => {
+    const legacySelect = { type: "single-select", options: ["중급", "고급"], selected: "중급" }
+    const v2 = load({ ...FLAT_RECORD, "lang-certificate.점수 / 등급": legacySelect })
+
+    expect(tableOf(v2)?.rows[0].cells.score).toBe("")
+    expect(v2.customBlocks.find(b => b.key === "lang-certificate.점수 / 등급")?.value).toEqual(
+      legacySelect,
+    )
+  })
+
+  /**
+   * 판별자를 안다고 알맹이까지 아는 것은 아니다 — `{type:"date", date:123}` 은 접을 수 있어
+   * 보이지만 셀에 실을 문자열이 아니다. 셀에는 **비문자열이 실리지 않는다.**
+   *
+   * ⚠️ 이 값이 '기타' 카드로 넘어가지는 **않는다.** `isFilledText` 가 비문자열을 "비었다"로
+   * 보므로 `isBlockDiscardable` 이 orphan 블록을 버린다 — 이 이관 이전부터의 동작이라
+   * 여기서 바꾸지 않는다. 여기서 지키는 것은 "우리가 쓰레기를 써 넣고 하류 정규화가 치우게
+   * 하지 않는다"까지다.
+   */
+  it("판별자는 맞지만 알맹이가 문자열이 아니면 셀에 싣지 않는다", () => {
+    const v2 = load({ ...FLAT_RECORD, "lang-certificate.취득일": { type: "date", date: 123 } })
+
+    expect(tableOf(v2)?.rows[0].cells.acquired).toBe("")
+  })
+
+  /**
+   * 표 키에 **모르는 판별자**의 값이 이미 실려 있으면 `injectValue` 가 그걸 보존한다(새 스키마가
+   * 쓴 값일 수 있다). 그 앞단인 fold 가 덮어써 버리면 그 보호가 무의미해진다 — 목적지를 만들
+   * 자격은 "비었거나, 아는 모양의 빈 표일 때"뿐이다.
+   */
+  it("표 키에 모르는 판별자가 있으면 덮어쓰지 않고 구 키도 남긴다", () => {
+    const future = { type: "cert-matrix", entries: [{ name: "TOEIC" }] }
+    const v2 = load({ ...FLAT_RECORD, [TABLE_KEY]: future })
+
+    expect(v2.extensionBlocks.find(b => b.key === TABLE_KEY)?.value).toEqual(future)
+    for (const key of Object.keys(FLAT_RECORD)) {
+      expect(v2.customBlocks.find(b => b.key === key), key).toBeDefined()
+    }
+  })
+
+  /**
+   * "빈 표"라는 이유만으로 목적지를 만들면, 아래 대입이 저장된 `columns` 를 오늘의 템플릿으로
+   * 갈아버린다 — 사용자가 더한 열과 **그 열이 부여한 잠금 해제**(FRT-104)가 함께 사라진다.
+   * `columnsMatchTemplate` 이 이미 그 판정을 맡고 있으므로 fold 도 같은 기준을 써야 한다.
+   */
+  it("빈 표라도 열이 템플릿과 다르면 손대지 않는다", () => {
+    const customized = {
+      type: "repeatable-cell",
+      columns: [
+        { key: "name", label: "시험 / 자격증명", blockType: "text" },
+        { key: "col-memo", label: "메모", blockType: "text" },
+      ],
+      rows: [],
+    }
+    const v2 = load({ ...FLAT_RECORD, [TABLE_KEY]: customized })
+
+    expect(tableOf(v2)?.columns.map(c => c.key)).toContain("col-memo")
+    expect(tableOf(v2)?.rows).toHaveLength(0)
+    for (const key of Object.keys(FLAT_RECORD)) {
+      expect(v2.customBlocks.find(b => b.key === key), key).toBeDefined()
+    }
+  })
+
+  /**
+   * `type` 만 맞고 `rows` 가 없는 저장분이 실재한다(FRT-200 계열). fold 가 `normalizeBlockValue`
+   * **앞**에서 돌기 때문에, 여기서 `.length` 를 그냥 읽으면 어학 기록이 통째로 안 열린다.
+   */
+  it("rows 가 없는 저장분에도 레코드가 열린다", () => {
+    const broken = { type: "repeatable-cell" }
+
+    expect(() => load({ ...FLAT_RECORD, [TABLE_KEY]: broken })).not.toThrow()
+  })
+
+  /**
+   * 표 키에 `null` 이 실려 있어도 열린다. `null` 은 "모르는 값"이 아니라 **손상**이라, 아예 없는
+   * 것과 같이 다뤄 이관이 덮어쓸 수 있어야 한다(`isBlockDiscardable` 이 못박은 규칙).
+   */
+  it("표 키가 null 인 저장분도 열리고 정상적으로 접힌다", () => {
+    let v2: ExperienceV2 | undefined
+    expect(() => {
+      v2 = load({ ...FLAT_RECORD, [TABLE_KEY]: null })
+    }).not.toThrow()
+
+    expect(tableOf(v2 as ExperienceV2)?.rows[0].cells).toMatchObject({ name: "TOEIC" })
+  })
+
+  /**
+   * `rows` 와 `columns` 는 **따로** 깨진다. 열 호환을 묻는 쪽(`columnsMatchTemplate`)도 배열을
+   * 전제하므로, `rows` 만 검사하고 통과시키면 그 다음 줄에서 같은 방식으로 터진다.
+   */
+  it("columns 가 없는 저장분에도 레코드가 열린다", () => {
+    const broken = { type: "repeatable-cell", rows: [] }
+
+    expect(() => load({ ...FLAT_RECORD, [TABLE_KEY]: broken })).not.toThrow()
+  })
+
+  /**
+   * 그릇이 배열이라고 **알맹이까지** 성한 것은 아니다. `columns: [null]` 이면 열 호환을 묻는
+   * `columnsMatchTemplate` 이 `c.key` 에서 터진다 — 같은 크래시의 한 겹 아래다.
+   */
+  it("columns 원소가 깨진 저장분에도 레코드가 열린다", () => {
+    const broken = { type: "repeatable-cell", rows: [], columns: [null] }
+
+    expect(() => load({ ...FLAT_RECORD, [TABLE_KEY]: broken })).not.toThrow()
+  })
+
+  /**
+   * 다섯 열이 모두 한 줄 위젯이다. 여러 줄이 든 값을 실으면 `<input>` 이 개행을 지우고, 사용자가
+   * 한 글자만 고쳐도 뭉개진 값이 저장된다 — `carryIntoSingleLine` 이 거절하는 그 전이다.
+   */
+  it("여러 줄이 든 구 값은 접지 않고 '기타' 카드로 보존한다", () => {
+    const multiline = { type: "textarea", text: "TOEIC\n2024년 3월 응시" }
+    const v2 = load({ ...FLAT_RECORD, "lang-certificate.시험 / 자격증명": multiline })
+
+    expect(tableOf(v2)?.rows[0].cells.name).toBe("")
+    expect(v2.customBlocks.find(b => b.key === "lang-certificate.시험 / 자격증명")?.value).toEqual(
+      multiline,
+    )
+  })
+
+  /**
+   * v1 → v2 로 올라온 레코드는 `lang-info.*` 구 키를 그대로 들고 있다. 그 값도 같은 자리로
+   * 접는다 — 한 세대만 접으면 레코드가 언제 저장됐느냐에 따라 결과가 갈린다.
+   */
+  it("더 구세대인 lang-info 키에서도 접힌다", () => {
+    const table = tableOf(
+      load({
+        "lang-info.시험/인증명": text("TOEIC"),
+        "lang-info.점수/등급": text("920점"),
+      }),
+    )
+
+    expect(table?.rows).toHaveLength(1)
+    expect(table?.rows[0].cells).toMatchObject({ name: "TOEIC", score: "920점" })
+  })
+
+  it("성적표 파일은 접지 않고 '기타' 카드로 보존한다 (설명·증빙 유형이 잘린다)", () => {
+    const v2 = load({
+      ...FLAT_RECORD,
+      "lang-certificate.성적표 첨부": {
+        type: "file",
+        fileId: "f1",
+        fileName: "toeic.pdf",
+        description: "2024년 3월 정기시험",
+        evidenceType: "성적표/점수 확인서",
+      },
+    })
+
+    const kept = v2.customBlocks.find(b => b.key === "lang-certificate.성적표 첨부")
+    expect(kept?.value).toMatchObject({
+      type: "file",
+      fileId: "f1",
+      description: "2024년 3월 정기시험",
+      evidenceType: "성적표/점수 확인서",
+    })
+    expect(tableOf(v2)?.rows[0].cells.file ?? "").toBe("")
+  })
+
+  /**
+   * 이관은 **한 번만** 일어나야 한다. 사용자가 접힌 행을 지우고 다시 쓴 뒤 저장했는데 다음 로드가
+   * 옛 값을 되살리면, 지울 수 없는 행이 된다.
+   */
+  it("표에 이미 행이 있으면 덮어쓰지 않는다", () => {
+    const table = tableOf(
+      load({
+        ...FLAT_RECORD,
+        [TABLE_KEY]: {
+          type: "repeatable-cell",
+          columns: [{ key: "name", label: "시험 / 자격증명", blockType: "text" }],
+          rows: [{ id: "r1", cells: { name: "TEPS" } }],
+        },
+      }),
+    )
+
+    expect(table?.rows).toHaveLength(1)
+    expect(table?.rows[0].cells.name).toBe("TEPS")
+  })
+
+  it("접은 값이 저장 왕복에도 살아남는다", () => {
+    const payload = toSavePayload(load(FLAT_RECORD))
+    const second = toExperienceV2(
+      makeExperience({ type: "language", content: payload.content as Record<string, unknown> }),
+    )
+
+    expect(tableOf(second)?.rows[0].cells).toMatchObject({ name: "TOEIC", score: "920점" })
+  })
+
+  it("자격증을 하나도 안 쓴 기록에는 빈 행을 만들지 않는다", () => {
+    expect(tableOf(load({ "lang-overview.전반적 수준": text("중급") }))?.rows ?? []).toEqual([])
   })
 })

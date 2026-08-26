@@ -30,6 +30,7 @@ import {
 import {
   uid,
   cloneBlocks,
+  createEmptyRow,
   createGroupBlock,
   isBlockDiscardable,
   dedupeBlockIdsAcross,
@@ -767,6 +768,160 @@ function isPreMergeTemplateVersion(templateVersion: unknown): boolean {
   return typeof templateVersion === "number" && templateVersion < PROJECT_TYPE_MERGE_VERSION
 }
 
+/** 어학 ④ 자격증 반복 표(FRT-341)의 안정키. */
+const LANGUAGE_CERT_TABLE_KEY = 'lang-certificate.어학 자격증'
+
+/**
+ * 접어 넣은 행의 고정 id. `uid('row')` 를 쓰지 않는 이유는 **멱등성**이다 — 이관은 저장 전까지
+ * 로드마다 다시 도는데, 매번 새 id 가 나오면 같은 행이 리렌더마다 신원을 바꾼다.
+ */
+const LANGUAGE_CERT_FOLDED_ROW_ID = 'lang-cert-folded'
+
+/**
+ * 어학 ④ 평면 필드 → 반복 표 열 (FRT-341). 확정본이 정한 5항목을 그대로 열로 옮겼으므로
+ * 질문이 달라진 짝이 없다 — 이 표의 모든 줄은 "같은 질문, 다른 층위"다.
+ *
+ * ⚠️ '성적표 첨부'는 **빠져 있다.** 블록 층위 `FileBlockValue` 는 `description`·`evidenceType`
+ * 을 담는데 셀 값 `FileCellValue` 에는 그 자리가 없어(FRT-213), 옮기면 사용자가 적은 설명과
+ * 고른 증빙 유형이 무음으로 잘린다. 옮기지 않으면 `orphanFieldsToBlocks` 가 '기타' 카드로
+ * 통째로 보존하므로 사용자가 보고 직접 판단할 수 있다 — 못 지킬 값은 옮기지 않는 쪽이 답이다.
+ */
+const LANGUAGE_CERT_FOLD: ReadonlyArray<{ from: string; column: string }> = [
+  { from: 'lang-certificate.시험 / 자격증명', column: 'name' },
+  { from: 'lang-certificate.점수 / 등급', column: 'score' },
+  { from: 'lang-certificate.취득일', column: 'acquired' },
+  { from: 'lang-certificate.유효기간', column: 'expires' },
+]
+
+/** 평면 블록 값에서 셀에 실을 문자열을 뽑는다. 이 이관이 다루는 세 타입만 연다. */
+function flatValueToCellText(value: BlockValue | undefined): string {
+  if (!value) return ''
+  if (value.type === 'text' || value.type === 'textarea') return value.text ?? ''
+  if (value.type === 'date') return value.date ?? ''
+  return ''
+}
+
+/**
+ * 이 이관이 **온전히 옮길 수 있는 모양인가.** `flatValueToCellText` 가 빈 문자열을 돌려주는
+ * 이유는 두 가지인데 — 값이 비었거나, 판별자를 모르거나 — 앞은 지워도 잃을 게 없고 뒤는 지우면
+ * 사용자 값이 영구히 사라진다. 구 키를 걷어낼 자격을 이 함수로 가른다(`applyScopedMigrations`
+ * 가 `isValueOccupied` 로 같은 함정을 피하는 것과 같은 이유).
+ */
+function isFoldableFlatValue(value: BlockValue | undefined): boolean {
+  if (!value) return true
+  if (value.type !== 'text' && value.type !== 'textarea' && value.type !== 'date') return false
+  const raw = value.type === 'date' ? value.date : value.text
+  // ⚠️ **판별자를 안다고 알맹이까지 아는 것은 아니다.** 알맹이가 아예 없으면 빈 값이라 지워도
+  // 잃을 게 없지만, `{type:'date', date:123}` 처럼 **문자열이 아닌 알맹이**는 우리가 모르는
+  // 값이다 — 통과시키면 셀에 비문자열이 실리고, 정규화가 그 칸을 `""` 로 갈아버린 뒤엔 구 키도
+  // 이미 지워져 원본이 갈 곳이 없다.
+  if (typeof raw !== 'string') return raw == null
+  // ⚠️ 다섯 열이 모두 **한 줄 위젯**이다. 여러 줄이 든 값을 실으면 `<input>` 이 개행을 지우고,
+  // 사용자가 한 글자만 고쳐도 뭉개진 값이 저장된다 — `carryIntoSingleLine` 이 거절하는 그 전이다.
+  return !/[\r\n]/.test(raw)
+}
+
+/**
+ * 정규화 전 저장분이 **아래에서 읽을 모양**을 갖췄는가. `rows`·`columns` 는 그릇이 없을 수도,
+ * 그릇만 있고 알맹이가 깨졌을 수도 있다(`columns: [null]`) — 읽는 자리마다 따로 막으면 한 겹씩
+ * 뚫린다. 여기서 한 번에 묻고, 아니면 fold 가 통째로 물러나 `normalizeBlockValue` 에 맡긴다.
+ */
+function isWellFormedTableShape(value: RepeatableCellBlockValue): boolean {
+  if (!Array.isArray(value.rows) || !Array.isArray(value.columns)) return false
+  return value.columns.every(c => !!c && typeof c.key === 'string')
+}
+
+/** 구 키 중 조건에 맞는 것만 걷어낸 새 맵. 원본은 건드리지 않는다. */
+function dropLegacyCertKeys(
+  fields: Record<string, BlockValue>,
+  shouldDrop: (from: string) => boolean,
+): Record<string, BlockValue> {
+  const out = { ...fields }
+  for (const { from } of LANGUAGE_CERT_FOLD) {
+    if (shouldDrop(from)) delete out[from]
+  }
+  return out
+}
+
+/** 옮길 수 있는데 **비어 있는** 구 키 — 표에 실릴 게 없으므로 지워도 잃을 것이 없다. */
+function isEmptyFoldableKey(fields: Record<string, BlockValue>, from: string): boolean {
+  const value = fields[from]
+  return isFoldableFlatValue(value) && flatValueToCellText(value) === ''
+}
+
+/**
+ * 평면 5필드로 저장된 어학 자격증 한 건을 반복 표의 **첫 행**으로 접는다 (FRT-341).
+ *
+ * 접지 않아도 값은 `orphanFieldsToBlocks` 가 '기타' 카드에 보존하므로 사라지지는 않는다. 그런데
+ * 이 개편의 목적이 "이미 쓴 토익 옆에 토플을 더한다"이므로, 접지 않으면 정작 그 사용자가 토익을
+ * **다시 타이핑**해야 한다 — 안전망이 있다는 것과 이관이 필요 없다는 것은 다른 이야기다.
+ *
+ * 이 함수는 `applyRenamedKeys` **뒤에** 돌아야 한다. 그래야 더 구세대인 `lang-info.시험/인증명`
+ * 계열이 먼저 `lang-certificate.*` 로 정규화되어 한 경로로 접힌다 — 세대마다 이관을 따로 쓰면
+ * 레코드가 언제 저장됐느냐에 따라 결과가 갈린다.
+ */
+function foldLegacyLanguageCertificate(
+  fields: Record<string, BlockValue>,
+  typeId: ExperienceTypeId,
+  templateByKey: Map<string, Block>,
+): Record<string, BlockValue> {
+  if (typeId !== 'language') return fields
+  const template = templateByKey.get(LANGUAGE_CERT_TABLE_KEY)
+  if (!template || template.value.type !== 'repeatable-cell') return fields
+  if (!LANGUAGE_CERT_FOLD.some(({ from }) => fields[from] !== undefined)) return fields
+
+  // 목적지를 만들 자격은 **"비었거나, 아는 모양의 빈 표일 때"**뿐이다. 아래 두 갈래는 그 자격이
+  // 없으므로 구 키까지 그대로 둔 채 물러난다 — 접지도 않으면서 구 키를 지우면 그게 곧 유실이다.
+  const current = fields[LANGUAGE_CERT_TABLE_KEY]
+  // ⚠️ **`null`·비객체는 "값이 없음"이지 "모르는 값"이 아니다.** `isBlockDiscardable` 이 못박은
+  // 대로 그런 손상은 이관이 덮어쓸 수 있어야 하므로 `undefined` 와 같이 다룬다 — 여기서
+  // `current.type` 을 그냥 읽으면 레코드가 통째로 안 열린다.
+  if (current != null && typeof current === 'object') {
+    // ⚠️ 모르는 판별자는 새 스키마가 쓴 값일 수 있다 — `injectValue` 가 일부러 보존하는 값을
+    // 그 앞단인 여기서 덮어쓰면 그 보호가 통째로 무의미해진다.
+    if (current.type !== 'repeatable-cell') return fields
+    // ⚠️ 이 함수는 `normalizeBlockValue` **앞**에서 돈다 — 즉 여기 오는 값은 **정규화되지 않은
+    // 저장분**이고, 그릇도 알맹이도 따로 깨진다(`rows` 누락 · `columns` 누락 · `columns: [null]`).
+    // 어느 한 겹만 막으면 다음 줄이 같은 방식으로 터져 어학 기록이 통째로 안 열린다. 아래에서
+    // 읽을 모양을 **한 곳에서 통째로** 확인한다.
+    if (!isWellFormedTableShape(current)) return fields
+    // 표에 이미 행이 있으면 접지 않는다. 이관은 한 번뿐이어야 한다 — 접힌 행을 지우고 저장한
+    // 사용자에게 다음 로드가 그 행을 되살리면, 지울 수 없는 행이 된다. 이때 걷어낼 자격이 있는
+    // 구 키는 **비어 있는 것뿐**이다: 값이 든 키는 이 표에 실린 적이 없으니 중복이 아니다.
+    if (current.rows.length > 0) return dropLegacyCertKeys(fields, k => isEmptyFoldableKey(fields, k))
+    // ⚠️ 비어 있다는 것만으로는 자격이 되지 않는다. 아래 대입이 저장된 `columns` 를 오늘의
+    // 템플릿으로 갈아버리면, 사용자가 더한 열과 **그 열이 부여한 잠금 해제**(FRT-104)가 함께
+    // 사라진다 — `injectValue` 가 쓰는 것과 같은 판정으로 묻는다.
+    if (!columnsMatchTemplate(template.value, current)) return fields
+  }
+
+  const cells = createEmptyRow(template.value.columns).cells
+  let filled = false
+  for (const { from, column } of LANGUAGE_CERT_FOLD) {
+    const legacy = fields[from]
+    if (!isFoldableFlatValue(legacy)) continue
+    const cellText = flatValueToCellText(legacy)
+    if (!cellText) continue
+    cells[column] = cellText
+    filled = true
+  }
+
+  // 옮긴(또는 비어서 잃을 것이 없는) 구 키만 걷어낸다. 걷어내는 이유는 중복 방지다 — 남겨 두면
+  // '기타' 카드에 같은 답이 한 벌 더 생겨, 사용자가 표에 고쳐 쓴 값과 옛 값 중 어느 쪽이 진짜인지
+  // 화면이 대답하지 못한다. 그런데 **접지 못한 값은 표에 실리지 않았으므로 중복이 아니다** —
+  // 지우면 로드-저장 한 번에 조용히 사라지고, 남기면 '기타' 카드가 통째로 보존한다.
+  const out = dropLegacyCertKeys(fields, k => isFoldableFlatValue(fields[k]))
+  // 빈 칸만 저장돼 있던 레코드에 빈 행을 만들지 않는다 — 사용자가 지워야 할 일이 하나 는다.
+  if (!filled) return out
+
+  out[LANGUAGE_CERT_TABLE_KEY] = {
+    type: 'repeatable-cell',
+    columns: template.value.columns,
+    rows: [{ id: LANGUAGE_CERT_FOLDED_ROW_ID, cells }],
+  }
+  return out
+}
+
 function applyScopedMigrations(
   fields: Record<string, BlockValue>,
   rules: ScopedMigration[],
@@ -952,14 +1107,18 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) templateByKey.set(b.key, b)
     // 전역 개명 별칭 뒤에 유형 스코프 이관을 얹는다 — 순서가 규칙이다. 유형 섹션 쪽 값이 먼저
     // 목적지를 차지하고, 코어 잔재는 목적지가 비었을 때만 들어간다.
-    const fields = seedMergedTypeAnswer(
-      applyScopedMigrations(
-        applyRenamedKeys(content.fields ?? {}),
-        [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
+    const fields = foldLegacyLanguageCertificate(
+      seedMergedTypeAnswer(
+        applyScopedMigrations(
+          applyRenamedKeys(content.fields ?? {}),
+          [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
+          templateByKey,
+        ),
+        exp.type,
+        isPreMergeTemplateVersion(content.template_version),
         templateByKey,
       ),
-      exp.type,
-      isPreMergeTemplateVersion(content.template_version),
+      typeId,
       templateByKey,
     )
     const coreBlocks = tmpl.commonCore.blocks.map(b => {
