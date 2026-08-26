@@ -164,19 +164,20 @@ describe("computeFormCards", () => {
     // commonCore detail 필드는 학회 앵커와 동의어라 dedup 으로 부재
     expect(labels).not.toContain("핵심 성과")
     expect(labels).not.toContain("내 역할/기여도")
-    // 공개 설정은 포트폴리오 발행에 필요하므로 보존
-    expect(labels).toContain("공개 설정")
+    // 공개 설정은 FRT-306 으로 화면에서 내려갔다 — 템플릿·저장값은 그대로다(아래 전용 describe).
+    expect(labels).not.toContain("공개 설정")
   })
 
   // detail 섹션을 정의하지 않은 유형은 지금도 범용 확장 카드로 폴백한다.
   // (club 은 FRT-178, volunteer 는 FRT-247 에서 자기 detail 섹션을 갖게 되어 더는 예시가 아니다 —
   //  확정본 정렬이 한 유형씩 들어올 때마다 이 예시를 옮겨 왔다.)
-  it("비-커스텀 유형(sports)은 범용 확장 필드(배경/목표·공개 설정)를 유지한다", () => {
+  it("비-커스텀 유형(sports)은 범용 확장 필드(배경/목표)를 유지한다", () => {
     const { core, sections } = sectionsFor("sports")
     const r = computeFormCards(core, sections)
     const all = r.cards.flatMap(c => c.blocks).map(b => b.label)
     expect(all).toContain("배경/목표")
-    expect(all).toContain("공개 설정")
+    // 같은 확장 섹션에 있어도 '공개 설정'만은 화면에서 내려간다(FRT-306).
+    expect(all).not.toContain("공개 설정")
   })
 
   /**
@@ -393,11 +394,11 @@ describe("computeFormCards", () => {
     expect(all).not.toContain("핵심 성과")
     // 문서 ④ 활동 증빙 = core 증빙 자료.
     expect(r.cards.find(c => c.category === "evidence")!.blocks.map(b => b.label)).toContain("증빙 자료")
-    // 공개 설정은 보존(설정 섹션).
-    expect(all).toContain("공개 설정")
+    // 설정 섹션의 '공개 설정'은 화면에서 내려갔다(FRT-306).
+    expect(all).not.toContain("공개 설정")
   })
 
-  it("동아리 detail 카드는 확정본 5필드 + 공개 설정만 갖는다", () => {
+  it("동아리 detail 카드는 확정본 5필드만 갖는다", () => {
     const { core, sections } = sectionsFor("club")
     const r = computeFormCards(core, sections)
     const detail = r.cards.find(c => c.category === "detail")!
@@ -407,7 +408,6 @@ describe("computeFormCards", () => {
       "주요 활동 / 이벤트",
       "주요 성과",
       "활동 성격",
-      "공개 설정",
     ])
   })
 
@@ -427,7 +427,7 @@ describe("computeFormCards", () => {
     expect(r.cards.find(c => c.category === "evidence")!.blocks.map(b => b.label)).toContain("증빙 자료")
   })
 
-  it("대외활동 detail 카드는 확정본 ② 5필드 + 공개 설정만 갖는다", () => {
+  it("대외활동 detail 카드는 확정본 ② 5필드만 갖는다", () => {
     const { core, sections } = sectionsFor("extracurricular")
     const r = computeFormCards(core, sections)
     const labels = r.cards.find(c => c.category === "detail")!.blocks.map(b => b.label)
@@ -437,7 +437,6 @@ describe("computeFormCards", () => {
       "주요 미션 / 프로젝트",
       "주요 성과",
       "활동 성격",
-      "공개 설정",
     ])
     // 범용 확장(buildExtendedSection) 필드는 유형 전용 detail 이 있으므로 부재
     expect(labels).not.toContain("배경/목표")
@@ -862,13 +861,13 @@ describe("standalone 섹션 분할 (FRT-320)", () => {
    */
   it("extended(설정) 잔여 블록은 분할된 카테고리의 마지막 카드에 붙는다", () => {
     const r = computeFormCards([], [
-      { id: "extended", label: "설정", category: "detail", blocks: [createSelectField("공개 설정", ["공개", "비공개"])] },
+      { id: "extended", label: "설정", category: "detail", blocks: [createSelectField("난이도", ["상", "하"])] },
       section("d-one", "하나", "detail", ["A"], true),
       section("d-two", "둘", "detail", ["B"], true),
     ])
     const last = r.cards[r.cards.length - 1]
     expect(last.id).toBe("d-two")
-    expect(last.blocks.map(b => b.label)).toEqual(["B", "공개 설정"])
+    expect(last.blocks.map(b => b.label)).toEqual(["B", "난이도"])
     const first = r.cards.find(c => c.id === "d-one")!
     expect(first.blocks.map(b => b.label)).toEqual(["A"])
   })
@@ -930,9 +929,9 @@ describe("standalone 섹션 분할 (FRT-320)", () => {
       ["self-direction", "방향과 지향점"],
       ["self-reflection", "인생 회고"],
     ])
-    // 설정(공개 설정)은 마지막 카드(인생 회고) 맨 아래에 붙는다.
-    const last = r.cards[r.cards.length - 1]
-    expect(last.blocks[last.blocks.length - 1].label).toBe("공개 설정")
+    // 설정 섹션의 유일한 블록('공개 설정')이 화면에서 내려가(FRT-306) 어느 카드에도 안 붙는다.
+    // 카드 골격은 그대로 7장이다 — 설정은 원래 자기 카드를 만들지 않았기 때문이다.
+    expect(r.cards.flatMap(c => c.blocks).map(b => b.label)).not.toContain("공개 설정")
   })
 })
 
@@ -1017,5 +1016,66 @@ describe("진행 자취 — 어디까지 채웠는가 (FRT-107)", () => {
       },
     ]
     expect(filledQualitativeKeys(cards)).toEqual([])
+  })
+})
+
+/**
+ * FRT-306 — '공개 설정'은 경험 입력 단계에서 내려갔다.
+ *
+ * 이 필드의 실체는 "기록의 공개 여부"가 아니라 **포트폴리오 발행 옵트인**이다. 기록을 쓰는
+ * 화면에서 물을 일이 아니므로 화면에서 내리되, 값을 읽는 소비처(`isPublishableExperience`)가
+ * 살아 있으니 템플릿·안정키·저장값은 그대로 둔다.
+ *
+ * ⚠️ 그래서 "템플릿에서 지운다"가 **답이 아니다.** 지우면 안정키가 어느 섹션에도 안 걸려
+ * `orphanFieldsToBlocks` 가 저장값을 custom('기타' 카드)으로 승격시켜 내리려던 필드가 다른
+ * 이름으로 다시 보이고, 그 위에 `isPublishableExperience` 는 customBlocks 를 보지 않으므로
+ * 이미 '공개'로 저장해 둔 경험이 전부 비공개로 굳는다. 아래 두 전칭이 그 갈림길을 지킨다.
+ */
+describe("공개 설정은 입력 화면에서 내려갔다 (FRT-306)", () => {
+  it("전칭: 어떤 유형의 어느 카드에도 '공개 설정'이 없다", () => {
+    for (const t of ALL_EXPERIENCE_TYPES) {
+      const { core, sections } = sectionsFor(t.id)
+      const labels = computeFormCards(core, sections).cards.flatMap(c => c.blocks).map(b => b.label)
+      expect(labels, t.id).not.toContain("공개 설정")
+    }
+  })
+
+  it("전칭: 그래도 템플릿은 안정키 'extended.공개 설정' 을 계속 소유한다", () => {
+    for (const t of ALL_EXPERIENCE_TYPES) {
+      const blocks = getTemplateForType(t.id).extensions.flatMap(s => s.blocks)
+      const visibility = blocks.find(b => b.key === "extended.공개 설정")
+      expect(visibility, t.id).toBeDefined()
+      expect(visibility!.formHidden, t.id).toBe(true)
+    }
+  })
+
+  it("내린 필드만 빠지고 같은 섹션의 나머지 확장 필드는 그대로 남는다", () => {
+    const { core, sections } = sectionsFor("sports")
+    const labels = computeFormCards(core, sections).cards.flatMap(c => c.blocks).map(b => b.label)
+    expect(labels).toEqual(expect.arrayContaining(["배경/목표", "내가 한 행동", "난이도"]))
+    expect(labels).not.toContain("공개 설정")
+  })
+
+  it("설정 섹션이 통째로 비어도 빈 카드가 생기지 않는다", () => {
+    // club 은 자기 detail 섹션을 가지므로 extended = 설정(공개 설정) 한 칸뿐이다.
+    // 그 한 칸이 내려가면 설정 섹션은 화면에 기여하는 블록이 0개가 된다.
+    const { core, sections } = sectionsFor("club")
+    const r = computeFormCards(core, sections)
+    for (const c of r.cards) expect(c.blocks.length, c.label).toBeGreaterThan(0)
+    expect(r.cards.find(c => c.category === "detail")!.blocks.length).toBeGreaterThan(0)
+  })
+
+  it("계측('정성 항목 채움')도 내린 필드를 세지 않는다", () => {
+    const { core, sections } = sectionsFor("sports")
+    const withValue = sections.map(s => ({
+      ...s,
+      blocks: s.blocks.map(b =>
+        b.key === "extended.공개 설정"
+          ? { ...b, value: { type: "single-select" as const, options: b.options ?? [], selected: "공개" } }
+          : b,
+      ),
+    }))
+    const r = computeFormCards(core, withValue)
+    expect(filledQualitativeKeys(r.cards)).not.toContain("extended.공개 설정")
   })
 })

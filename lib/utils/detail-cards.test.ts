@@ -344,4 +344,29 @@ describe("buildDetailSections — 사용자 섹션 (FRT-78)", () => {
     expect(userSections[1].id).toBe(g2.id)
     expect(userSections[0].id).not.toBe(userSections[1].id)
   })
+
+  /**
+   * FRT-306 — 상세뷰도 입력 폼과 같은 소스(`computeFormCards`)를 쓰므로 함께 내려간다.
+   *
+   * 값이 이미 저장돼 있어도 보이면 안 된다. 상세뷰는 "빈 블록은 숨긴다"라서 값이 없는 새 기록은
+   * 어차피 안 보이는데, 정작 사용자가 헤맸던 **'공개'로 저장해 둔 기존 기록**이 그대로 보이면
+   * 폼에서는 고칠 수 없는 값이 상세에만 남아 되돌릴 곳 없는 안내가 된다.
+   *
+   * ⚠️ 이 단언은 잔여 블록 재합류 루프까지 함께 지킨다 — 상세뷰는 섹션에 매칭 안 된 확장 블록을
+   * 카테고리 마지막 카드로 다시 밀어 넣기 때문에, 키 매칭이 깨지는 순간 이 필드가 그 경로로
+   * 되살아난다.
+   */
+  it("FRT-306: '공개'로 저장해 둔 기존 기록도 상세뷰에 공개 설정을 보이지 않는다", () => {
+    const { core, ext } = filledCareerBlocks()
+    const published = setVal(ext, "extended.공개 설정", {
+      type: "single-select",
+      options: ["공개", "비공개", "일부 공개"],
+      selected: "공개",
+    })
+    const sections = buildDetailSections(
+      makeExperienceV2({ coreBlocks: core, extensionBlocks: published }),
+      getTemplateForType("career"),
+    )
+    expect(sections.flatMap(s => s.blocks).map(b => b.label)).not.toContain("공개 설정")
+  })
 })

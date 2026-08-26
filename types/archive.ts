@@ -399,6 +399,23 @@ export interface Block {
    * 나타나지 않는다(사용자가 치운 것이 아니므로 되살릴 것도 없다).
    */
   visibleWhen?: VisibilityCondition
+  /**
+   * 화면에서 내린 필드 (FRT-306). 템플릿은 이 블록을 **계속 소유**하지만 입력 폼·상세뷰의
+   * 카드에는 그리지 않는다 — `computeFormCards` 가 카드 조립 단계에서 걸러낸다.
+   *
+   * ⚠️ **지우는 것과 다르다.** 템플릿에서 블록을 빼면 안정키가 템플릿의 어느 섹션에도 안 걸려
+   * `orphanFieldsToBlocks` 안전망이 저장값을 '기타' 카드로 되살린다 — 내리려던 필드가 이름만
+   * 바뀐 자리에 다시 나타난다. 블록을 남기면 키가 consumed 로 잡혀 그 경로가 아예 안 열리고,
+   * 로드→저장 왕복(`extensionSections` → payload)이 값을 그대로 실어 나른다. 저장 shape 무변경.
+   *
+   * ⚠️ 앞의 두 '숨김'과는 **다른 층**이다. `hiddenKeys`(FRT-190)는 사용자가 빈 선택 필드를
+   * 치운 것이라 되살리기 목록이 있고, `visibleWhen`(FRT-211)은 다른 필드 값에서 파생된다.
+   * 이건 제품이 그 입력을 영구히 내린 것이라 되살릴 경로도 조건도 없다 — 값을 읽는 소비처
+   * (공개 설정 → `isPublishableExperience`)만 계속 살아 있다.
+   *
+   * `variant` 와 동일하게 템플릿 정의에만 존재하며 value(JSONB)에는 직렬화되지 않는다.
+   */
+  formHidden?: boolean
   value: BlockValue
 }
 

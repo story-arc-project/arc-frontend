@@ -4815,3 +4815,76 @@ describe("어학 ④ 자격증 반복 표 이관 (FRT-341)", () => {
     expect(tableOf(load({ "lang-overview.전반적 수준": text("중급") }))?.rows ?? []).toEqual([])
   })
 })
+
+/**
+ * FRT-306 — 화면에서 내린 '공개 설정'의 **저장값**은 그대로다.
+ *
+ * 필드를 내리는 방법이 둘인데 하나만 옳다. 템플릿에서 블록을 **지우면** 안정키가
+ * `consumedKeys` 에서 빠져 `orphanFieldsToBlocks` 가 값을 custom 으로 승격시킨다 — 값은 남지만
+ * '기타' 카드에 다시 보이고, 무엇보다 `isPublishableExperience` 가 customBlocks 를 안 보므로
+ * 이미 '공개'로 저장해 둔 경험이 전부 비공개로 굳는다. 블록을 남기고 `formHidden` 으로 렌더만
+ * 끄는 지금 방식은 그 경로를 아예 안 연다. 아래가 그 차이를 값 층위에서 못 박는다.
+ */
+describe("내린 필드의 저장값 보존 (FRT-306)", () => {
+  const VISIBILITY_KEY = "extended.공개 설정"
+  const published: BlockValue = {
+    type: "single-select",
+    options: ["공개", "비공개", "일부 공개"],
+    selected: "공개",
+  }
+
+  function loadWithVisibility() {
+    return toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "인턴",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: { [VISIBILITY_KEY]: published },
+          custom: [],
+        },
+      }),
+    )
+  }
+
+  it("저장값이 extensionBlocks 로 실려 온다 — '기타'(custom) 로 새지 않는다", () => {
+    const v2 = loadWithVisibility()
+    expect(v2.extensionBlocks.find(b => b.key === VISIBILITY_KEY)?.value).toEqual(published)
+    expect(v2.customBlocks.find(b => b.key === VISIBILITY_KEY)).toBeUndefined()
+  })
+
+  it("저장 왕복이 값을 그대로 실어 나른다", () => {
+    const payload = toSavePayload(loadWithVisibility())
+    const content = payload.content as { fields: Record<string, unknown> }
+    expect(content.fields[VISIBILITY_KEY]).toEqual(published)
+  })
+
+  it("값을 고른 적 없는 기록에서는 빈 채로 복원된다(기본 비공개)", () => {
+    const v2 = toExperienceV2(
+      makeExperience({
+        type: "career",
+        content: {
+          schema_version: 2,
+          template_version: TEMPLATE_VERSION,
+          title: "인턴",
+          summary: "",
+          status: "complete",
+          tags: [],
+          fields: { "core.경험명": text("인턴") },
+          custom: [],
+        },
+      }),
+    )
+    // 화면에서 내려간 뒤에도 템플릿이 블록을 소유하므로 칸 자체는 복원된다 — 다만 비어 있다.
+    // 이 빈 값이 곧 `isPublishableExperience === false`(기본 비공개)다.
+    expect(v2.extensionBlocks.find(b => b.key === VISIBILITY_KEY)?.value).toEqual({
+      type: "single-select",
+      options: ["공개", "비공개", "일부 공개"],
+      selected: "",
+    })
+  })
+})
