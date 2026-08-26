@@ -90,7 +90,9 @@ export function ConsentStep({ onSubmit, isLoading = false, error }: ConsentStepP
         ))}
       </div>
 
-      {error && <p className="mb-3 text-body-sm text-error">{error}</p>}
+      {/* 제출 실패는 「다음」에 포커스가 머문 채 비동기로 나타난다 — 역할이 없으면 들리지 않는다(FRT-282).
+          aria-live 를 polite 로 명시하면 role="alert" 의 암묵값(assertive)을 덮어써 낭독이 밀린다. */}
+      {error && <p role="alert" className="mb-3 text-body-sm text-error">{error}</p>}
 
       <Button
         onClick={() => onSubmit(buildConsentPayload(state))}
