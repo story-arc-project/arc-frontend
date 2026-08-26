@@ -862,10 +862,11 @@ function foldLegacyLanguageCertificate(
     // ⚠️ 모르는 판별자는 새 스키마가 쓴 값일 수 있다 — `injectValue` 가 일부러 보존하는 값을
     // 그 앞단인 여기서 덮어쓰면 그 보호가 통째로 무의미해진다.
     if (current.type !== 'repeatable-cell') return fields
-    // ⚠️ `type` 만 맞고 `rows` 가 없는 저장분이 실재한다(FRT-200 계열). 이 함수는
-    // `normalizeBlockValue` **앞**에서 도는데, 여기서 `.length` 를 그냥 읽으면 고칠 기회가 오기
-    // 전에 터져 어학 기록이 통째로 안 열린다.
-    if (!Array.isArray(current.rows)) return fields
+    // ⚠️ `type` 만 맞고 `rows`·`columns` 가 없는 저장분이 실재한다(FRT-200 계열). 이 함수는
+    // `normalizeBlockValue` **앞**에서 도는데, 여기서 그냥 `.length`·`.map` 을 읽으면 고칠 기회가
+    // 오기 전에 터져 어학 기록이 통째로 안 열린다. 둘은 **따로** 깨지므로 따로 묻지 말고 함께
+    // 묻는다 — 하나만 막으면 다음 줄이 같은 방식으로 터진다.
+    if (!Array.isArray(current.rows) || !Array.isArray(current.columns)) return fields
     // 표에 이미 행이 있으면 접지 않는다. 이관은 한 번뿐이어야 한다 — 접힌 행을 지우고 저장한
     // 사용자에게 다음 로드가 그 행을 되살리면, 지울 수 없는 행이 된다. 이때 걷어낼 자격이 있는
     // 구 키는 **비어 있는 것뿐**이다: 값이 든 키는 이 표에 실린 적이 없으니 중복이 아니다.

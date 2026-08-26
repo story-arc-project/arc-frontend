@@ -4683,6 +4683,16 @@ describe("어학 ④ 자격증 반복 표 이관 (FRT-341)", () => {
   })
 
   /**
+   * `rows` 와 `columns` 는 **따로** 깨진다. 열 호환을 묻는 쪽(`columnsMatchTemplate`)도 배열을
+   * 전제하므로, `rows` 만 검사하고 통과시키면 그 다음 줄에서 같은 방식으로 터진다.
+   */
+  it("columns 가 없는 저장분에도 레코드가 열린다", () => {
+    const broken = { type: "repeatable-cell", rows: [] }
+
+    expect(() => load({ ...FLAT_RECORD, [TABLE_KEY]: broken })).not.toThrow()
+  })
+
+  /**
    * 다섯 열이 모두 한 줄 위젯이다. 여러 줄이 든 값을 실으면 `<input>` 이 개행을 지우고, 사용자가
    * 한 글자만 고쳐도 뭉개진 값이 저장된다 — `carryIntoSingleLine` 이 거절하는 그 전이다.
    */
