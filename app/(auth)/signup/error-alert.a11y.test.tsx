@@ -180,6 +180,33 @@ describe("회원가입 — 실패를 보조기술에 알린다", () => {
     assertNothingAnnounced();
   });
 
+  // 「← 이전」은 요청이 비행 중에도 눌린다(isLoading 으로 막지 않는다). 그래서 goTo 가 문구를
+  // 한 번 지워도, 뒤늦게 도착한 실패가 그 자리를 다시 채울 수 있다 — 사용자는 이미 **다른 이메일**로
+  // 넘어와 있는데 지난 주소의 실패가 낭독된다. 재발송 결과에 verifyFlowId 를 둔 것과 같은 이유다(FRT-218).
+  it("응답을 기다리는 사이 다른 이메일로 옮겨왔다면 지난 실패를 읽지 않는다", async () => {
+    let failSignup!: (reason: unknown) => void;
+    post.mockReturnValueOnce(
+      new Promise<never>((_resolve, reject) => {
+        failSignup = reject;
+      }),
+    );
+    await renderStep("password");
+
+    await typeInto("비밀번호", "arcpass123");
+    await typeInto("비밀번호 확인", "arcpass123");
+    await clickButton("가입하기"); // 요청은 아직 비행 중
+
+    await clickButton("← 이전"); // password → start
+    await typeInto("이메일", "other@example.com"); // 다른 주소로 갈아탄다
+    await clickButton("이메일로 계속하기"); // start → password
+
+    await act(async () => {
+      failSignup(new TypeError("Failed to fetch")); // 이제서야 지난 요청이 실패한다
+    });
+
+    assertNothingAnnounced();
+  });
+
   // 동의 제출 실패도 같은 결함이다(CONSENT_ENABLED off 라 화면에는 아직 안 걸려 있다).
   it("동의 제출에 실패하면 실패 사실이 즉시 읽히는 영역으로 노출된다", () => {
     render(<ConsentStep onSubmit={vi.fn()} error={NETWORK_MESSAGE} />);

@@ -95,6 +95,9 @@ function SignupForm() {
   const [signupError, setSignupError] = useState<string | null>(null);
   const [socialError, setSocialError] = useState<string | null>(null);
   const [consentError, setConsentError] = useState<string | null>(null);
+  // 스텝 이동의 세대. 스텝을 벗어날 때마다 올라간다 — 뒤늦게 도착한 실패가
+  // **아직 그 화면에 대한 진술인지** 판정한다(재발송의 verifyFlowId 와 같은 장치).
+  const stepFlowId = useRef(0);
 
   // 로그인 페이지에서 리다이렉트된 경우 URL 파라미터로 상태 복원
   useEffect(() => {
@@ -195,6 +198,8 @@ function SignupForm() {
     // 남겨두면 「← 이전」으로 되돌아왔다 다시 들어올 때 요소가 리마운트되면서
     // role="alert" 가 **지난 실패를 다시 낭독한다** — 아직 아무것도 시도하지 않았는데도(FRT-282).
     // 에러는 실패 경로에서만 세팅되고 그 경로는 goTo 를 부르지 않으므로, 여기서 지워도 지금 띄운 실패는 살아남는다.
+    // 다만 **아직 비행 중인** 요청은 여기서 지운 뒤에 실패할 수 있다. 세대를 올려 그 응답을 무효로 만든다.
+    stepFlowId.current += 1;
     setSignupError(null);
     setVerifyError(null);
     setSocialError(null);
@@ -216,6 +221,7 @@ function SignupForm() {
   async function handleSignup() {
     setIsLoading(true);
     setSignupError(null);
+    const flowId = stepFlowId.current;
 
     try {
       await api.post("/auth/signup", { email, password }, { auth: false });
@@ -229,6 +235,9 @@ function SignupForm() {
       setIsResending(false);
       goTo("verify");
     } catch (e) {
+      // 응답이 오는 사이 스텝을 떠났다면 이 실패는 이미 지난 화면의 진술이다. 그대로 세팅하면
+      // goTo 가 지운 문구가 되살아나, 다른 이메일로 갈아탄 화면에서 지난 주소의 실패가 낭독된다.
+      if (stepFlowId.current !== flowId) return;
       if (e instanceof ApiError) {
         if(e.code === "EMAIL_ALREADY_EXISTS") setSignupError("이미 존재하는 이메일이에요.")
         else if(e.code === "WEAK_PASSWORD") setSignupError("더 강한 비밀번호를 시도해주세요.")
@@ -243,6 +252,7 @@ function SignupForm() {
   async function handleVerify() {
     setIsLoading(true);
     setVerifyError(null);
+    const flowId = stepFlowId.current;
 
     try {
       const result = await api.post<VerifyEmailResponse>("/auth/verify-email", { email, code: verifyCode }, { auth: false });
@@ -260,6 +270,7 @@ function SignupForm() {
         goTo(FIRST_ONBOARDING_STEP);
       }
     } catch (e) {
+      if (stepFlowId.current !== flowId) return; // 떠난 화면의 실패다 — 위 handleSignup 과 같은 이유.
       if (e instanceof ApiError) {
         if (e.status === 410) setVerifyError("인증 코드가 만료되었어요. 재발송 후 다시 시도해주세요.");
         else setVerifyError(e.message);
@@ -274,11 +285,13 @@ function SignupForm() {
   async function handleConsent(payload: ConsentPayload) {
     setIsLoading(true);
     setConsentError(null);
+    const flowId = stepFlowId.current;
 
     try {
       await api.post("/auth/consent", payload, { auth: true });
       goTo("profile");
     } catch (e) {
+      if (stepFlowId.current !== flowId) return; // 떠난 화면의 실패다 — 위 handleSignup 과 같은 이유.
       if (e instanceof ApiError) {
         if (e.code === "AUTH_TOKEN_EXPIRED" || e.code === "AUTH_MISSING_COOKIES" || e.code === "AUTH_TOKEN_INVALID") {
           setConsentError("로그인 정보가 만료되었어요. 다시 로그인해주세요.");
