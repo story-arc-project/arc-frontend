@@ -809,11 +809,16 @@ function flatValueToCellText(value: BlockValue | undefined): string {
  */
 function isFoldableFlatValue(value: BlockValue | undefined): boolean {
   if (!value) return true
-  if (value.type === 'date') return true
-  if (value.type !== 'text' && value.type !== 'textarea') return false
+  if (value.type !== 'text' && value.type !== 'textarea' && value.type !== 'date') return false
+  const raw = value.type === 'date' ? value.date : value.text
+  // ⚠️ **판별자를 안다고 알맹이까지 아는 것은 아니다.** 알맹이가 아예 없으면 빈 값이라 지워도
+  // 잃을 게 없지만, `{type:'date', date:123}` 처럼 **문자열이 아닌 알맹이**는 우리가 모르는
+  // 값이다 — 통과시키면 셀에 비문자열이 실리고, 정규화가 그 칸을 `""` 로 갈아버린 뒤엔 구 키도
+  // 이미 지워져 원본이 갈 곳이 없다.
+  if (typeof raw !== 'string') return raw == null
   // ⚠️ 다섯 열이 모두 **한 줄 위젯**이다. 여러 줄이 든 값을 실으면 `<input>` 이 개행을 지우고,
   // 사용자가 한 글자만 고쳐도 뭉개진 값이 저장된다 — `carryIntoSingleLine` 이 거절하는 그 전이다.
-  return !/[\r\n]/.test(value.text ?? '')
+  return !/[\r\n]/.test(raw)
 }
 
 /** 구 키 중 조건에 맞는 것만 걷어낸 새 맵. 원본은 건드리지 않는다. */
