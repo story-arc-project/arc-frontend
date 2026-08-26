@@ -1025,27 +1025,31 @@ describe("확정본: 어학능력", () => {
     expect(activities.options).toEqual(blockAt(0, "가능한 활용 영역").options)
   })
 
-  it("④ 어학 자격증은 확정본 5필드이고 취득일·유효기간이 date 다", () => {
-    expect(labelsIn(sections()[3].blocks)).toEqual([
-      "시험 / 자격증명",
-      "점수 / 등급",
-      "취득일",
-      "유효기간",
-      "성적표 첨부",
+  /**
+   * FRT-341 — 확정본 ④ 는 평면 5필드였는데, 그 모양은 시험을 **하나만** 담는다.
+   * 토익·토플·텝스를 함께 쓰는 것이 어학 기록의 일반적인 모습이라 반복 표로 바꿨다.
+   */
+  it("④ 어학 자격증은 시험마다 한 줄인 반복 표다", () => {
+    expect(labelsIn(sections()[3].blocks)).toEqual(["어학 자격증"])
+
+    const table = sections()[3].blocks[0]
+    expect(table.type).toBe("repeatable-cell")
+    const columns = table.value.type === "repeatable-cell" ? table.value.columns : []
+    expect(columns.map(c => [c.key, c.label, c.blockType])).toEqual([
+      ["name", "시험 / 자격증명", "text"],
+      ["score", "점수 / 등급", "text"],
+      ["acquired", "취득일", "date"],
+      ["expires", "유효기간", "date"],
+      ["file", "성적표 첨부", "file"],
     ])
-    expect(blockAt(3, "취득일").type).toBe("date")
-    expect(blockAt(3, "유효기간").type).toBe("date")
   })
 
-  it("④ '성적표 첨부'는 증빙 유형 4종을 드롭다운으로 좁힌다", () => {
-    const file = blockAt(3, "성적표 첨부")
-    expect(file.type).toBe("file")
-    expect(file.options).toEqual([
-      "성적표/점수 확인서",
-      "합격증/자격증 사본",
-      "발급 확인서",
-      "기타",
-    ])
+  /**
+   * 열은 템플릿이 소유한다(FRT-104) — 확정본이 정한 5열에 사용자가 열을 더하면 다음 확정본
+   * 개정이 그 열을 어떻게 다뤄야 할지 알 수 없다.
+   */
+  it("④ 표의 열은 잠겨 있다", () => {
+    expect(sections()[3].blocks[0].lockColumns).toBe(true)
   })
 
   /**

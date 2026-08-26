@@ -30,6 +30,7 @@ import {
 import {
   uid,
   cloneBlocks,
+  createEmptyRow,
   createGroupBlock,
   isBlockDiscardable,
   dedupeBlockIdsAcross,
@@ -767,6 +768,89 @@ function isPreMergeTemplateVersion(templateVersion: unknown): boolean {
   return typeof templateVersion === "number" && templateVersion < PROJECT_TYPE_MERGE_VERSION
 }
 
+/** 어학 ④ 자격증 반복 표(FRT-341)의 안정키. */
+const LANGUAGE_CERT_TABLE_KEY = 'lang-certificate.어학 자격증'
+
+/**
+ * 접어 넣은 행의 고정 id. `uid('row')` 를 쓰지 않는 이유는 **멱등성**이다 — 이관은 저장 전까지
+ * 로드마다 다시 도는데, 매번 새 id 가 나오면 같은 행이 리렌더마다 신원을 바꾼다.
+ */
+const LANGUAGE_CERT_FOLDED_ROW_ID = 'lang-cert-folded'
+
+/**
+ * 어학 ④ 평면 필드 → 반복 표 열 (FRT-341). 확정본이 정한 5항목을 그대로 열로 옮겼으므로
+ * 질문이 달라진 짝이 없다 — 이 표의 모든 줄은 "같은 질문, 다른 층위"다.
+ *
+ * ⚠️ '성적표 첨부'는 **빠져 있다.** 블록 층위 `FileBlockValue` 는 `description`·`evidenceType`
+ * 을 담는데 셀 값 `FileCellValue` 에는 그 자리가 없어(FRT-213), 옮기면 사용자가 적은 설명과
+ * 고른 증빙 유형이 무음으로 잘린다. 옮기지 않으면 `orphanFieldsToBlocks` 가 '기타' 카드로
+ * 통째로 보존하므로 사용자가 보고 직접 판단할 수 있다 — 못 지킬 값은 옮기지 않는 쪽이 답이다.
+ */
+const LANGUAGE_CERT_FOLD: ReadonlyArray<{ from: string; column: string }> = [
+  { from: 'lang-certificate.시험 / 자격증명', column: 'name' },
+  { from: 'lang-certificate.점수 / 등급', column: 'score' },
+  { from: 'lang-certificate.취득일', column: 'acquired' },
+  { from: 'lang-certificate.유효기간', column: 'expires' },
+]
+
+/** 평면 블록 값에서 셀에 실을 문자열을 뽑는다. 이 이관이 다루는 세 타입만 연다. */
+function flatValueToCellText(value: BlockValue | undefined): string {
+  if (!value) return ''
+  if (value.type === 'text' || value.type === 'textarea') return value.text ?? ''
+  if (value.type === 'date') return value.date ?? ''
+  return ''
+}
+
+/**
+ * 평면 5필드로 저장된 어학 자격증 한 건을 반복 표의 **첫 행**으로 접는다 (FRT-341).
+ *
+ * 접지 않아도 값은 `orphanFieldsToBlocks` 가 '기타' 카드에 보존하므로 사라지지는 않는다. 그런데
+ * 이 개편의 목적이 "이미 쓴 토익 옆에 토플을 더한다"이므로, 접지 않으면 정작 그 사용자가 토익을
+ * **다시 타이핑**해야 한다 — 안전망이 있다는 것과 이관이 필요 없다는 것은 다른 이야기다.
+ *
+ * 이 함수는 `applyRenamedKeys` **뒤에** 돌아야 한다. 그래야 더 구세대인 `lang-info.시험/인증명`
+ * 계열이 먼저 `lang-certificate.*` 로 정규화되어 한 경로로 접힌다 — 세대마다 이관을 따로 쓰면
+ * 레코드가 언제 저장됐느냐에 따라 결과가 갈린다.
+ */
+function foldLegacyLanguageCertificate(
+  fields: Record<string, BlockValue>,
+  typeId: ExperienceTypeId,
+  templateByKey: Map<string, Block>,
+): Record<string, BlockValue> {
+  if (typeId !== 'language') return fields
+  const template = templateByKey.get(LANGUAGE_CERT_TABLE_KEY)
+  if (!template || template.value.type !== 'repeatable-cell') return fields
+  if (!LANGUAGE_CERT_FOLD.some(({ from }) => fields[from] !== undefined)) return fields
+
+  // 구 키는 접든 못 접든 걷어낸다 — 남겨 두면 '기타' 카드에 같은 답이 한 벌 더 생겨,
+  // 사용자가 표에 고쳐 쓴 값과 옛 값 중 어느 쪽이 진짜인지 화면이 대답하지 못한다.
+  const out = { ...fields }
+  for (const { from } of LANGUAGE_CERT_FOLD) delete out[from]
+
+  // 표에 이미 행이 있으면 접지 않는다. 이관은 한 번뿐이어야 한다 — 접힌 행을 지우고 저장한
+  // 사용자에게 다음 로드가 그 행을 되살리면, 지울 수 없는 행이 된다.
+  const current = out[LANGUAGE_CERT_TABLE_KEY]
+  if (current?.type === 'repeatable-cell' && current.rows.length > 0) return out
+
+  const cells = createEmptyRow(template.value.columns).cells
+  let filled = false
+  for (const { from, column } of LANGUAGE_CERT_FOLD) {
+    const cellText = flatValueToCellText(fields[from])
+    if (!cellText) continue
+    cells[column] = cellText
+    filled = true
+  }
+  // 빈 칸만 저장돼 있던 레코드에 빈 행을 만들지 않는다 — 사용자가 지워야 할 일이 하나 는다.
+  if (!filled) return out
+
+  out[LANGUAGE_CERT_TABLE_KEY] = {
+    type: 'repeatable-cell',
+    columns: template.value.columns,
+    rows: [{ id: LANGUAGE_CERT_FOLDED_ROW_ID, cells }],
+  }
+  return out
+}
+
 function applyScopedMigrations(
   fields: Record<string, BlockValue>,
   rules: ScopedMigration[],
@@ -952,14 +1036,18 @@ export function toExperienceV2(exp: Experience): ExperienceV2 {
     for (const s of tmpl.extensions) for (const b of s.blocks) if (b.key) templateByKey.set(b.key, b)
     // 전역 개명 별칭 뒤에 유형 스코프 이관을 얹는다 — 순서가 규칙이다. 유형 섹션 쪽 값이 먼저
     // 목적지를 차지하고, 코어 잔재는 목적지가 비었을 때만 들어간다.
-    const fields = seedMergedTypeAnswer(
-      applyScopedMigrations(
-        applyRenamedKeys(content.fields ?? {}),
-        [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
+    const fields = foldLegacyLanguageCertificate(
+      seedMergedTypeAnswer(
+        applyScopedMigrations(
+          applyRenamedKeys(content.fields ?? {}),
+          [...(SELECT_DOMAIN_MIGRATIONS[typeId] ?? []), ...(V2_CORE_SCOPED_MIGRATIONS[typeId] ?? [])],
+          templateByKey,
+        ),
+        exp.type,
+        isPreMergeTemplateVersion(content.template_version),
         templateByKey,
       ),
-      exp.type,
-      isPreMergeTemplateVersion(content.template_version),
+      typeId,
       templateByKey,
     )
     const coreBlocks = tmpl.commonCore.blocks.map(b => {
