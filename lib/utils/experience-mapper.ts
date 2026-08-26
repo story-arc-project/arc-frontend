@@ -870,6 +870,10 @@ function foldLegacyLanguageCertificate(
     // 사용자에게 다음 로드가 그 행을 되살리면, 지울 수 없는 행이 된다. 이때 걷어낼 자격이 있는
     // 구 키는 **비어 있는 것뿐**이다: 값이 든 키는 이 표에 실린 적이 없으니 중복이 아니다.
     if (current.rows.length > 0) return dropLegacyCertKeys(fields, k => isEmptyFoldableKey(fields, k))
+    // ⚠️ 비어 있다는 것만으로는 자격이 되지 않는다. 아래 대입이 저장된 `columns` 를 오늘의
+    // 템플릿으로 갈아버리면, 사용자가 더한 열과 **그 열이 부여한 잠금 해제**(FRT-104)가 함께
+    // 사라진다 — `injectValue` 가 쓰는 것과 같은 판정으로 묻는다.
+    if (!columnsMatchTemplate(template.value, current)) return fields
   }
 
   const cells = createEmptyRow(template.value.columns).cells

@@ -4650,6 +4650,29 @@ describe("어학 ④ 자격증 반복 표 이관 (FRT-341)", () => {
   })
 
   /**
+   * "빈 표"라는 이유만으로 목적지를 만들면, 아래 대입이 저장된 `columns` 를 오늘의 템플릿으로
+   * 갈아버린다 — 사용자가 더한 열과 **그 열이 부여한 잠금 해제**(FRT-104)가 함께 사라진다.
+   * `columnsMatchTemplate` 이 이미 그 판정을 맡고 있으므로 fold 도 같은 기준을 써야 한다.
+   */
+  it("빈 표라도 열이 템플릿과 다르면 손대지 않는다", () => {
+    const customized = {
+      type: "repeatable-cell",
+      columns: [
+        { key: "name", label: "시험 / 자격증명", blockType: "text" },
+        { key: "col-memo", label: "메모", blockType: "text" },
+      ],
+      rows: [],
+    }
+    const v2 = load({ ...FLAT_RECORD, [TABLE_KEY]: customized })
+
+    expect(tableOf(v2)?.columns.map(c => c.key)).toContain("col-memo")
+    expect(tableOf(v2)?.rows).toHaveLength(0)
+    for (const key of Object.keys(FLAT_RECORD)) {
+      expect(v2.customBlocks.find(b => b.key === key), key).toBeDefined()
+    }
+  })
+
+  /**
    * `type` 만 맞고 `rows` 가 없는 저장분이 실재한다(FRT-200 계열). fold 가 `normalizeBlockValue`
    * **앞**에서 돌기 때문에, 여기서 `.length` 를 그냥 읽으면 어학 기록이 통째로 안 열린다.
    */
