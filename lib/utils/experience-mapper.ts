@@ -809,7 +809,29 @@ function flatValueToCellText(value: BlockValue | undefined): string {
  */
 function isFoldableFlatValue(value: BlockValue | undefined): boolean {
   if (!value) return true
-  return value.type === 'text' || value.type === 'textarea' || value.type === 'date'
+  if (value.type === 'date') return true
+  if (value.type !== 'text' && value.type !== 'textarea') return false
+  // ⚠️ 다섯 열이 모두 **한 줄 위젯**이다. 여러 줄이 든 값을 실으면 `<input>` 이 개행을 지우고,
+  // 사용자가 한 글자만 고쳐도 뭉개진 값이 저장된다 — `carryIntoSingleLine` 이 거절하는 그 전이다.
+  return !/[\r\n]/.test(value.text ?? '')
+}
+
+/** 구 키 중 조건에 맞는 것만 걷어낸 새 맵. 원본은 건드리지 않는다. */
+function dropLegacyCertKeys(
+  fields: Record<string, BlockValue>,
+  shouldDrop: (from: string) => boolean,
+): Record<string, BlockValue> {
+  const out = { ...fields }
+  for (const { from } of LANGUAGE_CERT_FOLD) {
+    if (shouldDrop(from)) delete out[from]
+  }
+  return out
+}
+
+/** 옮길 수 있는데 **비어 있는** 구 키 — 표에 실릴 게 없으므로 지워도 잃을 것이 없다. */
+function isEmptyFoldableKey(fields: Record<string, BlockValue>, from: string): boolean {
+  const value = fields[from]
+  return isFoldableFlatValue(value) && flatValueToCellText(value) === ''
 }
 
 /**
@@ -833,28 +855,39 @@ function foldLegacyLanguageCertificate(
   if (!template || template.value.type !== 'repeatable-cell') return fields
   if (!LANGUAGE_CERT_FOLD.some(({ from }) => fields[from] !== undefined)) return fields
 
-  // 옮길 수 있는 구 키만 걷어낸다. 걷어내는 이유는 중복 방지다 — 남겨 두면 '기타' 카드에 같은
-  // 답이 한 벌 더 생겨, 사용자가 표에 고쳐 쓴 값과 옛 값 중 어느 쪽이 진짜인지 화면이 대답하지
-  // 못한다. 그런데 **모르는 판별자의 값은 애초에 표에 실리지 않으므로 중복이 아니다** — 지우면
-  // 로드-저장 한 번에 조용히 사라지고, 남기면 '기타' 카드가 통째로 보존한다.
-  const out = { ...fields }
-  for (const { from } of LANGUAGE_CERT_FOLD) {
-    if (isFoldableFlatValue(fields[from])) delete out[from]
+  // 목적지를 만들 자격은 **"비었거나, 아는 모양의 빈 표일 때"**뿐이다. 아래 두 갈래는 그 자격이
+  // 없으므로 구 키까지 그대로 둔 채 물러난다 — 접지도 않으면서 구 키를 지우면 그게 곧 유실이다.
+  const current = fields[LANGUAGE_CERT_TABLE_KEY]
+  if (current !== undefined) {
+    // ⚠️ 모르는 판별자는 새 스키마가 쓴 값일 수 있다 — `injectValue` 가 일부러 보존하는 값을
+    // 그 앞단인 여기서 덮어쓰면 그 보호가 통째로 무의미해진다.
+    if (current.type !== 'repeatable-cell') return fields
+    // ⚠️ `type` 만 맞고 `rows` 가 없는 저장분이 실재한다(FRT-200 계열). 이 함수는
+    // `normalizeBlockValue` **앞**에서 도는데, 여기서 `.length` 를 그냥 읽으면 고칠 기회가 오기
+    // 전에 터져 어학 기록이 통째로 안 열린다.
+    if (!Array.isArray(current.rows)) return fields
+    // 표에 이미 행이 있으면 접지 않는다. 이관은 한 번뿐이어야 한다 — 접힌 행을 지우고 저장한
+    // 사용자에게 다음 로드가 그 행을 되살리면, 지울 수 없는 행이 된다. 이때 걷어낼 자격이 있는
+    // 구 키는 **비어 있는 것뿐**이다: 값이 든 키는 이 표에 실린 적이 없으니 중복이 아니다.
+    if (current.rows.length > 0) return dropLegacyCertKeys(fields, k => isEmptyFoldableKey(fields, k))
   }
-
-  // 표에 이미 행이 있으면 접지 않는다. 이관은 한 번뿐이어야 한다 — 접힌 행을 지우고 저장한
-  // 사용자에게 다음 로드가 그 행을 되살리면, 지울 수 없는 행이 된다.
-  const current = out[LANGUAGE_CERT_TABLE_KEY]
-  if (current?.type === 'repeatable-cell' && current.rows.length > 0) return out
 
   const cells = createEmptyRow(template.value.columns).cells
   let filled = false
   for (const { from, column } of LANGUAGE_CERT_FOLD) {
-    const cellText = flatValueToCellText(fields[from])
+    const legacy = fields[from]
+    if (!isFoldableFlatValue(legacy)) continue
+    const cellText = flatValueToCellText(legacy)
     if (!cellText) continue
     cells[column] = cellText
     filled = true
   }
+
+  // 옮긴(또는 비어서 잃을 것이 없는) 구 키만 걷어낸다. 걷어내는 이유는 중복 방지다 — 남겨 두면
+  // '기타' 카드에 같은 답이 한 벌 더 생겨, 사용자가 표에 고쳐 쓴 값과 옛 값 중 어느 쪽이 진짜인지
+  // 화면이 대답하지 못한다. 그런데 **접지 못한 값은 표에 실리지 않았으므로 중복이 아니다** —
+  // 지우면 로드-저장 한 번에 조용히 사라지고, 남기면 '기타' 카드가 통째로 보존한다.
+  const out = dropLegacyCertKeys(fields, k => isFoldableFlatValue(fields[k]))
   // 빈 칸만 저장돼 있던 레코드에 빈 행을 만들지 않는다 — 사용자가 지워야 할 일이 하나 는다.
   if (!filled) return out
 

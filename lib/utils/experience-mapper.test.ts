@@ -4635,6 +4635,45 @@ describe("어학 ④ 자격증 반복 표 이관 (FRT-341)", () => {
   })
 
   /**
+   * 표 키에 **모르는 판별자**의 값이 이미 실려 있으면 `injectValue` 가 그걸 보존한다(새 스키마가
+   * 쓴 값일 수 있다). 그 앞단인 fold 가 덮어써 버리면 그 보호가 무의미해진다 — 목적지를 만들
+   * 자격은 "비었거나, 아는 모양의 빈 표일 때"뿐이다.
+   */
+  it("표 키에 모르는 판별자가 있으면 덮어쓰지 않고 구 키도 남긴다", () => {
+    const future = { type: "cert-matrix", entries: [{ name: "TOEIC" }] }
+    const v2 = load({ ...FLAT_RECORD, [TABLE_KEY]: future })
+
+    expect(v2.extensionBlocks.find(b => b.key === TABLE_KEY)?.value).toEqual(future)
+    for (const key of Object.keys(FLAT_RECORD)) {
+      expect(v2.customBlocks.find(b => b.key === key), key).toBeDefined()
+    }
+  })
+
+  /**
+   * `type` 만 맞고 `rows` 가 없는 저장분이 실재한다(FRT-200 계열). fold 가 `normalizeBlockValue`
+   * **앞**에서 돌기 때문에, 여기서 `.length` 를 그냥 읽으면 어학 기록이 통째로 안 열린다.
+   */
+  it("rows 가 없는 저장분에도 레코드가 열린다", () => {
+    const broken = { type: "repeatable-cell" }
+
+    expect(() => load({ ...FLAT_RECORD, [TABLE_KEY]: broken })).not.toThrow()
+  })
+
+  /**
+   * 다섯 열이 모두 한 줄 위젯이다. 여러 줄이 든 값을 실으면 `<input>` 이 개행을 지우고, 사용자가
+   * 한 글자만 고쳐도 뭉개진 값이 저장된다 — `carryIntoSingleLine` 이 거절하는 그 전이다.
+   */
+  it("여러 줄이 든 구 값은 접지 않고 '기타' 카드로 보존한다", () => {
+    const multiline = { type: "textarea", text: "TOEIC\n2024년 3월 응시" }
+    const v2 = load({ ...FLAT_RECORD, "lang-certificate.시험 / 자격증명": multiline })
+
+    expect(tableOf(v2)?.rows[0].cells.name).toBe("")
+    expect(v2.customBlocks.find(b => b.key === "lang-certificate.시험 / 자격증명")?.value).toEqual(
+      multiline,
+    )
+  })
+
+  /**
    * v1 → v2 로 올라온 레코드는 `lang-info.*` 구 키를 그대로 들고 있다. 그 값도 같은 자리로
    * 접는다 — 한 세대만 접으면 레코드가 언제 저장됐느냐에 따라 결과가 갈린다.
    */
