@@ -3147,13 +3147,17 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
  * 8 — 프로젝트 확정본 정렬(FRT-291). 같은 이유 — `pp-*`/`tp-*` 를 `project-info`/`project-detail`/
  *     `project-tasks`/`project-release`/`project-artifacts` 로 갈아치웠고, 개인·팀 두 유형이
  *     하나의 템플릿을 공유하게 됐다.
+ * 9 — 어학 ④ 자격증 반복 표(FRT-341). 섹션 id 는 그대로지만 `lang-certificate` 의 평면 5블록이
+ *     은퇴하고 `lang-certificate.어학 자격증` 한 블록이 그 자리를 대신했다 — 라벨 파생 안정키가
+ *     통째로 갈렸으므로 아래 `withSectionKeys` 규약이 요구하는 bump 다. 값 이관은
+ *     `foldLegacyLanguageCertificate`(평면 → 표 첫 행)가, 나머지 보존은 '기타' 카드가 맡는다.
  *
  * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
  * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
  * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
  * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 8
+export const TEMPLATE_VERSION = 9
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.

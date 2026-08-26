@@ -802,6 +802,17 @@ function flatValueToCellText(value: BlockValue | undefined): string {
 }
 
 /**
+ * 이 이관이 **온전히 옮길 수 있는 모양인가.** `flatValueToCellText` 가 빈 문자열을 돌려주는
+ * 이유는 두 가지인데 — 값이 비었거나, 판별자를 모르거나 — 앞은 지워도 잃을 게 없고 뒤는 지우면
+ * 사용자 값이 영구히 사라진다. 구 키를 걷어낼 자격을 이 함수로 가른다(`applyScopedMigrations`
+ * 가 `isValueOccupied` 로 같은 함정을 피하는 것과 같은 이유).
+ */
+function isFoldableFlatValue(value: BlockValue | undefined): boolean {
+  if (!value) return true
+  return value.type === 'text' || value.type === 'textarea' || value.type === 'date'
+}
+
+/**
  * 평면 5필드로 저장된 어학 자격증 한 건을 반복 표의 **첫 행**으로 접는다 (FRT-341).
  *
  * 접지 않아도 값은 `orphanFieldsToBlocks` 가 '기타' 카드에 보존하므로 사라지지는 않는다. 그런데
@@ -822,10 +833,14 @@ function foldLegacyLanguageCertificate(
   if (!template || template.value.type !== 'repeatable-cell') return fields
   if (!LANGUAGE_CERT_FOLD.some(({ from }) => fields[from] !== undefined)) return fields
 
-  // 구 키는 접든 못 접든 걷어낸다 — 남겨 두면 '기타' 카드에 같은 답이 한 벌 더 생겨,
-  // 사용자가 표에 고쳐 쓴 값과 옛 값 중 어느 쪽이 진짜인지 화면이 대답하지 못한다.
+  // 옮길 수 있는 구 키만 걷어낸다. 걷어내는 이유는 중복 방지다 — 남겨 두면 '기타' 카드에 같은
+  // 답이 한 벌 더 생겨, 사용자가 표에 고쳐 쓴 값과 옛 값 중 어느 쪽이 진짜인지 화면이 대답하지
+  // 못한다. 그런데 **모르는 판별자의 값은 애초에 표에 실리지 않으므로 중복이 아니다** — 지우면
+  // 로드-저장 한 번에 조용히 사라지고, 남기면 '기타' 카드가 통째로 보존한다.
   const out = { ...fields }
-  for (const { from } of LANGUAGE_CERT_FOLD) delete out[from]
+  for (const { from } of LANGUAGE_CERT_FOLD) {
+    if (isFoldableFlatValue(fields[from])) delete out[from]
+  }
 
   // 표에 이미 행이 있으면 접지 않는다. 이관은 한 번뿐이어야 한다 — 접힌 행을 지우고 저장한
   // 사용자에게 다음 로드가 그 행을 되살리면, 지울 수 없는 행이 된다.

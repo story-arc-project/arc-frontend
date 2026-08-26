@@ -4620,6 +4620,21 @@ describe("어학 ④ 자격증 반복 표 이관 (FRT-341)", () => {
   })
 
   /**
+   * 구 키를 걷어내는 유일한 이유는 **중복 방지**다. 그런데 모르는 판별자의 값은 애초에 표에
+   * 실리지 않으므로 중복이 아니다 — 그런데도 지우면 열어 보기만 한 사용자가 저장하는 순간
+   * 값이 영구히 사라진다. 옮길 수 있는 모양인지부터 묻고 지운다.
+   */
+  it("접을 수 없는 모양의 구 값은 지우지 않고 '기타' 카드로 보존한다", () => {
+    const legacySelect = { type: "single-select", options: ["중급", "고급"], selected: "중급" }
+    const v2 = load({ ...FLAT_RECORD, "lang-certificate.점수 / 등급": legacySelect })
+
+    expect(tableOf(v2)?.rows[0].cells.score).toBe("")
+    expect(v2.customBlocks.find(b => b.key === "lang-certificate.점수 / 등급")?.value).toEqual(
+      legacySelect,
+    )
+  })
+
+  /**
    * v1 → v2 로 올라온 레코드는 `lang-info.*` 구 키를 그대로 들고 있다. 그 값도 같은 자리로
    * 접는다 — 한 세대만 접으면 레코드가 언제 저장됐느냐에 따라 결과가 갈린다.
    */

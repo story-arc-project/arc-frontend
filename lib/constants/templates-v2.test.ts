@@ -1053,6 +1053,14 @@ describe("확정본: 어학능력", () => {
   })
 
   /**
+   * 섹션 id 는 그대로지만 ④ 의 평면 5블록이 은퇴하고 라벨 파생 안정키가 통째로 갈렸다 —
+   * `withSectionKeys` 규약이 요구하는 bump 다(이관은 `foldLegacyLanguageCertificate`).
+   */
+  it("④ 안정키를 갈아치웠으므로 TEMPLATE_VERSION 이 프로젝트(8) 위로 올라가 있다", () => {
+    expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(9)
+  })
+
+  /**
    * 확정본 ④는 시험명·점수·취득일·유효기간과 첨부가 **한 카드**다. core '증빙 자료'를 남기면
    * 같은 카드(evidence)에 파일 입력칸이 두 벌 생긴다 — 교육의 '성적 증빙'과 같은 처리다.
    * '기간'을 빼는 이유는 다르다: 어학은 시작·종료가 뚜렷하지 않아 required 기간이 억지 입력이 된다.
