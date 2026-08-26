@@ -273,6 +273,9 @@ function SignupForm() {
         if (await markSignupCompletedIfUnseen(email)) {
           capture("signup_completed", { method: "email" });
         }
+        // 마커(Web Crypto 해시)도 await 경계다 — 한 요청 안에 경계가 둘이면 대조도 둘이어야 한다.
+        // 이벤트는 인증이 실제로 성공했으니 그대로 쏘고, **이동만** 막는다.
+        if (stepFlowId.current !== flowId) return;
         goTo(FIRST_ONBOARDING_STEP);
       }
     } catch (e) {

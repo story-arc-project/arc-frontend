@@ -71,6 +71,7 @@ vi.mock("@/lib/api/client", async (importOriginal) => {
 });
 
 import { api } from "@/lib/api/client";
+import { markSignupCompletedIfUnseen } from "@/lib/analytics";
 import { ConsentStep } from "@/components/features/auth/ConsentStep";
 
 import SignupPage from "./page";
@@ -253,6 +254,31 @@ describe("회원가입 — 실패를 보조기술에 알린다", () => {
     });
 
     // password 스텝에 그대로 있어야 한다 — 떠난 흐름의 성공이 사용자를 옮겨서는 안 된다.
+    expect(screen.queryByRole("button", { name: "가입하기" })).not.toBeNull();
+  });
+
+  // 한 요청 안에 await 경계가 둘이면 대조도 둘이어야 한다. 인증 성공 뒤 분석 마커
+  // (Web Crypto 해시)에서 한 번 더 양보하는데, 그 틈에 스텝을 떠나면 뒤이은 goTo 가
+  // 여전히 사용자를 온보딩으로 끌어낸다. 창은 좁지만 장치가 빠진 자리는 같다.
+  it("분석 마커를 기다리는 사이 스텝을 떠났다면 온보딩으로 끌고 가지 않는다", async () => {
+    post.mockResolvedValueOnce({ data: { onboarded: false } });
+    let completeMark!: (value: boolean) => void;
+    vi.mocked(markSignupCompletedIfUnseen).mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        completeMark = resolve;
+      }),
+    );
+    await renderStep("verify");
+
+    await typeInto("인증 코드", "123456");
+    await clickButton("확인"); // 인증은 성공했지만 마커는 아직 비행 중
+
+    await clickButton("← 이전"); // verify → password
+
+    await act(async () => {
+      completeMark(true);
+    });
+
     expect(screen.queryByRole("button", { name: "가입하기" })).not.toBeNull();
   });
 
