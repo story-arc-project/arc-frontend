@@ -225,6 +225,10 @@ function SignupForm() {
 
     try {
       await api.post("/auth/signup", { email, password }, { auth: false });
+      // 응답이 오는 사이 스텝을 떠났다면 이 성공은 **옛 이메일**의 것이다. 그대로 진행하면
+      // verify 화면이 지금 입력된 새 주소를 대며 "코드를 보냈어요"라고 말한다 — 코드는 옛 주소로
+      // 갔고 새 주소는 가입조차 되지 않았으니, 오지 않을 코드를 기다리게 된다.
+      if (stepFlowId.current !== flowId) return;
       // 여기서부터 새 인증 흐름이다. 재발송 결과는 그 이메일에 매인 진술이라,
       // 「← 이전」으로 돌아가 다른 주소로 다시 가입하면(컴포넌트는 언마운트되지 않는다)
       // 재발송한 적 없는 새 주소 화면에 직전 결과가 그대로 남는다.
@@ -256,6 +260,8 @@ function SignupForm() {
 
     try {
       const result = await api.post<VerifyEmailResponse>("/auth/verify-email", { email, code: verifyCode }, { auth: false });
+      // 떠난 흐름의 성공은 사용자를 옮길 권한이 없다 — 대시보드로든 온보딩으로든.
+      if (stepFlowId.current !== flowId) return;
       if (result.data.onboarded) {
         // 이미 온보딩 완료된 유저 (재인증 케이스) — FastAPI 쿠키가 이미 설정됨
         // 하드 내비게이션으로 AuthProvider를 재마운트·refetch해야 GNB 계정 메뉴가 노출된다.
@@ -289,6 +295,7 @@ function SignupForm() {
 
     try {
       await api.post("/auth/consent", payload, { auth: true });
+      if (stepFlowId.current !== flowId) return; // 떠난 흐름의 성공이다 — 위 handleSignup 과 같은 이유.
       goTo("profile");
     } catch (e) {
       if (stepFlowId.current !== flowId) return; // 떠난 화면의 실패다 — 위 handleSignup 과 같은 이유.

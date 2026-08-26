@@ -207,6 +207,55 @@ describe("회원가입 — 실패를 보조기술에 알린다", () => {
     assertNothingAnnounced();
   });
 
+  // 실패만 막으면 절반이다. **성공**도 떠난 화면의 것일 수 있고, 이쪽이 더 나쁘다 —
+  // 문구가 하나 잘못 읽히는 게 아니라 화면 자체가 거짓말을 하게 된다.
+  it("응답을 기다리는 사이 다른 이메일로 옮겨왔다면 지난 가입 성공이 화면을 끌고 가지 않는다", async () => {
+    let completeSignup!: (value: { data: Record<string, never> }) => void;
+    post.mockReturnValueOnce(
+      new Promise<{ data: Record<string, never> }>((resolve) => {
+        completeSignup = resolve;
+      }),
+    );
+    await renderStep("password");
+
+    await typeInto("비밀번호", "arcpass123");
+    await typeInto("비밀번호 확인", "arcpass123");
+    await clickButton("가입하기"); // 요청은 아직 비행 중
+
+    await clickButton("← 이전"); // password → start
+    await typeInto("이메일", "other@example.com"); // 다른 주소로 갈아탄다
+    await clickButton("이메일로 계속하기"); // start → password
+
+    await act(async () => {
+      completeSignup({ data: {} }); // 이제서야 **옛 주소**의 가입이 성공한다
+    });
+
+    // 끌려가면 verify 화면이 새 주소를 대며 "코드를 보냈어요"라고 말한다 — 코드는 옛 주소로 갔는데.
+    expect(screen.queryByText(/코드를 보냈어요/)).toBeNull();
+  });
+
+  it("응답을 기다리는 사이 스텝을 떠났다면 지난 인증 성공이 온보딩으로 끌고 가지 않는다", async () => {
+    let completeVerify!: (value: { data: { onboarded: boolean } }) => void;
+    post.mockReturnValueOnce(
+      new Promise<{ data: { onboarded: boolean } }>((resolve) => {
+        completeVerify = resolve;
+      }),
+    );
+    await renderStep("verify");
+
+    await typeInto("인증 코드", "123456");
+    await clickButton("확인"); // 요청은 아직 비행 중
+
+    await clickButton("← 이전"); // verify → password
+
+    await act(async () => {
+      completeVerify({ data: { onboarded: false } });
+    });
+
+    // password 스텝에 그대로 있어야 한다 — 떠난 흐름의 성공이 사용자를 옮겨서는 안 된다.
+    expect(screen.queryByRole("button", { name: "가입하기" })).not.toBeNull();
+  });
+
   // 동의 제출 실패도 같은 결함이다(CONSENT_ENABLED off 라 화면에는 아직 안 걸려 있다).
   it("동의 제출에 실패하면 실패 사실이 즉시 읽히는 영역으로 노출된다", () => {
     render(<ConsentStep onSubmit={vi.fn()} error={NETWORK_MESSAGE} />);
