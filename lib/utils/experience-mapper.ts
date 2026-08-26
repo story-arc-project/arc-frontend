@@ -821,6 +821,16 @@ function isFoldableFlatValue(value: BlockValue | undefined): boolean {
   return !/[\r\n]/.test(raw)
 }
 
+/**
+ * 정규화 전 저장분이 **아래에서 읽을 모양**을 갖췄는가. `rows`·`columns` 는 그릇이 없을 수도,
+ * 그릇만 있고 알맹이가 깨졌을 수도 있다(`columns: [null]`) — 읽는 자리마다 따로 막으면 한 겹씩
+ * 뚫린다. 여기서 한 번에 묻고, 아니면 fold 가 통째로 물러나 `normalizeBlockValue` 에 맡긴다.
+ */
+function isWellFormedTableShape(value: RepeatableCellBlockValue): boolean {
+  if (!Array.isArray(value.rows) || !Array.isArray(value.columns)) return false
+  return value.columns.every(c => !!c && typeof c.key === 'string')
+}
+
 /** 구 키 중 조건에 맞는 것만 걷어낸 새 맵. 원본은 건드리지 않는다. */
 function dropLegacyCertKeys(
   fields: Record<string, BlockValue>,
@@ -867,11 +877,11 @@ function foldLegacyLanguageCertificate(
     // ⚠️ 모르는 판별자는 새 스키마가 쓴 값일 수 있다 — `injectValue` 가 일부러 보존하는 값을
     // 그 앞단인 여기서 덮어쓰면 그 보호가 통째로 무의미해진다.
     if (current.type !== 'repeatable-cell') return fields
-    // ⚠️ `type` 만 맞고 `rows`·`columns` 가 없는 저장분이 실재한다(FRT-200 계열). 이 함수는
-    // `normalizeBlockValue` **앞**에서 도는데, 여기서 그냥 `.length`·`.map` 을 읽으면 고칠 기회가
-    // 오기 전에 터져 어학 기록이 통째로 안 열린다. 둘은 **따로** 깨지므로 따로 묻지 말고 함께
-    // 묻는다 — 하나만 막으면 다음 줄이 같은 방식으로 터진다.
-    if (!Array.isArray(current.rows) || !Array.isArray(current.columns)) return fields
+    // ⚠️ 이 함수는 `normalizeBlockValue` **앞**에서 돈다 — 즉 여기 오는 값은 **정규화되지 않은
+    // 저장분**이고, 그릇도 알맹이도 따로 깨진다(`rows` 누락 · `columns` 누락 · `columns: [null]`).
+    // 어느 한 겹만 막으면 다음 줄이 같은 방식으로 터져 어학 기록이 통째로 안 열린다. 아래에서
+    // 읽을 모양을 **한 곳에서 통째로** 확인한다.
+    if (!isWellFormedTableShape(current)) return fields
     // 표에 이미 행이 있으면 접지 않는다. 이관은 한 번뿐이어야 한다 — 접힌 행을 지우고 저장한
     // 사용자에게 다음 로드가 그 행을 되살리면, 지울 수 없는 행이 된다. 이때 걷어낼 자격이 있는
     // 구 키는 **비어 있는 것뿐**이다: 값이 든 키는 이 표에 실린 적이 없으니 중복이 아니다.

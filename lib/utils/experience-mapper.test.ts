@@ -4708,6 +4708,16 @@ describe("어학 ④ 자격증 반복 표 이관 (FRT-341)", () => {
   })
 
   /**
+   * 그릇이 배열이라고 **알맹이까지** 성한 것은 아니다. `columns: [null]` 이면 열 호환을 묻는
+   * `columnsMatchTemplate` 이 `c.key` 에서 터진다 — 같은 크래시의 한 겹 아래다.
+   */
+  it("columns 원소가 깨진 저장분에도 레코드가 열린다", () => {
+    const broken = { type: "repeatable-cell", rows: [], columns: [null] }
+
+    expect(() => load({ ...FLAT_RECORD, [TABLE_KEY]: broken })).not.toThrow()
+  })
+
+  /**
    * 다섯 열이 모두 한 줄 위젯이다. 여러 줄이 든 값을 실으면 `<input>` 이 개행을 지우고, 사용자가
    * 한 글자만 고쳐도 뭉개진 값이 저장된다 — `carryIntoSingleLine` 이 거절하는 그 전이다.
    */
