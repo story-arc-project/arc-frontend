@@ -873,7 +873,10 @@ function foldLegacyLanguageCertificate(
   // 목적지를 만들 자격은 **"비었거나, 아는 모양의 빈 표일 때"**뿐이다. 아래 두 갈래는 그 자격이
   // 없으므로 구 키까지 그대로 둔 채 물러난다 — 접지도 않으면서 구 키를 지우면 그게 곧 유실이다.
   const current = fields[LANGUAGE_CERT_TABLE_KEY]
-  if (current !== undefined) {
+  // ⚠️ **`null`·비객체는 "값이 없음"이지 "모르는 값"이 아니다.** `isBlockDiscardable` 이 못박은
+  // 대로 그런 손상은 이관이 덮어쓸 수 있어야 하므로 `undefined` 와 같이 다룬다 — 여기서
+  // `current.type` 을 그냥 읽으면 레코드가 통째로 안 열린다.
+  if (current != null && typeof current === 'object') {
     // ⚠️ 모르는 판별자는 새 스키마가 쓴 값일 수 있다 — `injectValue` 가 일부러 보존하는 값을
     // 그 앞단인 여기서 덮어쓰면 그 보호가 통째로 무의미해진다.
     if (current.type !== 'repeatable-cell') return fields

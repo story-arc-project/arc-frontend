@@ -4698,6 +4698,19 @@ describe("어학 ④ 자격증 반복 표 이관 (FRT-341)", () => {
   })
 
   /**
+   * 표 키에 `null` 이 실려 있어도 열린다. `null` 은 "모르는 값"이 아니라 **손상**이라, 아예 없는
+   * 것과 같이 다뤄 이관이 덮어쓸 수 있어야 한다(`isBlockDiscardable` 이 못박은 규칙).
+   */
+  it("표 키가 null 인 저장분도 열리고 정상적으로 접힌다", () => {
+    let v2: ExperienceV2 | undefined
+    expect(() => {
+      v2 = load({ ...FLAT_RECORD, [TABLE_KEY]: null })
+    }).not.toThrow()
+
+    expect(tableOf(v2 as ExperienceV2)?.rows[0].cells).toMatchObject({ name: "TOEIC" })
+  })
+
+  /**
    * `rows` 와 `columns` 는 **따로** 깨진다. 열 호환을 묻는 쪽(`columnsMatchTemplate`)도 배열을
    * 전제하므로, `rows` 만 검사하고 통과시키면 그 다음 줄에서 같은 방식으로 터진다.
    */
