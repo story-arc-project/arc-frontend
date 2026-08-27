@@ -153,15 +153,42 @@ test.describe("FRT-86 미리보기 peer 네비게이션", () => {
     await page.keyboard.press("ArrowDown");
     await expect(page).toHaveURL(/\/archive\?id=exp-e2e-1/);
 
-    // 그래서 뒤로가기 한 번이면 목록으로 돌아온다.
-    expect(await historyLength()).toBe(afterOpen);
+    // 그래서 뒤로가기 한 번이면 목록으로 돌아온다 — 넘긴 횟수와 무관하게 한 번이다.
+    await page.goBack();
+    await expect(page).toHaveURL(/\/archive$/);
+    await expect(detailHeading(page, FIRST)).toHaveCount(0);
+    await expect(detailHeading(page, SECOND)).toHaveCount(0);
+  });
 
-    // NOTE: 여기서 goBack 까지 단언하지 않는 것은 의도다. peer 이동의 replace 가
-    // searchParams 에 반영되기 전에 Back 이 들어오면 그 반영이 버려져, "?id 가 사라졌으면
-    // 닫는다" 가드(syncedForParams === selectedId)가 거짓이 되어 미리보기가 열린 채 남는다.
-    // 상태만으로는 "내 내비게이션이 아직 안 왔다"와 "사용자가 Back 했다"를 구분할 수 없어
-    // 깨끗한 해법(popstate 직접 청취)은 FRT-52 계열 동기화 로직을 바꿔야 한다 → 후속 이슈.
-    // URL 이 안정된 뒤의 Back 동작은 archive-empty-states.behavior.spec.ts 가 이미 덮는다.
+  test("넘긴 직후 곧바로 뒤로가기 해도 미리보기가 닫힌다", async ({ page }) => {
+    // FRT-268 회귀 가드. peer 이동은 replace 라, 그 반영이 searchParams 에 닿기 전에 Back 이
+    // 끼어들면 반영이 통째로 버려진다. 그러면 "URL 의 ?id 가 사라졌으면 닫는다" 판정을
+    // 상태로만 추론하는 구현에서는 기준선(syncedForParams)만 옛 id 에 멈춰 판정이 영구히
+    // 거짓이 되고, 주소는 목록인데 미리보기만 열린 채 남는다.
+    await stubApi(page, { authed: true, scenario: "data" });
+    await page.goto("/archive");
+    await openFirstPreview(page);
+
+    // 이동과 Back 을 한 태스크 안에서 연달아 일으켜 그 과도기를 확정적으로 만든다.
+    // (사람 손으로는 수십 ms 안에 벌어지는 일이라 두 번의 원격 호출로는 재현이 들쭉날쭉하다.
+    //  keydown 리스너는 window 에 달려 있어 합성 이벤트도 같은 경로를 탄다.)
+    await page.evaluate(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+      history.back();
+    });
+
+    await expect(page).toHaveURL(/\/archive$/);
+    await expect(detailHeading(page, FIRST)).toHaveCount(0);
+    await expect(detailHeading(page, SECOND)).toHaveCount(0);
+
+    // 닫기는 되돌릴 수 있어야 한다 — 앞으로가기로 ?id 가 돌아오면 그 기록이 다시 도킹된다.
+    // (동기화 기준선을 함께 비우지 않으면 `idParam === syncedForParams` 라 재선택을 건너뛰어
+    //  주소만 ?id 이고 미리보기는 닫힌 채 남는다.)
+    await page.goForward();
+    await expect(page).toHaveURL(/\/archive\?id=exp-e2e-2/);
+    await expect(detailHeading(page, FIRST)).toBeVisible();
   });
 
   test("md 아래(모바일)에서는 포커스가 풀스크린 미리보기로 옮겨온다", async ({ page }) => {

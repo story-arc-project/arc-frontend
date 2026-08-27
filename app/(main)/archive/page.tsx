@@ -205,6 +205,35 @@ export default function ArchivePage() {
     setMobileView("list")
   }
 
+  // 브라우저 Back/Forward 로 ?id 가 사라지면 미리보기를 닫는다 (FRT-268).
+  //
+  // 위 블록의 `syncedForParams === selectedId` 가드는 "내가 보낸 이동이 아직 searchParams 에
+  // 안 왔다"와 "사용자가 Back 했다"를 상태 모양으로 가르려 하지만, 두 경우의 모양은 같다.
+  // peer 이동의 replace 가 반영되기 전에 Back 이 끼어들면 그 반영이 통째로 버려져 기준선만
+  // 옛 id 에 멈추고, 가드가 영구히 거짓이 되어 닫기 판정이 다시는 성립하지 않는다.
+  // popstate 는 pushState/replaceState 로는 발화하지 않고 사용자가 히스토리를 움직였을 때만
+  // 발화한다 — 두 경우가 애초에 섞이지 않으므로 주소를 상태로 되짚어 추론하지 않아도 된다.
+  //
+  // 닫기의 구성은 handleClosePreview 와 같아야 한다. 특히 syncedForParams 를 함께 비우는 것이
+  // 중요한데, 안 비우면 Forward 로 같은 ?id 가 돌아왔을 때 `idParam === syncedForParams` 라
+  // 위 블록이 재선택을 건너뛰어 주소만 ?id 이고 미리보기는 닫힌 채 남는다. 다만 여기서는
+  // router 를 부르지 않는다 — 주소는 이미 사용자가 옮겨 놓았고, push 하면 뒤로가기 스택이
+  // 어긋난다.
+  //
+  // ?id 가 남아 있는 Back/Forward(카드 클릭으로 쌓인 엔트리 사이 이동)는 건드리지 않는다 —
+  // 그쪽은 위 블록이 이미 정상 동작하며, FRT-52 계열 동기화 판정을 흔들지 않는 것이 낫다.
+  useEffect(() => {
+    const onPopState = () => {
+      if (new URLSearchParams(window.location.search).get("id")) return
+      setSelectedId(null)
+      setSyncedForParams(null)
+      setMobileView("list")
+      setIsRapidPeerNav(false)
+    }
+    window.addEventListener("popstate", onPopState)
+    return () => window.removeEventListener("popstate", onPopState)
+  }, [])
+
   // ── Selection ──────────────────────────────────────────────────────
   const handleSelectExperience = useCallback(
     (id: string) => {
