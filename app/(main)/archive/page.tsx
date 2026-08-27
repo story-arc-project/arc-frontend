@@ -222,6 +222,14 @@ export default function ArchivePage() {
   //
   // ?id 가 남아 있는 Back/Forward(카드 클릭으로 쌓인 엔트리 사이 이동)는 건드리지 않는다 —
   // 그쪽은 위 블록이 이미 정상 동작하며, FRT-52 계열 동기화 판정을 흔들지 않는 것이 낫다.
+  //
+  // "Next 가 popstate 를 startTransition 으로 지연 반영하니(app-router.js) 여기서 동기로 닫으면
+  // 위 블록이 아직 옛 idParam 을 보고 방금 닫은 미리보기를 도로 연다"는 우려가 있으나, 이 핸들러가
+  // 도는 시점의 searchParams 를 실제로 찍어 보면 이미 새 주소를 반영한 뒤였다(카드 클릭 후 back·
+  // peer 이동 후 back 양쪽 모두 null). 미리보기 DOM 도 변이 레코드 단위로 관찰해 재오픈 커밋이
+  // 없음을 확인했다. 그러니 그 재오픈을 막으려고 "옛 id 를 기억했다가 그동안 동기화를 보류하는"
+  // 장치를 두지 않는다 — 그건 이 이슈가 걷어낸 상태 추론을 되살리는 일이고, 되돌아온 ?id 가 하필
+  // 방금 닫은 그 id 면 보류가 영영 안 풀려 주소만 ?id 인 채 닫혀 있는 더 나쁜 상태가 된다.
   useEffect(() => {
     const onPopState = () => {
       if (new URLSearchParams(window.location.search).get("id")) return
