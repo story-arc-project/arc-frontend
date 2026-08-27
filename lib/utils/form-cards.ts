@@ -55,6 +55,9 @@ function isSummary(b: Block): boolean { return b.key === SUMMARY_KEY || b.label 
 /** 코어 증빙 자료 블록은 항상 evidence 카드에 표시 — dedup 대상에서 제외. */
 function isEvidenceBlock(b: Block): boolean { return b.key === EVIDENCE_KEY || b.label === "증빙 자료" }
 
+/** 템플릿이 화면에서 내리지 않은 블록인지 (FRT-306, `Block.formHidden`). */
+function isShownInForm(b: Block): boolean { return b.formHidden !== true }
+
 export interface FormCardSection {
   id: string
   category: SectionCategory
@@ -89,10 +92,26 @@ export interface FormCardsResult {
 }
 
 export function computeFormCards(
-  coreBlocks: Block[],
-  sections: FormCardSection[],
+  allCoreBlocks: Block[],
+  allSections: FormCardSection[],
   labelOverrides?: Partial<Record<SectionCategory, string>>,
 ): FormCardsResult {
+  // FRT-306: 템플릿이 화면에서 내린 필드(`formHidden`)는 **카드 조립 단계에서** 뺀다.
+  // 이 함수의 출력이 입력 폼·상세뷰·진행도 바·이탈 계측의 공통 원본이라, 렌더 층 한 곳에서만
+  // 빼면 나머지가 화면에 없는 칸을 세거나 그린다.
+  //
+  // ⚠️ 사용자가 치운 필드(`hiddenKeys`, FRT-190)를 여기서 빼면 안 되는 이유(FormSection 주석:
+  // 마지막 필드를 숨긴 순간 카드가 통째로 사라져 되살리기 경로까지 증발한다)는 여기 해당하지
+  // 않는다 — 내린 필드는 되살리기 목록에 애초에 없다. 오히려 그 필드만 남은 카드('설정')는
+  // 사라지는 것이 맞다.
+  //
+  // 저장은 이 카드가 아니라 `extensionSections` 에서 모으므로(ExperienceFormV2.handleSave)
+  // 여기서 빼도 값은 그대로 왕복한다.
+  const coreBlocks = allCoreBlocks.filter(isShownInForm)
+  const sections = allSections.map(s =>
+    s.blocks.some(b => !isShownInForm(b)) ? { ...s, blocks: s.blocks.filter(isShownInForm) } : s,
+  )
+
   const titleBlock = coreBlocks.find(isTitle)
   const summaryBlock = coreBlocks.find(isSummary)
   // 코어 증빙 자료는 항상 evidence 카드에 넣는다 (원래 formLayout도 별도 추출하여 항상 표시).

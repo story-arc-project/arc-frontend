@@ -63,6 +63,20 @@ export function buildDetailSections(
             || ext.blocks.some(tb => tb.label === b.label && tb.type === b.type)
         if (hit) consumed.add(b.id)
         return hit
+      }).map(b => {
+        // 화면에서 내린 필드(`formHidden`, FRT-306)는 **템플릿 정의에만** 있다. v2 는 매퍼가
+        // 템플릿 블록에서 다시 짜 이 표시를 달고 오지만, v1 레거시는 저장 배열을 그대로 통과시켜
+        // 표시 없이 도착한다 — 그대로 넘기면 폼은 숨기는데(템플릿 병합) 상세뷰만 보여, 고칠 수
+        // 없는 값이 읽기 전용 화면에만 남는다(Codex P2). 매칭된 템플릿 블록의 표시를 옮겨 실어
+        // `computeFormCards` 한 곳에서 함께 걸러지게 한다.
+        //
+        // ⚠️ 여기서 곧장 빼면 안 된다 — 빠진 블록은 `consumed` 밖의 잔여로 남아 아래 재합류
+        // 루프가 카테고리 마지막 카드에 도로 밀어 넣는다. 표시만 얹고 거르는 자리는 한 곳으로.
+        const tb = b.key
+          ? ext.blocks.find(t => t.key === b.key)
+          : ext.blocks.find(t => t.label === b.label && t.type === b.type)
+            ?? ext.blocks.find(t => t.label === b.label)
+        return tb?.formHidden && !b.formHidden ? { ...b, formHidden: true } : b
       })
       return {
         id: ext.id,

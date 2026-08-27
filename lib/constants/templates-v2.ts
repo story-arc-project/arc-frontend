@@ -286,7 +286,7 @@ function buildExtendedSection(): TemplateSection {
       createTagsField('사용한 스킬'),
       createTextField('협업/팀', { placeholder: '함께한 팀이나 협업 방식을 설명해주세요' }),
       createSelectField('난이도', ['상', '중', '하']),
-      createSelectField('공개 설정', ['공개', '비공개', '일부 공개']),
+      createSelectField('공개 설정', ['공개', '비공개', '일부 공개'], { formHidden: true }),
     ],
   }
 }
@@ -296,6 +296,12 @@ function buildExtendedSection(): TemplateSection {
 // 자기 detail 섹션을 정의한 유형은 범용 buildExtendedSection() 대신 이 섹션만 받는다.
 // '공개 설정'은 포트폴리오 발행(lib/portfolio/build-portfolio.ts)이 label 로 조회하므로
 // 반드시 존재해야 한다. id='extended' 를 유지해 안정키 'extended.공개 설정' 를 보존한다.
+//
+// ⚠️ FRT-306 으로 '공개 설정'은 **입력 화면에서 내려갔다**(`formHidden`) — 그래서 이 섹션은
+// 화면에 그려지는 블록이 하나도 없다. 그럼에도 섹션과 블록을 지우지 않는 이유는 이 필드의
+// 실체가 "기록의 공개 여부"가 아니라 **포트폴리오 발행 옵트인**이기 때문이다: 값을 읽는
+// 소비처가 살아 있고, 블록을 지우면 저장값이 `orphanFieldsToBlocks` 를 타고 '기타' 카드로
+// 되살아나 정작 내리려던 필드가 다른 이름으로 다시 보인다.
 function buildSettingsSection(): TemplateSection {
   return {
     id: 'extended',
@@ -303,7 +309,7 @@ function buildSettingsSection(): TemplateSection {
     category: 'detail',
     collapsed: true,
     blocks: [
-      createSelectField('공개 설정', ['공개', '비공개', '일부 공개']),
+      createSelectField('공개 설정', ['공개', '비공개', '일부 공개'], { formHidden: true }),
     ],
   }
 }

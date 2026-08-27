@@ -381,6 +381,39 @@ describe("isPublishableExperience (명시적 옵트인)", () => {
   ])("기본 비공개 — %s 는 발행 불가", (_label, selected) => {
     expect(isPublishableExperience(withVisibility("x", selected))).toBe(false);
   });
+
+  /**
+   * FRT-306 회귀 방어 — '공개 설정'은 입력 화면에서 내려갔지만 **발행 판정은 그대로 살아 있다.**
+   *
+   * 위 케이스들은 v1 모양(블록 배열)이라 템플릿을 타지 않는다. 실제 저장 레코드는 안정키
+   * `fields` 맵이고, 판정 값은 템플릿이 그 키를 계속 소유해야만 `extensionBlocks` 로 복원된다.
+   * 만약 필드를 "화면에서 내린다"를 **템플릿에서 지운다**로 구현하면 값이 customBlocks 로
+   * 밀려나는데 `isPublishableExperience` 는 코어·확장만 보므로(customBlocks 미포함) 이미
+   * '공개'로 저장해 둔 경험이 전부 조용히 발행에서 빠진다. 이 테스트가 그 구현을 막는다.
+   */
+  it("FRT-306: 화면에서 내려간 뒤에도 저장된 '공개' 값으로 발행된다 (v2 안정키 경로)", () => {
+    const stored: Experience = makeExp({
+      id: "v2-published",
+      type: "career",
+      content: {
+        schema_version: SCHEMA_VERSION_V2,
+        title: "인턴",
+        summary: "",
+        status: "complete",
+        tags: [],
+        fields: {
+          "core.경험명": { type: "text", text: "인턴" },
+          "extended.공개 설정": {
+            type: "single-select",
+            options: ["공개", "비공개", "일부 공개"],
+            selected: "공개",
+          },
+        },
+        custom: [],
+      },
+    });
+    expect(isPublishableExperience(stored)).toBe(true);
+  });
 });
 
 /**
