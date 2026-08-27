@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import type { Block, BlockValue, ExperienceV2 } from "@/types/archive"
+import type { Experience } from "@/types/experience"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks, createGroupBlock, createTextField } from "@/lib/utils/block-utils"
 import { buildDetailSections } from "@/lib/utils/detail-cards"
+import { toExperienceV2 } from "@/lib/utils/experience-mapper"
 
 function text(t: string): BlockValue {
   return { type: "text", text: t }
@@ -367,6 +369,53 @@ describe("buildDetailSections — 사용자 섹션 (FRT-78)", () => {
       makeExperienceV2({ coreBlocks: core, extensionBlocks: published }),
       getTemplateForType("career"),
     )
+    expect(sections.flatMap(s => s.blocks).map(b => b.label)).not.toContain("공개 설정")
+  })
+
+  /**
+   * FRT-306 — **v1 레거시 레코드**(schema_version 없음)까지 같이 내려간다.
+   *
+   * v2 는 매퍼가 템플릿 블록에서 확장 블록을 다시 짜므로 `formHidden` 표시가 따라오지만,
+   * v1 은 저장 배열을 그대로 통과시켜 표시 없이 도착한다. 폼은 템플릿 병합
+   * (`mergeSavedIntoTemplate`)을 거쳐 숨기는데 상세뷰만 그대로 그리면, **폼에서는 고칠 수 없는
+   * 값이 읽기 전용 화면에만 남는다** — 되돌릴 곳 없는 안내가 된다(Codex P2).
+   */
+  it("FRT-306: v1 레거시 레코드의 '공개 설정'도 상세뷰에 보이지 않는다", () => {
+    const legacy = {
+      id: "v1-legacy",
+      user_id: "user-1",
+      type: "career",
+      content: {
+        title: "인턴",
+        summary: "",
+        status: "complete",
+        tags: [],
+        coreBlocks: [
+          { id: "c1", type: "text", label: "경험명", value: { type: "text", text: "인턴" } },
+        ],
+        extensionBlocks: [
+          {
+            id: "e1",
+            type: "single-select",
+            label: "공개 설정",
+            value: {
+              type: "single-select",
+              options: ["공개", "비공개", "일부 공개"],
+              selected: "공개",
+            },
+          },
+        ],
+        customBlocks: [],
+      },
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-02T00:00:00Z",
+    } as unknown as Experience
+
+    const v2 = toExperienceV2(legacy)
+    // 값 자체는 살아 있어야 한다 — 발행 판정(isPublishableExperience)이 계속 읽는 자리다.
+    expect(v2.extensionBlocks.find(b => b.label === "공개 설정")).toBeDefined()
+
+    const sections = buildDetailSections(v2, getTemplateForType("career"))
     expect(sections.flatMap(s => s.blocks).map(b => b.label)).not.toContain("공개 설정")
   })
 })
