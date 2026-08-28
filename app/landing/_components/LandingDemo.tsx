@@ -21,6 +21,7 @@ import {
   canAddExperience,
   collectValues,
   createEmptyDraft,
+  hasFilledAdvanced,
   summarizeExperience,
   type DemoDraft,
   type DemoExperience,
@@ -230,7 +231,13 @@ export default function LandingDemo() {
                         <button
                           key={type.id}
                           type="button"
-                          onClick={() => setTypeId(type.id)}
+                          onClick={() => {
+                            setTypeId(type.id);
+                            // 유형이 바뀌면 접힘도 처음 상태로 돌린다 — 볼륨을 묶는 게 접힘의 목적이다.
+                            // 단, 그 유형의 접힘 필드를 이미 채워뒀다면 펼친 채로 둔다.
+                            // 접으면 렌더에서 빠지는데 값은 카드에 실려, 안 보이는 값이 저장된다.
+                            setShowAdvanced(hasFilledAdvanced(type.id, draft));
+                          }}
                           aria-pressed={active}
                           className={[
                             "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption transition-colors",

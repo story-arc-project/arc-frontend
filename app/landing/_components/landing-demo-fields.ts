@@ -321,6 +321,16 @@ export function canAddExperience(typeId: DemoTypeId, draft: DemoDraft): boolean 
   })
 }
 
+/**
+ * 이 유형의 접힘 필드에 이미 적어둔 값이 있는가.
+ * 접힘은 렌더 자체를 빼므로, 채워진 값을 접으면 화면에 없는 값이 카드에 실린다 — 그때는 펼친 채로 둔다.
+ */
+export function hasFilledAdvanced(typeId: DemoTypeId, draft: DemoDraft): boolean {
+  return DEMO_TYPE_MAP[typeId].fields.some(
+    field => field.advanced && isFieldFilled(field.format, draft[field.key]),
+  )
+}
+
 /** 현재 유형이 정의한 키 중 **채워진 것만** 담는다. 전환하며 남은 값은 따라오지 않는다. */
 export function collectValues(typeId: DemoTypeId, draft: DemoDraft): DemoDraft {
   const values: DemoDraft = {}

@@ -7,6 +7,7 @@ import {
   collectValues,
   createEmptyDraft,
   flattenDraftText,
+  hasFilledAdvanced,
   formatPeriod,
   isFieldFilled,
   summarizeExperience,
@@ -101,6 +102,27 @@ describe('isFieldFilled', () => {
   it('표는 셀에 값이 하나라도 있어야 채워진 것이다 — 빈 행은 세지 않는다', () => {
     expect(isFieldFilled('rows', [{ id: 'r1', cells: { task: '', role: '' } }])).toBe(false)
     expect(isFieldFilled('rows', [{ id: 'r1', cells: { task: '기획', role: '' } }])).toBe(true)
+  })
+})
+
+describe('hasFilledAdvanced', () => {
+  it('접힘 필드가 비어 있으면 false', () => {
+    expect(hasFilledAdvanced('internship', createEmptyDraft())).toBe(false)
+  })
+
+  it('그 유형의 접힘 필드가 채워져 있어야 true — 남의 유형 값은 세지 않는다', () => {
+    const draft = createEmptyDraft()
+    draft['careerStack'] = ['Figma']
+
+    expect(hasFilledAdvanced('internship', draft)).toBe(true)
+    expect(hasFilledAdvanced('project', draft)).toBe(false)
+  })
+
+  it('기본 필드만 채운 것은 세지 않는다', () => {
+    const draft = createEmptyDraft()
+    draft['title'] = '카카오 UX 인턴십'
+
+    expect(hasFilledAdvanced('internship', draft)).toBe(false)
   })
 })
 

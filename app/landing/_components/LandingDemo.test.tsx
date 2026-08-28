@@ -109,6 +109,38 @@ describe('LandingDemo 더 자세히 묻기', () => {
     expect(screen.getByLabelText('성장 / 변화')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /접기/ })).toHaveAttribute('aria-expanded', 'true')
   })
+
+  it('유형을 바꾸면 접힘도 처음 상태로 돌아간다', async () => {
+    const user = userEvent.setup()
+    render(<LandingDemo />)
+
+    await user.click(screen.getByRole('button', { name: /더 자세히 묻기/ }))
+    expect(screen.getByLabelText('사용한 스킬 / 툴 / 기술')).toBeInTheDocument()
+
+    await user.click(chip('프로젝트'))
+
+    // 접힘은 볼륨을 묶는 장치다 — 유형이 바뀌면 다시 접혀야 한다.
+    expect(screen.getByRole('button', { name: /더 자세히 묻기/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+    expect(screen.queryByLabelText('개인 / 팀')).not.toBeInTheDocument()
+  })
+
+  it('접힘 필드를 채워둔 유형으로 돌아오면 펼친 채로 둔다', async () => {
+    const user = userEvent.setup()
+    render(<LandingDemo />)
+
+    await user.click(screen.getByRole('button', { name: /더 자세히 묻기/ }))
+    await user.type(screen.getByLabelText('사용한 스킬 / 툴 / 기술'), 'Figma{Enter}')
+
+    await user.click(chip('프로젝트'))
+    await user.click(chip('인턴십'))
+
+    // 접으면 렌더에서 빠지는데 값은 카드에 실린다 — 안 보이는 값이 저장되면 안 된다.
+    expect(screen.getByRole('button', { name: /접기/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Figma 삭제' })).toBeInTheDocument()
+  })
 })
 
 describe('LandingDemo 시드 카드', () => {
