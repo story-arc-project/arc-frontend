@@ -111,6 +111,22 @@ describe('LandingDemo 더 자세히 묻기', () => {
   })
 })
 
+describe('LandingDemo 시드 카드', () => {
+  it('유형마다 다른 시점 표기를 카드에 보여준다', () => {
+    render(<LandingDemo />)
+
+    // 인턴십은 기간, 수상은 날짜 — 유형이 다르면 카드에 실리는 것도 다르다.
+    expect(screen.getByText('2024.07 — 2024.09')).toBeInTheDocument()
+    expect(screen.getByText('2024.03.15')).toBeInTheDocument()
+  })
+
+  it('입력한 태그가 카드에도 보인다', () => {
+    render(<LandingDemo />)
+
+    expect(screen.getByText('Figma')).toBeInTheDocument()
+  })
+})
+
 describe('LandingDemo 경험 추가', () => {
   it('제목과 요약을 채우면 카드가 목록에 붙는다', async () => {
     const user = userEvent.setup()
