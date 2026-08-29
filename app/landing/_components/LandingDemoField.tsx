@@ -161,7 +161,7 @@ function PeriodControl({
         aria-describedby={guideId}
         value={value.start}
         onChange={(e) => onChange({ ...value, start: e.target.value })}
-        className={INPUT_CLASS}
+        className={`${INPUT_CLASS} flex-1 min-w-0`}
       />
       <span className="text-caption text-text-tertiary shrink-0">—</span>
       <input
@@ -170,7 +170,7 @@ function PeriodControl({
         aria-describedby={guideId}
         value={value.end}
         onChange={(e) => onChange({ ...value, end: e.target.value })}
-        className={INPUT_CLASS}
+        className={`${INPUT_CLASS} flex-1 min-w-0`}
       />
     </div>
   );
@@ -284,7 +284,7 @@ function RowsControl({
   }
 
   return (
-    <div aria-describedby={guideId}>
+    <div>
       <div className="rounded-lg border border-border overflow-hidden">
         <div className="grid grid-cols-2 bg-surface-tertiary">
           {columns.map((column) => (
@@ -300,6 +300,8 @@ function RowsControl({
                 <input
                   type="text"
                   aria-label={`${rowIndex + 1}번째 줄 ${column.label}`}
+                  // 가이드는 셀마다 붙인다 — 설명은 조상에서 상속되지 않는다.
+                  aria-describedby={guideId}
                   value={row.cells[column.key] ?? ""}
                   onChange={(e) => updateCell(row.id, column.key, e.target.value)}
                   placeholder={column.placeholder}

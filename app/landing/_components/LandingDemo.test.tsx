@@ -91,6 +91,40 @@ describe('LandingDemo 가이드 문구', () => {
       '어디서 어떤 일을 했는지 적어주세요.'
     )
   })
+
+  it('표의 셀에도 안내문을 연결한다 — 설명은 조상에서 상속되지 않는다', async () => {
+    const user = userEvent.setup()
+    render(<LandingDemo />)
+
+    await user.click(chip('프로젝트'))
+
+    const cell = screen.getByRole('textbox', { name: '1번째 줄 작업' })
+    const describedBy = cell.getAttribute('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    expect(document.getElementById(describedBy as string)?.textContent).toBe(
+      '프로젝트 안에서 내가 한 일을 작업 단위로 나눠 적어보세요. 줄을 늘릴 수 있어요.'
+    )
+  })
+
+  it('유형마다 모든 입력칸이 안내문을 달고 있다 — 포맷이 늘어도 빠지지 않게', async () => {
+    const user = userEvent.setup()
+    render(<LandingDemo />)
+
+    for (const type of ['인턴십', '프로젝트', '공모전·수상']) {
+      await user.click(chip(type))
+      await user.click(screen.getByRole('button', { name: /더 자세히 묻기/ }))
+
+      const panel = within(screen.getByRole('tabpanel'))
+      const controls = [...panel.getAllByRole('textbox'), ...panel.getAllByRole('combobox')]
+      for (const control of controls) {
+        const id = control.getAttribute('aria-describedby') ?? ''
+        expect(
+          document.getElementById(id)?.textContent,
+          `${type} — ${control.getAttribute('aria-label') ?? id}`
+        ).toBeTruthy()
+      }
+    }
+  })
 })
 
 describe('LandingDemo 더 자세히 묻기', () => {
