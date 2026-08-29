@@ -295,7 +295,11 @@ function ForgotPasswordForm() {
                     disabled={emailFieldLocked}
                     hint={emailLocked ? "현재 로그인한 계정으로 코드를 보내요." : undefined}
                   />
-                  {emailError && <p className="text-body-sm text-error">{emailError}</p>}
+                  {/* 각 단계의 실패는 그 단계 버튼에 포커스가 머문 채 비동기로 나타난다 — 역할이 없으면
+                      스크린리더 사용자에게는 아무 일도 없던 것과 같다(FRT-340).
+                      aria-live 는 일부러 쓰지 않는다 — role="alert" 의 암묵값이 assertive 인데
+                      polite 를 명시하면 그 값이 이겨 낭독이 다른 발화 뒤로 밀린다(FRT-282). */}
+                  {emailError && <p role="alert" className="text-body-sm text-error">{emailError}</p>}
                   <Button onClick={handleRequestCode} disabled={!email || isLoading}>
                     {isLoading ? "보내는 중..." : "재설정 코드 받기"}
                   </Button>
@@ -329,7 +333,7 @@ function ForgotPasswordForm() {
                     onChange={(e) => setCode(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && code.trim() && !isLoading && handleVerifyCode()}
                   />
-                  {codeError && <p className="text-body-sm text-error">{codeError}</p>}
+                  {codeError && <p role="alert" className="text-body-sm text-error">{codeError}</p>}
                   <Button onClick={handleVerifyCode} disabled={!code.trim() || isLoading}>
                     {isLoading ? "확인 중..." : "확인"}
                   </Button>
@@ -414,7 +418,7 @@ function ForgotPasswordForm() {
                       </button>
                     }
                   />
-                  {pwError && <p className="text-body-sm text-error">{pwError}</p>}
+                  {pwError && <p role="alert" className="text-body-sm text-error">{pwError}</p>}
                   <Button onClick={handleReset} disabled={!pwValid || isLoading}>
                     {isLoading ? "변경 중..." : "비밀번호 변경하기"}
                   </Button>
