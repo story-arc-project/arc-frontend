@@ -17,16 +17,27 @@ const listenerAttached = new WeakSet<object>();
 const errorsByPage = new WeakMap<object, Error[]>();
 
 /**
- * 넘침 검사를 도입한 시점(FRT-338)에 **이미** 넘치고 있던 스토리.
+ * 넘침 검사를 도입한 시점(FRT-338)에 **이미** 넘치고 있던 스토리의 허용 폭(px).
  *
  * FRT-338 은 타이포 스케일 작업이라 이 넘침의 원인이 아니다(검사를 켜기만 하고 값은 그대로일 때 걸렸다).
  * 남의 결함을 그 김에 고치면 변경 범위가 흐려지므로, 부채를 숨기지 말고 여기 적어 두고 게이트는 살린다.
  * 목적은 **새로 생기는** 넘침을 잡는 것이다.
  *
- * 관측된 내용: FeedbackModal 본문 래퍼가 4px 넘친다 (scrollWidth 340 > clientWidth 336).
+ * 스토리를 통째로 건너뛰지 않고 **폭으로** 봐준다. 통째로 건너뛰면 그 스토리에서 새로 생기는
+ * 넘침도, 알던 넘침이 더 벌어지는 것도 함께 눈감게 된다 — 부채를 적어 두려던 것이 검사 구멍이 된다.
+ *
+ * 관측된 내용: FeedbackModal 본문 래퍼 2곳이 각각 4px 넘친다 (scrollWidth 340 > clientWidth 336).
  * TODO(FRT-338 후속): 이 4px 의 원인을 찾아 고치고 이 목록을 비운다.
  */
-const KNOWN_OVERFLOW_TITLES = new Set(["Features/Feedback/FeedbackModal"]);
+const KNOWN_OVERFLOW_TOLERANCE_PX = new Map([["Features/Feedback/FeedbackModal", 4]]);
+
+/**
+ * TODO(FRT-338 후속): 폰 폭(390px)에서도 재야 한다. 지금은 각 스토리의 기본(데스크톱) 캔버스만 보므로
+ * 폰에서만 생기는 넘침을 놓친다. 실제로 이 브랜치에서 390px 전수 측정을 해 보니 383개 중 9개가
+ * 넘쳤는데, 9개 모두 FRT-338 **이전과 수치가 같아**(FileBlock 계열 +187 ×4, ImagePreview +362,
+ * FeedbackModal +4 ×4) 이번 타이포 변경이 만든 것은 하나도 없었다. 남의 부채를 이 PR 에서
+ * 고치지 않기로 했으므로 폰 폭 검사도 함께 미룬다 — 켜는 순간 기준선이 빨개져 게이트가 무의미해진다.
+ */
 
 const config: TestRunnerConfig = {
   async preVisit(page) {
@@ -51,9 +62,9 @@ const config: TestRunnerConfig = {
     // 고정 높이 컨테이너(h-[44px] 등)가 넘칠 수 있다. 저장소에 비주얼 스냅숏 인프라가 없어
     // 넘침만 직접 잰다 — 타이포를 건드리는 변경의 레이아웃 회귀를 잡는 게 목적이다.
     // 가로만 본다: 세로는 스크롤이 정상인 자리가 많아 오탐이 크다.
-    if (KNOWN_OVERFLOW_TITLES.has(context.title)) return;
+    const tolerance = KNOWN_OVERFLOW_TOLERANCE_PX.get(context.title) ?? 0;
 
-    const overflows = await page.evaluate(async () => {
+    const overflows = await page.evaluate(async (tolerancePx: number) => {
       // 폰트가 도착하기 전에 재면 안 된다. 스토리북은 Pretendard 를 외부 CDN 에서 받는데
       // (.storybook/preview-head.html), 러너에는 스택 첫 폰트("Apple SD Gothic Neo")도 없어
       // 그 사이 한글이 폴백 폰트로 그려진다 — 폴백은 더 넓어서 같은 코드가 한 번은 통과하고
@@ -66,14 +77,15 @@ const config: TestRunnerConfig = {
         // 스스로 스크롤·숨김을 처리하는 요소는 넘쳐도 정상이다.
         if (getComputedStyle(el).overflowX !== "visible") continue;
         // 1px 여유: 소수점 레이아웃에서 반올림으로 생기는 오탐을 거른다.
-        if (el.scrollWidth > el.clientWidth + 1) {
+        // tolerancePx: 도입 시점에 이미 넘치던 스토리의 알려진 폭. 그보다 더 벌어지면 잡힌다.
+        if (el.scrollWidth > el.clientWidth + 1 + tolerancePx) {
           const cls = typeof el.className === "string" ? el.className.trim() : "";
           const id = el.tagName.toLowerCase() + (cls ? `.${cls.split(/\s+/).join(".")}` : "");
           bad.push(`${id} (scrollWidth ${el.scrollWidth} > clientWidth ${el.clientWidth})`);
         }
       }
       return bad.slice(0, 10);
-    });
+    }, tolerance);
     if (overflows.length > 0) {
       throw new Error(
         `"${context.title} / ${context.name}" 스토리에서 가로 넘침 ${overflows.length}건:\n${overflows.join("\n")}`,
