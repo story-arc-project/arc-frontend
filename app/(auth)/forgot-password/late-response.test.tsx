@@ -9,25 +9,43 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 // 회원가입 흐름은 FRT-282(PR #294)에서 같은 결함을 세대 카운터로 고쳤다. 이 파일은 그
 // 장치가 이 화면에서도 서 있는지, 그리고 **성공 쪽까지** 덮는지를 못 박는다.
 
-const { pushMock, replaceMock } = vi.hoisted(() => ({
+type MockAuth = {
+  user: { account: { email: string; has_password: boolean } } | null;
+  isAuthenticated: boolean;
+  isOnboarded: boolean;
+  isLoading: boolean;
+  error: null;
+};
+
+// 설정發 흐름(?from=settings)만 다른 분기를 타므로, 쿼리와 세션은 테스트마다 갈아끼운다.
+const { pushMock, replaceMock, authState, queryState } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   replaceMock: vi.fn(),
+  authState: { value: null as unknown },
+  queryState: { value: "" },
 }));
 
+const UNAUTHENTICATED: MockAuth = {
+  user: null,
+  isAuthenticated: false,
+  isOnboarded: false,
+  isLoading: false,
+  error: null,
+};
+
+function setAuth(next: MockAuth) {
+  authState.value = next;
+}
+
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(queryState.value),
   useRouter: () => ({ push: pushMock, replace: replaceMock }),
 }));
 
-// 인증 사용자는 이 화면에서 튕겨나간다(useRedirectIfAuthenticated). 미인증으로 고정해야 화면에 머문다.
+// 인증 사용자는 이 화면에서 튕겨나간다(useRedirectIfAuthenticated). 기본값은 미인증 —
+// 설정發 흐름만 로그인 세션을 심어 allowAuthenticated 경로로 들어간다.
 vi.mock("@/hooks/useAuth", () => ({
-  useAuth: () => ({
-    user: null,
-    isAuthenticated: false,
-    isOnboarded: false,
-    isLoading: false,
-    error: null,
-  }),
+  useAuth: () => authState.value,
 }));
 
 // PASSWORD_RESET_ENABLED 는 모듈 로드 시 env 로 확정된다(stubEnv 로는 못 바꾼다).
@@ -75,7 +93,12 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-import { requestPasswordReset, verifyResetCode, resetPassword } from "@/lib/api/auth-api";
+import {
+  requestPasswordReset,
+  verifyResetCode,
+  resetPassword,
+  logoutUser,
+} from "@/lib/api/auth-api";
 import { ApiError } from "@/lib/api/client";
 
 import ForgotPasswordPage from "./page";
@@ -83,15 +106,19 @@ import ForgotPasswordPage from "./page";
 const requestReset = vi.mocked(requestPasswordReset);
 const verifyCode = vi.mocked(verifyResetCode);
 const reset = vi.mocked(resetPassword);
+const logout = vi.mocked(logoutUser);
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
 afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setAuth(UNAUTHENTICATED);
+  queryState.value = "";
   requestReset.mockResolvedValue(undefined);
   verifyCode.mockResolvedValue(undefined);
   reset.mockResolvedValue(undefined);
+  logout.mockResolvedValue(undefined);
 });
 
 /** 응답 도착 시점을 테스트가 쥔다 — "비행 중"과 "뒤늦게 도착"을 갈라 놓기 위해. */
@@ -253,5 +280,43 @@ describe("비밀번호 찾기 — 떠난 흐름의 응답은 화면을 옮기지
     });
 
     expect(screen.queryByText("코드를 다시 보냈어요.")).toBeNull();
+  });
+
+  // 위 예외("성공은 알린다")의 이면. 설정發 흐름에서 변경은 성공했는데 세션 정리에 실패하면
+  // pwError 로 수동 재로그인을 안내하는데, 그 문구는 **password 스텝 JSX 안에서만** 렌더된다.
+  // 물러난 뒤라면 안내를 세워도 화면엔 아무것도 안 남는다 — 알리기로 한 결정이 무력해진다.
+  // 판정은 `step`(클로저에 굳은 값)이 아니라 세대로 해야 한다.
+  it("설정發 흐름에서 물러난 사이 변경이 끝났다면 재로그인 안내가 보이도록 비밀번호 단계로 되돌린다", async () => {
+    queryState.value = "from=settings";
+    setAuth({
+      user: { account: { email: "me@example.com", has_password: true } },
+      isAuthenticated: true,
+      isOnboarded: true,
+      isLoading: false,
+      error: null,
+    });
+    logout.mockRejectedValue(new ApiError(500, "logout failed")); // 세션 정리 실패
+    const resetting = deferred();
+    reset.mockReturnValueOnce(resetting.promise);
+    await renderPage();
+
+    await clickButton("재설정 코드 받기"); // 이메일은 계정 이메일로 잠겨 채워진다
+    await advanceToPasswordStep();
+    await fillNewPassword();
+    await clickButton("비밀번호 변경하기"); // 요청은 아직 비행 중
+
+    await clickButton("← 이전"); // password → code
+    expect(currentStep()).toBe("code");
+
+    await act(async () => {
+      resetting.resolve();
+    });
+
+    expect(currentStep()).toBe("password");
+    expect(
+      screen.queryByText(
+        "비밀번호는 변경됐어요. 보안을 위해 로그아웃 후 새 비밀번호로 로그인해주세요.",
+      ),
+    ).not.toBeNull();
   });
 });

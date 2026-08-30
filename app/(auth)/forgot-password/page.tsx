@@ -247,6 +247,14 @@ function ForgotPasswordForm() {
         }
         // 정리 실패(세션 살아있음): 자동 진행하면 /dashboard 로 조용히 튕겨 변경이 안 된 것처럼
         // 보인다. 변경은 성공했음을 알리고 수동 재로그인을 안내한다(silent 오인 방지).
+        // pwError 는 password 스텝 JSX 안에서만 렌더된다 — 응답을 기다리는 사이 물러났다면
+        // (예: 「← 이전」으로 code 단계에 가 있다면) setPwError 만으로는 아무것도 보이지 않는다.
+        // 되돌릴 수 없는 부수효과를 알리는 게 이 분기의 목적이므로, 안내가 보이도록 되돌린다.
+        //
+        // 판정 축은 `step` 이 아니라 세대다. `step` 은 이 클로저가 만들어진 렌더의 값이라
+        // 클릭 시점의 "password" 로 굳어 있어 **정작 물러난 경우에 조건이 거짓**이 된다.
+        // `stepFlowId` 는 ref 라 항상 지금 값이다.
+        if (stepFlowId.current !== flowId) goTo("password");
         setPwError("비밀번호는 변경됐어요. 보안을 위해 로그아웃 후 새 비밀번호로 로그인해주세요.");
         return;
       }
