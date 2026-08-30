@@ -1,0 +1,71 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+/**
+ * globals.css 의 타이포 스케일은 앱 전체(text-body 616곳 · text-body-sm 447곳 · text-caption 318곳)가
+ * 의존하는 인터페이스인데 지금까지 아무도 지키지 않았다. 값이 조용히 되돌아가는 것을 막으려고
+ * 파일을 직접 파싱해 못 박는다.
+ *
+ * jsdom 은 외부 CSS 를 적용하지 않으므로 getComputedStyle 로는 잴 수 없다 — 소스를 읽는 게 유일한 수단이다.
+ *
+ * 경로는 cwd 기준으로 잡는다. jsdom 환경에서 `import.meta.url` 은 file: 스킴이 아니라
+ * fileURLToPath 가 "The URL must be of scheme file" 로 터진다.
+ */
+const CSS = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf-8");
+
+/**
+ * `.text-body { ... }` 블록에서 한 속성의 값을 뽑는다.
+ *
+ * 선택자 앞에 경계를 요구한다 — 이게 없으면 `body` 를 찾을 때 `.text-body {` 가 먼저 걸린다.
+ */
+export function readRule(selector: string, prop: string): string | undefined {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const block = new RegExp(`(?:^|[\\n,])\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(CSS);
+  if (!block) return undefined;
+  const found = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`).exec(block[1]);
+  return found?.[1].trim();
+}
+
+describe("타이포 스케일 (globals.css)", () => {
+  it.each([
+    [".text-caption", "13px"],
+    [".text-label", "14px"],
+    [".text-body-sm", "14px"],
+    [".text-body", "16px"],
+    [".text-body-lg", "18px"],
+    [".text-title", "20px"],
+    [".text-heading-3", "24px"],
+    [".text-heading-2", "30px"],
+    [".text-heading-1", "36px"],
+    [".text-display", "48px"],
+  ])("%s 의 font-size 는 %s 다", (selector, expected) => {
+    expect(readRule(selector, "font-size")).toBe(expected);
+  });
+
+  it("필드 라벨은 18px — 입력값(16px)보다 2px 크고 섹션 제목(20px)보다 작아야 층위가 선다", () => {
+    expect(readRule(".text-field-label", "font-size")).toBe("18px");
+  });
+
+  it("하단 세 단계가 3px 안에 몰리지 않는다 — caption < body-sm < body", () => {
+    const px = (selector: string) => Number.parseInt(readRule(selector, "font-size") ?? "0", 10);
+
+    expect(px(".text-caption")).toBeLessThan(px(".text-body-sm"));
+    expect(px(".text-body-sm")).toBeLessThan(px(".text-body"));
+    expect(px(".text-body") - px(".text-caption")).toBeGreaterThanOrEqual(3);
+  });
+
+  it("아카이브 입력값은 16px — iOS Safari 는 16px 미만이면 포커스 순간 화면을 확대한다", () => {
+    // .archive-input-14 래퍼가 하위 input/textarea/select 를 눌러쓰는 규칙.
+    const rule = /\.archive-input-14 input:not\(\.text-title\)[^{]*\{([^}]*)\}/.exec(CSS);
+
+    expect(rule?.[1]).toContain("font-size: 16px");
+  });
+
+  it("블록 설정 다이얼로그는 값 입력이 아니라 원래 크기를 지킨다 — 함께 키우지 않는다", () => {
+    const rule = /\.archive-input-14 \[role="dialog"\] input[^{]*\{([^}]*)\}/.exec(CSS);
+
+    expect(rule?.[1]).toContain("font-size: 13px");
+  });
+});
