@@ -63,7 +63,7 @@ export default function TagsBlock({ block, readOnly, onChange }: TagsBlockProps)
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={inputId} className="text-field-label text-text-primary">{block.label}</label>
-      {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
+      {block.guide && <p className="text-caption">{block.guide}</p>}
       {/* FRT-301: 태그가 있을 때만 chip 줄을 렌더 — 빈 상태에서 공간을 차지하지 않는다. */}
       {val.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">

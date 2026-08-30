@@ -277,7 +277,7 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
         <span className="text-caption text-text-tertiary">{rows.length}개 항목</span>
       </div>
 
-      {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
+      {block.guide && <p className="text-caption">{block.guide}</p>}
 
       {/* overflow-hidden 은 둥근 모서리 밖으로 새는 자식 배경을 자르지만, 역할 칩 드롭다운까지
           잘라 등록된 역할이 반쯤 가려진다. 칩을 쓰는 블록만 열어두고 아래 '추가' 버튼에

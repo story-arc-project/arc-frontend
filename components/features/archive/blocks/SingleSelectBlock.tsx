@@ -182,7 +182,7 @@ export default function SingleSelectBlock({
         {block.label}
         {block.required && <RequiredDot />}
       </label>
-      {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
+      {block.guide && <p className="text-caption">{block.guide}</p>}
       <select
         id={selectId}
         value={otherMode ? OTHER_OPTION_LABEL : val.selected}
