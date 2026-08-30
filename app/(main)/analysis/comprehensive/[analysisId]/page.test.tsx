@@ -414,3 +414,46 @@ describe("종합 분석 상세 — v3.1 추천 사유 (FRT-208)", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("종합 분석 상세 — 긴 글 조판 (FRT-338)", () => {
+  const BRIEF = "흩어진 정보를 하나의 기준으로 묶은 다음 판단하는 방식이 반복됩니다.";
+  const DETAILED =
+    "기록 7건 중 5건에서, 주어진 틀을 따르기보다 스스로 분류 축을 세운 뒤 그 축이 맞는지 데이터로 되짚어 보는 순서가 나타납니다.";
+
+  function renderWithSummary() {
+    getResult.mockResolvedValue(
+      result({ hasResultBody: true, briefSummary: BRIEF, detailedSummary: DETAILED }),
+    );
+    render(<ComprehensiveDetailPage />);
+  }
+
+  it("긴 요약을 .text-prose 로 조판한다 — 가장 긴 글이 가장 작게 렌더되던 역전을 없앤다", async () => {
+    renderWithSummary();
+
+    const detailed = await screen.findByText(DETAILED);
+
+    expect(detailed).toHaveClass("text-prose");
+    // 회귀 시엔 상세 요약이 text-body-sm(13px)으로 '한눈에 보기'(15px)보다 작았다.
+    expect(detailed).not.toHaveClass("text-body-sm");
+  });
+
+  it("짧은 요약도 같은 조판을 쓴다 — 둘 다 훑는 글이 아니라 읽는 글이다", async () => {
+    renderWithSummary();
+
+    expect(await screen.findByText(BRIEF)).toHaveClass("text-prose");
+  });
+
+  it("무효였던 leading-relaxed 를 남겨두지 않는다 — 조판은 .text-prose 가 책임진다", async () => {
+    renderWithSummary();
+
+    // .text-body 계열이 unlayered 라 leading-* 는 애초에 적용되지 않았다. 오해를 부르므로 지운다.
+    expect(await screen.findByText(DETAILED)).not.toHaveClass("leading-relaxed");
+    expect(screen.getByText(BRIEF)).not.toHaveClass("leading-relaxed");
+  });
+
+  it("줄바꿈 보존은 유지한다 — 백엔드가 준 문단 구분이 뭉개지면 안 된다", async () => {
+    renderWithSummary();
+
+    expect(await screen.findByText(DETAILED)).toHaveClass("whitespace-pre-line");
+  });
+});

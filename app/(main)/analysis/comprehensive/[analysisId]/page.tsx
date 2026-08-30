@@ -243,18 +243,18 @@ function SummaryBlock({ brief, detailed }: { brief: string; detailed: string }) 
         <div className="space-y-2">
           <h2 className="text-title text-text-primary">한눈에 보기</h2>
           <div className="bg-surface-secondary rounded-lg p-4">
-            <p className="text-body text-text-secondary leading-relaxed whitespace-pre-line">
-              {brief}
-            </p>
+            {/* FRT-338: 훑는 글이 아니라 읽는 글이다 — 크기·행간·색·어절 줄바꿈을 .text-prose 가 함께 책임진다.
+                이전의 leading-relaxed 는 .text-body 가 unlayered 라 애초에 적용되지 않았다. */}
+            <p className="text-prose whitespace-pre-line">{brief}</p>
           </div>
         </div>
       )}
       {detailed && (
         <div className="space-y-2">
           <h2 className="text-title text-text-primary">상세 요약</h2>
-          <p className="text-body-sm text-text-secondary leading-relaxed whitespace-pre-line">
-            {detailed}
-          </p>
+          {/* FRT-338: 가장 긴 글이 가장 작은 크기(text-body-sm 13px)로 렌더되던 역전을 없앤다.
+              '한눈에 보기'(15px)보다 작아서, 유저테스트에서 "1.25배는 되어야" 라는 말이 나온 자리다. */}
+          <p className="text-prose whitespace-pre-line">{detailed}</p>
         </div>
       )}
     </section>
