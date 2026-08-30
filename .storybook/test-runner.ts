@@ -53,7 +53,14 @@ const config: TestRunnerConfig = {
     // 가로만 본다: 세로는 스크롤이 정상인 자리가 많아 오탐이 크다.
     if (KNOWN_OVERFLOW_TITLES.has(context.title)) return;
 
-    const overflows = await page.evaluate(() => {
+    const overflows = await page.evaluate(async () => {
+      // 폰트가 도착하기 전에 재면 안 된다. 스토리북은 Pretendard 를 외부 CDN 에서 받는데
+      // (.storybook/preview-head.html), 러너에는 스택 첫 폰트("Apple SD Gothic Neo")도 없어
+      // 그 사이 한글이 폴백 폰트로 그려진다 — 폴백은 더 넓어서 같은 코드가 한 번은 통과하고
+      // 한 번은 넘친다. 실제로 CI 에서 커밋 하나를 두고 결과가 갈렸다(FRT-338).
+      // 재는 시점을 폰트 로딩 뒤로 고정해 게이트를 동전 던지기에서 꺼낸다.
+      await document.fonts.ready;
+
       const bad: string[] = [];
       for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
         // 스스로 스크롤·숨김을 처리하는 요소는 넘쳐도 정상이다.
