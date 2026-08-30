@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -96,6 +96,9 @@ function ForgotPasswordForm() {
 
   const [step, setStep] = useState<ResetStep>("email");
   const [dir, setDir] = useState(1);
+  // 스텝 이동의 세대. 스텝을 벗어날 때마다 올라간다 — 뒤늦게 도착한 응답이
+  // **아직 그 화면에 대한 진술인지** 판정한다(회원가입 흐름의 stepFlowId 와 같은 장치·FRT-282).
+  const stepFlowId = useRef(0);
 
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -121,7 +124,14 @@ function ForgotPasswordForm() {
   const pwMatch = confirmPw.length > 0 && password === confirmPw;
   const pwValid = isPasswordValid(password) && pwMatch;
 
+  // 「← 이전」은 요청이 비행 중에도 눌린다(isLoading 으로 막지 않는다). 스텝을 벗어나는 순간
+  // 세대를 올려, 아직 비행 중인 요청의 응답이 이 화면을 움직일 자격을 잃게 한다(FRT-343).
+  //
+  // 회원가입 흐름과 달리 여기서 실패 문구를 함께 비우지는 않는다 — handleReset 의 410 분기가
+  // setCodeError(...) 를 세운 **직후** goTo("code") 를 부르므로, 여기서 비우면 그 안내가 지워진다.
+  // 목적지 문구를 비우는 일은 지금처럼 각 핸들러의 성공 경로가 맡는다.
   function goTo(next: ResetStep, direction = 1) {
+    stepFlowId.current += 1;
     setDir(direction);
     setStep(next);
   }
@@ -134,6 +144,8 @@ function ForgotPasswordForm() {
 
   // ── email: 재설정 코드 발송 ─────────────────────────────
   // 가입 여부와 무관하게 항상 코드 단계로 진행한다(enumeration 방지). 429만 별도 안내.
+  // 세대 가드가 없는 건 빠뜨린 게 아니다 — email 은 첫 스텝이라 「← 이전」이 아예 렌더되지 않고,
+  // 이 요청이 비행 중인 동안 스텝을 벗어날 경로가 없다(goBack 은 idx<=0 에서 멈춘다).
   async function handleRequestCode() {
     setIsLoading(true);
     setEmailError(null);
@@ -158,13 +170,20 @@ function ForgotPasswordForm() {
   async function handleVerifyCode() {
     setIsLoading(true);
     setCodeError(null);
+    const flowId = stepFlowId.current;
     try {
       await verifyResetCode(email, code.trim());
+      // 응답이 오는 사이 「← 이전」으로 물러났다면 이 성공은 이미 떠난 흐름의 것이다.
+      // 그대로 진행하면 **사용자가 하지 않은 이동**이 일어난다 — 이메일을 고치려고 의도적으로
+      // 물러난 사람을 비밀번호 단계로 끌고 간다(FRT-343). 실패만 막으면 절반이다.
+      if (stepFlowId.current !== flowId) return;
       setPassword("");
       setConfirmPw("");
       setPwError(null);
       goTo("password");
     } catch (e) {
+      // 떠난 화면의 실패다 — 지금 서 있는 자리와 무관한 문구를 세우지 않는다.
+      if (stepFlowId.current !== flowId) return;
       if (e instanceof ApiError) {
         if (e.status === 410) setCodeError("인증 코드가 만료되었어요. 재발송 후 다시 시도해주세요.");
         else if (e.status === 429) setCodeError("시도 횟수를 초과했어요. 잠시 후 다시 시도해주세요.");
@@ -187,10 +206,16 @@ function ForgotPasswordForm() {
     setIsResending(true);
     setResendNotice(null);
     setCodeError(null);
+    // 재발송은 isResending 으로만 막혀 이메일 단계의 「재설정 코드 받기」를 잠그지 않는다.
+    // 비행 중에 물러나 새 코드 흐름을 열 수 있고, 그때 도착한 지난 회차 결과를 찍으면
+    // 재발송한 적 없는 화면이 "다시 보냈어요"라고 말하게 된다.
+    const flowId = stepFlowId.current;
     try {
       await requestPasswordReset(email);
+      if (stepFlowId.current !== flowId) return;
       setResendNotice("코드를 다시 보냈어요.");
     } catch (e) {
+      if (stepFlowId.current !== flowId) return;
       if (e instanceof ApiError && e.status === 429) setResendNotice("5분 후 재발송 가능해요.");
       else setResendNotice("재발송에 실패했어요. 잠시 후 다시 시도해주세요.");
     } finally {
@@ -202,8 +227,13 @@ function ForgotPasswordForm() {
   async function handleReset() {
     setIsLoading(true);
     setPwError(null);
+    const flowId = stepFlowId.current;
     try {
       await resetPassword(email, code.trim(), password);
+      // 여기서는 세대를 따지지 않는다 — 다른 핸들러와 갈리는 유일한 지점이라 이유를 남긴다.
+      // 응답이 오는 사이 물러났더라도 비밀번호는 **이미 바뀌었다**. 되돌릴 수 없는 부수효과라,
+      // 이동을 막으면 사용자는 아무 안내 없이 코드 단계에 남아 이미 쓴 코드를 다시 넣어보게 된다.
+      // 떠난 흐름의 성공이라도 감추는 것보다 알리는 편이 낫다(FRT-343).
       // 성공 배너는 로그인 화면에서 ?reset=1 로 표시한다(내비게이션 후에도 살아남음).
       if (fromSettings) {
         // 설정發 흐름은 로그인 상태로 진입했으므로 비밀번호 변경 후 재로그인을 유도한다.
@@ -217,11 +247,22 @@ function ForgotPasswordForm() {
         }
         // 정리 실패(세션 살아있음): 자동 진행하면 /dashboard 로 조용히 튕겨 변경이 안 된 것처럼
         // 보인다. 변경은 성공했음을 알리고 수동 재로그인을 안내한다(silent 오인 방지).
+        // pwError 는 password 스텝 JSX 안에서만 렌더된다 — 응답을 기다리는 사이 물러났다면
+        // (예: 「← 이전」으로 code 단계에 가 있다면) setPwError 만으로는 아무것도 보이지 않는다.
+        // 되돌릴 수 없는 부수효과를 알리는 게 이 분기의 목적이므로, 안내가 보이도록 되돌린다.
+        //
+        // 판정 축은 `step` 이 아니라 세대다. `step` 은 이 클로저가 만들어진 렌더의 값이라
+        // 클릭 시점의 "password" 로 굳어 있어 **정작 물러난 경우에 조건이 거짓**이 된다.
+        // `stepFlowId` 는 ref 라 항상 지금 값이다.
+        if (stepFlowId.current !== flowId) goTo("password");
         setPwError("비밀번호는 변경됐어요. 보안을 위해 로그아웃 후 새 비밀번호로 로그인해주세요.");
         return;
       }
       router.push(RESET_SUCCESS_URL);
     } catch (e) {
+      // 실패는 다르다. 410 분기가 goTo("code", -1) 로 화면을 되돌리는데, 사용자가 이미
+      // 스스로 물러난 뒤라면 그 되돌림은 자기가 하지 않은 이동이다(FRT-343).
+      if (stepFlowId.current !== flowId) return;
       if (e instanceof ApiError) {
         if (e.code === "WEAK_PASSWORD") {
           setPwError("더 강한 비밀번호를 시도해주세요.");
