@@ -108,6 +108,13 @@ body {
   color: var(--color-text-primary);
   background-color: var(--color-surface);
   min-height: 100vh;
+
+  /* FRT-338: 한글은 브라우저 기본 줄바꿈이 CJK 규칙이라 어절 중간에서 갈린다
+     ("가독성을" → "가독"/"성을"). keep-all 로 낱말을 통째로 다음 줄에 넘긴다.
+     둘은 반드시 함께 간다 — keep-all 만 걸면 칸보다 긴 낱말(URL 등)이 칸을 넘치므로
+     break-word 가 그때만 잘라 주는 안전망 노릇을 한다. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 /* ── Typography scale ─────────────────────────────────────── */
@@ -167,6 +174,21 @@ body {
   font-weight: 400;
   line-height: 1.5;
   color: var(--color-text-secondary);
+}
+
+/* 긴 서술형 문단 전용 — 훑는 글이 아니라 '읽는' 글에만 쓴다(분석 상세의 요약·진단 등).
+   .text-body 와 나누는 이유: 본문 616곳을 전부 이 조판으로 바꿀 수는 없다. 카드·목록엔 과하다.
+
+   line-height 를 여기 두는 것은 의도적이다. 호출부에서 Tailwind 의 leading-* 로 행간을 넓히려던
+   시도가 61곳 있었는데 전부 무효였다 — .text-body 같은 unlayered 규칙이 @layer utilities 의
+   유틸리티를 이기기 때문이다(FRT-338 에서 빌드 CSS 로 실측). 그러니 조판은 클래스가 책임진다. */
+.text-prose {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.8;
+  color: var(--color-text-primary);
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .text-label {

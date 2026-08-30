@@ -13,7 +13,9 @@ import { describe, expect, it } from "vitest";
  * 경로는 cwd 기준으로 잡는다. jsdom 환경에서 `import.meta.url` 은 file: 스킴이 아니라
  * fileURLToPath 가 "The URL must be of scheme file" 로 터진다.
  */
-const CSS = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf-8");
+const CSS = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf-8")
+  // 주석을 먼저 걷어낸다. 남겨두면 주석 바로 뒤 선언이 "앞이 ; 또는 줄머리" 경계에 걸려 안 잡힌다.
+  .replace(/\/\*[\s\S]*?\*\//g, "");
 
 /**
  * `.text-body { ... }` 블록에서 한 속성의 값을 뽑는다.
@@ -24,7 +26,7 @@ export function readRule(selector: string, prop: string): string | undefined {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const block = new RegExp(`(?:^|[\\n,])\\s*${escaped}\\s*\\{([^}]*)\\}`).exec(CSS);
   if (!block) return undefined;
-  const found = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`).exec(block[1]);
+  const found = new RegExp(`(?:^|[;\\n])\\s*${prop}\\s*:\\s*([^;]+)`).exec(block[1]);
   return found?.[1].trim();
 }
 
@@ -99,7 +101,7 @@ describe("모바일 제목 축소 (FRT-338)", () => {
     }
   });
 
-  it("줄어든 뒤에도 제목 위계가 유지된다 — display > heading-1 > heading-2", () => {
+  it("제목 축소 뒤에도 위계가 유지된다 — display > heading-1 > heading-2", () => {
     const px = (selector: string) => {
       const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const rule = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(mobileBlock);
@@ -108,5 +110,41 @@ describe("모바일 제목 축소 (FRT-338)", () => {
 
     expect(px(".text-display")).toBeGreaterThan(px(".text-heading-1"));
     expect(px(".text-heading-1")).toBeGreaterThan(px(".text-heading-2"));
+  });
+});
+
+describe("긴 글 조판 (FRT-338)", () => {
+  it("한글이 어절 중간에서 갈리지 않도록 전역에서 막는다", () => {
+    // 한글은 브라우저 기본 줄바꿈이 CJK 규칙이라 "가독성을" 이 "가독"/"성을" 로 쪼개진다.
+    expect(readRule("body", "word-break")).toBe("keep-all");
+  });
+
+  it("긴 낱말은 여전히 잘린다 — keep-all 만 걸면 URL 이 칸을 넘긴다", () => {
+    expect(readRule("body", "overflow-wrap")).toBe("break-word");
+  });
+
+  it.each([
+    ["font-size", "16px"],
+    ["line-height", "1.8"],
+    ["word-break", "keep-all"],
+    ["overflow-wrap", "break-word"],
+  ])(".text-prose 의 %s 는 %s 다", (prop, expected) => {
+    expect(readRule(".text-prose", prop)).toBe(expected);
+  });
+
+  it(".text-prose 는 본문색을 스스로 정한다 — 장문을 회색으로 두지 않는다", () => {
+    expect(readRule(".text-prose", "color")).toBe("var(--color-text-primary)");
+  });
+
+  it(".text-prose 의 행간이 본문보다 넉넉하다 — 훑는 글과 읽는 글은 다르다", () => {
+    const prose = Number.parseFloat(readRule(".text-prose", "line-height") ?? "0");
+    const body = Number.parseFloat(readRule(".text-body", "line-height") ?? "0");
+
+    expect(prose).toBeGreaterThan(body);
+  });
+
+  it(".text-caption 은 색 선언을 유지한다 — 지우면 덧붙은 tertiary 8곳이 살아나 2.0:1 로 나빠진다", () => {
+    // .text-caption 의 unlayered color 가 layered 유틸리티를 이기는 덕에 도움말이 4.6:1 로 렌더된다.
+    expect(readRule(".text-caption", "color")).toBe("var(--color-text-secondary)");
   });
 });
