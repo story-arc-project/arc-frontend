@@ -237,7 +237,9 @@ body {
 .archive-input-14 select {
   font-size: 16px;
 }
-/* 블록 설정 다이얼로그(role="dialog")는 값 입력이 아니므로 원래 크기(text-body-sm 13px) 유지.
+/* 블록 설정 다이얼로그(role="dialog")는 값 입력이 아니므로 원래 크기(13px) 유지 — FRT-338 스케일
+   상향(.text-body-sm 13→14px) 대상에서 제외했다. 값을 13px 로 고정한 것은 의도적이며, .text-body-sm
+   과는 더 이상 같은 값이 아니다(13px vs 14px).
    위 규칙과 같은 특이도(0,2,1)라 뒤에 두어 다이얼로그 안에서만 되돌린다. */
 .archive-input-14 [role="dialog"] input,
 .archive-input-14 [role="dialog"] textarea,
