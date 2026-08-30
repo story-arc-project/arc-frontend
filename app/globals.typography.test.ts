@@ -69,3 +69,44 @@ describe("타이포 스케일 (globals.css)", () => {
     expect(rule?.[1]).toContain("font-size: 13px");
   });
 });
+
+describe("모바일 제목 축소 (FRT-338)", () => {
+  /** `@media (max-width: 639px) { ... }` 블록 전체를 뽑는다. */
+  const mobileBlock = /@media \(max-width: 639px\) \{([\s\S]*?)\n\}/.exec(CSS)?.[1] ?? "";
+
+  it.each([
+    [".text-display", "32px"],
+    [".text-heading-1", "28px"],
+    [".text-heading-2", "26px"],
+  ])("폰에서 %s 는 %s 로 줄어든다", (selector, expected) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rule = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(mobileBlock);
+
+    expect(rule?.[1]).toContain(`font-size: ${expected}`);
+  });
+
+  it("본문·라벨·캡션은 브레이크포인트로 가르지 않는다 — 폰과 PC 가 같은 크기다", () => {
+    // CSS px 는 기준 시청 거리에서의 각크기로 정의된 단위라 기기가 달라도 체감 크기가 비슷하다.
+    // 갈라야 하는 것은 크기가 아니라 큰 제목이다 — 48px 은 폰에서 세 줄로 깨진다.
+    for (const selector of [
+      ".text-body",
+      ".text-body-sm",
+      ".text-caption",
+      ".text-label",
+      ".text-field-label",
+    ]) {
+      expect(mobileBlock).not.toContain(selector);
+    }
+  });
+
+  it("줄어든 뒤에도 제목 위계가 유지된다 — display > heading-1 > heading-2", () => {
+    const px = (selector: string) => {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const rule = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(mobileBlock);
+      return Number.parseInt(/font-size:\s*(\d+)px/.exec(rule?.[1] ?? "")?.[1] ?? "0", 10);
+    };
+
+    expect(px(".text-display")).toBeGreaterThan(px(".text-heading-1"));
+    expect(px(".text-heading-1")).toBeGreaterThan(px(".text-heading-2"));
+  });
+});

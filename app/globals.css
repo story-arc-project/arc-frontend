@@ -184,6 +184,25 @@ body {
   line-height: 1.4;
 }
 
+/* 큰 제목만 폰에서 줄인다. 48px 디스플레이는 데스크톱에선 시원하지만 폰에선 세 줄로 깨진다.
+   본문·라벨·캡션은 가르지 않는다 — CSS px 는 기준 시청 거리에서의 각크기로 정의된 단위라
+   폰과 데스크톱의 체감 크기가 비슷하다. 갈라야 하는 건 크기가 아니라 큰 제목이다.
+   랜딩이 이미 쓰는 sm:text-[Npx] 패턴을 앱 제목으로 넓히는 것뿐이다.
+   경계는 Tailwind 의 sm(640px) 아래 — 랜딩과 같은 기준을 쓴다. */
+@media (max-width: 639px) {
+  .text-display {
+    font-size: 32px;
+  }
+
+  .text-heading-1 {
+    font-size: 28px;
+  }
+
+  .text-heading-2 {
+    font-size: 26px;
+  }
+}
+
 /* 아카이빙 입력 폼의 "값 입력" 크기. 폼 섹션 래퍼(.archive-input-14)에서 하위 input/textarea/select 를 눌러쓴다.
    .text-body 와 같은 unlayered 규칙이라 레이어가 아니라 특이도(0,1,1 > 0,1,0)로 이긴다 — !important 불필요.
    값이 아닌 두 컨트롤은 제외: ① 사용자 섹션 제목 편집 input(.text-title) ② 블록 설정 다이얼로그.
