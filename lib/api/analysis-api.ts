@@ -177,10 +177,10 @@ const KNOWN_SCHEMA_VERSIONS = new Set([
   "keyword/4.1",
   "individual/1.0",
   // individual/1.2 는 result 구조가 바뀌었지만(action_plan 객체화, applicable_roles 이동)
-  // 매퍼가 두 형태를 모두 눕히므로 1.0 과 같은 화면으로 렌더된다. 1.1 은 프런트가 실물을
-  // 본 적이 없으나 1.0 → 1.2 사이의 중간본이므로 함께 연다 — 화이트리스트에 없으면 상세가
-  // 통째로 안내로 빠지기 때문이다(PR #196 이 comprehensive/2.0 에서 겪은 실패).
-  "individual/1.1",
+  // 보고서와 백엔드 원본으로 형태를 확인했고 매퍼가 두 형태를 모두 눕히므로 1.0 과 같은
+  // 화면으로 렌더된다. 반면 1.1 은 **열지 않는다** — 실물을 본 적이 없어 모양이 다르면
+  // 매퍼가 필드를 조용히 흘린다. 확인 안 된 버전을 미리 열면 이 게이트 자체가 무의미해지고,
+  // 잘못 그린 화면보다 "표시할 수 없습니다"가 옳은 결말이다(계약 §3.5).
   "individual/1.2",
   // comprehensive/1.0 은 구 레코드 호환용으로 유지한다 — 1.0 payload 엔 strength_diagnosis 가
   // 없지만 매퍼가 부재를 빈 구조로 안전 처리하므로 렌더된다.
@@ -706,7 +706,21 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
     // result.status 는 본문이 아니라 엔벨로프에서 폴백돼 들어오는 메타다(위 `body.status ?? r.status`).
     // 판정에 넣으면 본문이 통째로 없어도 status 하나 때문에 "본문 있음"이 된다.
-    hasResultBody: hasAnyContent({ ...result, status: "" }),
+    //
+    // actionPlan 도 같은 이유로 손본다. v1.2 의 `normalize_time_fields()` 는 모델이 칸을 못
+    // 채워도 기간·마감일을 **무조건** 씌우므로, 객체를 그대로 넘기면 그 두 문자열 때문에
+    // 그릴 것이 하나도 없는 결과가 "본문 있음"이 된다 → 상태 안내(FRT-134) 대신 텅 빈 완료
+    // 껍데기가 그려진다. 화면(ActionPlanSection)이 내용 없는 칸을 빼는 것과 같은 기준으로,
+    // 판정에도 내용만 넘긴다.
+    hasResultBody: hasAnyContent({
+      ...result,
+      status: "",
+      actionPlan: [
+        result.actionPlan.shortTerm,
+        result.actionPlan.midTerm,
+        result.actionPlan.longTerm,
+      ].map((b) => b.content),
+    }),
     result,
   };
 }

@@ -476,10 +476,14 @@ function SynergySection({
   items: IndividualAnalysisResult["result"]["synergyRecommendations"];
   removed: IndividualAnalysisResult["result"]["removedRecommendations"];
 }) {
-  if (items.length === 0) return null;
+  // 걸러낸 추천만 남는 경우가 실재한다 — filter_certifications 가 전부 실재하지 않는다고
+  // 판정하면 items 는 비고 removed 만 남는다. 그때 섹션을 통째로 접으면 사용자는 추천이
+  // 왜 없는지 알 길이 없다.
+  if (items.length === 0 && removed.length === 0) return null;
   return (
     <section className="space-y-3">
       <h2 className="text-title text-text-primary">시너지 추천 활동</h2>
+      {items.length > 0 && (
       <ul className="space-y-3">
         {items.map((s, i) => (
           <li
@@ -501,6 +505,7 @@ function SynergySection({
           </li>
         ))}
       </ul>
+      )}
       {/* v1.2 신설. 추천이 적어 보이는 이유를 말해준다. 걸러낸 자격증명 자체는 적지 않는다 —
           실재하지 않는 이름을 추천 자리에 되살리지 않기 위해서다. */}
       {removed.length > 0 && (

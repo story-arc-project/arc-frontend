@@ -400,4 +400,46 @@ describe("개별 분석 상세 — 스키마 v1.2", () => {
     // 환각 자격증명을 추천 자리에 되살리지 않는다.
     expect(screen.queryByText("사회분석사")).not.toBeInTheDocument();
   });
+
+  // 전부 걸러진 경우가 이 안내가 가장 필요한 순간이다 — 추천이 하나도 없는 이유를
+  // 설명할 수 있는 유일한 자리인데, 목록이 비었다고 섹션을 접으면 그 말이 사라진다.
+  it("추천이 전부 걸러져도 안내를 보여준다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          synergyRecommendations: [],
+          removedRecommendations: [
+            { name: "사회분석사", category: "자격증", removedReason: "실재하지 않는 자격증명" },
+            { name: "빅데이터운용기사", category: "자격증", removedReason: "실재하지 않는 자격증명" },
+          ],
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    expect(
+      await screen.findByText("실재 여부를 확인하지 못한 추천 2건은 빼고 보여드려요."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("시너지 추천 활동")).toBeInTheDocument();
+    // 걸러낸 이름은 여전히 적지 않는다.
+    expect(screen.queryByText("사회분석사")).not.toBeInTheDocument();
+  });
+
+  it("추천도 걸러낸 것도 없으면 섹션 자체가 없다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          itemName: "데이터 분석 인턴",
+          synergyRecommendations: [],
+          removedRecommendations: [],
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    await screen.findByText("데이터 분석 인턴");
+    expect(screen.queryByText("시너지 추천 활동")).not.toBeInTheDocument();
+  });
 });

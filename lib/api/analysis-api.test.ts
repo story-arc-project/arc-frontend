@@ -2396,4 +2396,88 @@ describe("개별분석 스키마 v1.2", () => {
     const res = await getIndividualAnalysisResult("ind-1")
     expect(res.result.itemName).toBe("데이터 분석 인턴")
   })
+
+  // 검증되지 않은 중간 버전을 화이트리스트에 미리 열면 게이트 자체가 무의미해진다.
+  // 1.2 는 보고서와 백엔드 원본으로 형태를 확인했지만 1.1 은 실물을 본 적이 없다 —
+  // 모양이 다르면 매퍼가 필드를 조용히 흘리므로, "표시할 수 없습니다"가 옳은 결말이다.
+  it("schema_version individual/1.1 은 확인된 적이 없어 거부한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-1",
+        status: "completed",
+        experience_id: "e1",
+        result: { ...bodyWith({}), schema_version: "individual/1.1" },
+      }),
+    )
+    await expect(getIndividualAnalysisResult("ind-1")).rejects.toBeInstanceOf(
+      UnsupportedSchemaError,
+    )
+  })
+
+  // ── 기간·마감일만 남은 칸이 "본문 있음"을 만들지 않는다 (FRT-134 계열) ──
+  // normalize_time_fields() 는 내용을 못 채워도 기간·마감일을 **무조건** 씌운다. 그 두 문자열을
+  // 판정에 넣으면 그릴 것이 하나도 없는 결과가 "본문 있음"이 되어, 화면은 상태 안내 대신
+  // 텅 빈 완료 껍데기를 그린다. ActionPlanSection 이 내용 없는 칸을 빼는 기준과 같아야 한다.
+  describe("hasResultBody — 내용 없는 액션 플랜 칸", () => {
+    const emptyBody = {
+      item_name: "",
+      item_type: "",
+      brief_summary: "",
+      deep_analysis: { career_value: "", market_value: "" },
+      star_format: {},
+      item_diagnosis: {},
+      synergy_recommendations: [],
+      missing_info_warning: "",
+    }
+
+    const fetchEmpty = async (actionPlan: unknown) => {
+      apiMock.get.mockResolvedValue(
+        envelope({
+          id: "ind-1",
+          status: "completed",
+          experience_id: "e1",
+          result: { ...emptyBody, action_plan: actionPlan },
+        }),
+      )
+      return getIndividualAnalysisResult("ind-1")
+    }
+
+    it("내용이 null 이고 기간·마감일만 있으면 본문 없음이다", async () => {
+      const res = await fetchEmpty({
+        단기: { 기간: "2026-08-31 ~ 2026-11-30", 마감일: "2026-11-30", 내용: null },
+        중기: { 기간: "2026-11-30 ~ 2027-08-31", 마감일: "2027-08-31", 내용: null },
+        장기: { 기간: "2027-08-31 ~ 2029-08-31", 마감일: "2029-08-31", 내용: null },
+      })
+      expect(res.hasResultBody).toBe(false)
+    })
+
+    it("한 칸이라도 내용이 있으면 본문 있음이다", async () => {
+      const res = await fetchEmpty({
+        단기: { 기간: "2026-08-31 ~ 2026-11-30", 마감일: "2026-11-30", 내용: "SQL 포트폴리오 정리" },
+        중기: { 기간: "2026-11-30 ~ 2027-08-31", 마감일: "2027-08-31", 내용: null },
+        장기: { 기간: "2027-08-31 ~ 2029-08-31", 마감일: "2029-08-31", 내용: null },
+      })
+      expect(res.hasResultBody).toBe(true)
+    })
+
+    // 추천이 전부 걸러져도 화면은 그 사실을 안내한다 — 그릴 말이 남아 있으므로 본문이다.
+    it("걸러낸 추천만 남아도 본문 있음이다", async () => {
+      apiMock.get.mockResolvedValue(
+        envelope({
+          id: "ind-1",
+          status: "completed",
+          experience_id: "e1",
+          result: {
+            ...emptyBody,
+            action_plan: {},
+            removed_recommendations: [
+              { name: "사회분석사", category: "자격증", removed_reason: "실재하지 않는 자격증" },
+            ],
+          },
+        }),
+      )
+      const res = await getIndividualAnalysisResult("ind-1")
+      expect(res.hasResultBody).toBe(true)
+    })
+  })
 })
