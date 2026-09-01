@@ -79,10 +79,13 @@ export default function TableBlock({ block, readOnly, onChange }: TableBlockProp
       <span className="text-field-label text-text-primary">{block.label}</span>
 
       {val.columns.length === 0 ? (
-        <div className="flex gap-2">
+        // 아래 '행 추가 / 열 추가' 줄과 같은 이유로 줄어들 수 있어야 한다 — `flex-1` 만으로는
+        // 부족하다. flex 항목의 기본 `min-width: auto` 때문에 `<input>` 은 기본 size(20자)의
+        // 고유 너비 아래로 못 줄어들고, 그 아래에서 '열 추가' 버튼과 함께 칸을 넘친다.
+        <div className="flex flex-wrap gap-2">
           <input
             type="text"
-            className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+            className="h-9 min-w-0 flex-1 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
             placeholder="첫 번째 열 이름..."
             value={newCol}
             onChange={e => setNewCol(e.target.value)}
