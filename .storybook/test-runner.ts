@@ -51,12 +51,6 @@ const config: TestRunnerConfig = {
   },
   async postVisit(page, context) {
     const errors = errorsByPage.get(page) ?? [];
-    if (errors.length > 0) {
-      const detail = errors.map((e) => e.message || String(e)).join("\n");
-      throw new Error(
-        `"${context.title} / ${context.name}" 스토리에서 잡히지 않은 런타임 예외 ${errors.length}건 발생:\n${detail}`,
-      );
-    }
 
     // FRT-338: 글자를 키우고 전역 word-break: keep-all 을 걸면 좁은 칸이 넓어지거나
     // 고정 높이 컨테이너(h-[44px] 등)가 넘칠 수 있다. 저장소에 비주얼 스냅숏 인프라가 없어
@@ -72,8 +66,12 @@ const config: TestRunnerConfig = {
       // 재는 시점을 폰트 로딩 뒤로 고정해 게이트를 동전 던지기에서 꺼낸다.
       await document.fonts.ready;
 
+      // 스크롤 루트(html·body)를 함께 본다. 스토리 내용이 화면을 통째로 밀어내면 자손들은
+      // 저마다 scrollWidth === clientWidth 로 멀쩡해 보이고, 넘치는 건 루트뿐이다.
+      // "body *" 만 훑으면 이 게이트가 잡으려던 바로 그 경우가 빠져나간다.
+      const roots: HTMLElement[] = [document.documentElement, document.body];
       const bad: string[] = [];
-      for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
+      for (const el of [...roots, ...Array.from(document.querySelectorAll<HTMLElement>("body *"))]) {
         // 스스로 스크롤·숨김을 처리하는 요소는 넘쳐도 정상이다.
         if (getComputedStyle(el).overflowX !== "visible") continue;
         // 1px 여유: 소수점 레이아웃에서 반올림으로 생기는 오탐을 거른다.
@@ -86,6 +84,17 @@ const config: TestRunnerConfig = {
       }
       return bad.slice(0, 10);
     }, tolerance);
+
+    // 예외 검사는 **측정이 끝난 뒤** 한다. 위에서 document.fonts.ready 를 기다리는 동안, 또는 그
+    // 평가가 도는 동안 터진 예외도 이 스토리의 것이다 — 대기 앞에서만 보면 그 창이 통째로 샌다.
+    // 넘침보다 먼저 던진다: 예외는 화면이 제대로 그려지지 않았다는 더 근본적인 신호다.
+    if (errors.length > 0) {
+      const detail = errors.map((e) => e.message || String(e)).join("\n");
+      throw new Error(
+        `"${context.title} / ${context.name}" 스토리에서 잡히지 않은 런타임 예외 ${errors.length}건 발생:\n${detail}`,
+      );
+    }
+
     if (overflows.length > 0) {
       throw new Error(
         `"${context.title} / ${context.name}" 스토리에서 가로 넘침 ${overflows.length}건:\n${overflows.join("\n")}`,
