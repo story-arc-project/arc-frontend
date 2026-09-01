@@ -17,6 +17,8 @@ import type {
   IndividualSynergyRecommendation,
   IndividualStarFormat,
   IndividualActionPlan,
+  ActionPlanBucket,
+  IndividualRemovedRecommendation,
   WeaknessSeverity,
   StrengthLevel,
   SynergyPriority,
@@ -174,6 +176,12 @@ const MAX_RESULT_NESTING = 4;
 const KNOWN_SCHEMA_VERSIONS = new Set([
   "keyword/4.1",
   "individual/1.0",
+  // individual/1.2 는 result 구조가 바뀌었지만(action_plan 객체화, applicable_roles 이동)
+  // 매퍼가 두 형태를 모두 눕히므로 1.0 과 같은 화면으로 렌더된다. 1.1 은 프런트가 실물을
+  // 본 적이 없으나 1.0 → 1.2 사이의 중간본이므로 함께 연다 — 화이트리스트에 없으면 상세가
+  // 통째로 안내로 빠지기 때문이다(PR #196 이 comprehensive/2.0 에서 겪은 실패).
+  "individual/1.1",
+  "individual/1.2",
   // comprehensive/1.0 은 구 레코드 호환용으로 유지한다 — 1.0 payload 엔 strength_diagnosis 가
   // 없지만 매퍼가 부재를 빈 구조로 안전 처리하므로 렌더된다.
   "comprehensive/1.0",
@@ -601,12 +609,42 @@ function mapStarAnalysisStatus(dto: unknown): StarAnalysisStatus {
 /**
  * action_plan 키는 백엔드 표기에 따라 short_term/mid_term/long_term 또는 한글 키일 수 있다.
  */
+/**
+ * 액션 플랜 한 칸을 `{ period, deadline, content }` 로 눕힌다.
+ *
+ * 개별분석 v1.2 는 객체 `{ 기간, 마감일, 내용 }` 를 보내고(백엔드 `normalize_time_fields()`),
+ * v1.0 레코드와 종합분석은 여전히 문자열을 보낸다. 값의 **모양**으로 갈라 한 형태로 모은다 —
+ * 버전 키로 분기하지 않는 이유는 result 에 schema_version 이 없는 응답이 실재하기 때문이다.
+ */
+function mapActionPlanBucket(value: unknown): ActionPlanBucket {
+  if (typeof value === "string") {
+    return { period: "", deadline: "", content: value };
+  }
+  const r = asRecord(value);
+  return {
+    period: asString(r.period ?? r["기간"]),
+    deadline: asString(r.deadline ?? r["마감일"]),
+    // 백엔드는 모델이 칸을 못 채우면 내용을 null 로 둔다. asString 이 빈 문자열로 받는다.
+    content: asString(r.content ?? r["내용"]),
+  };
+}
+
 function mapActionPlan(dto: unknown): IndividualActionPlan {
   const r = asRecord(dto);
   return {
-    shortTerm: asString(r.shortTerm ?? r.short_term ?? r["단기"]),
-    midTerm: asString(r.midTerm ?? r.mid_term ?? r["중기"]),
-    longTerm: asString(r.longTerm ?? r.long_term ?? r["장기"]),
+    shortTerm: mapActionPlanBucket(r.shortTerm ?? r.short_term ?? r["단기"]),
+    midTerm: mapActionPlanBucket(r.midTerm ?? r.mid_term ?? r["중기"]),
+    longTerm: mapActionPlanBucket(r.longTerm ?? r.long_term ?? r["장기"]),
+  };
+}
+
+/** v1.2 `removed_recommendations`. 제거된 항목이 없으면 백엔드가 null 을 보낸다(`removed or None`). */
+function mapRemovedRecommendation(dto: unknown): IndividualRemovedRecommendation {
+  const r = asRecord(dto);
+  return {
+    name: asString(r.name),
+    category: asString(r.category),
+    removedReason: asString(r.removedReason ?? r.removed_reason),
   };
 }
 
@@ -641,6 +679,7 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
       marketValue: asString(deep.marketValue ?? deep.market_value),
     },
     starFormat: mapStarFormat(body.starFormat ?? body.star_format),
+    starNote: asString(body.starNote ?? body.star_note),
     itemStrengths: mapItemStrengths(body.itemStrengths ?? body.item_strengths),
     itemDiagnosis: {
       oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
@@ -653,6 +692,9 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
     synergyRecommendations: asArray(
       body.synergyRecommendations ?? body.synergy_recommendations,
     ).map(mapSynergy),
+    removedRecommendations: asArray(
+      body.removedRecommendations ?? body.removed_recommendations,
+    ).map(mapRemovedRecommendation),
     actionPlan: mapActionPlan(body.actionPlan ?? body.action_plan),
     missingInfoWarning: asString(body.missingInfoWarning ?? body.missing_info_warning),
   };

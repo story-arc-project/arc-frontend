@@ -2273,3 +2273,127 @@ describe("개별분석 — 백엔드가 보내는데 화면에 안 닿던 값들
     })
   })
 })
+
+// ─── 개별분석 스키마 v1.0 → v1.2 ────────────────────────────
+// 백엔드가 v1.2 에서 후처리(`postprocess_result` / `normalize_time_fields`)를 붙이면서
+// 두 가지가 달라졌다. 여기서 고정하는 것은 "두 형태가 한 매퍼를 통과하는가"다.
+//   1. action_plan 의 각 칸이 문자열 → { 기간, 마감일, 내용 } 객체
+//   2. applicable_roles 가 최상위 → deep_analysis 안 (위 FRT-271 블록이 이미 양쪽을 덮는다)
+// v1.0 형태는 이미 저장된 레코드로 계속 살아 있으므로 하위호환을 함께 못 박는다.
+describe("개별분석 스키마 v1.2", () => {
+  const bodyWith = (extra: Record<string, unknown>) => ({
+    item_name: "데이터 분석 인턴",
+    item_type: "인턴십",
+    brief_summary: "",
+    deep_analysis: { career_value: "", market_value: "" },
+    star_format: {},
+    item_diagnosis: {},
+    synergy_recommendations: [],
+    action_plan: {},
+    missing_info_warning: "",
+    ...extra,
+  })
+
+  const fetchDetail = async (extra: Record<string, unknown>) => {
+    apiMock.get.mockResolvedValue(
+      envelope({ id: "ind-1", status: "completed", experience_id: "e1", result: bodyWith(extra) }),
+    )
+    return getIndividualAnalysisResult("ind-1")
+  }
+
+  describe("action_plan — 문자열(v1.0)에서 객체(v1.2)로", () => {
+    it("v1.2 객체의 내용·기간·마감일을 읽는다", async () => {
+      const res = await fetchDetail({
+        action_plan: {
+          단기: { 기간: "2026-08-31 ~ 2026-11-30", 마감일: "2026-11-30", 내용: "SQL 포트폴리오 정리" },
+          중기: { 기간: "2026-11-30 ~ 2027-08-31", 마감일: "2027-08-31", 내용: "실무 프로젝트 1건" },
+          장기: { 기간: "2027-08-31 ~ 2029-08-31", 마감일: "2029-08-31", 내용: "데이터 직무 전환" },
+        },
+      })
+      expect(res.result.actionPlan.shortTerm).toEqual({
+        period: "2026-08-31 ~ 2026-11-30",
+        deadline: "2026-11-30",
+        content: "SQL 포트폴리오 정리",
+      })
+      expect(res.result.actionPlan.midTerm.content).toBe("실무 프로젝트 1건")
+      expect(res.result.actionPlan.longTerm.deadline).toBe("2029-08-31")
+    })
+
+    // v1.0 레코드는 DB 에 그대로 남아 있다. 문자열이 오면 그 자체가 내용이다.
+    it("v1.0 문자열이 오면 내용으로 읽고 기간·마감일은 비운다", async () => {
+      const res = await fetchDetail({
+        action_plan: { 단기: "3개월 이내 SQL 학습", 중기: "6개월~1년", 장기: "1년 이상" },
+      })
+      expect(res.result.actionPlan.shortTerm).toEqual({
+        period: "",
+        deadline: "",
+        content: "3개월 이내 SQL 학습",
+      })
+      expect(res.result.actionPlan.longTerm.content).toBe("1년 이상")
+    })
+
+    // 백엔드는 모델이 칸을 못 채우면 내용을 null 로 둔다(normalize_time_fields).
+    // 기간·마감일만 남은 칸을 "행동이 있다"고 그리면 빈 카드가 된다.
+    it("내용이 null 이면 기간·마감일이 있어도 내용은 빈 문자열이다", async () => {
+      const res = await fetchDetail({
+        action_plan: { 단기: { 기간: "2026-08-31 ~ 2026-11-30", 마감일: "2026-11-30", 내용: null } },
+      })
+      expect(res.result.actionPlan.shortTerm.content).toBe("")
+      expect(res.result.actionPlan.shortTerm.deadline).toBe("2026-11-30")
+    })
+
+    it("action_plan 자체가 없으면 세 칸 모두 빈 값이다", async () => {
+      const res = await fetchDetail({})
+      expect(res.result.actionPlan.shortTerm).toEqual({ period: "", deadline: "", content: "" })
+      expect(res.result.actionPlan.midTerm.content).toBe("")
+    })
+  })
+
+  describe("star_note — STAR 를 못 만든 이유", () => {
+    it("star_note 를 읽는다", async () => {
+      const res = await fetchDetail({
+        star_note: "기간·성과 수치가 없어 STAR 로 정리하기 어려워요.",
+      })
+      expect(res.result.starNote).toBe("기간·성과 수치가 없어 STAR 로 정리하기 어려워요.")
+    })
+
+    // 충분히 채워졌으면 백엔드가 null 을 보낸다 — 부재는 빈 문자열이다.
+    it("null 이면 빈 문자열이다", async () => {
+      const res = await fetchDetail({ star_note: null })
+      expect(res.result.starNote).toBe("")
+    })
+  })
+
+  describe("removed_recommendations — 검증에서 걸러낸 추천", () => {
+    it("이름·분류·사유를 읽는다", async () => {
+      const res = await fetchDetail({
+        removed_recommendations: [
+          { name: "사회분석사", category: "자격증", removed_reason: "실재하지 않는 자격증명" },
+        ],
+      })
+      expect(res.result.removedRecommendations).toEqual([
+        { name: "사회분석사", category: "자격증", removedReason: "실재하지 않는 자격증명" },
+      ])
+    })
+
+    // 제거된 항목이 없으면 백엔드는 배열이 아니라 null 을 보낸다(`removed or None`).
+    it("null 이면 빈 배열이다", async () => {
+      const res = await fetchDetail({ removed_recommendations: null })
+      expect(res.result.removedRecommendations).toEqual([])
+    })
+  })
+
+  // 화이트리스트에 없으면 상세가 통째로 "표시할 수 없습니다"로 빠진다(계약 §3.5).
+  it("schema_version individual/1.2 가 명시돼도 렌더한다", async () => {
+    apiMock.get.mockResolvedValue(
+      envelope({
+        id: "ind-1",
+        status: "completed",
+        experience_id: "e1",
+        result: { ...bodyWith({}), schema_version: "individual/1.2" },
+      }),
+    )
+    const res = await getIndividualAnalysisResult("ind-1")
+    expect(res.result.itemName).toBe("데이터 분석 인턴")
+  })
+})

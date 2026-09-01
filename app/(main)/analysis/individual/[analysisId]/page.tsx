@@ -174,7 +174,7 @@ export default function IndividualAnalysisDetailPage() {
 
         <DeepAnalysisSection deep={result.deepAnalysis} />
 
-        <StarFormatSection star={result.starFormat} />
+        <StarFormatSection star={result.starFormat} note={result.starNote} />
 
         {/* 강점 → 진단(약점) 순서. 백엔드 프롬프트의 앵커링 저항 원칙과 같은 배치이며,
             종합분석 상세도 strength_diagnosis 를 critical_diagnosis 앞에 둔다. */}
@@ -182,7 +182,10 @@ export default function IndividualAnalysisDetailPage() {
 
         <ItemDiagnosisSection diagnosis={result.itemDiagnosis} />
 
-        <SynergySection items={result.synergyRecommendations} />
+        <SynergySection
+          items={result.synergyRecommendations}
+          removed={result.removedRecommendations}
+        />
 
         <ActionPlanSection plan={result.actionPlan} />
       </div>
@@ -228,8 +231,10 @@ function DeepAnalysisSection({
 
 function StarFormatSection({
   star,
+  note,
 }: {
   star: IndividualAnalysisResult["result"]["starFormat"];
+  note: IndividualAnalysisResult["result"]["starNote"];
 }) {
   const fields = [
     { label: "S · 상황", value: star.situation },
@@ -237,7 +242,23 @@ function StarFormatSection({
     { label: "A · 행동", value: star.action },
     { label: "R · 결과", value: star.result },
   ];
-  if (!star.title && fields.every((f) => !f.value)) return null;
+  const isEmpty = !star.title && fields.every((f) => !f.value);
+
+  // v1.2 신설. STAR 를 못 만들었을 때 사유가 오면 빈 화면 대신 그 문장을 그린다 —
+  // 사유도 없이 비었으면 종전대로 섹션을 접는다(조용한 빈 카드 금지).
+  if (isEmpty) {
+    if (!note) return null;
+    return (
+      <section className="space-y-3">
+        <h2 className="text-title text-text-primary">STAR 정리</h2>
+        <div className="bg-surface-secondary rounded-lg p-4">
+          <p className="text-body-sm text-text-secondary leading-relaxed whitespace-pre-line">
+            {note}
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-3">
@@ -255,6 +276,12 @@ function StarFormatSection({
           </div>
         ))}
       </div>
+      {/* 일부 칸만 찼을 때도 사유가 오면 "무엇을 더 적으면 되는지"를 함께 알려준다. */}
+      {note && (
+        <p className="text-caption text-text-tertiary leading-relaxed whitespace-pre-line">
+          {note}
+        </p>
+      )}
     </section>
   );
 }
@@ -444,8 +471,10 @@ const priorityVariant: Record<SynergyPriority, "brand" | "default" | "outline"> 
 
 function SynergySection({
   items,
+  removed,
 }: {
   items: IndividualAnalysisResult["result"]["synergyRecommendations"];
+  removed: IndividualAnalysisResult["result"]["removedRecommendations"];
 }) {
   if (items.length === 0) return null;
   return (
@@ -472,6 +501,13 @@ function SynergySection({
           </li>
         ))}
       </ul>
+      {/* v1.2 신설. 추천이 적어 보이는 이유를 말해준다. 걸러낸 자격증명 자체는 적지 않는다 —
+          실재하지 않는 이름을 추천 자리에 되살리지 않기 위해서다. */}
+      {removed.length > 0 && (
+        <p className="text-caption text-text-tertiary">
+          실재 여부를 확인하지 못한 추천 {removed.length}건은 빼고 보여드려요.
+        </p>
+      )}
     </section>
   );
 }
@@ -481,23 +517,35 @@ function ActionPlanSection({
 }: {
   plan: IndividualAnalysisResult["result"]["actionPlan"];
 }) {
-  const buckets: { label: string; value: string }[] = [
-    { label: "단기", value: plan.shortTerm },
-    { label: "중기", value: plan.midTerm },
-    { label: "장기", value: plan.longTerm },
-  ].filter((b) => b.value);
+  // 내용이 있는 칸만 그린다. v1.2 는 내용이 비어도 기간·마감일을 채워 보내므로
+  // 기간만 있는 칸을 살리면 "행동은 없는데 마감일만 있는" 빈 카드가 남는다.
+  const buckets = [
+    { label: "단기", bucket: plan.shortTerm },
+    { label: "중기", bucket: plan.midTerm },
+    { label: "장기", bucket: plan.longTerm },
+  ].filter((b) => b.bucket.content);
   if (buckets.length === 0) return null;
 
   return (
     <section className="space-y-3">
       <h2 className="text-title text-text-primary">액션 플랜</h2>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {buckets.map((b) => (
-          <div key={b.label} className="bg-surface border border-border rounded-lg p-4 space-y-2">
-            <p className="text-label text-brand font-medium">{b.label}</p>
+        {buckets.map(({ label, bucket }) => (
+          <div key={label} className="bg-surface border border-border rounded-lg p-4 space-y-2">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <p className="text-label text-brand font-medium">{label}</p>
+              {/* v1.2 신설. 백엔드가 계산한 절대 기간이라 "3개월 이내" 같은 상대 표현과 달리
+                  사용자가 달력에 그대로 옮길 수 있다. v1.0 레코드에는 없어 조건부로 그린다. */}
+              {bucket.period && (
+                <p className="text-caption text-text-tertiary">{bucket.period}</p>
+              )}
+            </div>
             <p className="text-body-sm text-text-secondary leading-relaxed whitespace-pre-line">
-              {b.value}
+              {bucket.content}
             </p>
+            {bucket.deadline && (
+              <p className="text-caption text-text-tertiary">마감 {bucket.deadline}</p>
+            )}
           </div>
         ))}
       </div>

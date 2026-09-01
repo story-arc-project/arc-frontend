@@ -1023,10 +1023,13 @@ function ActionPlanBlock({
 }: {
   plan: ComprehensiveAnalysisResult["actionPlan"];
 }) {
+  // 액션 플랜 한 칸은 개별분석 v1.2 를 따라 { period, deadline, content } 객체다.
+  // 종합분석 백엔드는 아직 문자열만 보내므로 매퍼가 content 에 담아 준다 — 여기서는
+  // 기간·마감일을 그리지 않는다(값이 늘 비어 있어 그려도 빈 줄만 남는다).
   const buckets: { label: string; value: string }[] = [
-    { label: "단기", value: plan.shortTerm },
-    { label: "중기", value: plan.midTerm },
-    { label: "장기", value: plan.longTerm },
+    { label: "단기", value: plan.shortTerm.content },
+    { label: "중기", value: plan.midTerm.content },
+    { label: "장기", value: plan.longTerm.content },
   ].filter((b) => b.value);
   if (buckets.length === 0) return null;
   return (
