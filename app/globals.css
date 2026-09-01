@@ -108,6 +108,13 @@ body {
   color: var(--color-text-primary);
   background-color: var(--color-surface);
   min-height: 100vh;
+
+  /* FRT-338: 한글은 브라우저 기본 줄바꿈이 CJK 규칙이라 어절 중간에서 갈린다
+     ("가독성을" → "가독"/"성을"). keep-all 로 낱말을 통째로 다음 줄에 넘긴다.
+     둘은 반드시 함께 간다 — keep-all 만 걸면 칸보다 긴 낱말(URL 등)이 칸을 넘치므로
+     break-word 가 그때만 잘라 주는 안전망 노릇을 한다. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 /* ── Typography scale ─────────────────────────────────────── */
@@ -126,72 +133,113 @@ body {
 }
 
 .text-heading-2 {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 700;
   line-height: 1.3;
   letter-spacing: -0.01em;
 }
 
 .text-heading-3 {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
   line-height: 1.35;
 }
 
 .text-title {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
   line-height: 1.4;
 }
 
 .text-body-lg {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 400;
   line-height: 1.6;
 }
 
 .text-body {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 400;
   line-height: 1.6;
 }
 
 .text-body-sm {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   line-height: 1.55;
 }
 
 .text-caption {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 1.5;
   color: var(--color-text-secondary);
 }
 
+/* 긴 서술형 문단 전용 — 훑는 글이 아니라 '읽는' 글에만 쓴다(분석 상세의 요약·진단 등).
+   .text-body 와 나누는 이유: 본문 616곳을 전부 이 조판으로 바꿀 수는 없다. 카드·목록엔 과하다.
+
+   line-height 를 여기 두는 것은 의도적이다. 호출부에서 Tailwind 의 leading-* 로 행간을 넓히려던
+   시도가 61곳 있었는데 전부 무효였다 — .text-body 같은 unlayered 규칙이 @layer utilities 의
+   유틸리티를 이기기 때문이다(FRT-338 에서 빌드 CSS 로 실측). 그러니 조판은 클래스가 책임진다. */
+.text-prose {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.8;
+  color: var(--color-text-primary);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
 .text-label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.4;
 }
 
+/* 폼의 질문(라벨)과 답(입력값)을 갈라 세운다 — 크기 18 vs 16, 굵기 600 vs 400.
+   20px 은 쓸 수 없다: 섹션 제목(.text-title)이 20px 이라 필드 라벨과 같아져 폼 구조가 무너진다.
+   공유 Input·Textarea·DatePicker·PeriodPicker 와 아카이브 블록 18곳이 이 한 클래스를 쓴다. */
 .text-field-label {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
   line-height: 1.4;
 }
 
-/* 아카이빙 입력 폼 "값 입력"만 14px — Notion 확정본(입력값 14px)을 아카이빙 한정 채택(FRT-146 C안).
-   입력값은 공유 Input/Textarea 의 .text-body(15px)로 렌더되는데 그건 전역이라 못 바꾼다.
-   폼 섹션 래퍼(.archive-input-14)에서 하위 input/textarea/select 를 눌러쓴다.
+/* 큰 제목만 폰에서 줄인다. 48px 디스플레이는 데스크톱에선 시원하지만 폰에선 세 줄로 깨진다.
+   본문·라벨·캡션은 가르지 않는다 — CSS px 는 기준 시청 거리에서의 각크기로 정의된 단위라
+   폰과 데스크톱의 체감 크기가 비슷하다. 갈라야 하는 건 크기가 아니라 큰 제목이다.
+   랜딩이 이미 쓰는 sm:text-[Npx] 패턴을 앱 제목으로 넓히는 것뿐이다.
+   경계는 Tailwind 의 sm(640px) 아래 — 랜딩과 같은 기준을 쓴다. */
+@media (max-width: 639px) {
+  .text-display {
+    font-size: 32px;
+  }
+
+  .text-heading-1 {
+    font-size: 28px;
+  }
+
+  .text-heading-2 {
+    font-size: 26px;
+  }
+}
+
+/* 아카이빙 입력 폼의 "값 입력" 크기. 폼 섹션 래퍼(.archive-input-14)에서 하위 input/textarea/select 를 눌러쓴다.
    .text-body 와 같은 unlayered 규칙이라 레이어가 아니라 특이도(0,1,1 > 0,1,0)로 이긴다 — !important 불필요.
-   값이 아닌 두 컨트롤은 제외: ① 사용자 섹션 제목 편집 input(.text-title, 18px) ② 블록 설정 다이얼로그. */
+   값이 아닌 두 컨트롤은 제외: ① 사용자 섹션 제목 편집 input(.text-title) ② 블록 설정 다이얼로그.
+
+   FRT-338 에서 14px → 16px. 클래스 이름의 "14" 는 FRT-146 당시 값에서 온 역사적 흔적이다.
+   16px 미만이면 iOS Safari 가 포커스 순간 화면을 자동 확대한다 — 아이폰에서 경험을 기록할 때마다
+   화면이 튀고 있었다. 이 값을 다시 16px 아래로 내리면 그 증상이 되살아난다. */
 .archive-input-14 input:not(.text-title),
 .archive-input-14 textarea,
 .archive-input-14 select {
-  font-size: 14px;
+  font-size: 16px;
 }
-/* 블록 설정 다이얼로그(role="dialog")는 값 입력이 아니므로 원래 크기(text-body-sm 13px) 유지.
+/* 블록 설정 다이얼로그(role="dialog")는 값 입력이 아니므로 원래 크기(13px) 유지 — FRT-338 스케일
+   상향(.text-body-sm 13→14px) 대상에서 제외했다. 값을 13px 로 고정한 것은 의도적이며, .text-body-sm
+   과는 더 이상 같은 값이 아니다(13px vs 14px).
    위 규칙과 같은 특이도(0,2,1)라 뒤에 두어 다이얼로그 안에서만 되돌린다. */
 .archive-input-14 [role="dialog"] input,
 .archive-input-14 [role="dialog"] textarea,

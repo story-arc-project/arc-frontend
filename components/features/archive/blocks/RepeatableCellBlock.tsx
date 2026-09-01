@@ -301,7 +301,7 @@ export default function RepeatableCellBlock({ block, readOnly, onChange }: Repea
 
       {/* 블록 레벨 가이드 — 라벨과 입력 사이(컬럼 레벨 가이드와 별개). */}
       {block.guide && (
-        <p className="text-caption text-text-tertiary">{block.guide}</p>
+        <p className="text-caption">{block.guide}</p>
       )}
 
       {/* Column configuration (when no columns or for management) */}

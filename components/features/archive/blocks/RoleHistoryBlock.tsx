@@ -188,7 +188,7 @@ export default function RoleHistoryBlock({ block, readOnly, onChange }: RoleHist
   return (
     <div className="flex flex-col gap-2 rounded-lg bg-surface-secondary p-4">
       <span className="text-field-label text-text-primary">{block.label}</span>
-      {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
+      {block.guide && <p className="text-caption">{block.guide}</p>}
 
       <div className="flex flex-col gap-2">
         {displayRows.map(row => (

@@ -82,7 +82,7 @@ export default function MoodTagBlock({ block, readOnly, onChange }: MoodTagBlock
   return (
     <fieldset className="flex flex-col gap-1.5">
       <legend className="text-field-label text-text-primary">{block.label}</legend>
-      {block.guide && <p className="text-caption text-text-tertiary mb-1">{block.guide}</p>}
+      {block.guide && <p className="text-caption mb-1">{block.guide}</p>}
       <div className="flex flex-wrap gap-2">
         {options.map(option => {
           const selected = checked.includes(option)

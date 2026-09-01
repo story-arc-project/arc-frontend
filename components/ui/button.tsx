@@ -27,9 +27,11 @@ const variantClasses: Record<ButtonVariant, string> = {
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: "h-9 px-4 text-[13px] font-medium rounded-sm",
-  md: "h-11 px-5 text-[15px] font-semibold rounded-md",
-  lg: "h-14 px-6 text-[17px] font-semibold rounded-lg",
+  // FRT-338: globals.css 밖에 있는 값이라 스케일 상향 때 함께 올려야 한다.
+  // 본문(.text-body)이 16px 이므로 기본 버튼(md)이 그보다 작으면 위계가 역전된다.
+  sm: "h-9 px-4 text-[14px] font-medium rounded-sm",
+  md: "h-11 px-5 text-[16px] font-semibold rounded-md",
+  lg: "h-14 px-6 text-[18px] font-semibold rounded-lg",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(

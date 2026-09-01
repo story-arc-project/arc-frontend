@@ -79,10 +79,13 @@ export default function TableBlock({ block, readOnly, onChange }: TableBlockProp
       <span className="text-field-label text-text-primary">{block.label}</span>
 
       {val.columns.length === 0 ? (
-        <div className="flex gap-2">
+        // 아래 '행 추가 / 열 추가' 줄과 같은 이유로 줄어들 수 있어야 한다 — `flex-1` 만으로는
+        // 부족하다. flex 항목의 기본 `min-width: auto` 때문에 `<input>` 은 기본 size(20자)의
+        // 고유 너비 아래로 못 줄어들고, 그 아래에서 '열 추가' 버튼과 함께 칸을 넘친다.
+        <div className="flex flex-wrap gap-2">
           <input
             type="text"
-            className="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+            className="h-9 min-w-0 flex-1 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
             placeholder="첫 번째 열 이름..."
             value={newCol}
             onChange={e => setNewCol(e.target.value)}
@@ -137,15 +140,25 @@ export default function TableBlock({ block, readOnly, onChange }: TableBlockProp
             </table>
           </div>
 
-          <div className="flex gap-2">
+          {/*
+            이 줄의 자식은 셋 다 줄어들 수 없다 — 버튼 둘은 내용 너비고, `<input>` 은 폭 지정이
+            없어 기본 size(20자)의 고유 너비를 그대로 차지한다. 그래서 글자가 예상보다 넓어지면
+            줄이 통째로 칸을 넘친다. FRT-338 의 스케일 상향(입력 14→16px·버튼 13→14px)이 이 줄을
+            23px 넓혀 여유를 거의 다 썼고, 한글 폴백 폰트로 그려지는 환경(Pretendard 도착 전,
+            윈도우·안드로이드)에서는 실제로 넘쳤다.
+
+            `flex-wrap` 으로 오른쪽 묶음이 다음 줄로 내려가게 하고, `min-w-0` 으로 입력칸이
+            줄어들 수 있게 한다. 자리가 넉넉할 때의 모습은 그대로다.
+          */}
+          <div className="flex flex-wrap gap-2">
             <Button type="button" variant="ghost" size="sm" onClick={addRow} className="self-start">
               <Plus size={16} className="mr-1" />
               행 추가
             </Button>
-            <div className="flex gap-2 ml-auto">
+            <div className="flex gap-2 ml-auto min-w-0">
               <input
                 type="text"
-                className="h-9 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+                className="h-9 min-w-0 rounded-md border border-border bg-surface px-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
                 placeholder="열 추가..."
                 value={newCol}
                 onChange={e => setNewCol(e.target.value)}
