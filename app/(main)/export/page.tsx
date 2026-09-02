@@ -42,7 +42,7 @@ export default function ExportPage() {
         <header>
           <h1 className="text-heading-2 text-text-primary">익스포트</h1>
           <p className="text-body text-text-secondary mt-1">
-            기록한 경험으로 레쥬메와 자기소개서 같은 결과물을 만들어요.
+            기록한 경험으로 이력서와 자기소개서 같은 결과물을 만들어요.
           </p>
         </header>
 
@@ -50,11 +50,11 @@ export default function ExportPage() {
           <h2 className="text-title text-text-primary mb-3">무엇을 만들까요?</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <TrackCard
-              title="레쥬메"
+              title="이력서"
               description="경험을 바탕으로 이력서 초안을 만들어요."
               icon={<FileText size={20} />}
               onClick={() => setCreateOpen(true)}
-              actionLabel="새 레쥬메 만들기"
+              actionLabel="새 이력서 만들기"
             />
             {/* 게이트는 호출부인 이 페이지가 쥔다(FRT-108 교훈). 백엔드(BAC-62)에 자소서
                 파이프라인이 아직 없어 기본은 잠긴 카드 그대로다. */}
@@ -96,7 +96,7 @@ export default function ExportPage() {
 
         <section>
           <div className="flex items-baseline justify-between mb-3">
-            <h2 className="text-title text-text-primary">최근 만든 레쥬메</h2>
+            <h2 className="text-title text-text-primary">최근 만든 이력서</h2>
           </div>
           <RecentResumeList
             onCreateClick={() => setCreateOpen(true)}

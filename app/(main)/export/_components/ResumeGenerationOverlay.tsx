@@ -78,7 +78,7 @@ export function ResumeGenerationOverlay({ open }: ResumeGenerationOverlayProps) 
             </div>
 
             <p className="text-caption text-white/70 max-w-xs">
-              AI가 레쥬메를 만드는 데 5~30초 정도 걸릴 수 있어요.
+              AI가 이력서를 만드는 데 5~30초 정도 걸릴 수 있어요.
             </p>
           </div>
         </motion.div>

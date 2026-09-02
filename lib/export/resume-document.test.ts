@@ -211,7 +211,7 @@ describe("buildResumeDocument — 섹션 선별", () => {
     ]);
   });
 
-  it("영문 레쥬메는 같은 순서를 영문 제목으로 낸다 (FRT-147)", () => {
+  it("영문 이력서는 같은 순서를 영문 제목으로 낸다 (FRT-147)", () => {
     const titles = sectionTitles(
       emptyResume({
         meta: {
@@ -364,7 +364,7 @@ describe("buildResumeDocument — 경력", () => {
     expect(entry.meta).toBe("2025-09 – 현재");
   });
 
-  it("영문 레쥬메는 진행 중인 기간을 'Present' 로 닫는다 (FRT-147)", () => {
+  it("영문 이력서는 진행 중인 기간을 'Present' 로 닫는다 (FRT-147)", () => {
     // 섹션 제목만 영문화하면 기간 오른쪽에 "2025-09 – 현재" 가 남아, 영문 CV 한복판에
     // 한국어가 한 단어 박힌다. 종료 라벨도 라벨 표를 따라야 한다.
     const [entry] = buildResumeDocument(
@@ -551,7 +551,7 @@ describe("buildResumeDocument — 나머지 섹션", () => {
 });
 
 describe("buildResumeDocument — 실제 데이터", () => {
-  it("데모 레쥬메의 모든 섹션이 항목을 갖는다", () => {
+  it("데모 이력서의 모든 섹션이 항목을 갖는다", () => {
     const doc = buildResumeDocument(seedResume);
 
     expect(doc.sections.length).toBeGreaterThan(0);

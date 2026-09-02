@@ -234,10 +234,10 @@ export default function ResumeDetailPage({ params }: PageProps) {
   }, [resume]);
 
   const versionLabel = useMemo(() => {
-    if (!resume) return "레쥬메";
+    if (!resume) return "이력서";
     const shortId = versionId.slice(0, 8);
     const lang = resume.meta.language === "en" ? "🇺🇸" : "🇰🇷";
-    return `레쥬메 #${shortId} ${lang}`;
+    return `이력서 #${shortId} ${lang}`;
   }, [resume, versionId]);
 
   // 편집기의 onChange 를 그대로 setResume 에 넘기지 않고 한 겹 감싼다 — 초안 대비 처음
@@ -331,7 +331,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
       const reason = !(err instanceof ApiError)
         ? null
         : err.status === 400
-          ? "아직 레쥬메를 만드는 중이에요. 완성되면 저장할 수 있어요."
+          ? "아직 이력서를 만드는 중이에요. 완성되면 저장할 수 있어요."
           : err.status > 400 && err.status < 500
             ? err.message
             : null;
@@ -385,7 +385,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
       clearDraft(versionId);
       setInitial(resume);
       // 서버가 새 id 를 주지 않아 새 버전으로 바로 갈 수 없다 — 목록에서 확인한다.
-      toast("레쥬메를 다시 만들고 있어요. 완료되면 목록에 표시돼요", "info");
+      toast("이력서를 다시 만들고 있어요. 완료되면 목록에 표시돼요", "info");
       router.push(`${basePath}/export`);
     } catch {
       toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
@@ -677,10 +677,10 @@ export default function ResumeDetailPage({ params }: PageProps) {
       <div className="flex min-h-[calc(100dvh-var(--gnb-h))] flex-col items-center justify-center gap-4 px-6 text-center">
         <h2 className="text-title text-text-primary">
           {isNotFound
-            ? "레쥬메를 찾을 수 없어요"
+            ? "이력서를 찾을 수 없어요"
             : notReady
               ? "아직 만들고 있어요"
-              : "레쥬메를 불러오지 못했어요"}
+              : "이력서를 불러오지 못했어요"}
         </h2>
         <p className="text-body-sm text-text-secondary">
           {isNotFound
