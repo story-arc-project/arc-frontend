@@ -300,11 +300,42 @@ export function individualDetail(): ApiSuccessResponse<Record<string, unknown>> 
         missingElements: ["정량 지표"],
         rewriteSuggestion: "성과를 수치로 보강하세요.",
       },
-      synergyRecommendations: [],
-      actionPlan: {
-        shortTerm: "성과 지표 정리",
-        midTerm: "추가 프로젝트 연계",
-        longTerm: "리더십 포트폴리오 구성",
+      synergy_recommendations: [
+        {
+          priority: 1,
+          category: "자격증",
+          name: "정보처리기사",
+          reason: "SW 직무 지원 시 서류 기본 요건을 채운다.",
+          expected_effect: "서류 통과율 상승",
+          estimated_duration: "3~6개월",
+        },
+      ],
+      // v1.2: 실재성 검증에서 걸러낸 추천. 화면은 개수만 알린다.
+      removed_recommendations: [
+        {
+          name: "사회분석사",
+          category: "자격증",
+          removed_reason: "실재하지 않는 자격증명",
+        },
+      ],
+      // v1.2: action_plan 각 칸이 문자열 → { 기간, 마감일, 내용 } 객체.
+      // 백엔드 normalize_time_fields() 가 절대 날짜를 덧씌운 형태를 그대로 흉내 낸다.
+      action_plan: {
+        단기: {
+          기간: "2026-09-01 ~ 2026-12-01",
+          마감일: "2026-12-01",
+          내용: "운영 성과를 이탈률·참여율 같은 수치로 정리해 기록에 추가하세요.",
+        },
+        중기: {
+          기간: "2026-12-01 ~ 2027-09-01",
+          마감일: "2027-09-01",
+          내용: "온보딩 설계 경험을 실제 팀 프로젝트 한 건에 적용해 재현되는지 확인하세요.",
+        },
+        장기: {
+          기간: "2027-09-01 ~ 2029-09-01",
+          마감일: "2029-09-01",
+          내용: "조직 운영 사례를 묶어 리더십 포트폴리오로 정리하세요.",
+        },
       },
       missingInfoWarning: "",
     },

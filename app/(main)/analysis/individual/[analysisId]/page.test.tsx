@@ -45,6 +45,7 @@ function emptyBody(): IndividualAnalysisResult["result"] {
       marketValue: "",
     },
     starFormat: { title: "", situation: "", task: "", action: "", result: "" },
+    starNote: "",
     itemStrengths: {
       hasGenuineStrengths: false,
       oneLineVerdict: "",
@@ -62,7 +63,12 @@ function emptyBody(): IndividualAnalysisResult["result"] {
       rewriteSuggestion: "",
     },
     synergyRecommendations: [],
-    actionPlan: { shortTerm: "", midTerm: "", longTerm: "" },
+    removedRecommendations: [],
+    actionPlan: {
+      shortTerm: { period: "", deadline: "", content: "" },
+      midTerm: { period: "", deadline: "", content: "" },
+      longTerm: { period: "", deadline: "", content: "" },
+    },
     missingInfoWarning: "",
   };
 }
@@ -270,5 +276,170 @@ describe("개별 분석 상세 — 강점·적합 직무·한계 (FRT-271)", () 
       strengthHeading.compareDocumentPosition(diagnosisHeading) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+});
+
+// ─── 스키마 v1.2 가 화면에 닿는가 ───────────────────────────
+describe("개별 분석 상세 — 스키마 v1.2", () => {
+  const bucket = (content: string, period = "", deadline = "") => ({
+    period,
+    deadline,
+    content,
+  });
+
+  it("액션 플랜의 절대 기간·마감일을 함께 보여준다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          actionPlan: {
+            shortTerm: bucket("SQL 포트폴리오 정리", "2026-09-01 ~ 2026-12-01", "2026-12-01"),
+            midTerm: bucket(""),
+            longTerm: bucket(""),
+          },
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    expect(await screen.findByText("SQL 포트폴리오 정리")).toBeInTheDocument();
+    expect(screen.getByText("2026-09-01 ~ 2026-12-01")).toBeInTheDocument();
+    expect(screen.getByText("마감 2026-12-01")).toBeInTheDocument();
+  });
+
+  // v1.0 레코드는 기간·마감일이 없다. 그 자리에 빈 줄이 남으면 안 된다.
+  it("기간·마감일이 없는 v1.0 레코드도 내용만으로 그린다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          actionPlan: {
+            shortTerm: bucket("3개월 이내 SQL 학습"),
+            midTerm: bucket(""),
+            longTerm: bucket(""),
+          },
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    expect(await screen.findByText("3개월 이내 SQL 학습")).toBeInTheDocument();
+    expect(screen.queryByText(/^마감 /)).not.toBeInTheDocument();
+  });
+
+  // 내용 없이 기간·마감일만 온 칸을 살리면 "행동은 없는데 마감일만 있는" 카드가 남는다.
+  it("내용이 빈 칸은 마감일이 있어도 그리지 않는다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          actionPlan: {
+            shortTerm: bucket("", "2026-09-01 ~ 2026-12-01", "2026-12-01"),
+            midTerm: bucket(""),
+            longTerm: bucket(""),
+          },
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    await screen.findByRole("heading", { name: "이력 분석" });
+    expect(screen.queryByRole("heading", { name: "액션 플랜" })).not.toBeInTheDocument();
+    expect(screen.queryByText("마감 2026-12-01")).not.toBeInTheDocument();
+  });
+
+  it("STAR 가 비어도 사유가 오면 이유를 보여준다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: { ...emptyBody(), starNote: "기간과 성과 수치가 없어 STAR 로 정리하기 어려워요." },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    expect(
+      await screen.findByText("기간과 성과 수치가 없어 STAR 로 정리하기 어려워요."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "STAR 정리" })).toBeInTheDocument();
+  });
+
+  // 사유도 없이 비었으면 종전대로 접는다 — 빈 카드를 만들지 않는다.
+  it("STAR 도 사유도 없으면 섹션을 접는다", async () => {
+    getResult.mockResolvedValue(result({ result: emptyBody() }));
+    render(<IndividualAnalysisDetailPage />);
+
+    await screen.findByRole("heading", { name: "이력 분석" });
+    expect(screen.queryByRole("heading", { name: "STAR 정리" })).not.toBeInTheDocument();
+  });
+
+  it("검증에서 걸러낸 추천이 있으면 개수를 알리되 이름은 적지 않는다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          synergyRecommendations: [
+            {
+              priority: "high",
+              category: "자격증",
+              name: "ADsP",
+              reason: "",
+              expectedEffect: "",
+              estimatedDuration: "",
+            },
+          ],
+          removedRecommendations: [
+            { name: "사회분석사", category: "자격증", removedReason: "실재하지 않는 자격증명" },
+          ],
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    expect(
+      await screen.findByText("실재 여부를 확인하지 못한 추천 1건은 빼고 보여드려요."),
+    ).toBeInTheDocument();
+    // 환각 자격증명을 추천 자리에 되살리지 않는다.
+    expect(screen.queryByText("사회분석사")).not.toBeInTheDocument();
+  });
+
+  // 전부 걸러진 경우가 이 안내가 가장 필요한 순간이다 — 추천이 하나도 없는 이유를
+  // 설명할 수 있는 유일한 자리인데, 목록이 비었다고 섹션을 접으면 그 말이 사라진다.
+  it("추천이 전부 걸러져도 안내를 보여준다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          synergyRecommendations: [],
+          removedRecommendations: [
+            { name: "사회분석사", category: "자격증", removedReason: "실재하지 않는 자격증명" },
+            { name: "빅데이터운용기사", category: "자격증", removedReason: "실재하지 않는 자격증명" },
+          ],
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    expect(
+      await screen.findByText("실재 여부를 확인하지 못한 추천 2건은 빼고 보여드려요."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("시너지 추천 활동")).toBeInTheDocument();
+    // 걸러낸 이름은 여전히 적지 않는다.
+    expect(screen.queryByText("사회분석사")).not.toBeInTheDocument();
+  });
+
+  it("추천도 걸러낸 것도 없으면 섹션 자체가 없다", async () => {
+    getResult.mockResolvedValue(
+      result({
+        result: {
+          ...emptyBody(),
+          itemName: "데이터 분석 인턴",
+          synergyRecommendations: [],
+          removedRecommendations: [],
+        },
+      }),
+    );
+    render(<IndividualAnalysisDetailPage />);
+
+    await screen.findByText("데이터 분석 인턴");
+    expect(screen.queryByText("시너지 추천 활동")).not.toBeInTheDocument();
   });
 });

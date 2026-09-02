@@ -147,10 +147,37 @@ export interface IndividualSynergyRecommendation {
   estimatedDuration: string;
 }
 
+/**
+ * 액션 플랜 한 칸. 개별분석 v1.2 에서 값이 **문자열에서 객체로** 바뀌었다
+ * (백엔드 `normalize_time_fields()` 가 절대 기간·마감일을 덧씌운다).
+ *
+ * v1.0 레코드는 DB 에 문자열인 채로 남아 있고 종합분석은 아직 문자열을 보내므로,
+ * 매퍼가 두 형태를 모두 이 한 모양으로 눕힌다 — 문자열이면 `content` 만 차고
+ * `period`/`deadline` 은 빈 문자열이다. 화면은 버전이 아니라 **값의 유무로** 그린다.
+ */
+export interface ActionPlanBucket {
+  /** 절대 기간 라벨 "2026-08-31 ~ 2026-11-30". v1.0·종합분석은 빈 문자열. */
+  period: string;
+  /** 마감일 "2026-11-30". v1.0·종합분석은 빈 문자열. */
+  deadline: string;
+  /** 실제 행동 서술. 백엔드가 못 채우면 null 로 보내므로 부재는 빈 문자열이다. */
+  content: string;
+}
+
 export interface IndividualActionPlan {
-  shortTerm: string;
-  midTerm: string;
-  longTerm: string;
+  shortTerm: ActionPlanBucket;
+  midTerm: ActionPlanBucket;
+  longTerm: ActionPlanBucket;
+}
+
+/**
+ * v1.2 신설. 실재성 검증(`filter_certifications`)에서 걸러낸 추천.
+ * 화면은 개수만 조용히 알린다 — 환각 자격증명을 추천처럼 다시 노출하지 않기 위해서다.
+ */
+export interface IndividualRemovedRecommendation {
+  name: string;
+  category: string;
+  removedReason: string;
 }
 
 export interface IndividualAnalysisResultBody {
@@ -160,10 +187,18 @@ export interface IndividualAnalysisResultBody {
   briefSummary: string;
   deepAnalysis: IndividualDeepAnalysis;
   starFormat: IndividualStarFormat;
+  /**
+   * v1.2 신설. STAR 를 만들 수 없었던 사유와 기록 예시. 충분하면 백엔드가 null 을 보낸다.
+   * 이 자리가 생기기 전에는 근거가 없어 S/T/A/R 칸에 사유를 욱여넣거나 섹션이 통째로
+   * 사라졌다 — 빈 STAR 카드 대신 이 문장을 그린다.
+   */
+  starNote: string;
   /** 강점은 진단(약점)보다 먼저 노출한다 — 백엔드 프롬프트의 앵커링 저항 원칙과 같은 순서. */
   itemStrengths: IndividualItemStrengths;
   itemDiagnosis: IndividualItemDiagnosis;
   synergyRecommendations: IndividualSynergyRecommendation[];
+  /** v1.2 신설. 검증에서 제외된 추천 — "추천이 왜 적은가"에 답하는 근거다. */
+  removedRecommendations: IndividualRemovedRecommendation[];
   actionPlan: IndividualActionPlan;
   missingInfoWarning: string;
 }
