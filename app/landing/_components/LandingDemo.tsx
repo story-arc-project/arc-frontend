@@ -4,10 +4,6 @@ import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Briefcase,
-  Trophy,
-  Users,
-  BookOpen,
   Sparkles,
   Plus,
   X,
@@ -15,125 +11,57 @@ import {
   ArrowRight,
   BarChart2,
   CheckCircle2,
+  ChevronDown,
 } from "lucide-react";
 
-/* ── Demo types ─────────────────────────────────────────── */
-type DemoTypeId = "internship" | "contest" | "club" | "course";
-
-interface DemoExperience {
-  id: string;
-  typeId: DemoTypeId;
-  title: string;
-  period: string;
-  summary: string;
-}
-
-type KeywordKey =
-  | "리더십"
-  | "협업"
-  | "기획"
-  | "개발"
-  | "디자인"
-  | "분석"
-  | "커뮤니케이션";
+import { analyzeExperiences, CATEGORY_LABEL } from "./landing-demo-analysis";
+import {
+  DEMO_TYPES,
+  DEMO_TYPE_MAP,
+  canAddExperience,
+  collectValues,
+  createEmptyDraft,
+  hasFilledAdvanced,
+  summarizeExperience,
+  type DemoDraft,
+  type DemoExperience,
+  type DemoFieldValue,
+  type DemoTypeId,
+} from "./landing-demo-fields";
+import LandingDemoField from "./LandingDemoField";
 
 type StepKey = "record" | "analyze" | "export";
 
 /* ── Demo data ──────────────────────────────────────────── */
-const TYPE_META: Record<
-  DemoTypeId,
-  { label: string; icon: typeof Briefcase; tone: string }
-> = {
-  internship: { label: "인턴십", icon: Briefcase, tone: "bg-surface-brand text-brand-dark" },
-  contest: { label: "공모전", icon: Trophy, tone: "bg-surface-success text-success" },
-  club: { label: "동아리", icon: Users, tone: "bg-surface-warning text-warning" },
-  course: { label: "수업", icon: BookOpen, tone: "bg-surface-tertiary text-text-secondary" },
-};
-
+/**
+ * 시드 경험 2건. 유형별 필드 정의(`landing-demo-fields.ts`)의 키를 그대로 쓴다 —
+ * 첫 화면부터 "유형마다 다른 것을 묻는다"가 카드에도 보여야 한다.
+ */
 const SEED_EXPERIENCES: DemoExperience[] = [
   {
     id: "seed-1",
     typeId: "internship",
-    title: "카카오 UX 인턴십",
-    period: "2024.07 — 2024.09",
-    summary:
-      "사용자 인터뷰 6건을 진행하고 결과를 분석해 온보딩 플로우를 재설계했습니다. 디자이너·PM과 협업하며 프로토타입을 빠르게 개선했어요.",
+    values: {
+      title: "카카오 UX 인턴십",
+      period: { start: "2024-07", end: "2024-09" },
+      careerWorkType: "풀타임",
+      careerOutcome:
+        "사용자 인터뷰 6건을 진행하고 결과를 분석해 온보딩 플로우를 재설계했습니다. 디자이너·PM과 협업하며 프로토타입을 빠르게 개선했어요.",
+      careerStack: ["Figma", "사용자 인터뷰"],
+    },
   },
   {
     id: "seed-2",
-    typeId: "contest",
-    title: "앱잼 최우수상",
-    period: "2024.01 — 2024.03",
-    summary:
-      "팀장으로 5명을 이끌며 아이디어 기획부터 발표까지 주도했습니다. 프론트엔드 개발을 담당하고, 사용자 피드백을 바탕으로 UI를 반복 개선했습니다.",
+    typeId: "award",
+    values: {
+      title: "앱잼 최우수상",
+      awardGrade: "최우수상",
+      awardedAt: "2024-03-15",
+      awardBackground:
+        "팀장으로 5명을 이끌며 아이디어 기획부터 발표까지 주도했습니다. 프론트엔드 개발을 담당하고, 사용자 피드백을 바탕으로 UI를 반복 개선했습니다.",
+    },
   },
 ];
-
-const KEYWORD_RULES: Record<KeywordKey, string[]> = {
-  리더십: ["리더", "팀장", "주도", "이끌", "운영", "총괄", "관리"],
-  협업: ["협업", "팀", "함께", "회의", "조율", "커뮤니", "동료"],
-  기획: ["기획", "전략", "설계", "로드맵", "아이디어", "브레인", "방향"],
-  개발: ["개발", "구현", "코드", "프론트", "백엔드", "앱", "api", "배포"],
-  디자인: ["디자인", "ui", "ux", "프로토타입", "와이어프레임", "비주얼"],
-  분석: ["분석", "데이터", "리서치", "조사", "인터뷰", "지표", "가설"],
-  커뮤니케이션: ["발표", "피드백", "설득", "공유", "문서", "소통"],
-};
-
-const KEYWORD_CATEGORY: Record<KeywordKey, "skill" | "work_style"> = {
-  리더십: "work_style",
-  협업: "work_style",
-  기획: "skill",
-  개발: "skill",
-  디자인: "skill",
-  분석: "skill",
-  커뮤니케이션: "work_style",
-};
-
-const CATEGORY_LABEL: Record<"skill" | "work_style", string> = {
-  skill: "직무/스킬",
-  work_style: "업무 성향",
-};
-
-/* ── Heuristic: derive fake-analysis from text ──────────── */
-function analyzeExperiences(exps: DemoExperience[]) {
-  const corpus = exps
-    .map((e) => `${e.title} ${e.summary}`)
-    .join(" ")
-    .toLowerCase();
-
-  const scored = (Object.keys(KEYWORD_RULES) as KeywordKey[]).map((key) => {
-    const count = KEYWORD_RULES[key].reduce((acc, w) => {
-      const regex = new RegExp(w.toLowerCase(), "g");
-      const matches = corpus.match(regex);
-      return acc + (matches ? matches.length : 0);
-    }, 0);
-    return { key, count };
-  });
-
-  const max = Math.max(1, ...scored.map((s) => s.count));
-  const keywords = scored
-    .map((s) => ({
-      key: s.key,
-      percent: Math.min(98, Math.round((s.count / max) * 92) + (s.count ? 6 : 0)),
-      category: KEYWORD_CATEGORY[s.key],
-      hits: s.count,
-    }))
-    .sort((a, b) => b.percent - a.percent);
-
-  const top = keywords.filter((k) => k.hits > 0).slice(0, 3);
-  const topLabels = top.map((k) => k.key);
-
-  const storyline =
-    exps.length === 0
-      ? "경험을 2~3개 기록해보면 AI가 이 자리에서 스토리라인을 찾아드려요."
-      : top.length === 0
-        ? "조금 더 구체적인 활동·역할을 적어주시면 패턴이 또렷해져요."
-        : `${exps.length}개의 경험에서 '${topLabels.join(
-            " · "
-          )}'(이)라는 흐름이 반복되고 있어요. 서로 다른 활동이 하나의 서사로 연결됩니다.`;
-
-  return { keywords, top, storyline };
-}
 
 /* ── Step tabs ──────────────────────────────────────────── */
 const STEPS: { key: StepKey; label: string; hint: string }[] = [
@@ -178,13 +106,23 @@ export default function LandingDemo() {
   }
 
   const [typeId, setTypeId] = useState<DemoTypeId>("internship");
-  const [title, setTitle] = useState("");
-  const [period, setPeriod] = useState("");
-  const [summary, setSummary] = useState("");
+  /**
+   * 입력 중인 값. **유형을 바꿔도 비우지 않는다** — 칩을 잘못 눌렀다 되돌리면 적던 값이
+   * 살아있는 쪽이 안 놀랍다. 대신 저장 시점에 `collectValues` 가 현재 유형의 키만 골라 담아,
+   * 다른 유형에서 적다 만 값이 카드로 따라가지 않게 한다.
+   */
+  const [draft, setDraft] = useState<DemoDraft>(createEmptyDraft);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const canAdd = title.trim().length > 0 && summary.trim().length > 0;
+  const activeType = DEMO_TYPE_MAP[typeId];
+  const canAdd = canAddExperience(typeId, draft);
+  const advancedFields = activeType.fields.filter((f) => f.advanced);
 
   const analysis = useMemo(() => analyzeExperiences(experiences), [experiences]);
+
+  function setField(key: string, next: DemoFieldValue) {
+    setDraft((prev) => ({ ...prev, [key]: next }));
+  }
 
   function addExperience() {
     if (!canAdd) return;
@@ -193,14 +131,11 @@ export default function LandingDemo() {
       {
         id: `demo-${crypto.randomUUID()}`,
         typeId,
-        title: title.trim(),
-        period: period.trim() || "기간 미입력",
-        summary: summary.trim(),
+        values: collectValues(typeId, draft),
       },
     ]);
-    setTitle("");
-    setPeriod("");
-    setSummary("");
+    setDraft(createEmptyDraft());
+    setShowAdvanced(false);
   }
 
   function removeExperience(id: string) {
@@ -288,16 +223,22 @@ export default function LandingDemo() {
                   <p className="text-title text-text-primary mb-3">경험 추가하기</p>
 
                   {/* Type filter chips — matches FilterBar chip pattern */}
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {(Object.keys(TYPE_META) as DemoTypeId[]).map((id) => {
-                      const meta = TYPE_META[id];
-                      const Icon = meta.icon;
-                      const active = typeId === id;
+                  <div className="flex flex-wrap gap-2 mb-1.5">
+                    {DEMO_TYPES.map((type) => {
+                      const Icon = type.icon;
+                      const active = typeId === type.id;
                       return (
                         <button
-                          key={id}
+                          key={type.id}
                           type="button"
-                          onClick={() => setTypeId(id)}
+                          onClick={() => {
+                            setTypeId(type.id);
+                            // 유형이 바뀌면 접힘도 처음 상태로 돌린다 — 볼륨을 묶는 게 접힘의 목적이다.
+                            // 단, 그 유형의 접힘 필드를 이미 채워뒀다면 펼친 채로 둔다.
+                            // 접으면 렌더에서 빠지는데 값은 카드에 실려, 안 보이는 값이 저장된다.
+                            setShowAdvanced(hasFilledAdvanced(type.id, draft));
+                          }}
+                          aria-pressed={active}
                           className={[
                             "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption transition-colors",
                             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1",
@@ -307,48 +248,61 @@ export default function LandingDemo() {
                           ].join(" ")}
                         >
                           <Icon size={11} aria-hidden="true" />
-                          {meta.label}
+                          {type.label}
                         </button>
                       );
                     })}
                   </div>
+                  <p className="text-caption text-text-tertiary mb-4">
+                    유형을 고르면 묻는 항목이 달라져요.
+                  </p>
 
-                  <label className="block mb-3">
-                    <span className="block text-body-sm text-text-secondary mb-1">제목</span>
-                    <input
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="예) 네이버 프론트엔드 인턴십"
-                      className="w-full h-10 px-3 rounded-lg border border-border text-body-sm text-text-primary bg-surface-secondary placeholder:text-text-tertiary focus:outline-none focus:border-brand"
-                    />
-                  </label>
+                  {/*
+                    유형이 바뀌면 필드 구성이 통째로 바뀐다. key 에 typeId 를 섞어 입력칸이
+                    유형 사이에서 재사용되지 않게 한다 — 라벨만 갈리고 값이 남으면 엉뚱한
+                    칸에 남의 값이 붙어 보인다.
+                  */}
+                  {activeType.fields
+                    .filter((field) => !field.advanced)
+                    .map((field) => (
+                      <LandingDemoField
+                        key={`${typeId}-${field.key}`}
+                        field={field}
+                        value={draft[field.key]}
+                        onChange={(next) => setField(field.key, next)}
+                      />
+                    ))}
 
-                  <label className="block mb-3">
-                    <span className="block text-body-sm text-text-secondary mb-1">
-                      기간 <span className="text-text-tertiary">(선택)</span>
-                    </span>
-                    <input
-                      type="text"
-                      value={period}
-                      onChange={(e) => setPeriod(e.target.value)}
-                      placeholder="예) 2024.07 — 2024.09"
-                      className="w-full h-10 px-3 rounded-lg border border-border text-body-sm text-text-primary bg-surface-secondary placeholder:text-text-tertiary focus:outline-none focus:border-brand"
-                    />
-                  </label>
+                  {advancedFields.length > 0 && (
+                    <div className="mb-4">
+                      <button
+                        type="button"
+                        onClick={() => setShowAdvanced((prev) => !prev)}
+                        aria-expanded={showAdvanced}
+                        className="inline-flex items-center gap-1 text-body-sm font-medium text-brand hover:text-brand-dark transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1 rounded"
+                      >
+                        <ChevronDown
+                          size={13}
+                          aria-hidden="true"
+                          className={`transition-transform ${showAdvanced ? "rotate-180" : ""}`}
+                        />
+                        {showAdvanced ? "접기" : `＋ 더 자세히 묻기 (${advancedFields.length})`}
+                      </button>
 
-                  <label className="block mb-4">
-                    <span className="block text-body-sm text-text-secondary mb-1">
-                      역할·성과 요약
-                    </span>
-                    <textarea
-                      value={summary}
-                      onChange={(e) => setSummary(e.target.value)}
-                      rows={4}
-                      placeholder="어떤 역할을 맡았고, 무엇을 얻었나요? 자유롭게 적어주세요."
-                      className="w-full px-3 py-2 rounded-lg border border-border text-body-sm text-text-primary bg-surface-secondary placeholder:text-text-tertiary focus:outline-none focus:border-brand resize-none"
-                    />
-                  </label>
+                      {showAdvanced && (
+                        <div className="mt-3">
+                          {advancedFields.map((field) => (
+                            <LandingDemoField
+                              key={`${typeId}-${field.key}`}
+                              field={field}
+                              value={draft[field.key]}
+                              onChange={(next) => setField(field.key, next)}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <button
                     type="button"
@@ -379,8 +333,9 @@ export default function LandingDemo() {
                     ) : (
                       <AnimatePresence initial={false}>
                         {experiences.map((exp) => {
-                          const meta = TYPE_META[exp.typeId];
+                          const meta = DEMO_TYPE_MAP[exp.typeId];
                           const Icon = meta.icon;
+                          const card = summarizeExperience(exp);
                           return (
                             <motion.div
                               key={exp.id}
@@ -400,19 +355,33 @@ export default function LandingDemo() {
                                 <button
                                   type="button"
                                   onClick={() => removeExperience(exp.id)}
-                                  aria-label={`${exp.title} 삭제`}
+                                  aria-label={`${card.title} 삭제`}
                                   className="shrink-0 w-7 h-7 inline-flex items-center justify-center rounded-md text-text-tertiary hover:text-text-primary hover:bg-surface-tertiary transition-colors"
                                 >
                                   <X size={13} aria-hidden="true" />
                                 </button>
                               </div>
                               <p className="text-title text-text-primary line-clamp-1 mb-1">
-                                {exp.title}
+                                {card.title}
                               </p>
                               <p className="text-body-sm text-text-secondary line-clamp-2 mb-2">
-                                {exp.summary}
+                                {card.summary}
                               </p>
-                              <p className="text-caption text-text-disabled">{exp.period}</p>
+                              {card.chips.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mb-2">
+                                  {card.chips.map((chip) => (
+                                    <span
+                                      key={chip}
+                                      className="rounded-full bg-surface-tertiary px-2 py-0.5 text-[12px] leading-none text-text-secondary"
+                                    >
+                                      {chip}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {card.timeframe && (
+                                <p className="text-caption text-text-disabled">{card.timeframe}</p>
+                              )}
                             </motion.div>
                           );
                         })}
@@ -634,7 +603,8 @@ export default function LandingDemo() {
                       ) : (
                         <ul className="flex flex-col gap-2">
                           {experiences.map((exp) => {
-                            const meta = TYPE_META[exp.typeId];
+                            const meta = DEMO_TYPE_MAP[exp.typeId];
+                            const card = summarizeExperience(exp);
                             return (
                               <li
                                 key={exp.id}
@@ -646,18 +616,18 @@ export default function LandingDemo() {
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <p className="text-body-sm text-text-primary font-medium truncate">
-                                      {exp.title}
+                                      {card.title}
                                       <span className="ml-2 text-caption text-text-tertiary font-normal">
                                         {meta.label}
                                       </span>
                                     </p>
                                     <p className="text-caption text-text-secondary line-clamp-2">
-                                      {exp.summary}
+                                      {card.summary}
                                     </p>
                                   </div>
                                 </div>
                                 <span className="text-caption text-text-tertiary shrink-0 sm:ml-auto pl-11 sm:pl-0">
-                                  {exp.period}
+                                  {card.timeframe}
                                 </span>
                               </li>
                             );

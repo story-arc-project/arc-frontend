@@ -20,7 +20,8 @@ export function Badge({ variant = "default", className = "", children, ...props 
     <span
       className={[
         "inline-flex items-center rounded-full px-2.5 py-0.5",
-        "text-[12px] font-medium leading-none",
+        // FRT-338: globals.css 밖의 값이라 스케일 상향 때 함께 올린다 — 캡션(13px)과 같은 눈금.
+        "text-[13px] font-medium leading-none",
         variantClasses[variant],
         className,
       ]

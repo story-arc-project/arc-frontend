@@ -52,7 +52,7 @@ export default function BinaryChoiceBlock({ block, readOnly, onChange }: BinaryC
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-field-label text-text-primary">{block.label}</span>
-      {block.guide && <p className="text-caption text-text-tertiary">{block.guide}</p>}
+      {block.guide && <p className="text-caption">{block.guide}</p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {options.map(option => {
           const selected = val.selected === option

@@ -222,7 +222,7 @@ export default function FileBlock({ block, readOnly, onBusyChange, onChange }: F
     // 그러면 파일 행뿐 아니라 그 아래 설명·증빙 유형 칸까지 통째로 카드 밖으로 밀려난다.
     <fieldset className="flex min-w-0 flex-col gap-3">
       <legend className="text-field-label text-text-primary mb-1">{block.label}</legend>
-      {block.guide && <p className="text-caption text-text-tertiary -mt-2">{block.guide}</p>}
+      {block.guide && <p className="text-caption -mt-2">{block.guide}</p>}
 
       {state === "uploading" ? (
         <div className="flex flex-col gap-2 rounded-md border border-border bg-surface px-4 py-3">

@@ -26,6 +26,16 @@ import {
 /** FRT-143 이전 '결과물' 링크 한 칸의 열 key. 로드 시 행 첨부로 이관한다. */
 export const LEGACY_OUTPUT_LINK_COLUMN_KEY = 'output'
 
+// FRT-131 이전 수업 ② '가장 중요했던 내용'은 소제목+설명 2컬럼 블록반복이었다. 확정본의
+// ②→③ 연결을 붙이며 대외활동 ② 와 같은 개조식 단일컬럼(outcome-list)으로 정렬했다 —
+// 저장된 레코드는 두 열을 아직 들고 있으므로 로드 시 매퍼가 행마다 한 항목으로 합친다
+// (`experience-mapper`). 열 key 는 이관의 판정 근거라 템플릿에서 사라진 뒤에도 여기 남긴다.
+
+/** FRT-131 이전 소제목+설명 2컬럼의 '소제목' 열 key. */
+export const LEGACY_HIGHLIGHT_TITLE_COLUMN_KEY = 'title'
+/** FRT-131 이전 소제목+설명 2컬럼의 '설명' 열 key. */
+export const LEGACY_HIGHLIGHT_DETAIL_COLUMN_KEY = 'detail'
+
 /** 결과물 링크 빈칸 문구 — 확정본(학회 ③·수업 ③) 표기. */
 const ARTIFACT_URL_PLACEHOLDER = '링크 (Notion, Drive, YouTube 등)'
 
@@ -276,7 +286,7 @@ function buildExtendedSection(): TemplateSection {
       createTagsField('사용한 스킬'),
       createTextField('협업/팀', { placeholder: '함께한 팀이나 협업 방식을 설명해주세요' }),
       createSelectField('난이도', ['상', '중', '하']),
-      createSelectField('공개 설정', ['공개', '비공개', '일부 공개']),
+      createSelectField('공개 설정', ['공개', '비공개', '일부 공개'], { formHidden: true }),
     ],
   }
 }
@@ -286,6 +296,12 @@ function buildExtendedSection(): TemplateSection {
 // 자기 detail 섹션을 정의한 유형은 범용 buildExtendedSection() 대신 이 섹션만 받는다.
 // '공개 설정'은 포트폴리오 발행(lib/portfolio/build-portfolio.ts)이 label 로 조회하므로
 // 반드시 존재해야 한다. id='extended' 를 유지해 안정키 'extended.공개 설정' 를 보존한다.
+//
+// ⚠️ FRT-306 으로 '공개 설정'은 **입력 화면에서 내려갔다**(`formHidden`) — 그래서 이 섹션은
+// 화면에 그려지는 블록이 하나도 없다. 그럼에도 섹션과 블록을 지우지 않는 이유는 이 필드의
+// 실체가 "기록의 공개 여부"가 아니라 **포트폴리오 발행 옵트인**이기 때문이다: 값을 읽는
+// 소비처가 살아 있고, 블록을 지우면 저장값이 `orphanFieldsToBlocks` 를 타고 '기타' 카드로
+// 되살아나 정작 내리려던 필드가 다른 이름으로 다시 보인다.
 function buildSettingsSection(): TemplateSection {
   return {
     id: 'extended',
@@ -293,7 +309,7 @@ function buildSettingsSection(): TemplateSection {
     category: 'detail',
     collapsed: true,
     blocks: [
-      createSelectField('공개 설정', ['공개', '비공개', '일부 공개']),
+      createSelectField('공개 설정', ['공개', '비공개', '일부 공개'], { formHidden: true }),
     ],
   }
 }
@@ -394,31 +410,16 @@ function educationExtensions(): TemplateSection[] {
           placeholder:
             '예: 마케팅의 기본 개념부터 소비자 행동, 시장 세분화, 브랜드 포지셔닝까지 다뤘습니다. 매주 이론 강의와 함께 실제 기업 케이스를 분석하는 방식으로 진행됐습니다',
         }),
-        // 가장 중요했던 내용 — 소제목+설명 블록 반복. ③ 연결(블록반복 링크)은 FRT-131.
-        // 소제목은 required 로 두지 않는다 — 이 블록은 optional 인 '수업 상세'(detail) 카드 안이라
-        // required 컬럼이 있으면 카드 전체가 필수로 판정돼(isRequiredBlock) 수강 동기·수업 요약만
-        // 채워도 진행도가 미완료로 오판된다.
-        createRepeatableCell(
-          '가장 중요했던 내용',
-          [
-            {
-              key: 'title',
-              label: '소제목',
-              blockType: 'text',
-              placeholder: '예: 마케팅 4P 프레임의 실전 적용',
-            },
-            {
-              key: 'detail',
-              label: '설명',
-              blockType: 'textarea',
-              placeholder: '이 내용이 왜 중요했는지, 어떤 맥락에서 배웠는지 자유롭게 적어주세요',
-            },
-          ],
-          {
-            guide:
-              '이 강좌에서 나에게 가장 깊게 남은 개념, 이론, 관점을 단위별로 기록해주세요. 하나씩 소제목과 설명을 나눠 정리할 수 있어요.',
-          },
-        ),
+        // 가장 중요했던 내용 — 확정본 ②→③ 연결(FRT-131). 소제목+설명 2컬럼을 대외활동 ② 와
+        // 같은 개조식 단일컬럼으로 정렬해 각 항목에 '프로젝트로 기록' 링크를 붙인다. 구 레코드의
+        // 2컬럼 값은 로드 시 한 항목으로 합쳐 이관한다(위 LEGACY_HIGHLIGHT_* 참고).
+        createOutcomeList('가장 중요했던 내용', {
+          itemLabel: '내용',
+          placeholder: '예: 마케팅 4P 프레임의 실전 적용',
+          guide:
+            '이 강좌에서 나에게 가장 깊게 남은 개념, 이론, 관점을 한 줄씩 기록해주세요. 프로젝트나 과제로 이어진 내용은 아래 ③ 기록으로 바로 연결할 수 있어요.',
+          link: { targetSectionId: 'edu-projects', titleColumnKey: 'name', label: '프로젝트로 기록' },
+        }),
       ],
     },
     {
@@ -1488,14 +1489,6 @@ const LANGUAGE_ACTIVITY_TAGS = [
   '🌍 원어민과 자유로운 소통',
 ] as const
 
-/** 어학 ④ '성적표 첨부'의 증빙 유형 4종. 성적표가 맨 앞이다 — 어학 증빙의 대부분이 이것이다. */
-const LANGUAGE_EVIDENCE_OPTIONS = [
-  '성적표/점수 확인서',
-  '합격증/자격증 사본',
-  '발급 확인서',
-  '기타',
-] as const
-
 /** '언어 직접 입력'의 트리거 안정키 — `withSectionKeys` 가 만들 키를 미리 적은 것이다. */
 const LANGUAGE_KEY = 'lang-overview.언어'
 
@@ -1617,20 +1610,38 @@ function languageExtensions(): TemplateSection[] {
       ],
     },
     {
-      // 확정본 ④는 가이드라인이 전부 '—'다(무엇을 적는지 placeholder 로 충분한 항목들) —
-      // 없는 문구를 지어내지 않고 확정본 그대로 둔다. '성적표 첨부'만 안내가 있다.
+      // 확정본 ④ 는 평면 5필드였다 — 시험 하나를 담는 모양이다. 그런데 어학 기록의 일반적인
+      // 모습은 **한 언어에 시험이 여럿**이다(토익·토플·텝스). 평면 필드로는 두 번째 시험을
+      // 쓸 자리가 없어 같은 언어로 기록을 하나 더 만들거나 한 칸에 몰아 적게 되므로,
+      // 확정본이 정한 5항목을 그대로 **열**로 옮겨 시험마다 한 줄이 되게 했다(FRT-341).
+      //
+      // ⚠️ 블록 라벨이 '어학 자격증'이라 안정키는 `lang-certificate.어학 자격증` 으로 **새로
+      // 생긴다** — 구 5키와 겹치지 않는다. 구 값은 `foldLegacyLanguageCertificate`
+      // (experience-mapper)가 첫 행으로 접는다. 섹션 id 를 유지해도 되는 것은 그래서다.
+      //
+      // 증빙 유형 4종 드롭다운(`LANGUAGE_EVIDENCE_OPTIONS`)은 함께 사라진다 — `FileCellValue`
+      // 는 `evidenceType` 을 담지 않고(FRT-213), 시험명 열이 바로 옆에 있어 "이 파일이 무엇의
+      // 증빙인가"는 이미 행이 답한다.
       id: 'lang-certificate',
       category: 'evidence',
       label: '어학 자격증',
       blocks: [
-        createTextField('시험 / 자격증명', { placeholder: '예: TOEIC, TOEFL iBT, OPIc, HSK, JLPT' }),
-        createTextField('점수 / 등급', { placeholder: '예: 900점, IH, HSK 5급' }),
-        createDateField('취득일'),
-        createDateField('유효기간'),
-        createFileField('성적표 첨부', {
-          guide: '성적표, 점수 확인서, 자격증 사본 등',
-          options: [...LANGUAGE_EVIDENCE_OPTIONS],
-        }),
+        createRepeatableCell(
+          '어학 자격증',
+          [
+            {
+              key: 'name',
+              label: '시험 / 자격증명',
+              blockType: 'text',
+              placeholder: '예: TOEIC, TOEFL iBT, OPIc, HSK, JLPT',
+            },
+            { key: 'score', label: '점수 / 등급', blockType: 'text', placeholder: '예: 900점, IH, HSK 5급' },
+            { key: 'acquired', label: '취득일', blockType: 'date' },
+            { key: 'expires', label: '유효기간', blockType: 'date' },
+            { key: 'file', label: '성적표 첨부', blockType: 'file', placeholder: '성적표, 점수 확인서, 자격증 사본 등' },
+          ],
+          { guide: '취득한 시험을 한 줄씩 추가해주세요. 토익·토플·텝스처럼 여러 개여도 괜찮아요.' },
+        ),
       ],
     },
   ]
@@ -3142,13 +3153,17 @@ const extensionMap: Record<ExperienceTypeId, () => TemplateSection[]> = {
  * 8 — 프로젝트 확정본 정렬(FRT-291). 같은 이유 — `pp-*`/`tp-*` 를 `project-info`/`project-detail`/
  *     `project-tasks`/`project-release`/`project-artifacts` 로 갈아치웠고, 개인·팀 두 유형이
  *     하나의 템플릿을 공유하게 됐다.
+ * 9 — 어학 ④ 자격증 반복 표(FRT-341). 섹션 id 는 그대로지만 `lang-certificate` 의 평면 5블록이
+ *     은퇴하고 `lang-certificate.어학 자격증` 한 블록이 그 자리를 대신했다 — 라벨 파생 안정키가
+ *     통째로 갈렸으므로 아래 `withSectionKeys` 규약이 요구하는 bump 다. 값 이관은
+ *     `foldLegacyLanguageCertificate`(평면 → 표 첫 행)가, 나머지 보존은 '기타' 카드가 맡는다.
  *
  * ⚠️ 이 카운터는 **전역 하나**인데 라벨 변경은 유형별로 따로 들어온다. 그래서 `1` 은 단일 레이아웃을
  * 가리키지 않는다 — 자격증·대외활동·동아리·수상경력 확정본 정렬(FRT-177/178/179/211)이 모두 `1`
  * 아래에서 라벨을 바꿨다. 버전으로 "이 레코드가 어느 필드 셋인가"를 판정하지 말 것. 값 보존의 실제
  * 방어선은 키 층위다 — `RENAMED_FIELD_KEYS`(순수 개명 이관) + `orphanFieldsToBlocks`(나머지 보존).
  */
-export const TEMPLATE_VERSION = 8
+export const TEMPLATE_VERSION = 9
 
 /**
  * 섹션 블록에 안정 시맨틱 키(`${sectionId}.${label}`)를 부여한다.

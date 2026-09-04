@@ -17,6 +17,8 @@ import type {
   IndividualSynergyRecommendation,
   IndividualStarFormat,
   IndividualActionPlan,
+  ActionPlanBucket,
+  IndividualRemovedRecommendation,
   WeaknessSeverity,
   StrengthLevel,
   SynergyPriority,
@@ -174,6 +176,12 @@ const MAX_RESULT_NESTING = 4;
 const KNOWN_SCHEMA_VERSIONS = new Set([
   "keyword/4.1",
   "individual/1.0",
+  // individual/1.2 는 result 구조가 바뀌었지만(action_plan 객체화, applicable_roles 이동)
+  // 보고서와 백엔드 원본으로 형태를 확인했고 매퍼가 두 형태를 모두 눕히므로 1.0 과 같은
+  // 화면으로 렌더된다. 반면 1.1 은 **열지 않는다** — 실물을 본 적이 없어 모양이 다르면
+  // 매퍼가 필드를 조용히 흘린다. 확인 안 된 버전을 미리 열면 이 게이트 자체가 무의미해지고,
+  // 잘못 그린 화면보다 "표시할 수 없습니다"가 옳은 결말이다(계약 §3.5).
+  "individual/1.2",
   // comprehensive/1.0 은 구 레코드 호환용으로 유지한다 — 1.0 payload 엔 strength_diagnosis 가
   // 없지만 매퍼가 부재를 빈 구조로 안전 처리하므로 렌더된다.
   "comprehensive/1.0",
@@ -601,12 +609,42 @@ function mapStarAnalysisStatus(dto: unknown): StarAnalysisStatus {
 /**
  * action_plan 키는 백엔드 표기에 따라 short_term/mid_term/long_term 또는 한글 키일 수 있다.
  */
+/**
+ * 액션 플랜 한 칸을 `{ period, deadline, content }` 로 눕힌다.
+ *
+ * 개별분석 v1.2 는 객체 `{ 기간, 마감일, 내용 }` 를 보내고(백엔드 `normalize_time_fields()`),
+ * v1.0 레코드와 종합분석은 여전히 문자열을 보낸다. 값의 **모양**으로 갈라 한 형태로 모은다 —
+ * 버전 키로 분기하지 않는 이유는 result 에 schema_version 이 없는 응답이 실재하기 때문이다.
+ */
+function mapActionPlanBucket(value: unknown): ActionPlanBucket {
+  if (typeof value === "string") {
+    return { period: "", deadline: "", content: value };
+  }
+  const r = asRecord(value);
+  return {
+    period: asString(r.period ?? r["기간"]),
+    deadline: asString(r.deadline ?? r["마감일"]),
+    // 백엔드는 모델이 칸을 못 채우면 내용을 null 로 둔다. asString 이 빈 문자열로 받는다.
+    content: asString(r.content ?? r["내용"]),
+  };
+}
+
 function mapActionPlan(dto: unknown): IndividualActionPlan {
   const r = asRecord(dto);
   return {
-    shortTerm: asString(r.shortTerm ?? r.short_term ?? r["단기"]),
-    midTerm: asString(r.midTerm ?? r.mid_term ?? r["중기"]),
-    longTerm: asString(r.longTerm ?? r.long_term ?? r["장기"]),
+    shortTerm: mapActionPlanBucket(r.shortTerm ?? r.short_term ?? r["단기"]),
+    midTerm: mapActionPlanBucket(r.midTerm ?? r.mid_term ?? r["중기"]),
+    longTerm: mapActionPlanBucket(r.longTerm ?? r.long_term ?? r["장기"]),
+  };
+}
+
+/** v1.2 `removed_recommendations`. 제거된 항목이 없으면 백엔드가 null 을 보낸다(`removed or None`). */
+function mapRemovedRecommendation(dto: unknown): IndividualRemovedRecommendation {
+  const r = asRecord(dto);
+  return {
+    name: asString(r.name),
+    category: asString(r.category),
+    removedReason: asString(r.removedReason ?? r.removed_reason),
   };
 }
 
@@ -641,6 +679,7 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
       marketValue: asString(deep.marketValue ?? deep.market_value),
     },
     starFormat: mapStarFormat(body.starFormat ?? body.star_format),
+    starNote: asString(body.starNote ?? body.star_note),
     itemStrengths: mapItemStrengths(body.itemStrengths ?? body.item_strengths),
     itemDiagnosis: {
       oneLineVerdict: asString(diagnosis.oneLineVerdict ?? diagnosis.one_line_verdict),
@@ -653,6 +692,9 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
     synergyRecommendations: asArray(
       body.synergyRecommendations ?? body.synergy_recommendations,
     ).map(mapSynergy),
+    removedRecommendations: asArray(
+      body.removedRecommendations ?? body.removed_recommendations,
+    ).map(mapRemovedRecommendation),
     actionPlan: mapActionPlan(body.actionPlan ?? body.action_plan),
     missingInfoWarning: asString(body.missingInfoWarning ?? body.missing_info_warning),
   };
@@ -664,7 +706,21 @@ function mapIndividualDetail(dto: unknown): IndividualAnalysisResult {
     isBookmarked: asBoolean(r.isBookmarked ?? r.is_bookmarked ?? body.isBookmarked ?? body.is_bookmarked),
     // result.status 는 본문이 아니라 엔벨로프에서 폴백돼 들어오는 메타다(위 `body.status ?? r.status`).
     // 판정에 넣으면 본문이 통째로 없어도 status 하나 때문에 "본문 있음"이 된다.
-    hasResultBody: hasAnyContent({ ...result, status: "" }),
+    //
+    // actionPlan 도 같은 이유로 손본다. v1.2 의 `normalize_time_fields()` 는 모델이 칸을 못
+    // 채워도 기간·마감일을 **무조건** 씌우므로, 객체를 그대로 넘기면 그 두 문자열 때문에
+    // 그릴 것이 하나도 없는 결과가 "본문 있음"이 된다 → 상태 안내(FRT-134) 대신 텅 빈 완료
+    // 껍데기가 그려진다. 화면(ActionPlanSection)이 내용 없는 칸을 빼는 것과 같은 기준으로,
+    // 판정에도 내용만 넘긴다.
+    hasResultBody: hasAnyContent({
+      ...result,
+      status: "",
+      actionPlan: [
+        result.actionPlan.shortTerm,
+        result.actionPlan.midTerm,
+        result.actionPlan.longTerm,
+      ].map((b) => b.content),
+    }),
     result,
   };
 }

@@ -95,6 +95,9 @@ function SignupForm() {
   const [signupError, setSignupError] = useState<string | null>(null);
   const [socialError, setSocialError] = useState<string | null>(null);
   const [consentError, setConsentError] = useState<string | null>(null);
+  // 스텝 이동의 세대. 스텝을 벗어날 때마다 올라간다 — 뒤늦게 도착한 실패가
+  // **아직 그 화면에 대한 진술인지** 판정한다(재발송의 verifyFlowId 와 같은 장치).
+  const stepFlowId = useRef(0);
 
   // 로그인 페이지에서 리다이렉트된 경우 URL 파라미터로 상태 복원
   useEffect(() => {
@@ -191,6 +194,16 @@ function SignupForm() {
   }
 
   function goTo(next: Step, direction = 1) {
+    // 실패 문구는 그 스텝에서의 그 시도에 매인 진술이다. 스텝을 벗어나면 진술도 끝난다.
+    // 남겨두면 「← 이전」으로 되돌아왔다 다시 들어올 때 요소가 리마운트되면서
+    // role="alert" 가 **지난 실패를 다시 낭독한다** — 아직 아무것도 시도하지 않았는데도(FRT-282).
+    // 에러는 실패 경로에서만 세팅되고 그 경로는 goTo 를 부르지 않으므로, 여기서 지워도 지금 띄운 실패는 살아남는다.
+    // 다만 **아직 비행 중인** 요청은 여기서 지운 뒤에 실패할 수 있다. 세대를 올려 그 응답을 무효로 만든다.
+    stepFlowId.current += 1;
+    setSignupError(null);
+    setVerifyError(null);
+    setSocialError(null);
+    setConsentError(null);
     setDir(direction);
     setStep(next);
   }
@@ -208,9 +221,14 @@ function SignupForm() {
   async function handleSignup() {
     setIsLoading(true);
     setSignupError(null);
+    const flowId = stepFlowId.current;
 
     try {
       await api.post("/auth/signup", { email, password }, { auth: false });
+      // 응답이 오는 사이 스텝을 떠났다면 이 성공은 **옛 이메일**의 것이다. 그대로 진행하면
+      // verify 화면이 지금 입력된 새 주소를 대며 "코드를 보냈어요"라고 말한다 — 코드는 옛 주소로
+      // 갔고 새 주소는 가입조차 되지 않았으니, 오지 않을 코드를 기다리게 된다.
+      if (stepFlowId.current !== flowId) return;
       // 여기서부터 새 인증 흐름이다. 재발송 결과는 그 이메일에 매인 진술이라,
       // 「← 이전」으로 돌아가 다른 주소로 다시 가입하면(컴포넌트는 언마운트되지 않는다)
       // 재발송한 적 없는 새 주소 화면에 직전 결과가 그대로 남는다.
@@ -221,6 +239,9 @@ function SignupForm() {
       setIsResending(false);
       goTo("verify");
     } catch (e) {
+      // 응답이 오는 사이 스텝을 떠났다면 이 실패는 이미 지난 화면의 진술이다. 그대로 세팅하면
+      // goTo 가 지운 문구가 되살아나, 다른 이메일로 갈아탄 화면에서 지난 주소의 실패가 낭독된다.
+      if (stepFlowId.current !== flowId) return;
       if (e instanceof ApiError) {
         if(e.code === "EMAIL_ALREADY_EXISTS") setSignupError("이미 존재하는 이메일이에요.")
         else if(e.code === "WEAK_PASSWORD") setSignupError("더 강한 비밀번호를 시도해주세요.")
@@ -235,9 +256,12 @@ function SignupForm() {
   async function handleVerify() {
     setIsLoading(true);
     setVerifyError(null);
+    const flowId = stepFlowId.current;
 
     try {
       const result = await api.post<VerifyEmailResponse>("/auth/verify-email", { email, code: verifyCode }, { auth: false });
+      // 떠난 흐름의 성공은 사용자를 옮길 권한이 없다 — 대시보드로든 온보딩으로든.
+      if (stepFlowId.current !== flowId) return;
       if (result.data.onboarded) {
         // 이미 온보딩 완료된 유저 (재인증 케이스) — FastAPI 쿠키가 이미 설정됨
         // 하드 내비게이션으로 AuthProvider를 재마운트·refetch해야 GNB 계정 메뉴가 노출된다.
@@ -249,9 +273,13 @@ function SignupForm() {
         if (await markSignupCompletedIfUnseen(email)) {
           capture("signup_completed", { method: "email" });
         }
+        // 마커(Web Crypto 해시)도 await 경계다 — 한 요청 안에 경계가 둘이면 대조도 둘이어야 한다.
+        // 이벤트는 인증이 실제로 성공했으니 그대로 쏘고, **이동만** 막는다.
+        if (stepFlowId.current !== flowId) return;
         goTo(FIRST_ONBOARDING_STEP);
       }
     } catch (e) {
+      if (stepFlowId.current !== flowId) return; // 떠난 화면의 실패다 — 위 handleSignup 과 같은 이유.
       if (e instanceof ApiError) {
         if (e.status === 410) setVerifyError("인증 코드가 만료되었어요. 재발송 후 다시 시도해주세요.");
         else setVerifyError(e.message);
@@ -266,11 +294,14 @@ function SignupForm() {
   async function handleConsent(payload: ConsentPayload) {
     setIsLoading(true);
     setConsentError(null);
+    const flowId = stepFlowId.current;
 
     try {
       await api.post("/auth/consent", payload, { auth: true });
+      if (stepFlowId.current !== flowId) return; // 떠난 흐름의 성공이다 — 위 handleSignup 과 같은 이유.
       goTo("profile");
     } catch (e) {
+      if (stepFlowId.current !== flowId) return; // 떠난 화면의 실패다 — 위 handleSignup 과 같은 이유.
       if (e instanceof ApiError) {
         if (e.code === "AUTH_TOKEN_EXPIRED" || e.code === "AUTH_MISSING_COOKIES" || e.code === "AUTH_TOKEN_INVALID") {
           setConsentError("로그인 정보가 만료되었어요. 다시 로그인해주세요.");
@@ -487,7 +518,7 @@ function SignupForm() {
 
                 <SocialLoginButtons onLogin={handleSocial} action="시작하기" />
                 {socialError && (
-                  <p className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
+                  <p role="alert" className="mt-2 text-center text-body-sm text-text-tertiary">{socialError}</p>
                 )}
 
                 <p className="mt-6 text-center text-body-sm text-text-secondary">
@@ -562,8 +593,12 @@ function SignupForm() {
                       </button>
                     }
                   />
+                  {/* 가입 실패는 「가입하기」에 포커스가 머문 채 비동기로 나타난다.
+                      역할이 없으면 스크린리더에는 아무 일도 일어나지 않은 것과 같다(FRT-282).
+                      aria-live 는 일부러 쓰지 않는다 — role="alert" 의 암묵값이 assertive 인데
+                      polite 를 명시하면 그걸 덮어써서 낭독이 뒤로 밀린다. */}
                   {signupError && (
-                    <p className="text-body-sm text-error">{signupError}</p>
+                    <p role="alert" className="text-body-sm text-error">{signupError}</p>
                   )}
                   <Button onClick={handleSignup} disabled={!pwValid || isLoading}>
                     {isLoading ? "처리 중..." : "가입하기"}
@@ -591,7 +626,7 @@ function SignupForm() {
                     onKeyDown={(e) => e.key === "Enter" && verifyCode.trim() && handleVerify()}
                   />
                   {verifyError && (
-                    <p className="text-body-sm text-error">{verifyError}</p>
+                    <p role="alert" className="text-body-sm text-error">{verifyError}</p>
                   )}
                   <Button onClick={handleVerify} disabled={!verifyCode.trim() || isLoading}>
                     {isLoading ? "확인 중..." : "확인"}

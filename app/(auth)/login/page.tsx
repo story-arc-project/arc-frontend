@@ -196,8 +196,12 @@ function LoginForm() {
                   </Link>
                 </div>
               )}
+              {/* 로그인 실패는 「로그인」에 포커스가 머문 채 비동기로 나타난다 — 역할이 없으면
+                  스크린리더 사용자에게는 아무 일도 없던 것과 같다(FRT-340).
+                  aria-live 는 일부러 쓰지 않는다 — role="alert" 의 암묵값이 assertive 인데
+                  polite 를 명시하면 그 값이 이겨 낭독이 다른 발화 뒤로 밀린다(FRT-282). */}
               {error && (
-                <p className="text-body-sm text-error">{error}</p>
+                <p role="alert" className="text-body-sm text-error">{error}</p>
               )}
               <div className="mt-1">
                 <Button type="submit" size="lg" fullWidth disabled={isLoading || !email || !password}>
@@ -215,8 +219,9 @@ function LoginForm() {
 
           <motion.div variants={loginItem}>
             <SocialLoginButtons onLogin={handleSocialLogin} action="계속하기" />
+            {/* 소셜 로그인 실패도 버튼에 포커스가 머문 채 문구만 나타난다 — 같은 무반응이다. */}
             {socialError && (
-              <p className="mt-2 text-center text-body-sm text-error">{socialError}</p>
+              <p role="alert" className="mt-2 text-center text-body-sm text-error">{socialError}</p>
             )}
           </motion.div>
 

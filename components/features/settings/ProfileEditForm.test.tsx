@@ -137,3 +137,90 @@ describe("ProfileEditForm — 옵션 목록 밖 값 보존(FRT-260)", () => {
     expect(saveButton().hasAttribute("disabled")).toBe(true);
   });
 });
+
+/**
+ * FRT-294 — 저장은 성공했는데 뒤이은 refetch 가 실패하면 폼이 "저장되지 않은 변경사항"
+ * 상태로 되살아났다. 비교 기준선이 오직 profile prop 에서만 파생돼, prop 이 갱신되지 않는
+ * 순간 initial(구값) vs current(신값) 의 차이가 그대로 patch 로 잡혔기 때문이다.
+ * 저장 성공은 동기화 실패로 뒤집히지 않아야 한다.
+ */
+describe("ProfileEditForm — 저장 성공은 동기화 실패로 뒤집히지 않는다(FRT-294)", () => {
+  it("refetch 가 실패해도 저장 버튼은 비활성 상태로 남는다", async () => {
+    refetch.mockRejectedValue(new Error("network"));
+    const user = userEvent.setup();
+    render(<ProfileEditForm profile={profile} />);
+
+    await user.click(screen.getByText("취업/인턴"));
+    expect(saveButton().hasAttribute("disabled")).toBe(false); // 전제: 실제로 dirty 였다
+
+    await user.click(saveButton());
+
+    await waitFor(() => expect(updateProfile).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveButton().hasAttribute("disabled")).toBe(true));
+  });
+
+  it("refetch 실패 후 같은 값을 다시 저장하려 해도 중복 제출되지 않는다", async () => {
+    refetch.mockRejectedValue(new Error("network"));
+    const user = userEvent.setup();
+    render(<ProfileEditForm profile={profile} />);
+
+    await user.click(screen.getByText("취업/인턴"));
+    await user.click(saveButton());
+    await waitFor(() => expect(updateProfile).toHaveBeenCalledTimes(1));
+
+    await user.click(saveButton());
+
+    expect(updateProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("저장 요청 중에 더 고친 값은 저장이 끝나도 변경 상태로 남는다", async () => {
+    let finishSave: () => void = () => {};
+    updateProfile.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSave = () => resolve();
+        })
+    );
+    refetch.mockRejectedValue(new Error("network"));
+    const user = userEvent.setup();
+    render(<ProfileEditForm profile={profile} />);
+
+    await user.click(screen.getByText("취업/인턴"));
+    await user.click(saveButton());
+    await waitFor(() => expect(updateProfile).toHaveBeenCalledTimes(1));
+
+    // 저장 응답을 기다리는 동안 하나 더 고친다 — 이 변경분은 아직 저장되지 않았다.
+    await user.click(screen.getByText("디자인/UX"));
+    finishSave();
+
+    await waitFor(() => expect(saveButton().hasAttribute("disabled")).toBe(false));
+  });
+
+  it("저장 자체가 실패하면 변경 상태가 그대로 유지된다", async () => {
+    updateProfile.mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+    render(<ProfileEditForm profile={profile} />);
+
+    await user.click(screen.getByText("취업/인턴"));
+    await user.click(saveButton());
+
+    await waitFor(() => expect(updateProfile).toHaveBeenCalledTimes(1));
+    expect(saveButton().hasAttribute("disabled")).toBe(false);
+    expect(refetch).not.toHaveBeenCalled();
+  });
+
+  it("refetch 가 성공해 새 profile 이 내려오면 그 값이 새 기준선이 된다", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ProfileEditForm profile={profile} />);
+
+    await user.click(screen.getByText("취업/인턴"));
+    await user.click(saveButton());
+    await waitFor(() => expect(updateProfile).toHaveBeenCalledTimes(1));
+
+    const saved: Profile = { ...profile, worry: [...profile.worry, "취업/인턴"] };
+    rerender(<ProfileEditForm profile={saved} />);
+
+    expect(screen.getByRole("button", { name: "취업/인턴", pressed: true })).toBeInTheDocument();
+    expect(saveButton().hasAttribute("disabled")).toBe(true);
+  });
+});

@@ -635,14 +635,25 @@ const languageFields = fieldsFor("language", {
     ],
   },
 
-  "lang-certificate.시험 / 자격증명": "TOEIC",
-  "lang-certificate.점수 / 등급": "875점",
-  "lang-certificate.취득일": "2024-09-08",
-  "lang-certificate.유효기간": "2026-09-08",
-  "lang-certificate.성적표 첨부": {
-    fileName: "TOEIC_성적표.pdf",
-    description: "2024년 9월 정기시험 성적표",
-    evidenceType: "성적표/점수 확인서",
+  // 확정본 ④ 는 시험마다 한 줄이다(FRT-341). 데모가 두 줄을 보여주는 것이 요점이다 —
+  // "어학 자격증은 하나만 쓰는 칸"이라는 오해가 이 개편이 고친 바로 그 문제였다.
+  // '성적표' 컬럼은 비워 둔다: 파일 셀은 실제 업로드가 있어야 채워진 것으로 판정되고
+  // (`cellFilled` 은 fileId 로 본다) 데모에는 실물이 없다 — 창작물 시드와 같은 처리다.
+  "lang-certificate.어학 자격증": {
+    rows: [
+      {
+        name: "TOEIC",
+        score: "875점",
+        acquired: "2024-09-08",
+        expires: "2026-09-08",
+      },
+      {
+        name: "TOEFL iBT",
+        score: "102점",
+        acquired: "2025-03-15",
+        expires: "2027-03-15",
+      },
+    ],
   },
   ...PUBLIC,
 });

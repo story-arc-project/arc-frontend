@@ -230,12 +230,18 @@ describe("프로토타입 확정본: 인턴·수업·대외활동", () => {
     const detail = detailOf("education")!
     const labels = labelsIn(detail.blocks)
     expect(labels).toEqual(["수강 동기", "수업 요약", "가장 중요했던 내용"])
-    // '가장 중요했던 내용' = 소제목+설명 2컬럼 블록반복
+    // '가장 중요했던 내용' = 개조식 단일컬럼(FRT-131) — 각 항목을 ③ 프로젝트 기록으로 연결한다.
     const important = detail.blocks.find(b => b.label === "가장 중요했던 내용")!
+    expect(important.variant).toBe("outcome-list")
     expect(important.value.type).toBe("repeatable-cell")
     if (important.value.type === "repeatable-cell") {
-      expect(important.value.columns.length).toBe(2)
+      expect(important.value.columns.map(c => c.key)).toEqual(["item"])
     }
+    expect(important.linkConfig).toEqual({
+      targetSectionId: "edu-projects",
+      titleColumnKey: "name",
+      label: "프로젝트로 기록",
+    })
   })
 
   it("대외활동 ① 은 활동 유형·기수·주최·주관·규모 식별 필드를 갖는다", () => {
@@ -1019,27 +1025,39 @@ describe("확정본: 어학능력", () => {
     expect(activities.options).toEqual(blockAt(0, "가능한 활용 영역").options)
   })
 
-  it("④ 어학 자격증은 확정본 5필드이고 취득일·유효기간이 date 다", () => {
-    expect(labelsIn(sections()[3].blocks)).toEqual([
-      "시험 / 자격증명",
-      "점수 / 등급",
-      "취득일",
-      "유효기간",
-      "성적표 첨부",
+  /**
+   * FRT-341 — 확정본 ④ 는 평면 5필드였는데, 그 모양은 시험을 **하나만** 담는다.
+   * 토익·토플·텝스를 함께 쓰는 것이 어학 기록의 일반적인 모습이라 반복 표로 바꿨다.
+   */
+  it("④ 어학 자격증은 시험마다 한 줄인 반복 표다", () => {
+    expect(labelsIn(sections()[3].blocks)).toEqual(["어학 자격증"])
+
+    const table = sections()[3].blocks[0]
+    expect(table.type).toBe("repeatable-cell")
+    const columns = table.value.type === "repeatable-cell" ? table.value.columns : []
+    expect(columns.map(c => [c.key, c.label, c.blockType])).toEqual([
+      ["name", "시험 / 자격증명", "text"],
+      ["score", "점수 / 등급", "text"],
+      ["acquired", "취득일", "date"],
+      ["expires", "유효기간", "date"],
+      ["file", "성적표 첨부", "file"],
     ])
-    expect(blockAt(3, "취득일").type).toBe("date")
-    expect(blockAt(3, "유효기간").type).toBe("date")
   })
 
-  it("④ '성적표 첨부'는 증빙 유형 4종을 드롭다운으로 좁힌다", () => {
-    const file = blockAt(3, "성적표 첨부")
-    expect(file.type).toBe("file")
-    expect(file.options).toEqual([
-      "성적표/점수 확인서",
-      "합격증/자격증 사본",
-      "발급 확인서",
-      "기타",
-    ])
+  /**
+   * 열은 템플릿이 소유한다(FRT-104) — 확정본이 정한 5열에 사용자가 열을 더하면 다음 확정본
+   * 개정이 그 열을 어떻게 다뤄야 할지 알 수 없다.
+   */
+  it("④ 표의 열은 잠겨 있다", () => {
+    expect(sections()[3].blocks[0].lockColumns).toBe(true)
+  })
+
+  /**
+   * 섹션 id 는 그대로지만 ④ 의 평면 5블록이 은퇴하고 라벨 파생 안정키가 통째로 갈렸다 —
+   * `withSectionKeys` 규약이 요구하는 bump 다(이관은 `foldLegacyLanguageCertificate`).
+   */
+  it("④ 안정키를 갈아치웠으므로 TEMPLATE_VERSION 이 프로젝트(8) 위로 올라가 있다", () => {
+    expect(TEMPLATE_VERSION).toBeGreaterThanOrEqual(9)
   })
 
   /**

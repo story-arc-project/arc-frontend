@@ -67,29 +67,39 @@ function toFormState(profile: Profile | null): {
 
 export function ProfileEditForm({ profile }: ProfileEditFormProps) {
   const { refetch } = useAuth();
-  const { form: initial, preserved } = useMemo(() => toFormState(profile), [profile]);
+  const derived = useMemo(() => toFormState(profile), [profile]);
 
-  const [name, setName] = useState(initial.name);
-  const [birth, setBirth] = useState(initial.birth);
-  const [phone, setPhone] = useState(initial.phone);
-  const [affiliation, setAffiliation] = useState<AffiliationStatus | "">(initial.affiliation);
-  const [school, setSchool] = useState(initial.school);
-  const [department, setDepartment] = useState(initial.department);
-  const [worry, setWorry] = useState<string[]>(initial.worry);
-  const [interest, setInterest] = useState<string[]>(initial.interest);
+  /**
+   * dirty 판정의 비교 기준선. 서버 값(profile)에서 출발하지만 profile 에 **묶여 있지는 않다** —
+   * 저장이 성공하면 방금 저장한 값으로 앞당긴다. 기준선이 prop 에서만 파생되면, 저장 직후의
+   * refetch 가 실패해 prop 이 그대로일 때 구값(기준선) vs 신값(폼)의 차이가 다시 patch 로
+   * 잡혀 저장한 내용이 "저장되지 않은 변경사항"으로 되살아난다(FRT-294).
+   */
+  const [baseline, setBaseline] = useState(derived);
+  const { form: initial, preserved } = baseline;
+
+  const [name, setName] = useState(derived.form.name);
+  const [birth, setBirth] = useState(derived.form.birth);
+  const [phone, setPhone] = useState(derived.form.phone);
+  const [affiliation, setAffiliation] = useState<AffiliationStatus | "">(derived.form.affiliation);
+  const [school, setSchool] = useState(derived.form.school);
+  const [department, setDepartment] = useState(derived.form.department);
+  const [worry, setWorry] = useState<string[]>(derived.form.worry);
+  const [interest, setInterest] = useState<string[]>(derived.form.interest);
   const [saving, setSaving] = useState(false);
 
-  // 저장 후 refetch 로 profile 이 갱신되면 폼/baseline 을 재동기화해 dirty 를 초기화한다.
+  // profile 이 갱신되면(첫 로드·refetch 성공) 폼과 기준선을 서버 값으로 재동기화한다.
   useEffect(() => {
-    setName(initial.name);
-    setBirth(initial.birth);
-    setPhone(initial.phone);
-    setAffiliation(initial.affiliation);
-    setSchool(initial.school);
-    setDepartment(initial.department);
-    setWorry(initial.worry);
-    setInterest(initial.interest);
-  }, [initial]);
+    setBaseline(derived);
+    setName(derived.form.name);
+    setBirth(derived.form.birth);
+    setPhone(derived.form.phone);
+    setAffiliation(derived.form.affiliation);
+    setSchool(derived.form.school);
+    setDepartment(derived.form.department);
+    setWorry(derived.form.worry);
+    setInterest(derived.form.interest);
+  }, [derived]);
 
   // 학생일 때만 학교/학과를 노출한다 — 백엔드 교차검증(student→school/department만 허용)과 정합.
   const showSchoolFields = affiliation === "student";
@@ -138,8 +148,13 @@ export function ProfileEditForm({ profile }: ProfileEditFormProps) {
       return;
     }
 
-    // 저장 성공 — 헤더(이름/아바타) 동기화를 위해 refetch 하되, 동기화 실패가
-    // 저장 성공을 뒤집지 않도록 분리한다(실패해도 다음 로드 시 갱신된다).
+    // 저장 성공 — 이 시점의 폼 값이 곧 서버 값이므로 기준선을 여기로 앞당긴다. 그래야
+    // 아래 refetch 가 실패해도 폼이 "변경됨"으로 되돌아가지 않는다(FRT-294).
+    // preserved(옵션 밖 값)는 patch 에 합쳐 그대로 다시 보냈으므로 서버에 남아 있다 — 유지한다.
+    setBaseline({ form: current, preserved });
+
+    // 헤더(이름/아바타) 동기화를 위해 refetch 하되, 동기화 실패가 저장 성공을
+    // 뒤집지 않도록 분리한다(실패해도 다음 로드 시 갱신된다).
     toast.success("프로필을 저장했어요.");
     try {
       await refetch();
