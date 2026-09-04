@@ -211,7 +211,7 @@ export function ResumePdfDocument({ doc }: { doc: ResumeDocument }) {
     .join("  ·  ");
 
   return (
-    <Document title={header.name ? `${header.name} 레쥬메` : "레쥬메"}>
+    <Document title={header.name ? `${header.name} 이력서` : "이력서"}>
       <Page size="A4" style={styles.page}>
         <View>
           <View style={styles.headerRow}>

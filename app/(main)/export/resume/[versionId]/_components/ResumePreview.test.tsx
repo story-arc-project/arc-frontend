@@ -83,7 +83,7 @@ function base(overrides: Partial<ResumeVersion> = {}): ResumeVersion {
 }
 
 describe("ResumePreview — 섹션 라벨 (FRT-147)", () => {
-  it("국문 레쥬메는 국문 제목을 쓴다", () => {
+  it("국문 이력서는 국문 제목을 쓴다", () => {
     render(<ResumePreview resume={base()} />);
     expect(screen.getByText("학력")).toBeInTheDocument();
     expect(screen.getByText("경력")).toBeInTheDocument();
@@ -91,7 +91,7 @@ describe("ResumePreview — 섹션 라벨 (FRT-147)", () => {
     expect(screen.getByText("기술 및 역량")).toBeInTheDocument();
   });
 
-  it("영문 레쥬메는 영문 제목을 쓰고 국문 제목이 새지 않는다", () => {
+  it("영문 이력서는 영문 제목을 쓰고 국문 제목이 새지 않는다", () => {
     render(
       <ResumePreview
         resume={base({

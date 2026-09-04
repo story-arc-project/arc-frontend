@@ -20,10 +20,10 @@ interface RecentResumeListProps {
 
 // 서버가 제목을 주지 않아 만든 시각을 이름으로 쓴다.
 function resumeLabel(createdAt: string): string {
-  if (!createdAt) return "레쥬메";
+  if (!createdAt) return "이력서";
   const d = new Date(createdAt);
-  if (Number.isNaN(d.getTime())) return "레쥬메";
-  return `${formatDateTime(createdAt)} 레쥬메`;
+  if (Number.isNaN(d.getTime())) return "이력서";
+  return `${formatDateTime(createdAt)} 이력서`;
 }
 
 export function RecentResumeList({
@@ -89,7 +89,7 @@ export function RecentResumeList({
     try {
       await deleteResume(versionId);
       removeLocally(versionId);
-      toast.success("레쥬메를 삭제했어요");
+      toast.success("이력서를 삭제했어요");
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         // 이미 없는 것을 지우려 한 것뿐이다 — 사용자가 원한 결과와 같으므로 목록에서 뺀다.
@@ -140,10 +140,10 @@ export function RecentResumeList({
         <div className="rounded-xl border border-dashed border-border bg-surface-secondary p-8 text-center">
           <FileText size={28} className="mx-auto text-text-tertiary" />
           <p className="text-body text-text-primary mt-3">
-            아직 만든 레쥬메가 없어요.
+            아직 만든 이력서가 없어요.
           </p>
           <p className="text-body-sm text-text-secondary mt-1">
-            첫 레쥬메를 만들어볼까요?
+            첫 이력서를 만들어볼까요?
           </p>
           <Button
             variant="primary"
@@ -151,7 +151,7 @@ export function RecentResumeList({
             onClick={onCreateClick}
             className="mt-4"
           >
-            새 레쥬메 만들기
+            새 이력서 만들기
           </Button>
         </div>
       </>
@@ -224,7 +224,7 @@ export function RecentResumeList({
               onClick={() => setPendingDeleteId(item.version_id)}
               disabled={deletingId === item.version_id}
               className="text-text-tertiary hover:text-error transition-colors p-1.5 rounded-md disabled:opacity-40"
-              aria-label="레쥬메 삭제"
+              aria-label="이력서 삭제"
             >
               <Trash2 size={14} />
             </button>
@@ -235,7 +235,7 @@ export function RecentResumeList({
     </ul>
     <DeleteConfirmDialog
       open={pendingDeleteId !== null}
-      title="이 레쥬메를 삭제할까요?"
+      title="이 이력서를 삭제할까요?"
       description="삭제하면 되돌릴 수 없어요."
       deleting={deletingId !== null}
       onClose={() => setPendingDeleteId(null)}

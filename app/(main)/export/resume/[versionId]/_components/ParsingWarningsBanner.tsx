@@ -28,7 +28,7 @@ export function ParsingWarningsBanner({ warnings }: Props) {
         />
         <div className="min-w-0 flex-1">
           <p className="text-body-sm font-semibold text-text-primary">
-            이 정보를 보완하면 더 좋은 레쥬메를 만들 수 있어요
+            이 정보를 보완하면 더 좋은 이력서를 만들 수 있어요
           </p>
           <ul className="mt-2 list-disc space-y-0.5 pl-4 text-caption text-text-secondary">
             {warnings.map((w, i) => (

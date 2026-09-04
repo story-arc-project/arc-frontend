@@ -14,7 +14,7 @@ export function EnglishReadOnlyNotice() {
   return (
     <div className="no-print rounded-md border border-border bg-surface px-4 py-3">
       <p className="text-body-sm font-medium text-text-primary">
-        영문 레쥬메는 아직 편집할 수 없어요
+        영문 이력서는 아직 편집할 수 없어요
       </p>
       <p className="mt-1 text-caption text-text-secondary">
         지금은 내용 확인과 PDF · Word 내보내기까지 가능해요. 편집이 필요하면 한국어로 다시

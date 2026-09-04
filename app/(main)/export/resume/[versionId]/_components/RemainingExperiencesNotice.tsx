@@ -20,7 +20,7 @@ export function RemainingExperiencesNotice({ count }: Props) {
   return (
     <div className="no-print mb-4 rounded-md border border-border bg-surface px-4 py-3">
       <p className="text-body-sm text-text-primary">
-        한 장에 맞추려고 경험 {count}개는 이번 레쥬메에 넣지 않았어요.
+        한 장에 맞추려고 경험 {count}개는 이번 이력서에 넣지 않았어요.
       </p>
       <p className="mt-1 text-caption text-text-secondary">
         기록은 그대로 남아 있어요. 다시 만들면 다른 조합으로 채울 수 있어요.

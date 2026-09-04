@@ -5,13 +5,13 @@ import { downloadBlob, resumeFileName } from "@/lib/export/download";
 const DATE = new Date("2026-07-21T09:30:00+09:00");
 
 describe("resumeFileName", () => {
-  it("한국어 레쥬메는 이름과 생성일로 이름을 짓는다", () => {
+  it("한국어 이력서는 이름과 생성일로 이름을 짓는다", () => {
     expect(
       resumeFileName({ name: "김서윤", language: "ko", ext: "pdf", now: DATE }),
-    ).toBe("김서윤_레쥬메_20260721.pdf");
+    ).toBe("김서윤_이력서_20260721.pdf");
   });
 
-  it("영문 레쥬메는 Resume 로 적고 공백을 밑줄로 바꾼다", () => {
+  it("영문 이력서는 Resume 로 적고 공백을 밑줄로 바꾼다", () => {
     expect(
       resumeFileName({
         name: "Seo-yun Kim",
@@ -25,7 +25,7 @@ describe("resumeFileName", () => {
   it("이름이 없으면 이름 자리를 비운다", () => {
     expect(
       resumeFileName({ name: undefined, language: "ko", ext: "pdf", now: DATE }),
-    ).toBe("레쥬메_20260721.pdf");
+    ).toBe("이력서_20260721.pdf");
     expect(
       resumeFileName({ name: "   ", language: "en", ext: "pdf", now: DATE }),
     ).toBe("Resume_20260721.pdf");
@@ -45,7 +45,7 @@ describe("resumeFileName", () => {
   it("점으로 시작하는 이름이 숨김 파일이 되지 않게 한다", () => {
     expect(
       resumeFileName({ name: "..", language: "ko", ext: "pdf", now: DATE }),
-    ).toBe("레쥬메_20260721.pdf");
+    ).toBe("이력서_20260721.pdf");
   });
 
   it("제어·서식 문자를 지운다", () => {
@@ -53,7 +53,7 @@ describe("resumeFileName", () => {
     const noisy = `김${String.fromCharCode(0)}서${String.fromCharCode(31)}윤​`;
     expect(
       resumeFileName({ name: noisy, language: "ko", ext: "pdf", now: DATE }),
-    ).toBe("김서윤_레쥬메_20260721.pdf");
+    ).toBe("김서윤_이력서_20260721.pdf");
   });
 
   it("아주 긴 이름을 잘라낸다", () => {
@@ -64,7 +64,7 @@ describe("resumeFileName", () => {
       now: DATE,
     });
     expect(out.length).toBeLessThanOrEqual(100);
-    expect(out.endsWith("_레쥬메_20260721.pdf")).toBe(true);
+    expect(out.endsWith("_이력서_20260721.pdf")).toBe(true);
   });
 });
 
@@ -84,9 +84,9 @@ describe("downloadBlob", () => {
     anchor.click = click;
     vi.spyOn(document, "createElement").mockReturnValue(anchor);
 
-    downloadBlob(new Blob(["x"]), "레쥬메.pdf");
+    downloadBlob(new Blob(["x"]), "이력서.pdf");
 
-    expect(anchor.download).toBe("레쥬메.pdf");
+    expect(anchor.download).toBe("이력서.pdf");
     expect(anchor.href).toContain("blob:fake");
     expect(click).toHaveBeenCalledOnce();
     // 클릭 직후 회수하면 큰 파일 다운로드가 취소될 수 있다 — 아직 살아 있어야 한다.
