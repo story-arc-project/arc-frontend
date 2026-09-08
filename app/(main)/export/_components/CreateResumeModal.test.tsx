@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import type { Experience } from "@/types/experience";
 
 /**
- * FRT-109 — 레쥬메 생성 시 경험 선택.
+ * FRT-109 — 이력서 생성 시 경험 선택.
  *
  * 핵심은 "기본 전체 선택"과 "선택 0개면 생성 차단", 그리고 **플래그 off 일 때 현행과
  * 완전히 동일**하다는 것(백엔드가 experience_ids 를 조용히 무시하므로, 게이트가 새면

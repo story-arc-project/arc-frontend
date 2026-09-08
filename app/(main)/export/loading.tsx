@@ -16,7 +16,7 @@ export default function ExportLoading() {
             ))}
           </div>
         </div>
-        {/* "최근 만든 레쥬메" — list */}
+        {/* "최근 만든 이력서" — list */}
         <div className="space-y-3">
           <div className="h-6 w-1/4 bg-surface-secondary rounded animate-pulse" />
           {Array.from({ length: 2 }).map((_, i) => (

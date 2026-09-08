@@ -9,7 +9,7 @@ const meta: Meta<typeof DeleteConfirmDialog> = {
   parameters: { layout: "centered" },
   args: {
     open: true,
-    title: "이 레쥬메를 삭제할까요?",
+    title: "이 이력서를 삭제할까요?",
     description: "삭제하면 되돌릴 수 없어요.",
     deleting: false,
     onClose: () => {},

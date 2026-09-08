@@ -158,14 +158,14 @@ export function CreateResumeModal({
       // 생성은 비동기다 — 서버가 id 를 즉시 주더라도 본문(result)은 나중에 채워진다.
       // 생성 직후 상세로 이동하면 아직 준비 안 된 레쥬메를 로드해 "불러오지 못했어요"가 뜬다.
       // 상세로 튕기지 말고 목록에 남아 status 배지로 완료를 확인하게 한다("다시 만들기"와 대칭).
-      toast("레쥬메를 만들고 있어요. 완료되면 목록에 표시돼요", "info");
+      toast("이력서를 만들고 있어요. 완료되면 목록에 표시돼요", "info");
       onCreated();
       onClose();
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         setError("생성이 오래 걸렸어요. 다시 시도해 주세요.");
       } else {
-        setError("레쥬메 생성에 실패했어요. 다시 시도해 주세요.");
+        setError("이력서 생성에 실패했어요. 다시 시도해 주세요.");
       }
       setSubmitting(false);
     } finally {
@@ -184,15 +184,15 @@ export function CreateResumeModal({
       <Dialog
         open={open && !submitting}
         onClose={handleClose}
-        ariaLabel="새 레쥬메 만들기"
+        ariaLabel="새 이력서 만들기"
         className={experienceSelectionEnabled ? "max-w-lg" : "max-w-md"}
       >
         <div>
-          <h2 className="text-title text-text-primary">새 레쥬메 만들기</h2>
+          <h2 className="text-title text-text-primary">새 이력서 만들기</h2>
           <p className="text-body-sm text-text-secondary mt-1">
             {experienceSelectionEnabled
-              ? "선택한 경험을 바탕으로 AI가 레쥬메 초안을 만들어요."
-              : "지금까지 기록한 모든 경험을 바탕으로 AI가 레쥬메 초안을 만들어요."}
+              ? "선택한 경험을 바탕으로 AI가 이력서 초안을 만들어요."
+              : "지금까지 기록한 모든 경험을 바탕으로 AI가 이력서 초안을 만들어요."}
           </p>
 
           <fieldset className="mt-5">
@@ -302,7 +302,7 @@ export function CreateResumeModal({
             experiences.length > 0 &&
             selectedIds.length === 0 && (
               <p className="mt-3 text-caption text-text-tertiary">
-                레쥬메에 넣을 경험을 하나 이상 선택해 주세요.
+                이력서에 넣을 경험을 하나 이상 선택해 주세요.
               </p>
             )}
 

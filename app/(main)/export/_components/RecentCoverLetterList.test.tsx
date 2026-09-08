@@ -15,7 +15,7 @@ import type { CoverLetterListItem } from "@/types/cover-letter";
 /**
  * FRT-126 — 자기소개서 목록의 삭제 확인과 모바일 날짜.
  *
- * 레쥬메 목록과 나란히 같은 /export 화면에 놓이므로 확인 절차의 생김새가 갈리면 안 된다
+ * 이력서 목록과 나란히 같은 /export 화면에 놓이므로 확인 절차의 생김새가 갈리면 안 된다
  * (한쪽만 브라우저 confirm 이면 이슈가 지적한 불일치가 한 화면 안에서 드러난다).
  */
 

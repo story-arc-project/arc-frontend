@@ -22,7 +22,7 @@ export function EmptyResumeState({ onContinueAnyway }: Props) {
         기록된 경험이 아직 없어요
       </h2>
       <p className="text-body-sm text-text-secondary max-w-sm">
-        경험을 먼저 기록해볼까요? 아카이브에 경험이 쌓이면 더 풍부한 레쥬메를 만들 수 있어요.
+        경험을 먼저 기록해볼까요? 아카이브에 경험이 쌓이면 더 풍부한 이력서를 만들 수 있어요.
       </p>
       <div className="mt-3 flex gap-2">
         <Button asChild variant="primary" size="sm">
@@ -30,7 +30,7 @@ export function EmptyResumeState({ onContinueAnyway }: Props) {
         </Button>
         {onContinueAnyway && (
           <Button variant="ghost" size="sm" onClick={onContinueAnyway}>
-            빈 레쥬메 편집하기
+            빈 이력서 편집하기
           </Button>
         )}
       </div>

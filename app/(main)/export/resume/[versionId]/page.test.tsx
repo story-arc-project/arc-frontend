@@ -66,7 +66,7 @@ vi.mock("@/lib/api/export-api", async (importOriginal) => {
 // 파일 생성기는 무거운 동적 import 다 — 실제로 PDF 를 만들 이유가 없다.
 vi.mock("@/lib/export/download", () => ({
   downloadBlob: (...args: unknown[]) => mockDownloadBlob(...args),
-  resumeFileName: () => "레쥬메_20260731.pdf",
+  resumeFileName: () => "이력서_20260731.pdf",
 }));
 vi.mock("@/lib/export/resume-pdf", () => ({
   renderResumePdf: (...args: unknown[]) => mockRenderPdf(...args),
@@ -176,7 +176,7 @@ beforeEach(() => {
   mockRenderDocx.mockResolvedValue(new Blob(["docx"]));
 });
 
-describe("resume_downloaded — 만든 레쥬메를 실제로 꺼내갔는가", () => {
+describe("resume_downloaded — 만든 이력서를 실제로 꺼내갔는가", () => {
   it("PDF 다운로드가 끝나면 형식과 언어를 싣고 한 번 발화한다", async () => {
     const user = userEvent.setup();
     await renderLoaded();
@@ -246,8 +246,8 @@ describe("resume_edited — AI 초안에 손을 댔는가", () => {
     await user.type(screen.getByLabelText("이름"), "!");
     await waitFor(() => expect(captured("resume_edited").length).toBe(1));
     // version_id — "버전당 1회"는 **한 화면 안에서만** 참이다. 새로고침·재방문·두 번째 탭은
-    // 각자 새 페이지라 같은 레쥬메가 다시 발화한다. 버전 식별자가 없으면 다운스트림이
-    // 그 중복을 접을 수도, 서로 다른 레쥬메의 편집과 가를 수도 없다(analysis_completed 전례).
+    // 각자 새 페이지라 같은 이력서가 다시 발화한다. 버전 식별자가 없으면 다운스트림이
+    // 그 중복을 접을 수도, 서로 다른 이력서의 편집과 가를 수도 없다(analysis_completed 전례).
     expect(captured("resume_edited")[0][1]).toEqual({
       section: "personal_info",
       version_id: "v1",
@@ -360,7 +360,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
     );
   });
 
-  // 400 은 예외다 — 서버가 이 코드를 내는 분기는 "아직 생성이 안 끝난 레쥬메"
+  // 400 은 예외다 — 서버가 이 코드를 내는 분기는 "아직 생성이 안 끝난 이력서"
   // 하나뿐인데(`patch_resume`), 그 메시지가 영문("Resume is not completed yet.")이라
   // 그대로 띄우면 사용자가 읽지 못한다. 사유를 보여주는 규칙보다 **읽히는 것**이 먼저다.
   it("400 은 서버 영문 메시지 대신 생성 중이라는 한글 안내를 보여준다", async () => {
@@ -375,7 +375,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        "아직 레쥬메를 만드는 중이에요. 완성되면 저장할 수 있어요.",
+        "아직 이력서를 만드는 중이에요. 완성되면 저장할 수 있어요.",
       ),
     );
     expect(toast.error).not.toHaveBeenCalledWith(
@@ -750,7 +750,7 @@ describe("resume_edit_saved — 그 편집이 어디까지 갔는가", () => {
 });
 
 /**
- * FRT-147 — 영문 레쥬메는 편집 사이드바를 통째로 감춘다. 파싱 경고 배너가 그 사이드바
+ * FRT-147 — 영문 이력서는 편집 사이드바를 통째로 감춘다. 파싱 경고 배너가 그 사이드바
  * 안에만 있으면 "어떤 경험을 못 읽었는지"를 영문 사용자만 영영 못 보게 된다.
  */
 /**
@@ -934,7 +934,7 @@ describe("FRT-329 — 탭을 닫아도 편집이 남는다", () => {
     expect(window.localStorage.getItem("arc:resume-draft:v1")).toBeNull();
   });
 
-  // 같은 레쥬메를 두 탭에서 열면 탭을 오갈 때마다 hidden 이 온다. 그 사이 손대지 않은 탭이
+  // 같은 이력서를 두 탭에서 열면 탭을 오갈 때마다 hidden 이 온다. 그 사이 손대지 않은 탭이
   // 같은 내용을 더 새 시각으로 다시 쓰면, 다른 탭이 방금 남긴 편집을 덮는다.
   it("손대지 않은 채 다시 숨겨지면 같은 편집을 다시 쓰지 않는다", async () => {
     const user = userEvent.setup();
@@ -1038,7 +1038,7 @@ describe("영문 읽기 전용 — 보완 안내", () => {
         </Suspense>,
       );
     });
-    await screen.findByText("영문 레쥬메는 아직 편집할 수 없어요");
+    await screen.findByText("영문 이력서는 아직 편집할 수 없어요");
   }
 
   it("편집기가 없어도 파싱 경고를 미리보기 쪽에 보여준다", async () => {
@@ -1058,11 +1058,11 @@ describe("영문 읽기 전용 — 보완 안내", () => {
     await renderReadOnly();
 
     expect(
-      screen.queryByText("이 정보를 보완하면 더 좋은 레쥬메를 만들 수 있어요"),
+      screen.queryByText("이 정보를 보완하면 더 좋은 이력서를 만들 수 있어요"),
     ).not.toBeInTheDocument();
   });
 
-  // 전부 빈 레쥬메는 상세 화면보다 먼저 EmptyResumeState 로 빠진다 — 그 갈래도 경고를
+  // 전부 빈 이력서는 상세 화면보다 먼저 EmptyResumeState 로 빠진다 — 그 갈래도 경고를
   // 지나쳐 간다면 화면이 "경험이 없다"고만 말하고, 실은 못 읽은 것이라는 사실이 사라진다.
   it("전부 비어도 파싱 경고는 빈 상태 위에 남는다", async () => {
     mockGetResume.mockResolvedValue({
@@ -1094,11 +1094,11 @@ describe("영문 읽기 전용 — 보완 안내", () => {
     ).toBeInTheDocument();
     // 읽기 전용에는 편집기가 없다 — 편집을 약속하는 버튼을 두면 안 된다.
     expect(
-      screen.queryByRole("button", { name: "빈 레쥬메 편집하기" }),
+      screen.queryByRole("button", { name: "빈 이력서 편집하기" }),
     ).not.toBeInTheDocument();
   });
 
-  it("국문은 빈 레쥬메라도 편집으로 들어갈 수 있다", async () => {
+  it("국문은 빈 이력서라도 편집으로 들어갈 수 있다", async () => {
     // 위 갈래를 막느라 국문의 탈출구까지 닫으면 안 된다.
     mockGetResume.mockResolvedValue({
       ...resumeFixture(),
@@ -1125,7 +1125,7 @@ describe("영문 읽기 전용 — 보완 안내", () => {
 
     await screen.findByText("기록된 경험이 아직 없어요");
     expect(
-      screen.getByRole("button", { name: "빈 레쥬메 편집하기" }),
+      screen.getByRole("button", { name: "빈 이력서 편집하기" }),
     ).toBeInTheDocument();
   });
 });
@@ -1245,7 +1245,7 @@ function named(
   });
 }
 
-/** 지금 화면에 실린 레쥬메가 누구 것인지 — 편집기가 없으면 null. */
+/** 지금 화면에 실린 이력서가 누구 것인지 — 편집기가 없으면 null. */
 function shownName(): string | null {
   const input = screen.queryByLabelText("이름");
   return input ? (input as HTMLInputElement).value : null;
@@ -1293,7 +1293,7 @@ describe("FRT-238 — 버전 전환 중 늦게 도착한 응답", () => {
     route.reject("A", new Error("late failure"));
     await flush();
 
-    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+    expect(screen.queryByText("이력서를 불러오지 못했어요")).toBeNull();
     expect(shownName()).toBe("B유저");
   });
 
@@ -1343,7 +1343,7 @@ describe("FRT-238 — 버전 전환 중 늦게 도착한 응답", () => {
       .mockResolvedValueOnce(named("재시도됨"));
 
     await renderVersion("B");
-    await screen.findByText("레쥬메를 불러오지 못했어요");
+    await screen.findByText("이력서를 불러오지 못했어요");
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "다시 시도" }));
@@ -1360,13 +1360,13 @@ describe("FRT-238 — 버전 전환 중 늦게 도착한 응답", () => {
       .mockResolvedValueOnce(named("복구됨"));
 
     await renderVersion("A");
-    await screen.findByText("레쥬메를 불러오지 못했어요");
+    await screen.findByText("이력서를 불러오지 못했어요");
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "다시 시도" }));
 
     expect(await screen.findByLabelText("이름")).toHaveValue("복구됨");
-    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+    expect(screen.queryByText("이력서를 불러오지 못했어요")).toBeNull();
   });
 
   it("'다시 시도'를 누른 직후에는 옛 실패 화면이 아니라 로딩을 보여준다", async () => {
@@ -1382,14 +1382,14 @@ describe("FRT-238 — 버전 전환 중 늦게 도착한 응답", () => {
     });
 
     await renderVersion("A");
-    await screen.findByText("레쥬메를 불러오지 못했어요");
+    await screen.findByText("이력서를 불러오지 못했어요");
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "다시 시도" }));
 
     // 재조회를 시작한 순간 화면은 지난 실패가 아니라 지금 기다리는 중임을 보여야 한다.
     expect(loadingShown()).toBe(true);
-    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+    expect(screen.queryByText("이력서를 불러오지 못했어요")).toBeNull();
     expect(pending).toHaveLength(1);
   });
 
@@ -1406,7 +1406,7 @@ describe("FRT-238 — 버전 전환 중 늦게 도착한 응답", () => {
     });
 
     const result = await renderVersion("A");
-    await screen.findByText("레쥬메를 불러오지 못했어요");
+    await screen.findByText("이력서를 불러오지 못했어요");
 
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "다시 시도" }));
@@ -1627,7 +1627,7 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
     expect(screen.queryByRole("button", { name: "복원" })).toBeTruthy();
   });
 
-  // 언마운트는 seq 를 올리지 않는다 — 같은 레쥬메로 다시 들어오면 **새 인스턴스**의 키가
+  // 언마운트는 seq 를 올리지 않는다 — 같은 이력서로 다시 들어오면 **새 인스턴스**의 키가
   // seq 0 부터 시작해 옛 인스턴스의 키와 겹친다. 그 상태로 늦게 끝난 옛 저장이 가드를
   // 통과하면, 새 인스턴스가 **복원하라고 띄워 둔 임시 저장을 지워버린다** — 배너는 화면에
   // 남아 있는데 되돌릴 내용은 사라진 상태가 된다.
@@ -1652,7 +1652,7 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
     // 완전한 이탈 — 언마운트 cleanup 이 A 의 편집을 A 키에 남긴다.
     first.unmount();
 
-    // 같은 레쥬메로 다시 들어온다(새 인스턴스, seq 는 0 부터).
+    // 같은 이력서로 다시 들어온다(새 인스턴스, seq 는 0 부터).
     await renderVersion("A");
     route.resolve("A", named("에이"), 1);
     await flush();
@@ -1680,18 +1680,18 @@ describe("FRT-191 — 저장 성공 후 남는 복원 배너", () => {
  * 이미 갈라 놓았으므로(CoverLetterNotReadyError) 한 화면 안에서 두 기능이 다른 말을 한다.
  *
  * 안내 문구는 자소서를 그대로 베끼지 않는다: 자소서 목록에는 폴링이 있어 "완료되면 목록에서
- * 열 수 있어요"가 참이지만, **레쥬메 목록에는 폴링이 없다**(FRT-325). 지킬 수 없는 약속 대신
+ * 열 수 있어요"가 참이지만, **이력서 목록에는 폴링이 없다**(FRT-325). 지킬 수 없는 약속 대신
  * 이 화면에 실재하는 탈출구('다시 시도')를 가리킨다.
  */
-describe("FRT-326 - 아직 만들고 있는 레쥬메", () => {
-  it("준비 안 된 레쥬메는 실패가 아니라 '아직 만들고 있어요'로 말한다", async () => {
+describe("FRT-326 - 아직 만들고 있는 이력서", () => {
+  it("준비 안 된 이력서는 실패가 아니라 '아직 만들고 있어요'로 말한다", async () => {
     const route = routeByVersion();
     await renderVersion("A");
     route.reject("A", new ResumeNotReadyError());
     await flush();
 
     expect(screen.getByText("아직 만들고 있어요")).toBeTruthy();
-    expect(screen.queryByText("레쥬메를 불러오지 못했어요")).toBeNull();
+    expect(screen.queryByText("이력서를 불러오지 못했어요")).toBeNull();
   });
 
   it("그 화면은 이 자리에서 이을 길('다시 시도')을 가리킨다", async () => {
@@ -1705,7 +1705,7 @@ describe("FRT-326 - 아직 만들고 있는 레쥬메", () => {
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 
-  it("'다시 시도'로 완성된 레쥬메를 그 자리에서 연다", async () => {
+  it("'다시 시도'로 완성된 이력서를 그 자리에서 연다", async () => {
     const route = routeByVersion();
     await renderVersion("A");
     route.reject("A", new ResumeNotReadyError());
@@ -1729,7 +1729,7 @@ describe("FRT-326 - 아직 만들고 있는 레쥬메", () => {
     route.reject("A", new Error("boom"));
     await flush();
 
-    expect(screen.getByText("레쥬메를 불러오지 못했어요")).toBeTruthy();
+    expect(screen.getByText("이력서를 불러오지 못했어요")).toBeTruthy();
     expect(screen.queryByText("아직 만들고 있어요")).toBeNull();
   });
 
@@ -1739,7 +1739,7 @@ describe("FRT-326 - 아직 만들고 있는 레쥬메", () => {
     route.reject("A", new ApiError(404, "not found"));
     await flush();
 
-    expect(screen.getByText("레쥬메를 찾을 수 없어요")).toBeTruthy();
+    expect(screen.getByText("이력서를 찾을 수 없어요")).toBeTruthy();
     expect(screen.queryByText("아직 만들고 있어요")).toBeNull();
   });
 });

@@ -44,7 +44,7 @@ export function resumeFileName({
   ext,
   now = new Date(),
 }: ResumeFileNameParams): string {
-  const label = language === "en" ? "Resume" : "레쥬메";
+  const label = language === "en" ? "Resume" : "이력서";
   const owner = sanitizeName(name);
   const stem = owner ? `${owner}_${label}` : label;
   return `${stem}_${formatStamp(now)}.${ext}`;

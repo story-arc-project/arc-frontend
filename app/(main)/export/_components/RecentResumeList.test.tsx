@@ -44,7 +44,7 @@ function item(overrides: Partial<ResumeListItem> = {}): ResumeListItem {
     version_id: "v1",
     created_at: "2026-08-01T00:00:00.000Z",
     updated_at: "2026-08-01T00:00:00.000Z",
-    title: "지원용 레쥬메",
+    title: "지원용 이력서",
     language: "ko",
     status: "completed",
     ...overrides,
@@ -68,7 +68,7 @@ afterEach(() => {
 
 async function renderList() {
   render(<RecentResumeList onCreateClick={() => {}} />);
-  await screen.findByText("지원용 레쥬메");
+  await screen.findByText("지원용 이력서");
 }
 
 describe("RecentResumeList — 삭제 확인", () => {
@@ -76,37 +76,37 @@ describe("RecentResumeList — 삭제 확인", () => {
     const user = userEvent.setup();
     await renderList();
 
-    await user.click(screen.getByLabelText("레쥬메 삭제"));
+    await user.click(screen.getByLabelText("이력서 삭제"));
 
     expect(confirmSpy).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog");
     expect(dialog).toBeTruthy();
-    expect(screen.getByText("이 레쥬메를 삭제할까요?")).toBeTruthy();
+    expect(screen.getByText("이 이력서를 삭제할까요?")).toBeTruthy();
     // 확인 전에는 아무것도 지우지 않는다.
     expect(mockDeleteResume).not.toHaveBeenCalled();
   });
 
-  it("취소하면 대화상자가 닫히고 레쥬메는 그대로 남는다", async () => {
+  it("취소하면 대화상자가 닫히고 이력서는 그대로 남는다", async () => {
     const user = userEvent.setup();
     await renderList();
 
-    await user.click(screen.getByLabelText("레쥬메 삭제"));
+    await user.click(screen.getByLabelText("이력서 삭제"));
     await user.click(screen.getByRole("button", { name: "취소" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(mockDeleteResume).not.toHaveBeenCalled();
-    expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
+    expect(screen.getByText("지원용 이력서")).toBeTruthy();
   });
 
   it("삭제하기를 누르면 삭제되고 목록에서 사라진다", async () => {
     const user = userEvent.setup();
     await renderList();
 
-    await user.click(screen.getByLabelText("레쥬메 삭제"));
+    await user.click(screen.getByLabelText("이력서 삭제"));
     await user.click(screen.getByRole("button", { name: "삭제하기" }));
 
     await waitFor(() => expect(mockDeleteResume).toHaveBeenCalledWith("v1"));
-    await waitFor(() => expect(screen.queryByText("지원용 레쥬메")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("지원용 이력서")).toBeNull());
     // 삭제가 끝나면 대화상자도 닫힌다.
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
@@ -116,13 +116,13 @@ describe("RecentResumeList — 삭제 확인", () => {
     mockDeleteResume.mockRejectedValue(new Error("boom"));
     await renderList();
 
-    await user.click(screen.getByLabelText("레쥬메 삭제"));
+    await user.click(screen.getByLabelText("이력서 삭제"));
     await user.click(screen.getByRole("button", { name: "삭제하기" }));
 
     await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // 실패했으니 행은 남아 있어야 한다.
-    expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
+    expect(screen.getByText("지원용 이력서")).toBeTruthy();
   });
 
   // 서버에 DELETE 가 실재하므로(FRT-111) 405/501 은 배포 상태에서 나올 수 없다. 그런데도
@@ -135,14 +135,14 @@ describe("RecentResumeList — 삭제 확인", () => {
       mockDeleteResume.mockRejectedValue(new ApiError(status, "unsupported"));
       await renderList();
 
-      await user.click(screen.getByLabelText("레쥬메 삭제"));
+      await user.click(screen.getByLabelText("이력서 삭제"));
       await user.click(screen.getByRole("button", { name: "삭제하기" }));
 
       await waitFor(() =>
         expect(vi.mocked(toast.error)).toHaveBeenCalledWith("삭제에 실패했어요"),
       );
       // 버튼이 사라지면 사용자는 재시도 자체를 못 한다.
-      expect(screen.getByLabelText("레쥬메 삭제")).toBeTruthy();
+      expect(screen.getByLabelText("이력서 삭제")).toBeTruthy();
     },
   );
 });
@@ -150,19 +150,19 @@ describe("RecentResumeList — 삭제 확인", () => {
 /**
  * FRT-258 — 뒤에서 도는 재조회가 화면을 덮어쓴다.
  *
- * 이 목록의 로딩 게이트도 `items === null`(첫 조회 전용)이라, 레쥬메를 만든 뒤 올라가는
+ * 이 목록의 로딩 게이트도 `items === null`(첫 조회 전용)이라, 이력서를 만든 뒤 올라가는
  * `reloadToken` 재조회는 **목록이 조작 가능한 채로** 돈다. 자기소개서 목록보다 창은 좁지만
  * 여긴 폴링이 없어 교정할 다음 조회도 없다 — 한번 되살아나면 새로고침 전까지 남는다.
  */
 describe("RecentResumeList — 뒤에서 도는 재조회", () => {
-  const other = () => item({ version_id: "v2", title: "인턴 지원 레쥬메" });
+  const other = () => item({ version_id: "v2", title: "인턴 지원 이력서" });
 
-  it("재조회가 떠 있는 동안 지운 레쥬메를 그 응답이 되살리지 않는다", async () => {
+  it("재조회가 떠 있는 동안 지운 이력서를 그 응답이 되살리지 않는다", async () => {
     let resolveReload: (v: ResumeListItem[]) => void = () => {};
     mockGetResumeList
       .mockReset()
       .mockResolvedValueOnce([item(), other()])
-      // 레쥬메를 만들면 올라가는 reloadToken 의 재조회 — 삭제 뒤에 도착시킨다.
+      // 이력서를 만들면 올라가는 reloadToken 의 재조회 — 삭제 뒤에 도착시킨다.
       .mockImplementationOnce(
         () =>
           new Promise<ResumeListItem[]>((res) => {
@@ -174,35 +174,35 @@ describe("RecentResumeList — 뒤에서 도는 재조회", () => {
       <RecentResumeList onCreateClick={() => {}} reloadToken={0} />,
     );
     await act(async () => {});
-    expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
+    expect(screen.getByText("지원용 이력서")).toBeTruthy();
 
     rerender(<RecentResumeList onCreateClick={() => {}} reloadToken={1} />);
     await act(async () => {});
     expect(mockGetResumeList).toHaveBeenCalledTimes(2);
 
-    // 재조회가 떠 있는 채로 **다른** 레쥬메를 지운다.
-    fireEvent.click(screen.getAllByLabelText("레쥬메 삭제")[0]);
+    // 재조회가 떠 있는 채로 **다른** 이력서를 지운다.
+    fireEvent.click(screen.getAllByLabelText("이력서 삭제")[0]);
     fireEvent.click(screen.getByRole("button", { name: "삭제하기" }));
     await act(async () => {});
     expect(mockDeleteResume).toHaveBeenCalledWith("v1");
-    expect(screen.queryByText("지원용 레쥬메")).toBeNull();
+    expect(screen.queryByText("지원용 이력서")).toBeNull();
 
     // 삭제 전에 떠난 재조회 응답이 이제 도착한다.
     await act(async () => {
       resolveReload([item(), other()]);
     });
 
-    expect(screen.queryByText("지원용 레쥬메")).toBeNull();
+    expect(screen.queryByText("지원용 이력서")).toBeNull();
   });
 
-  // 삭제가 "그 순간 떠 있던 응답을 버린다"로 구현되면, 같은 응답에 실려 온 **새 레쥬메**까지
+  // 삭제가 "그 순간 떠 있던 응답을 버린다"로 구현되면, 같은 응답에 실려 온 **새 이력서**까지
   // 함께 사라진다. 여긴 폴링이 없어 그걸 되살릴 다음 조회도 없다 — 새로고침 전까지 안 보인다.
-  it("삭제 때문에 재조회가 실어 온 새 레쥬메까지 사라지지는 않는다", async () => {
+  it("삭제 때문에 재조회가 실어 온 새 이력서까지 사라지지는 않는다", async () => {
     let resolveReload: (v: ResumeListItem[]) => void = () => {};
     mockGetResumeList
       .mockReset()
       .mockResolvedValueOnce([item()])
-      // 새 레쥬메를 만들면 reloadToken 이 올라간다 — 그 응답에 새 레쥬메가 실려 온다.
+      // 새 이력서를 만들면 reloadToken 이 올라간다 — 그 응답에 새 이력서가 실려 온다.
       .mockImplementationOnce(
         () =>
           new Promise<ResumeListItem[]>((res) => {
@@ -214,13 +214,13 @@ describe("RecentResumeList — 뒤에서 도는 재조회", () => {
       <RecentResumeList onCreateClick={() => {}} reloadToken={0} />,
     );
     await act(async () => {});
-    expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
+    expect(screen.getByText("지원용 이력서")).toBeTruthy();
 
     rerender(<RecentResumeList onCreateClick={() => {}} reloadToken={1} />);
     await act(async () => {});
 
-    // 재조회가 떠 있는 채로 옛 레쥬메를 지운다.
-    fireEvent.click(screen.getByLabelText("레쥬메 삭제"));
+    // 재조회가 떠 있는 채로 옛 이력서를 지운다.
+    fireEvent.click(screen.getByLabelText("이력서 삭제"));
     fireEvent.click(screen.getByRole("button", { name: "삭제하기" }));
     await act(async () => {});
     expect(mockDeleteResume).toHaveBeenCalledWith("v1");
@@ -230,8 +230,8 @@ describe("RecentResumeList — 뒤에서 도는 재조회", () => {
       resolveReload([item(), other()]);
     });
 
-    expect(screen.queryByText("지원용 레쥬메")).toBeNull();
-    expect(screen.getByText("인턴 지원 레쥬메")).toBeTruthy();
+    expect(screen.queryByText("지원용 이력서")).toBeNull();
+    expect(screen.getByText("인턴 지원 이력서")).toBeTruthy();
   });
 
   it("늦게 도착한 옛 응답이 그 뒤에 시작된 재조회의 결과를 덮지 않는다", async () => {
@@ -253,14 +253,14 @@ describe("RecentResumeList — 뒤에서 도는 재조회", () => {
 
     rerender(<RecentResumeList onCreateClick={() => {}} reloadToken={1} />);
     await act(async () => {});
-    expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
-    expect(screen.queryByText("인턴 지원 레쥬메")).toBeNull();
+    expect(screen.getByText("지원용 이력서")).toBeTruthy();
+    expect(screen.queryByText("인턴 지원 이력서")).toBeNull();
 
     await act(async () => {
       resolveFirst([item(), other()]);
     });
 
-    expect(screen.queryByText("인턴 지원 레쥬메")).toBeNull();
+    expect(screen.queryByText("인턴 지원 이력서")).toBeNull();
   });
 });
 
@@ -279,7 +279,7 @@ describe("RecentResumeList — 만든 시각", () => {
  * FRT-319 — 조회 한 번이 실패했다고 보이던 목록을 지우지 않는다.
  *
  * 자기소개서 목록과 같은 결함이다. 여긴 폴링이 없어 "관측이 멈춘다"는 없지만, 실패를
- * `setItems([])` 로 기록하면 잘 떠 있던 레쥬메가 통째로 사라지고 에러 박스로 바뀌는 것은
+ * `setItems([])` 로 기록하면 잘 떠 있던 이력서가 통째로 사라지고 에러 박스로 바뀌는 것은
  * 똑같다 — 게다가 되돌려 줄 다음 조회조차 없어 새로고침 전까지 빈 화면이 남는다.
  */
 describe("RecentResumeList — 조회 실패", () => {
@@ -292,12 +292,12 @@ describe("RecentResumeList — 조회 실패", () => {
     const { rerender } = render(
       <RecentResumeList onCreateClick={() => {}} reloadToken={0} />,
     );
-    await screen.findByText("지원용 레쥬메");
+    await screen.findByText("지원용 이력서");
 
     rerender(<RecentResumeList onCreateClick={() => {}} reloadToken={1} />);
     await screen.findByRole("status");
 
-    expect(screen.getByText("지원용 레쥬메")).toBeTruthy();
+    expect(screen.getByText("지원용 이력서")).toBeTruthy();
     expect(screen.queryByText("목록을 불러오지 못했어요.")).toBeNull();
   });
 
@@ -317,19 +317,19 @@ describe("RecentResumeList — 조회 실패", () => {
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce([
         item(),
-        item({ version_id: "v9", title: "새 레쥬메" }),
+        item({ version_id: "v9", title: "새 이력서" }),
       ]);
 
     const { rerender } = render(
       <RecentResumeList onCreateClick={() => {}} reloadToken={0} />,
     );
-    await screen.findByText("지원용 레쥬메");
+    await screen.findByText("지원용 이력서");
     rerender(<RecentResumeList onCreateClick={() => {}} reloadToken={1} />);
     const banner = await screen.findByRole("status");
 
     fireEvent.click(within(banner).getByRole("button", { name: "다시 시도" }));
 
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
-    expect(screen.getByText("새 레쥬메")).toBeTruthy();
+    expect(screen.getByText("새 이력서")).toBeTruthy();
   });
 });

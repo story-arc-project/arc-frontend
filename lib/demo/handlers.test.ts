@@ -21,7 +21,7 @@ async function createAndGetId(): Promise<string> {
 }
 
 /**
- * 데모 레쥬메 생성 회귀 가드.
+ * 데모 이력서 생성 회귀 가드.
  *
  * 실제 서버처럼 createResume 은 id 를 돌려주지 않는다. 그래도 생성 직후 목록을 다시
  * 부르면 새 항목이 보여야 한다 — 모달이 "만들고 있어요" 안내 후 목록만 갱신하기 때문에,
@@ -42,7 +42,7 @@ describe("demo createResume", () => {
 });
 
 /**
- * 데모 레쥬메 저장 회귀 가드 (FRT-151).
+ * 데모 이력서 저장 회귀 가드 (FRT-151).
  *
  * 데모는 버전을 여러 개 만들어도 본문은 시드 하나를 공유한다. 그래도 **저장이 성공했다고
  * 말했으면 그 편집은 남아야 한다** — 되돌려주기만 하면 상세 화면이 성공 토스트를 띄우고
@@ -73,13 +73,13 @@ describe("demo updateResume", () => {
 });
 
 /**
- * 데모 레쥬메 삭제 회귀 가드 (FRT-151).
+ * 데모 이력서 삭제 회귀 가드 (FRT-151).
  *
  * 목록 화면은 삭제 성공 시 로컬 state 에서만 행을 지운다. 스토어에 남겨두면 목록을 다시
- * 부르는 순간(생성·재진입) 삭제한 레쥬메가 되살아난다.
+ * 부르는 순간(생성·재진입) 삭제한 이력서가 되살아난다.
  */
 describe("demo deleteResume", () => {
-  it("삭제한 레쥬메는 목록을 다시 불러도 부활하지 않는다", async () => {
+  it("삭제한 이력서는 목록을 다시 불러도 부활하지 않는다", async () => {
     const versionId = await createAndGetId();
     const before = await getResumeList();
     expect(before.some((r) => r.version_id === versionId)).toBe(true);

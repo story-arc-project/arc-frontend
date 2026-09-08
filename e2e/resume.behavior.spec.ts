@@ -3,40 +3,40 @@ import { expect, test, type Page } from "@playwright/test";
 import { stubApi } from "./fixtures/stub-api";
 
 /**
- * FRT-43 / FRT-116 / FRT-117 — 레쥬메(export) 생성→편집→저장 동작(behavior) E2E.
+ * FRT-43 / FRT-116 / FRT-117 — 이력서(export) 생성→편집→저장 동작(behavior) E2E.
  *
  * 서버는 생성을 큐잉만 하고 id 를 돌려주지 않으므로(POST /export/resume →
  * {status, message}), 생성 직후 상세로 이동하지 않고 "만드는 중" 안내 후 목록을
  * 갱신한다. 목록 항목의 이름은 서버가 제목을 주지 않아 created_at 으로 만든다.
  *
- * ⚠️ 레쥬메 상세 조회·변이(PATCH/DELETE)는 백엔드 미구현 → stateful mock 으로 프론트
+ * ⚠️ 이력서 상세 조회·변이(PATCH/DELETE)는 백엔드 미구현 → stateful mock 으로 프론트
  * 동작을 선검증한다. 목록·생성 stub 은 실 계약(6356a37) 그대로다.
  */
 
-test.describe("FRT-43 레쥬메 생성·편집 동작", () => {
-  test("레쥬메 생성 → 자기소개 편집·저장이 상세·목록에 반영된다", async ({ page }) => {
+test.describe("FRT-43 이력서 생성·편집 동작", () => {
+  test("이력서 생성 → 자기소개 편집·저장이 상세·목록에 반영된다", async ({ page }) => {
     const stub = await stubApi(page, { authed: true, scenario: "data" });
     await page.goto("/export");
 
-    // Arrange: 시드 레쥬메 1건이 목록에 보인다(이름은 만든 시각 기반).
+    // Arrange: 시드 이력서 1건이 목록에 보인다(이름은 만든 시각 기반).
     await expect(page.getByRole("heading", { level: 1, name: "익스포트" })).toBeVisible();
-    await expect(page.getByRole("link", { name: /레쥬메/ })).toHaveCount(1);
+    await expect(page.getByRole("link", { name: /이력서/ })).toHaveCount(1);
 
     // ── CREATE ─────────────────────────────────────────────────────────────
-    // 레쥬메 트랙 카드(버튼)로 생성 모달을 연다.
-    await page.getByRole("button", { name: "새 레쥬메 만들기" }).click();
-    const dialog = page.getByRole("dialog", { name: "새 레쥬메 만들기" });
+    // 이력서 트랙 카드(버튼)로 생성 모달을 연다.
+    await page.getByRole("button", { name: "새 이력서 만들기" }).click();
+    const dialog = page.getByRole("dialog", { name: "새 이력서 만들기" });
     await expect(dialog).toBeVisible();
     // 언어 기본값은 한국어 → 그대로 "만들기".
     await dialog.getByRole("button", { name: "만들기", exact: true }).click();
 
     // FRT-116 가드: 생성이 큐잉되면 실패 경고가 아니라 "만드는 중" 안내가 뜬다.
-    await expect(page.getByText("레쥬메를 만들고 있어요", { exact: false })).toBeVisible();
-    await expect(page.getByText("레쥬메 생성에 실패했어요.", { exact: false })).toHaveCount(0);
+    await expect(page.getByText("이력서를 만들고 있어요", { exact: false })).toBeVisible();
+    await expect(page.getByText("이력서 생성에 실패했어요.", { exact: false })).toHaveCount(0);
 
     // FRT-117 가드: 상세로 튀지 않고 목록에 새 항목이 반영된다.
     await expect(page).toHaveURL(/\/export$/);
-    await expect(page.getByRole("link", { name: /레쥬메/ })).toHaveCount(2);
+    await expect(page.getByRole("link", { name: /이력서/ })).toHaveCount(2);
 
     // 변이 payload 단언: POST /export/resume 에 언어가 담겨 전송된다.
     const creates = stub.mutations.filter(
@@ -46,8 +46,8 @@ test.describe("FRT-43 레쥬메 생성·편집 동작", () => {
     expect(creates[0].body).toMatchObject({ language: "ko" });
 
     // ── EDIT + SAVE ────────────────────────────────────────────────────────
-    // 새로 만든 레쥬메(목록 최상단) 상세로 들어간다.
-    await page.getByRole("link", { name: /레쥬메/ }).first().click();
+    // 새로 만든 이력서(목록 최상단) 상세로 들어간다.
+    await page.getByRole("link", { name: /이력서/ }).first().click();
     await expect(page).toHaveURL(/\/export\/resume\/e2e-resume-new-/);
     const newId = page.url().split("/export/resume/")[1];
 
@@ -88,19 +88,19 @@ test.describe("FRT-43 레쥬메 생성·편집 동작", () => {
 
     // ── 목록 반영 ────────────────────────────────────────────────────────────
     await page.goto("/export");
-    // 새 레쥬메(시드 + 1 = 2건)가 목록에 남아 있다. 목록 응답에는 요약이 없으므로
+    // 새 이력서(시드 + 1 = 2건)가 목록에 남아 있다. 목록 응답에는 요약이 없으므로
     // 미리보기 대신 건수와 이름만 단언한다.
-    await expect(page.getByRole("link", { name: /레쥬메/ })).toHaveCount(2);
+    await expect(page.getByRole("link", { name: /이력서/ })).toHaveCount(2);
   });
 });
 
 /**
- * FRT-112 — 레쥬메 파일 내보내기(PDF·DOCX) 동작 E2E.
+ * FRT-112 — 이력서 파일 내보내기(PDF·DOCX) 동작 E2E.
  *
  * PDF 는 한글 폰트(수 MB)를 런타임에 받아 만들기 때문에 스모크에서 제외하고,
  * 순수 JS 로 즉시 만들어지는 Word(.docx) 로 "실제 파일이 규칙대로 떨어지는지"를 본다.
  */
-test.describe("FRT-112 레쥬메 내보내기", () => {
+test.describe("FRT-112 이력서 내보내기", () => {
   test("내보내기에서 Word 를 고르면 이름 규칙대로 파일이 내려온다", async ({
     page,
   }) => {
@@ -122,8 +122,8 @@ test.describe("FRT-112 레쥬메 내보내기", () => {
     await dialog.getByRole("button", { name: /^Word/ }).click();
     const download = await downloadPromise;
 
-    // 파일명 규칙: {이름}_레쥬메_{YYYYMMDD}.docx (픽스처 인적사항 이름 = 김아크)
-    expect(download.suggestedFilename()).toMatch(/^김아크_레쥬메_\d{8}\.docx$/);
+    // 파일명 규칙: {이름}_이력서_{YYYYMMDD}.docx (픽스처 인적사항 이름 = 김아크)
+    expect(download.suggestedFilename()).toMatch(/^김아크_이력서_\d{8}\.docx$/);
 
     // 내려받고 나면 다이얼로그는 닫힌다.
     await expect(dialog).toBeHidden();
@@ -160,7 +160,7 @@ test.describe("FRT-148 저장 실패와 복원 배너", () => {
     });
   }
 
-  /** 시드 레쥬메(generated_at 2026-03-10)보다 새 임시 저장을 심어 배너를 띄운다. */
+  /** 시드 이력서(generated_at 2026-03-10)보다 새 임시 저장을 심어 배너를 띄운다. */
   async function seedStaleDraft(page: Page) {
     await page.addInitScript(
       ([key, draft]) => window.localStorage.setItem(key, draft),
@@ -227,7 +227,7 @@ test.describe("FRT-148 저장 실패와 복원 배너", () => {
     await expectEditKept(page);
   });
 
-  // 생성이 아직 안 끝난 레쥬메를 저장하면 서버가 400 과 **영문** 메시지를 준다.
+  // 생성이 아직 안 끝난 이력서를 저장하면 서버가 400 과 **영문** 메시지를 준다.
   // 사유를 그대로 보여주는 관용구가 여기서는 읽히지 않는 문장을 띄운다.
   test("400 은 서버 영문 메시지 대신 생성 중이라는 한글 안내를 보여준다", async ({
     page,
@@ -240,7 +240,7 @@ test.describe("FRT-148 저장 실패와 복원 배너", () => {
     await editAndSave(page);
 
     await expect(
-      page.getByText("아직 레쥬메를 만드는 중이에요", { exact: false }),
+      page.getByText("아직 이력서를 만드는 중이에요", { exact: false }),
     ).toBeVisible();
     await expect(page.getByText("Resume is not completed yet.")).toHaveCount(0);
     await expectEditKept(page);
@@ -306,13 +306,13 @@ test.describe("FRT-148 저장 실패와 복원 배너", () => {
 });
 
 /**
- * FRT-56 — 레쥬메 '다시 만들기' 재생성 동작(behavior) E2E.
+ * FRT-56 — 이력서 '다시 만들기' 재생성 동작(behavior) E2E.
  *
- * 편집(dirty) 중 재생성하면: (1) 새 레쥬메가 큐잉되고 목록으로 돌아가 거기에 반영되며,
+ * 편집(dirty) 중 재생성하면: (1) 새 이력서가 큐잉되고 목록으로 돌아가 거기에 반영되며,
  * (2) 구 versionId 의 draft 가 localStorage 에 잔존하지 않는다(다이얼로그 "편집 내용이
  * 사라진다" 약속과 정합). 서버가 새 id 를 주지 않아 새 버전 상세로는 갈 수 없다.
  */
-test.describe("FRT-56 레쥬메 재생성 동작", () => {
+test.describe("FRT-56 이력서 재생성 동작", () => {
   const DRAFT_KEY = "arc:resume-draft:resume-e2e-1";
 
   test("편집 중 재생성 시 목록에 반영되고 구 draft 가 남지 않는다", async ({
@@ -320,7 +320,7 @@ test.describe("FRT-56 레쥬메 재생성 동작", () => {
   }) => {
     await stubApi(page, { authed: true, scenario: "data" });
 
-    // Arrange: 시드 레쥬메 상세로 진입한다.
+    // Arrange: 시드 이력서 상세로 진입한다.
     await page.goto("/export/resume/resume-e2e-1");
     const regenerateButton = page
       .locator("header")
@@ -344,10 +344,10 @@ test.describe("FRT-56 레쥬메 재생성 동작", () => {
 
     // 재생성은 큐잉만 되므로 새 버전 상세가 아니라 목록으로 돌아간다.
     await expect(page).toHaveURL(/\/export$/);
-    await expect(page.getByText("레쥬메를 다시 만들고 있어요", { exact: false })).toBeVisible();
+    await expect(page.getByText("이력서를 다시 만들고 있어요", { exact: false })).toBeVisible();
 
-    // 새 레쥬메가 목록에 반영된다(시드 1 + 재생성 1).
-    await expect(page.getByRole("link", { name: /레쥬메/ })).toHaveCount(2);
+    // 새 이력서가 목록에 반영된다(시드 1 + 재생성 1).
+    await expect(page.getByRole("link", { name: /이력서/ })).toHaveCount(2);
 
     // 구 versionId 의 draft 가 localStorage 에 남지 않는다
     // (다이얼로그 "편집 내용이 사라진다" 약속과 정합).

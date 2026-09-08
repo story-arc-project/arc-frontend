@@ -12,7 +12,7 @@ import { stubApi } from "./fixtures/stub-api";
  *
  * 근거 레이어는 main-routes.smoke 와 동일:
  *  - 1차(load-bearing): 화면 고유 랜드마크. 목록/ new 페이지는 데이터-독립 h1(진입+가드
- *    통과 증명), 상세/레쥬메 페이지는 성공 상태에서만 뜨는 요소(로딩=스켈레톤·에러=alert엔
+ *    통과 증명), 상세/이력서 페이지는 성공 상태에서만 뜨는 요소(로딩=스켈레톤·에러=alert엔
  *    없음 → 데이터 렌더까지 증명).
  *  - 2차: URL 유지 + GNB 로고("ARC").
  * 상세 라우트는 픽스처 ID(ind-1/comp-1/kw-1/resume-e2e-1)로 진입한다. 스텁은 id 무관
@@ -102,7 +102,7 @@ const SUBROUTES: SubRouteCase[] = [
     name: "export/resume detail",
     path: "/export/resume/resume-e2e-1",
     url: /\/export\/resume\/resume-e2e-1$/,
-    // 레쥬메 상세는 h1 이 없다. 비어있지 않은 섹션이 로드되면 편집기 상단바 버튼이 뜬다
+    // 이력서 상세는 h1 이 없다. 비어있지 않은 섹션이 로드되면 편집기 상단바 버튼이 뜬다
     // (전부 빈 섹션이면 EmptyResumeState 가 가로채므로, 픽스처는 비어있지 않게 유지).
     landmark: async (page) => {
       await expect(page.getByRole("button", { name: "내보내기" })).toBeVisible();

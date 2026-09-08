@@ -170,7 +170,7 @@ describe("createResume — experience_ids (FRT-109 / BAC-45 계약)", () => {
 
   // 미지정은 "빈 배열"이 아니라 **키 자체의 부재**여야 한다. 서버 계약상 experience_ids 부재는
   // 현행 동작(전체 경험)이고 빈 배열은 400 이므로, 여기서 [] 로 뭉개면 플래그 off 상태에서
-  // 레쥬메 생성이 통째로 실패한다.
+  // 이력서 생성이 통째로 실패한다.
   it("experienceIds 를 안 넘기면 body 에 키 자체가 없다", async () => {
     mockPost.mockResolvedValue({ status: "success", message: "ok", data: { id: "res-4" } });
 
@@ -285,7 +285,7 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
   // FRT-326 - 자소서(CoverLetterNotReadyError)와 같은 모양으로 갈라 놓는다. 소거법("ApiError 가
   // 아니면 준비 중")으로 판정하면 네트워크 장애·파싱 실패까지 "아직 만들고 있어요"가 되므로,
   // 준비 안 됨은 **전용 타입으로만** 말한다.
-  it("아직 준비 안 된 레쥬메는 ResumeNotReadyError 로 말한다 - 일반 실패와 갈린다", async () => {
+  it("아직 준비 안 된 이력서는 ResumeNotReadyError 로 말한다 - 일반 실패와 갈린다", async () => {
     mockGet.mockResolvedValue({
       status: "success",
       message: "ok",
@@ -341,7 +341,7 @@ describe("getResume — data.result 언랩 (FRT-123 계약 §3.6, dual-compat)",
   });
 
   // 반대쪽 회귀: status 를 안 주거나 모르는 값이면 **끝났다는 증거가 없다.** 여기서 실패로
-  // 단정하면 정상 생성 중인 레쥬메가 다시 "불러오지 못했어요"가 된다(FRT-326 원래 증상).
+  // 단정하면 정상 생성 중인 이력서가 다시 "불러오지 못했어요"가 된다(FRT-326 원래 증상).
   it("status 가 없거나 미지 값이면 여전히 ResumeNotReadyError 다", async () => {
     mockGet.mockResolvedValue({
       status: "success",
@@ -606,7 +606,7 @@ describe("resume 뮤테이션 실패 매핑", () => {
     expect((err as ApiError).message).toContain("100자");
   });
 
-  // 생성이 아직 안 끝난 레쥬메를 저장하면 서버가 400 을 준다(`patch_resume` 의 유일한
+  // 생성이 아직 안 끝난 이력서를 저장하면 서버가 400 을 준다(`patch_resume` 의 유일한
   // 400 분기). 상태코드를 삼키면 화면이 "왜 안 되는지"를 말할 수 없다.
   it("updateResume: 400(생성 미완료)도 그대로 올린다", async () => {
     mockPatch.mockRejectedValue(new ApiError(400, "Resume is not completed yet."));

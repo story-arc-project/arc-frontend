@@ -15,7 +15,7 @@ const at = (items: Item[]) => items.map((i) => i.id);
 
 describe("visibleExperiences", () => {
   it("표시 필드가 어떤 항목에도 없으면 입력을 그대로 돌려준다", () => {
-    // 백엔드가 rev.5 를 구현하기 전 상태. 여기서 하나라도 걸러지면 현행 레쥬메가 조용히 줄어든다.
+    // 백엔드가 rev.5 를 구현하기 전 상태. 여기서 하나라도 걸러지면 현행 이력서가 조용히 줄어든다.
     const items: Item[] = [{ id: 1 }, { id: 2 }, { id: 3 }];
     expect(visibleExperiences(items)).toEqual(items);
   });
