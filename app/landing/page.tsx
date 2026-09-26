@@ -5,13 +5,6 @@ import { motion, useInView } from "framer-motion";
 import { Coins } from "lucide-react";
 import { useRef } from "react";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
-import {
-  CREDIT_PACKAGES,
-  SIGNUP_GRANT_CREDITS,
-  creditCost,
-  creditRuns,
-  formatKrw,
-} from "@/lib/constants/credits";
 import LandingDemo from "./_components/LandingDemo";
 
 /* ── Shared animation ────────────────────────────────────── */
@@ -430,20 +423,16 @@ function HowItWorks() {
 
 /* ── Pricing ─────────────────────────────────────────────── */
 function Pricing() {
-  // 대표 환산은 config 값에서 파생 — 안정 id로 조회(배열 순서 비의존).
-  // 차감량 자체는 노출하지 않고, "가입 크레딧으로 대표 작업 몇 편" 감만 준다.
-  const resumeRuns = creditRuns(SIGNUP_GRANT_CREDITS, creditCost("resume"));
-
   return (
     <section id="pricing" className="py-24 px-6 border-t border-border">
       <div className="max-w-4xl mx-auto">
         <Reveal className="mb-10 max-w-2xl">
           <p className="text-[12px] font-bold text-brand uppercase tracking-widest mb-4">요금</p>
           <h2 className="text-[26px] sm:text-[38px] font-bold tracking-[-0.02em] text-text-primary mb-4">
-            기록은 무료로, AI는 필요한 만큼만
+            경험 기록부터, 무료로 시작하세요
           </h2>
           <p className="text-[16px] leading-[1.7] text-text-secondary break-keep">
-            월 구독 없이, AI 분석과 문서 생성에만 크레딧을 써요. 기록과 보관은 언제나 무료입니다.
+            경험 기록과 보관, 개별 경험 분석은 무료로 이용할 수 있어요.
           </p>
         </Reveal>
 
@@ -451,13 +440,9 @@ function Pricing() {
         <Reveal delay={0.04} className="mb-10">
           <ul className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             {[
-              { label: "월 구독료", value: "없음", desc: "필요한 만큼만 충전하세요" },
-              { label: "기록·보관", value: "무료", desc: "기록은 계속 보관돼요" },
-              {
-                label: "가입 혜택",
-                value: `${SIGNUP_GRANT_CREDITS} 크레딧`,
-                desc: "가입 즉시 지급해요",
-              },
+              { label: "기록·보관", value: "무료", desc: "나의 경험을 차곡차곡 모아요" },
+              { label: "개별 경험 분석", value: "무료", desc: "경험 하나하나의 강점을 찾아요" },
+              { label: "크레딧 충전", value: "준비 중", desc: "이용 안내는 추후 공개할게요" },
             ].map((item) => (
               <li key={item.label} className="px-6 py-6 text-center sm:py-2">
                 <p className="text-[13px] font-medium tracking-wide text-text-secondary">
@@ -474,7 +459,7 @@ function Pricing() {
           </ul>
         </Reveal>
 
-        {/* 히어로 — 무료 크레딧 강조(가장 강한 정보) */}
+        {/* 무료 이용 안내 */}
         <Reveal delay={0.08}>
           <div className="rounded-2xl border border-border bg-surface-secondary p-8 sm:p-10">
             <div className="mb-4 inline-flex items-center justify-center w-11 h-11 rounded-full bg-surface-brand">
@@ -482,58 +467,32 @@ function Pricing() {
             </div>
             <p className="text-[13px] font-semibold text-brand mb-3">먼저 무료로 시작해 보세요</p>
             <p className="text-[24px] sm:text-[30px] font-bold tracking-[-0.02em] text-text-primary leading-[1.3]">
-              가입하면 {SIGNUP_GRANT_CREDITS}크레딧을 무료로 드려요
+              나의 경험에서 강점을 발견해 보세요
             </p>
             <p className="text-[15px] leading-[1.7] text-text-secondary mt-3">
-              이력서를 약 {resumeRuns}편 만들어 볼 수 있는 크레딧이에요.
-              결제 없이 AI 분석과 문서 생성을 바로 경험할 수 있습니다.
+              경험을 기록하고 개별 분석으로 나만의 역량을 정리해 보세요.
             </p>
             <Link
               href="/signup"
               className="mt-7 inline-flex items-center justify-center h-12 px-7 rounded-lg bg-brand
                          text-white text-[15px] font-semibold hover:bg-brand-dark transition-colors"
             >
-              {SIGNUP_GRANT_CREDITS}크레딧 받고 시작하기
+              무료로 시작하기
             </Link>
           </div>
         </Reveal>
 
-        {/* 충전 안내 — 단일 패널(카드 분리 아님) + 열 구분선 */}
+        {/* 크레딧 도입 예정 안내 */}
         <Reveal delay={0.16} className="mt-10">
-          <p className="text-[15px] leading-[1.7] text-text-secondary mb-5">
-            무료 크레딧을 모두 사용한 뒤에도, 필요한 만큼 충전할 수 있어요.
-          </p>
-          <ul className="grid grid-cols-3 divide-x divide-border rounded-2xl border border-border">
-            {CREDIT_PACKAGES.map((pkg) => (
-              <li
-                key={pkg.id}
-                className={`relative px-2 py-7 text-center sm:px-3 ${
-                  pkg.recommended
-                    ? "z-10 rounded-xl bg-surface-brand ring-2 ring-inset ring-brand"
-                    : ""
-                }`}
-              >
-                {pkg.recommended && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-brand px-2.5 py-0.5 text-[11px] font-semibold text-white">
-                    추천
-                  </span>
-                )}
-                <Coins className="mx-auto mb-2 h-5 w-5 text-brand" aria-hidden />
-                <p className="text-[20px] sm:text-[26px] font-bold tracking-[-0.02em] text-text-primary leading-none">
-                  {pkg.credits}
-                  <span className="ml-0.5 text-[13px] font-medium text-text-secondary">
-                    크레딧
-                  </span>
-                </p>
-                <p className="mt-3 text-[16px] sm:text-[19px] font-semibold text-text-primary">
-                  {formatKrw(pkg.price)}
-                </p>
-                <p className="mt-3 text-[12px] sm:text-[13px] leading-[1.5] text-text-secondary break-keep">
-                  이력서 약 {creditRuns(pkg.credits, creditCost("resume"))}개
-                </p>
-              </li>
-            ))}
-          </ul>
+          <div className="rounded-2xl border border-border p-6 sm:p-8">
+            <p className="text-[16px] font-semibold text-text-primary">
+              크레딧 이용을 준비하고 있어요
+            </p>
+            <p className="mt-3 text-[15px] leading-[1.7] text-text-secondary break-keep">
+              종합 경험 분석, 키워드 분석, 이력서·자기소개서 생성에 크레딧을 사용하는 방식을 준비 중이에요.
+              도입 시점과 충전 방법은 추후 안내할게요.
+            </p>
+          </div>
         </Reveal>
       </div>
     </section>
