@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { motion, useInView } from "framer-motion";
 import { Coins } from "lucide-react";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { DEFAULT_CREDIT_PACKAGES, type CreditPackage } from "@/lib/constants/credit-packages";
+import { getCreditPackages } from "@/lib/api/credit-packages-api";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import LandingDemo from "./_components/LandingDemo";
 
@@ -423,76 +425,88 @@ function HowItWorks() {
 
 /* ── Pricing ─────────────────────────────────────────────── */
 function Pricing() {
+  const [packages, setPackages] = useState<readonly CreditPackage[]>(DEFAULT_CREDIT_PACKAGES);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    getCreditPackages(controller.signal).then((data) => {
+      if (active) setPackages(data);
+    }).catch(() => {
+      // Keep the planning defaults if the request cannot complete.
+    });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, []);
+
   return (
     <section id="pricing" className="py-24 px-6 border-t border-border">
       <div className="max-w-4xl mx-auto">
         <Reveal className="mb-10 max-w-2xl">
-          <p className="text-[12px] font-bold text-brand uppercase tracking-widest mb-4">요금</p>
-          <h2 className="text-[26px] sm:text-[38px] font-bold tracking-[-0.02em] text-text-primary mb-4">
-            경험 기록부터, 무료로 시작하세요
+          <p className="text-[12px] font-bold text-brand uppercase tracking-widest mb-4">크레딧 요금제</p>
+          <h2 className="text-[26px] sm:text-[38px] font-bold tracking-[-0.02em] text-text-primary mb-4 break-keep">
+            월 구독 없이,<br />필요한 만큼 크레딧으로
           </h2>
           <p className="text-[16px] leading-[1.7] text-text-secondary break-keep">
-            경험 기록과 보관, 개별 경험 분석은 무료로 이용할 수 있어요.
+            경험 기록과 보관, 개별 경험 분석은 무료로.{" "}<br className="hidden sm:block" />
+            분석부터 이력서·자기소개서 완성까지, 필요할 때 크레딧을 사용하세요.
           </p>
         </Reveal>
 
-        {/* 가치 제안 3열 — 라벨 · 강조 값 · 보조 설명 */}
         <Reveal delay={0.04} className="mb-10">
-          <ul className="grid grid-cols-1 divide-y divide-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-            {[
-              { label: "기록·보관", value: "무료", desc: "나의 경험을 차곡차곡 모아요" },
-              { label: "개별 경험 분석", value: "무료", desc: "경험 하나하나의 강점을 찾아요" },
-              { label: "크레딧 충전", value: "준비 중", desc: "이용 안내는 추후 공개할게요" },
-            ].map((item) => (
-              <li key={item.label} className="px-6 py-6 text-center sm:py-2">
-                <p className="text-[13px] font-medium tracking-wide text-text-secondary">
-                  {item.label}
-                </p>
-                <p className="mt-2 text-[30px] sm:text-[34px] font-bold tracking-[-0.02em] text-text-primary leading-none">
-                  {item.value}
-                </p>
-                <p className="mt-2.5 text-[13px] leading-[1.6] text-text-secondary">
-                  {item.desc}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </Reveal>
-
-        {/* 무료 이용 안내 */}
-        <Reveal delay={0.08}>
-          <div className="rounded-2xl border border-border bg-surface-secondary p-8 sm:p-10">
-            <div className="mb-4 inline-flex items-center justify-center w-11 h-11 rounded-full bg-surface-brand">
-              <Coins className="w-5 h-5 text-brand" aria-hidden />
+          <div className="grid grid-cols-1 gap-6 rounded-2xl border border-border bg-surface-secondary p-6 sm:grid-cols-2 sm:gap-8 sm:p-8">
+            <div>
+              <p className="text-[13px] font-semibold text-brand mb-2">무료로 쌓는 경험</p>
+              <p className="text-[18px] font-bold text-text-primary">기록·보관·개별 경험 분석</p>
+              <p className="mt-2 text-[14px] leading-[1.7] text-text-secondary break-keep">
+                나의 경험을 차곡차곡 모으고, 경험 하나하나의 강점을 발견하세요.
+              </p>
             </div>
-            <p className="text-[13px] font-semibold text-brand mb-3">먼저 무료로 시작해 보세요</p>
-            <p className="text-[24px] sm:text-[30px] font-bold tracking-[-0.02em] text-text-primary leading-[1.3]">
-              나의 경험에서 강점을 발견해 보세요
-            </p>
-            <p className="text-[15px] leading-[1.7] text-text-secondary mt-3">
-              경험을 기록하고 개별 분석으로 나만의 역량을 정리해 보세요.
-            </p>
-            <Link
-              href="/signup"
-              className="mt-7 inline-flex items-center justify-center h-12 px-7 rounded-lg bg-brand
-                         text-white text-[15px] font-semibold hover:bg-brand-dark transition-colors"
-            >
-              무료로 시작하기
-            </Link>
+            <div className="border-t border-border pt-6 sm:border-t-0 sm:border-l sm:pt-0 sm:pl-8">
+              <p className="text-[13px] font-semibold text-brand mb-2">크레딧으로 완성하는 결과물</p>
+              <p className="text-[18px] font-bold text-text-primary">종합·키워드 분석과 서류 생성</p>
+              <p className="mt-2 text-[14px] leading-[1.7] text-text-secondary break-keep">
+                쌓인 경험을 종합하고 키워드를 분석해, 이력서와 자기소개서로 연결하세요.
+              </p>
+            </div>
           </div>
         </Reveal>
 
-        {/* 크레딧 도입 예정 안내 */}
-        <Reveal delay={0.16} className="mt-10">
-          <div className="rounded-2xl border border-border p-6 sm:p-8">
-            <p className="text-[16px] font-semibold text-text-primary">
-              크레딧 이용을 준비하고 있어요
-            </p>
-            <p className="mt-3 text-[15px] leading-[1.7] text-text-secondary break-keep">
-              종합 경험 분석, 키워드 분석, 이력서·자기소개서 생성에 크레딧을 사용하는 방식을 준비 중이에요.
-              도입 시점과 충전 방법은 추후 안내할게요.
-            </p>
+        <Reveal delay={0.08}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {packages.map((creditPackage) => (
+              <article key={creditPackage.id} className="min-w-0 rounded-2xl border border-border p-6 sm:p-7">
+                <div className="mb-5 flex items-center gap-2 text-brand">
+                  <Coins className="h-4 w-4 shrink-0" aria-hidden />
+                  <h3 className="min-w-0 text-[14px] font-semibold [overflow-wrap:anywhere]">{creditPackage.name}</h3>
+                </div>
+                <p className="text-text-primary [overflow-wrap:anywhere]">
+                  <span className="text-[34px] font-bold tracking-[-0.03em]">{creditPackage.credits.toLocaleString("ko-KR")}</span>
+                  <span className="ml-1.5 text-[14px] font-medium">크레딧</span>
+                </p>
+                <p className="mt-5 border-t border-border pt-5 text-[24px] font-bold tracking-[-0.02em] text-text-primary [overflow-wrap:anywhere]">
+                  {creditPackage.price_krw.toLocaleString("ko-KR")}<span className="ml-1 text-[15px] font-medium">원</span>
+                </p>
+              </article>
+            ))}
           </div>
+          <p className="mt-4 text-[13px] leading-[1.6] text-text-secondary">
+            크레딧 충전은 추후 제공될 예정이에요.
+          </p>
+        </Reveal>
+
+        <Reveal delay={0.16} className="mt-10">
+          <Link
+            href="/signup"
+            className="inline-flex items-center justify-center h-12 px-7 rounded-lg bg-brand
+                       text-white text-[15px] font-semibold hover:bg-brand-dark transition-colors"
+          >
+            무료로 시작하기
+          </Link>
         </Reveal>
       </div>
     </section>
