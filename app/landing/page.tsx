@@ -494,19 +494,6 @@ function Pricing() {
               </article>
             ))}
           </div>
-          <p className="mt-4 text-[13px] leading-[1.6] text-text-secondary">
-            크레딧 충전은 추후 제공될 예정이에요.
-          </p>
-        </Reveal>
-
-        <Reveal delay={0.16} className="mt-10">
-          <Link
-            href="/signup"
-            className="inline-flex items-center justify-center h-12 px-7 rounded-lg bg-brand
-                       text-white text-[15px] font-semibold hover:bg-brand-dark transition-colors"
-          >
-            무료로 시작하기
-          </Link>
         </Reveal>
       </div>
     </section>

@@ -24,7 +24,8 @@ for (const width of [320, 390, 1440]) {
       await expect(cards.nth(index)).toContainText(`${price}원`);
     }
     await expect(section).not.toContainText(/가입 즉시|가입하면|이력서 약|1회당|3~5/);
-    await expect(section.getByRole("link", { name: "무료로 시작하기" })).toHaveAttribute("href", "/signup");
+    await expect(section.getByRole("link")).toHaveCount(0);
+    await expect(section).not.toContainText("크레딧 충전은 추후");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 }
