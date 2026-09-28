@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { stubApi } from "./fixtures/stub-api";
+import { corsHeaders, stubApi } from "./fixtures/stub-api";
 import { API_ORIGIN } from "./fixtures/api-origin";
 
 const endpoint = `${API_ORIGIN}/credits/packages`;
@@ -32,9 +32,12 @@ for (const width of [320, 390, 1440]) {
 
 test("정상 서버 패키지가 기획안 기본값을 대체한다", async ({ page }) => {
   await stubApi(page, { authed: false });
-  await page.route(endpoint, (route) => route.fulfill({ json: {
-    packages: [{ id: "custom", name: "새 패키지", credits: 80, price_krw: 12300 }],
-  } }));
+  await page.route(endpoint, (route) => route.fulfill({
+    headers: corsHeaders(route.request().headers()["origin"] ?? ""),
+    json: {
+      packages: [{ id: "custom", name: "새 패키지", credits: 80, price_krw: 12300 }],
+    },
+  }));
   await page.goto("/landing");
   const section = page.locator("#pricing");
   await expect(section.locator("article")).toHaveCount(1);
@@ -46,7 +49,10 @@ test("정상 서버 패키지가 기획안 기본값을 대체한다", async ({ 
 
 test("깨진 서버 응답이면 기본 패키지를 유지한다", async ({ page }) => {
   await stubApi(page, { authed: false });
-  await page.route(endpoint, (route) => route.fulfill({ json: { packages: [] } }));
+  await page.route(endpoint, (route) => route.fulfill({
+    headers: corsHeaders(route.request().headers()["origin"] ?? ""),
+    json: { packages: [] },
+  }));
   const response = page.waitForResponse(endpoint);
   await page.goto("/landing");
   await response;
