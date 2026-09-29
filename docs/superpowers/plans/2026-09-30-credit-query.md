@@ -28,22 +28,32 @@
 
 **Interfaces:** CreditBalance has balance/reserved/available/updated_at. getCredits(signal?: AbortSignal): Promise<CreditBalance>; invalidateCredits(): void; CreditsProvider default export; useCredits exposes the state and refetch contract from the spec.
 
-- [ ] Write and run failing API and state tests covering the spec and review focus.
-- [ ] Implement API validation and shared lazy auth-scoped state; preserve the existing API client.
-- [ ] Integrate provider around GNB/content without visible changes or eager fetching.
-- [ ] Run targeted tests and record RED/GREEN evidence.
-- [ ] Commit focused implementation.
+- [x] Write and run failing API and state tests covering the spec and review focus.
+- [x] Implement API validation and shared lazy auth-scoped state; preserve the existing API client.
+- [x] Integrate provider around GNB/content without visible changes or eager fetching.
+- [x] Run targeted tests and record RED/GREEN evidence.
+- [x] Commit focused implementation.
 
 ### Task 2: Contract documentation and issue alignment
 
 **Files:** docs/credits-user-api-proposal.md; link from docs/credits-api-proposal.md.
 
-- [ ] Document response, errors, private cache, refresh semantics and future operation call sites.
-- [ ] Update FRT-98 scope, preserving real backend integration as pending.
-- [ ] Post BAC-38 contract proposal with confirmed authenticated disclosure boundary.
+- [x] Document response, errors, private cache, refresh semantics and future operation call sites.
+- [x] Update FRT-98 scope, preserving real backend integration as pending.
+- [x] Post BAC-38 contract proposal with confirmed authenticated disclosure boundary.
 
 ### Task 3: Review and delivery
 
-- [ ] Independent spec and quality review; remediate concrete findings.
-- [ ] Run lint, typecheck, unit, build; main-layout browser smoke.
+- [x] Independent spec and quality review; remediate concrete findings.
+- [x] Run lint, typecheck, unit, build; main-layout browser smoke.
 - [ ] Open PR to dev with contract status, validation and follow-up limitations. Do not merge.
+
+## Progress evidence
+
+- Existing baseline: 2,982 tests passed; newly added missing-module test was expected RED.
+- Query/client targeted suite: 72 passed, including 10-second timeout and cancelled refresh regressions.
+- Browser: 11 passed (main route data/empty smoke plus no eager credit request).
+- Independent spec and quality review: PASS after abort guards prevented cancelled callers from redirecting/retrying after shared auth refresh.
+- Implementation commits: 56c4ff3 documentation, b4595e0 query foundation and cancellation correction.
+- API contract posted to BAC-38; FRT-98 scope updated and read back. Backend integration remains pending.
+- Final gates: lint PASS, typecheck PASS, 3,020 unit tests PASS, build PASS (sandbox port restriction resolved by approved escalation). No code changes after validation.
