@@ -33,7 +33,7 @@ class CreditsStore {
     this.listeners.add(listener);
     if (this.listeners.size === 1 && this.enabled) this.listen(true);
     // Deferring the first read coalesces sibling mounts and StrictMode's setup/cleanup/setup.
-    queueMicrotask(() => { if (this.listeners.size) void this.refetch(); });
+    queueMicrotask(() => { if (this.listeners.size) void this.read(); });
     return () => {
       this.listeners.delete(listener);
       if (!this.listeners.size) {
@@ -55,8 +55,6 @@ class CreditsStore {
   };
 
   private onInvalidate = () => {
-    this.invalidated = true;
-    this.publish({ ...this.state, isStale: true });
     void this.refetch();
   };
 
@@ -69,6 +67,14 @@ class CreditsStore {
   }
 
   refetch = (): Promise<void> => {
+    if (!this.enabled || !this.listeners.size) return Promise.resolve();
+    // An explicit refresh may follow a mutation; a read already in flight is not fresh enough.
+    this.invalidated = true;
+    this.publish({ ...this.state, isStale: true });
+    return this.read();
+  };
+
+  private read = (): Promise<void> => {
     if (!this.enabled || !this.listeners.size) return Promise.resolve();
     if (this.pending) return this.pending;
     const controller = new AbortController();
@@ -96,7 +102,7 @@ class CreditsStore {
       if (this.controller === controller) {
         this.controller = null;
         this.pending = null;
-        if (this.invalidated && this.listeners.size) return this.refetch();
+        if (this.invalidated && this.listeners.size) return this.read();
       }
     });
     return this.pending;

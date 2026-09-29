@@ -1,4 +1,4 @@
-import { StrictMode, useState } from "react";
+import { StrictMode, useState, useEffect } from "react";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import CreditsProvider from "./CreditsContext";
@@ -156,4 +156,34 @@ it.each(["focus", "visibilitychange"])("queues a fresh read on %s behind an in-f
   await act(async () => first.reject(new Error("old request failed")));
   await waitFor(() => expect(getCredits).toHaveBeenCalledTimes(2));
   expect(state().status).toBe("success");
+});
+it("explicit refetch after a mutation waits for a fresh read behind the pending snapshot", async () => {
+  const beforeMutation = deferred<typeof balance>();
+  const afterMutation = deferred<typeof balance>();
+  vi.mocked(getCredits).mockReturnValueOnce(beforeMutation.promise).mockReturnValueOnce(afterMutation.promise);
+  let refetch!: () => Promise<void>;
+  function Actions() { const credits = useCredits(); useEffect(() => { refetch = credits.refetch; }, [credits.refetch]); return null; }
+  render(<CreditsProvider><Consumer /><Actions /></CreditsProvider>);
+  await waitFor(() => expect(getCredits).toHaveBeenCalledTimes(1));
+  let completed = false;
+  let refresh!: Promise<void>;
+  act(() => { refresh = refetch().then(() => { completed = true; }); void refetch(); });
+  expect(state().isStale).toBe(true);
+  await act(async () => beforeMutation.resolve(balance));
+  await waitFor(() => expect(getCredits).toHaveBeenCalledTimes(2));
+  expect(completed).toBe(false);
+  expect(state().isStale).toBe(true);
+  const updated = { ...balance, balance: 44, available: 41 };
+  await act(async () => { afterMutation.resolve(updated); await refresh; });
+  expect(completed).toBe(true);
+  expect(state().data).toEqual(updated);
+  expect(state().isStale).toBe(false);
+  expect(getCredits).toHaveBeenCalledTimes(2);
+});
+it("explicit refetch while signed out stays idle without marking data stale", async () => {
+  auth.user = null;
+  render(<CreditsProvider><Consumer /></CreditsProvider>);
+  await act(async () => screen.getByTestId("state").click());
+  expect(getCredits).not.toHaveBeenCalled();
+  expect(state()).toMatchObject({ status: "idle", data: null, isStale: false });
 });
