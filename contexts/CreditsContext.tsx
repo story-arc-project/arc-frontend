@@ -63,7 +63,7 @@ class CreditsStore {
   private listen(add: boolean) {
     const method = add ? "addEventListener" : "removeEventListener";
     window[method]("focus", this.onReturn);
-    window[method]("online", this.onReturn);
+    window[method]("online", this.onInvalidate);
     document[method]("visibilitychange", this.onReturn);
     window[method](CREDITS_INVALIDATED_EVENT, this.onInvalidate);
   }
@@ -79,7 +79,7 @@ class CreditsStore {
       do {
         this.invalidated = false;
         if (!current()) break;
-        this.publish({ ...this.state, status: this.state.data ? this.state.status : "loading", error: null, isRefreshing: !!this.state.data });
+        this.publish({ ...this.state, status: this.state.data ? "success" : "loading", error: null, isRefreshing: !!this.state.data });
         try {
           const data = await getCredits(controller.signal);
           if (current()) this.publish({ data, status: "success", error: null, isRefreshing: false, isStale: this.invalidated });

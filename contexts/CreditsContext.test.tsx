@@ -122,3 +122,25 @@ it("ignores focus while hidden", async () => {
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(getCredits).toHaveBeenCalledTimes(1); spy.mockRestore();
 });
+it("queues a fresh read when reconnecting behind a failing in-flight request", async () => {
+  const first = deferred<typeof balance>(); vi.mocked(getCredits).mockReturnValueOnce(first.promise);
+  render(<CreditsProvider><Consumer /></CreditsProvider>);
+  await waitFor(() => expect(getCredits).toHaveBeenCalledTimes(1));
+  act(() => { window.dispatchEvent(new Event("online")); window.dispatchEvent(new Event("online")); });
+  await act(async () => first.reject(new Error("offline")));
+  await waitFor(() => expect(getCredits).toHaveBeenCalledTimes(2));
+  expect(state().status).toBe("success");
+});
+it("keeps cached data retry status coherent after a failed refresh", async () => {
+  render(<CreditsProvider><Consumer /></CreditsProvider>);
+  await waitFor(() => expect(state().status).toBe("success"));
+  vi.mocked(getCredits).mockRejectedValueOnce(new Error("offline"));
+  act(() => invalidateCredits());
+  await waitFor(() => expect(state().status).toBe("error"));
+  const retry = deferred<typeof balance>(); vi.mocked(getCredits).mockReturnValueOnce(retry.promise);
+  await act(async () => screen.getByTestId("state").click());
+  expect(state()).toMatchObject({ status: "success", data: balance, isRefreshing: true, isStale: true });
+  expect(state().error).toBeUndefined();
+  await act(async () => retry.resolve(balance));
+  expect(state().isStale).toBe(false);
+});

@@ -714,3 +714,79 @@ it("does not start refresh after cancellation while reading an auth error body",
   expect(fetchMock).toHaveBeenCalledTimes(1)
   expect(window.location.href).toBe("")
 })
+
+describe("bounded shared auth refresh", () => {
+  afterEach(() => vi.useRealTimers())
+
+  it("times out a hung shared refresh and allows a later request to refresh again", async () => {
+    vi.useFakeTimers()
+    let finishHung!: (response: Response) => void
+    const hung = new Promise<Response>(resolve => { finishHung = resolve })
+    let refreshes = 0
+    let reads = 0
+    let refreshSignal: AbortSignal | undefined
+    fetchMock.mockImplementation((url: string, options: RequestInit) => {
+      if (url.includes("/auth/refresh")) {
+        refreshes += 1
+        refreshSignal = options.signal as AbortSignal
+        return refreshes === 1 ? hung : Promise.resolve(new Response(null, { status: 200 }))
+      }
+      reads += 1
+      return Promise.resolve(reads < 3 ? jsonResponse({}, 401) : jsonResponse({ ok: true }))
+    })
+    let result: unknown
+    const first = api.get("/credits").catch(error => { result = error })
+    await vi.advanceTimersByTimeAsync(0)
+    try {
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(result).toMatchObject({ status: 503 })
+      expect(refreshSignal?.aborted).toBe(true)
+      expect(window.location.href).toBe("")
+      await expect(api.get("/credits")).resolves.toEqual({ ok: true })
+      expect(refreshes).toBe(2)
+      const callsAfterRecovery = fetchMock.mock.calls.length
+      finishHung(new Response(null, { status: 200 }))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetchMock).toHaveBeenCalledTimes(callsAfterRecovery)
+      expect(window.location.href).toBe("")
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      finishHung(new Response(null, { status: 500 }))
+      await first
+    }
+  })
+
+  it("detaches a cancelled caller promptly while another caller still awaits shared refresh", async () => {
+    vi.useFakeTimers()
+    let finishRefresh!: (response: Response) => void
+    const pending = new Promise<Response>(resolve => { finishRefresh = resolve })
+    let refreshSignal: AbortSignal | undefined
+    let reads = 0
+    fetchMock.mockImplementation((url: string, options: RequestInit) => {
+      if (url.includes("/auth/refresh")) {
+        refreshSignal = options.signal as AbortSignal
+        return pending
+      }
+      reads += 1
+      return Promise.resolve(reads <= 2 ? jsonResponse({}, 401) : jsonResponse({ ok: true }))
+    })
+    const controller = new AbortController()
+    let cancelledResult: unknown
+    const cancelled = api.get("/credits", { signal: controller.signal }).catch(error => { cancelledResult = error })
+    const live = api.get("/other")
+    await vi.advanceTimersByTimeAsync(0)
+    controller.abort()
+    await vi.advanceTimersByTimeAsync(0)
+    try {
+      expect(cancelledResult).toMatchObject({ name: "AbortError" })
+      expect(refreshSignal?.aborted).toBe(false)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+    } finally {
+      finishRefresh(new Response(null, { status: 200 }))
+      await cancelled
+      await expect(live).resolves.toEqual({ ok: true })
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
