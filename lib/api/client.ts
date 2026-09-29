@@ -136,6 +136,7 @@ async function request<T>(
   refreshRoundsLeft = MAX_REFRESH_ROUNDS
 ): Promise<T> {
   const { auth = true, ...fetchOptions } = options;
+  fetchOptions.signal?.throwIfAborted();
   const isFormData = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
 
   const method = fetchOptions.method ?? "GET";
@@ -158,6 +159,7 @@ async function request<T>(
   if ((res.status === 401 || res.status === 403) && refreshRoundsLeft > 0) {
     // 본문은 한 번만 읽을 수 있으니 여기서 한 번 파싱해 판정과 throw 에 함께 쓴다.
     const body = await parseErrorBody(res);
+    fetchOptions.signal?.throwIfAborted();
 
     // 갱신해도 달라지지 않는 응답은 여기서 갈라 그대로 던진다.
     // - 403 은 "내 액세스 토큰이 갱신에 밀려났다"일 때만 되살린다. 진짜 폐기(`AUTH_REVOKED`)나
@@ -194,6 +196,8 @@ async function request<T>(
     }
 
     const refresh = await tryRefresh();
+    // Shared refresh can outlive this caller; a cancelled read must not retry or redirect.
+    fetchOptions.signal?.throwIfAborted();
     if (refresh === "ok") {
       return request<T>(path, options, refreshRoundsLeft - 1);
     }
@@ -209,6 +213,7 @@ async function request<T>(
 
   if (!res.ok) {
     const body = await parseErrorBody(res);
+    fetchOptions.signal?.throwIfAborted();
     throw new ApiError(res.status, body.message ?? "오류가 발생했어요.", body.code);
   }
 

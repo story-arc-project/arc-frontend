@@ -664,3 +664,53 @@ describe("탭 간 갱신 세대 동기화", () => {
     expect(state.refreshCalls).toBe(1)
   })
 })
+
+describe("cancelled authenticated reads", () => {
+  it.each([200, 401])("does not retry or redirect after cancellation during refresh (%i)", async status => {
+    let finishRefresh!: (response: Response) => void
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 401))
+      .mockReturnValueOnce(new Promise<Response>(resolve => { finishRefresh = resolve }))
+      .mockResolvedValue(jsonResponse({ ok: true }))
+    const controller = new AbortController()
+    const request = api.get("/credits", { signal: controller.signal }).catch((error: unknown) => error)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    controller.abort()
+    finishRefresh(new Response(null, { status }))
+    expect(await request).toMatchObject({ name: "AbortError" })
+    expect(window.location.href).toBe("")
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+  it("keeps the shared refresh available to other live requests", async () => {
+    let finishRefresh!: (response: Response) => void
+    const pendingRefresh = new Promise<Response>(resolve => { finishRefresh = resolve })
+    let reads = 0
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/auth/refresh")) return pendingRefresh
+      reads += 1
+      return Promise.resolve(reads <= 2 ? jsonResponse({}, 401) : jsonResponse({ ok: true }))
+    })
+    const controller = new AbortController()
+    const cancelled = api.get("/credits", { signal: controller.signal }).catch((error: unknown) => error)
+    const live = api.get("/other")
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    controller.abort()
+    finishRefresh(new Response(null, { status: 200 }))
+    expect(await cancelled).toMatchObject({ name: "AbortError" })
+    await expect(live).resolves.toEqual({ ok: true })
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+})
+it("does not start refresh after cancellation while reading an auth error body", async () => {
+  let finishBody!: (value: unknown) => void
+  const response = jsonResponse({}, 401)
+  vi.spyOn(response, "json").mockReturnValue(new Promise(resolve => { finishBody = resolve }))
+  fetchMock.mockResolvedValueOnce(response).mockResolvedValue(jsonResponse({ ok: true }))
+  const controller = new AbortController()
+  const request = api.get("/credits", { signal: controller.signal }).catch((error: unknown) => error)
+  await vi.waitFor(() => expect(response.json).toHaveBeenCalled())
+  controller.abort()
+  finishBody({})
+  expect(await request).toMatchObject({ name: "AbortError" })
+  expect(fetchMock).toHaveBeenCalledTimes(1)
+  expect(window.location.href).toBe("")
+})
