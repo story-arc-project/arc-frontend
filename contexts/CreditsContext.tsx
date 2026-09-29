@@ -51,7 +51,7 @@ class CreditsStore {
   };
 
   private onReturn = () => {
-    if (document.visibilityState === "visible") void this.refetch();
+    if (document.visibilityState === "visible") this.onInvalidate();
   };
 
   private onInvalidate = () => {

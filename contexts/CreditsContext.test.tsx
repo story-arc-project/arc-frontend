@@ -144,3 +144,16 @@ it("keeps cached data retry status coherent after a failed refresh", async () =>
   await act(async () => retry.resolve(balance));
   expect(state().isStale).toBe(false);
 });
+it.each(["focus", "visibilitychange"])("queues a fresh read on %s behind an in-flight request", async event => {
+  const first = deferred<typeof balance>(); vi.mocked(getCredits).mockReturnValueOnce(first.promise);
+  render(<CreditsProvider><Consumer /></CreditsProvider>);
+  await waitFor(() => expect(getCredits).toHaveBeenCalledTimes(1));
+  act(() => {
+    const target = event === "focus" ? window : document;
+    target.dispatchEvent(new Event(event));
+    target.dispatchEvent(new Event(event));
+  });
+  await act(async () => first.reject(new Error("old request failed")));
+  await waitFor(() => expect(getCredits).toHaveBeenCalledTimes(2));
+  expect(state().status).toBe("success");
+});
