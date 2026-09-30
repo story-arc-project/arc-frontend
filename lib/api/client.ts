@@ -50,6 +50,27 @@ function tryRefresh(): Promise<RefreshResult> {
   return inflightRefresh;
 }
 
+// Individual cancellation detaches only this waiter, never the shared rotation request.
+function waitForRefresh(signal?: AbortSignal | null): Promise<RefreshResult> {
+  signal?.throwIfAborted();
+  const shared = tryRefresh();
+  if (!signal) return shared;
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    shared.then(result => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(result);
+    }, error => {
+      signal.removeEventListener("abort", onAbort);
+      reject(error);
+    });
+  });
+}
+
 // 갱신이 성공할 때마다 오른다. 요청은 **보내기 직전의 값**을 기억해 두었다가 401/403 을 받은
 // 순간 다시 읽는다. 값이 달라져 있으면 "내가 나간 뒤에 이미 누군가 갱신을 끝냈다"는 뜻이고,
 // 브라우저는 그때 심어진 새 쿠키를 이미 들고 있다.
@@ -79,11 +100,25 @@ if (refreshChannel) {
 }
 
 async function runRefresh(): Promise<RefreshResult> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>(resolve => {
+    timer = setTimeout(() => {
+      // Settle even if a transport ignores AbortSignal; late responses cannot publish success.
+      resolve(null);
+      controller.abort();
+    }, 10_000);
+  });
   try {
-    const res = await fetch(`${API_URL}/auth/refresh`, {
-      method: "POST",
-      credentials: "include",
-    });
+    const res = await Promise.race([
+      fetch(`${API_URL}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        signal: controller.signal,
+      }),
+      deadline,
+    ]);
+    if (!res) return "error";
     if (res.ok) {
       refreshGeneration += 1;
       refreshChannel?.postMessage("refreshed");
@@ -96,6 +131,8 @@ async function runRefresh(): Promise<RefreshResult> {
   } catch {
     // 네트워크 오류도 일시 장애로 취급
     return "error";
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -136,6 +173,7 @@ async function request<T>(
   refreshRoundsLeft = MAX_REFRESH_ROUNDS
 ): Promise<T> {
   const { auth = true, ...fetchOptions } = options;
+  fetchOptions.signal?.throwIfAborted();
   const isFormData = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
 
   const method = fetchOptions.method ?? "GET";
@@ -158,6 +196,7 @@ async function request<T>(
   if ((res.status === 401 || res.status === 403) && refreshRoundsLeft > 0) {
     // 본문은 한 번만 읽을 수 있으니 여기서 한 번 파싱해 판정과 throw 에 함께 쓴다.
     const body = await parseErrorBody(res);
+    fetchOptions.signal?.throwIfAborted();
 
     // 갱신해도 달라지지 않는 응답은 여기서 갈라 그대로 던진다.
     // - 403 은 "내 액세스 토큰이 갱신에 밀려났다"일 때만 되살린다. 진짜 폐기(`AUTH_REVOKED`)나
@@ -193,7 +232,9 @@ async function request<T>(
       return request<T>(path, options, refreshRoundsLeft - 1);
     }
 
-    const refresh = await tryRefresh();
+    const refresh = await waitForRefresh(fetchOptions.signal);
+    // Shared refresh can outlive this caller; a cancelled read must not retry or redirect.
+    fetchOptions.signal?.throwIfAborted();
     if (refresh === "ok") {
       return request<T>(path, options, refreshRoundsLeft - 1);
     }
@@ -209,6 +250,7 @@ async function request<T>(
 
   if (!res.ok) {
     const body = await parseErrorBody(res);
+    fetchOptions.signal?.throwIfAborted();
     throw new ApiError(res.status, body.message ?? "오류가 발생했어요.", body.code);
   }
 
