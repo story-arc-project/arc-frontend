@@ -11,6 +11,7 @@
 
 ## Validation (Node 20.19.2)
 
+- RED confirmation (performed after implementation because the initial run was not recorded before the fix): in detached temp worktree `/private/tmp/arc-account-credit-balance-red` at `fa7554b`, restored only the original provider subscription behavior and ran `npm run test:unit -- contexts/CreditsContext.test.tsx -t "shares a settled snapshot when a second consumer mounts"` — expected FAIL, exit 1: `getCredits` was called 2 times instead of 1. The review checkout was not modified.
 - `npm run test:unit -- components/features/credits/CreditBalance.test.tsx contexts/CreditsContext.test.tsx lib/api/credits-api.test.ts` — PASS, 57 tests.
 - `npx playwright test e2e/account-credit-balance.spec.ts e2e/credits-foundation.spec.ts e2e/admin.smoke.spec.ts --project=chromium -c .superpowers/sdd/2026-10-02-account-credit-balance/playwright.config.ts` — PASS, 13 tests.
 - `npx playwright test e2e/account-credit-balance.spec.ts --project=chromium -c .superpowers/sdd/2026-10-02-account-credit-balance/playwright.config.ts` after logout regression addition — PASS, 10 tests.
@@ -18,3 +19,8 @@
 - `git diff --check` — PASS.
 
 The controller owns the full lint, typecheck, unit, build, Storybook, and visual preview gates. Browser checks above used explicit API/auth stubs and do not prove the live credit API or a physical-device session.
+
+## Coverage boundary
+
+- Account isolation is covered at provider level by `clears synchronously on account switch and ignores old completion`, `never fetches or exposes data when auth is loading or absent`, and `hides old data during auth loading without remounting children, then requests afresh`. Browser integration covers logout removing the visible prior balance, but does not simulate an in-place authenticated A-to-B account switch; that visible transition remains deferred to controller/live-auth validation.
+- Stale refresh behavior is covered by provider tests for retained snapshots, queued invalidation, reconnect/focus/visibility, and explicit refetch, plus `CreditBalanceView` tests for `업데이트 중` and `업데이트 지연`. The focused browser integration covers initial error → retry → success and 404 unavailable, but does not hold a live refresh request open to observe the stale label in Chromium; that integration observation remains deferred.
