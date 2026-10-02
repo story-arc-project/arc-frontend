@@ -13,11 +13,20 @@ import {
 } from "@/lib/api/analysis-api";
 import { ApiError } from "@/lib/api/client";
 import { capture } from "@/lib/analytics";
+import { useAuth } from "@/hooks/useAuth";
 import ExperienceSelector from "@/components/features/analysis/ExperienceSelector";
 
 type Phase = "select" | "error";
 
 export default function ComprehensiveNewPage() {
+  const { user, isLoading } = useAuth();
+  // /auth/me currently identifies accounts by email. A new account gets a fresh
+  // form, so an old account's selection, request key, or response cannot leak.
+  const owner = user?.account.email ?? null;
+  return <ComprehensiveNewForm key={owner} canSubmit={owner !== null && !isLoading} />;
+}
+
+function ComprehensiveNewForm({ canSubmit }: { canSubmit: boolean }) {
   const router = useRouter();
   const [experiences, setExperiences] = useState<SelectableExperience[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -42,11 +51,15 @@ export default function ComprehensiveNewPage() {
     fetchExperiences();
   }, [fetchExperiences]);
 
-  // 생성 요청이 도는 동안 사용자는 '목록으로'나 전역 내비게이션으로 떠날 수 있다. 그때 뒤늦게
-  // 도착한 응답이 router.push 를 부르면 보고 있던 화면을 빼앗아 목록으로 끌고 온다.
-  // 시작했다는 사실은 토스트로 알리되, **화면을 옮기는 건 이 화면에 남아 있을 때만** 한다.
-  // (초기값이 아니라 effect 본문에서 true 로 세운다 — StrictMode 이중 마운트에서 첫 정리가
-  //  false 로 내려놓은 뒤 다시 켜주는 곳이 없으면 영영 false 로 남는다.)
+  // Keys live only for this mounted form, never in storage or analytics.
+  const attemptRef = useRef<{ key: string; experienceIds: string[] } | null>(null);
+  const submittingRef = useRef(false);
+  const changeSelection = useCallback((ids: string[]) => {
+    attemptRef.current = null;
+    setSelected(ids);
+  }, []);
+
+  // Ignore responses after leaving this form (including account changes).
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -61,17 +74,24 @@ export default function ComprehensiveNewPage() {
   // 오류를 보여줬다. 분석은 실패한 적이 없었고(백엔드는 계속 돌아 결국 완료된다) 화면만
   // 거짓말을 했다. 소요시간은 예측할 수 없으므로 예산을 키워봐야 같은 버그가 재발한다.
   const startAnalysis = useCallback(async () => {
+    if (submittingRef.current || !canSubmit || selected.length < 2) return;
+    submittingRef.current = true;
     setSubmitting(true);
+    const attempt = attemptRef.current ?? {
+      key: crypto.randomUUID(),
+      experienceIds: [...selected],
+    };
+    attemptRef.current = attempt;
     // 실행 직전 최종 선택 = "어떤 조합으로 분석을 시도했나"(FRT-19). 완료 못 가도 drop-off 관측.
     capture("analysis_target_selected", { analysis_type: "comprehensive", count: selected.length });
     try {
-      const { analysisId: id } = await createComprehensiveAnalysis(selected);
+      const { analysisId: id } = await createComprehensiveAnalysis(attempt.experienceIds, attempt.key);
+      if (!mountedRef.current) return;
       // 서버가 요청을 받았다(FRT-107). 위 analysis_target_selected(누름)와의 건수 차이가
       // "눌렀는데 요청이 안 나간" 기술적 실패다 — analysis_completed 로는 못 가른다.
       // 그건 분석이 끝났다는 뜻이라 "접수됐지만 도는 중"과 한 덩어리가 되기 때문이다.
       capture("analysis_requested", { analysis_type: "comprehensive", accepted: true });
       toast("분석을 시작했어요. 목록에서 진행 상황을 확인하세요.", "success");
-      if (!mountedRef.current) return;
       // 방금 만든 분석 id 를 목록에 알려준다 — 빨리 끝나는 분석은 목록의 첫 조회 시점에 이미
       // 완료라 '진행 중 → 완료' 전이가 없고, 그러면 완료 계측·피드백 트리거를 놓친다.
       // id 를 못 받는 레거시 응답(FRT-38)이면 추적 대상을 특정할 수 없어 그냥 목록으로 간다.
@@ -81,6 +101,13 @@ export default function ComprehensiveNewPage() {
           : "/analysis/comprehensive",
       );
     } catch (err) {
+      if (!mountedRef.current) return;
+      // Only confirmed rejection clears the attempt. Network errors, 5xx,
+      // malformed 2xx and 409 may refer to an already accepted reservation.
+      if (err instanceof ApiError && (err.status === 402 || err.status === 422) && attemptRef.current === attempt) {
+        attemptRef.current = null;
+      }
+      submittingRef.current = false;
       // 서버가 **응답을 돌려준** 실패만 여기 실린다(FRT-107). ApiError 는 HTTP 응답이
       // 왔다는 증거다 — 오프라인·DNS·연결 끊김은 응답 자체가 없어 raw 예외로 오고, 그건
       // 접수가 아니라 "요청이 브라우저를 못 떠났다"라 세 갈래가 이렇게 갈린다:
@@ -94,12 +121,11 @@ export default function ComprehensiveNewPage() {
       if (err instanceof ApiError) {
         capture("analysis_requested", { analysis_type: "comprehensive", accepted: err.status < 400 });
       }
-      if (!mountedRef.current) return;
       setSubmitting(false);
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selected, router]);
+  }, [selected, router, canSubmit]);
 
   if (phase === "error") {
     return (
@@ -138,7 +164,7 @@ export default function ComprehensiveNewPage() {
           <ExperienceSelector
             experiences={experiences}
             selected={selected}
-            onChange={setSelected}
+            onChange={changeSelection}
             minCount={2}
             isLoading={!expLoaded}
           />
@@ -147,7 +173,7 @@ export default function ComprehensiveNewPage() {
         <div className="pt-4">
           <Button
             fullWidth
-            disabled={selected.length < 2 || submitting}
+            disabled={!canSubmit || selected.length < 2 || submitting}
             onClick={startAnalysis}
           >
             {submitting ? "분석을 시작하는 중..." : "분석 시작"}

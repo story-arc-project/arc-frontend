@@ -154,20 +154,20 @@ describe("getBookmarks — isBookmarked/bookmarkedAt 폴백", () => {
 describe("create*Analysis — 응답 ID 부재 처리 (FRT-38)", () => {
   it("종합 분석: 응답에 id 가 없으면 analysisId: null 을 반환한다 (오류로 보지 않음)", async () => {
     apiMock.post.mockResolvedValue(envelope({ status: "queued", message: "시작됨" }))
-    expect(await createComprehensiveAnalysis(["e1"])).toEqual({ analysisId: null })
+    expect(await createComprehensiveAnalysis(["e1"], "attempt-1")).toEqual({ analysisId: null })
   })
 
   it("종합 분석: id 또는 analysis_id 가 있으면 analysisId 를 반환한다", async () => {
     apiMock.post.mockResolvedValueOnce(envelope({ id: "comp-1" }))
-    expect(await createComprehensiveAnalysis(["e1"])).toEqual({ analysisId: "comp-1" })
+    expect(await createComprehensiveAnalysis(["e1"], "attempt-1")).toEqual({ analysisId: "comp-1" })
 
     apiMock.post.mockResolvedValueOnce(envelope({ analysis_id: "comp-2" }))
-    expect(await createComprehensiveAnalysis(["e1"])).toEqual({ analysisId: "comp-2" })
+    expect(await createComprehensiveAnalysis(["e1"], "attempt-1")).toEqual({ analysisId: "comp-2" })
   })
 
   it("종합 분석: id 가 최상위(`{ status, message, id }`)에 와도 추출한다 (BE 문서 스펙)", async () => {
     apiMock.post.mockResolvedValue({ status: "success", message: "시작됨", id: "comp-top" })
-    expect(await createComprehensiveAnalysis(["e1"])).toEqual({ analysisId: "comp-top" })
+    expect(await createComprehensiveAnalysis(["e1"], "attempt-1")).toEqual({ analysisId: "comp-top" })
   })
 
   it("키워드 분석: 응답에 id 가 없으면 analysisId: null 을 반환한다 (오류로 보지 않음)", async () => {
@@ -2481,3 +2481,17 @@ describe("개별분석 스키마 v1.2", () => {
     })
   })
 })
+
+
+describe("comprehensive create idempotency (FRT-361)", () => {
+  it("passes the caller key with the unchanged payload", async () => {
+    apiMock.post.mockResolvedValue(envelope({ id: "comp-1" }));
+    await createComprehensiveAnalysis(["e1", "e2"], "attempt-1");
+    expect(apiMock.post).toHaveBeenCalledWith("/analysis/comprehensive", { experiences: ["e1", "e2"] }, { headers: { "Idempotency-Key": "attempt-1" } });
+  });
+  it.each([402, 409, 422])("preserves HTTP %i errors", async (status) => {
+    const error = Object.assign(new Error("rejected"), { status });
+    apiMock.post.mockRejectedValueOnce(error);
+    await expect(createComprehensiveAnalysis(["e1", "e2"], "attempt-1")).rejects.toBe(error);
+  });
+});
