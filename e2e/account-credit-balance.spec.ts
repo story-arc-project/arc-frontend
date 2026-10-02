@@ -97,6 +97,38 @@ test("계정 메뉴는 키보드 이동과 Escape 포커스 복귀를 지원한�
   await expect(page.getByRole("group", { name: "계정 정보 및 메뉴" })).toHaveCount(0);
 });
 
+test("오류 상태에서도 Tab은 재시도, 마이페이지, 로그아웃 순서로 이동한다", async ({ page }) => {
+  await stubAccount(page, "student");
+  await page.route(`${API_ORIGIN}/credits`, (route) => {
+    const origin = route.request().headers()["origin"] ?? "";
+    return route.fulfill({ status: 500, headers: corsHeaders(origin), json: {} });
+  });
+  await page.goto("/dashboard");
+  const trigger = page.getByRole("button", { name: "계정 메뉴" });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "다시 시도" })).toBeVisible();
+
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "다시 시도" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "마이페이지" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "로그아웃" })).toBeFocused();
+});
+
+test("관리자 링크를 표시하고 마이페이지로 이동한다", async ({ page }) => {
+  await stubAccount(page, "student");
+  await page.route("**/api/admin/status", (route) => route.fulfill({ json: { isAdmin: true } }));
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "계정 메뉴" }).click();
+
+  await expect(page.getByRole("link", { name: "관리자" })).toBeVisible();
+  await page.getByRole("link", { name: "마이페이지" }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole("heading", { level: 1, name: "내 계정" })).toBeVisible();
+});
+
 test("로그아웃하면 이전 사용자의 잔액을 즉시 제거한다", async ({ page }) => {
   await stubAccount(page, "student");
   await page.goto("/dashboard");
