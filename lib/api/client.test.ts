@@ -80,6 +80,25 @@ describe("api 기본 응답 처리", () => {
 })
 
 describe("401 → refresh 분기 (FRT-11 회귀 가드)", () => {
+  it("종합 분석의 인증 재전송은 동일 멱등 키와 payload를 유지한다 (FRT-361)", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "comp-1" } }))
+    const payload = { experiences: ["e1", "e2"] }
+    await api.post("/analysis/comprehensive", payload, {
+      headers: { "Idempotency-Key": "same-logical-request" },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock.mock.calls[1][0]).toContain("/auth/refresh")
+    for (const index of [0, 2]) {
+      expect(fetchMock.mock.calls[index][0]).toContain("/analysis/comprehensive")
+      const options = fetchMock.mock.calls[index][1] as RequestInit
+      expect(new Headers(options.headers).get("Idempotency-Key")).toBe("same-logical-request")
+      expect(options.body).toBe(JSON.stringify(payload))
+    }
+  })
+
   it("refresh 성공 시 원요청을 1회 재시도해 성공시킨다", async () => {
     fetchMock
       .mockResolvedValueOnce(new Response(null, { status: 401 })) // 원요청

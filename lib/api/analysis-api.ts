@@ -1487,12 +1487,14 @@ export async function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
  */
 export async function createComprehensiveAnalysis(
   experienceIds: string[],
+  idempotencyKey: string,
 ): Promise<{ analysisId: string | null }> {
   if (shouldMock())
     return mock(async () => ({ analysisId: "comp-new-" + Date.now() }));
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/comprehensive",
     { experiences: experienceIds },
+    { headers: { "Idempotency-Key": idempotencyKey } },
   );
   return { analysisId: extractAnalysisId(res) };
 }
