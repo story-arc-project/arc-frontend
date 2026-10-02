@@ -31,6 +31,7 @@ import {
 
 interface ProfileEditFormProps {
   profile: Profile | null;
+  className?: string;
 }
 
 /** 읽기 포맷(affiliation)이 AFFILIATION_OPTIONS.value 와 일치할 때만 매핑, 아니면 미선택 */
@@ -65,7 +66,7 @@ function toFormState(profile: Profile | null): {
   };
 }
 
-export function ProfileEditForm({ profile }: ProfileEditFormProps) {
+export function ProfileEditForm({ profile, className = "" }: ProfileEditFormProps) {
   const { refetch } = useAuth();
   const derived = useMemo(() => toFormState(profile), [profile]);
 
@@ -166,12 +167,12 @@ export function ProfileEditForm({ profile }: ProfileEditFormProps) {
   }
 
   return (
-    <Card variant="default" padding="lg">
+    <Card variant="default" padding="lg" className={`flex flex-col ${className}`.trim()}>
       <CardHeader>
         <CardTitle>프로필 편집</CardTitle>
       </CardHeader>
 
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-1 flex-col gap-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Input
             label="이름"
@@ -265,7 +266,7 @@ export function ProfileEditForm({ profile }: ProfileEditFormProps) {
           </div>
         </div>
 
-        <div className="pt-1">
+        <div className="mt-auto pt-1">
           <Button
             variant="primary"
             onClick={handleSave}

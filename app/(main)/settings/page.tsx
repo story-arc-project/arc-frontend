@@ -3,7 +3,7 @@
 import { useAuth } from "@/hooks/useAuth";
 import { Button, Card } from "@/components/ui";
 import { ProfileEditForm } from "@/components/features/settings/ProfileEditForm";
-import { PlanCard } from "@/components/features/settings/PlanCard";
+import { CreditBalance } from "@/components/features/credits/CreditBalance";
 import { AccountInfoCard } from "@/components/features/settings/AccountInfoCard";
 import { SecurityCard } from "@/components/features/settings/SecurityCard";
 import { DeleteAccountCard } from "@/components/features/settings/DeleteAccountCard";
@@ -30,35 +30,48 @@ export default function SettingsPage() {
     <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 py-10 sm:py-12">
       <h1 className="text-heading-2 text-text-primary mb-8">내 계정</h1>
 
-      <Card variant="default" padding="lg" className="mb-6 flex items-center gap-4">
-        <div className="w-14 h-14 rounded-full bg-surface-secondary flex items-center justify-center text-heading-2 text-text-tertiary shrink-0">
-          {profile?.name?.[0] ?? "?"}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-title font-semibold text-text-primary truncate mb-0.5">
-            {profile?.name ?? "이름 없음"}
-          </p>
-          <p className="text-body-sm text-text-secondary truncate">{account?.email}</p>
+      <Card variant="default" padding="lg" className="mb-6">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
+            <div className="w-14 h-14 rounded-full bg-surface-secondary flex items-center justify-center text-heading-2 text-text-tertiary shrink-0">
+              {profile?.name?.[0] ?? "?"}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-title font-semibold text-text-primary truncate mb-0.5">
+                {profile?.name ?? "이름 없음"}
+              </p>
+              <p className="text-body-sm text-text-secondary truncate">{account?.email}</p>
+            </div>
+          </div>
+          <div className="min-w-0 border-t border-border pt-4 sm:border-l sm:border-t-0 sm:py-1 sm:pl-6 sm:text-right">
+            <CreditBalance variant="summary" />
+          </div>
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-8">
-          <ProfileEditForm profile={profile} />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-stretch">
+        <div data-testid="settings-profile-column" className="lg:col-span-8">
+          <ProfileEditForm profile={profile} className="lg:h-full" />
         </div>
-        <div className="lg:col-span-4 space-y-6">
-          <PlanCard />
-          {account && <AccountInfoCard account={account} />}
-          {account && <SecurityCard hasPassword={account.has_password} />}
-          <Button variant="destructive" fullWidth onClick={logout}>
-            로그아웃
-          </Button>
-          {account && (
-            <DeleteAccountCard
-              isSocialAccount={isSocialAccount}
-              connectedOauth={account.connected_oauth ?? []}
-            />
-          )}
+        <div
+          data-testid="settings-account-column"
+          className="flex flex-col gap-6 lg:col-span-4 lg:h-full"
+        >
+          <div className="flex flex-col gap-6">
+            {account && <AccountInfoCard account={account} />}
+            {account && <SecurityCard hasPassword={account.has_password} />}
+          </div>
+          <div data-testid="settings-account-bottom" className="flex flex-col gap-6 lg:mt-auto">
+            <Button variant="destructive" fullWidth onClick={logout}>
+              로그아웃
+            </Button>
+            {account && (
+              <DeleteAccountCard
+                isSocialAccount={isSocialAccount}
+                connectedOauth={account.connected_oauth ?? []}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>
