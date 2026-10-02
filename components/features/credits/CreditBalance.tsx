@@ -28,12 +28,15 @@ const variantClasses: Record<CreditBalanceVariant, { value: string; detail: stri
 function LoadingBalance({ variant }: { variant: CreditBalanceVariant }) {
   return (
     <span
+      role="status"
       aria-label="크레딧 조회 중"
       className={[
         "inline-block rounded bg-surface-tertiary",
         variant === "summary" ? "h-6 w-24" : "h-5 w-20",
       ].join(" ")}
-    />
+    >
+      <span className="sr-only">크레딧 조회 중</span>
+    </span>
   );
 }
 

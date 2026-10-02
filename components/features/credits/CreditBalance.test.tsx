@@ -69,7 +69,7 @@ describe.each(["summary", "compact"] as const)("CreditBalanceView — %s", (vari
       />,
     );
 
-    const skeleton = screen.getByLabelText("크레딧 조회 중");
+    const skeleton = screen.getByRole("status", { name: "크레딧 조회 중" });
     expect(skeleton).toBeVisible();
     expect(skeleton).not.toHaveClass("animate-pulse");
     expect(screen.queryByText(/^\d.* 크레딧$/)).not.toBeInTheDocument();

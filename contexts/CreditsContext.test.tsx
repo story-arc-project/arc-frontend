@@ -26,6 +26,19 @@ it("is lazy without consumers and shares a request between two consumers", async
   await waitFor(() => expect(state().status).toBe("success"));
   expect(getCredits).toHaveBeenCalledTimes(1);
 });
+it("shares a settled snapshot when a second consumer mounts", async () => {
+  function OptionalConsumer({ show }: { show: boolean }) {
+    return <CreditsProvider><Consumer />{show && <Consumer id="other" />}</CreditsProvider>;
+  }
+  const view = render(<OptionalConsumer show={false} />);
+  await waitFor(() => expect(state().status).toBe("success"));
+  expect(getCredits).toHaveBeenCalledTimes(1);
+
+  view.rerender(<OptionalConsumer show />);
+  await waitFor(() => expect(JSON.parse(screen.getByTestId("other").textContent!).status).toBe("success"));
+  await act(async () => {});
+  expect(getCredits).toHaveBeenCalledTimes(1);
+});
 it("clears synchronously on account switch and ignores old completion", async () => {
   const old = deferred<typeof balance>(); vi.mocked(getCredits).mockReturnValueOnce(old.promise);
   const view = render(<CreditsProvider><Consumer /></CreditsProvider>);

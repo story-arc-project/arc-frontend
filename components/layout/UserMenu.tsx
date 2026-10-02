@@ -1,16 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
+import { CreditBalance } from "@/components/features/credits/CreditBalance";
 import { AdminEntryLink } from "./AdminEntryLink";
 
 export function UserMenu({ isAdmin = false }: { isAdmin?: boolean }) {
   const { user, isLoading, logout } = useAuth();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -21,7 +24,10 @@ export function UserMenu({ isAdmin = false }: { isAdmin?: boolean }) {
       }
     }
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     }
 
     document.addEventListener("mousedown", handlePointerDown);
@@ -50,9 +56,10 @@ export function UserMenu({ isAdmin = false }: { isAdmin?: boolean }) {
   return (
     <div ref={menuRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        aria-haspopup="menu"
+        aria-controls={menuId}
         aria-expanded={open}
         aria-label="계정 메뉴"
         className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary"
@@ -71,7 +78,9 @@ export function UserMenu({ isAdmin = false }: { isAdmin?: boolean }) {
 
       {open && (
         <div
-          role="menu"
+          id={menuId}
+          role="group"
+          aria-label="계정 정보 및 메뉴"
           className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-surface py-2 shadow-lg"
         >
           <div className="border-b border-border px-4 py-2">
@@ -79,11 +88,17 @@ export function UserMenu({ isAdmin = false }: { isAdmin?: boolean }) {
               {displayName}
             </p>
             <p className="truncate text-caption">{user.account?.email}</p>
+            <div className="mt-2">
+              <CreditBalance variant="compact" />
+            </div>
           </div>
-          <AdminEntryLink isAdmin={isAdmin} onClick={() => setOpen(false)} />
+          <AdminEntryLink
+            isAdmin={isAdmin}
+            semanticRole="link"
+            onClick={() => setOpen(false)}
+          />
           <Link
             href="/settings"
-            role="menuitem"
             onClick={() => setOpen(false)}
             className="block px-4 py-2.5 text-body text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary"
           >
@@ -91,7 +106,6 @@ export function UserMenu({ isAdmin = false }: { isAdmin?: boolean }) {
           </Link>
           <button
             type="button"
-            role="menuitem"
             onClick={() => {
               setOpen(false);
               logout();

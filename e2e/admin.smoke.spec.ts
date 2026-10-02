@@ -45,7 +45,7 @@ test.describe("FRT-15 admin 접근 가드", () => {
     await page.getByRole("button", { name: "계정 메뉴" }).click();
 
     // 마이페이지는 있고, 관리자 항목은 없다.
-    await expect(page.getByRole("menuitem", { name: "마이페이지" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "관리자" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "마이페이지" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "관리자" })).toHaveCount(0);
   });
 });
