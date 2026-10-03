@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
+import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
+
+import { useEffect, useRef, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { retryComprehensiveAnalysis, retryKeywordAnalysis } from "@/lib/api/analysis-api";
 import { ANALYTICS_EVENTS, capture, type AnalysisKind } from "@/lib/analytics";
@@ -33,21 +36,40 @@ export default function RetryAnalysisButton({
   analysisType,
   onRetried,
 }: RetryAnalysisButtonProps) {
+  const { open: insufficientOpen, onClose: closeInsufficient, beginAttempt } = useInsufficientCredits(`${analysisType}:${analysisId}`);
+  const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const scope = `${analysisType}:${analysisId}`;
+  const [trackedScope, setTrackedScope] = useState(scope);
+  if (trackedScope !== scope) {
+    setTrackedScope(scope);
+    setBusy(false);
+    setFailed(false);
+  }
+  useEffect(() => {
+    busyRef.current = false;
+  }, [scope]);
 
   async function handleRetry() {
-    if (busy) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
+    const handleCreditError = beginAttempt();
     setBusy(true);
     setFailed(false);
     try {
       await retryFn[analysisType](analysisId);
-    } catch {
+      if (!handleCreditError.isCurrent()) return;
+    } catch (err) {
+      if (handleCreditError(err)) return;
       // 재시도 요청 자체가 실패했다 — 카드는 실패 상태로 남기고 다시 누를 수 있게 둔다.
       setFailed(true);
       return;
     } finally {
-      setBusy(false);
+      if (handleCreditError.isCurrent()) {
+        busyRef.current = false;
+        setBusy(false);
+      }
     }
 
     // 여기부터는 서버가 이미 접수한 뒤다. 계측은 best-effort — PostHog 가 스토리지 오류로
@@ -81,6 +103,7 @@ export default function RetryAnalysisButton({
           다시 시도하지 못했어요. 잠시 후 한 번 더 눌러주세요.
         </p>
       )}
+      <InsufficientCreditsDialog open={insufficientOpen} onClose={closeInsufficient} />
     </div>
   );
 }

@@ -151,3 +151,17 @@ describe("RetryAnalysisButton (FRT-108)", () => {
     await waitFor(() => expect(retryComprehensive).toHaveBeenCalledTimes(1));
   });
 });
+
+it("shows the credit dialog for an explicit rejection without marking a retry accepted", async () => {
+  const { ApiError } = await import("@/lib/api/api-error");
+  retryComprehensive.mockRejectedValue(new ApiError(402, "required 999 available 111"));
+  const onRetried = vi.fn();
+  render(<RetryAnalysisButton analysisId="comp-1" analysisType="comprehensive" onRetried={onRetried} />);
+  await userEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+  await screen.findByRole("dialog", { name: "크레딧이 부족해요" });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByText(/999|111/)).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "닫기" }));
+  expect(retryComprehensive).toHaveBeenCalledTimes(1);
+  expect(onRetried).not.toHaveBeenCalled();
+});
