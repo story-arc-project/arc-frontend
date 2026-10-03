@@ -31,9 +31,11 @@ class CreditsStore {
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
-    if (this.listeners.size === 1 && this.enabled) this.listen(true);
-    // Deferring the first read coalesces sibling mounts and StrictMode's setup/cleanup/setup.
-    queueMicrotask(() => { if (this.listeners.size) void this.read(); });
+    if (this.listeners.size === 1) {
+      if (this.enabled) this.listen(true);
+      // Deferring the first read coalesces sibling mounts and StrictMode's setup/cleanup/setup.
+      queueMicrotask(() => { if (this.listeners.size) void this.read(); });
+    }
     return () => {
       this.listeners.delete(listener);
       if (!this.listeners.size) {
