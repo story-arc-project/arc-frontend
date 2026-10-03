@@ -316,3 +316,24 @@ describe("CreateResumeModal — 플래그 off (백엔드 미수용 봉인)", () 
     ).toBe(false);
   });
 });
+
+describe("insufficient credits", () => {
+  it("suspends the form and restores selections without retrying or exposing server amounts", async () => {
+    const { ApiError } = await import("@/lib/api/api-error");
+    mockCreateResume.mockRejectedValue(new ApiError(402, "required 999 available 111", "INSUFFICIENT_CREDITS"));
+    const user = userEvent.setup();
+    renderModal(true);
+    await user.click(screen.getByRole("radio", { name: "English" }));
+    await user.click(screen.getAllByRole("checkbox")[0]);
+    await user.click(screen.getByRole("button", { name: "만들기" }));
+    await screen.findByRole("dialog", { name: "크레딧이 부족해요" });
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.queryByText(/999|111/)).toBeNull();
+    expect(screen.getByRole("link", { name: "충전 페이지로 이동" })).toHaveAttribute("href", "/credits/charge");
+    await user.click(screen.getByRole("button", { name: "닫기" }));
+    expect(screen.getByRole("dialog", { name: "새 이력서 만들기" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "English" })).toBeChecked();
+    expect(screen.getAllByRole("checkbox")[0]).not.toBeChecked();
+    expect(mockCreateResume).toHaveBeenCalledTimes(1);
+  });
+});

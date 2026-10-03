@@ -1,5 +1,8 @@
 "use client";
 
+import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
+import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button, Dialog } from "@/components/ui";
@@ -40,6 +43,8 @@ export function CreateResumeModal({
 
   const [language, setLanguage] = useState<ResumeLanguage>("ko");
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const { open: insufficientOpen, onClose: closeInsufficient, beginAttempt } = useInsufficientCredits(open);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const basePath = useBasePath();
@@ -85,6 +90,8 @@ export function CreateResumeModal({
 
   useEffect(() => {
     if (!open) {
+      abortRef.current?.abort();
+      submittingRef.current = false;
       setLanguage("ko");
       setSubmitting(false);
       setError(null);
@@ -105,7 +112,9 @@ export function CreateResumeModal({
       selectedIds.length > 0);
 
   const handleSubmit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || submittingRef.current) return;
+    submittingRef.current = true;
+    const handleCreditError = beginAttempt();
     setError(null);
     setSubmitting(true);
     const controller = new AbortController();
@@ -147,6 +156,7 @@ export function CreateResumeModal({
           : { language },
         { signal: controller.signal },
       );
+      if (!handleCreditError.isCurrent() || controller.signal.aborted) return;
       // 익스포트 완료(FRT-19). experience_count 는 선택 기능이 켜졌을 때만 의미가 있다.
       capture("export_completed", {
         export_type: "resume",
@@ -162,6 +172,9 @@ export function CreateResumeModal({
       onCreated();
       onClose();
     } catch (err) {
+      if (!handleCreditError.isCurrent() || abortRef.current !== controller) return;
+      setSubmitting(false);
+      if (handleCreditError(err)) return;
       if (err instanceof DOMException && err.name === "AbortError") {
         setError("생성이 오래 걸렸어요. 다시 시도해 주세요.");
       } else {
@@ -170,7 +183,10 @@ export function CreateResumeModal({
       setSubmitting(false);
     } finally {
       window.clearTimeout(timeoutId);
-      abortRef.current = null;
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        submittingRef.current = false;
+      }
     }
   };
 
@@ -182,7 +198,7 @@ export function CreateResumeModal({
   return (
     <>
       <Dialog
-        open={open && !submitting}
+        open={open && !submitting && !insufficientOpen}
         onClose={handleClose}
         ariaLabel="새 이력서 만들기"
         className={experienceSelectionEnabled ? "max-w-lg" : "max-w-md"}
@@ -342,6 +358,7 @@ export function CreateResumeModal({
       </Dialog>
 
       <ResumeGenerationOverlay open={submitting} />
+      <InsufficientCreditsDialog open={open && insufficientOpen} onClose={closeInsufficient} />
     </>
   );
 }
