@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, ReactNode } from "react";
+import { useEffect, useRef, ReactNode, RefObject } from "react";
 
 interface DialogProps {
   open: boolean;
@@ -8,6 +8,8 @@ interface DialogProps {
   ariaLabel: string;
   children: ReactNode;
   className?: string;
+  /** Explicit focus target when reopening a dialog whose children were remounted. */
+  initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -32,9 +34,11 @@ function getFocusable(container: HTMLElement | null): HTMLElement[] {
   );
 }
 
-export function Dialog({ open, onClose, ariaLabel, children, className }: DialogProps) {
+export function Dialog({ open, onClose, ariaLabel, children, className, initialFocusRef }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
+  const initialFocus = useRef(initialFocusRef);
+  useEffect(() => { initialFocus.current = initialFocusRef; }, [initialFocusRef]);
 
   // Store the element that opened the dialog, restore on close
   useEffect(() => {
@@ -42,9 +46,12 @@ export function Dialog({ open, onClose, ariaLabel, children, className }: Dialog
       previousFocus.current = document.activeElement as HTMLElement;
 
       // Focus first focusable element inside dialog
-      requestAnimationFrame(() => {
-        getFocusable(dialogRef.current)[0]?.focus();
+      const frame = requestAnimationFrame(() => {
+        const focusable = getFocusable(dialogRef.current);
+        const target = initialFocus.current?.current;
+        (target && focusable.includes(target) ? target : focusable[0])?.focus();
       });
+      return () => cancelAnimationFrame(frame);
     } else if (previousFocus.current) {
       previousFocus.current.focus();
       previousFocus.current = null;

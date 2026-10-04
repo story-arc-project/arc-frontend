@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { isInsufficientCredits } from "@/lib/credits/insufficient-credits";
 
 /** Local to the paid operation. A superseded or unmounted attempt cannot reopen UI. */
@@ -14,7 +14,8 @@ export function useInsufficientCredits(scope: unknown = true) {
   const generation = useRef(0);
   const initiatingElement = useRef<HTMLElement | null>(null);
   const mounted = useRef(false);
-  useEffect(() => {
+  // Invalidate during commit, before promises can run ahead of passive cleanup.
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;

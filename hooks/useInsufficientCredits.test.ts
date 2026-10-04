@@ -1,3 +1,4 @@
+import { useLayoutEffect } from "react";
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api/api-error";
@@ -44,4 +45,18 @@ it("restores the initiating button even if the pending request blurred it", asyn
   expect(document.activeElement).toBe(button);
   unmount();
   button.remove();
+});
+
+it("invalidates the previous scope before layout effects can settle its request", () => {
+  let currentDuringCommit: boolean | undefined;
+  const { result, rerender } = renderHook(({ scope }) => {
+    const credits = useInsufficientCredits(scope);
+    useLayoutEffect(() => {
+      if (scope === "b") currentDuringCommit = previous?.isCurrent();
+    }, [scope]);
+    return credits;
+  }, { initialProps: { scope: "a" } });
+  const previous = result.current.beginAttempt();
+  rerender({ scope: "b" });
+  expect(currentDuringCommit).toBe(false);
 });

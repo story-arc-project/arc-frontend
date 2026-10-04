@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { Button, Dialog } from "@/components/ui";
+import { useSuppressFeedback } from "@/contexts/FeedbackTriggerContext";
 
 export function InsufficientCreditsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  useSuppressFeedback(open);
+
   return (
     <Dialog open={open} onClose={onClose} ariaLabel="크레딧이 부족해요">
       <h2 className="text-title text-text-primary">크레딧이 부족해요</h2>

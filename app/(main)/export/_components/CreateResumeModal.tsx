@@ -44,6 +44,8 @@ export function CreateResumeModal({
   const [language, setLanguage] = useState<ResumeLanguage>("ko");
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
+  const [restoreSubmitFocus, setRestoreSubmitFocus] = useState(false);
   const { open: insufficientOpen, onClose: closeInsufficient, beginAttempt } = useInsufficientCredits(open);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -92,6 +94,7 @@ export function CreateResumeModal({
     if (!open) {
       abortRef.current?.abort();
       submittingRef.current = false;
+      setRestoreSubmitFocus(false);
       setLanguage("ko");
       setSubmitting(false);
       setError(null);
@@ -114,6 +117,7 @@ export function CreateResumeModal({
   const handleSubmit = async () => {
     if (!canSubmit || submittingRef.current) return;
     submittingRef.current = true;
+    setRestoreSubmitFocus(false);
     const handleCreditError = beginAttempt();
     setError(null);
     setSubmitting(true);
@@ -200,6 +204,7 @@ export function CreateResumeModal({
       <Dialog
         open={open && !submitting && !insufficientOpen}
         onClose={handleClose}
+        initialFocusRef={restoreSubmitFocus ? submitButtonRef : undefined}
         ariaLabel="새 이력서 만들기"
         className={experienceSelectionEnabled ? "max-w-lg" : "max-w-md"}
       >
@@ -348,6 +353,7 @@ export function CreateResumeModal({
             <Button
               variant="primary"
               size="sm"
+              ref={submitButtonRef}
               onClick={handleSubmit}
               disabled={!canSubmit}
             >
@@ -358,7 +364,7 @@ export function CreateResumeModal({
       </Dialog>
 
       <ResumeGenerationOverlay open={submitting} />
-      <InsufficientCreditsDialog open={open && insufficientOpen} onClose={closeInsufficient} />
+      <InsufficientCreditsDialog open={open && insufficientOpen} onClose={() => { setRestoreSubmitFocus(true); closeInsufficient(); }} />
     </>
   );
 }

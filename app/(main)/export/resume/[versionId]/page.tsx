@@ -67,6 +67,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const { open: insufficientOpen, onClose: closeInsufficient, beginAttempt } = useInsufficientCredits(versionId);
   const regeneratingRef = useRef(false);
+  const [restoreRegenerateFocus, setRestoreRegenerateFocus] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<ResumeDraft | null>(null);
   const [continueAnyway, setContinueAnyway] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -118,6 +119,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
     setRegenerating(false);
     regeneratingRef.current = false;
     setRegenerateOpen(false);
+    setRestoreRegenerateFocus(false);
     // 다른 버전을 열면 그 버전의 초안은 아직 손대지 않은 상태다.
     editedFiredRef.current = false;
     exitDraftFiredRef.current = false;
@@ -374,6 +376,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const handleRegenerate = useCallback(async () => {
     if (!resume || regeneratingRef.current) return;
     regeneratingRef.current = true;
+    setRestoreRegenerateFocus(false);
     const handleCreditError = beginAttempt();
     setRegenerating(true);
     // 이 경로도 아래에서 export_completed 를 쏜다. 누름을 여기서 안 잡으면 그 완료 하나가
@@ -817,11 +820,12 @@ export default function ResumeDetailPage({ params }: PageProps) {
         onSelect={handleExport}
       />
 
-      <InsufficientCreditsDialog open={insufficientOpen} onClose={closeInsufficient} />
+      <InsufficientCreditsDialog open={insufficientOpen} onClose={() => { setRestoreRegenerateFocus(true); closeInsufficient(); }} />
       <RegenerateConfirmDialog
         open={regenerateOpen && !insufficientOpen}
         submitting={regenerating}
-        onClose={() => setRegenerateOpen(false)}
+        restoreConfirmFocus={restoreRegenerateFocus}
+        onClose={() => { setRegenerateOpen(false); setRestoreRegenerateFocus(false); }}
         onConfirm={handleRegenerate}
       />
     </div>
