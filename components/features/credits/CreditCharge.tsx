@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { getCreditPackages, type CreditPackage } from "@/lib/api/credit-packages-api";
 
+import { useSuppressFeedback } from "@/contexts/FeedbackTriggerContext";
+
 const number = new Intl.NumberFormat("ko-KR");
 
 /** States: loading → catalog (or API default fallback) → selection → CTA-only reveal.
@@ -16,6 +18,7 @@ export function CreditCharge() {
   const [packages, setPackages] = useState<readonly CreditPackage[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
+  useSuppressFeedback(revealed);
   const selected = packages?.find((item) => item.id === selectedId);
 
   useEffect(() => {

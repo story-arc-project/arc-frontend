@@ -1,11 +1,51 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CreditCharge } from "./CreditCharge";
 import { DEFAULT_CREDIT_PACKAGES } from "@/lib/constants/credit-packages";
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+import { FeedbackHost } from "@/components/features/feedback/FeedbackHost";
+import { useFeedbackTriggers } from "@/contexts/FeedbackTriggerContext";
+import { FEEDBACK_PROMPT_DELAY_MS } from "@/lib/feedback/campaigns";
+
+vi.mock("next/navigation", () => ({ usePathname: () => "/credits/charge" }));
+const feedbackApi = vi.hoisted(() => ({ markFeedbackPromptShown: vi.fn() }));
+vi.mock("@/lib/api/feedback-api", () => feedbackApi);
+
+function ReportExperience() {
+  const triggers = useFeedbackTriggers();
+  return <button onClick={() => triggers?.reportExperienceCount(3)}>Report experience</button>;
+}
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.clearAllMocks();
+});
 
 describe("CreditCharge", () => {
+  it("holds pending feedback while the payment preparation dialog is open", async () => {
+    vi.stubEnv("NEXT_PUBLIC_FEEDBACK_ENABLED", "true");
+    feedbackApi.markFeedbackPromptShown.mockResolvedValue({ created: true });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ packages: DEFAULT_CREDIT_PACKAGES }))));
+    render(<FeedbackHost><ReportExperience /><CreditCharge /></FeedbackHost>);
+    fireEvent.click(await screen.findByRole("radio", { name: /Lite/ }));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Report experience" }));
+    fireEvent.click(screen.getByRole("button", { name: "결제하기" }));
+    await act(async () => { vi.advanceTimersByTime(FEEDBACK_PROMPT_DELAY_MS * 5); });
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.getByRole("dialog", { name: "크레딧 충전 안내" })).toBeInTheDocument();
+    expect(feedbackApi.markFeedbackPromptShown).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    await act(async () => { vi.advanceTimersByTime(FEEDBACK_PROMPT_DELAY_MS); });
+    expect(screen.queryByRole("dialog", { name: "크레딧 충전 안내" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "ARC에 기록해 보니 어떠셨나요?" })).toBeInTheDocument();
+    expect(feedbackApi.markFeedbackPromptShown).toHaveBeenCalledTimes(1);
+  });
+
   it("reveals availability only after explicit payment click and never sends a mutation", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ packages: DEFAULT_CREDIT_PACKAGES })));
     vi.stubGlobal("fetch", fetchSpy);
