@@ -1,5 +1,8 @@
 "use client";
 
+import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
+import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
+
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,6 +15,7 @@ import {
   createComprehensiveAnalysis,
 } from "@/lib/api/analysis-api";
 import { ApiError } from "@/lib/api/client";
+import { isInsufficientCredits } from "@/lib/credits/insufficient-credits";
 import { capture } from "@/lib/analytics";
 import { useAuth } from "@/hooks/useAuth";
 import ExperienceSelector from "@/components/features/analysis/ExperienceSelector";
@@ -28,6 +32,7 @@ export default function ComprehensiveNewPage() {
 
 function ComprehensiveNewForm({ canSubmit }: { canSubmit: boolean }) {
   const router = useRouter();
+  const { open: insufficientOpen, onClose: closeInsufficient, beginAttempt } = useInsufficientCredits();
   const [experiences, setExperiences] = useState<SelectableExperience[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [phase, setPhase] = useState<Phase>("select");
@@ -84,6 +89,7 @@ function ComprehensiveNewForm({ canSubmit }: { canSubmit: boolean }) {
     attemptRef.current = attempt;
     // 실행 직전 최종 선택 = "어떤 조합으로 분석을 시도했나"(FRT-19). 완료 못 가도 drop-off 관측.
     capture("analysis_target_selected", { analysis_type: "comprehensive", count: selected.length });
+    const handleCreditError = beginAttempt();
     try {
       const { analysisId: id } = await createComprehensiveAnalysis(attempt.experienceIds, attempt.key);
       if (!mountedRef.current) return;
@@ -104,7 +110,7 @@ function ComprehensiveNewForm({ canSubmit }: { canSubmit: boolean }) {
       if (!mountedRef.current) return;
       // Only confirmed rejection clears the attempt. Network errors, 5xx,
       // malformed 2xx and 409 may refer to an already accepted reservation.
-      if (err instanceof ApiError && (err.status === 402 || err.status === 422) && attemptRef.current === attempt) {
+      if ((isInsufficientCredits(err) || (err instanceof ApiError && err.status === 422)) && attemptRef.current === attempt) {
         attemptRef.current = null;
       }
       submittingRef.current = false;
@@ -122,10 +128,11 @@ function ComprehensiveNewForm({ canSubmit }: { canSubmit: boolean }) {
         capture("analysis_requested", { analysis_type: "comprehensive", accepted: err.status < 400 });
       }
       setSubmitting(false);
+      if (handleCreditError(err)) return;
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selected, router, canSubmit]);
+  }, [selected, router, canSubmit, beginAttempt]);
 
   if (phase === "error") {
     return (
@@ -180,6 +187,7 @@ function ComprehensiveNewForm({ canSubmit }: { canSubmit: boolean }) {
           </Button>
         </div>
       </div>
+      <InsufficientCreditsDialog open={insufficientOpen} onClose={closeInsufficient} />
     </main>
   );
 }

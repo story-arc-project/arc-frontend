@@ -237,7 +237,7 @@ describe("submission lifecycle (FRT-361)", () => {
     await renderAndSelectTwo();
     createAnalysis.mockRejectedValue(new ApiError(status, "rejected"));
     await click(screen.getByRole("button", { name: "분석 시작" }));
-    await click(screen.getByRole("button", { name: "다시 시도" }));
+    await click(screen.getByRole("button", { name: status === 402 ? "닫기" : "다시 시도" }));
     await click(screen.getByRole("button", { name: "분석 시작" }));
     expect(createAnalysis.mock.calls[1][1]).not.toBe(createAnalysis.mock.calls[0][1]);
   });

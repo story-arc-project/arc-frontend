@@ -1,5 +1,8 @@
 "use client";
 
+import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
+import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
+
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -19,6 +22,7 @@ type Phase = "select" | "error";
 
 export default function KeywordNewPage() {
   const router = useRouter();
+  const { open: insufficientOpen, onClose: closeInsufficient, beginAttempt } = useInsufficientCredits();
   const [suggestions, setSuggestions] = useState<KeywordSuggestion[]>([]);
   const [selectedKeywords, setSelectedKeywords] = useState<
     { label: string; category: KeywordCategory }[]
@@ -27,6 +31,7 @@ export default function KeywordNewPage() {
   const [phase, setPhase] = useState<Phase>("select");
   const [errorMsg, setErrorMsg] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const fetchSuggestions = useCallback(() => {
     getKeywordSuggestions()
@@ -60,6 +65,8 @@ export default function KeywordNewPage() {
   // 오류를 보여줬다. 분석은 실패한 적이 없었고(백엔드는 계속 돌아 결국 완료된다) 화면만
   // 거짓말을 했다. 소요시간은 예측할 수 없으므로 예산을 키워봐야 같은 버그가 재발한다.
   const startAnalysis = useCallback(async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
     // 실행 직전 최종 선택 = "어떤 키워드로 적합도를 확인하려 하나"(FRT-19). category 는 4분류.
     const keywordCategories = Array.from(new Set(selectedKeywords.map((k) => k.category)));
@@ -68,6 +75,7 @@ export default function KeywordNewPage() {
       count: selectedKeywords.length,
       keyword_categories: keywordCategories,
     });
+    const handleCreditError = beginAttempt();
     try {
       const labels = selectedKeywords.map((k) => k.label);
       const { analysisId: id } = await createKeywordAnalysis(labels, target.trim());
@@ -93,11 +101,13 @@ export default function KeywordNewPage() {
         capture("analysis_requested", { analysis_type: "keyword", accepted: err.status < 400 });
       }
       if (!mountedRef.current) return;
+      submittingRef.current = false;
       setSubmitting(false);
+      if (handleCreditError(err)) return;
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selectedKeywords, target, router]);
+  }, [selectedKeywords, target, router, beginAttempt]);
 
   if (phase === "error") {
     return (
@@ -169,6 +179,7 @@ export default function KeywordNewPage() {
           </Button>
         </div>
       </div>
+      <InsufficientCreditsDialog open={insufficientOpen} onClose={closeInsufficient} />
     </main>
   );
 }

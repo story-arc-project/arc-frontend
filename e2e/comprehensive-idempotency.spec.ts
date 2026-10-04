@@ -53,8 +53,16 @@ for (const failure of ["network", "server", "rejected"] as const) {
     await page.goto("/analysis/comprehensive/new");
     await selectExperiences(page);
     await page.getByRole("button", { name: "분석 시작", exact: true }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "분석 요청에 실패했습니다." })).toBeVisible();
-    await page.getByRole("button", { name: "다시 시도", exact: true }).click();
+    if (failure === "rejected") {
+      const dialog = page.getByRole("dialog", { name: "크레딧이 부족해요" });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("button", { name: "닫기", exact: true }).click();
+      await expect(page.getByRole("checkbox").nth(0)).toBeChecked();
+      await expect(page.getByRole("checkbox").nth(1)).toBeChecked();
+    } else {
+      await expect(page.getByRole("alert").filter({ hasText: "분석 요청에 실패했습니다." })).toBeVisible();
+      await page.getByRole("button", { name: "다시 시도", exact: true }).click();
+    }
     await page.getByRole("button", { name: "분석 시작", exact: true }).click();
     await expect(page).toHaveURL(/\/analysis\/comprehensive\?started=comp-idempotent$/);
     expect(keys).toHaveLength(2);
