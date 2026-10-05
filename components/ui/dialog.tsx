@@ -23,7 +23,7 @@ const FOCUSABLE_SELECTOR =
  */
 function getFocusable(container: HTMLElement | null): HTMLElement[] {
   if (!container) return [];
-  return Array.from(
+  const visible = Array.from(
     container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
   ).filter(
     (el) =>
@@ -32,6 +32,13 @@ function getFocusable(container: HTMLElement | null): HTMLElement[] {
       el.tabIndex !== -1 &&
       el.offsetParent !== null
   );
+  // Native radio groups contribute one tab stop: checked item, otherwise first.
+  return visible.filter((el) => {
+    if (!(el instanceof HTMLInputElement) || el.type !== "radio" || !el.name) return true;
+    const group = visible.filter((item): item is HTMLInputElement =>
+      item instanceof HTMLInputElement && item.type === "radio" && item.name === el.name && item.form === el.form);
+    return el === (group.find((item) => item.checked) ?? group[0]);
+  });
 }
 
 export function Dialog({ open, onClose, ariaLabel, children, className, initialFocusRef }: DialogProps) {
@@ -88,10 +95,11 @@ export function Dialog({ open, onClose, ariaLabel, children, className, initialF
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
 
-        if (e.shiftKey && document.activeElement === first) {
+        const activeIsTabStop = focusable.includes(document.activeElement as HTMLElement);
+        if (e.shiftKey && (document.activeElement === first || !activeIsTabStop)) {
           e.preventDefault();
           last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
+        } else if (!e.shiftKey && (document.activeElement === last || !activeIsTabStop)) {
           e.preventDefault();
           first.focus();
         }

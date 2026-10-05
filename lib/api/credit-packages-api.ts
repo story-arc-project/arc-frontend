@@ -31,38 +31,38 @@ function parsePackages(body: unknown): readonly CreditPackage[] | null {
   return Object.freeze(result);
 }
 
-/** Public catalog only. Do not use the authenticated client: it refreshes sessions on 401. */
+/** Public landing keeps its established fallback; intent screens must use strict loading. */
 export async function getCreditPackages(signal?: AbortSignal): Promise<readonly CreditPackage[]> {
-  if (signal?.aborted) return DEFAULT_CREDIT_PACKAGES;
+  try {
+    return await getCreditPackagesStrict(signal);
+  } catch {
+    return DEFAULT_CREDIT_PACKAGES;
+  }
+}
 
+/** Public catalog only; never refresh authentication or substitute prices on failure. */
+export async function getCreditPackagesStrict(signal?: AbortSignal): Promise<readonly CreditPackage[]> {
+  if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
   const controller = new AbortController();
-  let finishCancellation: (() => void) | undefined;
-  const cancelled = new Promise<readonly CreditPackage[]>((resolve) => {
-    finishCancellation = () => {
+  let abort!: () => void;
+  const cancelled = new Promise<never>((_, reject) => {
+    abort = () => {
       controller.abort();
-      resolve(DEFAULT_CREDIT_PACKAGES);
+      reject(new DOMException("Catalog request cancelled or timed out", "AbortError"));
     };
   });
-  const abort = () => finishCancellation?.();
   signal?.addEventListener("abort", abort, { once: true });
   const timeout = setTimeout(abort, REQUEST_TIMEOUT_MS);
-
   try {
-    const request = async (): Promise<readonly CreditPackage[]> => {
-      try {
-        const response = await fetch(`${API_URL.replace(/\/$/, "")}/credits/packages`, {
-          method: "GET",
-          credentials: "omit",
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) return DEFAULT_CREDIT_PACKAGES;
-        return parsePackages(await response.json()) ?? DEFAULT_CREDIT_PACKAGES;
-      } catch {
-        return DEFAULT_CREDIT_PACKAGES;
-      }
+    const request = async () => {
+      const response = await fetch(`${API_URL.replace(/\/$/, "")}/credits/packages`, {
+        method: "GET", credentials: "omit", cache: "no-store", signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("Catalog unavailable");
+      const packages = parsePackages(await response.json());
+      if (!packages) throw new Error("Invalid catalog");
+      return packages;
     };
-    // Bound both connection and response-body parsing, including implementations ignoring abort.
     return await Promise.race([request(), cancelled]);
   } finally {
     clearTimeout(timeout);

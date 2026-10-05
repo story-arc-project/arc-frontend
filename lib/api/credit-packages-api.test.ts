@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getCreditPackages } from "./credit-packages-api";
+import { getCreditPackages, getCreditPackagesStrict } from "./credit-packages-api";
 import { DEFAULT_CREDIT_PACKAGES } from "../constants/credit-packages";
 
 const pack = { id: "lite", name: "Lite", credits: 20, price_krw: 4900 };
@@ -72,5 +72,29 @@ describe("getCreditPackages", () => {
     expect(Object.isFrozen(DEFAULT_CREDIT_PACKAGES)).toBe(true);
     expect(DEFAULT_CREDIT_PACKAGES.every(Object.isFrozen)).toBe(true);
     expect(DEFAULT_CREDIT_PACKAGES.map(({ credits, price_krw }) => [credits, price_krw])).toEqual([[20, 4900], [50, 9900], [120, 19900]]);
+  });
+});
+
+
+describe("getCreditPackagesStrict", () => {
+  it("returns validated prices without hiding errors behind defaults", async () => {
+    respond({ packages: [pack] });
+    expect(await getCreditPackagesStrict()).toEqual([pack]);
+    respond({}, 503);
+    await expect(getCreditPackagesStrict()).rejects.toThrow();
+    respond({ packages: [] });
+    await expect(getCreditPackagesStrict()).rejects.toThrow();
+  });
+  it("rejects a hanging response at the deadline", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+    const result = expect(getCreditPackagesStrict()).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(3000);
+    await result;
+  });
+  it("rejects cancellation without returning a purchasable catalog", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(getCreditPackagesStrict(controller.signal)).rejects.toThrow();
   });
 });
