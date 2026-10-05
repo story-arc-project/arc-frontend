@@ -9,11 +9,14 @@ Run Node 20 and `FRT138_PREVIEW=true npm run dev -- --port 3128`, then open
 `http://localhost:3128/dev/credit-fake-door`. This route returns 404 unless both
 `NODE_ENV=development` and the server-only opt-in are present. Production builds
 return 404 even with the opt-in. Production entrypoints remain on FRT-99 behavior.
-The existing insufficient-credit dialog accepts an optional `onCharge` callback;
-only the development harness opts into the new in-place flow.
+The existing `/credits/charge` page component accepts an optional fake-door adapter;
+only the development harness opts in. The production page remains on its existing behavior.
 
-The harness preserves the mounted source form and demonstrates a single price/notice
-dialog. Its mission destination is explicitly a mock, not a placeholder production link.
+The harness preserves the source draft while rendering the existing CreditCharge page.
+Price selection is never a modal. Only the payment-preparation notice uses a dialog,
+with mission and close actions. Close, Escape, and backdrop click all retain the
+selected package and restore the payment button focus. A page-level back control
+returns to the source screen. Its mission destination is explicitly a mock, not a placeholder production link.
 The account and request records controls are diagnostic preview controls only.
 Storybook also exposes catalog, error, selection, notice, delayed, and retry states.
 
