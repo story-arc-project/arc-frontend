@@ -6,6 +6,7 @@ async function openPrices(page: Page, scenario = "normal") {
   await page.getByLabel("시나리오").selectOption(scenario);
   await page.getByRole("button", { name: "분석 시도" }).click();
   await page.getByRole("button", { name: "충전 패키지 보기" }).click();
+  await expect(page.getByRole("button", { name: "이전 화면으로", exact: true })).toBeFocused();
 }
 async function records(page: Page) {
   // Deliberately simulate harness instrumentation behind the modal.
@@ -23,6 +24,7 @@ test("selection, keyboard, exposure and original draft preservation", async ({ p
   const originalScroll = await page.evaluate(() => window.scrollY);
   await page.getByRole("button", { name: "분석 시도" }).click();
   await page.getByRole("button", { name: "충전 패키지 보기" }).click();
+  await expect(page.getByRole("button", { name: "이전 화면으로", exact: true })).toBeFocused();
   await expect(page.getByRole("radio")).toHaveCount(3);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("radio", { checked: true })).toHaveCount(0);
@@ -139,4 +141,47 @@ test("notice dismissal retains page selection and restores purchase focus", asyn
     await expect(page.getByRole("radio").nth(2)).toBeChecked();
     await expect(purchase).toBeFocused();
   }
+});
+
+
+test("explicit purchase after response loss creates a new intent", async ({ page }) => {
+  await openPrices(page, "intent-error");
+  await page.getByRole("radio").first().focus();
+  await page.keyboard.press("Space");
+  const purchase = page.getByRole("button", { name: "4,900원 결제하기" });
+  await purchase.click();
+  await expect(page.getByRole("button", { name: "저장 다시 시도" })).toBeVisible();
+  const initial = (await records(page)).intents[0];
+  await page.getByRole("button", { name: "닫기", exact: true }).click();
+  await expect(purchase).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await records(page)).intents.length).toBe(2);
+  const subsequent = (await records(page)).intents[1];
+  expect(subsequent.intentId).not.toBe(initial.intentId);
+  expect(subsequent.flowId).toBe(initial.flowId);
+});
+
+test("pending telemetry survives mission navigation but is cancelled by account switch", async ({ page }) => {
+  await openPrices(page, "delayed");
+  await page.getByRole("radio").first().focus();
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "4,900원 결제하기" }).click();
+  await page.getByRole("button", { name: "미션으로 크레딧 받기" }).click();
+  await expect(page.getByRole("region", { name: "미션 mock" })).toBeVisible();
+  await expect.poll(async () => (await records(page)).intents.length).toBe(1);
+  await expect.poll(async () => (await records(page)).exposures.length).toBe(1);
+  await page.getByRole("button", { name: "작성 화면으로 돌아가기" }).click();
+  await page.getByRole("button", { name: "분석 시도" }).click();
+  await page.getByRole("button", { name: "충전 패키지 보기" }).click();
+  await page.getByRole("radio").first().focus();
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "4,900원 결제하기" }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "미션으로 크레딧 받기" }).click();
+  await page.getByRole("button", { name: "계정 전환" }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect(page.getByLabel("현재 계정")).toHaveText("preview-account-b");
+  // Let the delayed mock reach its commit boundary; cancelled account-A writes must stay absent.
+  await page.waitForTimeout(2200);
+  expect((await records(page)).intents).toHaveLength(1);
+  expect((await records(page)).exposures).toHaveLength(1);
 });

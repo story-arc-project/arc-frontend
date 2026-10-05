@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { FakeDoorTelemetryProvider } from "./FakeDoorDialog";
 import { CreditCharge } from "./CreditCharge";
 import { DEFAULT_CREDIT_PACKAGES } from "@/lib/constants/credit-packages";
 import type { FakeDoorAdapter } from "@/lib/credits/fake-door";
@@ -106,6 +107,78 @@ describe("FakeDoorDialog", () => {
     const calls = vi.mocked(adapter.recordIntent).mock.calls;
     expect(calls[1][0].intentId).not.toBe(calls[0][0].intentId);
     expect(screen.getByRole("button", { name: "미션으로 크레딧 받기" })).toBeEnabled();
+  });
+  it("finishes pending telemetry after mission navigation under its account owner", async () => {
+    const adapter = createAdapter();
+    let finishIntent!: () => void;
+    let finishExposure!: () => void;
+    adapter.recordIntent = vi.fn().mockImplementation(() => new Promise((resolve) => { finishIntent = () => resolve({ audience: "first" }); }));
+    adapter.recordExposure = vi.fn().mockImplementation(() => new Promise<void>((resolve) => { finishExposure = resolve; }));
+    const p = props(adapter);
+    const view = (prices: boolean) => <FakeDoorTelemetryProvider accountId="one">{prices ? <CreditCharge fakeDoor={{ ...p, onMission: () => rendered.rerender(view(false)) }} /> : <p>Mission destination</p>}</FakeDoorTelemetryProvider>;
+    const rendered = render(view(true));
+    await purchase();
+    fireEvent.click(screen.getByRole("button", { name: "미션으로 크레딧 받기" }));
+    expect(screen.getByText("Mission destination")).toBeInTheDocument();
+    expect(vi.mocked(adapter.recordIntent).mock.calls[0][1].aborted).toBe(false);
+    expect(vi.mocked(adapter.recordExposure).mock.calls[0][1].aborted).toBe(false);
+    await act(async () => { finishIntent(); finishExposure(); });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  it("cancels pending mission telemetry when its account changes", async () => {
+    const adapter = createAdapter();
+    let finishIntent!: () => void;
+    adapter.recordIntent = vi.fn().mockImplementation(() => new Promise((resolve) => { finishIntent = () => resolve({ audience: "first" }); }));
+    adapter.recordExposure = vi.fn().mockImplementation(() => new Promise(() => {}));
+    const p = props(adapter);
+    const view = (accountId: string, prices: boolean) => <FakeDoorTelemetryProvider accountId={accountId}>{prices ? <CreditCharge fakeDoor={{ ...p, accountId, onMission: () => rendered.rerender(view(accountId, false)) }} /> : <p>Mission destination</p>}</FakeDoorTelemetryProvider>;
+    const rendered = render(view("one", true));
+    await purchase();
+    fireEvent.click(screen.getByRole("button", { name: "미션으로 크레딧 받기" }));
+    rendered.rerender(view("two", true));
+    expect(vi.mocked(adapter.recordIntent).mock.calls[0][1].aborted).toBe(true);
+    expect(vi.mocked(adapter.recordExposure).mock.calls[0][1].aborted).toBe(true);
+    await act(async () => finishIntent());
+    await screen.findAllByRole("radio");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "결제하기" })).toBeDisabled();
+  });
+  it("aborts telemetry when the whole account owner unmounts", async () => {
+    const adapter = createAdapter();
+    adapter.recordIntent = vi.fn().mockImplementation(() => new Promise(() => {}));
+    adapter.recordExposure = vi.fn().mockImplementation(() => new Promise(() => {}));
+    const rendered = render(<FakeDoorTelemetryProvider accountId="one"><CreditCharge fakeDoor={props(adapter)} /></FakeDoorTelemetryProvider>);
+    await purchase();
+    rendered.unmount();
+    expect(vi.mocked(adapter.recordIntent).mock.calls[0][1].aborted).toBe(true);
+    expect(vi.mocked(adapter.recordExposure).mock.calls[0][1].aborted).toBe(true);
+  });
+  it("resets a mounted charge page and ignores its late response when provider account changes", async () => {
+    const adapter = createAdapter();
+    let finish!: () => void;
+    adapter.recordIntent = vi.fn().mockImplementation(() => new Promise((resolve) => { finish = () => resolve({ audience: "repeat" }); }));
+    const view = (accountId: string) => <FakeDoorTelemetryProvider accountId={accountId}><CreditCharge fakeDoor={{ ...props(adapter), accountId }} /></FakeDoorTelemetryProvider>;
+    const rendered = render(view("one"));
+    await purchase();
+    rendered.rerender(view("two"));
+    expect(vi.mocked(adapter.recordIntent).mock.calls[0][1].aborted).toBe(true);
+    await act(async () => finish());
+    await screen.findAllByRole("radio");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "결제하기" })).toBeDisabled();
+  });
+  it("gives a new explicit purchase a fresh id after a failed purchase was dismissed", async () => {
+    const adapter = createAdapter();
+    adapter.recordIntent = vi.fn().mockRejectedValue(new Error("response lost"));
+    render(<CreditCharge fakeDoor={props(adapter)} />);
+    await purchase();
+    await screen.findByRole("button", { name: "저장 다시 시도" });
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    fireEvent.click(screen.getByRole("button", { name: "4,900원 결제하기" }));
+    await waitFor(() => expect(adapter.recordIntent).toHaveBeenCalledTimes(2));
+    const calls = vi.mocked(adapter.recordIntent).mock.calls;
+    expect(calls[1][0].intentId).not.toBe(calls[0][0].intentId);
+    expect(calls[1][0].flowId).toBe(calls[0][0].flowId);
   });
   it("shows catalog failure and explicitly retries without default prices", async () => {
     const adapter = createAdapter();

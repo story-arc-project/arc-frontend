@@ -42,11 +42,26 @@ contract, not the preview's `mock-2026-10-05` label.
 including a bounded timeout. The old `getCreditPackages` wrapper retains landing
 fallback behavior. BAC-89's versioned catalog adapter is deliberately not fabricated.
 
-Intent payloads retain the same ID and price snapshot across response-loss retries.
+Intent payloads retain the same ID and price snapshot only for the explicit storage-retry action.
+Dismissing the notice and clicking payment again creates a new intent ID, even for
+the same package after a failed save.
 Exposure has its own ID and timestamp. The preview mock models idempotency and
 response loss in memory only: it is not proof of server concurrency, multi-tab
 correctness, durable storage, or actual first/repeat classification. It never
 calls a payment, ledger, credit invalidation, or purchase-complete event.
+
+## Account-scoped telemetry lifetime
+
+Mount `FakeDoorTelemetryProvider accountId={accountId}` above both the charge page
+and the mission destination. Keep this provider mounted during navigation between
+those screens. The development preview and Storybook use this ownership boundary.
+Intent and exposure requests belong to that account scope, so immediate mission
+navigation does not cancel the writes just created by the payment click.
+Changing the provider account or unmounting the whole owner scope aborts its pending
+requests, including when the charge page is already absent. Unmounted page hooks
+ignore all later completions. Catalog loading remains page-local and is aborted
+when the page leaves. Without a provider the hook conservatively cancels its own
+requests on unmount; production integration must supply the longer-lived provider.
 
 ## Before publishing
 
