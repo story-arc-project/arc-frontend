@@ -59,7 +59,7 @@ describe("서버 경로", () => {
     mockPost.mockResolvedValue(ok({ id: "cl-1" }));
     mockGet.mockResolvedValue(ok({ contents: [] }));
 
-    await createCoverLetter({ questions: [] });
+    await createCoverLetter({ questions: [] }, { idempotencyKey: "attempt-1" });
     await getCoverLetterList();
 
     expect(mockPost.mock.calls[0][0]).toBe("/export/cover_letter");
@@ -92,7 +92,7 @@ describe("createCoverLetter", () => {
         { question: "지원 동기", maxChars: 800 },
         { question: "성장 과정" },
       ],
-    });
+    }, { idempotencyKey: "attempt-1" });
 
     const body = mockPost.mock.calls[0][1] as Record<string, unknown>;
     expect(body.questions).toEqual([
@@ -109,7 +109,7 @@ describe("createCoverLetter", () => {
       targetCompany: "   ",
       targetJob: "",
       motivation: undefined,
-    });
+    }, { idempotencyKey: "attempt-1" });
 
     const body = mockPost.mock.calls[0][1] as Record<string, unknown>;
     expect(body).not.toHaveProperty("target_company");
@@ -128,7 +128,7 @@ describe("createCoverLetter", () => {
       extraNotes: "메모",
       region: "KR",
       includeWritingGuide: false,
-    });
+    }, { idempotencyKey: "attempt-1" });
 
     const body = mockPost.mock.calls[0][1] as Record<string, unknown>;
     expect(body.target_company).toBe("토스");
@@ -141,7 +141,7 @@ describe("createCoverLetter", () => {
 
   it("id 가 없는(계약 미이행) 응답이면 null 로 폴백한다", async () => {
     mockPost.mockResolvedValue(ok({ message: "queued" }));
-    await expect(createCoverLetter({ questions: [] })).resolves.toEqual({
+    await expect(createCoverLetter({ questions: [] }, { idempotencyKey: "attempt-1" })).resolves.toEqual({
       id: null,
       title: undefined,
     });
@@ -323,5 +323,18 @@ describe("deleteCoverLetter", () => {
     await expect(deleteCoverLetter("cl-1")).rejects.not.toBeInstanceOf(
       CoverLetterMutationUnsupportedError,
     );
+  });
+});
+
+describe("idempotency retransmission", () => {
+  it("preserves the caller key and AbortSignal after response loss", async () => {
+    const signal = new AbortController().signal;
+    const options = { idempotencyKey: "stable-key", signal };
+    mockPost.mockRejectedValueOnce(new TypeError("response lost"))
+      .mockResolvedValueOnce({ status: "success", data: { id: "existing-id" } });
+    await expect(createCoverLetter({ questions: [] }, options)).rejects.toThrow("response lost");
+    await expect(createCoverLetter({ questions: [] }, options)).resolves.toMatchObject({ id: "existing-id" });
+    expect(mockPost.mock.calls[0]).toEqual(mockPost.mock.calls[1]);
+    expect(mockPost.mock.calls[1][2]).toEqual({ signal, headers: { "Idempotency-Key": "stable-key" } });
   });
 });

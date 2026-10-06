@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/hooks/useAuth";
+import { useRequestAttempt } from "@/hooks/useRequestAttempt";
 import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
 import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
 
@@ -21,6 +23,12 @@ import KeywordSelector from "@/components/features/analysis/KeywordSelector";
 type Phase = "select" | "error";
 
 export default function KeywordNewPage() {
+  const { user, isLoading } = useAuth();
+  return <KeywordNewForm key={user?.account.email} canSubmit={!!user && !isLoading} />;
+}
+
+function KeywordNewForm({ canSubmit }: { canSubmit: boolean }) {
+  const { begin, reject, reset } = useRequestAttempt<{ labels: string[]; target: string }>();
   const router = useRouter();
   const { open: insufficientOpen, onClose: closeInsufficient, beginAttempt } = useInsufficientCredits();
   const [suggestions, setSuggestions] = useState<KeywordSuggestion[]>([]);
@@ -32,6 +40,8 @@ export default function KeywordNewPage() {
   const [errorMsg, setErrorMsg] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+
+  useEffect(() => { reset(); }, [selectedKeywords, target, reset]);
 
   const fetchSuggestions = useCallback(() => {
     getKeywordSuggestions()
@@ -65,7 +75,7 @@ export default function KeywordNewPage() {
   // 오류를 보여줬다. 분석은 실패한 적이 없었고(백엔드는 계속 돌아 결국 완료된다) 화면만
   // 거짓말을 했다. 소요시간은 예측할 수 없으므로 예산을 키워봐야 같은 버그가 재발한다.
   const startAnalysis = useCallback(async () => {
-    if (submittingRef.current) return;
+    if (submittingRef.current || !canSubmit) return;
     submittingRef.current = true;
     setSubmitting(true);
     // 실행 직전 최종 선택 = "어떤 키워드로 적합도를 확인하려 하나"(FRT-19). category 는 4분류.
@@ -76,9 +86,10 @@ export default function KeywordNewPage() {
       keyword_categories: keywordCategories,
     });
     const handleCreditError = beginAttempt();
+    const attempt = begin({ labels: selectedKeywords.map((k) => k.label), target: target.trim() });
     try {
-      const labels = selectedKeywords.map((k) => k.label);
-      const { analysisId: id } = await createKeywordAnalysis(labels, target.trim());
+      const { analysisId: id } = await createKeywordAnalysis(attempt.payload.labels, attempt.payload.target, attempt.key);
+      if (!handleCreditError.isCurrent()) return;
       // 서버가 요청을 받았다(FRT-107). 위 analysis_target_selected(누름)와의 건수 차이가
       // "눌렀는데 요청이 안 나간" 기술적 실패다.
       capture("analysis_requested", { analysis_type: "keyword", accepted: true });
@@ -91,6 +102,8 @@ export default function KeywordNewPage() {
         id ? `/analysis/keyword?started=${encodeURIComponent(id)}` : "/analysis/keyword",
       );
     } catch (err) {
+      if (!handleCreditError.isCurrent()) return;
+      reject(attempt.key, err);
       // 서버가 **응답을 돌려준** 실패만 여기 실린다 — 오프라인·DNS·연결 끊김은 응답이 없어
       // raw 예외로 오고, 그건 접수가 아니라 "요청이 브라우저를 못 떠났다"다(FRT-107,
       // 종합분석과 같은 축이라 세 갈래 해석도 그대로 성립한다).
@@ -107,7 +120,7 @@ export default function KeywordNewPage() {
       setPhase("error");
       setErrorMsg("분석 요청에 실패했습니다.");
     }
-  }, [selectedKeywords, target, router, beginAttempt]);
+  }, [selectedKeywords, target, router, beginAttempt, begin, reject, canSubmit]);
 
   if (phase === "error") {
     return (
@@ -172,7 +185,7 @@ export default function KeywordNewPage() {
         <div className="pt-4">
           <Button
             fullWidth
-            disabled={selectedKeywords.length === 0 || submitting}
+            disabled={!canSubmit || selectedKeywords.length === 0 || submitting}
             onClick={startAnalysis}
           >
             {submitting ? "분석을 시작하는 중..." : "분석 시작"}

@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/hooks/useAuth";
+import { useRequestAttempt } from "@/hooks/useRequestAttempt";
 import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
 import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
 
@@ -53,7 +55,14 @@ interface PageProps {
   params: Promise<{ versionId: string }>;
 }
 
-export default function ResumeDetailPage({ params }: PageProps) {
+export default function ResumeDetailPage(props: PageProps) {
+  const { user, isLoading } = useAuth();
+  const demo = useBasePath() === "/demo";
+  return <ResumeDetailContent key={demo ? "demo" : user?.account.email} {...props} canGenerate={demo || (!!user && !isLoading)} />;
+}
+
+function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate: boolean }) {
+  const { begin, reject } = useRequestAttempt<{ versionId: string; language: ResumeVersion["meta"]["language"] }>();
   const { versionId } = use(params);
   const router = useRouter();
   const basePath = useBasePath();
@@ -374,7 +383,7 @@ export default function ResumeDetailPage({ params }: PageProps) {
   ]);
 
   const handleRegenerate = useCallback(async () => {
-    if (!resume || regeneratingRef.current) return;
+    if (!resume || regeneratingRef.current || !canGenerate) return;
     regeneratingRef.current = true;
     setRestoreRegenerateFocus(false);
     const handleCreditError = beginAttempt();
@@ -383,8 +392,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
     // 짝 없이 총계에 얹혀, "눌렀는데 요청이 안 나갔다"를 재는 **누름 − 완료** 차이가
     // 재생성 건수만큼 깎인다(FRT-107). 완료를 쏘는 자리마다 누름도 있어야 뺄셈이 성립한다.
     capture("export_execute_button_clicked", { export_type: "resume" });
+    const attempt = begin({ versionId, language: resume.meta.language });
     try {
-      await createResume({ language: resume.meta.language });
+      await createResume({ language: attempt.payload.language }, { idempotencyKey: attempt.key });
       if (!handleCreditError.isCurrent()) return;
       // '다시 만들기'도 새 레쥬메 버전이 만들어진 익스포트 완료다 — 모달 생성 경로만
       // 잡으면 퍼널이 이 사용자를 미완료로 센다(FRT-19).
@@ -401,12 +411,13 @@ export default function ResumeDetailPage({ params }: PageProps) {
       router.push(`${basePath}/export`);
     } catch (err) {
       if (!handleCreditError.isCurrent()) return;
+      reject(attempt.key, err);
       regeneratingRef.current = false;
       setRegenerating(false);
       if (handleCreditError(err)) return;
       toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
     }
-  }, [resume, router, basePath, versionId, beginAttempt]);
+  }, [resume, router, basePath, versionId, beginAttempt, begin, reject, canGenerate]);
 
   const handlePrint = useCallback(() => {
     if (typeof window !== "undefined") window.print();

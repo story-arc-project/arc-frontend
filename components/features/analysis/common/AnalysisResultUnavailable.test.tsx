@@ -1,5 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+
+vi.mock("@/hooks/useAuth", () => ({
+  useAuth: () => ({ user: { account: { email: "test@example.com" } }, isLoading: false }),
+}));
 
 import AnalysisResultUnavailable from "./AnalysisResultUnavailable";
 

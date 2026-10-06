@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/hooks/useAuth";
+import { useRequestAttempt } from "@/hooks/useRequestAttempt";
 import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
 import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
 
@@ -21,6 +23,13 @@ import { CoverLetterGenerationOverlay } from "../../_components/CoverLetterGener
 const GENERATION_TIMEOUT_MS = 120_000;
 
 export default function NewCoverLetterPage() {
+  const { user, isLoading } = useAuth();
+  const demo = useBasePath() === "/demo";
+  return <NewCoverLetterForm key={demo ? "demo" : user?.account.email} canSubmit={demo || (!!user && !isLoading)} />;
+}
+
+function NewCoverLetterForm({ canSubmit }: { canSubmit: boolean }) {
+  const { begin, reject, reset } = useRequestAttempt<Parameters<typeof createCoverLetter>[0]>();
   const router = useRouter();
   const basePath = useBasePath();
 
@@ -36,6 +45,8 @@ export default function NewCoverLetterPage() {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  useEffect(() => { reset(); }, [targetCompany, targetJob, motivation, careerGoal, extraNotes, questions, reset]);
+
   // 만드는 중에 피드백 모달이 위를 덮지 않게 한다(FRT-95).
   useSuppressFeedback(submitting);
 
@@ -46,7 +57,7 @@ export default function NewCoverLetterPage() {
   }, []);
 
   const handleSubmit = async () => {
-    if (submittingRef.current) return;
+    if (submittingRef.current || !canSubmit) return;
     submittingRef.current = true;
     const handleCreditError = beginAttempt();
     setError(null);
@@ -64,18 +75,9 @@ export default function NewCoverLetterPage() {
     // 여기서 "(자유 형식)" 문자열을 지어 보내면 그 문구가 문항 제목으로 굳어 버린다.
     const asked = questions.filter((q) => q.question.trim() !== "");
 
+    const attempt = begin({ targetCompany, targetJob, motivation, careerGoal, extraNotes, questions: asked });
     try {
-      const created = await createCoverLetter(
-        {
-          targetCompany,
-          targetJob,
-          motivation,
-          careerGoal,
-          extraNotes,
-          questions: asked,
-        },
-        { signal: controller.signal },
-      );
+      const created = await createCoverLetter(attempt.payload, { signal: controller.signal, idempotencyKey: attempt.key });
       if (!handleCreditError.isCurrent() || controller.signal.aborted) return;
 
       // 입력한 글자수 제한은 출력 계약에 없다 — 여기서 남기지 않으면 결과 화면이 제한을
@@ -93,6 +95,7 @@ export default function NewCoverLetterPage() {
       router.push(`${basePath}/export`);
     } catch (err) {
       if (!handleCreditError.isCurrent() || abortRef.current !== controller) return;
+      reject(attempt.key, err);
       setSubmitting(false);
       if (handleCreditError(err)) return;
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -223,7 +226,7 @@ export default function NewCoverLetterPage() {
             >
               취소
             </Button>
-            <Button variant="primary" size="sm" onClick={handleSubmit}>
+            <Button variant="primary" size="sm" onClick={handleSubmit} disabled={!canSubmit}>
               초안 만들기
             </Button>
           </div>

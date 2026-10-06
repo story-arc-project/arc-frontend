@@ -1,3 +1,4 @@
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { account: { email: "test@example.com" } }, isLoading: false }) }));
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { AnalysisSnapshot } from "@/types/analysis";
@@ -135,7 +136,7 @@ describe("종합 분석 목록 — 재시도 폴링과 로컬 변경 (FRT-108)",
     // 재시도를 눌러 폴링을 켠다.
     await click(screen.getByRole("button", { name: "다시 시도" }));
     await flush();
-    expect(retryAnalysis).toHaveBeenCalledWith("a");
+    expect(retryAnalysis).toHaveBeenCalledWith("a", expect.any(String));
 
     // 폴링 GET 을 응답 전에 붙잡아 둔다.
     const poll = deferred<AnalysisSnapshot[]>();
@@ -172,7 +173,7 @@ describe("종합 분석 목록 — 재시도 폴링과 로컬 변경 (FRT-108)",
     // a 재시도 → 폴링 1회차 시작.
     await click(screen.getAllByRole("button", { name: "다시 시도" })[0]);
     await flush();
-    expect(retryAnalysis).toHaveBeenCalledWith("a");
+    expect(retryAnalysis).toHaveBeenCalledWith("a", expect.any(String));
 
     const poll = deferred<AnalysisSnapshot[]>();
     getList.mockReturnValueOnce(poll.promise);
@@ -182,7 +183,7 @@ describe("종합 분석 목록 — 재시도 폴링과 로컬 변경 (FRT-108)",
     // GET 이 떠 있는 동안 b 도 재시도한다.
     await click(screen.getByRole("button", { name: "다시 시도" }));
     await flush();
-    expect(retryAnalysis).toHaveBeenCalledWith("b");
+    expect(retryAnalysis).toHaveBeenCalledWith("b", expect.any(String));
     expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
 
     // b 재시도 이전에 찍힌 스냅샷(b 는 아직 failed)이 뒤늦게 도착한다.

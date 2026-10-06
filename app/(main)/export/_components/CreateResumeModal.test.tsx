@@ -1,3 +1,5 @@
+const auth = vi.hoisted(() => ({ signedIn: true, basePath: "" }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: auth.signedIn ? { account: { email: "test@example.com" } } : null, isLoading: false }) }));
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -22,7 +24,7 @@ vi.mock("@/lib/analytics", () => ({
   capture: (...args: unknown[]) => mockCapture(...args),
 }));
 vi.mock("@/components/ui/toast", () => ({ toast: vi.fn() }));
-vi.mock("@/lib/utils/use-base-path", () => ({ useBasePath: () => "" }));
+vi.mock("@/lib/utils/use-base-path", () => ({ useBasePath: () => auth.basePath }));
 
 let mockExperiences: Experience[] = [];
 let mockLoading = false;
@@ -70,6 +72,8 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auth.signedIn = true;
+  auth.basePath = "";
   mockLoading = false;
   mockError = null;
   mockExperiences = [
@@ -336,4 +340,32 @@ describe("insufficient credits", () => {
     expect(screen.getAllByRole("checkbox")[0]).not.toBeChecked();
     expect(mockCreateResume).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it("keeps a resume request key across a lost response and rotates it after editing away and back", async () => {
+  const user = userEvent.setup();
+  mockCreateResume.mockRejectedValue(new TypeError("response lost"));
+  renderModal(false);
+  await user.click(screen.getByRole("button", { name: "만들기" }));
+  await screen.findByRole("alert");
+  await user.click(screen.getByRole("button", { name: "다시 시도" }));
+  await waitFor(() => expect(mockCreateResume).toHaveBeenCalledTimes(2));
+  expect(mockCreateResume.mock.calls[1][1].idempotencyKey).toBe(mockCreateResume.mock.calls[0][1].idempotencyKey);
+  await screen.findByRole("alert");
+  await user.click(screen.getByRole("radio", { name: "English" }));
+  await user.click(screen.getByRole("radio", { name: "한국어" }));
+  await user.click(screen.getByRole("button", { name: "만들기" }));
+  await waitFor(() => expect(mockCreateResume).toHaveBeenCalledTimes(3));
+  expect(mockCreateResume.mock.calls[2][1].idempotencyKey).not.toBe(mockCreateResume.mock.calls[0][1].idempotencyKey);
+});
+
+
+it("allows demo generation without a signed-in account", async () => {
+  auth.signedIn = false;
+  auth.basePath = "/demo";
+  const user = userEvent.setup();
+  renderModal(false);
+  await user.click(screen.getByRole("button", { name: "만들기" }));
+  expect(mockCreateResume).toHaveBeenCalledWith({ language: "ko" }, expect.objectContaining({ idempotencyKey: expect.any(String) }));
 });
