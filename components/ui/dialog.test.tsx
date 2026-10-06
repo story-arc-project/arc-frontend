@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 
 import { createRef } from "react";
 
@@ -128,4 +128,23 @@ it("does not replace the original return target when initialFocusRef changes whi
     rerender(content(false, false));
     expect(opener).toHaveFocus();
   } finally { visible.mockRestore(); opener.remove(); }
+});
+
+
+it("keeps reverse Tab inside from a heading and the selected native radio", () => {
+  const visible = vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockImplementation(() => document.body);
+  try {
+    render(<Dialog open onClose={() => {}} ariaLabel="radio boundary">
+      <h2 tabIndex={-1}>Heading</h2>
+      <input type="radio" name="package" aria-label="first" />
+      <input type="radio" name="package" aria-label="second" defaultChecked />
+      <button>Last</button>
+    </Dialog>);
+    screen.getByRole("heading").focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { name: "Last" })).toHaveFocus();
+    screen.getByRole("radio", { name: "second" }).focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { name: "Last" })).toHaveFocus();
+  } finally { visible.mockRestore(); }
 });
