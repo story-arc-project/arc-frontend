@@ -39,6 +39,9 @@ jobs:
       - name: Run Playwright smoke E2E
         run: npm run test:e2e
 
+      - name: Run required idempotency-key E2E
+        run: npx playwright test --config playwright.idempotency.config.ts
+
       - name: Run unpublished fake-door preview E2E
         run: npx playwright test --config playwright.fake-door.config.ts
 

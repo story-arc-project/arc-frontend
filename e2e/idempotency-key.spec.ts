@@ -102,7 +102,6 @@ test("자기소개서 생성은 연타를 막고 재시도 키를 보존하며 �
   await stubApi(page, { authed: true });
   const { attempts } = await uncertainGeneration(page, "/export/cover_letter");
   await page.goto("/export/cover-letter/new");
-  test.skip(await page.getByRole("heading", { name: "페이지를 찾을 수 없어요" }).isVisible(), "Cover-letter route is disabled by its feature flag");
   const company = page.getByPlaceholder("예: 토스");
   await company.fill("테스트 회사");
   const submit = page.getByRole("button", { name: "초안 만들기" });
@@ -131,7 +130,6 @@ for (const kind of ["comprehensive", "keyword"] as const) {
     await page.goto(`/analysis/${kind}/${id}`);
     await expect(page.getByText("분석에 실패했습니다", { exact: true })).toBeVisible();
     const submit = page.getByRole("button", { name: "다시 시도", exact: true });
-    test.skip(await submit.count() === 0, "Analysis retry is disabled by its feature flag");
     await submit.evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
     const error = page.getByText("다시 시도하지 못했어요. 잠시 후 한 번 더 눌러주세요.", { exact: true });
     await expect(error).toBeVisible();
