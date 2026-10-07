@@ -1,5 +1,10 @@
 "use client";
 
+import { useAuth } from "@/hooks/useAuth";
+import { useRequestAttempt } from "@/hooks/useRequestAttempt";
+import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
+import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
@@ -18,6 +23,13 @@ import { CoverLetterGenerationOverlay } from "../../_components/CoverLetterGener
 const GENERATION_TIMEOUT_MS = 120_000;
 
 export default function NewCoverLetterPage() {
+  const { user, isLoading } = useAuth();
+  const demo = useBasePath() === "/demo";
+  return <NewCoverLetterForm key={demo ? "demo" : user?.account.email} canSubmit={demo || (!!user && !isLoading)} />;
+}
+
+function NewCoverLetterForm({ canSubmit }: { canSubmit: boolean }) {
+  const { begin, reject, reset } = useRequestAttempt<Parameters<typeof createCoverLetter>[0]>();
   const router = useRouter();
   const basePath = useBasePath();
 
@@ -28,8 +40,12 @@ export default function NewCoverLetterPage() {
   const [extraNotes, setExtraNotes] = useState("");
   const [questions, setQuestions] = useState<CoverLetterQuestion[]>([{ question: "" }]);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const { open: insufficientOpen, onClose: closeInsufficient, beginAttempt } = useInsufficientCredits(true);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => { reset(); }, [targetCompany, targetJob, motivation, careerGoal, extraNotes, questions, reset]);
 
   // 만드는 중에 피드백 모달이 위를 덮지 않게 한다(FRT-95).
   useSuppressFeedback(submitting);
@@ -41,7 +57,9 @@ export default function NewCoverLetterPage() {
   }, []);
 
   const handleSubmit = async () => {
-    if (submitting) return;
+    if (submittingRef.current || !canSubmit) return;
+    submittingRef.current = true;
+    const handleCreditError = beginAttempt();
     setError(null);
     setSubmitting(true);
 
@@ -57,18 +75,10 @@ export default function NewCoverLetterPage() {
     // 여기서 "(자유 형식)" 문자열을 지어 보내면 그 문구가 문항 제목으로 굳어 버린다.
     const asked = questions.filter((q) => q.question.trim() !== "");
 
+    const attempt = begin({ targetCompany, targetJob, motivation, careerGoal, extraNotes, questions: asked });
     try {
-      const created = await createCoverLetter(
-        {
-          targetCompany,
-          targetJob,
-          motivation,
-          careerGoal,
-          extraNotes,
-          questions: asked,
-        },
-        { signal: controller.signal },
-      );
+      const created = await createCoverLetter(attempt.payload, { signal: controller.signal, idempotencyKey: attempt.key });
+      if (!handleCreditError.isCurrent() || controller.signal.aborted) return;
 
       // 입력한 글자수 제한은 출력 계약에 없다 — 여기서 남기지 않으면 결과 화면이 제한을
       // 영영 모르고, 사용자가 적어 넣은 요구 조건을 넘겨도 아무 말을 하지 않는다.
@@ -84,6 +94,10 @@ export default function NewCoverLetterPage() {
       toast("자기소개서를 만들고 있어요. 완료되면 목록에 표시돼요", "info");
       router.push(`${basePath}/export`);
     } catch (err) {
+      if (!handleCreditError.isCurrent() || abortRef.current !== controller) return;
+      reject(attempt.key, err);
+      setSubmitting(false);
+      if (handleCreditError(err)) return;
       if (err instanceof DOMException && err.name === "AbortError") {
         setError("생성이 오래 걸렸어요. 다시 시도해 주세요.");
       } else {
@@ -92,7 +106,10 @@ export default function NewCoverLetterPage() {
       setSubmitting(false);
     } finally {
       window.clearTimeout(timeoutId);
-      abortRef.current = null;
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        submittingRef.current = false;
+      }
     }
   };
 
@@ -209,7 +226,7 @@ export default function NewCoverLetterPage() {
             >
               취소
             </Button>
-            <Button variant="primary" size="sm" onClick={handleSubmit}>
+            <Button variant="primary" size="sm" onClick={handleSubmit} disabled={!canSubmit}>
               초안 만들기
             </Button>
           </div>
@@ -217,6 +234,7 @@ export default function NewCoverLetterPage() {
       </div>
 
       <CoverLetterGenerationOverlay open={submitting} />
+      <InsufficientCreditsDialog open={insufficientOpen} onClose={closeInsufficient} />
     </div>
   );
 }

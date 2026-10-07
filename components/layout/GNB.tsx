@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { UserMenu } from "./UserMenu";
 import { AdminEntryLink } from "./AdminEntryLink";
+import { CreditBalance } from "@/components/features/credits/CreditBalance";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "대시보드" },
@@ -102,6 +103,9 @@ export function GNB() {
                   {user.profile?.name ?? user.account?.email ?? "사용자"}
                 </p>
                 <p className="truncate text-caption">{user.account?.email}</p>
+                <div className="mt-2">
+                  <CreditBalance variant="compact" />
+                </div>
               </div>
               <AdminEntryLink
                 isAdmin={isAdmin}

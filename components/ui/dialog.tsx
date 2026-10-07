@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, ReactNode } from "react";
+import { useEffect, useRef, ReactNode, RefObject } from "react";
 
 interface DialogProps {
   open: boolean;
@@ -8,6 +8,8 @@ interface DialogProps {
   ariaLabel: string;
   children: ReactNode;
   className?: string;
+  /** Explicit focus target when reopening a dialog whose children were remounted. */
+  initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
 const FOCUSABLE_SELECTOR =
@@ -21,7 +23,7 @@ const FOCUSABLE_SELECTOR =
  */
 function getFocusable(container: HTMLElement | null): HTMLElement[] {
   if (!container) return [];
-  return Array.from(
+  const visible = Array.from(
     container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
   ).filter(
     (el) =>
@@ -30,11 +32,20 @@ function getFocusable(container: HTMLElement | null): HTMLElement[] {
       el.tabIndex !== -1 &&
       el.offsetParent !== null
   );
+  // Native radio groups contribute one tab stop: checked item, otherwise first.
+  return visible.filter((el) => {
+    if (!(el instanceof HTMLInputElement) || el.type !== "radio" || !el.name) return true;
+    const group = visible.filter((item): item is HTMLInputElement =>
+      item instanceof HTMLInputElement && item.type === "radio" && item.name === el.name && item.form === el.form);
+    return el === (group.find((item) => item.checked) ?? group[0]);
+  });
 }
 
-export function Dialog({ open, onClose, ariaLabel, children, className }: DialogProps) {
+export function Dialog({ open, onClose, ariaLabel, children, className, initialFocusRef }: DialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
+  const initialFocus = useRef(initialFocusRef);
+  useEffect(() => { initialFocus.current = initialFocusRef; }, [initialFocusRef]);
 
   // Store the element that opened the dialog, restore on close
   useEffect(() => {
@@ -42,9 +53,12 @@ export function Dialog({ open, onClose, ariaLabel, children, className }: Dialog
       previousFocus.current = document.activeElement as HTMLElement;
 
       // Focus first focusable element inside dialog
-      requestAnimationFrame(() => {
-        getFocusable(dialogRef.current)[0]?.focus();
+      const frame = requestAnimationFrame(() => {
+        const focusable = getFocusable(dialogRef.current);
+        const target = initialFocus.current?.current;
+        (target && focusable.includes(target) ? target : focusable[0])?.focus();
       });
+      return () => cancelAnimationFrame(frame);
     } else if (previousFocus.current) {
       previousFocus.current.focus();
       previousFocus.current = null;
@@ -81,10 +95,11 @@ export function Dialog({ open, onClose, ariaLabel, children, className }: Dialog
         const first = focusable[0];
         const last = focusable[focusable.length - 1];
 
-        if (e.shiftKey && document.activeElement === first) {
+        const activeIsTabStop = focusable.includes(document.activeElement as HTMLElement);
+        if (e.shiftKey && (document.activeElement === first || !activeIsTabStop)) {
           e.preventDefault();
           last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
+        } else if (!e.shiftKey && (document.activeElement === last || !activeIsTabStop)) {
           e.preventDefault();
           first.focus();
         }

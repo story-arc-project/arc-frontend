@@ -1,6 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useAuth } from "@/hooks/useAuth";
+import { useRequestAttempt } from "@/hooks/useRequestAttempt";
+import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
+import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
+
+import { useEffect, useRef, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { retryComprehensiveAnalysis, retryKeywordAnalysis } from "@/lib/api/analysis-api";
 import { ANALYTICS_EVENTS, capture, type AnalysisKind } from "@/lib/analytics";
@@ -13,7 +18,7 @@ interface RetryAnalysisButtonProps {
   onRetried: () => void;
 }
 
-const retryFn: Record<AnalysisKind, (analysisId: string) => Promise<void>> = {
+const retryFn: Record<AnalysisKind, (analysisId: string, key: string) => Promise<void>> = {
   comprehensive: retryComprehensiveAnalysis,
   keyword: retryKeywordAnalysis,
 };
@@ -28,26 +33,54 @@ const retryFn: Record<AnalysisKind, (analysisId: string) => Promise<void>> = {
  * 실패한 분석에만 쓴다. 성공한 분석을 같은 조합으로 다시 돌리는 건 재시도가 아니라
  * 새 분석이고 정상 차감 대상이다.
  */
-export default function RetryAnalysisButton({
+export default function RetryAnalysisButton(props: RetryAnalysisButtonProps) {
+  const { user, isLoading } = useAuth();
+  return <RetryAnalysisAction key={`${user?.account.email}:${props.analysisType}:${props.analysisId}`} {...props} canSubmit={!!user && !isLoading} />;
+}
+
+function RetryAnalysisAction({
   analysisId,
   analysisType,
   onRetried,
-}: RetryAnalysisButtonProps) {
+  canSubmit,
+}: RetryAnalysisButtonProps & { canSubmit: boolean }) {
+  const { open: insufficientOpen, onClose: closeInsufficient, beginAttempt } = useInsufficientCredits(`${analysisType}:${analysisId}`);
+  const { begin, reject, reset } = useRequestAttempt<string>();
+  const busyRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const scope = `${analysisType}:${analysisId}`;
+  const [trackedScope, setTrackedScope] = useState(scope);
+  if (trackedScope !== scope) {
+    setTrackedScope(scope);
+    setBusy(false);
+    setFailed(false);
+  }
+  useEffect(() => {
+    busyRef.current = false;
+  }, [scope]);
 
   async function handleRetry() {
-    if (busy) return;
+    if (busyRef.current || !canSubmit) return;
+    busyRef.current = true;
+    const handleCreditError = beginAttempt();
     setBusy(true);
     setFailed(false);
+    const attempt = begin(analysisId);
     try {
-      await retryFn[analysisType](analysisId);
-    } catch {
+      await retryFn[analysisType](attempt.payload, attempt.key);
+      if (!handleCreditError.isCurrent()) return;
+    } catch (err) {
+      reject(attempt.key, err);
+      if (handleCreditError(err)) return;
       // 재시도 요청 자체가 실패했다 — 카드는 실패 상태로 남기고 다시 누를 수 있게 둔다.
       setFailed(true);
       return;
     } finally {
-      setBusy(false);
+      if (handleCreditError.isCurrent()) {
+        busyRef.current = false;
+        setBusy(false);
+      }
     }
 
     // 여기부터는 서버가 이미 접수한 뒤다. 계측은 best-effort — PostHog 가 스토리지 오류로
@@ -57,6 +90,7 @@ export default function RetryAnalysisButton({
     } catch {
       // 계측 실패는 사용자 흐름을 막지 않는다.
     }
+    reset();
     onRetried();
   }
 
@@ -66,7 +100,7 @@ export default function RetryAnalysisButton({
         variant="secondary"
         size="sm"
         onClick={handleRetry}
-        disabled={busy}
+        disabled={busy || !canSubmit}
         className="min-h-11 sm:min-h-0"
       >
         <RotateCcw
@@ -81,6 +115,7 @@ export default function RetryAnalysisButton({
           다시 시도하지 못했어요. 잠시 후 한 번 더 눌러주세요.
         </p>
       )}
+      <InsufficientCreditsDialog open={insufficientOpen} onClose={closeInsufficient} />
     </div>
   );
 }

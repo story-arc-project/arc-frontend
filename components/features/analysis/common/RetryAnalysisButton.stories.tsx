@@ -3,6 +3,8 @@ import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { http, HttpResponse } from "msw";
 
 import RetryAnalysisButton from "./RetryAnalysisButton";
+import { AuthContext } from "@/contexts/AuthContext";
+import { seedDemoUser } from "@/lib/demo/seed";
 
 // 실패 카드 안에 놓였을 때의 맥락을 재현한다 — 버튼만 떼어 보면 여백·정렬을 판단할 수 없다.
 function FailedCard({ children }: { children: React.ReactNode }) {
@@ -20,6 +22,7 @@ function FailedCard({ children }: { children: React.ReactNode }) {
 
 const meta: Meta<typeof RetryAnalysisButton> = {
   title: "Features/Analysis/RetryAnalysisButton",
+  tags: ["idempotency"],
   component: RetryAnalysisButton,
   parameters: { layout: "centered" },
   args: {
@@ -29,9 +32,11 @@ const meta: Meta<typeof RetryAnalysisButton> = {
   },
   decorators: [
     (Story) => (
-      <FailedCard>
-        <Story />
-      </FailedCard>
+      <AuthContext.Provider value={{ user: seedDemoUser, isLoading: false, isAuthenticated: true, isOnboarded: true, error: null, refetch: fn(), logout: fn() }}>
+        <FailedCard>
+          <Story />
+        </FailedCard>
+      </AuthContext.Provider>
     ),
   ],
 };
@@ -48,6 +53,18 @@ export const Idle: Story = {};
  * 버튼이 잠기고("요청 중…") 부모에 통지가 간다 → 호출부가 카드를 '진행 중'으로 바꾼다.
  */
 export const RetryFlow: Story = {
+  parameters: {
+    msw: {
+      handlers: [
+        http.post("*/analysis/comprehensive/:id/retry", ({ request }) => {
+          if (!request.headers.get("Idempotency-Key")) {
+            return HttpResponse.json({ message: "Missing Idempotency-Key" }, { status: 422 });
+          }
+          return HttpResponse.json({ data: { id: "comp-1" } });
+        }),
+      ],
+    },
+  },
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     const button = canvas.getByRole("button", { name: "다시 시도" });
