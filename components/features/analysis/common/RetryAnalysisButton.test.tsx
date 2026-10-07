@@ -1,3 +1,5 @@
+const auth = vi.hoisted(() => ({ email: "test@example.com" }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { account: { email: auth.email } }, isLoading: false }) }));
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -26,6 +28,7 @@ const captureMock = vi.mocked(capture);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auth.email = "test@example.com";
 });
 
 describe("RetryAnalysisButton (FRT-108)", () => {
@@ -43,7 +46,7 @@ describe("RetryAnalysisButton (FRT-108)", () => {
     await userEvent.click(screen.getByRole("button", { name: "다시 시도" }));
 
     await waitFor(() => expect(onRetried).toHaveBeenCalledTimes(1));
-    expect(retryComprehensive).toHaveBeenCalledWith("comp-1");
+    expect(retryComprehensive).toHaveBeenCalledWith("comp-1", expect.any(String));
     expect(retryKeyword).not.toHaveBeenCalled();
   });
 
@@ -55,7 +58,7 @@ describe("RetryAnalysisButton (FRT-108)", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "다시 시도" }));
 
-    await waitFor(() => expect(retryKeyword).toHaveBeenCalledWith("kw-1"));
+    await waitFor(() => expect(retryKeyword).toHaveBeenCalledWith("kw-1", expect.any(String)));
     expect(retryComprehensive).not.toHaveBeenCalled();
   });
 
@@ -164,4 +167,40 @@ it("shows the credit dialog for an explicit rejection without marking a retry ac
   await userEvent.click(screen.getByRole("button", { name: "닫기" }));
   expect(retryComprehensive).toHaveBeenCalledTimes(1);
   expect(onRetried).not.toHaveBeenCalled();
+});
+
+
+describe("retry request identity", () => {
+  it("reuses the same key after response loss and changes it for a different analysis", async () => {
+    retryComprehensive.mockRejectedValue(new TypeError("response lost"));
+    const user = userEvent.setup();
+    const props = { analysisId: "a", analysisType: "comprehensive" as const, onRetried: vi.fn() };
+    const { rerender } = render(<RetryAnalysisButton {...props} />);
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    expect(retryComprehensive.mock.calls[1]).toEqual(retryComprehensive.mock.calls[0]);
+    rerender(<RetryAnalysisButton {...props} analysisId="b" />);
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    expect(retryComprehensive.mock.calls[2][0]).toBe("b");
+    expect(retryComprehensive.mock.calls[2][1]).not.toBe(retryComprehensive.mock.calls[0][1]);
+  });
+
+  it("ignores an old account response and gives the new account a fresh request key", async () => {
+    let resolve!: () => void;
+    retryComprehensive.mockImplementationOnce(() => new Promise<void>((done) => { resolve = done; }));
+    const user = userEvent.setup();
+    const props = { analysisId: "a", analysisType: "comprehensive" as const, onRetried: vi.fn() };
+    const { rerender } = render(<RetryAnalysisButton {...props} />);
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    auth.email = "other@example.com";
+    rerender(<RetryAnalysisButton {...props} />);
+    resolve();
+    await Promise.resolve();
+    expect(props.onRetried).not.toHaveBeenCalled();
+    retryComprehensive.mockResolvedValue(undefined);
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
+    expect(retryComprehensive.mock.calls[1][1]).not.toBe(retryComprehensive.mock.calls[0][1]);
+    expect(props.onRetried).toHaveBeenCalledTimes(1);
+  });
 });

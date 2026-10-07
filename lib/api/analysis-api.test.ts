@@ -172,33 +172,33 @@ describe("create*Analysis — 응답 ID 부재 처리 (FRT-38)", () => {
 
   it("키워드 분석: 응답에 id 가 없으면 analysisId: null 을 반환한다 (오류로 보지 않음)", async () => {
     apiMock.post.mockResolvedValue(envelope({ status: "queued" }))
-    expect(await createKeywordAnalysis(["성장"])).toEqual({ analysisId: null })
+    expect(await createKeywordAnalysis(["성장"], undefined, "attempt-1")).toEqual({ analysisId: null })
   })
 
   it("키워드 분석: id 가 있으면 analysisId 를 반환한다", async () => {
     apiMock.post.mockResolvedValueOnce(envelope({ id: "kw-1" }))
-    expect(await createKeywordAnalysis(["성장"])).toEqual({ analysisId: "kw-1" })
+    expect(await createKeywordAnalysis(["성장"], undefined, "attempt-1")).toEqual({ analysisId: "kw-1" })
   })
 
   it("키워드 분석: id 가 최상위(`{ status, message, id }`)에 와도 추출한다 (BE 문서 스펙)", async () => {
     apiMock.post.mockResolvedValue({ status: "success", message: "시작됨", id: "kw-top" })
-    expect(await createKeywordAnalysis(["성장"])).toEqual({ analysisId: "kw-top" })
+    expect(await createKeywordAnalysis(["성장"], undefined, "attempt-1")).toEqual({ analysisId: "kw-top" })
   })
 
   it("키워드 분석: target 을 body 에 실어 보낸다 (계약 §2.3). 미지정 시 빈 문자열", async () => {
     apiMock.post.mockResolvedValue(envelope({ id: "kw-1" }))
-    await createKeywordAnalysis(["리더십"], "스타트업 PM")
+    await createKeywordAnalysis(["리더십"], "스타트업 PM", "attempt-1")
     expect(apiMock.post).toHaveBeenCalledWith("/analysis/keyword", {
       keywords: ["리더십"],
       target: "스타트업 PM",
-    })
+    }, { headers: { "Idempotency-Key": "attempt-1" } })
 
     apiMock.post.mockClear()
-    await createKeywordAnalysis(["리더십"])
+    await createKeywordAnalysis(["리더십"], undefined, "attempt-1")
     expect(apiMock.post).toHaveBeenCalledWith("/analysis/keyword", {
       keywords: ["리더십"],
       target: "",
-    })
+    }, { headers: { "Idempotency-Key": "attempt-1" } })
   })
 })
 
@@ -1542,31 +1542,31 @@ describe("getKeywordResult — result 래퍼 내 is_bookmarked 보존 (FRT-64 P2
 describe("retry — 실패 분석 재실행 (FRT-108 / BAC-42)", () => {
   it("종합 재시도는 타입별 retry 경로로 POST 한다", async () => {
     apiMock.post.mockResolvedValue(envelope({ id: "comp-1", title: "제목" }))
-    await retryComprehensiveAnalysis("comp-1")
-    expect(apiMock.post).toHaveBeenCalledWith("/analysis/comprehensive/comp-1/retry")
+    await retryComprehensiveAnalysis("comp-1", "attempt-1")
+    expect(apiMock.post).toHaveBeenCalledWith("/analysis/comprehensive/comp-1/retry", undefined, { headers: { "Idempotency-Key": "attempt-1" } })
   })
 
   it("키워드 재시도는 타입별 retry 경로로 POST 한다", async () => {
     apiMock.post.mockResolvedValue(envelope({ id: "kw-1", title: "제목" }))
-    await retryKeywordAnalysis("kw-1")
-    expect(apiMock.post).toHaveBeenCalledWith("/analysis/keyword/kw-1/retry")
+    await retryKeywordAnalysis("kw-1", "attempt-1")
+    expect(apiMock.post).toHaveBeenCalledWith("/analysis/keyword/kw-1/retry", undefined, { headers: { "Idempotency-Key": "attempt-1" } })
   })
 
   it("body 를 보내지 않는다 — 원 파라미터는 서버 보관값을 재사용한다", async () => {
     apiMock.post.mockResolvedValue(envelope({}))
-    await retryComprehensiveAnalysis("comp-1")
-    await retryKeywordAnalysis("kw-1")
-    // 두 번째 인자(body)가 붙으면 삭제된 경험 때문에 400 이 나는 경로가 생긴다.
+    await retryComprehensiveAnalysis("comp-1", "attempt-1")
+    await retryKeywordAnalysis("kw-1", "attempt-1")
+    // body 는 undefined 로 유지하고 필수 헤더만 세 번째 인자로 보낸다.
     for (const call of apiMock.post.mock.calls) {
-      expect(call).toHaveLength(1)
+      expect(call[1]).toBeUndefined()
     }
   })
 
   it("에러는 삼키지 않고 그대로 throw 한다 (409 = 실패 상태가 아님)", async () => {
     const conflict = new Error("409")
     apiMock.post.mockRejectedValue(conflict)
-    await expect(retryComprehensiveAnalysis("comp-1")).rejects.toBe(conflict)
-    await expect(retryKeywordAnalysis("kw-1")).rejects.toBe(conflict)
+    await expect(retryComprehensiveAnalysis("comp-1", "attempt-1")).rejects.toBe(conflict)
+    await expect(retryKeywordAnalysis("kw-1", "attempt-1")).rejects.toBe(conflict)
   })
 })
 
@@ -2495,3 +2495,18 @@ describe("comprehensive create idempotency (FRT-361)", () => {
     await expect(createComprehensiveAnalysis(["e1", "e2"], "attempt-1")).rejects.toBe(error);
   });
 });
+
+describe("idempotency retransmission", () => {
+  it.each([
+    ["keyword create", () => createKeywordAnalysis(["성장"], undefined, "stable-key")],
+    ["comprehensive retry", () => retryComprehensiveAnalysis("comp-1", "stable-key")],
+    ["keyword retry", () => retryKeywordAnalysis("kw-1", "stable-key")],
+  ])("%s preserves the caller key after response loss", async (_name, send) => {
+    apiMock.post.mockRejectedValueOnce(new TypeError("response lost"))
+      .mockResolvedValueOnce(envelope({ id: "existing-id" }))
+    await expect(send()).rejects.toThrow("response lost")
+    await send()
+    expect(apiMock.post.mock.calls[0]).toEqual(apiMock.post.mock.calls[1])
+    expect(apiMock.post.mock.calls[1][2]).toEqual({ headers: { "Idempotency-Key": "stable-key" } })
+  })
+})

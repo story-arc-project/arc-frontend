@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/hooks/useAuth";
+import { useRequestAttempt } from "@/hooks/useRequestAttempt";
 import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
 import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
 
@@ -31,16 +33,24 @@ interface CreateResumeModalProps {
 
 const GENERATION_TIMEOUT_MS = 60_000;
 
-export function CreateResumeModal({
+export function CreateResumeModal(props: CreateResumeModalProps) {
+  const { user, isLoading } = useAuth();
+  const demo = useBasePath() === "/demo";
+  return <CreateResumeForm key={`${demo ? "demo" : user?.account.email}:${props.open}`} {...props} authenticated={demo || (!!user && !isLoading)} />;
+}
+
+function CreateResumeForm({
   open,
   onClose,
   onCreated,
   experienceSelectionEnabled = false,
-}: CreateResumeModalProps) {
+  authenticated,
+}: CreateResumeModalProps & { authenticated: boolean }) {
   // 레쥬메를 만드는 중에는 피드백 모달이 위에 겹치지 않게 한다(FRT-95). 목록과 같은 URL 에서
   // 열리므로 Host 의 경로 억제로는 보이지 않는다 — 이 흐름이 직접 손을 든다.
   useSuppressFeedback(open);
 
+  const { begin, reject, reset } = useRequestAttempt<Parameters<typeof createResume>[0]>();
   const [language, setLanguage] = useState<ResumeLanguage>("ko");
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
@@ -73,6 +83,8 @@ export function CreateResumeModal({
   // "빼기"만 하면 된다. 그래서 상태를 "고른 id" 가 아니라 **제외한 id** 로 들고 초기값이 ∅ 이다
   // (목록 로드 후 전체를 선택 상태로 세팅하는 effect 가 필요 없어진다).
   const [excludedIds, setExcludedIds] = useState<ReadonlySet<string>>(new Set());
+
+  useEffect(() => { reset(); }, [language, excludedIds, reset]);
 
   const selectedExperiences = useMemo(
     () => experiences.filter((e) => !excludedIds.has(e.id)),
@@ -115,7 +127,7 @@ export function CreateResumeModal({
       selectedIds.length > 0);
 
   const handleSubmit = async () => {
-    if (!canSubmit || submittingRef.current) return;
+    if (!authenticated || !canSubmit || submittingRef.current) return;
     submittingRef.current = true;
     setRestoreSubmitFocus(false);
     const handleCreditError = beginAttempt();
@@ -151,15 +163,9 @@ export function CreateResumeModal({
       });
     }
 
+    const attempt = begin(experienceSelectionEnabled ? { language, experienceIds: selectedIds } : { language });
     try {
-      await createResume(
-        // 선택 기능이 꺼져 있으면 experience_ids 키 자체를 보내지 않는다 —
-        // 계약상 부재 = 전체 경험이라 현행 동작이 그대로 유지된다.
-        experienceSelectionEnabled
-          ? { language, experienceIds: selectedIds }
-          : { language },
-        { signal: controller.signal },
-      );
+      await createResume(attempt.payload, { signal: controller.signal, idempotencyKey: attempt.key });
       if (!handleCreditError.isCurrent() || controller.signal.aborted) return;
       // 익스포트 완료(FRT-19). experience_count 는 선택 기능이 켜졌을 때만 의미가 있다.
       capture("export_completed", {
@@ -177,6 +183,7 @@ export function CreateResumeModal({
       onClose();
     } catch (err) {
       if (!handleCreditError.isCurrent() || abortRef.current !== controller) return;
+      reject(attempt.key, err);
       setSubmitting(false);
       if (handleCreditError(err)) return;
       if (err instanceof DOMException && err.name === "AbortError") {

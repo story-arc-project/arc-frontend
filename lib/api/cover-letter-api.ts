@@ -157,7 +157,7 @@ function unwrapCoverLetter(data: unknown): unknown {
  */
 export async function createCoverLetter(
   input: CoverLetterCreateInput,
-  options?: { signal?: AbortSignal },
+  options: { idempotencyKey: string; signal?: AbortSignal },
 ): Promise<{ id: string | null; title?: string }> {
   if (isDemoMode()) return demo.createCoverLetter(input);
 
@@ -187,7 +187,10 @@ export async function createCoverLetter(
     body.include_action_plan = input.includeActionPlan;
   }
 
-  const res = await api.post<ApiSuccessResponse<unknown>>(BASE_PATH, body, options);
+  const res = await api.post<ApiSuccessResponse<unknown>>(BASE_PATH, body, {
+    signal: options.signal,
+    headers: { "Idempotency-Key": options.idempotencyKey },
+  });
   return extractCoverLetterId(res);
 }
 

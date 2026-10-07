@@ -2,11 +2,21 @@ import type { Meta, StoryObj } from "@storybook/nextjs";
 import { expect, fn, within } from "storybook/test";
 
 import AnalysisResultUnavailable from "./AnalysisResultUnavailable";
+import { AuthContext } from "@/contexts/AuthContext";
+import { seedDemoUser } from "@/lib/demo/seed";
 
 const meta: Meta<typeof AnalysisResultUnavailable> = {
   title: "Features/Analysis/AnalysisResultUnavailable",
+  tags: ["idempotency"],
   component: AnalysisResultUnavailable,
   parameters: { layout: "fullscreen" },
+  decorators: [
+    (Story) => (
+      <AuthContext.Provider value={{ user: seedDemoUser, isLoading: false, isAuthenticated: true, isOnboarded: true, error: null, refetch: fn(), logout: fn() }}>
+        <Story />
+      </AuthContext.Provider>
+    ),
+  ],
   args: {
     basePath: "",
     fallbackHref: "/analysis/individual",
