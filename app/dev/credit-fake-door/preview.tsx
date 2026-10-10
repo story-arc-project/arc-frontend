@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { FakeDoorTelemetryProvider } from "@/components/features/credits/FakeDoorDialog";
 import { CreditCharge } from "@/components/features/credits/CreditCharge";
 import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
+import { MissionPreviewPanel } from "@/components/features/missions/MissionPreviewPanel";
 import { createFakeDoorMock } from "@/lib/mocks/fake-door";
 
 export function FakeDoorPreview() {
@@ -57,10 +58,8 @@ function PreviewSession({ scenario, onScenario }: { scenario: string; onScenario
     {screen === "form" && <div className="h-[70vh]" aria-hidden="true" />}
     <InsufficientCreditsDialog open={screen === "insufficient"} onClose={close} onCharge={() => setScreen("prices")} />
     {screen === "prices" && <div ref={chargePage}><CreditCharge fakeDoor={{ accountId, entryPoint: "development-preview", adapter: mock.adapter, onMission: () => setScreen("mission") }} onBack={close} /></div>}
-    {screen === "mission" && <section role="region" aria-label="미션 mock" className="fixed inset-0 z-50 overflow-auto bg-surface p-8">
-      <h2 className="text-heading-2" tabIndex={-1} ref={(node) => node?.focus()}>미션 센터 mock</h2>
-      <p className="my-4">FRT-348 연결 위치입니다. 실제 미션과 보상은 제공하지 않습니다.</p>
-      <Button onClick={close}>작성 화면으로 돌아가기</Button>
-    </section>}
+    <div hidden={screen !== "mission"}>
+      <MissionPreviewPanel key={accountId} accountId={accountId} scenario="normal" onBack={close} />
+    </div>
   </main></FakeDoorTelemetryProvider>;
 }

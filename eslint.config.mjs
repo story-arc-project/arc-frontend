@@ -18,6 +18,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated browser reports and traces.
+    "playwright-report/**",
+    "test-results/**",
     // Storybook build output.
     "storybook-static/**",
     // Generated MSW service worker (network mock for Storybook).
