@@ -112,8 +112,8 @@ test("response-loss retry preserves intent identity and mission returns without 
   await expect(page.getByRole("button", { name: "저장 다시 시도" })).toHaveCount(0);
   expect((await records(page)).intents).toEqual(before.intents);
   await page.getByRole("button", { name: "미션으로 크레딧 받기" }).click();
-  await expect(page.getByRole("region", { name: "미션 mock" })).toBeVisible();
-  await page.getByRole("button", { name: "작성 화면으로 돌아가기" }).click();
+  await expect(page.getByRole("heading", { name: "미션", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /작성 화면으로 돌아가기/ }).click();
   await expect(page.getByRole("button", { name: "분석 시도" })).toBeFocused();
   await expect(page.getByText("생성 요청: 0 · 실제 잔액 변경: 0")).toBeVisible();
 });
@@ -167,10 +167,10 @@ test("pending telemetry survives mission navigation but is cancelled by account 
   await page.keyboard.press("Space");
   await page.getByRole("button", { name: "4,900원 결제하기" }).click();
   await page.getByRole("button", { name: "미션으로 크레딧 받기" }).click();
-  await expect(page.getByRole("region", { name: "미션 mock" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "미션", exact: true })).toBeVisible();
   await expect.poll(async () => (await records(page)).intents.length).toBe(1);
   await expect.poll(async () => (await records(page)).exposures.length).toBe(1);
-  await page.getByRole("button", { name: "작성 화면으로 돌아가기" }).click();
+  await page.getByRole("button", { name: /작성 화면으로 돌아가기/ }).click();
   await page.getByRole("button", { name: "분석 시도" }).click();
   await page.getByRole("button", { name: "충전 패키지 보기" }).click();
   await page.getByRole("radio").first().focus();

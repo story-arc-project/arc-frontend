@@ -13,7 +13,7 @@ export default defineConfig({
     { name: "mobile", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "npm run dev -- --port 3128",
+    command: "npm run dev -- --webpack --port 3128",
     url: "http://localhost:3128/dev/credit-fake-door",
     reuseExistingServer: false,
     timeout: 120_000,

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { Button, Card } from "@/components/ui";
 import { ProfileEditForm } from "@/components/features/settings/ProfileEditForm";
@@ -45,6 +46,9 @@ export default function SettingsPage() {
           </div>
           <div className="min-w-0 border-t border-border pt-4 sm:border-l sm:border-t-0 sm:py-1 sm:pl-6 sm:text-right">
             <CreditBalance variant="summary" />
+            <Button asChild variant="ghost" size="sm" className="mt-2 min-h-11">
+              <Link href="/credits/missions">미션 둘러보기</Link>
+            </Button>
           </div>
         </div>
       </Card>
