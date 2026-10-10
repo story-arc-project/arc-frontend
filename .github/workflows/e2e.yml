@@ -45,6 +45,9 @@ jobs:
       - name: Run unpublished fake-door preview E2E
         run: npx playwright test --config playwright.fake-door.config.ts
 
+      - name: Run mission preview and recovery E2E
+        run: npx playwright test --config playwright.missions.config.ts
+
       # 실패 디버깅용 아티팩트(리포트/영상/trace). 성공 시에도 보존(if: always()).
       # 다운로드 후 로컬에서 `npx playwright show-report` / `show-trace` 로 재생·추적 가능.
       - name: Upload Playwright report
