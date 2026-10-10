@@ -10,6 +10,6 @@ export default defineConfig({
     { name: "ipad", use: { ...devices["iPad Mini"], browserName: "chromium" } },
     { name: "mobile", use: { ...devices["Pixel 7"], viewport: { width: 320, height: 740 } } },
   ],
-  webServer: { command: "npm run dev -- --webpack --port 3138", url: "http://localhost:3138/dev/missions", reuseExistingServer: false, timeout: 120_000,
+  webServer: { command: "npm run dev -- --port 3138", url: "http://localhost:3138/dev/missions", reuseExistingServer: false, timeout: 120_000,
     env: { FRT348_PREVIEW: "true", FRT138_PREVIEW: "true", NEXT_PUBLIC_API_URL: API_ORIGIN } },
 });
