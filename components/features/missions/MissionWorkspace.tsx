@@ -12,12 +12,18 @@ import { MissionCenter } from "./MissionCenter";
 import { MissionDetail } from "./MissionDetail";
 
 // Store lifetime follows account/session lifetime, including list/detail navigation.
-const flows = new WeakMap<MissionStore, { id: string; started: Set<MissionId>; claimView: () => boolean }>();
-function missionFlow(store: MissionStore) {
+const flows = new WeakMap<MissionStore, { id: string; started: Set<string>; handoffId?: string; claimView: () => boolean }>();
+// A trusted handoff can be consumed by one account session only. Weak references
+// retain no account/store data after disposal; consumed IDs stay invalid for reuse.
+const handoffOwners = new Map<string, WeakRef<MissionStore>>();
+function missionFlow(store: MissionStore, handoffId?: string) {
   let flow = flows.get(store);
-  if (!flow) {
+  if (!flow || (handoffId && flow.handoffId !== handoffId)) {
+    const owner = handoffId ? handoffOwners.get(handoffId) : undefined;
+    const inherit = handoffId && (!owner || owner.deref() === store);
+    if (inherit) handoffOwners.set(handoffId, new WeakRef(store));
     let viewed = false;
-    flow = { id: newFunnelId(), started: new Set(), claimView: () => {
+    flow = { id: inherit ? handoffId : newFunnelId(), handoffId, started: new Set(), claimView: () => {
       if (viewed) return false;
       viewed = true;
       return true;
@@ -27,26 +33,30 @@ function missionFlow(store: MissionStore) {
   return flow;
 }
 
-export function MissionWorkspace({ onBack, backLabel, balance, initialMissionId, onNavigate, analyticsEnabled = false, entryPath = "direct" }: {
+export function MissionWorkspace({ onBack, backLabel, balance, initialMissionId, onNavigate, analyticsEnabled = false, entryPath = "direct", flowId }: {
   onBack: () => void; backLabel?: string; balance: ReactNode; initialMissionId?: MissionId;
   onNavigate?: (id?: MissionId) => void;
   analyticsEnabled?: boolean; entryPath?: string;
+  /** Trusted in-memory fake-door handoff only; never read from URL/query data. */
+  flowId?: string;
 }) {
   const store = useMissionSession();
   const state = useMissions(store);
-  const flow = missionFlow(store);
+  const flow = missionFlow(store, flowId);
   const entry = sanitizeFunnelEntry(entryPath);
   const context = { flow_id: flow.id, entry_path: entry };
   // One initial terminal workspace result per session, including direct detail entry.
   useEffect(() => {
     if (!analyticsEnabled || state.status === "idle" || state.status === "loading" || !flow.claimView()) return;
     captureFunnel("mission_page_viewed", { flow_id: flow.id, entry_path: entry,
-      availability: state.status === "success" ? "available" : state.status });
-  }, [analyticsEnabled, entry, flow, state.status]);
+      availability: state.status === "success" ? state.snapshot?.missions.length ? "available" : "unavailable" : state.status });
+  }, [analyticsEnabled, entry, flow, state.status, state.snapshot]);
   const start = (id: MissionId) => {
     const mission = getMission(id);
-    if (!analyticsEnabled || mission.kind === "automatic" || mission.retroactive || flow.started.has(id)) return;
-    flow.started.add(id);
+    const cycleId = getProgress(store.getSnapshot().snapshot, id).cycleId;
+    const participation = JSON.stringify([id, cycleId ?? null]);
+    if (!analyticsEnabled || mission.kind === "automatic" || mission.retroactive || flow.started.has(participation)) return;
+    flow.started.add(participation);
     captureFunnel("mission_started", { ...context, mission_id: id, participation_type: mission.kind });
   };
   const submit = (id: MissionId) => {
