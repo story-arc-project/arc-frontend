@@ -18,14 +18,14 @@ const number = new Intl.NumberFormat("ko-KR");
 /** States: loading → catalog (or API default fallback) → selection → CTA-only reveal.
  * No selectable defaults during loading: a late catalog cannot invalidate a selection.
  */
-export function CreditCharge({ fakeDoor, onBack }: { fakeDoor?: FakeDoorIntegration; onBack?: () => void } = {}) {
-  return fakeDoor ? <IntegratedCharge key={fakeDoor.accountId} integration={fakeDoor} onBack={onBack} /> : <LegacyCharge />;
+export function CreditCharge({ fakeDoor, onBack, entryPath = "charge_page" }: { fakeDoor?: FakeDoorIntegration; onBack?: () => void; entryPath?: "charge_page" | "insufficient_credits" } = {}) {
+  return fakeDoor ? <IntegratedCharge key={fakeDoor.accountId} integration={fakeDoor} onBack={onBack} /> : <LegacyCharge key={entryPath} entryPath={entryPath} />;
 }
 function IntegratedCharge({ integration, onBack }: { integration: FakeDoorIntegration; onBack?: () => void }) {
   const flow = useFakeDoorFlow(integration);
   return <ChargePage packages={flow.catalog?.packages ?? null} selectedId={flow.selectedId} onSelect={flow.setSelectedId} onPurchase={flow.purchase} pending={flow.pending} loadError={flow.loadError} onRetry={flow.retryCatalog} onBack={onBack} amountLabel notice={<FakeDoorDialog {...flow.notice} onMission={flow.navigateToMission} />} />;
 }
-function LegacyCharge() {
+function LegacyCharge({ entryPath }: { entryPath: "charge_page" | "insufficient_credits" }) {
   const [flowId] = useState(newFunnelId);
   const [catalogSource, setCatalogSource] = useState<"api" | "fallback">("fallback");
   const viewed = useRef(false);
@@ -49,19 +49,19 @@ function LegacyCharge() {
     return () => controller.abort();
   }, []);
 
-  const context = { flow_id: flowId, entry_path: "charge_page" as const };
+  const context = { flow_id: flowId, entry_path: entryPath };
   // No catalog version is provided by this endpoint; do not invent one.
   const offer = { ...context, offer_version: "unknown", catalog_source: catalogSource };
   useEffect(() => {
     if (!packages || catalogSource !== "api" || viewed.current) return;
     viewed.current = true;
-    captureFunnel("token_purchase_page_viewed", { flow_id: flowId, entry_path: "charge_page", offer_version: "unknown", catalog_source: catalogSource, packages: packages.map(({ id, credits, price_krw }) => ({ package_id: id, credits, price_krw })) });
-  }, [packages, catalogSource, flowId]);
+    captureFunnel("token_purchase_page_viewed", { flow_id: flowId, entry_path: entryPath, offer_version: "unknown", catalog_source: catalogSource, packages: packages.map(({ id, credits, price_krw }) => ({ package_id: id, credits, price_krw })) });
+  }, [packages, catalogSource, flowId, entryPath]);
   useEffect(() => {
     if (!revealed || !intentId.current || noticed.current === intentId.current) return;
     noticed.current = intentId.current;
-    captureFunnel("fake_door_revealed", { flow_id: flowId, entry_path: "charge_page", intent_id: intentId.current });
-  }, [revealed, flowId]);
+    captureFunnel("fake_door_revealed", { flow_id: flowId, entry_path: entryPath, intent_id: intentId.current });
+  }, [revealed, flowId, entryPath]);
   function select(id: string) {
     const item = packages?.find((item) => item.id === id);
     if (!item || selectedId === id) return;

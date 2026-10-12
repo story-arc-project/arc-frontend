@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { captureFunnel } from "@/lib/analytics/funnel";
+import CreditChargePage from "@/app/(main)/credits/charge/page";
 import { CreditCharge } from "./CreditCharge";
 import { DEFAULT_CREDIT_PACKAGES } from "@/lib/constants/credit-packages";
 
@@ -122,4 +123,22 @@ describe("legacy credit funnel", () => {
     expect(vi.mocked(captureFunnel).mock.calls.some(([event]) => event === "token_purchase_page_viewed")).toBe(false);
     expect(vi.mocked(captureFunnel).mock.calls.find(([event]) => event === "credit_purchase_intent")![1]).toMatchObject({ catalog_source: "fallback" });
   });
+});
+
+
+it.each([
+  ["insufficient_credits", "insufficient_credits"],
+  [undefined, "charge_page"],
+  ["private@example.com", "charge_page"],
+  [["insufficient_credits"], "charge_page"],
+])("accepts only the literal shortage entry from the route: %j", async (entry, expected) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ packages: DEFAULT_CREDIT_PACKAGES }))));
+  render(await CreditChargePage({ searchParams: Promise.resolve({ entry }) }));
+  fireEvent.click((await screen.findAllByRole("radio"))[0]);
+  fireEvent.click(screen.getByRole("button", { name: "결제하기" }));
+  fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+  const calls = vi.mocked(captureFunnel).mock.calls;
+  expect(calls.map(([event]) => event)).toEqual(["token_purchase_page_viewed", "token_package_selected", "credit_purchase_intent", "fake_door_revealed", "fake_door_dismissed"]);
+  for (const [, payload] of calls) expect(payload).toMatchObject({ entry_path: expected });
+  expect(JSON.stringify(calls)).not.toContain("private@example.com");
 });

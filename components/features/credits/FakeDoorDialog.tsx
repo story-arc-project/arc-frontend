@@ -25,6 +25,19 @@ export function FakeDoorTelemetryProvider({ accountId, children }: { accountId: 
   return <TelemetryContext.Provider value={owner}>{children}</TelemetryContext.Provider>;
 }
 
+function isUsableCatalog(catalog: FakeDoorCatalog): boolean {
+  if (!catalog || typeof catalog.version !== "string" || !catalog.version.trim() || !Array.isArray(catalog.packages) || catalog.packages.length === 0 || catalog.packages.length > 20) return false;
+  const ids = new Set<string>();
+  return catalog.packages.every((item) => {
+    if (!item || typeof item.id !== "string" || !item.id.trim() || ids.has(item.id) ||
+      typeof item.name !== "string" || !item.name.trim() ||
+      !Number.isSafeInteger(item.credits) || item.credits <= 0 ||
+      !Number.isSafeInteger(item.price_krw) || item.price_krw <= 0) return false;
+    ids.add(item.id);
+    return true;
+  });
+}
+
 const notice = "크레딧 결제를 준비하고 있어요. 지금은 실제 결제나 충전이 이루어지지 않아요. 미션에 참여하면 정해진 보상만큼 크레딧을 받을 수 있어요.";
 export function useFakeDoorFlow({ accountId, entryPoint, adapter, onMission }: FakeDoorIntegration) {
   const [flowId] = useState(newFunnelId);
@@ -34,7 +47,7 @@ export function useFakeDoorFlow({ accountId, entryPoint, adapter, onMission }: F
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [step, setStep] = useState<"catalog" | "notice">("catalog");
   const [saveStatus, setSaveStatus] = useState<"idle" | "pending" | "error" | "saved">("idle");
-  const priceViewed = useRef(false);
+  const priceViews = useRef(new Set<string>());
   const noticeViewed = useRef<string | null>(null);
   const deliberations = useRef(0);
   const entryPath = sanitizeFunnelEntry(entryPoint);
@@ -61,13 +74,21 @@ export function useFakeDoorFlow({ accountId, entryPoint, adapter, onMission }: F
   useEffect(() => {
     const controller = new AbortController();
     void Promise.resolve().then(() => adapter.loadCatalog(controller.signal)).then((value) => {
-      if (!controller.signal.aborted) setCatalog(value);
-    }).catch(() => { if (!controller.signal.aborted) setLoadError(true); });
+      if (controller.signal.aborted) return;
+      if (!isUsableCatalog(value)) throw new Error("Invalid catalog");
+      setSelectedId(null);
+      setLoadError(false);
+      setCatalog(value);
+    }).catch(() => {
+      if (!controller.signal.aborted) { setCatalog(null); setSelectedId(null); setLoadError(true); }
+    });
     return () => controller.abort();
   }, [adapter, attempt]);
   useEffect(() => {
-    if (!catalog || priceViewed.current) return;
-    priceViewed.current = true;
+    if (!catalog) return;
+    const snapshot = JSON.stringify([catalog.version, catalog.packages.map(({ id, credits, price_krw }) => [id, credits, price_krw])]);
+    if (priceViews.current.has(snapshot)) return;
+    priceViews.current.add(snapshot);
     captureFunnel("token_purchase_page_viewed", { flow_id: flowId, entry_path: entryPath, offer_version: catalog.version, catalog_source: "adapter", packages: catalog.packages.map(({ id, credits, price_krw }) => ({ package_id: id, credits, price_krw })) });
   }, [catalog, flowId, entryPath]);
   // Exposure is sent only after React has committed the notice, independently of intent storage.

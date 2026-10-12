@@ -5,7 +5,7 @@ import { FakeDoorTelemetryProvider } from "./FakeDoorDialog";
 import { captureFunnel } from "@/lib/analytics/funnel";
 import { CreditCharge } from "./CreditCharge";
 import { DEFAULT_CREDIT_PACKAGES } from "@/lib/constants/credit-packages";
-import type { FakeDoorAdapter } from "@/lib/credits/fake-door";
+import type { FakeDoorAdapter, FakeDoorCatalog } from "@/lib/credits/fake-door";
 
 vi.mock("@/lib/analytics/funnel", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/analytics/funnel")>(), captureFunnel: vi.fn() }));
 
@@ -229,4 +229,52 @@ describe("integrated credit funnel", () => {
     expect(screen.queryByRole("radio")).toBeNull();
     expect(captureFunnel).not.toHaveBeenCalled();
   });
+});
+
+
+it.each([
+  [],
+  [{ ...DEFAULT_CREDIT_PACKAGES[0], credits: 0 }],
+  [{ ...DEFAULT_CREDIT_PACKAGES[0], price_krw: Number.NaN }],
+  [DEFAULT_CREDIT_PACKAGES[0], DEFAULT_CREDIT_PACKAGES[0]],
+].map((packages) => ({ packages })))("rejects unusable adapter packages before price exposure and permits a valid retry: %j", async ({ packages }) => {
+  const adapter = createAdapter();
+  vi.mocked(adapter.loadCatalog).mockResolvedValueOnce({ version: "invalid", packages });
+  render(<CreditCharge fakeDoor={props(adapter)} />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("가격을 불러오지 못했어요.");
+  expect(screen.queryByRole("radio")).toBeNull();
+  expect(screen.getByRole("button", { name: "결제하기" })).toBeDisabled();
+  expect(captureFunnel).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "다시 불러오기" }));
+  expect(await screen.findAllByRole("radio")).toHaveLength(3);
+  expect(vi.mocked(captureFunnel).mock.calls.filter(([event]) => event === "token_purchase_page_viewed")).toHaveLength(1);
+});
+
+
+it("counts changed catalog values once per flow without counting equal replacement arrays", async () => {
+  const adapter = createAdapter();
+  const p = props(adapter);
+  const view = render(<CreditCharge fakeDoor={p} />);
+  fireEvent.click((await screen.findAllByRole("radio"))[0]);
+  const next = createAdapter();
+  vi.mocked(next.loadCatalog).mockResolvedValue({ version: "test-v2", packages: DEFAULT_CREDIT_PACKAGES.map((item) => ({ ...item, price_krw: item.price_krw + 1 })) });
+  view.rerender(<CreditCharge fakeDoor={{ ...p, adapter: next }} />);
+  await waitFor(() => expect(vi.mocked(captureFunnel).mock.calls.filter(([event]) => event === "token_purchase_page_viewed")).toHaveLength(2));
+  expect(screen.getByRole("button", { name: "결제하기" })).toBeDisabled();
+  const same = createAdapter();
+  vi.mocked(same.loadCatalog).mockResolvedValue({ version: "test-v2", packages: DEFAULT_CREDIT_PACKAGES.map((item) => ({ ...item, price_krw: item.price_krw + 1 })) });
+  view.rerender(<CreditCharge fakeDoor={{ ...p, adapter: same }} />);
+  await waitFor(() => expect(same.loadCatalog).toHaveBeenCalled());
+  await act(async () => {});
+  expect(vi.mocked(captureFunnel).mock.calls.filter(([event]) => event === "token_purchase_page_viewed")).toHaveLength(2);
+});
+
+
+it.each([undefined, null, {}, "", "   "])("rejects malformed adapter catalog version %j before exposure", async (version) => {
+  const adapter = createAdapter();
+  vi.mocked(adapter.loadCatalog).mockResolvedValue({ version, packages: DEFAULT_CREDIT_PACKAGES } as unknown as FakeDoorCatalog);
+  render(<CreditCharge fakeDoor={props(adapter)} />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("가격을 불러오지 못했어요.");
+  expect(screen.queryByRole("radio")).toBeNull();
+  expect(captureFunnel).not.toHaveBeenCalled();
 });
