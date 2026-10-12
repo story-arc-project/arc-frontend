@@ -18,12 +18,12 @@ export function ProductionMissionSession({ children }: { children: ReactNode }) 
 
 export function ProductionMissionRoute({ missionId }: { missionId?: MissionId }) {
   const router = useRouter();
-  return <MissionWorkspace balance={<CreditBalance variant="summary" />} initialMissionId={missionId}
+  return <MissionWorkspace analyticsEnabled entryPath="direct" balance={<CreditBalance variant="summary" />} initialMissionId={missionId}
     onNavigate={id => router.push(id ? `/credits/missions/${id}` : "/credits/missions")}
     onBack={() => router.push("/settings")} backLabel="내 계정으로" />;
 }
 
 export function EmbeddedProductionMissions({ onBack }: { onBack: () => void }) {
-  return <ProductionMissionSession><MissionWorkspace balance={<CreditBalance variant="summary" />}
+  return <ProductionMissionSession><MissionWorkspace analyticsEnabled entryPath="insufficient_credits" balance={<CreditBalance variant="summary" />}
     onBack={onBack} backLabel="이전 화면으로" /></ProductionMissionSession>;
 }

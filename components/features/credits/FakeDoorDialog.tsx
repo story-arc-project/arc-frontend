@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { captureFunnel, newFunnelId, sanitizeFunnelEntry } from "@/lib/analytics/funnel";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { useSuppressFeedback } from "@/contexts/FeedbackTriggerContext";
@@ -25,14 +26,18 @@ export function FakeDoorTelemetryProvider({ accountId, children }: { accountId: 
 }
 
 const notice = "크레딧 결제를 준비하고 있어요. 지금은 실제 결제나 충전이 이루어지지 않아요. 미션에 참여하면 정해진 보상만큼 크레딧을 받을 수 있어요.";
-export function useFakeDoorFlow({ accountId, entryPoint, adapter }: FakeDoorIntegration) {
-  const [flowId] = useState(() => crypto.randomUUID());
+export function useFakeDoorFlow({ accountId, entryPoint, adapter, onMission }: FakeDoorIntegration) {
+  const [flowId] = useState(newFunnelId);
   const [catalog, setCatalog] = useState<FakeDoorCatalog | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [step, setStep] = useState<"catalog" | "notice">("catalog");
   const [saveStatus, setSaveStatus] = useState<"idle" | "pending" | "error" | "saved">("idle");
+  const priceViewed = useRef(false);
+  const noticeViewed = useRef<string | null>(null);
+  const deliberations = useRef(0);
+  const entryPath = sanitizeFunnelEntry(entryPoint);
   const intent = useRef<FakeDoorIntent | null>(null);
   const pending = useRef(false);
   const clicked = useRef(false);
@@ -60,9 +65,18 @@ export function useFakeDoorFlow({ accountId, entryPoint, adapter }: FakeDoorInte
     }).catch(() => { if (!controller.signal.aborted) setLoadError(true); });
     return () => controller.abort();
   }, [adapter, attempt]);
+  useEffect(() => {
+    if (!catalog || priceViewed.current) return;
+    priceViewed.current = true;
+    captureFunnel("token_purchase_page_viewed", { flow_id: flowId, entry_path: entryPath, offer_version: catalog.version, catalog_source: "adapter", packages: catalog.packages.map(({ id, credits, price_krw }) => ({ package_id: id, credits, price_krw })) });
+  }, [catalog, flowId, entryPath]);
   // Exposure is sent only after React has committed the notice, independently of intent storage.
   useEffect(() => {
     if (step !== "notice" || !intent.current) return;
+    if (noticeViewed.current !== intent.current.intentId) {
+      noticeViewed.current = intent.current.intentId;
+      captureFunnel("fake_door_revealed", { flow_id: flowId, intent_id: intent.current.intentId, entry_path: entryPath });
+    }
     const controller = new AbortController();
     controllers.add(controller);
     const payload = exposure.current ?? (exposure.current = { accountId, flowId, intentId: intent.current.intentId, exposureId: crypto.randomUUID(), shownAt: new Date().toISOString() });
@@ -71,7 +85,7 @@ export function useFakeDoorFlow({ accountId, entryPoint, adapter }: FakeDoorInte
     }).catch(() => {
       // Exposure failure is deliberately not converted into a successful event.
     }).finally(() => controllers.delete(controller));
-  }, [step, adapter, accountId, flowId, controllers]);
+  }, [step, adapter, accountId, flowId, controllers, entryPath]);
 
   function save() {
     if (pending.current || !intent.current) return;
@@ -100,14 +114,27 @@ export function useFakeDoorFlow({ accountId, entryPoint, adapter }: FakeDoorInte
     if (!selected || !catalog || clicked.current || pending.current) return;
     clicked.current = true;
     intent.current = { accountId, flowId, intentId: crypto.randomUUID(), entryPoint, catalogVersion: catalog.version, package: selected, clickedAt: new Date().toISOString() };
+    captureFunnel("credit_purchase_intent", { flow_id: flowId, intent_id: intent.current.intentId, entry_path: entryPath, offer_version: catalog.version, package_id: selected.id, credits: selected.credits, price_krw: selected.price_krw, catalog_source: "adapter" });
     save();
     setStep("notice");
   }
   function dismiss() {
-    if (step === "notice") { clicked.current = false; exposure.current = null; setStep("catalog"); }
+    if (step === "notice") {
+      if (intent.current) captureFunnel("fake_door_dismissed", { flow_id: flowId, intent_id: intent.current.intentId, entry_path: entryPath, dismissal_type: "close" });
+      clicked.current = false; exposure.current = null; setStep("catalog"); }
   }
 
-  return { catalog, loadError, selectedId, setSelectedId, purchase, pending: saveStatus === "pending", retryCatalog: () => { setLoadError(false); setAttempt((value) => value + 1); }, notice: { open: step === "notice", onClose: dismiss, saveStatus, onRetry: save, flowId } };
+  function select(id: string) {
+    const item = catalog?.packages.find((item) => item.id === id);
+    if (!item || !catalog || selectedId === id) return;
+    setSelectedId(id);
+    captureFunnel("token_package_selected", { flow_id: flowId, entry_path: entryPath, offer_version: catalog.version, package_id: item.id, credits: item.credits, price_krw: item.price_krw, deliberation_count: ++deliberations.current, catalog_source: "adapter" });
+  }
+  function navigateToMission() {
+    if (intent.current) captureFunnel("mission_page_navigated_from_fakedoor", { flow_id: flowId, intent_id: intent.current.intentId, entry_path: entryPath });
+    onMission({ flowId });
+  }
+  return { catalog, loadError, selectedId, setSelectedId: select, navigateToMission, purchase, pending: saveStatus === "pending", retryCatalog: () => { setLoadError(false); setAttempt((value) => value + 1); }, notice: { open: step === "notice", onClose: dismiss, saveStatus, onRetry: save, flowId } };
 }
 
 export function FakeDoorDialog({ open, onClose, saveStatus, onRetry, onMission }: { open: boolean; onClose: () => void; saveStatus: string; onRetry: () => void; onMission: () => void }) {

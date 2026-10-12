@@ -1,11 +1,15 @@
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { FakeDoorTelemetryProvider } from "./FakeDoorDialog";
+import { captureFunnel } from "@/lib/analytics/funnel";
 import { CreditCharge } from "./CreditCharge";
 import { DEFAULT_CREDIT_PACKAGES } from "@/lib/constants/credit-packages";
 import type { FakeDoorAdapter } from "@/lib/credits/fake-door";
 
-afterEach(cleanup);
+vi.mock("@/lib/analytics/funnel", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/analytics/funnel")>(), captureFunnel: vi.fn() }));
+
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const createAdapter = (): FakeDoorAdapter => ({ loadCatalog: vi.fn().mockResolvedValue({ version: "test-v1", packages: DEFAULT_CREDIT_PACKAGES }), recordIntent: vi.fn().mockResolvedValue({ audience: "first" }), recordExposure: vi.fn().mockResolvedValue(undefined) });
 const props = (adapter: FakeDoorAdapter) => ({ adapter, accountId: "one", entryPoint: "preview", open: true, onClose: vi.fn(), onMission: vi.fn() });
 async function purchase() { fireEvent.click((await screen.findAllByRole("radio"))[0]); fireEvent.click(screen.getByRole("button", { name: "4,900원 결제하기" })); }
@@ -187,5 +191,42 @@ describe("FakeDoorDialog", () => {
     fireEvent.click(await screen.findByRole("button", { name: "다시 불러오기" }));
     await waitFor(() => expect(screen.getAllByRole("radio")).toHaveLength(3));
     expect(adapter.loadCatalog).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+describe("integrated credit funnel", () => {
+  it("separates committed prices, purchase intent, and notice; retries retain one intent and a fresh click creates another", async () => {
+    const adapter = createAdapter();
+    adapter.recordIntent = vi.fn().mockRejectedValue(new Error("lost"));
+    const p = { ...props(adapter), entryPoint: "private@example.com" };
+    render(<StrictMode><CreditCharge fakeDoor={p} /></StrictMode>);
+    await purchase();
+    fireEvent.click(await screen.findByRole("button", { name: "저장 다시 시도" }));
+    await waitFor(() => expect(adapter.recordIntent).toHaveBeenCalledTimes(2));
+    const calls = () => vi.mocked(captureFunnel).mock.calls;
+    expect(calls().filter(([event]) => event === "token_purchase_page_viewed")).toHaveLength(1);
+    expect(calls().filter(([event]) => event === "credit_purchase_intent")).toHaveLength(1);
+    expect(calls().filter(([event]) => event === "fake_door_revealed")).toHaveLength(1);
+    const firstId = vi.mocked(adapter.recordIntent).mock.calls[0][0].intentId;
+    expect(calls().find(([event]) => event === "fake_door_revealed")![1]).toMatchObject({ intent_id: firstId, entry_path: "unknown" });
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    fireEvent.click(screen.getByRole("button", { name: "4,900원 결제하기" }));
+    await waitFor(() => expect(adapter.recordIntent).toHaveBeenCalledTimes(3));
+    const secondId = vi.mocked(adapter.recordIntent).mock.calls[2][0].intentId;
+    expect(secondId).not.toBe(firstId);
+    expect(calls().filter(([event]) => event === "credit_purchase_intent")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "미션으로 크레딧 받기" }));
+    expect(calls().find(([event]) => event === "mission_page_navigated_from_fakedoor")![1]).toMatchObject({ intent_id: secondId });
+    expect(p.onMission).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(calls())).not.toMatch(/private@example|accountId|entryPoint|clickedAt|"name"/);
+  });
+  it("does not report exposure for a failed catalog", async () => {
+    const adapter = createAdapter();
+    vi.mocked(adapter.loadCatalog).mockRejectedValue(new Error("offline"));
+    render(<CreditCharge fakeDoor={props(adapter)} />);
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(captureFunnel).not.toHaveBeenCalled();
   });
 });

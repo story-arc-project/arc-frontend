@@ -1,5 +1,7 @@
+import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { captureFunnel } from "@/lib/analytics/funnel";
 import { CreditCharge } from "./CreditCharge";
 import { DEFAULT_CREDIT_PACKAGES } from "@/lib/constants/credit-packages";
 
@@ -15,6 +17,8 @@ function ReportExperience() {
   const triggers = useFeedbackTriggers();
   return <button onClick={() => triggers?.reportExperienceCount(3)}>Report experience</button>;
 }
+
+vi.mock("@/lib/analytics/funnel", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/analytics/funnel")>(), captureFunnel: vi.fn() }));
 
 afterEach(() => {
   cleanup();
@@ -85,5 +89,37 @@ describe("CreditCharge", () => {
     expect(screen.getAllByRole("radio")).toHaveLength(3);
     expect(screen.getByRole("button", { name: "결제하기" })).toBeDisabled();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+
+describe("legacy credit funnel", () => {
+  it("records committed API prices once in StrictMode and snapshots the selected offer without display names", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => new Response(JSON.stringify({ packages: DEFAULT_CREDIT_PACKAGES }))));
+    render(<StrictMode><CreditCharge /></StrictMode>);
+    const radios = await screen.findAllByRole("radio");
+    expect(vi.mocked(captureFunnel).mock.calls.filter(([event]) => event === "token_purchase_page_viewed")).toHaveLength(1);
+    fireEvent.click(radios[0]);
+    fireEvent.click(radios[1]);
+    fireEvent.click(screen.getByRole("button", { name: "결제하기" }));
+    const first = vi.mocked(captureFunnel).mock.calls.find(([event]) => event === "credit_purchase_intent")![1];
+    expect(first).toMatchObject({ package_id: DEFAULT_CREDIT_PACKAGES[1].id, price_krw: DEFAULT_CREDIT_PACKAGES[1].price_krw, catalog_source: "api", offer_version: "unknown" });
+    expect(vi.mocked(captureFunnel).mock.calls.filter(([event]) => event === "token_package_selected")[1][1]).toMatchObject({ deliberation_count: 2 });
+    expect(vi.mocked(captureFunnel).mock.calls.find(([event]) => event === "fake_door_revealed")![1]).toMatchObject({ intent_id: (first as { intent_id: string }).intent_id });
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    fireEvent.click(screen.getByRole("button", { name: "결제하기" }));
+    const intents = vi.mocked(captureFunnel).mock.calls.filter(([event]) => event === "credit_purchase_intent");
+    expect(intents).toHaveLength(2);
+    expect(intents[1][1]).not.toMatchObject({ intent_id: (first as { intent_id: string }).intent_id });
+    expect(JSON.stringify(vi.mocked(captureFunnel).mock.calls)).not.toContain('"name"');
+  });
+  it("preserves fallback UI but excludes failed catalog from verified price exposure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    render(<CreditCharge />);
+    fireEvent.click((await screen.findAllByRole("radio"))[0]);
+    fireEvent.click(screen.getByRole("button", { name: "결제하기" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(vi.mocked(captureFunnel).mock.calls.some(([event]) => event === "token_purchase_page_viewed")).toBe(false);
+    expect(vi.mocked(captureFunnel).mock.calls.find(([event]) => event === "credit_purchase_intent")![1]).toMatchObject({ catalog_source: "fallback" });
   });
 });

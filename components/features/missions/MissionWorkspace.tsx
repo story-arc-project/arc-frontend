@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { captureFunnel, newFunnelId, sanitizeFunnelEntry } from "@/lib/analytics/funnel";
+import type { MissionStore } from "@/lib/missions/store";
 import { getMission } from "@/lib/missions/catalog";
 import { getProgress } from "@/lib/missions/model";
 import { useMissions } from "@/lib/missions/use-missions";
@@ -9,12 +11,58 @@ import { useMissionSession } from "./MissionSession";
 import { MissionCenter } from "./MissionCenter";
 import { MissionDetail } from "./MissionDetail";
 
-export function MissionWorkspace({ onBack, backLabel, balance, initialMissionId, onNavigate }: {
+// Store lifetime follows account/session lifetime, including list/detail navigation.
+const flows = new WeakMap<MissionStore, { id: string; started: Set<MissionId>; claimView: () => boolean }>();
+function missionFlow(store: MissionStore) {
+  let flow = flows.get(store);
+  if (!flow) {
+    let viewed = false;
+    flow = { id: newFunnelId(), started: new Set(), claimView: () => {
+      if (viewed) return false;
+      viewed = true;
+      return true;
+    } };
+    flows.set(store, flow);
+  }
+  return flow;
+}
+
+export function MissionWorkspace({ onBack, backLabel, balance, initialMissionId, onNavigate, analyticsEnabled = false, entryPath = "direct" }: {
   onBack: () => void; backLabel?: string; balance: ReactNode; initialMissionId?: MissionId;
   onNavigate?: (id?: MissionId) => void;
+  analyticsEnabled?: boolean; entryPath?: string;
 }) {
   const store = useMissionSession();
   const state = useMissions(store);
+  const flow = missionFlow(store);
+  const entry = sanitizeFunnelEntry(entryPath);
+  const context = { flow_id: flow.id, entry_path: entry };
+  // One initial terminal workspace result per session, including direct detail entry.
+  useEffect(() => {
+    if (!analyticsEnabled || state.status === "idle" || state.status === "loading" || !flow.claimView()) return;
+    captureFunnel("mission_page_viewed", { flow_id: flow.id, entry_path: entry,
+      availability: state.status === "success" ? "available" : state.status });
+  }, [analyticsEnabled, entry, flow, state.status]);
+  const start = (id: MissionId) => {
+    const mission = getMission(id);
+    if (!analyticsEnabled || mission.kind === "automatic" || mission.retroactive || flow.started.has(id)) return;
+    flow.started.add(id);
+    captureFunnel("mission_started", { ...context, mission_id: id, participation_type: mission.kind });
+  };
+  const submit = (id: MissionId) => {
+    const current = store.getSnapshot();
+    if (analyticsEnabled && current.mutations[id]?.status !== "pending") captureFunnel("mission_submit_clicked", {
+      ...context, mission_id: id, is_retry: current.mutations[id]?.status === "uncertain" && current.mutations[id]?.operation === "submit",
+    });
+    void store.submit(id);
+  };
+  const claim = (id: MissionId) => {
+    const current = store.getSnapshot();
+    if (analyticsEnabled && current.mutations[id]?.status !== "pending") captureFunnel("mission_claim_clicked", {
+      ...context, mission_id: id, is_retry: current.mutations[id]?.status === "uncertain" && current.mutations[id]?.operation === "claim",
+    });
+    void store.claim(id);
+  };
   const [localMission, setLocalMission] = useState<MissionId>();
   const selected = onNavigate ? initialMissionId : localMission;
   const container = useRef<HTMLDivElement>(null);
@@ -39,9 +87,19 @@ export function MissionWorkspace({ onBack, backLabel, balance, initialMissionId,
       mission={getMission(selected)} progress={getProgress(state.status === "success" ? state.snapshot : null, selected)}
       draft={state.drafts[selected] ?? getProgress(state.snapshot, selected).submission ?? { url: "", note: "" }}
       mutation={state.mutations[selected] ?? { status: "idle" }}
-      onDraft={draft => store.setDraft(selected, draft)} onSubmit={() => { void store.submit(selected); }}
-      onClaim={() => { void store.claim(selected); }} onBack={() => open()}
+      onDraft={draft => {
+        const previous = store.getSnapshot().drafts[selected] ?? getProgress(state.snapshot, selected).submission ?? { url: "", note: "" };
+        if ((draft.url !== previous.url || draft.note !== previous.note) && (draft.url.trim() || draft.note.trim())) start(selected);
+        store.setDraft(selected, draft);
+      }} onSubmit={() => submit(selected)}
+      onParticipate={() => start(selected)}
+      onReferralShared={() => {
+        if (!analyticsEnabled) return;
+        start(selected);
+        captureFunnel("referral_code_shared", { ...context, mission_id: selected, share_channel: "clipboard" });
+      }}
+      onClaim={() => claim(selected)} onBack={() => open()}
     /></> : <MissionCenter state={state} balance={balance} onRetry={() => { void store.load(); }} onOpen={id => open(id)}
-      onClaim={id => { void store.claim(id); }} onBack={onBack} backLabel={backLabel} />}
+      onClaim={claim} onBack={onBack} backLabel={backLabel} />}
   </div>;
 }
