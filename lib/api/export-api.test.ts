@@ -120,12 +120,12 @@ describe("createResume — id 이중경로 (FRT-123 계약 §2.4)", () => {
       message: "Resume generation queued successfully.",
     });
 
-    await expect(createResume({ language: "ko" })).resolves.toEqual({ id: null });
+    await expect(createResume({ language: "ko" }, { idempotencyKey: "attempt-1" })).resolves.toEqual({ id: null });
     expect(mockPost).toHaveBeenCalledWith(
       "/export/resume",
       // FRT-207 — 기본 생성은 1쪽 제한이라 두 상수가 항상 함께 나간다.
       { language: "ko", max_pages: 1, auto_fill: true },
-      undefined,
+      { signal: undefined, headers: { "Idempotency-Key": "attempt-1" } },
     );
   });
 
@@ -136,7 +136,7 @@ describe("createResume — id 이중경로 (FRT-123 계약 §2.4)", () => {
       data: { id: "res-1", title: "2026-07-17 resume" },
     });
 
-    await expect(createResume({ language: "en" })).resolves.toEqual({
+    await expect(createResume({ language: "en" }, { idempotencyKey: "attempt-1" })).resolves.toEqual({
       id: "res-1",
       title: "2026-07-17 resume",
     });
@@ -144,11 +144,11 @@ describe("createResume — id 이중경로 (FRT-123 계약 §2.4)", () => {
 
   it("title 을 넘기면 body 에 실어 보낸다", async () => {
     mockPost.mockResolvedValue({ status: "success", message: "ok", data: { id: "res-2" } });
-    await createResume({ language: "ko", title: "내 이력서" });
+    await createResume({ language: "ko", title: "내 이력서" }, { idempotencyKey: "attempt-1" });
     expect(mockPost).toHaveBeenCalledWith(
       "/export/resume",
       { language: "ko", title: "내 이력서", max_pages: 1, auto_fill: true },
-      undefined,
+      { signal: undefined, headers: { "Idempotency-Key": "attempt-1" } },
     );
   });
 });
@@ -157,14 +157,14 @@ describe("createResume — experience_ids (FRT-109 / BAC-45 계약)", () => {
   it("experienceIds 를 넘기면 snake_case 로 body 에 싣는다", async () => {
     mockPost.mockResolvedValue({ status: "success", message: "ok", data: { id: "res-3" } });
 
-    await createResume({ language: "ko", experienceIds: ["exp-1", "exp-2"] });
+    await createResume({ language: "ko", experienceIds: ["exp-1", "exp-2"] }, { idempotencyKey: "attempt-1" });
 
     expect(mockPost).toHaveBeenCalledWith(
       "/export/resume",
       // 사용자가 경험을 직접 골랐으면 자동 채움을 끈다 — 켜두면 일부러 뺀 경험이
       // 1쪽 여백을 메우려고 되돌아온다.
       { language: "ko", experience_ids: ["exp-1", "exp-2"], max_pages: 1, auto_fill: false },
-      undefined,
+      { signal: undefined, headers: { "Idempotency-Key": "attempt-1" } },
     );
   });
 
@@ -174,7 +174,7 @@ describe("createResume — experience_ids (FRT-109 / BAC-45 계약)", () => {
   it("experienceIds 를 안 넘기면 body 에 키 자체가 없다", async () => {
     mockPost.mockResolvedValue({ status: "success", message: "ok", data: { id: "res-4" } });
 
-    await createResume({ language: "ko" });
+    await createResume({ language: "ko" }, { idempotencyKey: "attempt-1" });
 
     const body = mockPost.mock.calls[0][1] as Record<string, unknown>;
     expect("experience_ids" in body).toBe(false);
@@ -183,7 +183,7 @@ describe("createResume — experience_ids (FRT-109 / BAC-45 계약)", () => {
   it("빈 배열을 명시적으로 넘기면 그대로 싣는다(차단은 호출부 책임)", async () => {
     mockPost.mockResolvedValue({ status: "success", message: "ok", data: { id: "res-5" } });
 
-    await createResume({ language: "ko", experienceIds: [] });
+    await createResume({ language: "ko", experienceIds: [] }, { idempotencyKey: "attempt-1" });
 
     const body = mockPost.mock.calls[0][1] as Record<string, unknown>;
     expect(body.experience_ids).toEqual([]);
@@ -669,4 +669,17 @@ describe("resume 뮤테이션 실패 매핑", () => {
       expect((err as ApiError).status).toBe(status);
     },
   );
+});
+
+describe("idempotency retransmission", () => {
+  it("preserves the caller key and AbortSignal after response loss", async () => {
+    const signal = new AbortController().signal;
+    const options = { idempotencyKey: "stable-key", signal };
+    mockPost.mockRejectedValueOnce(new TypeError("response lost"))
+      .mockResolvedValueOnce({ status: "success", data: { id: "existing-id" } });
+    await expect(createResume({ language: "ko" }, options)).rejects.toThrow("response lost");
+    await expect(createResume({ language: "ko" }, options)).resolves.toMatchObject({ id: "existing-id" });
+    expect(mockPost.mock.calls[0]).toEqual(mockPost.mock.calls[1]);
+    expect(mockPost.mock.calls[1][2]).toEqual({ signal, headers: { "Idempotency-Key": "stable-key" } });
+  });
 });

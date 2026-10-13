@@ -1,5 +1,10 @@
 "use client";
 
+import { useAuth } from "@/hooks/useAuth";
+import { useRequestAttempt } from "@/hooks/useRequestAttempt";
+import { useInsufficientCredits } from "@/hooks/useInsufficientCredits";
+import { InsufficientCreditsDialog } from "@/components/features/credits/InsufficientCreditsDialog";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -50,7 +55,14 @@ interface PageProps {
   params: Promise<{ versionId: string }>;
 }
 
-export default function ResumeDetailPage({ params }: PageProps) {
+export default function ResumeDetailPage(props: PageProps) {
+  const { user, isLoading } = useAuth();
+  const demo = useBasePath() === "/demo";
+  return <ResumeDetailContent key={demo ? "demo" : user?.account.email} {...props} canGenerate={demo || (!!user && !isLoading)} />;
+}
+
+function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate: boolean }) {
+  const { begin, reject } = useRequestAttempt<{ versionId: string; language: ResumeVersion["meta"]["language"] }>();
   const { versionId } = use(params);
   const router = useRouter();
   const basePath = useBasePath();
@@ -62,6 +74,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
+  const { open: insufficientOpen, onClose: closeInsufficient, beginAttempt } = useInsufficientCredits(versionId);
+  const regeneratingRef = useRef(false);
+  const [restoreRegenerateFocus, setRestoreRegenerateFocus] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<ResumeDraft | null>(null);
   const [continueAnyway, setContinueAnyway] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -111,7 +126,9 @@ export default function ResumeDetailPage({ params }: PageProps) {
     // 동일 인스턴스가 재사용돼도 '다시 만들기' 버튼/다이얼로그가 잔존(영구 비활성)하지
     // 않도록 여기서 리셋한다.
     setRegenerating(false);
+    regeneratingRef.current = false;
     setRegenerateOpen(false);
+    setRestoreRegenerateFocus(false);
     // 다른 버전을 열면 그 버전의 초안은 아직 손대지 않은 상태다.
     editedFiredRef.current = false;
     exitDraftFiredRef.current = false;
@@ -366,14 +383,19 @@ export default function ResumeDetailPage({ params }: PageProps) {
   ]);
 
   const handleRegenerate = useCallback(async () => {
-    if (!resume || regenerating) return;
+    if (!resume || regeneratingRef.current || !canGenerate) return;
+    regeneratingRef.current = true;
+    setRestoreRegenerateFocus(false);
+    const handleCreditError = beginAttempt();
     setRegenerating(true);
     // 이 경로도 아래에서 export_completed 를 쏜다. 누름을 여기서 안 잡으면 그 완료 하나가
     // 짝 없이 총계에 얹혀, "눌렀는데 요청이 안 나갔다"를 재는 **누름 − 완료** 차이가
     // 재생성 건수만큼 깎인다(FRT-107). 완료를 쏘는 자리마다 누름도 있어야 뺄셈이 성립한다.
     capture("export_execute_button_clicked", { export_type: "resume" });
+    const attempt = begin({ versionId, language: resume.meta.language });
     try {
-      await createResume({ language: resume.meta.language });
+      await createResume({ language: attempt.payload.language }, { idempotencyKey: attempt.key });
+      if (!handleCreditError.isCurrent()) return;
       // '다시 만들기'도 새 레쥬메 버전이 만들어진 익스포트 완료다 — 모달 생성 경로만
       // 잡으면 퍼널이 이 사용자를 미완료로 센다(FRT-19).
       capture("export_completed", { export_type: "resume", language: resume.meta.language });
@@ -387,11 +409,15 @@ export default function ResumeDetailPage({ params }: PageProps) {
       // 서버가 새 id 를 주지 않아 새 버전으로 바로 갈 수 없다 — 목록에서 확인한다.
       toast("이력서를 다시 만들고 있어요. 완료되면 목록에 표시돼요", "info");
       router.push(`${basePath}/export`);
-    } catch {
-      toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } catch (err) {
+      if (!handleCreditError.isCurrent()) return;
+      reject(attempt.key, err);
+      regeneratingRef.current = false;
       setRegenerating(false);
+      if (handleCreditError(err)) return;
+      toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
     }
-  }, [resume, regenerating, router, basePath, versionId]);
+  }, [resume, router, basePath, versionId, beginAttempt, begin, reject, canGenerate]);
 
   const handlePrint = useCallback(() => {
     if (typeof window !== "undefined") window.print();
@@ -805,10 +831,12 @@ export default function ResumeDetailPage({ params }: PageProps) {
         onSelect={handleExport}
       />
 
+      <InsufficientCreditsDialog open={insufficientOpen} onClose={() => { setRestoreRegenerateFocus(true); closeInsufficient(); }} />
       <RegenerateConfirmDialog
-        open={regenerateOpen}
+        open={regenerateOpen && !insufficientOpen}
         submitting={regenerating}
-        onClose={() => setRegenerateOpen(false)}
+        restoreConfirmFocus={restoreRegenerateFocus}
+        onClose={() => { setRegenerateOpen(false); setRestoreRegenerateFocus(false); }}
         onConfirm={handleRegenerate}
       />
     </div>

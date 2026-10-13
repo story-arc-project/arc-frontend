@@ -1,5 +1,7 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+
+import { createRef } from "react";
 
 import { Dialog } from "./dialog";
 
@@ -73,4 +75,76 @@ describe("Dialog — 닫을 때 포커스 복원", () => {
     expect(document.activeElement).toBe(elsewhere);
     elsewhere.remove();
   });
+});
+
+
+it("restores a remounted explicit focus target instead of the first button", async () => {
+  const visible = vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockImplementation(() => document.body);
+  const target = createRef<HTMLButtonElement>();
+  const content = (open: boolean) => <Dialog open={open} onClose={() => {}} ariaLabel="reopened" initialFocusRef={target}>
+    <button>Cancel</button><button ref={target}>Submit</button>
+  </Dialog>;
+  try {
+    const { rerender } = render(content(true));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const oldTarget = target.current;
+    rerender(content(false));
+    rerender(content(true));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(target.current).not.toBe(oldTarget);
+    expect(target.current).toHaveFocus();
+  } finally { visible.mockRestore(); }
+});
+
+it("falls back to the first enabled element when the explicit target is disabled", async () => {
+  const visible = vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockImplementation(() => document.body);
+  const target = createRef<HTMLButtonElement>();
+  try {
+    render(<Dialog open onClose={() => {}} ariaLabel="fallback" initialFocusRef={target}>
+      <button>Cancel</button><button ref={target} disabled>Submit</button>
+    </Dialog>);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+  } finally { visible.mockRestore(); }
+});
+
+
+it("does not replace the original return target when initialFocusRef changes while open", async () => {
+  const visible = vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockImplementation(() => document.body);
+  const target = createRef<HTMLButtonElement>();
+  const opener = document.createElement("button");
+  document.body.append(opener);
+  opener.focus();
+  const content = (open: boolean, explicit: boolean) => <Dialog open={open} onClose={() => {}} ariaLabel="stable return" initialFocusRef={explicit ? target : undefined}>
+    <button>Cancel</button><button ref={target}>Submit</button>
+  </Dialog>;
+  try {
+    const { rerender } = render(content(true, true));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(target.current).toHaveFocus();
+    rerender(content(true, false));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(target.current).toHaveFocus();
+    rerender(content(false, false));
+    expect(opener).toHaveFocus();
+  } finally { visible.mockRestore(); opener.remove(); }
+});
+
+
+it("keeps reverse Tab inside from a heading and the selected native radio", () => {
+  const visible = vi.spyOn(HTMLElement.prototype, "offsetParent", "get").mockImplementation(() => document.body);
+  try {
+    render(<Dialog open onClose={() => {}} ariaLabel="radio boundary">
+      <h2 tabIndex={-1}>Heading</h2>
+      <input type="radio" name="package" aria-label="first" />
+      <input type="radio" name="package" aria-label="second" defaultChecked />
+      <button>Last</button>
+    </Dialog>);
+    screen.getByRole("heading").focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { name: "Last" })).toHaveFocus();
+    screen.getByRole("radio", { name: "second" }).focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { name: "Last" })).toHaveFocus();
+  } finally { visible.mockRestore(); }
 });

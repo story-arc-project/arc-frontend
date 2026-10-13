@@ -7,6 +7,8 @@ interface AdminEntryLinkProps {
   onClick?: () => void;
   /** 렌더 위치별 스타일 — 데스크톱 UserMenu 드롭다운 vs GNB 모바일 인라인 블록 */
   variant?: "menu" | "mobile";
+  /** 데스크톱 popover의 disclosure semantics에 맞춰 native link 역할을 선택한다. */
+  semanticRole?: "menuitem" | "link";
 }
 
 /**
@@ -14,7 +16,12 @@ interface AdminEntryLinkProps {
  * admin 여부 판정은 상위(GNB)의 useIsAdmin() 이 내려주는 prop 에 위임 — 표시 로직만 담는
  * 순수 prop→UI 컴포넌트라 Storybook 으로 격리 검증한다.
  */
-export function AdminEntryLink({ isAdmin, onClick, variant = "menu" }: AdminEntryLinkProps) {
+export function AdminEntryLink({
+  isAdmin,
+  onClick,
+  variant = "menu",
+  semanticRole = "menuitem",
+}: AdminEntryLinkProps) {
   if (!isAdmin) return null;
 
   const className =
@@ -25,7 +32,7 @@ export function AdminEntryLink({ isAdmin, onClick, variant = "menu" }: AdminEntr
   return (
     <Link
       href="/admin"
-      role={variant === "menu" ? "menuitem" : undefined}
+      role={variant === "menu" ? semanticRole : undefined}
       onClick={onClick}
       className={className}
     >
