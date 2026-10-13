@@ -1,19 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { MissionDefinition, MissionDraft, MissionMutation, MissionProgress } from "@/lib/missions/types";
 import { safeMissionUrl } from "@/lib/missions/model";
 import { MissionEvidenceForm } from "./MissionEvidenceForm";
 import { missionStatusLabels } from "./MissionCenter";
 import styles from "./missions.module.css";
 
-export function MissionDetail({ mission, progress, draft, mutation, onDraft, onSubmit, onClaim, onBack }: {
+export function MissionDetail({ mission, progress, draft, mutation, onDraft, onSubmit, onClaim, onBack, onParticipate, onReferralShared }: {
   mission: MissionDefinition; progress: MissionProgress; draft: MissionDraft; mutation: MissionMutation;
+  onParticipate?: () => void; onReferralShared?: () => void;
   onDraft: (draft: MissionDraft) => void; onSubmit: () => void; onClaim: () => void; onBack: () => void;
 }) {
   const [copyStatus, setCopyStatus] = useState("");
   const actionUrl = safeMissionUrl(progress.actionUrl);
   const invitationUrl = safeMissionUrl(progress.invitation?.url);
+  const copyGeneration = useRef(0);
+  // Invalidate asynchronous clipboard completion on account unmount or detail change.
+  useLayoutEffect(() => {
+    copyGeneration.current += 1;
+    return () => { copyGeneration.current += 1; };
+  }, [mission.id, invitationUrl]);
   const unresolved = mutation.status === "uncertain" || mutation.status === "pending";
   const unresolvedSubmit = unresolved && mutation.operation === "submit";
   const unresolvedClaim = unresolved && mutation.operation === "claim";
@@ -34,7 +41,7 @@ export function MissionDetail({ mission, progress, draft, mutation, onDraft, onS
         {!unresolved && progress.status === "closed" && <p className={styles.notice}>{progress.reason || "현재 모집이 없어요. 새로운 참여 기회가 열리면 확인할 수 있어요."}</p>}
         {!unresolved && progress.status === "unavailable" && <p className={styles.notice}>현재 참여 가능 여부를 확인할 수 없어요. 참여와 보상 수령은 상태가 확인된 뒤 이용할 수 있어요.</p>}
         {!unresolved && progress.status === "available" && mission.kind !== "evidence" && <>
-          {mission.kind === "invite" ? <><p>초대한 친구가 가입하고 3일 활동하며 기록 2건을 남기면 완료 여부를 확인해요.</p>{invitationUrl && progress.invitation ? <div className={styles.invitation}><h3>내 초대 주소</h3><code>{invitationUrl}</code><button className={`${styles.button} ${styles.secondary}`} type="button" onClick={async () => { try { await navigator.clipboard.writeText(invitationUrl); setCopyStatus("초대 주소를 복사했어요."); } catch { setCopyStatus("복사하지 못했어요. 위 주소를 직접 복사해 주세요."); } }}>초대 주소 복사</button><p className={styles.feedback}>조건 달성 {progress.invitation.qualifiedCount}명 · 확인 중 {progress.invitation.pendingCount}명</p><p aria-live="polite" className={styles.feedback}>{copyStatus}</p></div> : <p className={styles.notice}>초대 주소를 아직 확인할 수 없어요.</p>}</> : actionUrl ? <><p className={styles.notice}>참여 후 완료 여부를 확인해요. 링크를 여는 것만으로 완료되지는 않아요.</p><a className={styles.button} href={actionUrl} target="_blank" rel="noopener noreferrer">{mission.kind === "automatic" ? "설정·활동 확인하기" : "참여 페이지 열기"}<span className={styles.hint}>(새 창)</span></a></> : <p className={styles.notice}>참여 경로가 아직 준비되지 않았어요. 현재는 이 화면에서 참여할 수 없어요.</p>}
+          {mission.kind === "invite" ? <><p>초대한 친구가 가입하고 3일 활동하며 기록 2건을 남기면 완료 여부를 확인해요.</p>{invitationUrl && progress.invitation ? <div className={styles.invitation}><h3>내 초대 주소</h3><code>{invitationUrl}</code><button className={`${styles.button} ${styles.secondary}`} type="button" onClick={async () => { const generation = copyGeneration.current; try { await navigator.clipboard.writeText(invitationUrl); if (generation !== copyGeneration.current) return; setCopyStatus("초대 주소를 복사했어요."); onReferralShared?.(); } catch { if (generation !== copyGeneration.current) return; setCopyStatus("복사하지 못했어요. 위 주소를 직접 복사해 주세요."); } }}>초대 주소 복사</button><p className={styles.feedback}>조건 달성 {progress.invitation.qualifiedCount}명 · 확인 중 {progress.invitation.pendingCount}명</p><p aria-live="polite" className={styles.feedback}>{copyStatus}</p></div> : <p className={styles.notice}>초대 주소를 아직 확인할 수 없어요.</p>}</> : actionUrl ? <><p className={styles.notice}>참여 후 완료 여부를 확인해요. 링크를 여는 것만으로 완료되지는 않아요.</p><a className={styles.button} href={actionUrl} onClick={mission.kind === "external" ? onParticipate : undefined} target="_blank" rel="noopener noreferrer">{mission.kind === "automatic" ? "설정·활동 확인하기" : "참여 페이지 열기"}<span className={styles.hint}>(새 창)</span></a></> : <p className={styles.notice}>참여 경로가 아직 준비되지 않았어요. 현재는 이 화면에서 참여할 수 없어요.</p>}
         </>}
         {!canSubmit && <div aria-live="polite">{mutation.message && <p className={styles.feedback}>{mutation.message}</p>}</div>}
       </article>

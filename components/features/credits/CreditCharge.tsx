@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { getCreditPackages, type CreditPackage } from "@/lib/api/credit-packages-api";
+import { getCreditPackagesStrict, DEFAULT_CREDIT_PACKAGES, type CreditPackage } from "@/lib/api/credit-packages-api";
+
+import { captureFunnel, newFunnelId } from "@/lib/analytics/funnel";
 
 import { useSuppressFeedback } from "@/contexts/FeedbackTriggerContext";
 
@@ -16,14 +18,20 @@ const number = new Intl.NumberFormat("ko-KR");
 /** States: loading → catalog (or API default fallback) → selection → CTA-only reveal.
  * No selectable defaults during loading: a late catalog cannot invalidate a selection.
  */
-export function CreditCharge({ fakeDoor, onBack }: { fakeDoor?: FakeDoorIntegration; onBack?: () => void } = {}) {
-  return fakeDoor ? <IntegratedCharge key={fakeDoor.accountId} integration={fakeDoor} onBack={onBack} /> : <LegacyCharge />;
+export function CreditCharge({ fakeDoor, onBack, entryPath = "charge_page" }: { fakeDoor?: FakeDoorIntegration; onBack?: () => void; entryPath?: "charge_page" | "insufficient_credits" } = {}) {
+  return fakeDoor ? <IntegratedCharge key={fakeDoor.accountId} integration={fakeDoor} onBack={onBack} /> : <LegacyCharge key={entryPath} entryPath={entryPath} />;
 }
 function IntegratedCharge({ integration, onBack }: { integration: FakeDoorIntegration; onBack?: () => void }) {
   const flow = useFakeDoorFlow(integration);
-  return <ChargePage packages={flow.catalog?.packages ?? null} selectedId={flow.selectedId} onSelect={flow.setSelectedId} onPurchase={flow.purchase} pending={flow.pending} loadError={flow.loadError} onRetry={flow.retryCatalog} onBack={onBack} amountLabel notice={<FakeDoorDialog {...flow.notice} onMission={() => integration.onMission({ flowId: flow.notice.flowId })} />} />;
+  return <ChargePage packages={flow.catalog?.packages ?? null} selectedId={flow.selectedId} onSelect={flow.setSelectedId} onPurchase={flow.purchase} pending={flow.pending} loadError={flow.loadError} onRetry={flow.retryCatalog} onBack={onBack} amountLabel notice={<FakeDoorDialog {...flow.notice} onMission={flow.navigateToMission} />} />;
 }
-function LegacyCharge() {
+function LegacyCharge({ entryPath }: { entryPath: "charge_page" | "insufficient_credits" }) {
+  const [flowId] = useState(newFunnelId);
+  const [catalogSource, setCatalogSource] = useState<"api" | "fallback">("fallback");
+  const viewed = useRef(false);
+  const deliberations = useRef(0);
+  const intentId = useRef<string | null>(null);
+  const noticed = useRef<string | null>(null);
   const [packages, setPackages] = useState<readonly CreditPackage[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
@@ -32,15 +40,48 @@ function LegacyCharge() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void getCreditPackages(controller.signal).then((catalog) => {
+    void getCreditPackagesStrict(controller.signal).then((packages) => ({ packages, source: "api" as const })).catch(() => ({ packages: DEFAULT_CREDIT_PACKAGES, source: "fallback" as const })).then((catalog) => {
       if (controller.signal.aborted) return;
       setSelectedId(null);
-      setPackages(catalog);
+      setCatalogSource(catalog.source);
+      setPackages(catalog.packages);
     });
     return () => controller.abort();
   }, []);
 
-  return <ChargePage packages={packages} selectedId={selectedId} onSelect={setSelectedId} onPurchase={() => { if (selected) setRevealed(true); }} notice={<Dialog open={revealed} onClose={() => setRevealed(false)} ariaLabel="크레딧 충전 안내" className="max-w-md"><h2 className="text-title font-semibold text-text-primary">크레딧 충전을 준비하고 있어요</h2><p className="mt-3 text-body text-text-secondary">아직 결제 기능이 제공되지 않아요. 결제는 진행되지 않았으며, 크레딧도 충전되지 않았어요.</p><Button fullWidth className="mt-6" onClick={() => setRevealed(false)}>닫기</Button></Dialog>} />;
+  const context = { flow_id: flowId, entry_path: entryPath };
+  // No catalog version is provided by this endpoint; do not invent one.
+  const offer = { ...context, offer_version: "unknown", catalog_source: catalogSource };
+  useEffect(() => {
+    if (!packages || catalogSource !== "api" || viewed.current) return;
+    viewed.current = true;
+    captureFunnel("token_purchase_page_viewed", { flow_id: flowId, entry_path: entryPath, offer_version: "unknown", catalog_source: catalogSource, packages: packages.map(({ id, credits, price_krw }) => ({ package_id: id, credits, price_krw })) });
+  }, [packages, catalogSource, flowId, entryPath]);
+  useEffect(() => {
+    if (!revealed || !intentId.current || noticed.current === intentId.current) return;
+    noticed.current = intentId.current;
+    captureFunnel("fake_door_revealed", { flow_id: flowId, entry_path: entryPath, intent_id: intentId.current });
+  }, [revealed, flowId, entryPath]);
+  function select(id: string) {
+    const item = packages?.find((item) => item.id === id);
+    if (!item || selectedId === id) return;
+    setSelectedId(id);
+    captureFunnel("token_package_selected", { ...offer, package_id: item.id, credits: item.credits, price_krw: item.price_krw, deliberation_count: ++deliberations.current });
+  }
+  function purchase() {
+    if (!selected || intentId.current) return;
+    intentId.current = newFunnelId();
+    captureFunnel("credit_purchase_intent", { ...offer, intent_id: intentId.current, package_id: selected.id, credits: selected.credits, price_krw: selected.price_krw });
+    setRevealed(true);
+  }
+  function dismiss() {
+    if (!intentId.current) return;
+    captureFunnel("fake_door_dismissed", { ...context, intent_id: intentId.current, dismissal_type: "close" });
+    intentId.current = null;
+    setRevealed(false);
+  }
+
+  return <ChargePage packages={packages} selectedId={selectedId} onSelect={select} onPurchase={purchase} notice={<Dialog open={revealed} onClose={dismiss} ariaLabel="크레딧 충전 안내" className="max-w-md"><h2 className="text-title font-semibold text-text-primary">크레딧 충전을 준비하고 있어요</h2><p className="mt-3 text-body text-text-secondary">아직 결제 기능이 제공되지 않아요. 결제는 진행되지 않았으며, 크레딧도 충전되지 않았어요.</p><Button fullWidth className="mt-6" onClick={dismiss}>닫기</Button></Dialog>} />;
 }
 function ChargePage({ packages, selectedId, onSelect, onPurchase, notice, pending = false, loadError = false, onRetry, onBack, amountLabel = false }: { packages: readonly CreditPackage[] | null; selectedId: string | null; onSelect: (id: string) => void; onPurchase: () => void; notice: ReactNode; pending?: boolean; loadError?: boolean; onRetry?: () => void; onBack?: () => void; amountLabel?: boolean }) {
   const selected = packages?.find((item) => item.id === selectedId);

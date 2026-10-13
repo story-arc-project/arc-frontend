@@ -14,7 +14,7 @@ export const Default: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("dialog", { name: "크레딧이 부족해요" })).toBeVisible();
-    await expect(canvas.getByRole("link", { name: "충전 페이지로 이동" })).toHaveAttribute("href", "/credits/charge");
+    await expect(canvas.getByRole("link", { name: "충전 페이지로 이동" })).toHaveAttribute("href", "/credits/charge?entry=insufficient_credits");
     await userEvent.click(canvas.getByRole("button", { name: "닫기" }));
     await expect(args.onClose).toHaveBeenCalledOnce();
   },

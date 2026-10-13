@@ -16,14 +16,15 @@ export function ProductionMissionSession({ children }: { children: ReactNode }) 
   return <MissionSession accountId={accountId} adapter={unavailableAdapter} onClaimed={invalidateCredits}>{children}</MissionSession>;
 }
 
-export function ProductionMissionRoute({ missionId }: { missionId?: MissionId }) {
+export function ProductionMissionRoute({ missionId, entryPath = "direct" }: { missionId?: MissionId; entryPath?: "direct" | "settings" }) {
   const router = useRouter();
-  return <MissionWorkspace balance={<CreditBalance variant="summary" />} initialMissionId={missionId}
-    onNavigate={id => router.push(id ? `/credits/missions/${id}` : "/credits/missions")}
+  const entryQuery = entryPath === "settings" ? "?entry=settings" : "";
+  return <MissionWorkspace analyticsEnabled entryPath={entryPath} balance={<CreditBalance variant="summary" />} initialMissionId={missionId}
+    onNavigate={id => router.push((id ? `/credits/missions/${id}` : "/credits/missions") + entryQuery)}
     onBack={() => router.push("/settings")} backLabel="내 계정으로" />;
 }
 
 export function EmbeddedProductionMissions({ onBack }: { onBack: () => void }) {
-  return <ProductionMissionSession><MissionWorkspace balance={<CreditBalance variant="summary" />}
+  return <ProductionMissionSession><MissionWorkspace analyticsEnabled entryPath="insufficient_credits" balance={<CreditBalance variant="summary" />}
     onBack={onBack} backLabel="이전 화면으로" /></ProductionMissionSession>;
 }

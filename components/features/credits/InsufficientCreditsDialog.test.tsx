@@ -54,7 +54,7 @@ describe("InsufficientCreditsDialog", () => {
     const onClose = vi.fn();
     render(<InsufficientCreditsDialog open onClose={onClose} />);
     expect(screen.getByRole("dialog", { name: "크레딧이 부족해요" })).toHaveAttribute("aria-modal", "true");
-    expect(screen.getByRole("link", { name: "충전 페이지로 이동" })).toHaveAttribute("href", "/credits/charge");
+    expect(screen.getByRole("link", { name: "충전 페이지로 이동" })).toHaveAttribute("href", "/credits/charge?entry=insufficient_credits");
     await userEvent.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(1);
   });

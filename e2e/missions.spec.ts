@@ -5,7 +5,7 @@ test("account entry opens ten missions without fabricating eligibility or grant 
   const stub = await stubApi(page, { authed: true });
   await page.goto("/settings");
   await page.getByRole("link", { name: /미션/ }).click();
-  await expect(page).toHaveURL(/\/credits\/missions$/);
+  await expect(page).toHaveURL(/\/credits\/missions\?entry=settings$/);
   await expect(page.getByRole("heading", { name: "미션", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "크레딧 받기", exact: true })).toHaveCount(0);
   await expect(page.getByText("프로필 100% 완성", { exact: true })).toBeVisible();

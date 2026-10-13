@@ -44,7 +44,7 @@ function OpenCreditsDialog({ onClose, onCharge }: Omit<Props, "open">) {
             {onCharge ? (
               <Button size="sm" className="min-h-11" onClick={onCharge}>충전 패키지 보기</Button>
             ) : (
-              <Button asChild size="sm" className="min-h-11"><Link href="/credits/charge">충전 페이지로 이동</Link></Button>
+              <Button asChild size="sm" className="min-h-11"><Link href="/credits/charge?entry=insufficient_credits">충전 페이지로 이동</Link></Button>
             )}
           </div>
         </>}

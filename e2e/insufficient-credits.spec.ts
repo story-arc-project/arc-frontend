@@ -42,7 +42,7 @@ test("부족 모달은 수치를 숨기며 Escape 뒤 입력과 포커스를 보
   const dialog = page.getByRole("dialog", { name: "크레딧이 부족해요" });
   await expect(dialog).toBeVisible();
   await expect(dialog).not.toContainText(/731|129|602|required|available/);
-  await expect(dialog.getByRole("link", { name: "충전 페이지로 이동" })).toHaveAttribute("href", "/credits/charge");
+  await expect(dialog.getByRole("link", { name: "충전 페이지로 이동" })).toHaveAttribute("href", "/credits/charge?entry=insufficient_credits");
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
@@ -55,7 +55,7 @@ test("부족 모달은 수치를 숨기며 Escape 뒤 입력과 포커스를 보
   expect(attempts).toHaveLength(2);
   expect(attempts[1]).toEqual(attempts[0]);
   await dialog.getByRole("link", { name: "충전 페이지로 이동" }).click();
-  await expect(page).toHaveURL(/\/credits\/charge$/);
+  await expect(page).toHaveURL(/\/credits\/charge\?entry=insufficient_credits$/);
   await expect(page.getByRole("heading", { name: "크레딧 충전", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
