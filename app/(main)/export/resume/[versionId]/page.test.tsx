@@ -1,3 +1,4 @@
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { account: { email: "test@example.com" } }, isLoading: false }) }));
 import { Suspense } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {

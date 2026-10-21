@@ -18,6 +18,9 @@ vi.mock("@/lib/analytics", async (importOriginal) => {
 
 vi.mock("@/components/ui/toast", () => ({ toast: vi.fn() }));
 
+const auth = vi.hoisted(() => ({ email: "owner@example.com" }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { account: { email: auth.email } }, isLoading: false }) }));
+
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
@@ -49,6 +52,7 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auth.email = "owner@example.com";
 });
 
 function exp(id: string): SelectableExperience {
@@ -82,7 +86,7 @@ describe("새 종합 분석 — 걸어두고 목록으로 (FRT-176)", () => {
     await click(screen.getByRole("button", { name: "분석 시작" }));
     await flush();
 
-    expect(createAnalysis).toHaveBeenCalledWith(["a", "b"]);
+    expect(createAnalysis).toHaveBeenCalledWith(["a", "b"], expect.any(String));
     expect(push).toHaveBeenCalledWith("/analysis/comprehensive?started=comp-9");
     expect(toastMock).toHaveBeenCalledTimes(1);
     // 대기 화면은 이제 존재하지 않는다.
@@ -198,8 +202,8 @@ describe("새 종합 분석 — 걸어두고 목록으로 (FRT-176)", () => {
     });
 
     expect(push).not.toHaveBeenCalled();
-    // 시작했다는 사실 자체는 알린다 — 요청은 실제로 나갔고 분석은 돌고 있다.
-    expect(toastMock).toHaveBeenCalledTimes(1);
+    // 이전 화면이나 계정의 완료 응답은 전역 부수 효과도 남기지 않는다.
+    expect(toastMock).not.toHaveBeenCalled();
   });
 
   it("경험을 2개 미만 고르면 시작할 수 없다", async () => {
@@ -214,5 +218,77 @@ describe("새 종합 분석 — 걸어두고 목록으로 (FRT-176)", () => {
 
     await click(screen.getByText("경험 b"));
     expect(screen.getByRole("button", { name: "분석 시작" })).toBeEnabled();
+  });
+});
+
+
+describe("submission lifecycle (FRT-361)", () => {
+  it.each([new Error("network"), new ApiError(503, "unavailable"), new ApiError(200, "invalid", "INVALID_JSON"), new ApiError(409, "processing")])("reuses the key after an ambiguous response: %s", async (error) => {
+    await renderAndSelectTwo();
+    createAnalysis.mockRejectedValue(error);
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    const firstKey = createAnalysis.mock.calls[0][1];
+    expect(firstKey).toEqual(expect.any(String));
+    await click(screen.getByRole("button", { name: "다시 시도" }));
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    expect(createAnalysis.mock.calls[1]).toEqual([["a", "b"], firstKey]);
+  });
+  it.each([402, 422])("uses a fresh key after definitive rejection %i", async (status) => {
+    await renderAndSelectTwo();
+    createAnalysis.mockRejectedValue(new ApiError(status, "rejected"));
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    await click(screen.getByRole("button", { name: status === 402 ? "닫기" : "다시 시도" }));
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    expect(createAnalysis.mock.calls[1][1]).not.toBe(createAnalysis.mock.calls[0][1]);
+  });
+  it("starts a fresh attempt when selection changes, even when restored", async () => {
+    await renderAndSelectTwo();
+    createAnalysis.mockRejectedValue(new Error("network"));
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    await click(screen.getByRole("button", { name: "다시 시도" }));
+    await click(screen.getByRole("button", { name: "경험 a 선택 해제" }));
+    await click(screen.getByText("경험 a"));
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    expect(createAnalysis.mock.calls[1][1]).not.toBe(createAnalysis.mock.calls[0][1]);
+  });
+  it("keeps the submitted payload snapshot when selection changes in flight", async () => {
+    await renderAndSelectTwo();
+    let reject!: (error: Error) => void;
+    createAnalysis.mockReturnValueOnce(new Promise((_, r) => { reject = r; }));
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    await click(screen.getByRole("button", { name: "경험 a 선택 해제" }));
+    expect(createAnalysis.mock.calls[0][0]).toEqual(["a", "b"]);
+    await act(async () => { reject(new Error("network")); });
+    await click(screen.getByRole("button", { name: "다시 시도" }));
+    await click(screen.getByText("경험 a"));
+    createAnalysis.mockRejectedValueOnce(new Error("network"));
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    expect(createAnalysis.mock.calls[1][0]).toEqual(["b", "a"]);
+    expect(createAnalysis.mock.calls[1][1]).not.toBe(createAnalysis.mock.calls[0][1]);
+  });
+  it("blocks duplicate clicks before React commits disabled state", async () => {
+    await renderAndSelectTwo();
+    createAnalysis.mockReturnValue(new Promise(() => {}));
+    const button = screen.getByRole("button", { name: "분석 시작" });
+    act(() => { fireEvent.click(button); fireEvent.click(button); });
+    expect(createAnalysis).toHaveBeenCalledTimes(1);
+  });
+  it("isolates account changes and ignores the old account response", async () => {
+    const view = await renderAndSelectTwo();
+    let resolve!: (value: { analysisId: string }) => void;
+    createAnalysis.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    auth.email = "other@example.com";
+    view.rerender(<ComprehensiveNewPage />);
+    await flush();
+    await act(async () => { resolve({ analysisId: "old-owner" }); });
+    expect(push).not.toHaveBeenCalled();
+    expect(toastMock).not.toHaveBeenCalled();
+    expect(captureMock.mock.calls.filter(([name]) => name === "analysis_requested")).toHaveLength(0);
+    await click(screen.getByText("경험 a"));
+    await click(screen.getByText("경험 b"));
+    createAnalysis.mockRejectedValue(new Error("network"));
+    await click(screen.getByRole("button", { name: "분석 시작" }));
+    expect(createAnalysis.mock.calls[1][1]).not.toBe(createAnalysis.mock.calls[0][1]);
   });
 });

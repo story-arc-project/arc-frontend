@@ -1,0 +1,40 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+const mocks = vi.hoisted(() => ({ email: "a@example.com", create: vi.fn(), push: vi.fn(), capture: vi.fn() }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { account: { email: mocks.email } }, isLoading: false }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
+vi.mock("@/lib/api/analysis-api", () => ({ createKeywordAnalysis: mocks.create, getKeywordSuggestions: async () => [] }));
+vi.mock("@/lib/analytics", () => ({ capture: mocks.capture }));
+vi.mock("@/components/ui/toast", () => ({ toast: vi.fn() }));
+vi.mock("@/components/features/analysis/KeywordSelector", () => ({ default: ({ onChange }: { onChange: (items: { label: string; category: string }[]) => void }) => <button onClick={() => onChange([{ label: "분석", category: "skill" }])}>키워드 선택</button> }));
+import Page from "./page";
+afterEach(cleanup);
+beforeEach(() => { vi.clearAllMocks(); mocks.email = "a@example.com"; });
+describe("keyword request identity", () => {
+  it("reuses the same key after losing a response", async () => {
+    mocks.create.mockRejectedValue(new TypeError("lost"));
+    const user = userEvent.setup();
+    render(<Page />);
+    await user.click(screen.getByRole("button", { name: "키워드 선택" }));
+    await user.click(screen.getByRole("button", { name: "분석 시작" }));
+    await user.click(await screen.findByRole("button", { name: "다시 시도" }));
+    await user.click(screen.getByRole("button", { name: "분석 시작" }));
+    expect(mocks.create.mock.calls[1]).toEqual(mocks.create.mock.calls[0]);
+    expect(mocks.create.mock.calls[0][2]).toEqual(expect.any(String));
+  });
+  it("ignores an old account response", async () => {
+    let resolve!: (value: { analysisId: string }) => void;
+    mocks.create.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    const user = userEvent.setup();
+    const { rerender } = render(<Page />);
+    await user.click(screen.getByRole("button", { name: "키워드 선택" }));
+    await user.click(screen.getByRole("button", { name: "분석 시작" }));
+    mocks.email = "b@example.com";
+    rerender(<Page />);
+    resolve({ analysisId: "old-account-result" });
+    await Promise.resolve();
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(mocks.capture).not.toHaveBeenCalledWith("analysis_requested", expect.anything());
+  });
+});

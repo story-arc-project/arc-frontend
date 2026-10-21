@@ -1487,12 +1487,14 @@ export async function getComprehensiveList(): Promise<AnalysisSnapshot[]> {
  */
 export async function createComprehensiveAnalysis(
   experienceIds: string[],
+  idempotencyKey: string,
 ): Promise<{ analysisId: string | null }> {
   if (shouldMock())
     return mock(async () => ({ analysisId: "comp-new-" + Date.now() }));
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/comprehensive",
     { experiences: experienceIds },
+    { headers: { "Idempotency-Key": idempotencyKey } },
   );
   return { analysisId: extractAnalysisId(res) };
 }
@@ -1532,10 +1534,13 @@ export async function deleteComprehensiveAnalysis(
  */
 export async function retryComprehensiveAnalysis(
   analysisId: string,
+  idempotencyKey: string,
 ): Promise<void> {
   if (shouldMock()) return mock(async () => undefined);
   await api.post<ApiSuccessResponse<unknown>>(
     `/analysis/comprehensive/${analysisId}/retry`,
+    undefined,
+    { headers: { "Idempotency-Key": idempotencyKey } },
   );
 }
 
@@ -1568,14 +1573,16 @@ export async function getKeywordList(): Promise<AnalysisSnapshot[]> {
  */
 export async function createKeywordAnalysis(
   keywordLabels: string[],
-  target = "",
+  target: string | undefined,
+  idempotencyKey: string,
 ): Promise<{ analysisId: string | null }> {
   if (shouldMock())
     return mock(async () => ({ analysisId: "kw-new-" + Date.now() }));
-  // target 은 기본값 "" 이라 안 보내도 현재 동작과 동일하다(계약 §2.3, 하위호환).
+  // 미지정 target 은 기존 빈 문자열 계약을 유지한다.
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/analysis/keyword",
-    { keywords: keywordLabels, target },
+    { keywords: keywordLabels, target: target ?? "" },
+    { headers: { "Idempotency-Key": idempotencyKey } },
   );
   return { analysisId: extractAnalysisId(res) };
 }
@@ -1600,10 +1607,15 @@ export async function deleteKeywordAnalysis(analysisId: string): Promise<void> {
  * POST /analysis/keyword/{analysisId}/retry — 실패한 분석 재실행 (FRT-108 / BAC-42)
  * 계약·주의사항은 retryComprehensiveAnalysis 참고 (원 파라미터는 keywords + target).
  */
-export async function retryKeywordAnalysis(analysisId: string): Promise<void> {
+export async function retryKeywordAnalysis(
+  analysisId: string,
+  idempotencyKey: string,
+): Promise<void> {
   if (shouldMock()) return mock(async () => undefined);
   await api.post<ApiSuccessResponse<unknown>>(
     `/analysis/keyword/${analysisId}/retry`,
+    undefined,
+    { headers: { "Idempotency-Key": idempotencyKey } },
   );
 }
 

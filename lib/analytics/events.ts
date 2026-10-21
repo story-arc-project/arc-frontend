@@ -5,6 +5,7 @@
 // 가입→온보딩→기록→분석→export 를 PostHog 안에서 하나의 퍼널로 잇기 위해 완료 등뼈를
 // 이벤트로 emit 한다. 단순 총량 집계는 DB(고객정보 API 등)로 넘겨 중복 계측을 피한다.
 
+import type { FunnelEventProps } from "./funnel-events";
 import type { DraftTier } from "@/lib/export/draft-storage";
 
 export type SignupMethod = "email" | "google";
@@ -48,6 +49,17 @@ export type ResumeSaveOutcome = "server" | "failed" | "exit_draft";
 export type AttachmentType = "file" | "url";
 
 export const ANALYTICS_EVENTS = {
+  tokenPurchasePageViewed: "token_purchase_page_viewed",
+  tokenPackageSelected: "token_package_selected",
+  creditPurchaseIntent: "credit_purchase_intent",
+  fakeDoorRevealed: "fake_door_revealed",
+  fakeDoorDismissed: "fake_door_dismissed",
+  missionPageNavigatedFromFakedoor: "mission_page_navigated_from_fakedoor",
+  missionPageViewed: "mission_page_viewed",
+  missionStarted: "mission_started",
+  missionSubmitClicked: "mission_submit_clicked",
+  missionClaimClicked: "mission_claim_clicked",
+  referralCodeShared: "referral_code_shared",
   // ── 진입 (drop-off 관측: "들어왔지만 아무것도 안 함") ───────────────
   // 새 기록 입력 라우트 진입만 센다. 수정(edit) 진입을 섞으면
   // "진입 → 유형선택 → 저장" 퍼널의 이탈률이 왜곡된다(FRT-113).
@@ -131,7 +143,7 @@ export type AnalyticsEventName =
   (typeof ANALYTICS_EVENTS)[keyof typeof ANALYTICS_EVENTS];
 
 // 이벤트별 속성 계약. PII 금지 — 비식별 퍼널 메타만 싣는다.
-export interface AnalyticsEventProps {
+export interface AnalyticsEventProps extends FunnelEventProps {
   archive_entry_started: Record<string, never>;
   signup_method_selected: { method: SignupMethod };
   archive_type_selected: { experience_type: string };

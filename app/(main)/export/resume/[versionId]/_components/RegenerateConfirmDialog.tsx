@@ -1,10 +1,12 @@
 "use client";
 
+import { useRef } from "react";
 import { Button, Dialog } from "@/components/ui";
 
 interface Props {
   open: boolean;
   submitting: boolean;
+  restoreConfirmFocus?: boolean;
   onClose: () => void;
   onConfirm: () => void;
 }
@@ -12,12 +14,15 @@ interface Props {
 export function RegenerateConfirmDialog({
   open,
   submitting,
+  restoreConfirmFocus = false,
   onClose,
   onConfirm,
 }: Props) {
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
   return (
     <Dialog
       open={open}
+      initialFocusRef={restoreConfirmFocus ? confirmButtonRef : undefined}
       onClose={submitting ? () => {} : onClose}
       ariaLabel="다시 만들기 확인"
       className="max-w-sm"
@@ -36,6 +41,7 @@ export function RegenerateConfirmDialog({
           취소
         </Button>
         <Button
+          ref={confirmButtonRef}
           variant="primary"
           size="sm"
           onClick={onConfirm}

@@ -1,3 +1,4 @@
+import CreditsProvider from "@/contexts/CreditsContext";
 import { GNB } from "@/components/layout/GNB";
 import { AuthGate } from "@/components/features/auth/AuthGate";
 import { FeedbackHost } from "@/components/features/feedback/FeedbackHost";
@@ -10,13 +11,13 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   // POST가 나가야 하고, 트리거가 걸리는 화면들(대시보드·아카이브·분석)을 한 번에 덮으면서
   // 라우트 이동에도 살아남는 지점이 여기 하나뿐이다.
   return (
-    <>
+    <CreditsProvider>
       <GNB />
       <div className="pt-[var(--gnb-h)]" data-print-root>
         <AuthGate>
           <FeedbackHost>{children}</FeedbackHost>
         </AuthGate>
       </div>
-    </>
+    </CreditsProvider>
   );
 }

@@ -73,7 +73,7 @@ export async function createResume(
      */
     experienceIds?: string[];
   },
-  options?: { signal?: AbortSignal },
+  options: { idempotencyKey: string; signal?: AbortSignal },
 ): Promise<{ id: string | null; title?: string }> {
   if (isDemoMode()) {
     await demo.createResume(params);
@@ -95,7 +95,7 @@ export async function createResume(
   const res = await api.post<ApiSuccessResponse<unknown>>(
     "/export/resume",
     body,
-    options,
+    { signal: options.signal, headers: { "Idempotency-Key": options.idempotencyKey } },
   );
   return extractResumeId(res);
 }

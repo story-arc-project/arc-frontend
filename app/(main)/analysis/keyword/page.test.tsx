@@ -1,3 +1,4 @@
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { account: { email: "test@example.com" } }, isLoading: false }) }));
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { AnalysisSnapshot } from "@/types/analysis";
@@ -129,7 +130,7 @@ describe("키워드 분석 목록 — 재시도 폴링과 로컬 변경 (FRT-108
 
     await click(screen.getByRole("button", { name: "다시 시도" }));
     await flush();
-    expect(retryAnalysis).toHaveBeenCalledWith("a");
+    expect(retryAnalysis).toHaveBeenCalledWith("a", expect.any(String));
 
     const poll = deferred<AnalysisSnapshot[]>();
     getList.mockReturnValueOnce(poll.promise);
