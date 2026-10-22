@@ -247,7 +247,7 @@ it.each([
   expect(captureFunnel).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "다시 불러오기" }));
   expect(await screen.findAllByRole("radio")).toHaveLength(3);
-  expect(vi.mocked(captureFunnel).mock.calls.filter(([event]) => event === "token_purchase_page_viewed")).toHaveLength(1);
+  await waitFor(() => expect(vi.mocked(captureFunnel).mock.calls.filter(([event]) => event === "token_purchase_page_viewed")).toHaveLength(1));
 });
 
 
