@@ -107,7 +107,8 @@ export default function ArchiveEditPage() {
 
   // useExperience 의 isLoading 은 마운트 후 비동기로 켜지므로(초기값 false), 첫 동기
   // 렌더의 에러 화면 플래시를 피하려 "데이터도 에러도 없으면 로딩"으로 판정한다.
-  if (!experienceV2) {
+  // 다음 기록을 기다리는 동안 앞 기록으로 새 폼을 마운트하지 않는다.
+  if (!experienceV2 || !loadedId) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100dvh-var(--gnb-h))] text-text-tertiary">
         <p className="text-body">불러오는 중…</p>
