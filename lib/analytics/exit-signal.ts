@@ -17,6 +17,22 @@
 //     (페이지가 통째로 사라지는 경우는 pagehide 가 이미 동기로 처리한 뒤다.)
 import { useCallback, useEffect, useRef } from "react";
 
+// Keep pending unmounts registered until they settle: logout can finish between cleanup
+// and its timer. A snapshot also lets one failing callback leave the others unaffected.
+const exitSignals = new Set<() => void>();
+
+export function flushExitSignals(): void {
+  const pending = [...exitSignals];
+  exitSignals.clear();
+  for (const finish of pending) {
+    try {
+      finish();
+    } catch {
+      // Analytics must never prevent explicit logout or another signal's settlement.
+    }
+  }
+}
+
 export interface ExitSignalOptions {
   // 잴 준비가 됐는가. false 인 동안은 시계가 돌지 않는다.
   // **끄는 것도 떠나는 것이다** — 흐름 밖으로 나갔는데 컴포넌트가 안 죽는 화면이 있다
@@ -63,6 +79,7 @@ export function useExitSignal({
   const startedAtRef = useRef<number | null>(null);
   const firedRef = useRef(false);
   const deferredRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const finishRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     // 직전 언마운트가 예약해 둔 발화가 있고 **지금도 흐름 안**이면 취소한다 — StrictMode 의
@@ -75,6 +92,7 @@ export function useExitSignal({
     if (resumed && active) {
       clearTimeout(deferredRef.current as ReturnType<typeof setTimeout>);
       deferredRef.current = null;
+      if (finishRef.current) exitSignals.delete(finishRef.current);
     }
     if (!active) return;
 
@@ -109,6 +127,22 @@ export function useExitSignal({
       onFireRef.current(Math.round((Date.now() - startedAt) / 1000));
     };
 
+    const finish = (): void => {
+      try {
+        fire();
+      } finally {
+        // Even a veto/exception closes A's session. A later pagehide or visibility
+        // transition must not emit it under the reset anonymous ID or user B.
+        firedRef.current = true;
+        if (deferredRef.current !== null) {
+          clearTimeout(deferredRef.current);
+          deferredRef.current = null;
+        }
+      }
+    };
+    finishRef.current = finish;
+    exitSignals.add(finish);
+
     const handleVisibility = (): void => {
       if (document.visibilityState === "hidden") {
         fire();
@@ -132,7 +166,11 @@ export function useExitSignal({
       // 이 예약이 늦어서 유실될 걱정은 SPA 이동에 한정되고, 그때는 페이지가 살아 있다.
       deferredRef.current = setTimeout(() => {
         deferredRef.current = null;
-        fire();
+        try {
+          fire();
+        } finally {
+          exitSignals.delete(finish);
+        }
       }, 0);
     };
   }, [active, onHidden]);
