@@ -52,19 +52,22 @@ export default function ArchiveNewPage() {
     setSaving(true)
     try {
       const payload = toSavePayload(exp)
+      // 전송할 내용과 진행률은 같은 시점의 값이어야 한다. 응답 대기 중의 추가 입력은
+      // 이번 저장에 포함되지 않으므로 완료 이벤트에도 섞지 않는다(FRT-331).
+      const progress = entryAnalytics.progressProps()
       const savedId = await createExperience(payload)
       setError(null)
       // 저장 성공 — 미저장 플래그를 내려 beforeunload 경고 없이 목록으로 복귀한다.
       setHasUnsaved(false)
       // 여기서부터 이 진입은 이탈이 아니다(FRT-107). 진행 속성은 이탈 이벤트와 **같은
       // 이름·같은 시계**라, 끝낸 사람과 포기한 사람을 나란히 놓고 무엇이 달랐는지 물을 수 있다.
-      const progress = entryAnalytics.progressProps()
+      const elapsedSeconds = entryAnalytics.progressProps().elapsed_seconds
       entryAnalytics.markSaved()
       // 기록 생성 완료(FRT-19). status 로 draft·complete 를 구분한다.
       capture("record_created", {
         experience_type: payload.type,
         status: exp.status,
-        elapsed_seconds: progress.elapsed_seconds,
+        elapsed_seconds: elapsedSeconds,
         sections_done: progress.sections_done,
         sections_total: progress.sections_total,
         qualitative_fields_filled: progress.qualitative_fields_filled,
