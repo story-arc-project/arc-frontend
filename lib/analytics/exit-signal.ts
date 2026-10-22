@@ -15,7 +15,7 @@
 //     0초짜리 유령 이탈이 남는다. 그래서 언마운트 발화는 한 틱 미루고, 같은 인스턴스가
 //     곧바로 다시 마운트되면 그 예약을 취소하고 원래 시작 시각을 이어 쓴다.
 //     (페이지가 통째로 사라지는 경우는 pagehide 가 이미 동기로 처리한 뒤다.)
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 // Keep pending unmounts registered until they settle: logout can finish between cleanup
 // and its timer. A snapshot also lets one failing callback leave the others unaffected.
@@ -39,6 +39,8 @@ export interface ExitSignalOptions {
   // (온보딩은 스텝 state 하나라 「← 이전」으로 흐름을 벗어나도 언마운트가 없다).
   // 다시 켜면 시계는 그때부터 새로 잰다.
   active: boolean;
+  // 같은 컴포넌트에서 다루는 기록이 바뀌면 별도 세션으로 잰다.
+  sessionKey?: string;
   // 탭이 숨겨지는 순간도 "떠남"으로 칠 것인가.
   // 체류시간은 true(백그라운드로 넘어간 시간은 본 시간이 아니다),
   // 흐름 이탈은 false(탭 전환은 이탈이 아니다 — 돌아와서 계속 쓴다).
@@ -60,6 +62,7 @@ export interface ExitSignalResult {
 
 export function useExitSignal({
   active,
+  sessionKey,
   onHidden,
   shouldFire,
   onFire,
@@ -67,19 +70,29 @@ export function useExitSignal({
 }: ExitSignalOptions): ExitSignalResult {
   // 발화는 언마운트 이후에도 일어난다 — 그때 옛 클로저가 굳지 않도록 커밋마다 최신값으로
   // 갈아둔다(렌더 중 ref 쓰기는 금지 — ExperienceFormV2 의 onProgressChangeRef 와 같은 패턴).
-  const shouldFireRef = useRef(shouldFire);
-  const onFireRef = useRef(onFire);
-  const onStartRef = useRef(onStart);
+  // 콜백과 시계는 기록별로 소유한다. 새 기록의 자식 effect가 먼저 실행돼도
+  // 종료를 기다리는 이전 기록의 콜백/완료 상태를 덮어쓰지 않는다.
+  const session = useMemo(() => ({
+    shouldFire,
+    onFire,
+    onStart,
+    startedAt: null as number | null,
+    fired: false,
+    // 초기 콜백은 위에서 잡고, 이후 같은 세션의 커밋에서 최신값을 반영한다.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [sessionKey]);
   useEffect(() => {
-    shouldFireRef.current = shouldFire;
-    onFireRef.current = onFire;
-    onStartRef.current = onStart;
+    session.shouldFire = shouldFire;
+    session.onFire = onFire;
+    session.onStart = onStart;
   });
 
-  const startedAtRef = useRef<number | null>(null);
-  const firedRef = useRef(false);
-  const deferredRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const finishRef = useRef<(() => void) | null>(null);
+  const deferredRef = useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    session: typeof session;
+    finish: () => void;
+  } | null>(null);
+
 
   useEffect(() => {
     // 직전 언마운트가 예약해 둔 발화가 있고 **지금도 흐름 안**이면 취소한다 — StrictMode 의
@@ -88,18 +101,21 @@ export function useExitSignal({
     // ⚠️ active 가 꺼진 채로 다시 돌아온 경우는 취소하지 않는다. 예약을 무조건 지우면
     // "컴포넌트는 살아 있는데 흐름 밖으로 나갔다"(온보딩 「← 이전」)가 영영 관측되지 않는다.
     // 취소 조건에 active 를 빠뜨리면 이탈 관측이 조용히 사라지는 쪽으로 틀린다.
-    const resumed = deferredRef.current !== null;
-    if (resumed && active) {
-      clearTimeout(deferredRef.current as ReturnType<typeof setTimeout>);
+    const pending = deferredRef.current;
+    const resumed = pending !== null && pending.session === session;
+    if (pending && (!resumed || active)) {
+      clearTimeout(pending.timer);
       deferredRef.current = null;
-      if (finishRef.current) exitSignals.delete(finishRef.current);
+      // StrictMode는 예약만 취소한다. 기록 전환은 앞 세션을 끝내고 등록도 해제한다.
+      if (resumed) exitSignals.delete(pending.finish);
+      else pending.finish();
     }
     if (!active) return;
 
     const beginSession = (): void => {
-      firedRef.current = false;
-      startedAtRef.current = Date.now();
-      onStartRef.current?.();
+      session.fired = false;
+      session.startedAt = Date.now();
+      session.onStart?.();
     };
 
     if (!resumed) {
@@ -111,20 +127,20 @@ export function useExitSignal({
       // 이탈(onHidden=false)은 반대다. 탭을 옮겼다고 흐름을 놓은 게 아니고 시계도
       // "포기까지 붙들고 있던 벽시계"라, 숨어 있어도 그대로 시작한다.
       if (onHidden && document.visibilityState === "hidden") {
-        firedRef.current = false;
-        startedAtRef.current = null;
+        session.fired = false;
+        session.startedAt = null;
       } else {
         beginSession();
       }
     }
 
     const fire = (): void => {
-      if (firedRef.current) return;
-      const startedAt = startedAtRef.current;
+      if (session.fired) return;
+      const startedAt = session.startedAt;
       if (startedAt === null) return;
-      if (!shouldFireRef.current()) return;
-      firedRef.current = true;
-      onFireRef.current(Math.round((Date.now() - startedAt) / 1000));
+      if (!session.shouldFire()) return;
+      session.fired = true;
+      session.onFire(Math.round((Date.now() - startedAt) / 1000));
     };
 
     const finish = (): void => {
@@ -133,14 +149,14 @@ export function useExitSignal({
       } finally {
         // Even a veto/exception closes A's session. A later pagehide or visibility
         // transition must not emit it under the reset anonymous ID or user B.
-        firedRef.current = true;
-        if (deferredRef.current !== null) {
-          clearTimeout(deferredRef.current);
+        session.fired = true;
+        exitSignals.delete(finish);
+        if (deferredRef.current?.session === session) {
+          clearTimeout(deferredRef.current.timer);
           deferredRef.current = null;
         }
       }
     };
-    finishRef.current = finish;
     exitSignals.add(finish);
 
     const handleVisibility = (): void => {
@@ -149,7 +165,7 @@ export function useExitSignal({
         return;
       }
       // 숨은 채로 시작해 시계를 안 걸어 둔 세션이라면, 화면이 처음 보이는 지금이 시작이다.
-      if (startedAtRef.current === null && !firedRef.current) beginSession();
+      if (session.startedAt === null && !session.fired) beginSession();
     };
 
     if (onHidden) {
@@ -164,22 +180,19 @@ export function useExitSignal({
       window.removeEventListener("pagehide", fire);
       // 한 틱 미루는 이유는 위 3번. 페이지 종료는 pagehide 가 이미 동기로 처리했으므로
       // 이 예약이 늦어서 유실될 걱정은 SPA 이동에 한정되고, 그때는 페이지가 살아 있다.
-      deferredRef.current = setTimeout(() => {
+      const timer = setTimeout(() => {
         deferredRef.current = null;
-        try {
-          fire();
-        } finally {
-          exitSignals.delete(finish);
-        }
+        finish();
       }, 0);
+      deferredRef.current = { timer, session, finish };
     };
-  }, [active, onHidden]);
+  }, [active, onHidden, session]);
 
   const elapsedSeconds = useCallback((): number => {
-    const startedAt = startedAtRef.current;
+    const startedAt = session.startedAt;
     if (startedAt === null) return 0;
     return Math.round((Date.now() - startedAt) / 1000);
-  }, []);
+  }, [session]);
 
   return { elapsedSeconds };
 }

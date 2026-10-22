@@ -8,7 +8,7 @@
 //
 // 신규 작성과 수정을 한 이벤트에 싣되 mode 로 가른다 — 수정 중 이탈은 이미 저장된 기록이
 // 있어서 뜻이 다르지만, 같은 폼·같은 자리라 나란히 봐야 "이 화면이 어렵다"를 읽을 수 있다.
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import type { FormCompletionSnapshot } from "@/lib/utils/form-cards";
 
@@ -57,7 +57,7 @@ export interface ArchiveEntryAnalytics {
   handleCompletionChange: (snapshot: FormCompletionSnapshot) => void;
   /** 저장이 확정된 순간 호출 — 이 뒤로는 이탈로 세지 않는다. */
   markSaved: () => void;
-  /** record_created 에 실을 진행 속성. markSaved 와 같은 시점에 읽어야 한다. */
+  /** 저장 요청 직전 진행률을 고정한다. elapsed_seconds는 응답 완료 시 다시 읽을 수 있다. */
   progressProps: () => ArchiveEntryProgressProps;
 }
 
@@ -69,28 +69,26 @@ export function useArchiveEntryAnalytics({
 }: ArchiveEntryAnalyticsOptions): ArchiveEntryAnalytics {
   // 발화는 언마운트 이후라 클로저의 saving 은 옛 값이다 — 커밋마다 ref 로 맞춘다.
   // (언마운트 발화는 한 틱 미뤄지므로 effect 동기화가 늦지 않는다.)
-  const savingRef = useRef(saving);
+  // 기록마다 상태를 분리해 자식의 새 스냅샷이 이전 기록의 이탈을 오염시키지 않는다.
+  const session = useMemo(() => ({
+    saving,
+    snapshot: EMPTY_SNAPSHOT,
+    emittedSections: new Set<string>(),
+    baselined: mode === "new",
+  // mode는 기록 진입 시 기준선에만 쓰고 saving은 아래 커밋에서 갱신한다.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [sessionKey]);
   useEffect(() => {
-    savingRef.current = saving;
-  }, [saving]);
-  // 발화는 언마운트 이후다 — state 로 들면 옛 진행률이 굳어 "아무것도 안 채우고 나갔다"가 된다.
-  const snapshotRef = useRef<FormCompletionSnapshot>(EMPTY_SNAPSHOT);
-  // 한 번 완료로 관측한 섹션은 다시 세지 않는다. 값을 지웠다 다시 채우면 카드가 미완료로
-  // 돌아갔다 오는데, 그때마다 쏘면 "섹션을 몇 번 완료했나"가 타이핑 횟수에 가까워진다.
-  const emittedSectionsRef = useRef<Set<string>>(new Set());
-  // 수정 화면은 **이미 완료된 기록을 들고 시작한다.** 첫 스냅샷을 그대로 세면 기록을 열기만
-  // 해도 그 기록의 완료 섹션 전부가 발화하고, 이 이벤트에는 mode 가 없어 진짜 완료와
-  // 구분조차 안 된다 — 지표가 "사용자가 무엇을 했나"가 아니라 "무엇을 열었나"가 된다.
-  // 그래서 도착 시점의 완료분은 세지 않고 기준선으로만 깔아 둔다.
-  const baselinedRef = useRef(mode === "new");
-  const sessionRef = useRef<string | undefined>(sessionKey);
+    session.saving = saving;
+  }, [saving, session]);
 
   const { markCompleted, elapsedSeconds } = useFlowExit({
     active,
+    sessionKey,
     onExit: (elapsed) => {
       // 저장이 도는 중이면 이 시도의 결말은 응답이 정한다 — 여기서 한 번 더 정하지 않는다.
-      if (savingRef.current) return;
-      const snapshot = snapshotRef.current;
+      if (session.saving) return;
+      const snapshot = session.snapshot;
       const done = snapshot.completedSectionIds;
       capture(
         "archive_entry_abandoned",
@@ -112,29 +110,21 @@ export function useArchiveEntryAnalytics({
 
   const handleCompletionChange = useCallback(
     (snapshot: FormCompletionSnapshot) => {
-      // 다루는 기록이 바뀌었으면 앞 기록의 자취를 물려주지 않는다. 폼이 새 스냅샷을 보내는
-      // 시점(자식 effect)이 페이지 effect 보다 먼저라, 판정은 여기서 해야 늦지 않는다.
-      if (sessionRef.current !== sessionKey) {
-        sessionRef.current = sessionKey;
-        snapshotRef.current = EMPTY_SNAPSHOT;
-        emittedSectionsRef.current = new Set();
-        baselinedRef.current = mode === "new";
-      }
-      snapshotRef.current = snapshot;
+      session.snapshot = snapshot;
 
       // 기준선은 폼이 자리를 잡은 첫 스냅샷이다 — 수정 모드는 템플릿이 실린 뒤에야 섹션이
       // 다 모이므로(확장 섹션은 마운트 이후 effect 에서 채워진다) 빈 스냅샷으로 잡으면
       // 뒤늦게 도착한 완료분이 그대로 오탐이 된다. 폼이 dirty 기준선을 잡는 시점과 같다.
-      if (!baselinedRef.current) {
+      if (!session.baselined) {
         if (snapshot.sectionIds.length === 0) return;
-        baselinedRef.current = true;
+        session.baselined = true;
         for (const id of snapshot.completedSectionIds) {
-          emittedSectionsRef.current.add(id);
+          session.emittedSections.add(id);
         }
         return;
       }
 
-      const emitted = emittedSectionsRef.current;
+      const emitted = session.emittedSections;
       for (const id of snapshot.completedSectionIds) {
         if (emitted.has(id)) continue;
         emitted.add(id);
@@ -148,18 +138,18 @@ export function useArchiveEntryAnalytics({
         });
       }
     },
-    [mode, sessionKey],
+    [session],
   );
 
   const progressProps = useCallback((): ArchiveEntryProgressProps => {
-    const snapshot = snapshotRef.current;
+    const snapshot = session.snapshot;
     return {
       elapsed_seconds: elapsedSeconds(),
       sections_done: snapshot.completedSectionIds.length,
       sections_total: snapshot.sectionIds.length,
       qualitative_fields_filled: snapshot.qualitativeFieldsFilled,
     };
-  }, [elapsedSeconds]);
+  }, [elapsedSeconds, session]);
 
   return { handleCompletionChange, markSaved: markCompleted, progressProps };
 }

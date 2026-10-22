@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 
 import ArchiveNewPage from "./page"
+import { createExperience } from "@/lib/api/experience-api"
 
 // FRT-113: 이 테스트가 지키는 계약은 하나다 — "새 기록 입력 진입 1회당 이벤트 1건".
 // StrictMode 이중 마운트로 2건이 되면 퍼널의 진입 수가 부풀어 이탈률이 통째로 틀어진다.
@@ -72,7 +73,12 @@ afterEach(cleanup)
 beforeEach(() => {
   vi.mocked(capture).mockClear()
   markSaved.mockClear()
-  progressProps.mockClear()
+  progressProps.mockReset()
+  progressProps.mockReturnValue({
+    elapsed_seconds: 42, sections_done: 3, sections_total: 4,
+    qualitative_fields_filled: ["detail.배운 점"],
+  })
+  vi.mocked(createExperience).mockReset().mockResolvedValue("exp-1")
 })
 
 describe("아카이브 새 기록 진입 계측", () => {
@@ -114,5 +120,35 @@ describe("아카이브 저장 계측 — 끝낸 사람의 진행(FRT-107)", () =
     fireEvent.click(getByTestId("save"))
 
     await waitFor(() => expect(markSaved).toHaveBeenCalledTimes(1))
+  })
+})
+
+
+describe("FRT-331 저장 요청 시점의 진행률", () => {
+  it("응답 전 추가 입력은 완료 진행률에 섞이지 않고 소요시간만 완료까지 잰다", async () => {
+    let resolveSave!: (id: string) => void
+    vi.mocked(createExperience).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveSave = resolve
+    }))
+    progressProps.mockReturnValue({
+      elapsed_seconds: 10, sections_done: 1, sections_total: 4,
+      qualitative_fields_filled: [],
+    })
+    const { getByTestId } = render(<ArchiveNewPage />)
+    fireEvent.click(getByTestId("save"))
+    expect(createExperience).toHaveBeenCalledTimes(1)
+    expect(markSaved).not.toHaveBeenCalled()
+
+    // 요청이 진행되는 동안 화면의 완료 스냅샷이 더 채워진 상황.
+    progressProps.mockReturnValue({
+      elapsed_seconds: 15, sections_done: 3, sections_total: 4,
+      qualitative_fields_filled: ["detail.배운 점"],
+    })
+    resolveSave("exp-1")
+    await waitFor(() => expect(capture).toHaveBeenCalledWith("record_created", {
+      experience_type: "career", status: "complete",
+      elapsed_seconds: 15, sections_done: 1, sections_total: 4,
+      qualitative_fields_filled: [],
+    }))
   })
 })
