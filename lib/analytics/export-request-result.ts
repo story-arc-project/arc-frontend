@@ -28,7 +28,7 @@ export function classifyExportRequestResult(input: {
     if (input.error.status >= 200 && input.error.status < 300) {
       return { accepted: true, request_result: "response_unreadable" };
     }
-    if (input.error.status >= 400) {
+    if (input.error.status >= 400 && input.error.status < 600) {
       return { accepted: false, request_result: "api_error" };
     }
   }

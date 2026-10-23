@@ -13,7 +13,7 @@ describe("classifyExportRequestResult", () => {
     expect(classifyExportRequestResult({ outcome: "rejected", error: new ApiError(status, "private body", "INVALID_JSON"), timedOut: false })).toEqual({ accepted: true, request_result: "response_unreadable" });
   });
 
-  it.each([400, 401, 403, 422, 500, 503])("classifies API rejection (%s)", (status) => {
+  it.each([400, 401, 403, 422, 500, 503, 599])("classifies API rejection (%s)", (status) => {
     expect(classifyExportRequestResult({ outcome: "rejected", error: new ApiError(status, "private error"), timedOut: false })).toEqual({ accepted: false, request_result: "api_error" });
   });
 
@@ -25,7 +25,7 @@ describe("classifyExportRequestResult", () => {
     expect(classifyExportRequestResult({ outcome: "rejected", error, timedOut: false })).toEqual({ accepted: null, request_result: "network_or_unknown" });
   });
 
-  it.each([0, 199, 300, 399, -1, NaN, Infinity, 200.5])("keeps invalid or nonfinal status unknown (%s)", (status) => {
+  it.each([0, 199, 300, 399, 600, 999, -1, NaN, Infinity, 200.5])("keeps invalid or nonfinal status unknown (%s)", (status) => {
     expect(classifyExportRequestResult({ outcome: "rejected", error: new ApiError(status, "private error"), timedOut: false })).toEqual({ accepted: null, request_result: "network_or_unknown" });
   });
 
