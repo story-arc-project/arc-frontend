@@ -5,6 +5,7 @@
 // 가입→온보딩→기록→분석→export 를 PostHog 안에서 하나의 퍼널로 잇기 위해 완료 등뼈를
 // 이벤트로 emit 한다. 단순 총량 집계는 DB(고객정보 API 등)로 넘겨 중복 계측을 피한다.
 
+import type { ExportRequestResult } from "./export-request-result";
 import type { FunnelEventProps } from "./funnel-events";
 import type { DraftTier } from "@/lib/export/draft-storage";
 
@@ -79,9 +80,10 @@ export const ANALYTICS_EVENTS = {
   recordCreated: "record_created",
   firstRecordCreated: "first_record_created",
   analysisCompleted: "analysis_completed",
-  exportCompleted: "export_completed",
+  // FRT-325: browser request settlement; official completion/failure is server-only.
+  exportRequested: "export_requested",
   // ── 익스포트 이후 행동 (FRT-114) ───────────────────────────────────
-  // export_completed 까지만 보면 "만들어놓고 안 쓰는지"가 안 보인다. 결과물을 실제로
+  // 요청 이후 결과물을 실제로
   // 꺼내갔는지(다운로드), AI 초안을 얼마나 고쳐 쓰는지(편집·저장)를 여기서 잡는다.
   resumeDownloaded: "resume_downloaded",
   resumeEdited: "resume_edited",
@@ -121,10 +123,8 @@ export const ANALYTICS_EVENTS = {
   //          받은 사실 = 없다 → analysis_requested 를 만든다.
   //          (analysis_completed 로는 못 가른다. 그건 분석이 **끝났다**는 뜻이라
   //           "접수됐지만 아직 도는 중"과 "요청조차 못 갔다"가 한 덩어리가 된다.)
-  //  엑스포트: 받은 사실 = export_completed(이름과 달리 실체는 접수다) — 있다.
-  //          누른 사실 = 없다 → export_execute_button_clicked 를 만든다.
-  //          (resume_experience_selected 는 선택 UI 플래그가 꺼지면 아예 안 떠서
-  //           누름의 대역이 못 된다.)
+  //  엑스포트: export_requested 는 요청 결과를 accepted 삼상 값으로 구분한다.
+  //          공식 생성 완료·실패는 서버만 발행한다(FRT-325).
   analysisRequested: "analysis_requested",
   exportExecuteButtonClicked: "export_execute_button_clicked",
   // ── 자소서 이후 행동 (FRT-107) ────────────────────────────────────
@@ -230,15 +230,17 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // 화면엔 실패로 보여도 서버가 받은 것이라 접수로 센다.
   // 실패면 무조건 쏘도록 두면 첫 갈래가 영영 비고, 성공에만 쏘면 앞 두 갈래가 뭉개진다.
   analysis_requested: { analysis_type: AnalysisKind; accepted: boolean };
-  // 엑스포트 실행 버튼을 누른 시점(요청 함수를 부르기 **직전**). export_completed(실체는
-  // 접수)와의 차이가 같은 질문을 엑스포트에서 답한다.
+  // 엑스포트 실행 버튼을 누른 시점(요청 함수를 부르기 **직전**).
+  // export_requested 와 함께 누름과 요청 결과를 구분한다.
   export_execute_button_clicked: { export_type: ExportType };
   // experience_count — 사용자가 레쥬메에 넣기로 고른 경험 수(FRT-109). 선택 UI 가 꺼져 있으면
   // "고른" 개념 자체가 없으므로 싣지 않는다(0 이 아니라 부재).
   // 익스포트 종류마다 의미 있는 속성이 다르다 — 레쥬메는 언어(국문/영문), 자소서는 문항 수다.
   // 하나의 넓은 객체로 합치면 language 를 optional 로 풀어야 하고, 그러면 레쥬메 호출부가
   // 언어를 빠뜨려도 타입이 통과한다. 판별 유니온으로 각 종류의 필수 속성을 지킨다.
-  export_completed:
+  // FRT-325: 브라우저 요청 결과만 기록한다. accepted=null 은 접수 여부 불명이다.
+  // 본문·오류 원문·HTTP status·토큰·멱등키는 속성 계약에 포함하지 않는다.
+  export_requested: ExportRequestResult & (
     | {
         export_type: "resume";
         language: string;
@@ -251,13 +253,14 @@ export interface AnalyticsEventProps extends FunnelEventProps {
         // 사용자가 직접 넣은 문항 수(FRT-140). 0 이면 자유 형식 1건으로 생성된다 —
         // 0 과 부재가 다른 뜻이라 optional 이 아니라 필수다.
         question_count: number;
-      };
-  // FRT-114: 레쥬메에 넣을 경험을 고른 시점(생성 요청 직전). export_completed 의
+      }
+  );
+  // FRT-114: 레쥬메에 넣을 경험을 고른 시점(생성 요청 직전). export_requested 의
   // experience_count 와 겹쳐 보이지만 순증 가치가 둘 있다 — ① 어떤 **유형**을 "낼 만하다"고
-  // 판단하는지 ② 생성 요청이 실패해도 선택 사실이 남는다(export_completed 는 성공 시에만 뜬다).
+  // 판단하는지 ② 요청 결과와 별개로 선택 사실이 남는다.
   // experience_types 는 유형 id 목록(중복 제거)이다. 경험 제목·id 는 PII 위험이라 싣지 않는다.
   resume_experience_selected: { count: number; experience_types: string[] };
-  // 만든 레쥬메를 실제로 꺼내간 시점. language 는 export_completed 와 같은 결(국문/영문 중
+  // 만든 레쥬메를 실제로 꺼내간 시점. language 는 export_requested 와 같은 결(국문/영문 중
   // 무엇을 진짜로 받아가는가)이라 같은 이름·같은 타입으로 싣는다.
   resume_downloaded: { format: ResumeExportFormat; language: string };
   // AI 초안에 처음 손댄 시점. 버전 로드당 1회 — 키 입력마다 쏘면 이벤트가 폭증한다.
@@ -267,8 +270,7 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // 이유). 없으면 그 중복을 접을 수도, 서로 다른 레쥬메의 편집과 가를 수도 없다.
   // 경로에 이미 드러나는 서버 식별자라 새 노출면이 아니다.
   resume_edited: { section: string; version_id: string };
-  // 편집 저장 시도의 결말. outcome 없이 뭉치면 export_completed 가 "접수"를 "완료"로
-  // 보고하는 것과 같은 실수를 저장에서 반복한다.
+  // 편집 저장 시도의 결말. outcome 으로 저장 시도와 실제 보관 여부를 구분한다.
   // persisted — 편집이 **어디든**(서버든 로컬 임시저장이든) 남았는가. false 는 서버도
   // 로컬도 못 남긴 편집 유실이고, outcome 만으로는 그 최악의 경우가 보이지 않는다.
   resume_edit_saved: {

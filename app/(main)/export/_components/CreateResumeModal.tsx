@@ -12,6 +12,7 @@ import { toast } from "@/components/ui/toast";
 import { ResumeExperiencePicker } from "@/components/features/export/ResumeExperiencePicker";
 import { createResume } from "@/lib/api/export-api";
 import { capture } from "@/lib/analytics";
+import { observeExportRequest } from "@/lib/analytics/observe-export-request";
 import { canonicalTypeId } from "@/lib/constants/templates-v2";
 import { toExperienceV2 } from "@/lib/utils/experience-mapper";
 import { useBasePath } from "@/lib/utils/use-base-path";
@@ -136,19 +137,18 @@ function CreateResumeForm({
     const controller = new AbortController();
     abortRef.current = controller;
 
+    let timedOut = false;
     const timeoutId = window.setTimeout(() => {
+      timedOut = true;
       controller.abort();
     }, GENERATION_TIMEOUT_MS);
 
-    // 눌렀다는 사실(FRT-107). 아래 resume_experience_selected 는 선택 UI 플래그가 꺼지면
-    // 아예 안 떠서 누름의 대역이 못 된다 — 그래서 별도로, 조건 없이 남긴다.
-    // export_completed(이름과 달리 실체는 접수)와의 건수 차이가 "눌렀는데 요청이 안 나간"
-    // 기술적 실패다.
+    // 유효 실행 클릭과 API 요청 결과는 별도로 관측한다(FRT-107/FRT-325).
     capture("export_execute_button_clicked", { export_type: "resume" });
 
     // 실행 직전 최종 선택 = "내 어떤 경험을 이력서에 낼 만하다고 판단했나"(FRT-114).
     // 요청 **앞**에 둔다 — 뒤에 두면 생성이 실패한 사용자의 선택이 통째로 사라지고,
-    // export_completed 는 성공했을 때만 뜨므로 그 drop-off 를 볼 곳이 없어진다.
+    // 요청 결과와 별도로 선택을 남긴다.
     // 플래그가 꺼져 있으면 "고른다"는 개념 자체가 없으므로 쏘지 않는다(전체 자동 포함을
     // 사용자의 선택으로 기록하면 유형 분포가 거짓이 된다).
     if (experienceSelectionEnabled) {
@@ -164,17 +164,16 @@ function CreateResumeForm({
     }
 
     const attempt = begin(experienceSelectionEnabled ? { language, experienceIds: selectedIds } : { language });
+    let requestSucceeded = false;
     try {
-      await createResume(attempt.payload, { signal: controller.signal, idempotencyKey: attempt.key });
+      await observeExportRequest(
+        () => createResume(attempt.payload, { signal: controller.signal, idempotencyKey: attempt.key }),
+        { export_type: "resume", language, ...(experienceSelectionEnabled ? { experience_count: selectedIds.length } : {}) },
+        () => handleCreditError.isCurrent() && abortRef.current === controller,
+        { timedOut: () => timedOut, onSettled: () => window.clearTimeout(timeoutId) },
+      );
+      requestSucceeded = true;
       if (!handleCreditError.isCurrent() || controller.signal.aborted) return;
-      // 익스포트 완료(FRT-19). experience_count 는 선택 기능이 켜졌을 때만 의미가 있다.
-      capture("export_completed", {
-        export_type: "resume",
-        language,
-        ...(experienceSelectionEnabled
-          ? { experience_count: selectedIds.length }
-          : {}),
-      });
       // 생성은 비동기다 — 서버가 id 를 즉시 주더라도 본문(result)은 나중에 채워진다.
       // 생성 직후 상세로 이동하면 아직 준비 안 된 레쥬메를 로드해 "불러오지 못했어요"가 뜬다.
       // 상세로 튕기지 말고 목록에 남아 status 배지로 완료를 확인하게 한다("다시 만들기"와 대칭).
@@ -183,9 +182,9 @@ function CreateResumeForm({
       onClose();
     } catch (err) {
       if (!handleCreditError.isCurrent() || abortRef.current !== controller) return;
-      reject(attempt.key, err);
+      if (!requestSucceeded) reject(attempt.key, err);
       setSubmitting(false);
-      if (handleCreditError(err)) return;
+      if (!requestSucceeded && handleCreditError(err)) return;
       if (err instanceof DOMException && err.name === "AbortError") {
         setError("생성이 오래 걸렸어요. 다시 시도해 주세요.");
       } else {

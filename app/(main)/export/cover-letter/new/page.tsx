@@ -15,6 +15,7 @@ import { CoverLetterQuestionsField } from "@/components/features/export/CoverLet
 import { createCoverLetter } from "@/lib/api/cover-letter-api";
 import { writeLimits } from "@/lib/export/cover-letter-limits";
 import { capture } from "@/lib/analytics";
+import { observeExportRequest } from "@/lib/analytics/observe-export-request";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { useSuppressFeedback } from "@/contexts/FeedbackTriggerContext";
 import type { CoverLetterQuestion } from "@/types/cover-letter";
@@ -65,10 +66,10 @@ function NewCoverLetterForm({ canSubmit }: { canSubmit: boolean }) {
 
     const controller = new AbortController();
     abortRef.current = controller;
-    const timeoutId = window.setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => { timedOut = true; controller.abort(); }, GENERATION_TIMEOUT_MS);
 
-    // 눌렀다는 사실(FRT-107). 요청 **앞**에 둔다 — export_completed(이름과 달리 실체는
-    // 접수)와의 건수 차이가 "눌렀는데 요청이 안 나간" 기술적 실패다.
+    // 유효 실행 클릭과 API 요청 결과는 별도로 관측한다(FRT-107/FRT-325).
     capture("export_execute_button_clicked", { export_type: "cover_letter" });
 
     // 빈 문항은 보내지 않는다 — 명세상 빈 목록이면 백엔드가 자유 형식 1건을 만든다.
@@ -76,18 +77,20 @@ function NewCoverLetterForm({ canSubmit }: { canSubmit: boolean }) {
     const asked = questions.filter((q) => q.question.trim() !== "");
 
     const attempt = begin({ targetCompany, targetJob, motivation, careerGoal, extraNotes, questions: asked });
+    let requestSucceeded = false;
     try {
-      const created = await createCoverLetter(attempt.payload, { signal: controller.signal, idempotencyKey: attempt.key });
+      const created = await observeExportRequest(
+        () => createCoverLetter(attempt.payload, { signal: controller.signal, idempotencyKey: attempt.key }),
+        { export_type: "cover_letter", question_count: asked.length },
+        () => handleCreditError.isCurrent() && abortRef.current === controller,
+        { timedOut: () => timedOut, onSettled: () => window.clearTimeout(timeoutId) },
+      );
+      requestSucceeded = true;
       if (!handleCreditError.isCurrent() || controller.signal.aborted) return;
 
       // 입력한 글자수 제한은 출력 계약에 없다 — 여기서 남기지 않으면 결과 화면이 제한을
       // 영영 모르고, 사용자가 적어 넣은 요구 조건을 넘겨도 아무 말을 하지 않는다.
       if (created.id) writeLimits(created.id, asked);
-
-      capture("export_completed", {
-        export_type: "cover_letter",
-        question_count: asked.length,
-      });
 
       // 생성은 비동기다 — id 를 즉시 받아도 본문은 나중에 채워진다. 상세로 바로 보내면
       // 아직 없는 본문을 로드해 "불러오지 못했어요"가 뜬다(레쥬메와 같은 판단).
@@ -95,9 +98,9 @@ function NewCoverLetterForm({ canSubmit }: { canSubmit: boolean }) {
       router.push(`${basePath}/export`);
     } catch (err) {
       if (!handleCreditError.isCurrent() || abortRef.current !== controller) return;
-      reject(attempt.key, err);
+      if (!requestSucceeded) reject(attempt.key, err);
       setSubmitting(false);
-      if (handleCreditError(err)) return;
+      if (!requestSucceeded && handleCreditError(err)) return;
       if (err instanceof DOMException && err.name === "AbortError") {
         setError("생성이 오래 걸렸어요. 다시 시도해 주세요.");
       } else {
