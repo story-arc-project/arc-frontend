@@ -84,6 +84,7 @@ export default function ArchiveEditPage() {
     const epoch = getAnalyticsEpoch()
     const previousStatus = experienceV2?.status
     setSavingSession(saveSession)
+    let savedCurrentSession = false
     try {
       const payload = toSavePayload(exp)
       const savedStatus = exp.status
@@ -105,13 +106,17 @@ export default function ArchiveEditPage() {
         experience_type: payload.type, status: savedStatus,
       })
       router.push(backTo)
+      savedCurrentSession = true
     } catch (err) {
       if (!isAnalyticsEpochCurrent(epoch) || currentSession.current !== saveSession) return
       setSaveError(err instanceof Error ? err.message : "경험을 저장하지 못했어요")
     } finally {
-      // Stale results still release only their own lock; a newer request stays pending.
-      saveSession.pending = false
-      setSavingSession((pending) => pending === saveSession ? null : pending)
+      // Keep a successful current form locked while navigation is pending. Failed/stale
+      // requests release only their own state, preserving a newer entry's request.
+      if (!savedCurrentSession || !isAnalyticsEpochCurrent(epoch) || currentSession.current !== saveSession) {
+        saveSession.pending = false
+        setSavingSession((pending) => pending === saveSession ? null : pending)
+      }
     }
   }
 

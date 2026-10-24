@@ -25,7 +25,7 @@ vi.mock("@/hooks/useExperience", () => ({
 }))
 vi.mock("@/lib/utils/experience-mapper", () => ({
   toExperienceV2: (experience: unknown) => experience,
-  toSavePayload: () => ({ type: "project", content: { status: "complete" } }),
+  toSavePayload: (exp: { status: string }) => ({ type: "project", content: { status: exp.status } }),
 }))
 vi.mock("@/lib/api/experience-api", () => ({ updateExperience: vi.fn() }))
 vi.mock("@/lib/analytics", () => ({
@@ -49,7 +49,7 @@ vi.mock("@/components/features/archive/ExperienceFormV2", () => ({
     // 실제 폼처럼 초기 데이터는 마운트 시에만 내부 state에 반영한다.
     const [recordId] = useState(initialExperience.id)
     useEffect(() => { onCompletionChange({ recordId }) }, [onCompletionChange, recordId])
-    return <div data-testid="edit-form">{recordId}<button onClick={() => onSave({ status: "complete" })}>save</button></div>
+    return <div data-testid="edit-form">{recordId}<button onClick={() => onSave({ status: "complete" })}>save</button><button onClick={() => onSave({ status: "draft" })}>draft</button></div>
   },
 }))
 
@@ -169,4 +169,33 @@ it("resumes a new A attempt after leaving for an unloaded B", () => {
   const resumes = vi.mocked(capture).mock.calls.filter(([event]) => event === "archive_entry_resumed")
   expect(resumes).toHaveLength(2)
   expect(resumes[1][1]).toMatchObject({ record_id: "A", entry_attempt_id: "attempt-A-return" })
+})
+
+it("retains the successful save lock while navigation leaves the form visible", async () => {
+  mocks.id = "A"
+  mocks.experience = { id: "A", status: "draft", typeId: "project" }
+  vi.mocked(updateExperience).mockResolvedValue(undefined)
+  render(<ArchiveEditPage />)
+  fireEvent.click(screen.getByText("save"))
+  await waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(1))
+  fireEvent.click(screen.getByText("save"))
+  fireEvent.click(screen.getByText("draft"))
+  await new Promise(r => setTimeout(r, 0))
+  expect(updateExperience).toHaveBeenCalledTimes(1)
+  expect(vi.mocked(capture).mock.calls.filter(([event]) => event === "record_saved")).toHaveLength(1)
+  expect(screen.getByTestId("shell")).toHaveAttribute("data-saving", "true")
+})
+
+it("releases the failed request lock so the user can retry", async () => {
+  mocks.id = "A"
+  mocks.experience = { id: "A", status: "draft", typeId: "project" }
+  vi.mocked(updateExperience).mockRejectedValueOnce(new Error("save failed")).mockResolvedValue(undefined)
+  render(<ArchiveEditPage />)
+  fireEvent.click(screen.getByText("save"))
+  await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("save failed"))
+  expect(screen.getByTestId("shell")).toHaveAttribute("data-saving", "false")
+  fireEvent.click(screen.getByText("save"))
+  await waitFor(() => expect(mocks.push).toHaveBeenCalledTimes(1))
+  expect(updateExperience).toHaveBeenCalledTimes(2)
+  expect(vi.mocked(capture).mock.calls.filter(([event]) => event === "record_saved")).toHaveLength(1)
 })
