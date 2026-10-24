@@ -47,7 +47,11 @@ function SignupForm() {
   const { shouldRedirect } = useRedirectIfAuthenticated({ allowOnboardingFlow: isOnOnboardingStep });
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
 
-  const [step, setStep] = useState<Step>("start");
+  const [step, setStep] = useState<Step>(() => {
+    if (!stepParam || !STEP_ORDER.includes(stepParam)) return "start";
+    return CONSENT_ENABLED && stepParam !== "consent" && ONBOARDING_STEPS.includes(stepParam)
+      ? "consent" : stepParam;
+  });
   const [dir, setDir] = useState(1);
 
   // Auth fields
@@ -121,6 +125,18 @@ function SignupForm() {
       goTo(FIRST_ONBOARDING_STEP);
     }
   }, [step, isAuthenticated, isAuthLoading]);
+
+  const lastSignupStepRef = useRef<Step | null>(null);
+  useEffect(() => {
+    if (isAuthLoading || shouldRedirect) return;
+    if (step !== "start" && step !== "password" && step !== "verify") {
+      lastSignupStepRef.current = null;
+      return;
+    }
+    if (lastSignupStepRef.current === step) return;
+    lastSignupStepRef.current = step;
+    capture("signup_step_viewed", { step, step_index: STEP_ORDER.indexOf(step) });
+  }, [step, isAuthLoading, shouldRedirect]);
 
   const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
   const isOnboarding = onboardingIndex >= 0;
@@ -399,7 +415,7 @@ function SignupForm() {
       }, { auth: false });
       // 온보딩 완료 확정 지점(성공 응답). DUPLICATE_ONBOARDING(이미 완료 재진입)은
       // 아래 catch 에서 별도 처리하며 중복 발화하지 않는다.
-      capture("onboarding_completed", {});
+      capture("onboarding_completed", {}, { atUnload: true });
       // 여기서부터 이 온보딩은 이탈이 아니다(FRT-107). 아래 하드 내비게이션이 pagehide 를
       // 부르므로, 이 표시가 먼저 서야 완료가 이탈로도 집계되지 않는다.
       markOnboardingCompleted();
