@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 
-import { createExperience, getExperiences } from "@/lib/api/experience-api"
+import { createExperience } from "@/lib/api/experience-api"
 import { toSavePayload } from "@/lib/utils/experience-mapper"
-import { capture, markFirstRecordIfUnseen, useArchiveEntryAnalytics } from "@/lib/analytics"
-import { useAuth } from "@/hooks/useAuth"
+import { capture, useArchiveEntryAnalytics } from "@/lib/analytics"
+import { getAnalyticsEpoch, isAnalyticsEpochCurrent } from "@/lib/analytics/client"
 import { useBasePath } from "@/lib/utils/use-base-path"
 import { safeReturnTo } from "@/lib/utils/archive-context"
 import ExperienceFormV2, {
@@ -19,8 +19,7 @@ export default function ArchiveNewPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const basePath = useBasePath()
-  // 첫 기록 마커를 사용자별로 스코프하기 위한 시드(원본 이메일은 저장·전송되지 않는다).
-  const { user } = useAuth()
+  const savePending = useRef(false)
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -33,6 +32,8 @@ export default function ArchiveNewPage() {
   // 신뢰 불가 값이라 safeReturnTo 로 같은 출처 archive 경로만 통과시키고, 추가 디코딩하지 않는다.
   const backTo = safeReturnTo(searchParams.get("returnTo"), basePath, `${basePath}/archive`)
 
+  const entryAnalytics = useArchiveEntryAnalytics({ mode: "new", active: true, saving })
+
   // 입력 폼 진입(FRT-113). archive_type_selected·record_created 와 이어 붙이면
   // "진입 → 유형선택 → 저장" 구간별 이탈이 보인다. 여기가 유일한 새 기록 입력 진입점이다.
   // 재진입(뒤로가기 후 다시 시작)은 각각 1건으로 세는 게 의도 — 세션 dedup 을 두지 않는다.
@@ -41,21 +42,24 @@ export default function ArchiveNewPage() {
   useEffect(() => {
     if (entryCapturedRef.current) return
     entryCapturedRef.current = true
-    capture("archive_entry_started", {})
-  }, [])
+    capture("archive_entry_started", { entry_attempt_id: entryAnalytics.entryAttemptId, schema_version: 2, source: "browser" })
+  }, [entryAnalytics.entryAttemptId])
 
   // 진입 23 → 저장 4(180일 실측). 사라진 83% 가 **이 화면 안에서** 사라져 퍼널로는
   // 어디서 멈췄는지 볼 수 없다 — 멈춘 자리·진행률·경과를 여기서 남긴다(FRT-107).
-  const entryAnalytics = useArchiveEntryAnalytics({ mode: "new", active: true, saving })
-
   async function handleSave(exp: ExperienceV2) {
+    if (savePending.current) return
+    savePending.current = true
+    const epoch = getAnalyticsEpoch()
     setSaving(true)
     try {
       const payload = toSavePayload(exp)
+      const savedStatus = exp.status
       // 전송할 내용과 진행률은 같은 시점의 값이어야 한다. 응답 대기 중의 추가 입력은
       // 이번 저장에 포함되지 않으므로 완료 이벤트에도 섞지 않는다(FRT-331).
       const progress = entryAnalytics.progressProps()
       const savedId = await createExperience(payload)
+      if (!isAnalyticsEpochCurrent(epoch)) return
       setError(null)
       // 저장 성공 — 미저장 플래그를 내려 beforeunload 경고 없이 목록으로 복귀한다.
       setHasUnsaved(false)
@@ -66,26 +70,26 @@ export default function ArchiveNewPage() {
       // 기록 생성 완료(FRT-19). status 로 draft·complete 를 구분한다.
       capture("record_created", {
         experience_type: payload.type,
-        status: exp.status,
+        status: savedStatus,
         elapsed_seconds: elapsedSeconds,
         sections_done: progress.sections_done,
         sections_total: progress.sections_total,
         qualitative_fields_filled: progress.qualitative_fields_filled,
       })
-      // 최초 1회 판정: 서버 count===1 을 1차 근거로 하되, 전체 삭제 후 재생성 재발화를
-      // 디바이스 마커로 막는다(markFirstRecordIfUnseen). 네비게이션을 막지 않도록 fire-and-forget.
-      void getExperiences()
-        .then(async (list) => {
-          if (await markFirstRecordIfUnseen(list.count, user?.account.email ?? "")) {
-            capture("first_record_created", { experience_type: payload.type })
-          }
-        })
-        .catch(() => {})
+      capture("record_saved", {
+        ...progress, elapsed_seconds: elapsedSeconds,
+        schema_version: 2, source: "browser", record_id: savedId,
+        entry_attempt_id: entryAnalytics.entryAttemptId,
+        save_kind: savedStatus === "draft" ? "draft" : "new",
+        experience_type: payload.type, status: savedStatus,
+      })
       // 새 레코드는 방금 만든 것이므로 항상 전체 라이브러리로 복귀해 확실히 보이게 한다.
       // 수동 라이브러리 컨텍스트를 복원하면(lib=...) 새 레코드는 그 라이브러리 멤버가
       // 아니라 프리뷰를 닫는 순간 목록에서 사라진다(Codex P2). 복귀 시 ?id 로 미리보기만 도킹.
       router.push(`${basePath}/archive?id=${savedId}`)
     } catch (err) {
+      if (!isAnalyticsEpochCurrent(epoch)) return
+      savePending.current = false
       setError(err instanceof Error ? err.message : "경험을 저장하지 못했어요")
       setSaving(false)
     }

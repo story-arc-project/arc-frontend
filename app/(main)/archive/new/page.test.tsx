@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@testing-library/react"
 
 import ArchiveNewPage from "./page"
+import { resetUser } from "@/lib/analytics/client"
 import { createExperience } from "@/lib/api/experience-api"
 
 // FRT-113: 이 테스트가 지키는 계약은 하나다 — "새 기록 입력 진입 1회당 이벤트 1건".
@@ -10,6 +11,7 @@ import { createExperience } from "@/lib/api/experience-api"
 // FRT-107: 이탈·진행 계측 훅은 자기 유닛 테스트(lib/analytics/use-archive-entry.test.ts)가
 // 계약을 지킨다. 여기서는 **페이지가 그 훅을 제대로 쓰는가**만 본다 — 저장 순간에 진행
 // 속성을 읽어 record_created 에 싣고, 이 진입을 이탈에서 빼는지.
+let saveStatus = "complete"
 const markSaved = vi.fn()
 const progressProps = vi.fn(() => ({
   elapsed_seconds: 42,
@@ -21,6 +23,7 @@ vi.mock("@/lib/analytics", () => ({
   capture: vi.fn(),
   markFirstRecordIfUnseen: vi.fn().mockResolvedValue(false),
   useArchiveEntryAnalytics: () => ({
+    entryAttemptId: "attempt-1",
     handleCompletionChange: vi.fn(),
     markSaved,
     progressProps,
@@ -55,7 +58,7 @@ vi.mock("@/components/features/archive/ExperienceFormV2", () => ({
           typeId: "career",
           title: "테스트 경험",
           summary: "",
-          status: "complete",
+          status: saveStatus,
           tags: [],
           coreBlocks: [],
           extensionBlocks: [],
@@ -71,6 +74,7 @@ vi.mock("@/components/features/archive/ExperienceFormV2", () => ({
 
 afterEach(cleanup)
 beforeEach(() => {
+  saveStatus = "complete"
   vi.mocked(capture).mockClear()
   markSaved.mockClear()
   progressProps.mockReset()
@@ -85,7 +89,7 @@ describe("아카이브 새 기록 진입 계측", () => {
   it("진입 시 archive_entry_started 를 1회 발화한다", () => {
     render(<ArchiveNewPage />)
     expect(capture).toHaveBeenCalledTimes(1)
-    expect(capture).toHaveBeenCalledWith("archive_entry_started", {})
+    expect(capture).toHaveBeenCalledWith("archive_entry_started", { entry_attempt_id: "attempt-1", schema_version: 2, source: "browser" })
   })
 
   it("StrictMode 이중 마운트에서도 1회만 발화한다", () => {
@@ -151,4 +155,40 @@ describe("FRT-331 저장 요청 시점의 진행률", () => {
       qualitative_fields_filled: [],
     }))
   })
+})
+
+it("correlates successful saves and suppresses duplicate clicks", async () => {
+  let resolve!: (id: string) => void
+  vi.mocked(createExperience).mockReturnValue(new Promise<string>(r => { resolve = r }))
+  const view = render(<ArchiveNewPage />)
+  fireEvent.click(view.getByTestId("save"))
+  fireEvent.click(view.getByTestId("save"))
+  expect(createExperience).toHaveBeenCalledTimes(1)
+  resolve("record-1")
+  await waitFor(() => expect(capture).toHaveBeenCalledWith("record_saved", expect.objectContaining({
+    schema_version: 2, source: "browser", record_id: "record-1",
+    entry_attempt_id: "attempt-1", save_kind: "new", experience_type: "career", status: "complete",
+  })))
+})
+
+it("ignores save responses after account reset", async () => {
+  let resolve!: (id: string) => void
+  vi.mocked(createExperience).mockReturnValue(new Promise<string>(r => { resolve = r }))
+  const view = render(<ArchiveNewPage />)
+  fireEvent.click(view.getByTestId("save"))
+  resetUser()
+  resolve("old-account-record")
+  await new Promise(r => setTimeout(r, 0))
+  expect(vi.mocked(capture).mock.calls.some(([event]) => event === "record_saved")).toBe(false)
+  expect(markSaved).not.toHaveBeenCalled()
+})
+
+it("observes drafts without claiming first completion", async () => {
+  saveStatus = "draft"
+  const view = render(<ArchiveNewPage />)
+  fireEvent.click(view.getByTestId("save"))
+  await waitFor(() => expect(capture).toHaveBeenCalledWith("record_saved", expect.objectContaining({
+    status: "draft", save_kind: "draft", record_id: "exp-1",
+  })))
+  expect(vi.mocked(capture).mock.calls.some(([event]) => event === "first_record_created")).toBe(false)
 })

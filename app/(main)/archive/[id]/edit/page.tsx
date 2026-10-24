@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 
+import { getAnalyticsEpoch, isAnalyticsEpochCurrent } from "@/lib/analytics/client"
 import { updateExperience } from "@/lib/api/experience-api"
 import { capture, useArchiveEntryAnalytics } from "@/lib/analytics"
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper"
@@ -22,9 +23,14 @@ export default function ArchiveEditPage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const { experience, error } = useExperience(id)
+  // A new route entry owns its request state, even when returning to the same ID.
+  const saveSession = useMemo(() => ({ id, pending: false }), [id])
+  const currentSession = useRef(saveSession)
+  useEffect(() => { currentSession.current = saveSession }, [saveSession])
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [savingSession, setSavingSession] = useState<typeof saveSession | null>(null)
+  const saving = savingSession === saveSession
   const [saveError, setSaveError] = useState<string | null>(null)
   const [sections, setSections] = useState<{ id: string; label: string }[]>([])
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
@@ -61,33 +67,56 @@ export default function ArchiveEditPage() {
 
   // 임시저장을 다시 열어 이어쓰기 시작한 시점(FRT-107). **draft 일 때만** 센다 —
   // 완성된 기록의 수정까지 섞으면 "재방문 의도가 있는 이탈이 회수됐는가"라는 질문이
-  // 평범한 편집에 묻힌다. 문서(id)당 1회: 폼 재시드(key={id})와 같은 축으로 묶는다.
+  // 평범한 편집에 묻힌다. 작성 시도당 1회라 같은 기록에 재진입해도 새 시도를 관측한다.
   const resumeCapturedRef = useRef<string | null>(null)
   useEffect(() => {
     // 아직 이 id 의 기록이 아니면(전환 중 앞 기록) 판단하지 않는다 — 앞 기록이 draft 라는
     // 이유로 지금 id 를 발화 완료로 찍으면, 정작 이 기록의 이어쓰기가 영영 안 잡힌다.
     if (!loadedId || !experienceV2 || experienceV2.status !== "draft") return
-    if (resumeCapturedRef.current === loadedId) return
-    resumeCapturedRef.current = loadedId
-    capture("archive_entry_resumed", { experience_type: experienceV2.typeId })
-  }, [experienceV2, loadedId])
+    if (resumeCapturedRef.current === entryAnalytics.entryAttemptId) return
+    resumeCapturedRef.current = entryAnalytics.entryAttemptId
+    capture("archive_entry_resumed", { experience_type: experienceV2.typeId, record_id: loadedId, entry_attempt_id: entryAnalytics.entryAttemptId, schema_version: 2, source: "browser" })
+  }, [experienceV2, loadedId, entryAnalytics.entryAttemptId])
 
   async function handleSave(exp: ExperienceV2) {
-    setSaving(true)
+    if (saveSession.pending || !loadedId) return
+    saveSession.pending = true
+    const epoch = getAnalyticsEpoch()
+    const previousStatus = experienceV2?.status
+    setSavingSession(saveSession)
+    let savedCurrentSession = false
     try {
       const payload = toSavePayload(exp)
+      const savedStatus = exp.status
+      const progress = entryAnalytics.progressProps()
       await updateExperience(id, {
         content: payload.content,
         importance: payload.importance,
       })
+      if (!isAnalyticsEpochCurrent(epoch) || currentSession.current !== saveSession) return
       setSaveError(null)
       setHasUnsaved(false)
       // 여기서부터 이 수정은 이탈이 아니다(FRT-107).
       entryAnalytics.markSaved()
+      capture("record_saved", {
+        ...progress, elapsed_seconds: entryAnalytics.progressProps().elapsed_seconds,
+        schema_version: 2, source: "browser", record_id: id,
+        entry_attempt_id: entryAnalytics.entryAttemptId,
+        save_kind: savedStatus === "draft" ? "draft" : previousStatus === "draft" ? "draft_to_complete" : "complete_edit",
+        experience_type: payload.type, status: savedStatus,
+      })
       router.push(backTo)
+      savedCurrentSession = true
     } catch (err) {
+      if (!isAnalyticsEpochCurrent(epoch) || currentSession.current !== saveSession) return
       setSaveError(err instanceof Error ? err.message : "경험을 저장하지 못했어요")
-      setSaving(false)
+    } finally {
+      // Keep a successful current form locked while navigation is pending. Failed/stale
+      // requests release only their own state, preserving a newer entry's request.
+      if (!savedCurrentSession || !isAnalyticsEpochCurrent(epoch) || currentSession.current !== saveSession) {
+        saveSession.pending = false
+        setSavingSession((pending) => pending === saveSession ? null : pending)
+      }
     }
   }
 

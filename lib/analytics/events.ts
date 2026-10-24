@@ -67,6 +67,7 @@ export const ANALYTICS_EVENTS = {
   archiveEntryStarted: "archive_entry_started",
   // ── 직전 선택 (drop-off 관측: "선택했지만 완료 안 함") ─────────────
   signupMethodSelected: "signup_method_selected",
+  signupStepViewed: "signup_step_viewed",
   archiveTypeSelected: "archive_type_selected",
   analysisTargetSelected: "analysis_target_selected",
   // FRT-114. 실행 직전 최종 선택만 센다(analysis_target_selected 와 같은 결) — 체크박스
@@ -78,6 +79,7 @@ export const ANALYTICS_EVENTS = {
   signupCompleted: "signup_completed",
   onboardingCompleted: "onboarding_completed",
   recordCreated: "record_created",
+  recordSaved: "record_saved",
   firstRecordCreated: "first_record_created",
   analysisCompleted: "analysis_completed",
   // FRT-325: browser request settlement; official completion/failure is server-only.
@@ -114,6 +116,8 @@ export const ANALYTICS_EVENTS = {
   // 정의서의 individual_/comprehensive_/keyword_analysis_result_viewed 3종을 하나로 합치고
   // analysis_type 으로 가른다 — analysis_completed·analysis_target_selected 와 같은 결.
   analysisViewed: "analysis_viewed",
+  analysisResultViewed: "analysis_result_viewed",
+  analysisBookmarkChanged: "analysis_bookmark_changed",
   // ── 기술적 실패 판별 (FRT-107) ────────────────────────────────────
   // "눌렀는데 요청이 안 나갔다"를 보려면 **누른 사실**과 **서버가 받은 사실**이 둘 다
   // 있어야 하고, 그 차이가 곧 버그·네트워크 실패다(사용자 의도적 이탈과 갈린다).
@@ -144,8 +148,9 @@ export type AnalyticsEventName =
 
 // 이벤트별 속성 계약. PII 금지 — 비식별 퍼널 메타만 싣는다.
 export interface AnalyticsEventProps extends FunnelEventProps {
-  archive_entry_started: Record<string, never>;
+  archive_entry_started: { entry_attempt_id?: string; schema_version?: 2; source?: "browser" };
   signup_method_selected: { method: SignupMethod };
+  signup_step_viewed: { step: "start" | "password" | "verify"; step_index: number };
   archive_type_selected: { experience_type: string };
   analysis_target_selected:
     | { analysis_type: "comprehensive"; count: number }
@@ -162,6 +167,19 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // 없어서 잴 수가 없고, 0 을 넣으면 "즉시 저장했다"는 거짓이 된다(부재와 0 은 다른 사실).
   // archive_entry_abandoned 와 **같은 이름·같은 축**으로 싣는 것이 요점이다 — 끝낸 사람과
   // 포기한 사람을 나란히 놓고 "무엇이 달랐나"를 물을 수 있어야 한다.
+  record_saved: {
+    schema_version: 2;
+    source: "browser";
+    record_id: string;
+    entry_attempt_id: string;
+    elapsed_seconds?: number;
+    sections_done?: number;
+    sections_total?: number;
+    qualitative_fields_filled?: string[];
+    save_kind: "new" | "draft" | "draft_to_complete" | "complete_edit" | "duplicate";
+    experience_type: string;
+    status: RecordStatus;
+  };
   record_created: {
     experience_type: string;
     status: RecordStatus;
@@ -174,6 +192,10 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // archive_entry_started → record_created 미도달까지는 퍼널도 알지만,
   // **그 화면 어디에서** 멈췄는지는 이 이벤트에만 있다.
   archive_entry_abandoned: {
+    entry_attempt_id?: string;
+    record_id?: string;
+    schema_version?: 2;
+    source?: "browser";
     mode: ArchiveEntryMode;
     // 마지막으로 완료한 섹션 슬러그. 하나도 못 채웠으면 null — "시작도 못 했다"는
     // 유효한 답이라 부재로 뭉개지 않는다.
@@ -191,6 +213,10 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // 섹션 하나를 채운 시점. sections_done 이 "몇 개 했나"라면 section_index 는 "폼의 어디를
   // 하고 있나"다 — 둘이 벌어지면 사용자가 순서를 건너뛰며 채운다는 뜻이라 서로 못 대신한다.
   archive_section_completed: {
+    entry_attempt_id?: string;
+    record_id?: string;
+    schema_version?: 2;
+    source?: "browser";
     section_key: string;
     section_index: number;
     sections_done: number;
@@ -198,7 +224,7 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   };
   // 임시저장한 기록을 다시 열어 이어쓰기 시작한 시점. "재방문 의도가 있는 이탈"이 실제로
   // 회수되는지를 보는 유일한 신호다(draft 저장 자체는 record_created{status:"draft"} 가 센다).
-  archive_entry_resumed: { experience_type: string };
+  archive_entry_resumed: { experience_type: string; entry_attempt_id?: string; record_id?: string; schema_version?: 2; source?: "browser" };
   // 첨부 "여부"만 본다 — 파일명·URL 원문은 PII 위험이라 절대 싣지 않는다(타입으로 봉인).
   archive_attachment_added: { attachment_type: AttachmentType };
   first_record_created: { experience_type: string };
@@ -209,10 +235,25 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // 실패한 분석의 재시도 요청이 접수된 시점. 재시도 결과(성공/재실패)는
   // analysis_completed 와 status 로 따로 관측한다.
   analysis_retried: { analysis_type: AnalysisKind };
-  // 결과를 한 번 열어 본 사건. **매 조회마다** 발화하므로 조회 횟수는 이 이벤트를 세면 되고,
-  // 체류는 속성으로 함께 온다(정의서 권고 그대로 — 별도 카운터 이벤트를 만들지 않는다).
-  // view_duration_seconds 는 "처음 화면을 벗어나기까지 실제로 보인 시간"이다(useDwell).
-  // 0 은 유효한 값 — 열자마자 나간 조회가 가장 중요한 신호다.
+  // Foreground ready-result entry; server result version is deliberately absent.
+  analysis_result_viewed: {
+    schema_version: 2;
+    source: "browser";
+    analysis_type: ViewableAnalysisKind;
+    analysis_id: string;
+    view_id: string;
+    viewed_at: string;
+  };
+  analysis_bookmark_changed: {
+    schema_version: 2;
+    source: "browser";
+    analysis_id: string;
+    action: "added" | "removed";
+    is_bookmarked: boolean;
+    analysis_type?: ViewableAnalysisKind;
+    view_id?: string;
+  };
+  // Legacy exit/dwell observation; zero seconds is a valid short visit.
   analysis_viewed: {
     analysis_type: ViewableAnalysisKind;
     analysis_id: string;

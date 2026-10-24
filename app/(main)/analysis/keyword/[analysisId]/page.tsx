@@ -28,6 +28,7 @@ export default function KeywordDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
   const basePath = useBasePath();
   const [data, setData] = useState<KeywordAnalysisResult | null>(null);
+  const [loadedId, setLoadedId] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [unsupported, setUnsupported] = useState(false);
 
@@ -41,6 +42,7 @@ export default function KeywordDetailPage() {
         setError(false);
         setUnsupported(false);
         setData(d);
+        setLoadedId(analysisId);
       })
       .catch((e) => {
         if (!active) return;
@@ -60,7 +62,7 @@ export default function KeywordDetailPage() {
   // 이 결과를 얼마나 봤는가(FRT-107). 결과가 화면에 실제로 있는 동안만 잰다.
   // ready 는 data 가 아니라 hasResultBody 다 — 대기·실패 안내 화면을 본 시간은 결과를
   // 본 시간이 아니다(comprehensive 와 같은 규칙).
-  useAnalysisViewed({ analysisType: "keyword", analysisId, ready: !!data?.hasResultBody });
+  const viewObservation = useAnalysisViewed({ analysisType: "keyword", analysisId, ready: loadedId === analysisId && !error && !unsupported && !!data?.hasResultBody });
 
   if (unsupported) {
     return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/keyword" />;
@@ -84,7 +86,7 @@ export default function KeywordDetailPage() {
     );
   }
 
-  if (!data) {
+  if (!data || loadedId !== analysisId) {
     return (
       <main className="px-4 py-8 sm:px-8">
         <div className="max-w-4xl mx-auto space-y-6" aria-busy="true">
@@ -162,7 +164,7 @@ export default function KeywordDetailPage() {
               </p>
             )}
           </header>
-          <BookmarkToggle analysisId={analysisId} isBookmarked={data.isBookmarked} />
+          <BookmarkToggle analysisId={analysisId} isBookmarked={data.isBookmarked} viewObservation={viewObservation} />
         </div>
 
         <hr className="border-border" />

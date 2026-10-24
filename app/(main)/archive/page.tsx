@@ -1,5 +1,7 @@
 "use client"
 
+import { getAnalyticsEpoch, isAnalyticsEpochCurrent } from "@/lib/analytics/client"
+
 import { useState, useCallback, useMemo, useRef, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
@@ -426,20 +428,35 @@ export default function ArchivePage() {
     [performDelete]
   )
 
+  const duplicatePending = useRef(new Set<string>())
   const performDuplicate = useCallback(
     async (exp: ExperienceV2) => {
+      if (duplicatePending.current.has(exp.id)) return
+      duplicatePending.current.add(exp.id)
+      const epoch = getAnalyticsEpoch()
+      const snapshot = { type: exp.typeId, status: exp.status }
+      const attemptId = crypto.randomUUID()
       try {
         const newId = await apiDuplicate(exp.id)
+        if (!isAnalyticsEpochCurrent(epoch)) return
+        capture("record_saved", {
+          schema_version: 2, source: "browser", record_id: newId,
+          entry_attempt_id: attemptId, save_kind: "duplicate",
+          experience_type: snapshot.type, status: snapshot.status,
+        })
         // 복제도 새 기록이 만들어지는 생성 경로다 — 입력 폼만 계측하면 등뼈가 이 사용자를
         // 미기록으로 센다(FRT-19). 서버는 원본을 그대로 복사하므로 유형·상태는 원본 값.
-        capture("record_created", { experience_type: exp.typeId, status: exp.status })
+        capture("record_created", { experience_type: snapshot.type, status: snapshot.status })
         setExperienceActionError(null)
         setSelectedId(newId)
         setMobileView("panel")
         router.push(`${basePath}/archive?id=${newId}`, { scroll: false })
       } catch (err) {
+        if (!isAnalyticsEpochCurrent(epoch)) return
         const message = err instanceof Error ? err.message : "경험을 복제하지 못했어요"
         setExperienceActionError(message)
+      } finally {
+        duplicatePending.current.delete(exp.id)
       }
     },
     [apiDuplicate, router, basePath]
