@@ -23,13 +23,14 @@ export default function ArchiveEditPage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const { experience, error } = useExperience(id)
-  const savePending = useRef<string | null>(null)
-  const currentId = useRef(id)
-  useEffect(() => { currentId.current = id }, [id])
+  // A new route entry owns its request state, even when returning to the same ID.
+  const saveSession = useMemo(() => ({ id, pending: false }), [id])
+  const currentSession = useRef(saveSession)
+  useEffect(() => { currentSession.current = saveSession }, [saveSession])
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
-  const [savingRecord, setSavingRecord] = useState<string | null>(null)
-  const saving = savingRecord === id
+  const [savingSession, setSavingSession] = useState<typeof saveSession | null>(null)
+  const saving = savingSession === saveSession
   const [saveError, setSaveError] = useState<string | null>(null)
   const [sections, setSections] = useState<{ id: string; label: string }[]>([])
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
@@ -78,11 +79,11 @@ export default function ArchiveEditPage() {
   }, [experienceV2, loadedId, entryAnalytics.entryAttemptId])
 
   async function handleSave(exp: ExperienceV2) {
-    if (savePending.current === id || !loadedId) return
-    savePending.current = id
+    if (saveSession.pending || !loadedId) return
+    saveSession.pending = true
     const epoch = getAnalyticsEpoch()
     const previousStatus = experienceV2?.status
-    setSavingRecord(id)
+    setSavingSession(saveSession)
     try {
       const payload = toSavePayload(exp)
       const savedStatus = exp.status
@@ -91,7 +92,7 @@ export default function ArchiveEditPage() {
         content: payload.content,
         importance: payload.importance,
       })
-      if (!isAnalyticsEpochCurrent(epoch) || currentId.current !== id) return
+      if (!isAnalyticsEpochCurrent(epoch) || currentSession.current !== saveSession) return
       setSaveError(null)
       setHasUnsaved(false)
       // 여기서부터 이 수정은 이탈이 아니다(FRT-107).
@@ -105,10 +106,12 @@ export default function ArchiveEditPage() {
       })
       router.push(backTo)
     } catch (err) {
-      if (!isAnalyticsEpochCurrent(epoch) || currentId.current !== id) return
-      savePending.current = null
+      if (!isAnalyticsEpochCurrent(epoch) || currentSession.current !== saveSession) return
       setSaveError(err instanceof Error ? err.message : "경험을 저장하지 못했어요")
-      setSavingRecord(null)
+    } finally {
+      // Stale results still release only their own lock; a newer request stays pending.
+      saveSession.pending = false
+      setSavingSession((pending) => pending === saveSession ? null : pending)
     }
   }
 

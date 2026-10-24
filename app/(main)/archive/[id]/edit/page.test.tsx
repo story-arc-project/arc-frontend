@@ -107,3 +107,44 @@ it("does not carry a pending save into a reused edit route", async () => {
   expect(mocks.push).not.toHaveBeenCalled()
   expect(vi.mocked(capture).mock.calls.some(([event]) => event === "record_saved")).toBe(false)
 })
+
+it("releases a stale request lock before returning to its record", async () => {
+  mocks.id = "A"
+  mocks.experience = { id: "A", status: "draft", typeId: "project" }
+  let resolve!: () => void
+  vi.mocked(updateExperience).mockReturnValueOnce(new Promise<void>(r => { resolve = r })).mockResolvedValue(undefined)
+  const view = render(<ArchiveEditPage />)
+  fireEvent.click(screen.getByText("save"))
+  mocks.id = "B"
+  mocks.experience = { id: "B", status: "draft", typeId: "project" }
+  view.rerender(<ArchiveEditPage />)
+  resolve()
+  await new Promise(r => setTimeout(r, 0))
+  mocks.id = "A"
+  mocks.experience = { id: "A", status: "draft", typeId: "project" }
+  view.rerender(<ArchiveEditPage />)
+  expect(screen.getByTestId("shell")).toHaveAttribute("data-saving", "false")
+  fireEvent.click(screen.getByText("save"))
+  await waitFor(() => expect(updateExperience).toHaveBeenCalledTimes(2))
+})
+
+it("rejects old A response after A to B to new A entry", async () => {
+  mocks.id = "A"
+  mocks.experience = { id: "A", status: "draft", typeId: "project" }
+  let resolve!: () => void
+  vi.mocked(updateExperience).mockReturnValueOnce(new Promise<void>(r => { resolve = r })).mockResolvedValue(undefined)
+  const view = render(<ArchiveEditPage />)
+  fireEvent.click(screen.getByText("save"))
+  mocks.id = "B"
+  mocks.experience = { id: "B", status: "draft", typeId: "project" }
+  view.rerender(<ArchiveEditPage />)
+  mocks.id = "A"
+  mocks.experience = { id: "A", status: "draft", typeId: "project" }
+  view.rerender(<ArchiveEditPage />)
+  resolve()
+  await new Promise(r => setTimeout(r, 0))
+  expect(mocks.push).not.toHaveBeenCalled()
+  expect(vi.mocked(capture).mock.calls.some(([event]) => event === "record_saved")).toBe(false)
+  fireEvent.click(screen.getByText("save"))
+  await waitFor(() => expect(updateExperience).toHaveBeenCalledTimes(2))
+})
