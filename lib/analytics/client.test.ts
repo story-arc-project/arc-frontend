@@ -4,6 +4,8 @@ import posthog from "posthog-js";
 
 import { isDemoMode } from "@/lib/demo/state";
 import {
+  getAnalyticsEpoch,
+  isAnalyticsEpochCurrent,
   capture,
   identifyUser,
   isIdentified,
@@ -219,4 +221,16 @@ describe("analytics client — 내부 사용자 표식(FRT-139)", () => {
     markInternalUser();
     expect(ph.setPersonProperties).toHaveBeenCalledWith({ $internal_or_test_user: true });
   });
+});
+
+it("invalidates pending browser observations at account boundaries only", async () => {
+  await identifyUser("same@example.com");
+  const epoch = getAnalyticsEpoch();
+  await identifyUser(" SAME@EXAMPLE.COM ");
+  expect(isAnalyticsEpochCurrent(epoch)).toBe(true);
+  await identifyUser("other@example.com");
+  expect(isAnalyticsEpochCurrent(epoch)).toBe(false);
+  const next = getAnalyticsEpoch();
+  resetUser();
+  expect(isAnalyticsEpochCurrent(next)).toBe(false);
 });

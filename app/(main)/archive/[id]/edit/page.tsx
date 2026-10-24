@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 
+import { getAnalyticsEpoch, isAnalyticsEpochCurrent } from "@/lib/analytics/client"
 import { updateExperience } from "@/lib/api/experience-api"
 import { capture, useArchiveEntryAnalytics } from "@/lib/analytics"
 import { toExperienceV2, toSavePayload } from "@/lib/utils/experience-mapper"
@@ -22,9 +23,13 @@ export default function ArchiveEditPage() {
   const { id } = useParams<{ id: string }>()
   const searchParams = useSearchParams()
   const { experience, error } = useExperience(id)
+  const savePending = useRef<string | null>(null)
+  const currentId = useRef(id)
+  useEffect(() => { currentId.current = id }, [id])
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [savingRecord, setSavingRecord] = useState<string | null>(null)
+  const saving = savingRecord === id
   const [saveError, setSaveError] = useState<string | null>(null)
   const [sections, setSections] = useState<{ id: string; label: string }[]>([])
   const [progress, setProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
@@ -69,25 +74,41 @@ export default function ArchiveEditPage() {
     if (!loadedId || !experienceV2 || experienceV2.status !== "draft") return
     if (resumeCapturedRef.current === loadedId) return
     resumeCapturedRef.current = loadedId
-    capture("archive_entry_resumed", { experience_type: experienceV2.typeId })
-  }, [experienceV2, loadedId])
+    capture("archive_entry_resumed", { experience_type: experienceV2.typeId, record_id: loadedId, entry_attempt_id: entryAnalytics.entryAttemptId, schema_version: 2, source: "browser" })
+  }, [experienceV2, loadedId, entryAnalytics.entryAttemptId])
 
   async function handleSave(exp: ExperienceV2) {
-    setSaving(true)
+    if (savePending.current === id || !loadedId) return
+    savePending.current = id
+    const epoch = getAnalyticsEpoch()
+    const previousStatus = experienceV2?.status
+    setSavingRecord(id)
     try {
       const payload = toSavePayload(exp)
+      const savedStatus = exp.status
+      const progress = entryAnalytics.progressProps()
       await updateExperience(id, {
         content: payload.content,
         importance: payload.importance,
       })
+      if (!isAnalyticsEpochCurrent(epoch) || currentId.current !== id) return
       setSaveError(null)
       setHasUnsaved(false)
       // 여기서부터 이 수정은 이탈이 아니다(FRT-107).
       entryAnalytics.markSaved()
+      capture("record_saved", {
+        ...progress, elapsed_seconds: entryAnalytics.progressProps().elapsed_seconds,
+        schema_version: 2, source: "browser", record_id: id,
+        entry_attempt_id: entryAnalytics.entryAttemptId,
+        save_kind: savedStatus === "draft" ? "draft" : previousStatus === "draft" ? "draft_to_complete" : "complete_edit",
+        experience_type: payload.type, status: savedStatus,
+      })
       router.push(backTo)
     } catch (err) {
+      if (!isAnalyticsEpochCurrent(epoch) || currentId.current !== id) return
+      savePending.current = null
       setSaveError(err instanceof Error ? err.message : "경험을 저장하지 못했어요")
-      setSaving(false)
+      setSavingRecord(null)
     }
   }
 

@@ -19,6 +19,10 @@ function isActive(): boolean {
 // reset 마다 토큰을 올려, await 이전에 시작된 stale identify 가 로그아웃된 세션을 다시
 // 식별하지 못하게 취소한다.
 let identifyToken = 0;
+let analyticsEpoch = 0;
+let analyticsAccount: string | null = null;
+export function getAnalyticsEpoch(): number { return analyticsEpoch; }
+export function isAnalyticsEpochCurrent(epoch: number): boolean { return epoch === analyticsEpoch; }
 
 // FRT-139: 팀 계정 행동을 지표에서 제외하기 위한 person 표식.
 // PostHog 가 내부/테스트 사용자 필터(프로젝트 test_account_filters → 코호트)에 쓰는 표준 속성이라,
@@ -66,6 +70,12 @@ export function capture<E extends keyof AnalyticsEventProps>(
 
 // 로그인/가입·재방문 시 해시된 이메일로 사용자를 식별한다(원본 이메일 미전송).
 export async function identifyUser(emailSeed: string): Promise<void> {
+  const account = emailSeed.trim().toLowerCase();
+  if (account !== analyticsAccount) {
+    analyticsAccount = account;
+    analyticsEpoch++;
+    identifyToken++;
+  }
   if (!isActive() || !emailSeed) return;
   const token = identifyToken;
   const distinctId = await hashUserId(emailSeed);
@@ -107,6 +117,8 @@ export function isIdentified(): boolean {
 export function resetUser(): void {
   // 진행 중인 identify 를 먼저 무효화한다(비활성 상태여도 토큰은 올린다).
   identifyToken++;
+  analyticsEpoch++;
+  analyticsAccount = null;
   // 내부 표식도 여기서 비운다 — 비활성 상태여도 비워야, 같은 브라우저의 다음 사용자가
   // 팀원의 보류분을 물려받아 '내부 사용자'로 잘못 표시되지 않는다.
   internalTagPending = false;

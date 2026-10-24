@@ -54,6 +54,7 @@ export interface ArchiveEntryAnalyticsOptions {
 
 export interface ArchiveEntryAnalytics {
   /** ExperienceFormV2 의 onCompletionChange 에 그대로 연결한다. */
+  entryAttemptId: string;
   handleCompletionChange: (snapshot: FormCompletionSnapshot) => void;
   /** 저장이 확정된 순간 호출 — 이 뒤로는 이탈로 세지 않는다. */
   markSaved: () => void;
@@ -71,6 +72,7 @@ export function useArchiveEntryAnalytics({
   // (언마운트 발화는 한 틱 미뤄지므로 effect 동기화가 늦지 않는다.)
   // 기록마다 상태를 분리해 자식의 새 스냅샷이 이전 기록의 이탈을 오염시키지 않는다.
   const session = useMemo(() => ({
+    entryAttemptId: crypto.randomUUID(),
     saving,
     snapshot: EMPTY_SNAPSHOT,
     emittedSections: new Set<string>(),
@@ -94,6 +96,10 @@ export function useArchiveEntryAnalytics({
         "archive_entry_abandoned",
         {
           mode,
+          entry_attempt_id: session.entryAttemptId,
+          ...(sessionKey ? { record_id: sessionKey } : {}),
+          schema_version: 2,
+          source: "browser",
           // 폼 순서상 마지막으로 완료한 섹션 = "어디까지 갔나". 하나도 없으면 null 이고,
           // 그건 "시작도 못 했다"는 유효한 답이라 부재로 뭉개지 않는다.
           last_section: done.length > 0 ? done[done.length - 1] : null,
@@ -129,6 +135,10 @@ export function useArchiveEntryAnalytics({
         if (emitted.has(id)) continue;
         emitted.add(id);
         capture("archive_section_completed", {
+          entry_attempt_id: session.entryAttemptId,
+          ...(sessionKey ? { record_id: sessionKey } : {}),
+          schema_version: 2,
+          source: "browser",
           section_key: id,
           // sections_done 이 "몇 개 했나"라면 이쪽은 "폼의 어디를 하고 있나"다.
           // 둘이 벌어지면 사용자가 순서를 건너뛰며 채운다는 뜻이라 서로 못 대신한다.
@@ -138,7 +148,7 @@ export function useArchiveEntryAnalytics({
         });
       }
     },
-    [session],
+    [session, sessionKey],
   );
 
   const progressProps = useCallback((): ArchiveEntryProgressProps => {
@@ -151,5 +161,5 @@ export function useArchiveEntryAnalytics({
     };
   }, [elapsedSeconds, session]);
 
-  return { handleCompletionChange, markSaved: markCompleted, progressProps };
+  return { entryAttemptId: session.entryAttemptId, handleCompletionChange, markSaved: markCompleted, progressProps };
 }
