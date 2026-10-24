@@ -67,14 +67,14 @@ export default function ArchiveEditPage() {
 
   // 임시저장을 다시 열어 이어쓰기 시작한 시점(FRT-107). **draft 일 때만** 센다 —
   // 완성된 기록의 수정까지 섞으면 "재방문 의도가 있는 이탈이 회수됐는가"라는 질문이
-  // 평범한 편집에 묻힌다. 문서(id)당 1회: 폼 재시드(key={id})와 같은 축으로 묶는다.
+  // 평범한 편집에 묻힌다. 작성 시도당 1회라 같은 기록에 재진입해도 새 시도를 관측한다.
   const resumeCapturedRef = useRef<string | null>(null)
   useEffect(() => {
     // 아직 이 id 의 기록이 아니면(전환 중 앞 기록) 판단하지 않는다 — 앞 기록이 draft 라는
     // 이유로 지금 id 를 발화 완료로 찍으면, 정작 이 기록의 이어쓰기가 영영 안 잡힌다.
     if (!loadedId || !experienceV2 || experienceV2.status !== "draft") return
-    if (resumeCapturedRef.current === loadedId) return
-    resumeCapturedRef.current = loadedId
+    if (resumeCapturedRef.current === entryAnalytics.entryAttemptId) return
+    resumeCapturedRef.current = entryAnalytics.entryAttemptId
     capture("archive_entry_resumed", { experience_type: experienceV2.typeId, record_id: loadedId, entry_attempt_id: entryAnalytics.entryAttemptId, schema_version: 2, source: "browser" })
   }, [experienceV2, loadedId, entryAnalytics.entryAttemptId])
 

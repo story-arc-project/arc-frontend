@@ -7,6 +7,7 @@ import { updateExperience } from "@/lib/api/experience-api"
 import ArchiveEditPage from "./page"
 
 const mocks = vi.hoisted(() => ({
+  attemptId: "attempt-edit",
   id: "A",
   experience: { id: "A", status: "saved", typeId: "project" },
   report: vi.fn(),
@@ -30,7 +31,7 @@ vi.mock("@/lib/api/experience-api", () => ({ updateExperience: vi.fn() }))
 vi.mock("@/lib/analytics", () => ({
   capture: vi.fn(),
   useArchiveEntryAnalytics: () => ({
-    entryAttemptId: "attempt-edit",
+    entryAttemptId: mocks.attemptId,
     progressProps: () => ({ elapsed_seconds: 10, sections_done: 1, sections_total: 2, qualitative_fields_filled: [] }),
     handleCompletionChange: mocks.report,
     markSaved: vi.fn(),
@@ -55,6 +56,7 @@ vi.mock("@/components/features/archive/ExperienceFormV2", () => ({
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  mocks.attemptId = "attempt-edit"
 })
 
 describe("archive edit record loading boundary", () => {
@@ -147,4 +149,24 @@ it("rejects old A response after A to B to new A entry", async () => {
   expect(vi.mocked(capture).mock.calls.some(([event]) => event === "record_saved")).toBe(false)
   fireEvent.click(screen.getByText("save"))
   await waitFor(() => expect(updateExperience).toHaveBeenCalledTimes(2))
+})
+
+it("resumes a new A attempt after leaving for an unloaded B", () => {
+  mocks.id = "A"
+  mocks.experience = { id: "A", status: "draft", typeId: "project" }
+  mocks.attemptId = "attempt-A-first"
+  const view = render(<ArchiveEditPage />)
+  expect(capture).toHaveBeenCalledWith("archive_entry_resumed", expect.objectContaining({
+    record_id: "A", entry_attempt_id: "attempt-A-first",
+  }))
+  mocks.id = "B"
+  mocks.attemptId = "attempt-B-loading"
+  view.rerender(<ArchiveEditPage />)
+  expect(screen.queryByTestId("edit-form")).not.toBeInTheDocument()
+  mocks.id = "A"
+  mocks.attemptId = "attempt-A-return"
+  view.rerender(<ArchiveEditPage />)
+  const resumes = vi.mocked(capture).mock.calls.filter(([event]) => event === "archive_entry_resumed")
+  expect(resumes).toHaveLength(2)
+  expect(resumes[1][1]).toMatchObject({ record_id: "A", entry_attempt_id: "attempt-A-return" })
 })
