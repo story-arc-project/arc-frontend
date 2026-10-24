@@ -71,9 +71,14 @@ export function capture<E extends keyof AnalyticsEventProps>(
 // 로그인/가입·재방문 시 해시된 이메일로 사용자를 식별한다(원본 이메일 미전송).
 export async function identifyUser(emailSeed: string): Promise<void> {
   const account = emailSeed.trim().toLowerCase();
+  if (!account) return;
   if (account !== analyticsAccount) {
+    // Initial identification continues the anonymous browser session. AuthGate can
+    // mount result hooks before AuthProvider identifies in its passive effect.
+    // Real account switches invalidate pending work; resetUser already invalidates
+    // the previous account before a later anonymous-to-identified transition.
+    if (analyticsAccount !== null) analyticsEpoch++;
     analyticsAccount = account;
-    analyticsEpoch++;
     identifyToken++;
   }
   if (!isActive() || !emailSeed) return;

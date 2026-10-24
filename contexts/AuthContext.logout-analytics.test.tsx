@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AuthProvider, { AuthContext } from "./AuthContext";
 import { fetchCurrentUser, logoutUser } from "@/lib/api/auth-api";
-import { capture } from "@/lib/analytics/client";
+import { capture, resetUser } from "@/lib/analytics/client";
 import { hashUserId } from "@/lib/analytics/hash";
 import { useAnalysisViewed } from "@/lib/analytics/use-analysis-viewed";
 import { useArchiveEntryAnalytics } from "@/lib/analytics/use-archive-entry";
@@ -54,6 +54,7 @@ function visible(state: DocumentVisibilityState): void {
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 5));
 
 beforeEach(() => {
+  resetUser();
   sdk.id = "anonymous";
   sdk.events = [];
   sdk.order = [];
@@ -98,6 +99,10 @@ describe("explicit logout retains the departing analytics identity (FRT-330)", (
     }, { wrapper });
     const hook = renderScreen();
     await waitFor(() => expect(sdk.id).toMatch(/^[a-f0-9]{64}$/));
+    // Entry is a separate observation; this regression asserts logout dwell/exit.
+    expect(sdk.events.filter(({ event }) => event === "analysis_result_viewed")).toHaveLength(1);
+    sdk.events = [];
+    sdk.order = [];
     act(() => hook.result.current.archive.handleCompletionChange({
       sectionIds: ["situation", "action", "result"],
       completedSectionIds: ["situation"],
@@ -117,6 +122,9 @@ describe("explicit logout retains the departing analytics identity (FRT-330)", (
         event: "archive_entry_abandoned",
         distinct_id: a,
         props: {
+          schema_version: 2,
+          source: "browser",
+          entry_attempt_id: expect.any(String),
           mode: "edit",
           last_section: "situation",
           sections_done: 1,
@@ -136,6 +144,8 @@ describe("explicit logout retains the departing analytics identity (FRT-330)", (
     vi.mocked(fetchCurrentUser).mockResolvedValue(user("b@example.com"));
     const bHook = renderScreen();
     await waitFor(() => expect(sdk.id).not.toBe("anonymous"));
+    expect(sdk.events.filter(({ event }) => event === "analysis_result_viewed")).toHaveLength(1);
+    sdk.events = sdk.events.filter(({ event }) => event !== "analysis_result_viewed");
     act(() => window.dispatchEvent(new Event("pagehide")));
     expect(sdk.events.slice(2)).toHaveLength(2);
     expect(sdk.events.slice(2).every((event) => event.distinct_id === sdk.id)).toBe(true);
