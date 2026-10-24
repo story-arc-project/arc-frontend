@@ -79,6 +79,7 @@ export const ANALYTICS_EVENTS = {
   signupCompleted: "signup_completed",
   onboardingCompleted: "onboarding_completed",
   recordCreated: "record_created",
+  recordSaved: "record_saved",
   firstRecordCreated: "first_record_created",
   analysisCompleted: "analysis_completed",
   // FRT-325: browser request settlement; official completion/failure is server-only.
