@@ -6,6 +6,13 @@ import PresetManager from "./PresetManager"
 import { samplePreset } from "./__fixtures__/archive.fixtures"
 import type { Preset } from "@/types/archive"
 
+// React development builds require awaited act for these mount/unmount events.
+// Production React omits act; let the real user event finish there instead.
+async function performAction(action: () => Promise<void>) {
+  if (typeof act === "function") await act(action)
+  else await action()
+}
+
 const secondPreset: Preset = {
   id: "preset-02",
   name: "어학 경험 블록 세트",
@@ -73,18 +80,17 @@ export const RenameCancelAndSave: Story = {
   },
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement)
-    // React 19 needs awaited async act scopes for the input mount/unmount.
-    await act(async () => { await userEvent.click(canvas.getByRole("button", { name: "이름 변경" })) })
+    await performAction(async () => { await userEvent.click(canvas.getByRole("button", { name: "이름 변경" })) })
     const cancelledInput = canvas.getByDisplayValue(samplePreset.name)
-    await act(async () => { await userEvent.clear(cancelledInput) })
-    await act(async () => { await userEvent.type(cancelledInput, "취소할 이름{Escape}") })
+    await performAction(async () => { await userEvent.clear(cancelledInput) })
+    await performAction(async () => { await userEvent.type(cancelledInput, "취소할 이름{Escape}") })
     await expect(canvas.getByText(samplePreset.name)).toBeVisible()
     await expect(args.onRename).not.toHaveBeenCalled()
 
-    await act(async () => { await userEvent.click(canvas.getByRole("button", { name: "이름 변경" })) })
+    await performAction(async () => { await userEvent.click(canvas.getByRole("button", { name: "이름 변경" })) })
     const savedInput = canvas.getByDisplayValue(samplePreset.name)
-    await act(async () => { await userEvent.clear(savedInput) })
-    await act(async () => { await userEvent.type(savedInput, "  새 이름  {Enter}") })
+    await performAction(async () => { await userEvent.clear(savedInput) })
+    await performAction(async () => { await userEvent.type(savedInput, "  새 이름  {Enter}") })
     await expect(args.onRename).toHaveBeenCalledTimes(1)
     await expect(args.onRename).toHaveBeenCalledWith(samplePreset.id, "새 이름")
   },
