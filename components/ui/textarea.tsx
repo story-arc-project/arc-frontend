@@ -1,6 +1,6 @@
 "use client";
 
-import { TextareaHTMLAttributes, forwardRef, useImperativeHandle } from "react";
+import { TextareaHTMLAttributes, forwardRef, useId, useImperativeHandle } from "react";
 
 import { syncTextareaHeight, useAutoResizeTextarea } from "@/hooks/useAutoResizeTextarea";
 
@@ -21,7 +21,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     // 아래 `onChange` 가 직접 다시 잰다.
     const isControlled = value !== undefined;
     const innerRef = useAutoResizeTextarea(isControlled ? String(value) : "");
-    const textareaId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
+    const generatedId = useId();
+    const textareaId = id ?? generatedId;
     const hintId = textareaId ? `${textareaId}-hint` : undefined;
     const errorId = textareaId ? `${textareaId}-error` : undefined;
     const describedBy = error ? errorId : hint ? hintId : undefined;

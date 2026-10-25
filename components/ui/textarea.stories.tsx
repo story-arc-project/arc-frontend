@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs";
-import { expect, within } from "storybook/test";
+import { expect, userEvent, within } from "storybook/test";
 
 import { Textarea } from "./textarea";
 
@@ -70,5 +70,30 @@ export const Disabled: Story = {
     label: "비활성화 필드",
     disabled: true,
     defaultValue: "편집할 수 없습니다",
+  },
+};
+
+/** 같은 라벨을 가진 독립 입력: 각 라벨과 설명은 해당 입력으로만 연결된다. */
+export const DuplicateLabels: Story = {
+  render: () => (
+    <div className="flex flex-col gap-6">
+      <Textarea label="내용" hint="첫 번째 입력의 설명" required />
+      <Textarea label="내용" hint="두 번째 입력의 설명" />
+      <Textarea label="내용" error="세 번째 입력의 오류" />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const fields = canvas.getAllByRole("textbox");
+    const labels = canvasElement.querySelectorAll("label");
+    const descriptions = ["첫 번째 입력의 설명", "두 번째 입력의 설명", "세 번째 입력의 오류"];
+    const names = ["내용 필수", "내용", "내용"];
+    await expect(new Set(fields.map(field => field.id)).size).toBe(3);
+    for (const [index, label] of Array.from(labels).entries()) {
+      await userEvent.click(label);
+      await expect(fields[index]).toHaveFocus();
+      await expect(fields[index]).toHaveAccessibleName(names[index]);
+      await expect(fields[index]).toHaveAccessibleDescription(descriptions[index]);
+    }
   },
 };
