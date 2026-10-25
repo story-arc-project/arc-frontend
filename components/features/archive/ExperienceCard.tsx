@@ -1,7 +1,7 @@
 "use client"
 
 import { MoreHorizontal, ChevronRight } from "lucide-react"
-import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { Badge } from "@/components/ui/badge"
 import ImportanceSelector from "./ImportanceSelector"
@@ -49,28 +49,69 @@ export default function ExperienceCard({
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
   const [submenuPos, setSubmenuPos] = useState({ top: 0, left: 0 })
 
-  // Position the main menu when it opens
-  useEffect(() => {
-    if (!menuOpen || !triggerRef.current) return
-    const rect = triggerRef.current.getBoundingClientRect()
-    setMenuPos({
-      top: rect.bottom + 4,
-      left: Math.min(rect.right - 160, window.innerWidth - 168),
-    })
-  }, [menuOpen])
+  // Measure the rendered portals before paint: content and viewport height may vary.
+  useLayoutEffect(() => {
+    if (!menuOpen) return
+    const positionMenus = () => {
+      const menu = menuRef.current
+      const trigger = triggerRef.current
+      if (!menu || !trigger) return
+      const maxHeight = Math.max(0, window.innerHeight - 16)
+      const maxWidth = Math.max(0, window.innerWidth - 16)
+      menu.style.maxHeight = `${maxHeight}px`
+      menu.style.maxWidth = `${maxWidth}px`
+      const bounds = menu.getBoundingClientRect()
+      const rect = trigger.getBoundingClientRect()
+      const clamp = (value: number, size: number, limit: number) =>
+        Math.max(8, Math.min(value, limit - size - 8))
+      const preferredTop = rect.bottom + 4 + bounds.height <= window.innerHeight - 8
+        ? rect.bottom + 4
+        : rect.top - bounds.height - 4
+      const top = clamp(preferredTop, bounds.height, window.innerHeight)
+      const left = clamp(rect.right - bounds.width, bounds.width, window.innerWidth)
+      // Place the parent before measuring the submenu trigger in its new position.
+      menu.style.top = `${top}px`
+      menu.style.left = `${left}px`
+      setMenuPos({ top, left })
 
-  // Position submenu when it shows
-  useEffect(() => {
-    if (!showLibrarySubmenu || !submenuTriggerRef.current) return
-    const rect = submenuTriggerRef.current.getBoundingClientRect()
-    const submenuWidth = 144
-    // Prefer right side, fall back to left if not enough space
-    const preferRight = rect.right + submenuWidth + 4 <= window.innerWidth
-    setSubmenuPos({
-      top: rect.top,
-      left: preferRight ? rect.right + 4 : rect.left - submenuWidth - 4,
-    })
-  }, [showLibrarySubmenu])
+      const submenu = submenuRef.current
+      const submenuTrigger = submenuTriggerRef.current
+      if (!submenu || !submenuTrigger) return
+      submenu.style.maxHeight = `${maxHeight}px`
+      submenu.style.maxWidth = `${maxWidth}px`
+      const submenuBounds = submenu.getBoundingClientRect()
+      const anchor = submenuTrigger.getBoundingClientRect()
+      const preferRight = anchor.right + submenuBounds.width + 4 <= window.innerWidth - 8
+      setSubmenuPos({
+        top: clamp(anchor.top, submenuBounds.height, window.innerHeight),
+        left: clamp(preferRight ? anchor.right + 4 : anchor.left - submenuBounds.width - 4, submenuBounds.width, window.innerWidth),
+      })
+    }
+    positionMenus()
+    window.addEventListener("resize", positionMenus)
+    const menu = menuRef.current
+    // The body-portaled submenu must follow its row when the main menu scrolls.
+    // Listen only on the parent scroll surface; submenu scrolling changes no anchor.
+    menu?.addEventListener("scroll", positionMenus)
+    return () => {
+      window.removeEventListener("resize", positionMenus)
+      menu?.removeEventListener("scroll", positionMenus)
+    }
+  }, [menuOpen, showLibrarySubmenu, manualLibraries.length])
+
+  // A short grace period lets the pointer cross the gap between portal surfaces.
+  const submenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const keepSubmenuOpen = () => {
+    if (submenuCloseTimer.current) clearTimeout(submenuCloseTimer.current)
+    setShowLibrarySubmenu(true)
+  }
+  const scheduleSubmenuClose = () => {
+    if (submenuCloseTimer.current) clearTimeout(submenuCloseTimer.current)
+    submenuCloseTimer.current = setTimeout(() => setShowLibrarySubmenu(false), 150)
+  }
+  useEffect(() => () => {
+    if (submenuCloseTimer.current) clearTimeout(submenuCloseTimer.current)
+  }, [])
 
   // Close menu on outside click
   const handleOutsideClick = useCallback((e: MouseEvent) => {
@@ -93,7 +134,12 @@ export default function ExperienceCard({
   // Close menu on scroll
   useEffect(() => {
     if (!menuOpen) return
-    const handleScroll = () => { setMenuOpen(false); setShowLibrarySubmenu(false) }
+    const handleScroll = (e: Event) => {
+      const target = e.target
+      if (target instanceof Node && (menuRef.current?.contains(target) || submenuRef.current?.contains(target))) return
+      setMenuOpen(false)
+      setShowLibrarySubmenu(false)
+    }
     window.addEventListener("scroll", handleScroll, true)
     return () => window.removeEventListener("scroll", handleScroll, true)
   }, [menuOpen])
@@ -116,7 +162,7 @@ export default function ExperienceCard({
           ref={menuRef}
           data-archive-popover
           className="fixed w-40 bg-surface border border-border rounded-lg shadow-md py-1 z-50"
-          style={{ top: menuPos.top, left: menuPos.left }}
+          style={{ top: menuPos.top, left: menuPos.left, overflowY: "auto", overscrollBehavior: "contain" }}
         >
           <button
             type="button"
@@ -135,8 +181,8 @@ export default function ExperienceCard({
           {libraries && onMoveToLibrary && manualLibraries.length > 0 && (
             <div
               className="relative"
-              onMouseEnter={() => setShowLibrarySubmenu(true)}
-              onMouseLeave={() => setShowLibrarySubmenu(false)}
+              onPointerEnter={e => { if (e.pointerType === "mouse") keepSubmenuOpen() }}
+              onPointerLeave={e => { if (e.pointerType === "mouse") scheduleSubmenuClose() }}
             >
               <button
                 ref={submenuTriggerRef}
@@ -153,7 +199,9 @@ export default function ExperienceCard({
                     ref={submenuRef}
                     data-archive-popover
                     className="fixed w-36 bg-surface border border-border rounded-lg shadow-md py-1 z-50"
-                    style={{ top: submenuPos.top, left: submenuPos.left }}
+                    onPointerEnter={e => { if (e.pointerType === "mouse") keepSubmenuOpen() }}
+                    onPointerLeave={e => { if (e.pointerType === "mouse") scheduleSubmenuClose() }}
+                    style={{ top: submenuPos.top, left: submenuPos.left, overflowY: "auto", overscrollBehavior: "contain" }}
                   >
                     {manualLibraries.map(lib => {
                       const isIn = lib.experienceIds.includes(experience.id)
