@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
+import { act } from "react"
+import { expect, fn, userEvent, within } from "storybook/test"
 
 import PresetManager from "./PresetManager"
 import { samplePreset } from "./__fixtures__/archive.fixtures"
@@ -60,5 +62,30 @@ export const SinglePreset: Story = {
 export const Empty: Story = {
   args: {
     presets: [],
+  },
+}
+
+export const RenameCancelAndSave: Story = {
+  tags: ["frt292"],
+  args: {
+    presets: [samplePreset],
+    onRename: fn(),
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    // React 19 needs awaited async act scopes for the input mount/unmount.
+    await act(async () => { await userEvent.click(canvas.getByRole("button", { name: "이름 변경" })) })
+    const cancelledInput = canvas.getByDisplayValue(samplePreset.name)
+    await act(async () => { await userEvent.clear(cancelledInput) })
+    await act(async () => { await userEvent.type(cancelledInput, "취소할 이름{Escape}") })
+    await expect(canvas.getByText(samplePreset.name)).toBeVisible()
+    await expect(args.onRename).not.toHaveBeenCalled()
+
+    await act(async () => { await userEvent.click(canvas.getByRole("button", { name: "이름 변경" })) })
+    const savedInput = canvas.getByDisplayValue(samplePreset.name)
+    await act(async () => { await userEvent.clear(savedInput) })
+    await act(async () => { await userEvent.type(savedInput, "  새 이름  {Enter}") })
+    await expect(args.onRename).toHaveBeenCalledTimes(1)
+    await expect(args.onRename).toHaveBeenCalledWith(samplePreset.id, "새 이름")
   },
 }
