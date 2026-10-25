@@ -182,6 +182,25 @@ describe("FileBlock URL lifecycle", () => {
     expect(vi.getTimerCount()).toBe(1)
   })
 
+  it.each(["audio/mpeg", "video/mp4"])("reloads native %s resource after URL refresh", async (mimeType) => {
+    vi.useFakeTimers()
+    vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first" })
+      .mockResolvedValue({ url: "https://files.example/refreshed" })
+    const block = attachedBlock()
+    const view = render(<FileBlock block={{ ...block, value: { ...block.value as FileBlockValue, mimeType } }} onChange={vi.fn()} />)
+    await flush()
+    const selector = mimeType.startsWith("audio") ? "audio" : "video"
+    const originalMedia = view.container.querySelector(selector)
+    expect(originalMedia?.querySelector("source")?.src).toBe("https://files.example/first")
+    await act(async () => { vi.advanceTimersByTime(300_000) })
+    const refreshedMedia = view.container.querySelector(selector)
+    // Updating a nested <source> alone does not rerun native media resource selection.
+    // A new media element guarantees the refreshed URL gets selected by the browser.
+    expect(refreshedMedia).not.toBe(originalMedia)
+    expect(originalMedia?.isConnected).toBe(false)
+    expect(refreshedMedia?.querySelector("source")?.src).toBe("https://files.example/refreshed")
+  })
+
   it.each([false, true])("discards failed links and retries in readOnly=%s", async (readOnly) => {
     vi.useFakeTimers()
     vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first" })

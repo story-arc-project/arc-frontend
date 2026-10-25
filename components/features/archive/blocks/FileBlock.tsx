@@ -57,11 +57,13 @@ function FilePreview({
     return <ImagePreview name={name} url={url} onDelete={onDelete} />
   }
   if (mime.startsWith("video/")) {
-    return <VideoPreview name={name} url={url} mimeType={mime} onDelete={onDelete} />
+    // Nested <source> URL changes need a fresh native media resource selection.
+    return <VideoPreview key={url} name={name} url={url} mimeType={mime} onDelete={onDelete} />
   }
   if (mime.startsWith("audio/")) {
     return (
       <AudioPreview
+        key={url}
         name={name}
         url={url}
         mimeType={mime}
