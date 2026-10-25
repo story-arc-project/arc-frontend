@@ -1,12 +1,13 @@
 "use client";
 
-import { FormEvent, Suspense, useRef, useState } from "react";
+import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
+import { clearSignupHandoff, createSignupHandoff } from "@/lib/auth/signup-handoff";
 import { needsOnboarding } from "@/lib/auth/login-response";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { API_URL, SOCIAL_ERROR_MESSAGES, FIRST_ONBOARDING_STEP, PASSWORD_RESET_ENABLED, loginContainer, loginItem } from "../constants";
@@ -59,8 +60,11 @@ function LoginForm() {
     SOCIAL_ERROR_MESSAGES[errorParam] ?? null
   );
 
+  useEffect(() => { clearSignupHandoff(); }, []);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    clearSignupHandoff();
     setIsLoading(true);
     setError(null);
 
@@ -78,7 +82,9 @@ function LoginForm() {
         if (code === "ACCOUNT_LOCKED") {
           setError("계정이 잠겼어요. 잠시 후 다시 시도해주세요.");
         } else if (code === "EMAIL_NOT_VERIFIED") {
-          router.push(`/signup?step=verify&email=${encodeURIComponent(email)}`);
+          const destination = createSignupHandoff(email);
+          if (destination) router.push(destination);
+          else setError("이메일 인증을 이어갈 수 없어요. 브라우저 저장 공간을 허용한 뒤 다시 로그인해주세요.");
         } else {
           setError("이메일 또는 비밀번호가 올바르지 않아요.");
         }
@@ -91,7 +97,7 @@ function LoginForm() {
       const body = await loginRes.json().catch(() => null);
 
       if (needsOnboarding(body)) {
-        router.push(`/signup?step=${FIRST_ONBOARDING_STEP}&email=${encodeURIComponent(email)}`);
+        router.push(`/signup?step=${FIRST_ONBOARDING_STEP}`);
       } else {
         // 하드 내비게이션으로 AuthProvider를 재마운트해 로그인 직후 user를 다시 불러온다.
         // (클라이언트 push만으로는 루트 컨텍스트의 user가 null로 남아 GNB 계정 메뉴가 가려진다.)
@@ -106,6 +112,7 @@ function LoginForm() {
   }
 
   function handleSocialLogin() {
+    clearSignupHandoff();
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) {
       setSocialError("Google 로그인을 사용할 수 없어요");

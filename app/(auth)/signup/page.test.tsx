@@ -12,7 +12,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 // 매 렌더 새 객체를 주면 page.tsx:111 의 [searchParams] 이펙트가 렌더마다 재실행돼
 // step 이 계속 verify 로 되돌아간다 — 스텝을 벗어나는 흐름을 아예 테스트할 수 없다.
 const { SEARCH_PARAMS } = vi.hoisted(() => ({
-  SEARCH_PARAMS: new URLSearchParams("step=verify&email=test@example.com"),
+  SEARCH_PARAMS: new URLSearchParams("step=verify&flow=test-flow"),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -85,6 +85,7 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sessionStorage.setItem("arc:signup-handoff", JSON.stringify({ flow: "test-flow", email: "test@example.test", createdAt: Date.now() }));
 });
 
 const NETWORK_MESSAGE = "네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
