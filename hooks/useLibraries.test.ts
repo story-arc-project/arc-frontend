@@ -208,7 +208,7 @@ describe("useLibraries — 병렬 멤버십 로딩과 mutation 경합", () => {
     await settle()
 
     expect(rejected).toBe(true)
-    expect(membershipOf(result.current.libraries, "lib-a")).toContain("exp-3")
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1", "exp-3"])
   })
 
   it("실패한 변경의 복구 재조회가, 그 사이 시작된 다른 변경까지 되돌리지 않는다", async () => {
@@ -260,7 +260,7 @@ describe("useLibraries — 병렬 멤버십 로딩과 mutation 경합", () => {
     await settle()
 
     expect(rejectedA).toBe(true)
-    expect(membershipOf(result.current.libraries, "lib-a")).toContain("exp-3")
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1", "exp-3"])
   })
 
   it("겹친 두 변경이 모두 실패하면, 뒤늦게 성공한 옛 복구가 새 복구의 재시도 안내를 지우지 않는다", async () => {
@@ -366,7 +366,7 @@ describe("useLibraries — 병렬 멤버십 로딩과 mutation 경합", () => {
     })
     await settle()
 
-    expect(membershipOf(result.current.libraries, "lib-a")).toContain("exp-2")
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1", "exp-2"])
   })
 
   it("경합이 없으면 두 라이브러리 모두 각자의 목록을 반영한다", async () => {
@@ -582,5 +582,297 @@ describe("useLibraries — 멤버십 판정은 상태 업데이터 밖에서 한
 
     expect(rejected).toBe(true)
     expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+  })
+})
+
+describe("useLibraries — 실패한 변경과 유효한 변경을 재조정한다", () => {
+  it.each([false, true])("성공 응답이 먼저인가=%s: 겹친 성공만 남기고 실패한 추가를 제거한다", async (successFirst) => {
+    const { result } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    const failedPost = deferred<void>()
+    const successfulPost = deferred<void>()
+    addExperienceToLibraryMock.mockReturnValueOnce(failedPost.promise).mockReturnValueOnce(successfulPost.promise)
+    let failed!: Promise<void>
+    let successful!: Promise<void>
+    await act(async () => {
+      failed = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {})
+      successful = result.current.addExperienceToLibrary("lib-a", "exp-3")
+    })
+    expect(addExperienceToLibraryMock).toHaveBeenCalledTimes(2)
+    if (successFirst) await act(async () => { successfulPost.resolve(); await successful })
+    await act(async () => { failedPost.reject(new Error("write failed")); await Promise.resolve() })
+    await settle()
+    await act(async () => {
+      membershipQueue[0].resolve(listData(successFirst ? ["exp-1", "exp-3"] : ["exp-1"]))
+      await failed
+    })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1", "exp-3"])
+    if (!successFirst) await act(async () => { successfulPost.resolve(); await successful })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1", "exp-3"])
+  })
+
+  it.each([false, true])("복구 응답 역순=%s: 두 추가가 모두 실패하면 둘 다 제거한다", async (reverse) => {
+    const { result } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    const posts = [deferred<void>(), deferred<void>()]
+    addExperienceToLibraryMock.mockReturnValueOnce(posts[0].promise).mockReturnValueOnce(posts[1].promise)
+    let writes!: Promise<void>[]
+    await act(async () => {
+      writes = ["exp-2", "exp-3"].map((id) => result.current.addExperienceToLibrary("lib-a", id).catch(() => {}))
+      posts[0].reject(new Error("first failed"))
+      await Promise.resolve()
+    })
+    await settle()
+    await act(async () => { posts[1].reject(new Error("second failed")); await Promise.resolve() })
+    await settle()
+    for (const index of reverse ? [1, 0] : [0, 1]) {
+      await act(async () => { membershipQueue[index].resolve(listData(["exp-1"])); await writes[index] })
+    }
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+    expect(result.current.membershipErrorIds.has("lib-a")).toBe(false)
+  })
+
+  it.each(["add", "remove"] as const)("같은 항목 %s 실패 뒤 반대 변경은 요청 순서를 지키고 복구에 보존된다", async (firstAction) => {
+    const { result } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    const firstRequest = deferred<void>()
+    const secondRequest = deferred<void>()
+    const firstMock = firstAction === "add" ? addExperienceToLibraryMock : removeExperienceFromLibraryMock
+    const secondMock = firstAction === "add" ? removeExperienceFromLibraryMock : addExperienceToLibraryMock
+    firstMock.mockReturnValueOnce(firstRequest.promise)
+    secondMock.mockReturnValueOnce(secondRequest.promise)
+    const id = firstAction === "add" ? "exp-2" : "exp-1"
+    let first!: Promise<void>
+    let second!: Promise<void>
+    await act(async () => {
+      first = (firstAction === "add" ? result.current.addExperienceToLibrary : result.current.removeExperienceFromLibrary)("lib-a", id).catch(() => {})
+      second = (firstAction === "add" ? result.current.removeExperienceFromLibrary : result.current.addExperienceToLibrary)("lib-a", id)
+    })
+    expect(secondMock).not.toHaveBeenCalled()
+    await act(async () => { firstRequest.reject(new Error("failed")); await Promise.resolve() })
+    await settle()
+    expect(secondMock).toHaveBeenCalledWith("lib-a", id)
+    await act(async () => { membershipQueue[0].resolve(listData(["exp-1"])); await first })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+    await act(async () => { secondRequest.resolve(); await second })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+  })
+
+  it("같은 항목의 후속 요청은 앞의 서버 응답 전에는 전송하지 않고 다른 라이브러리는 독립 처리한다", async () => {
+    const { result } = await renderWithMembershipSettled()
+    const post = deferred<void>()
+    addExperienceToLibraryMock.mockReturnValueOnce(post.promise)
+    let add!: Promise<void>
+    let remove!: Promise<void>
+    await act(async () => {
+      add = result.current.addExperienceToLibrary("lib-a", "exp-2")
+      remove = result.current.removeExperienceFromLibrary("lib-a", "exp-2")
+      await result.current.addExperienceToLibrary("lib-b", "exp-2")
+    })
+    expect(removeExperienceFromLibraryMock).not.toHaveBeenCalled()
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+    expect(membershipOf(result.current.libraries, "lib-b")).toEqual(["exp-2"])
+    await act(async () => { post.resolve(); await Promise.all([add, remove]) })
+    expect(removeExperienceFromLibraryMock).toHaveBeenCalledOnce()
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+  })
+
+  it("복구 GET 실패 뒤 재시도하는 동안에도 진행 중인 추가를 유지한다", async () => {
+    const { result } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    addExperienceToLibraryMock.mockRejectedValueOnce(new Error("failed"))
+    let failed!: Promise<void>
+    await act(async () => { failed = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {}); await Promise.resolve() })
+    await settle()
+    await act(async () => { membershipQueue[0].reject(new Error("GET failed")); await failed })
+    expect(result.current.membershipErrorIds.has("lib-a")).toBe(true)
+    const post = deferred<void>()
+    addExperienceToLibraryMock.mockReturnValueOnce(post.promise)
+    let added!: Promise<void>
+    let retry!: Promise<void>
+    await act(async () => {
+      added = result.current.addExperienceToLibrary("lib-a", "exp-3")
+      retry = result.current.retryLibraryMembership("lib-a")
+    })
+    await act(async () => { membershipQueue[1].resolve(listData(["exp-1"])); await retry })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1", "exp-3"])
+    expect(result.current.membershipErrorIds.has("lib-a")).toBe(false)
+    await act(async () => { post.resolve(); await added })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1", "exp-3"])
+  })
+
+  it("언마운트 뒤 실패한 쓰기는 복구 GET을 시작하지 않는다", async () => {
+    const { result, unmount } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    const post = deferred<void>()
+    addExperienceToLibraryMock.mockReturnValueOnce(post.promise)
+    let write!: Promise<void>
+    await act(async () => { write = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {}) })
+    unmount()
+    post.reject(new Error("failed after unmount"))
+    await settle()
+    expect(membershipQueue).toHaveLength(0)
+    await write
+  })
+
+  it("언마운트 전에 시작한 복구 응답도 목록을 갱신하지 않는다", async () => {
+    const { result, unmount } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    addExperienceToLibraryMock.mockRejectedValueOnce(new Error("failed"))
+    let write!: Promise<void>
+    await act(async () => { write = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {}); await Promise.resolve() })
+    await settle()
+    const before = result.current.libraries
+    unmount()
+    membershipQueue[0].resolve(listData(["exp-1"]))
+    await write
+    expect(result.current.libraries).toBe(before)
+  })
+})
+
+describe("useLibraries — 같은 항목 요청 결과 조합", () => {
+  it.each([
+    { first: "add", failFirst: false, failSecond: false, server: ["exp-1"], expected: ["exp-1"] },
+    { first: "add", failFirst: false, failSecond: true, server: ["exp-1", "exp-2"], expected: ["exp-1", "exp-2"] },
+    { first: "add", failFirst: true, failSecond: true, server: ["exp-1"], expected: ["exp-1"] },
+    { first: "remove", failFirst: false, failSecond: false, server: ["exp-1"], expected: ["exp-1"] },
+    { first: "remove", failFirst: false, failSecond: true, server: [], expected: [] },
+    { first: "remove", failFirst: true, failSecond: true, server: ["exp-1"], expected: ["exp-1"] },
+  ])("$first → 반대 변경: 첫 실패=$failFirst, 다음 실패=$failSecond", async ({ first, failFirst, failSecond, server, expected }) => {
+    const { result } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    const requests = [deferred<void>(), deferred<void>()]
+    const firstMock = first === "add" ? addExperienceToLibraryMock : removeExperienceFromLibraryMock
+    const secondMock = first === "add" ? removeExperienceFromLibraryMock : addExperienceToLibraryMock
+    firstMock.mockReturnValueOnce(requests[0].promise)
+    secondMock.mockReturnValueOnce(requests[1].promise)
+    const id = first === "add" ? "exp-2" : "exp-1"
+    let writes!: Promise<void>[]
+    await act(async () => {
+      writes = [
+        (first === "add" ? result.current.addExperienceToLibrary : result.current.removeExperienceFromLibrary)("lib-a", id).catch(() => {}),
+        (first === "add" ? result.current.removeExperienceFromLibrary : result.current.addExperienceToLibrary)("lib-a", id).catch(() => {}),
+      ]
+    })
+    expect(secondMock).not.toHaveBeenCalled()
+    await act(async () => {
+      if (failFirst) requests[0].reject(new Error("first failed"))
+      else requests[0].resolve()
+      await Promise.resolve()
+    })
+    await settle()
+    expect(secondMock).toHaveBeenCalledOnce()
+    await act(async () => {
+      if (failSecond) requests[1].reject(new Error("second failed"))
+      else requests[1].resolve()
+      await Promise.resolve()
+    })
+    await settle()
+    // Resolve the newest server snapshot first, then the older response. The
+    // older GET must neither restore an earlier toggle nor clear a newer error.
+    for (const recovery of [...membershipQueue].reverse()) {
+      await act(async () => { recovery.resolve(listData(server)); await Promise.resolve() })
+    }
+    await act(async () => { await Promise.all(writes) })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(expected)
+  })
+
+  it("추가 실패 → 제거 → 추가 세 번을 눌러도 마지막 의도를 순서대로 처리한다", async () => {
+    const { result } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    const first = deferred<void>()
+    const second = deferred<void>()
+    const third = deferred<void>()
+    addExperienceToLibraryMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(third.promise)
+    removeExperienceFromLibraryMock.mockReturnValueOnce(second.promise)
+    let writes!: Promise<void>[]
+    await act(async () => {
+      writes = [
+        result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {}),
+        result.current.removeExperienceFromLibrary("lib-a", "exp-2"),
+        result.current.addExperienceToLibrary("lib-a", "exp-2"),
+      ]
+    })
+    expect(addExperienceToLibraryMock).toHaveBeenCalledTimes(1)
+    expect(removeExperienceFromLibraryMock).not.toHaveBeenCalled()
+    await act(async () => { first.reject(new Error("first failed")); await Promise.resolve() })
+    await settle()
+    expect(removeExperienceFromLibraryMock).toHaveBeenCalledOnce()
+    expect(addExperienceToLibraryMock).toHaveBeenCalledTimes(1)
+    await act(async () => { membershipQueue[0].resolve(listData(["exp-1"])); await writes[0] })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1", "exp-2"])
+    await act(async () => { second.resolve(); await writes[1] })
+    expect(addExperienceToLibraryMock).toHaveBeenCalledTimes(2)
+    await act(async () => { third.resolve(); await writes[2] })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1", "exp-2"])
+  })
+
+  it("오래 걸린 최초 GET은 복구 실패 뒤 재시도 필요 상태를 loaded로 바꾸지 않는다", async () => {
+    const { result } = await renderWithMembershipInFlight()
+    const initial = pendingMembership.get("lib-a")!
+    addExperienceToLibraryMock.mockRejectedValueOnce(new Error("write failed"))
+    let write!: Promise<void>
+    await act(async () => { write = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {}); await Promise.resolve() })
+    await settle()
+    await act(async () => { pendingMembership.get("lib-a")!.reject(new Error("recovery failed")); await write })
+    await act(async () => { initial.resolve(listData([])); await Promise.resolve() })
+    expect(result.current.membershipErrorIds.has("lib-a")).toBe(true)
+    expect(result.current.loadedMembershipIds.has("lib-a")).toBe(false)
+  })
+})
+
+describe("useLibraries — 재시도 상태", () => {
+  it("복구 오류 뒤 중복 no-op 호출은 재시도 안내와 요청 수를 바꾸지 않는다", async () => {
+    const { result } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    addExperienceToLibraryMock.mockRejectedValueOnce(new Error("write failed"))
+    let failed!: Promise<void>
+    await act(async () => { failed = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {}); await Promise.resolve() })
+    await settle()
+    await act(async () => { membershipQueue[0].reject(new Error("GET failed")); await failed })
+    await act(async () => {
+      await result.current.addExperienceToLibrary("lib-a", "exp-2")
+      await result.current.removeExperienceFromLibrary("lib-a", "absent")
+    })
+    expect(addExperienceToLibraryMock).toHaveBeenCalledTimes(1)
+    expect(removeExperienceFromLibraryMock).not.toHaveBeenCalled()
+    expect(result.current.membershipErrorIds.has("lib-a")).toBe(true)
+    expect(result.current.loadedMembershipIds.has("lib-a")).toBe(false)
+  })
+
+  it("겹친 재시도 중 이전 응답이 먼저 끝나도 다음 응답까지 loading을 유지한다", async () => {
+    const { result } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    let retries!: Promise<void>[]
+    await act(async () => {
+      retries = [result.current.retryLibraryMembership("lib-a"), result.current.retryLibraryMembership("lib-a")]
+    })
+    await act(async () => { membershipQueue[0].resolve(listData(["exp-1"])); await retries[0] })
+    expect(result.current.loadingMembershipIds.has("lib-a")).toBe(true)
+    await act(async () => { membershipQueue[1].resolve(listData(["exp-1"])); await retries[1] })
+    expect(result.current.loadingMembershipIds.has("lib-a")).toBe(false)
+  })
+})
+
+describe("useLibraries — 전체 재조회 이후 복구 상태", () => {
+  it("실패 복구 GET 뒤 전체 재조회가 성공하면 새 멤버십을 loaded로 표시한다", async () => {
+    const { result } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    addExperienceToLibraryMock.mockRejectedValueOnce(new Error("write failed"))
+    let failed!: Promise<void>
+    await act(async () => { failed = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {}); await Promise.resolve() })
+    await settle()
+    await act(async () => { membershipQueue[0].reject(new Error("recovery failed")); await failed })
+    expect(result.current.membershipErrorIds.has("lib-a")).toBe(true)
+    await act(async () => { await result.current.refetch() })
+    await act(async () => {
+      pendingMembership.get("lib-a")!.resolve(listData(["exp-1"]))
+      pendingMembership.get("lib-b")!.resolve(listData([]))
+      await Promise.resolve()
+    })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+    expect(result.current.loadedMembershipIds.has("lib-a")).toBe(true)
+    expect(result.current.membershipErrorIds.has("lib-a")).toBe(false)
+    expect(result.current.loadingMembershipIds.has("lib-a")).toBe(false)
   })
 })
