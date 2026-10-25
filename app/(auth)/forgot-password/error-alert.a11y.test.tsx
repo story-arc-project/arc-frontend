@@ -238,6 +238,19 @@ function deferredReset() {
 }
 
 describe("비밀번호 찾기 — 재발송 결과의 역할과 수명", () => {
+  it("성공 영역은 응답 전부터 존재하고 응답 뒤 내용을 갱신한다", async () => {
+    await renderPage();
+    await advanceToCodeStep();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+    const pending = deferredReset();
+    requestReset.mockReturnValueOnce(pending.promise);
+    await clickButton("코드 재발송");
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    await act(async () => pending.resolve());
+    expect(screen.getByRole("status")).toHaveTextContent(RESEND_SUCCESS);
+  });
+
   it("성공은 polite status로 알리고 실패 alert를 남기지 않는다", async () => {
     await renderPage();
     await advanceToCodeStep();
@@ -257,7 +270,7 @@ describe("비밀번호 찾기 — 재발송 결과의 역할과 수명", () => {
     requestReset.mockRejectedValueOnce(error);
     await clickButton("코드 재발송");
     assertAnnounced(message);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 
   it("성공 다음 실패, 실패 다음 성공으로 바뀔 때 이전 역할을 비운다", async () => {
@@ -267,7 +280,7 @@ describe("비밀번호 찾기 — 재발송 결과의 역할과 수명", () => {
     requestReset.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     await clickButton("코드 재발송");
     assertAnnounced(RESEND_FAILURE);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
     await clickButton("코드 재발송");
     expect(screen.getByRole("status")).toHaveTextContent(RESEND_SUCCESS);
     assertNothingAnnounced();
@@ -297,7 +310,7 @@ describe("비밀번호 찾기 — 재발송 결과의 역할과 수명", () => {
     await clickButton("← 이전");
     assertNoResendResult();
     assertNothingAnnounced();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 
   it.each(["success", "failure"])("떠난 코드 흐름의 늦은 %s 응답은 새 코드 화면에 결과를 남기지 않는다", async (result) => {
@@ -314,6 +327,6 @@ describe("비밀번호 찾기 — 재발송 결과의 역할과 수명", () => {
     });
     assertNoResendResult();
     assertNothingAnnounced();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
   });
 });

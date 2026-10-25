@@ -383,7 +383,7 @@ function ForgotPasswordForm() {
                     {isLoading ? "확인 중..." : "확인"}
                   </Button>
                   {resendError && <p role="alert" className="text-body-sm text-error">{resendError}</p>}
-                  {resendNotice && <p role="status" aria-live="polite" className="text-body-sm text-text-tertiary">{resendNotice}</p>}
+                  <p role="status" aria-live="polite" className={resendNotice ? "text-body-sm text-text-tertiary" : "sr-only"}>{resendNotice}</p>
                   <button
                     type="button"
                     onClick={handleResendCode}
