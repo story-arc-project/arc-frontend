@@ -52,12 +52,20 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
     await expect(download).toHaveAttribute("href", `https://files.example/link-${failedCount + 1}`);
     await expect(retry).toHaveCount(0);
     await expect(page.getByText("검토용 문서.txt", { exact: true })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    // Scope this regression to the changed attachment, rather than unrelated template tables.
+    const attachment = page.getByRole("group", { name: "검토용 첨부", exact: true });
+    const layout = await attachment.evaluate(el => ({
+      left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right,
+      width: innerWidth, scroll: el.scrollWidth, client: el.clientWidth,
+    }));
+    expect(layout.left).toBeGreaterThanOrEqual(0);
+    expect(layout.right).toBeLessThanOrEqual(layout.width);
+    expect(layout.scroll).toBeLessThanOrEqual(layout.client);
     await page.getByRole("group", { name: "검토용 첨부", exact: true }).screenshot({ path: testInfo.outputPath("recovered.jpg"), type: "jpeg", quality: 70 });
   });
 }
 
-test("FRT-240 audio preview selects renewed native resource", async ({ page }) => {
+test("FRT-240 audio renewal preserves playing and paused position", async ({ page }, testInfo) => {
   await stubApi(page, { authed: true, scenario: "data" });
   await page.route(`${STUB_API_URL}/experiences/frt240-audio`, async route => {
     await route.fulfill({ json: { status: "success", message: "ok", data: {
@@ -75,18 +83,41 @@ test("FRT-240 audio preview selects renewed native resource", async ({ page }) =
     await route.fulfill({ json: { status: "success", message: "ok", data: `https://files.example/audio-${requests}.wav` } });
   });
   // Synthetic silence, no user file data. Valid PCM header allows native resource selection.
-  const wav = Buffer.alloc(204);
-  wav.write("RIFF", 0); wav.writeUInt32LE(196, 4); wav.write("WAVEfmt ", 8);
+  const wav = Buffer.alloc(1_600_044);
+  wav.write("RIFF", 0); wav.writeUInt32LE(1_600_036, 4); wav.write("WAVEfmt ", 8);
   wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
   wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32);
-  wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(160, 40);
-  await page.route("https://files.example/audio-*.wav", route => route.fulfill({ contentType: "audio/wav", body: wav }));
+  wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(1_600_000, 40);
+  await page.route("https://files.example/audio-*.wav", async route => {
+    const range = route.request().headers()["range"]?.match(/bytes=(\d+)-(\d*)/);
+    const start = range ? Number(range[1]) : 0;
+    const end = range?.[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1;
+    await route.fulfill({ status: range ? 206 : 200, contentType: "audio/wav",
+      headers: { "accept-ranges": "bytes", ...(range ? { "content-range": `bytes ${start}-${end}/${wav.length}` } : {}) },
+      body: wav.subarray(start, end + 1),
+    });
+  });
   await page.clock.install();
   await page.goto("/archive/frt240-audio/edit");
   const audio = page.locator("audio");
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.currentSrc)).toMatch(/audio-\d+\.wav/);
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.readyState)).toBeGreaterThanOrEqual(1);
+  await audio.evaluate((el: HTMLAudioElement) => { el.currentTime = 10; });
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.seeking)).toBe(false);
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.currentTime)).toBe(10);
+  await audio.evaluate((el: HTMLAudioElement) => el.play());
   const firstSrc = await audio.evaluate((el: HTMLAudioElement) => el.currentSrc);
   await page.clock.fastForward(300_000);
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.currentSrc)).not.toBe(firstSrc);
-  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.readyState)).toBeGreaterThanOrEqual(1);
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.paused)).toBe(false);
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.currentTime)).toBeGreaterThanOrEqual(10);
+  await audio.evaluate((el: HTMLAudioElement) => { el.pause(); el.currentTime = 25; });
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.seeking)).toBe(false);
+  const playingSrc = await audio.evaluate((el: HTMLAudioElement) => el.currentSrc);
+  await page.clock.fastForward(300_000);
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.currentSrc)).not.toBe(playingSrc);
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.currentTime)).toBe(25);
+  expect(await audio.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true);
+  await audio.scrollIntoViewIfNeeded();
+  await page.getByRole("group", { name: "오디오 첨부", exact: true }).screenshot({ path: testInfo.outputPath("audio-preserved.jpg"), type: "jpeg", quality: 70 });
 });
