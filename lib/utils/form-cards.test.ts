@@ -1079,3 +1079,20 @@ describe("공개 설정은 입력 화면에서 내려갔다 (FRT-306)", () => {
     expect(filledQualitativeKeys(r.cards)).not.toContain("extended.공개 설정")
   })
 })
+
+
+describe("custom table progress (FRT-184)", () => {
+  it("빈 행을 추가해도 미완료이며 셀 입력·삭제를 따라 진행도가 바뀐다", () => {
+    const block: Block = { id: "table", type: "table", label: "표", value: { type: "table", columns: ["항목"], rows: [[""]] } }
+    const card: FormCardModel = { id: "detail", category: "detail", label: "상세", blocks: [block] }
+    expect(isCardComplete(card)).toBe(false)
+    expect(computeFormProgress([card]).done).toBe(0)
+    if (block.value.type !== "table") throw new Error("unreachable")
+    block.value.rows.push(["실제 내용"])
+    expect(isCardComplete(card)).toBe(true)
+    expect(computeFormProgress([card]).done).toBe(1)
+    block.value.rows[1][0] = "   "
+    expect(isCardComplete(card)).toBe(false)
+    expect(block.value.rows).toEqual([[""], ["   "]])
+  })
+})
