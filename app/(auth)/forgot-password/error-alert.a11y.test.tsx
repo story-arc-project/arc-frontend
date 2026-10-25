@@ -70,6 +70,7 @@ vi.mock("next/link", () => ({
 
 import { requestPasswordReset, verifyResetCode, resetPassword } from "@/lib/api/auth-api";
 
+import { ApiError } from "@/lib/api/client";
 import ForgotPasswordPage from "./page";
 
 const requestReset = vi.mocked(requestPasswordReset);
@@ -214,5 +215,105 @@ describe("비밀번호 찾기 — 실패를 보조기술에 알린다", () => {
     });
 
     assertNothingAnnounced();
+  });
+});
+
+const RESEND_SUCCESS = "코드를 다시 보냈어요.";
+const RESEND_FAILURE = "재발송에 실패했어요. 잠시 후 다시 시도해주세요.";
+
+function assertNoResendResult() {
+  expect(screen.queryByText(RESEND_SUCCESS)).not.toBeInTheDocument();
+  expect(screen.queryByText(RESEND_FAILURE)).not.toBeInTheDocument();
+  expect(screen.queryByText("5분 후 재발송 가능해요.")).not.toBeInTheDocument();
+}
+
+function deferredReset() {
+  let resolve!: () => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+describe("비밀번호 찾기 — 재발송 결과의 역할과 수명", () => {
+  it("성공은 polite status로 알리고 실패 alert를 남기지 않는다", async () => {
+    await renderPage();
+    await advanceToCodeStep();
+    await clickButton("코드 재발송");
+    expect(screen.getByRole("status")).toHaveTextContent(RESEND_SUCCESS);
+    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+    assertNothingAnnounced();
+  });
+
+  it.each([
+    ["네트워크", new TypeError("Failed to fetch"), RESEND_FAILURE],
+    ["서버", new ApiError(500, "Internal server error"), RESEND_FAILURE],
+    ["429", new ApiError(429, "Too many requests"), "5분 후 재발송 가능해요."],
+  ])("%s 실패는 polite로 덮이지 않은 alert로 알린다", async (_name, error, message) => {
+    await renderPage();
+    await advanceToCodeStep();
+    requestReset.mockRejectedValueOnce(error);
+    await clickButton("코드 재발송");
+    assertAnnounced(message);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("성공 다음 실패, 실패 다음 성공으로 바뀔 때 이전 역할을 비운다", async () => {
+    await renderPage();
+    await advanceToCodeStep();
+    await clickButton("코드 재발송");
+    requestReset.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await clickButton("코드 재발송");
+    assertAnnounced(RESEND_FAILURE);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await clickButton("코드 재발송");
+    expect(screen.getByRole("status")).toHaveTextContent(RESEND_SUCCESS);
+    assertNothingAnnounced();
+  });
+
+  it.each(["success", "failure"])("%s 결과는 재시도 시작 시 비우고 반복 클릭은 추가 요청하지 않는다", async (result) => {
+    await renderPage();
+    await advanceToCodeStep();
+    if (result === "failure") requestReset.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await clickButton("코드 재발송");
+    const pending = deferredReset();
+    requestReset.mockReturnValueOnce(pending.promise);
+    await clickButton("코드 재발송");
+    assertNoResendResult();
+    await clickButton("보내는 중...");
+    expect(requestReset).toHaveBeenCalledTimes(3);
+    await act(async () => pending.resolve());
+    expect(screen.getByRole("status")).toHaveTextContent(RESEND_SUCCESS);
+  });
+
+  it.each(["success", "failure"])("%s 결과를 남긴 뒤 비밀번호 단계에서 돌아와도 지난 결과를 읽지 않는다", async (result) => {
+    await renderPage();
+    await advanceToCodeStep();
+    if (result === "failure") requestReset.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await clickButton("코드 재발송");
+    await advanceToPasswordStep();
+    await clickButton("← 이전");
+    assertNoResendResult();
+    assertNothingAnnounced();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it.each(["success", "failure"])("떠난 코드 흐름의 늦은 %s 응답은 새 코드 화면에 결과를 남기지 않는다", async (result) => {
+    await renderPage();
+    await advanceToCodeStep();
+    const old = deferredReset();
+    requestReset.mockReturnValueOnce(old.promise);
+    await clickButton("코드 재발송");
+    await clickButton("← 이전");
+    await clickButton("재설정 코드 받기"); // 새 발송 응답이 먼저 도착한다.
+    await act(async () => {
+      if (result === "success") old.resolve();
+      else old.reject(new TypeError("Failed to fetch"));
+    });
+    assertNoResendResult();
+    assertNothingAnnounced();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
