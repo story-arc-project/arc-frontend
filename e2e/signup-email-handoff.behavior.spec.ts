@@ -8,7 +8,7 @@ async function attachScreenshots(page: Page, testInfo: TestInfo, label: string) 
     // Framer Motion uses JS transforms, which Playwright's CSS animation switch does not finish.
     // Wait for its final geometry before taking review screenshots at either viewport.
     await expect.poll(() => page.locator("h1").evaluate((heading) => {
-      let node: HTMLElement | null = heading;
+      let node: Element | null = heading;
       while (node) {
         const { transform, opacity } = getComputedStyle(node);
         if (Number(opacity) < 1) return false;
