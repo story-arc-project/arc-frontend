@@ -1,5 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
-import { expect, within } from "storybook/test"
+import { expect, userEvent, within } from "storybook/test"
+
+import { http, HttpResponse } from "msw"
 
 import FileBlock from "./FileBlock"
 import {
@@ -201,3 +203,38 @@ export const ReadOnlyNameOnlyLongFileName: Story = {
     expectWithinParent(canvasElement, "frt318-nameonly-container")
   },
 }
+
+let retryRequests = 0
+const retryState: Story = {
+  args: {
+    block: {
+      ...fileBlock,
+      value: { type: "file", fileName: "증빙.pdf", fileId: "file-frt240-retry",
+        mimeType: "application/pdf", url: "https://files.example/stale", description: "제출한 증빙", evidenceType: "증빙 서류" },
+    },
+  },
+  beforeEach: () => { retryRequests = 0 },
+  parameters: {
+    msw: {
+      handlers: [http.get("*/files/file-frt240-retry/download", () => {
+        retryRequests += 1
+        return retryRequests === 1
+          ? HttpResponse.json({ message: "signed URL must stay private" }, { status: 500 })
+          : HttpResponse.json({ data: "https://files.example/recovered" })
+      })],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const retry = await canvas.findByRole("button", { name: "다운로드 링크 다시 시도" })
+    expect(canvas.queryByRole("link")).toBeNull()
+    expect(canvas.queryByText(/signed URL/)).toBeNull()
+    await userEvent.click(retry)
+    const link = await canvas.findByRole("link", { name: "증빙.pdf 열기" })
+    expect(link).toHaveAttribute("href", "https://files.example/recovered")
+    expect(canvas.queryByRole("button", { name: "다운로드 링크 다시 시도" })).toBeNull()
+  },
+}
+
+export const DownloadRetry: Story = { ...retryState, args: { ...retryState.args, readOnly: false } }
+export const ReadOnlyDownloadRetry: Story = { ...retryState, args: { ...retryState.args, readOnly: true } }
