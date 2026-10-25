@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { capture } from "@/lib/analytics"
 import { getFileUrl, MAX_FILE_SIZE_BYTES } from "@/lib/api/files-api"
 import { useFileUpload } from "@/hooks/useFileUpload"
+import { isSafeHttpUrl } from "@/lib/utils/url-utils"
 import type { Block, FileBlockValue } from "@/types/archive"
 
 import AudioPreview from "./file/AudioPreview"
@@ -242,10 +243,12 @@ export default function FileBlock({ block, readOnly, onBusyChange, onChange }: F
       : undefined
 
   if (readOnly) {
+    // Legacy attachments have no fileId to renew; only stored HTTP(S) URLs are viewable.
+    const hasLegacyUrl = !hasUploaded && Boolean(val.url && isSafeHttpUrl(val.url))
     return (
       <div className="flex flex-col gap-1 border-l-2 border-brand/30 pl-3.5">
         <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
-        {hasUploaded ? (
+        {hasUploaded || hasLegacyUrl ? (
           <div className="mt-1 flex flex-col gap-2">
             <FilePreview val={val} resolvedUrl={resolvedUrl} />
             {urlErrorNotice}
