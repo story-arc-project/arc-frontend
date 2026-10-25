@@ -30,6 +30,53 @@ interface FileBlockProps {
   onChange: (value: FileBlockValue) => void
 }
 
+// Keep the native element alive: replacing it on each signed URL renewal loses playback.
+function MediaPreview({ val, url, onDelete }: {
+  val: FileBlockValue
+  url: string
+  onDelete?: () => void
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const previousUrlRef = useRef(url)
+  const pendingPlaybackRef = useRef<{ time: number; paused: boolean } | null>(null)
+
+  useEffect(() => {
+    if (previousUrlRef.current === url) return
+    previousUrlRef.current = url
+    const media = containerRef.current?.querySelector("audio, video") as HTMLMediaElement | null
+    if (!media) return
+    // A second renewal can arrive before metadata; keep the original playback intent.
+    const playback = pendingPlaybackRef.current ?? { time: media.currentTime, paused: media.paused }
+    pendingPlaybackRef.current = playback
+    let cancelled = false
+    const restorePlayback = () => {
+      const source = media.querySelector("source")
+      if (cancelled || !source || media.currentSrc !== source.src) return
+      media.currentTime = playback.time
+      pendingPlaybackRef.current = null
+      media.removeEventListener("loadedmetadata", restorePlayback)
+      if (!playback.paused) void media.play().catch(() => {})
+    }
+    media.addEventListener("loadedmetadata", restorePlayback)
+    // Updating a nested source alone does not rerun the native resource selection.
+    media.load()
+    return () => {
+      cancelled = true
+      media.removeEventListener("loadedmetadata", restorePlayback)
+    }
+  }, [url])
+
+  return (
+    <div ref={containerRef}>
+      {val.mimeType?.startsWith("video/") ? (
+        <VideoPreview name={val.fileName} url={url} mimeType={val.mimeType} onDelete={onDelete} />
+      ) : (
+        <AudioPreview name={val.fileName} url={url} mimeType={val.mimeType ?? ""} size={val.size} onDelete={onDelete} />
+      )}
+    </div>
+  )
+}
+
 function FilePreview({
   val,
   resolvedUrl,
@@ -56,21 +103,8 @@ function FilePreview({
   if (mime.startsWith("image/")) {
     return <ImagePreview name={name} url={url} onDelete={onDelete} />
   }
-  if (mime.startsWith("video/")) {
-    // Nested <source> URL changes need a fresh native media resource selection.
-    return <VideoPreview key={url} name={name} url={url} mimeType={mime} onDelete={onDelete} />
-  }
-  if (mime.startsWith("audio/")) {
-    return (
-      <AudioPreview
-        key={url}
-        name={name}
-        url={url}
-        mimeType={mime}
-        size={val.size}
-        onDelete={onDelete}
-      />
-    )
+  if (mime.startsWith("video/") || mime.startsWith("audio/")) {
+    return <MediaPreview key={`${val.fileId ?? ""}:${mime}`} val={val} url={url} onDelete={onDelete} />
   }
   if (mime === "application/pdf") {
     return <PdfCard name={name} size={val.size} url={url} onDelete={onDelete} />

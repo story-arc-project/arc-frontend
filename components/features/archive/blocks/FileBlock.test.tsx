@@ -29,7 +29,7 @@ vi.mock("@/hooks/useFileUpload", () => ({
   }),
 }))
 
-afterEach(() => { cleanup(); vi.useRealTimers() })
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 beforeEach(() => {
   vi.mocked(capture).mockClear()
   start.mockReset()
@@ -182,23 +182,75 @@ describe("FileBlock URL lifecycle", () => {
     expect(vi.getTimerCount()).toBe(1)
   })
 
-  it.each(["audio/mpeg", "video/mp4"])("reloads native %s resource after URL refresh", async (mimeType) => {
+  it.each([
+    ["audio/mpeg", false], ["audio/mpeg", true],
+    ["video/mp4", false], ["video/mp4", true],
+  ])("renews %s preserving paused=%s and playback position", async (mimeType, paused) => {
     vi.useFakeTimers()
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {})
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue()
     vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first" })
       .mockResolvedValue({ url: "https://files.example/refreshed" })
     const block = attachedBlock()
     const view = render(<FileBlock block={{ ...block, value: { ...block.value as FileBlockValue, mimeType } }} onChange={vi.fn()} />)
     await flush()
     const selector = mimeType.startsWith("audio") ? "audio" : "video"
-    const originalMedia = view.container.querySelector(selector)
-    expect(originalMedia?.querySelector("source")?.src).toBe("https://files.example/first")
+    const media = view.container.querySelector<HTMLMediaElement>(selector)!
+    Object.defineProperty(media, "currentSrc", { configurable: true, value: "https://files.example/first" })
+    fireEvent.loadedMetadata(media)
+    load.mockClear()
+    play.mockClear()
+    media.currentTime = 47
+    Object.defineProperty(media, "paused", { configurable: true, value: paused })
     await act(async () => { vi.advanceTimersByTime(300_000) })
-    const refreshedMedia = view.container.querySelector(selector)
-    // Updating a nested <source> alone does not rerun native media resource selection.
-    // A new media element guarantees the refreshed URL gets selected by the browser.
-    expect(refreshedMedia).not.toBe(originalMedia)
-    expect(originalMedia?.isConnected).toBe(false)
-    expect(refreshedMedia?.querySelector("source")?.src).toBe("https://files.example/refreshed")
+    expect(view.container.querySelector(selector)).toBe(media)
+    expect(load).toHaveBeenCalledTimes(1)
+    // Native load resets time before the replacement source's metadata arrives.
+    media.currentTime = 0
+    fireEvent.loadedMetadata(media)
+    expect(media.currentTime).toBe(0)
+    expect(play).not.toHaveBeenCalled()
+    Object.defineProperty(media, "currentSrc", { configurable: true, value: "https://files.example/refreshed" })
+    fireEvent.loadedMetadata(media)
+    expect(media.currentTime).toBe(47)
+    expect(play).toHaveBeenCalledTimes(paused ? 0 : 1)
+    load.mockRestore()
+    play.mockRestore()
+  })
+
+  it.each(["switch", "unmount"])("ignores pending metadata after %s", async (action) => {
+    vi.useFakeTimers()
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {})
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue()
+    vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first" })
+      .mockResolvedValue({ url: "https://files.example/refreshed" })
+    const audioBlock = (id: string) => {
+      const block = attachedBlock(id)
+      return { ...block, value: { ...block.value as FileBlockValue, mimeType: "audio/mpeg" } }
+    }
+    const view = render(<FileBlock block={audioBlock("A")} onChange={vi.fn()} />)
+    await flush()
+    const oldMedia = view.container.querySelector("audio")!
+    Object.defineProperty(oldMedia, "currentSrc", { configurable: true, value: "https://files.example/first" })
+    fireEvent.loadedMetadata(oldMedia)
+    load.mockClear()
+    play.mockClear()
+    oldMedia.currentTime = 47
+    Object.defineProperty(oldMedia, "paused", { configurable: true, value: false })
+    await act(async () => { vi.advanceTimersByTime(300_000) })
+    expect(load).toHaveBeenCalledTimes(1)
+    oldMedia.currentTime = 0
+    if (action === "switch") {
+      view.rerender(<FileBlock block={audioBlock("B")} onChange={vi.fn()} />)
+      await flush()
+    } else view.unmount()
+    Object.defineProperty(oldMedia, "currentSrc", { configurable: true, value: "https://files.example/refreshed" })
+    fireEvent.loadedMetadata(oldMedia)
+    expect(oldMedia.currentTime).toBe(0)
+    expect(play).not.toHaveBeenCalled()
+    if (action === "switch") expect(view.container.querySelector("audio")?.currentTime).toBe(0)
+    load.mockRestore()
+    play.mockRestore()
   })
 
   it.each([false, true])("discards failed links and retries in readOnly=%s", async (readOnly) => {
