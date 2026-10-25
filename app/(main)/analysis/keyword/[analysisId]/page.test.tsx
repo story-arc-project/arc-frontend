@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import type { KeywordAnalysisResult } from "@/types/analysis";
 import { mockKeywordResult } from "@/lib/api/mocks/analysis";
 
@@ -72,5 +72,37 @@ describe("키워드 분석 상세 — 본문 부재 화면 (FRT-134)", () => {
     await waitFor(() =>
       expect(screen.getByText("분석 결과를 불러오지 못했습니다.")).toBeInTheDocument(),
     );
+  });
+});
+
+
+describe("FRT-137 — 근거 없는 커버리지 비율 숨김", () => {
+  it.each([
+    { relatedCount: 2, totalCount: 0, coveragePercent: 80 },
+    { relatedCount: 4, totalCount: 3, coveragePercent: 100 },
+    { relatedCount: 2, totalCount: 5, coveragePercent: null },
+    { relatedCount: 2, totalCount: 5, coveragePercent: 120 },
+  ])("유효하지 않은 비율과 진행 막대를 숨기고 등급 개수는 보존한다: %j", async (coverage) => {
+    getResult.mockResolvedValue(result({
+      hasResultBody: true,
+      coverage: [{ keyword: "협업", highCount: 2, mediumCount: 0, lowCount: 0, ...coverage }],
+    }));
+    render(<KeywordDetailPage />);
+    const heading = await screen.findByRole("heading", { name: "커버리지" });
+    const section = within(heading.closest("section")!);
+    expect(section.getByText("협업")).toBeInTheDocument();
+    expect(section.getByText("높음 2")).toBeInTheDocument();
+    expect(section.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(section.queryByText(/%|\//)).not.toBeInTheDocument();
+  });
+
+  it("정상 분모의 API 비율은 표시한다", async () => {
+    getResult.mockResolvedValue(result({
+      hasResultBody: true,
+      coverage: [{ keyword: "협업", relatedCount: 2, totalCount: 5, coveragePercent: 37.5, highCount: 2, mediumCount: 0, lowCount: 0 }],
+    }));
+    render(<KeywordDetailPage />);
+    expect(await screen.findByText("2/5 · 38%")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "협업 커버리지" })).toHaveAttribute("aria-valuenow", "38");
   });
 });

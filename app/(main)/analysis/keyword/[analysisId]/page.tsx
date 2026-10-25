@@ -284,7 +284,13 @@ function CoverageBlock({ coverage }: { coverage: KeywordCoverage[] }) {
       <h2 className="text-title text-text-primary">커버리지</h2>
       <div className="space-y-3">
         {coverage.map((c) => {
-          const pct = Math.max(0, Math.min(100, Math.round(c.coveragePercent)));
+          const pct =
+            Number.isSafeInteger(c.relatedCount) && c.relatedCount >= 0 &&
+            Number.isSafeInteger(c.totalCount) && c.totalCount > 0 && c.totalCount >= c.relatedCount &&
+            c.coveragePercent !== null && Number.isFinite(c.coveragePercent) &&
+            c.coveragePercent >= 0 && c.coveragePercent <= 100
+              ? Math.round(c.coveragePercent)
+              : null;
           return (
             <div
               key={c.keyword}
@@ -292,23 +298,27 @@ function CoverageBlock({ coverage }: { coverage: KeywordCoverage[] }) {
             >
               <div className="flex justify-between items-center">
                 <p className="text-body-sm font-medium text-text-primary">{c.keyword}</p>
-                <p className="text-caption text-text-tertiary">
-                  {c.relatedCount}/{c.totalCount} · {pct}%
-                </p>
+                {pct !== null && (
+                  <p className="text-caption text-text-tertiary">
+                    {c.relatedCount}/{c.totalCount} · {pct}%
+                  </p>
+                )}
               </div>
-              <div
-                className="h-1.5 rounded-full bg-surface-tertiary overflow-hidden"
-                role="progressbar"
-                aria-label={`${c.keyword} 커버리지`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={pct}
-              >
+              {pct !== null && (
                 <div
-                  className="h-full bg-brand transition-all"
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
+                  className="h-1.5 rounded-full bg-surface-tertiary overflow-hidden"
+                  role="progressbar"
+                  aria-label={`${c.keyword} 커버리지`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={pct}
+                >
+                  <div
+                    className="h-full bg-brand transition-all"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              )}
               {(c.highCount > 0 || c.mediumCount > 0 || c.lowCount > 0) && (
                 <div className="flex flex-wrap gap-1.5 pt-0.5">
                   {c.highCount > 0 && (

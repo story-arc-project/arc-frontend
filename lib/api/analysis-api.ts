@@ -414,8 +414,22 @@ function mapIndividualStrength(dto: unknown, index: number): IndividualStrength 
 /** item_strengths 부재(구 레코드·진행중)에도 빈 구조를 돌려 화면이 안전히 건너뛴다. */
 function mapItemStrengths(dto: unknown): IndividualItemStrengths {
   const r = asRecord(dto);
+  const flag = r.hasGenuineStrengths ?? r.has_genuine_strengths;
+  // 명시적인 false 판정은 LLM이 함께 보낸 긍정 서술보다 우선한다.
+  // 플래그가 없는 구 레코드는 기존 서술을 보존한다.
+  if (flag === false) {
+    return {
+      hasGenuineStrengths: false,
+      oneLineVerdict: "",
+      noStrengthReason: asString(r.noStrengthReason ?? r.no_strength_reason),
+      summarizedStrengths: [],
+      strengths: [],
+      strongestAsset: "",
+      positioningTip: "",
+    };
+  }
   return {
-    hasGenuineStrengths: asBoolean(r.hasGenuineStrengths ?? r.has_genuine_strengths),
+    hasGenuineStrengths: asBoolean(flag),
     oneLineVerdict: asString(r.oneLineStrengthVerdict ?? r.one_line_strength_verdict),
     noStrengthReason: asString(r.noStrengthReason ?? r.no_strength_reason),
     summarizedStrengths: asStringArray(r.summarizedStrengths ?? r.summarized_strengths),
@@ -1029,11 +1043,19 @@ function mapKeywordDefinition(dto: unknown): KeywordDefinition {
 
 function mapKeywordCoverage(dto: unknown): KeywordCoverage {
   const r = asRecord(dto);
+  const related = r.relatedCount ?? r.related_count;
+  const total = r.totalCount ?? r.total_count;
+  const percent = r.coveragePercent ?? r.coverage_percent;
+  // 기본값 0으로 바꾸기 전에 원본 수치를 검증한다. 분모를 추정하거나 비율을 재계산하지 않는다.
+  const hasValidRatio =
+    typeof related === "number" && Number.isSafeInteger(related) && related >= 0 &&
+    typeof total === "number" && Number.isSafeInteger(total) && total > 0 && total >= related &&
+    typeof percent === "number" && Number.isFinite(percent) && percent >= 0 && percent <= 100;
   return {
     keyword: asString(r.keyword),
-    relatedCount: asNumber(r.relatedCount ?? r.related_count),
-    totalCount: asNumber(r.totalCount ?? r.total_count),
-    coveragePercent: asNumber(r.coveragePercent ?? r.coverage_percent),
+    relatedCount: asNumber(related),
+    totalCount: asNumber(total),
+    coveragePercent: hasValidRatio ? percent : null,
     highCount: asNumber(r.highCount ?? r.high_count),
     mediumCount: asNumber(r.mediumCount ?? r.medium_count),
     lowCount: asNumber(r.lowCount ?? r.low_count),

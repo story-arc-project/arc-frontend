@@ -1836,3 +1836,17 @@ it("blocks duplicate clicks and reuses a response-loss retry key", async () => {
   expect(mockCreateResume.mock.calls[1][0]).toEqual(mockCreateResume.mock.calls[0][0]);
   await waitFor(() => expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(2));
 });
+
+describe("FRT-137 — AI meta.format 불확실성", () => {
+  it.each([undefined, null, "unexpected_format", { unexpected: true }, 42])(
+    "meta.format=%j 이어도 상세 편집기와 미리보기를 연다",
+    async (format) => {
+      const fixture = resumeFixture();
+      fixture.meta = { ...fixture.meta, format: format as never };
+      mockGetResume.mockResolvedValue(fixture);
+      await renderLoaded();
+      expect(screen.getByLabelText("이름")).toHaveValue("김서윤");
+      expect(screen.getByRole("article")).toHaveTextContent("김서윤");
+    },
+  );
+});
