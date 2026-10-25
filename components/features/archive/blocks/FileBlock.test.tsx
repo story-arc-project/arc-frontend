@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, cleanup, waitFor } from "@testing-library/react"
+import { render, screen, cleanup, waitFor, act, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import FileBlock from "./FileBlock"
 import { uid } from "@/lib/utils/block-utils"
-import type { Block } from "@/types/archive"
+import type { Block, FileBlockValue } from "@/types/archive"
+import { getFileUrl } from "@/lib/api/files-api"
 import type { UploadedFile } from "@/lib/api/files-api"
+
+vi.mock("@/lib/api/files-api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/api/files-api")>(),
+  getFileUrl: vi.fn(),
+}))
 
 // FRT-113: 업로드 성공 시에만 첨부로 세는지 검증한다.
 vi.mock("@/lib/analytics", () => ({ capture: vi.fn() }))
@@ -23,10 +29,11 @@ vi.mock("@/hooks/useFileUpload", () => ({
   }),
 }))
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.useRealTimers() })
 beforeEach(() => {
   vi.mocked(capture).mockClear()
   start.mockReset()
+  vi.mocked(getFileUrl).mockReset().mockResolvedValue({ url: "https://files.example/fresh" })
 })
 
 const emptyFileBlock: Block = {
@@ -137,5 +144,127 @@ describe("FileBlock 증빙 유형 (FRT-179)", () => {
     render(<FileBlock block={emptyFileBlock} onChange={vi.fn()} />)
     expect(screen.queryByLabelText("증빙 유형")).toBeNull()
     expect(screen.getByPlaceholderText("증빙 유형 (성적표/상장 등)")).toBeTruthy()
+  })
+})
+
+const attachedBlock = (id = "A"): Block => ({
+  ...emptyFileBlock,
+  value: { type: "file", fileName: `${id}.pdf`, fileId: id, mimeType: "application/pdf",
+    url: "https://files.example/stale", description: "", evidenceType: "" },
+})
+async function flush() { await act(async () => {}) }
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+describe("FileBlock URL lifecycle", () => {
+  it.each([
+    ["valid TTL", 600_000, 540_000],
+    ["short TTL", 10_000, 30_000],
+    ["past TTL", -1, 30_000],
+    ["missing expiry", undefined, 300_000],
+    ["invalid expiry", "invalid", 300_000],
+  ])("refreshes %s with one bounded timer", async (_, ttl, delay) => {
+    vi.useFakeTimers()
+    const expiresAt = typeof ttl === "number" ? new Date(Date.now() + ttl).toISOString() : ttl
+    vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first", expiresAt })
+      .mockResolvedValue({ url: "https://files.example/second" })
+    render(<FileBlock block={attachedBlock()} onChange={vi.fn()} />)
+    await flush()
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/first")
+    await act(async () => { vi.advanceTimersByTime(delay - 1) })
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/first")
+    await act(async () => { vi.advanceTimersByTime(1) })
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/second")
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
+  it.each([false, true])("discards failed links and retries in readOnly=%s", async (readOnly) => {
+    vi.useFakeTimers()
+    vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first" })
+      .mockRejectedValueOnce(new Error("secret signed URL"))
+      .mockResolvedValue({ url: "https://files.example/recovered" })
+    render(<FileBlock block={attachedBlock()} readOnly={readOnly} onChange={vi.fn()} />)
+    await flush()
+    await act(async () => { vi.advanceTimersByTime(300_000) })
+    expect(screen.queryByRole("link")).toBeNull()
+    expect(screen.queryByText(/secret/)).toBeNull()
+    expect(vi.getTimerCount()).toBe(0)
+    fireEvent.click(screen.getByRole("button", { name: "다운로드 링크 다시 시도" }))
+    await flush()
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/recovered")
+    expect(screen.queryByRole("button", { name: "다운로드 링크 다시 시도" })).toBeNull()
+  })
+
+  it.each(["resolve", "reject"])("ignores late A %s after switching to B", async (outcome) => {
+    const pending = deferred<{ url: string }>()
+    vi.mocked(getFileUrl).mockReturnValueOnce(pending.promise).mockResolvedValue({ url: "https://files.example/B" })
+    const view = render(<FileBlock block={attachedBlock()} onChange={vi.fn()} />)
+    view.rerender(<FileBlock block={attachedBlock("B")} onChange={vi.fn()} />)
+    await flush()
+    await act(async () => { if (outcome === "resolve") pending.resolve({ url: "https://files.example/A" }); else pending.reject(new Error("A failed")) })
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/B")
+    expect(screen.queryByRole("button", { name: "다운로드 링크 다시 시도" })).toBeNull()
+  })
+
+  it("isolates errors to their file ID", async () => {
+    vi.mocked(getFileUrl).mockRejectedValueOnce(new Error("A failed")).mockResolvedValue({ url: "https://files.example/B" })
+    const view = render(<FileBlock block={attachedBlock()} onChange={vi.fn()} />)
+    await flush()
+    view.rerender(<FileBlock block={attachedBlock("B")} onChange={vi.fn()} />)
+    await flush()
+    expect(screen.queryByText(/failed/)).toBeNull()
+    expect(screen.queryByRole("button", { name: "다운로드 링크 다시 시도" })).toBeNull()
+  })
+
+  it.each(["delete", "unmount"])("invalidates pending refresh on %s", async (action) => {
+    vi.useFakeTimers()
+    const pending = deferred<{ url: string }>()
+    vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first" }).mockReturnValueOnce(pending.promise)
+    const view = render(<FileBlock block={attachedBlock()} onChange={vi.fn()} />)
+    await flush()
+    await act(async () => { vi.advanceTimersByTime(300_000) })
+    if (action === "unmount") view.unmount()
+    else fireEvent.click(screen.getByRole("button", { name: /삭제/ }))
+    await act(async () => { pending.resolve({ url: "https://files.example/late" }) })
+    expect(vi.getTimerCount()).toBe(0)
+    expect(screen.queryByRole("link", { name: /열기/ })?.getAttribute("href")).not.toBe("https://files.example/late")
+  })
+
+  it("does not apply an upload to a replacement file", async () => {
+    const pending = deferred<UploadedFile | null>()
+    start.mockReturnValue(pending.promise)
+    const onChange = vi.fn()
+    const view = render(<FileBlock block={emptyFileBlock} onChange={onChange} />)
+    await selectFile()
+    view.rerender(<FileBlock block={attachedBlock("B")} onChange={onChange} />)
+    await act(async () => { pending.resolve(uploaded) })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(capture).not.toHaveBeenCalled()
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/fresh")
+  })
+
+  it("keeps name-only demo rendering without fetching", async () => {
+    render(<FileBlock block={{ ...emptyFileBlock, value: { type: "file", fileName: "demo.pdf", description: "", evidenceType: "" } }} readOnly onChange={vi.fn()} />)
+    await flush()
+    expect(screen.getByText("demo.pdf")).toBeTruthy()
+    expect(screen.queryByRole("link")).toBeNull()
+    expect(getFileUrl).not.toHaveBeenCalled()
+  })
+
+  it("uses latest fields and callback when upload finishes", async () => {
+    const pending = deferred<UploadedFile | null>()
+    start.mockReturnValue(pending.promise)
+    const originalChange = vi.fn()
+    const latestChange = vi.fn()
+    const view = render(<FileBlock block={emptyFileBlock} onChange={originalChange} />)
+    await selectFile()
+    view.rerender(<FileBlock block={{ ...emptyFileBlock, value: { ...emptyFileBlock.value as FileBlockValue, description: "new", evidenceType: "updated" } }} onChange={latestChange} />)
+    await act(async () => { pending.resolve(uploaded) })
+    expect(originalChange).not.toHaveBeenCalled()
+    expect(latestChange).toHaveBeenCalledWith(expect.objectContaining({ fileId: "file-1", description: "new", evidenceType: "updated" }))
   })
 })
