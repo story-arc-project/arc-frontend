@@ -111,6 +111,7 @@ function ForgotPasswordForm() {
   const [isResending, setIsResending] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
   const [resendNotice, setResendNotice] = useState<string | null>(null);
   const [pwError, setPwError] = useState<string | null>(null);
 
@@ -127,11 +128,14 @@ function ForgotPasswordForm() {
   // 「← 이전」은 요청이 비행 중에도 눌린다(isLoading 으로 막지 않는다). 스텝을 벗어나는 순간
   // 세대를 올려, 아직 비행 중인 요청의 응답이 이 화면을 움직일 자격을 잃게 한다(FRT-343).
   //
-  // 회원가입 흐름과 달리 여기서 실패 문구를 함께 비우지는 않는다 — handleReset 의 410 분기가
+  // 재발송 결과는 스텝을 떠날 때 비워 돌아왔을 때 지난 결과를 다시 읽지 않는다(FRT-342).
+  // 다른 실패 문구는 여기서 함께 비우지 않는다 — handleReset 의 410 분기가
   // setCodeError(...) 를 세운 **직후** goTo("code") 를 부르므로, 여기서 비우면 그 안내가 지워진다.
   // 목적지 문구를 비우는 일은 지금처럼 각 핸들러의 성공 경로가 맡는다.
   function goTo(next: ResetStep, direction = 1) {
     stepFlowId.current += 1;
+    setResendError(null);
+    setResendNotice(null);
     setDir(direction);
     setStep(next);
   }
@@ -153,7 +157,6 @@ function ForgotPasswordForm() {
       await requestPasswordReset(email);
       setCode("");
       setCodeError(null);
-      setResendNotice(null);
       goTo("code");
     } catch (e) {
       if (e instanceof ApiError && e.status === 429) {
@@ -204,6 +207,7 @@ function ForgotPasswordForm() {
   async function handleResendCode() {
     if (isResending) return;
     setIsResending(true);
+    setResendError(null);
     setResendNotice(null);
     setCodeError(null);
     // 재발송은 isResending 으로만 막혀 이메일 단계의 「재설정 코드 받기」를 잠그지 않는다.
@@ -216,8 +220,8 @@ function ForgotPasswordForm() {
       setResendNotice("코드를 다시 보냈어요.");
     } catch (e) {
       if (stepFlowId.current !== flowId) return;
-      if (e instanceof ApiError && e.status === 429) setResendNotice("5분 후 재발송 가능해요.");
-      else setResendNotice("재발송에 실패했어요. 잠시 후 다시 시도해주세요.");
+      if (e instanceof ApiError && e.status === 429) setResendError("5분 후 재발송 가능해요.");
+      else setResendError("재발송에 실패했어요. 잠시 후 다시 시도해주세요.");
     } finally {
       setIsResending(false);
     }
@@ -378,7 +382,8 @@ function ForgotPasswordForm() {
                   <Button onClick={handleVerifyCode} disabled={!code.trim() || isLoading}>
                     {isLoading ? "확인 중..." : "확인"}
                   </Button>
-                  {resendNotice && <p className="text-body-sm text-text-tertiary">{resendNotice}</p>}
+                  {resendError && <p role="alert" className="text-body-sm text-error">{resendError}</p>}
+                  <p role="status" aria-live="polite" className={resendNotice ? "text-body-sm text-text-tertiary" : "sr-only"}>{resendNotice}</p>
                   <button
                     type="button"
                     onClick={handleResendCode}
