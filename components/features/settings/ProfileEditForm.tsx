@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Input,
   DatePicker,
@@ -66,6 +66,14 @@ function toFormState(profile: Profile | null): {
   };
 }
 
+/** 칩 선택 순서는 저장 의미가 없으므로 값으로 비교한다. */
+function sameFieldValue(a: string | string[], b: string | string[]) {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((value) => b.includes(value));
+  }
+  return a === b;
+}
+
 export function ProfileEditForm({ profile, className = "" }: ProfileEditFormProps) {
   const { refetch } = useAuth();
   const derived = useMemo(() => toFormState(profile), [profile]);
@@ -77,6 +85,15 @@ export function ProfileEditForm({ profile, className = "" }: ProfileEditFormProp
    * 잡혀 저장한 내용이 "저장되지 않은 변경사항"으로 되살아난다(FRT-294).
    */
   const [baseline, setBaseline] = useState(derived);
+  // PATCH 성공 직후부터 refetch effect도 제출한 스냅샷을 기준으로 비교해야 한다.
+  const baselineRef = useRef(derived);
+  const mountedRef = useRef(false);
+  const savingRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const { form: initial, preserved } = baseline;
 
   const [name, setName] = useState(derived.form.name);
@@ -89,17 +106,20 @@ export function ProfileEditForm({ profile, className = "" }: ProfileEditFormProp
   const [interest, setInterest] = useState<string[]>(derived.form.interest);
   const [saving, setSaving] = useState(false);
 
-  // profile 이 갱신되면(첫 로드·refetch 성공) 폼과 기준선을 서버 값으로 재동기화한다.
+  // 서버 갱신은 이전 기준선과 같은 필드에만 적용한다. 사용자가 고친 필드는
+  // 새 기준선과 비교해 계속 dirty로 남긴다(동일 값의 새 profile 참조도 포함).
   useEffect(() => {
+    const previous = baselineRef.current.form;
+    baselineRef.current = derived;
     setBaseline(derived);
-    setName(derived.form.name);
-    setBirth(derived.form.birth);
-    setPhone(derived.form.phone);
-    setAffiliation(derived.form.affiliation);
-    setSchool(derived.form.school);
-    setDepartment(derived.form.department);
-    setWorry(derived.form.worry);
-    setInterest(derived.form.interest);
+    setName((value) => sameFieldValue(value, previous.name) ? derived.form.name : value);
+    setBirth((value) => sameFieldValue(value, previous.birth) ? derived.form.birth : value);
+    setPhone((value) => sameFieldValue(value, previous.phone) ? derived.form.phone : value);
+    setAffiliation((value) => sameFieldValue(value, previous.affiliation) ? derived.form.affiliation : value);
+    setSchool((value) => sameFieldValue(value, previous.school) ? derived.form.school : value);
+    setDepartment((value) => sameFieldValue(value, previous.department) ? derived.form.department : value);
+    setWorry((value) => sameFieldValue(value, previous.worry) ? derived.form.worry : value);
+    setInterest((value) => sameFieldValue(value, previous.interest) ? derived.form.interest : value);
   }, [derived]);
 
   // 학생일 때만 학교/학과를 노출한다 — 백엔드 교차검증(student→school/department만 허용)과 정합.
@@ -123,7 +143,7 @@ export function ProfileEditForm({ profile, className = "" }: ProfileEditFormProp
   }
 
   async function handleSave() {
-    if (!isDirty || saving) return;
+    if (!isDirty || savingRef.current) return;
 
     if (patch.name !== undefined && patch.name.trim() === "") {
       toast.error("이름을 입력해주세요.");
@@ -138,31 +158,39 @@ export function ProfileEditForm({ profile, className = "" }: ProfileEditFormProp
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     try {
       await updateProfile(patch);
     } catch (e) {
+      if (!mountedRef.current) return;
       toast.error(
         e instanceof ApiError ? e.message : "저장에 실패했어요. 잠시 후 다시 시도해주세요."
       );
+      savingRef.current = false;
       setSaving(false);
       return;
     }
 
-    // 저장 성공 — 이 시점의 폼 값이 곧 서버 값이므로 기준선을 여기로 앞당긴다. 그래야
-    // 아래 refetch 가 실패해도 폼이 "변경됨"으로 되돌아가지 않는다(FRT-294).
-    // preserved(옵션 밖 값)는 patch 에 합쳐 그대로 다시 보냈으므로 서버에 남아 있다 — 유지한다.
-    setBaseline({ form: current, preserved });
+    // 저장 성공 — 제출 당시 폼 값으로 기준선을 앞당긴다. 이후 추가 입력은 포함하지 않는다.
+    // 계정 교체·페이지 이동으로 사라진 폼의 상태나 토스트는 갱신하지 않는다.
+    if (mountedRef.current) {
+      // refetch 실패가 저장 완료를 뒤집지 않도록 기준선은 PATCH 성공 직후 갱신한다(FRT-294).
+      // 옵션 밖 값은 patch에 합쳐 보냈으므로 보존한다(FRT-260).
+      baselineRef.current = { form: current, preserved };
+      setBaseline(baselineRef.current);
+      toast.success("프로필을 저장했어요.");
+    }
 
-    // 헤더(이름/아바타) 동기화를 위해 refetch 하되, 동기화 실패가 저장 성공을
-    // 뒤집지 않도록 분리한다(실패해도 다음 로드 시 갱신된다).
-    toast.success("프로필을 저장했어요.");
+    // 페이지를 떠나도 헤더(이름/아바타)는 현재 세션의 프로필로 동기화한다.
+    // refetch 실패가 저장 성공을 뒤집지 않도록 분리한다.
     try {
       await refetch();
     } catch {
       // 저장은 반영됨. 동기화 실패는 조용히 무시한다.
     } finally {
-      setSaving(false);
+      savingRef.current = false;
+      if (mountedRef.current) setSaving(false);
     }
   }
 
