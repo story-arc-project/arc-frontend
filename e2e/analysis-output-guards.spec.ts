@@ -13,7 +13,7 @@ for (const width of [1440, 390]) {
       if (process.env.FRT137_CAPTURE_DIR) await mkdir(process.env.FRT137_CAPTURE_DIR, { recursive: true });
     });
 
-    test("불확실한 커버리지 비율을 숨기고 유효한 API 비율은 유지한다", async ({ page }) => {
+    test("불확실한 경험 수를 숨기고 유효한 관련 경험 수를 설명한다", async ({ page }) => {
       await stubApi(page, { authed: true });
       const data = keywordDetail().data;
       data.coverage = [
@@ -24,18 +24,21 @@ for (const width of [1440, 390]) {
       ];
       await page.route(`${API_ORIGIN}/analysis/keyword/kw-1`, (route) => route.fulfill({ json: success(data) }));
       await page.goto("/analysis/keyword/kw-1");
-      await expect(page.getByRole("heading", { name: "커버리지", exact: true })).toBeVisible();
-      await expect(page.getByRole("progressbar")).toHaveCount(1);
-      await expect(page.getByRole("progressbar", { name: "정상 비율 커버리지" })).toHaveAttribute("aria-valuenow", "25");
-      await expect(page.getByText("1/4 · 25%", { exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "키워드 관련 경험", exact: true })).toBeVisible();
+      await expect(page.getByRole("progressbar")).toHaveCount(0);
+      await expect(page.getByText("전체 4개 중 1개", { exact: true })).toBeVisible();
+      await expect(page.getByText("전체 경험 중 이 키워드와 관련 있다고 분석된 경험 수예요. 관련성이 낮은 참고용 경험도 포함돼요.", { exact: true })).toBeVisible();
+      const coverageSection = page.getByRole("heading", { name: "키워드 관련 경험", exact: true }).locator("..");
+      await expect(coverageSection).not.toContainText("%");
       await expect(page.getByText("높음 2", { exact: true })).toBeVisible();
       for (const label of ["분모 누락", "분모 초과", "분모 영"]) {
         const card = page.getByText(label, { exact: true }).locator("../..");
+        await expect(card).not.toContainText(/전체 \d+개 중/);
         await expect(card).not.toContainText("%");
         await expect(card.getByRole("progressbar")).toHaveCount(0);
       }
       if (process.env.FRT137_CAPTURE_DIR) {
-        await page.getByRole("heading", { name: "커버리지", exact: true }).evaluate((el) => el.scrollIntoView({ block: "start", behavior: "instant" }));
+        await page.getByRole("heading", { name: "키워드 관련 경험", exact: true }).evaluate((el) => el.scrollIntoView({ block: "start", behavior: "instant" }));
         await page.screenshot({ path: `${process.env.FRT137_CAPTURE_DIR}/keyword-${width}.jpg`, fullPage: true, animations: "disabled", type: "jpeg", quality: 70 });
       }
     });
