@@ -23,7 +23,49 @@ function removalMask(text: string): Uint8Array {
       protect(start, start + line[0].length);
     }
   }
-  for (const m of text.matchAll(/(`+)[^`]*?\1/g)) protect(m.index!, m.index! + m[0].length);
+  // Match maximal delimiter runs; shorter (or longer) internal runs are code content.
+  const ticks = [...text.matchAll(/`+/g)];
+  for (let i = 0; i < ticks.length; i++) {
+    const opening = ticks[i];
+    if (protectedChars[opening.index!]) continue;
+    const closing = ticks.findIndex((run, j) => j > i && run[0].length === opening[0].length);
+    if (closing !== -1) {
+      protect(opening.index!, ticks[closing].index! + ticks[closing][0].length);
+      i = closing;
+    }
+  }
+
+  const normalizeReference = (label: string) => label.trim().replace(/\s+/g, " ").toLowerCase();
+  const references = new Set<string>();
+  for (const line of lines) {
+    const definition = line[0].match(/^ {0,3}\[([^\]]+)\]:[\t ]*\S/);
+    if (definition) {
+      references.add(normalizeReference(definition[1]));
+      protect(line.index!, line.index! + line[0].length);
+    }
+  }
+  for (const link of text.matchAll(/\[([^\]]+)\](?:\[([^\]]*)\])?/g)) {
+    // Explicit references are ambiguous enough to retain even without a definition.
+    if (link[2] !== undefined || references.has(normalizeReference(link[1]))) {
+      protect(link.index!, link.index! + link[0].length);
+    }
+  }
+
+  // Protect paired HTML contents across lines, including nested elements of the same name.
+  const openTags: { name: string; start: number }[] = [];
+  const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+  for (const tag of text.matchAll(/<(\/?)([a-z][\w-]*)\b[^>]*>/gi)) {
+    const name = tag[2].toLowerCase();
+    if (tag[1]) {
+      const opening = openTags.findLastIndex(item => item.name === name);
+      if (opening !== -1) {
+        protect(openTags[opening].start, tag.index! + tag[0].length);
+        openTags.splice(opening);
+      }
+    } else if (!voidTags.has(name) && !tag[0].endsWith("/>")) {
+      openTags.push({ name, start: tag.index! });
+    }
+  }
 
   for (const m of text.matchAll(/(\*\*|__)(\S(?:[\s\S]*?\S)?)\1/g)) {
     const start = m.index!;

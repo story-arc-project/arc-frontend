@@ -13,6 +13,32 @@ describe("cover letter display", () => {
   it.each([
     "C# #태그 inline #, 10% + 2 = 12, -5, 2026-10-26, 1.5", "1. 단독 항목\n3. 비연속 항목", "- 단독 대시", "* * *\n* * *", "- - -\n- - -", "`code\n**literal**`", "__init__method", "a__word__b", "가나다__라__마", "**성과\\**", "** 미완성 **", "** **", "**미완성", "\\**보존**", "*단일* _단일_", "2 ** 3 ** 4", "***삼중***", "---\n***\n___", "`**코드**`", "```\n# 코드\n- 하나\n- 둘\n```", "[**링크**](url)", "<b>**HTML**</b>", "    # 들여쓴 코드\n    **코드**",
   ])("preserves ambiguous or out-of-scope text: %s", raw => expect(stripCoverLetterMarkdown(raw)).toBe(raw));
+  it.each([
+    "`` **앞 코드** ` **뒤 코드** ``",
+    "`` **앞 코드**\n` # 코드\n**뒤 코드** ``",
+    "`` **코드** ``` **코드** ``",
+    "[**링크**][ref]\n\n[ref]: https://example.com",
+    "[**링크**][]\n\n[**링크**]: https://example.com",
+    "[**링크**]\n\n[**링크**]: https://example.com",
+    "<pre>\n**literal**\n</pre>",
+    "<div>\n<div>**inner**</div>\n**outer**\n</div>",
+    "[**링크**][REF]\n\n[ref]: https://example.com",
+    "[**링크**][missing]",
+    "<div>\n## literal\n- 하나\n- 둘\n</div>",
+    '<pre class="example">\n__literal__\n</pre>',
+  ])("preserves complete literal ranges: %s", raw => expect(stripCoverLetterMarkdown(raw)).toBe(raw));
+  it("still strips ordinary bracket prose and emphasis outside literal ranges", () => {
+    expect(stripCoverLetterMarkdown("[**설명**]\n<pre>\n**literal**\n</pre>\n**강점**")).toBe("[설명]\n<pre>\n**literal**\n</pre>\n강점");
+  });
+  it("preserves literal ranges across grounding segment boundaries", () => {
+    const raw = "`` **코드** ` **본문** ``\n[**링크**][ref]\n\n[ref]: url\n<pre>\n**literal**\n</pre>\n**강점**";
+    const segments = raw.split(/(코드|링크|literal|강점)/).map(text => ({ text, flagged: ["코드", "링크", "literal", "강점"].includes(text) }));
+    const before = structuredClone(segments);
+    const shown = displayCoverLetterSegments(segments);
+    expect(shown.map(segment => segment.text).join("")).toBe(raw.slice(0, -6) + "강점");
+    expect(shown.filter(segment => segment.flagged).map(segment => segment.text)).toEqual(["코드", "링크", "literal", "강점"]);
+    expect(segments).toEqual(before);
+  });
   it("projects whole-string removals across raw grounding boundaries without mutating input", () => {
     const raw = "**수상 경력**입니다. **수상 경력**입니다.\n## 다음 주장";
     const segments = buildGroundingHighlight(raw, ["*수상 경력*", "## 다음 주장"]).segments;
