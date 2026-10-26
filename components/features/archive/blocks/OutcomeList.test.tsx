@@ -53,6 +53,73 @@ function textInputs(): HTMLTextAreaElement[] {
   return screen.getAllByRole("textbox") as HTMLTextAreaElement[]
 }
 
+describe("OutcomeList — 접근 이름(FRT-283)", () => {
+  const name = (row: number) => `단체 활동 / 성과 ${row}행`
+
+  it("placeholder가 없어도 블록 라벨과 행번호로 입력을 구별한다", () => {
+    const first = makeBlock(["A", "B"])
+    const value = first.value as RepeatableCellBlockValue
+    const withoutPlaceholder = { ...first, value: { ...value, columns: [{ ...value.columns[0], placeholder: undefined }] } }
+    render(<>
+      <OutcomeList block={withoutPlaceholder} onChange={() => {}} />
+      <OutcomeList block={{ ...makeBlock(["C"]), id: "b2", label: "주요 활동 / 이벤트" }} onChange={() => {}} />
+    </>)
+    expect(screen.getByRole("textbox", { name: name(1) })).toHaveValue("A")
+    expect(screen.getByRole("textbox", { name: name(2) })).toHaveValue("B")
+    expect(screen.getByRole("textbox", { name: "주요 활동 / 이벤트 1행" })).toHaveValue("C")
+  })
+
+  it("표시용 빈 행의 이름과 포커스는 입력 후에도 같은 노드에 남는다", async () => {
+    const user = userEvent.setup()
+    const onValue = vi.fn()
+    render(<Harness initial={[]} onValue={onValue} />)
+    const input = screen.getByRole("textbox", { name: name(1) })
+    expect(onValue).not.toHaveBeenCalled()
+    await user.type(input, "은상")
+    expect(screen.getByRole("textbox", { name: name(1) })).toBe(input)
+    expect(input).toHaveFocus()
+    expect(onValue.mock.calls.at(-1)![0].rows[0].cells.item).toBe("은상")
+  })
+
+  it("추가·Enter·Backspace·삭제 후 현재 행번호와 기존 DOM·포커스를 보존한다", async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={["A", "B"]} />)
+    const first = screen.getByRole("textbox", { name: name(1) })
+    const second = screen.getByRole("textbox", { name: name(2) })
+    await user.click(screen.getByRole("button", { name: /추가/ }))
+    expect(screen.getByRole("textbox", { name: name(3) })).toHaveFocus()
+    await user.click(first)
+    await user.keyboard("{Enter}")
+    const inserted = screen.getByRole("textbox", { name: name(2) })
+    expect(inserted).toHaveFocus()
+    expect(screen.getByRole("textbox", { name: name(3) })).toBe(second)
+    await user.keyboard("{Backspace}")
+    expect(screen.getByRole("textbox", { name: name(1) })).toBe(first)
+    expect(first).toHaveFocus()
+    expect(screen.getByRole("textbox", { name: name(2) })).toBe(second)
+    await user.click(screen.getByRole("button", { name: "A 삭제" }))
+    expect(screen.getByRole("textbox", { name: name(1) })).toBe(second)
+    expect(second).toHaveValue("B")
+    expect(textInputs()).toHaveLength(2)
+  })
+
+  it("이름 있는 입력에서 IME Enter·Backspace와 Shift+Enter는 행을 조작하지 않는다", async () => {
+    const user = userEvent.setup()
+    const onValue = vi.fn()
+    render(<Harness initial={["A", ""]} onValue={onValue} />)
+    const input = screen.getByRole("textbox", { name: name(2) })
+    await user.click(input)
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true })
+    fireEvent.keyDown(input, { key: "Backspace", isComposing: true })
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229 })
+    expect(onValue).not.toHaveBeenCalled()
+    await user.keyboard("{Shift>}{Enter}{/Shift}")
+    expect(screen.getByRole("textbox", { name: name(2) })).toBe(input)
+    expect(input).toHaveFocus()
+    expect(textInputs()).toHaveLength(2)
+  })
+})
+
 describe("OutcomeList", () => {
   it("각 행의 값을 인풋에 렌더한다", () => {
     render(<Harness initial={["케이스 대회 은상", "논문 발간"]} />)
