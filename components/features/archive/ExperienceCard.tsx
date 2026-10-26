@@ -1,5 +1,6 @@
 "use client"
 
+import { formatDate } from "@/lib/utils/date-utils"
 import { MoreHorizontal, ChevronRight } from "lucide-react"
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
@@ -19,10 +20,6 @@ interface ExperienceCardProps {
   onMoveToLibrary?: (libraryId: string) => void
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`
-}
 
 export default function ExperienceCard({
   experience,
@@ -349,7 +346,7 @@ export default function ExperienceCard({
             <span className="text-caption text-text-disabled">+{experience.tags.length - 3}</span>
           )}
         </div>
-        <span className="text-caption text-text-disabled shrink-0">{formatDate(experience.updatedAt)}</span>
+        <span className="text-caption text-text-disabled shrink-0">{formatDate(experience.updatedAt, "compact")}</span>
       </div>
     </div>
   )

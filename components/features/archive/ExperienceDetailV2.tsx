@@ -1,5 +1,6 @@
 "use client"
 
+import { formatDate } from "@/lib/utils/date-utils"
 import { useState } from "react"
 import { Pencil, Trash2, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -19,10 +20,6 @@ interface ExperienceDetailV2Props {
   onUpdateImportance?: (id: string, value: ImportanceLevel | undefined) => void
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`
-}
 
 export default function ExperienceDetailV2({
   experience,
@@ -133,7 +130,7 @@ export default function ExperienceDetailV2({
 
       {/* Meta */}
       <p className="text-caption text-text-disabled mt-6">
-        마지막 수정: {formatDate(experience.updatedAt)}
+        마지막 수정: {formatDate(experience.updatedAt, "compact")}
       </p>
 
       {/* Delete confirmation */}
