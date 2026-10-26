@@ -96,6 +96,40 @@ function htmlTagAt(text: string, start: number): HtmlTagToken | undefined {
   return undefined;
 }
 
+/** Resolve a paired HTML container before its body can open an outside code span. */
+function pairedHtmlEnd(text: string, opening: HtmlTagToken): number | undefined {
+  let depth = 1;
+  for (let cursor = opening.end; cursor < text.length; cursor++) {
+    // Complete nested literals hide fake tags; incomplete syntax cannot hide the
+    // enclosing close. Backticks in this HTML body are literal content.
+    if (text.startsWith("<!--", cursor)) {
+      const closing = text.indexOf("-->", cursor + 4);
+      if (closing === -1) return undefined;
+      cursor = closing + 2;
+    } else if (text[cursor] === "[" && !isEscaped(text, cursor)) {
+      const labelEnd = inlineLabelEnd(text, cursor);
+      if (labelEnd !== undefined && text[labelEnd + 1] === "(") {
+        const end = inlineLinkEnd(text, labelEnd + 1);
+        if (end !== undefined) cursor = end - 1;
+      }
+    } else if (text[cursor] === "<") {
+      if (/^(?:<!\[CDATA\[|<\?|<![a-z])/i.test(text.slice(cursor))) {
+        const end = declarationEnd(text, cursor);
+        if (end !== undefined) cursor = end - 1;
+        continue;
+      }
+      const tag = htmlTagAt(text, cursor);
+      if (!tag) continue;
+      if (tag.name === opening.name) {
+        if (tag.closing && --depth === 0) return tag.end;
+        if (!tag.closing && !tag.selfClosing) depth++;
+      }
+      cursor = tag.end - 1;
+    }
+  }
+  return undefined;
+}
+
 /** A definition can continue with a destination and title, but never across a blank line. */
 function referenceDefinitionAt(text: string, start: number): { label: string; end: number } | undefined {
   const indent = text.slice(start).match(/^ {0,3}(?=\[)/)?.[0];
@@ -179,8 +213,11 @@ function removalMask(text: string): Uint8Array {
   // delimiter inside an accepted token cannot consume a later, genuine opener.
   // Incomplete link/declaration fallbacks wait until paired HTML is established.
   const pending: { start: number; end: number }[] = [];
-  const openTags: { name: string; start: number }[] = [];
   const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+  // Whitespace, quotes, angle brackets and backticks delimit a bare URL. Preserve
+  // its path/query/fragment punctuation rather than guessing which marks are prose.
+  const bareUrls = new Map([...text.matchAll(/\b(?:[a-z][a-z\d+.-]*:\/\/|www\.)[^\s<>"'`]+/gi)]
+    .map(match => [match.index!, match.index! + match[0].length]));
   const ticks = [...text.matchAll(/`+/g)];
   for (let start = 0; start < text.length; start++) {
     if (literalChars[start]) continue;
@@ -189,6 +226,8 @@ function removalMask(text: string): Uint8Array {
     if (definition) {
       references.add(normalizeReference(definition.label));
       end = definition.end;
+    } else if (bareUrls.has(start)) {
+      end = bareUrls.get(start);
     } else if (text[start] === "`" && text[start - 1] !== "`" && !isEscaped(text, start)) {
       const opening = ticks.find(run => run.index === start)!;
       const closing = ticks.find(run => run.index! > start && run[0].length === opening[0].length);
@@ -211,14 +250,8 @@ function removalMask(text: string): Uint8Array {
       if (autolink) end = start + autolink[0].length;
       if (tag) {
         end = tag.end;
-        if (tag.closing) {
-          const opening = openTags.findLastIndex(item => item.name === tag.name);
-          if (opening !== -1) {
-            protectLiteral(openTags[opening].start, tag.end);
-            openTags.splice(opening);
-          }
-        } else if (!voidTags.has(tag.name) && !tag.selfClosing) {
-          openTags.push({ name: tag.name, start });
+        if (!tag.closing && !tag.selfClosing && !voidTags.has(tag.name)) {
+          end = pairedHtmlEnd(text, tag) ?? tag.end;
         }
       }
     }

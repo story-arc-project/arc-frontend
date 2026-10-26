@@ -213,6 +213,36 @@ describe("cover letter display", () => {
   ])("preserves surrounding literal ownership and reference variants: %s", literal => {
     expect(stripCoverLetterMarkdown(literal + '\n\n**ordinary**')).toBe(literal + '\n\nordinary');
   });
+  it.each([
+    '<div>\n`\n</div>',
+    '<pre>\n``\n**literal**\n</pre>',
+    '<div>\n<div>`</div>\n<!-- </div> -->\n**literal**\n</div>',
+    '<div title="a>b">\n`\n<span title="</div>">**literal**</span>\n</div>',
+  ])("resolves enclosing HTML before interior code openers: %s", html => {
+    const ticks = html.includes('``') ? '``' : '`';
+    expect(stripCoverLetterMarkdown(html + '\n\n**ordinary** ' + ticks + '**code**' + ticks)).toBe(html + '\n\nordinary ' + ticks + '**code**' + ticks);
+  });
+  it.each([
+    'https://example.com/__portfolio__/',
+    'http://example.com/**path**?q=__query__#**fragment**',
+    'https://example.com/a(b)/__portfolio__/',
+    'www.example.com/__portfolio__/',
+  ])("preserves bare URLs while cleaning neighboring prose: %s", url => {
+    expect(stripCoverLetterMarkdown('**before** ' + url + ' **after**')).toBe('before ' + url + ' after');
+  });
+  it("keeps code ownership around HTML-looking text and URL boundaries", () => {
+    expect(stripCoverLetterMarkdown('`<div>**literal**</div>`\n**ordinary**')).toBe('`<div>**literal**</div>`\nordinary');
+    expect(stripCoverLetterMarkdown('https://example.com/__path__/\n**ordinary** `**code**`')).toBe('https://example.com/__path__/\nordinary `**code**`');
+  });
+  it("projects HTML and bare URL ranges without changing raw grounding claims", () => {
+    const raw = '<div>\n` **literal**\n</div>\n\n**ordinary** `**code**` https://example.com/__portfolio__/';
+    const segments = buildGroundingHighlight(raw, ['literal', 'ordinary', 'code', 'portfolio']).segments;
+    const before = structuredClone(segments);
+    const shown = displayCoverLetterSegments(segments);
+    expect(shown.map(s => s.text).join('')).toBe(raw.replace('**ordinary**', 'ordinary'));
+    expect(shown.filter(s => s.flagged).map(s => s.text)).toEqual(['literal', 'ordinary', 'code', 'portfolio']);
+    expect(segments).toEqual(before);
+  });
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);
