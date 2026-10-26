@@ -56,6 +56,7 @@ export default function FilterBar({
           <input
             type="text"
             className="h-11 w-full rounded-md border border-border bg-surface-secondary pl-9 pr-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+            aria-label="경험 검색"
             placeholder="경험 검색..."
             value={filter.search ?? ""}
             onChange={e => onSearchChange(e.target.value)}
