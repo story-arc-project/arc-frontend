@@ -70,6 +70,37 @@ function declarationEnd(text: string, start: number): number | undefined {
   return undefined;
 }
 
+interface HtmlTagToken {
+  start: number;
+  end: number;
+  name: string;
+  closing: boolean;
+  selfClosing: boolean;
+}
+
+/** Attribute quotes, including entity text, keep internal > characters inside the tag. */
+function htmlTagTokens(text: string): HtmlTagToken[] {
+  const tokens: HtmlTagToken[] = [];
+  const opener = /<(\/?)([a-z][\w-]*)(?=[\s/>])/gi;
+  let match: RegExpExecArray | null;
+  while ((match = opener.exec(text)) !== null) {
+    let quote: string | undefined;
+    for (let i = opener.lastIndex; i < text.length; i++) {
+      const ch = text[i];
+      if (quote) {
+        if (ch === quote) quote = undefined;
+      } else if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === ">") {
+        tokens.push({ start: match.index, end: i + 1, name: match[2].toLowerCase(), closing: Boolean(match[1]), selfClosing: text[i - 1] === "/" });
+        opener.lastIndex = i + 1;
+        break;
+      }
+    }
+  }
+  return tokens;
+}
+
 /** Display-only removals indexed against the complete raw body, before grounding splits. */
 function removalMask(text: string): Uint8Array {
   const removed = new Uint8Array(text.length);
@@ -155,13 +186,16 @@ function removalMask(text: string): Uint8Array {
     if (end !== undefined) commentContexts.push({ start, end });
   }
 
+  const tags = htmlTagTokens(text);
+  for (const tag of tags) commentContexts.push({ start: tag.start, end: tag.end });
+
   const commentChars = new Uint8Array(text.length);
   let commentCursor = 0;
   while (commentCursor < text.length) {
     const start = text.indexOf("<!--", commentCursor);
     if (start === -1) break;
     commentCursor = start + 4;
-    // Complete link/declaration ranges establish semantic containment here,
+    // Complete link/declaration/tag tokens establish semantic containment here,
     // without applying EOF fallbacks that could mask a genuine enclosing HTML body.
     if (literalChars[start] || commentContexts.some(range =>
       range.start < start && start < range.end && !literalChars[range.start] && !commentChars[range.start],
@@ -176,17 +210,17 @@ function removalMask(text: string): Uint8Array {
   // Protect paired HTML contents across lines, including nested elements of the same name.
   const openTags: { name: string; start: number }[] = [];
   const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
-  for (const tag of text.matchAll(/<(\/?)([a-z][\w-]*)\b[^>]*>/gi)) {
-    if (commentChars[tag.index!] || literalChars[tag.index!]) continue;
-    const name = tag[2].toLowerCase();
-    if (tag[1]) {
+  for (const tag of tags) {
+    if (commentChars[tag.start] || literalChars[tag.start]) continue;
+    const name = tag.name;
+    if (tag.closing) {
       const opening = openTags.findLastIndex(item => item.name === name);
       if (opening !== -1) {
-        literalRanges.push({ start: openTags[opening].start, end: tag.index! + tag[0].length });
+        literalRanges.push({ start: openTags[opening].start, end: tag.end });
         openTags.splice(opening);
       }
-    } else if (!voidTags.has(name) && !tag[0].endsWith("/>")) {
-      openTags.push({ name, start: tag.index! });
+    } else if (!voidTags.has(name) && !tag.selfClosing) {
+      openTags.push({ name, start: tag.start });
     }
   }
 

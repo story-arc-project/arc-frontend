@@ -157,6 +157,16 @@ describe("cover letter display", () => {
   ])("keeps genuine comment masking despite earlier ambiguous openers: %s", raw => {
     expect(stripCoverLetterMarkdown(raw)).toBe(raw.slice(0, -12) + 'ordinary');
   });
+  it.each([
+    '<div title="<!--">', "<div title='<!--'>", '<div title="a>b<!--">', '<div title="&quot;<!--">',
+  ])("ignores comment-like HTML attribute text: %s", opening => {
+    const raw = opening + '\n**literal**\n</div>\n**ordinary**';
+    expect(stripCoverLetterMarkdown(raw)).toBe(opening + '\n**literal**\n</div>\nordinary');
+  });
+  it("recognizes actual comments after an opening tag with a fake attribute opener", () => {
+    const raw = '<div title="<!--">\n<!-- </div> -->\n**literal**\n</div>\n**ordinary**';
+    expect(stripCoverLetterMarkdown(raw)).toBe(raw.slice(0, -12) + 'ordinary');
+  });
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);
