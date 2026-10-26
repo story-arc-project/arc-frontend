@@ -1,5 +1,35 @@
 import type { GroundingSegment } from "./cover-letter-grounding";
 
+/** Find the outer close without treating URL parentheses or quoted title text as its end. */
+function inlineLinkEnd(text: string, opening: number): number | undefined {
+  let depth = 1;
+  let quote: string | undefined;
+  let angleDestination = false;
+  let destinationStarted = false;
+  for (let i = opening + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\\") { i++; continue; }
+    if (quote) {
+      if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (angleDestination) {
+      if (ch === ">") angleDestination = false;
+      continue;
+    }
+    if (!destinationStarted && /\s/.test(ch)) continue;
+    if (!destinationStarted) {
+      destinationStarted = true;
+      if (ch === "<") { angleDestination = true; continue; }
+    }
+    // Quotes introduce optional titles after whitespace; URL apostrophes stay ordinary text.
+    if ((ch === '"' || ch === "'") && /\s/.test(text[i - 1])) { quote = ch; continue; }
+    if (ch === "(") depth++;
+    if (ch === ")" && --depth === 0) return i + 1;
+  }
+  return undefined;
+}
+
 /** Display-only removals indexed against the complete raw body, before grounding splits. */
 function removalMask(text: string): Uint8Array {
   const removed = new Uint8Array(text.length);
@@ -19,7 +49,7 @@ function removalMask(text: string): Uint8Array {
     } else if (opening) {
       fence = opening[1];
       protect(start, start + line[0].length);
-    } else if (/^ {0,3}(?:(?:\*[\t ]*){3,}|(?:-[\t ]*){3,}|(?:_[\t ]*){3,})\r?\n?$/.test(line[0]) || /^(?: {4}|\t)/.test(line[0]) || /\[[^\]]*\]\(|<[^>]+>/.test(line[0])) {
+    } else if (/^ {0,3}(?:(?:\*[\t ]*){3,}|(?:-[\t ]*){3,}|(?:_[\t ]*){3,})\r?\n?$/.test(line[0]) || /^(?: {4}|\t)/.test(line[0]) || /<\/?[a-z][\w-]*(?:\s[^>]*|\/?)>/i.test(line[0])) {
       protect(start, start + line[0].length);
     }
   }
@@ -51,9 +81,15 @@ function removalMask(text: string): Uint8Array {
     }
   }
 
-  // These literal constructs may span line and grounding boundaries.
-  for (const link of text.matchAll(/\[[^\]]*\]\([\s\S]*?\)/g)) {
+  // Preserve autolinks by range, leaving adjacent ordinary prose transformable.
+  for (const link of text.matchAll(/<(?:[a-z][a-z\d+.-]*:[^\s<>]*|[^\s<>@]+@[^\s<>@]+)>/gi)) {
     protect(link.index!, link.index! + link[0].length);
+  }
+
+  // These literal constructs may span line and grounding boundaries.
+  for (const link of text.matchAll(/\[[^\]]*\]\(/g)) {
+    const end = inlineLinkEnd(text, link.index! + link[0].length - 1);
+    if (end !== undefined) protect(link.index!, end);
   }
   for (const comment of text.matchAll(/<!--[\s\S]*?(?:-->|$)/g)) {
     protect(comment.index!, comment.index! + comment[0].length);

@@ -60,6 +60,32 @@ describe("cover letter display", () => {
     ["** 미완성 **강조**", "** 미완성 강조"],
     ["**첫 줄\n다음 줄**", "첫 줄\n다음 줄"],
   ])("recovers valid emphasis after rejected candidates: %s", (raw, shown) => expect(stripCoverLetterMarkdown(raw)).toBe(shown));
+  it.each([
+    "[label](https://example.com/path'**value**)",
+    '[label](https://example.com/path(foo) "**title**")',
+    '[label](<https://example.com/path(foo)> "**title**")',
+    '[label](https://example.com/path(foo)\n"**title**")',
+    '[multi\nlabel](https://example.com/a(b(c))\n"**title**) text")',
+    "[label](https://example.com/a(b)\n'**title**) text')",
+    '[label](https://example.com/path(foo)\r\n"**title**")',
+    '[label](<https://example.com/path(foo)>\n"**title**) text")',
+    '[label](https://example.com/path\\(foo\\)\n"**title**")',
+  ])("preserves balanced inline link and following emphasis: %s", raw => {
+    expect(stripCoverLetterMarkdown(raw)).toBe(raw);
+    expect(stripCoverLetterMarkdown(raw + " **강조**")).toBe(raw + " 강조");
+  });
+  it.each(["<https://example.com/**path**>", "<mailto:__name__@example.com>", "<__name__@example.com>"])("preserves angle autolinks with emphasis outside: %s", raw => {
+    expect(stripCoverLetterMarkdown(raw + " **강조**")).toBe(raw + " 강조");
+  });
+  it("projects balanced links across raw grounding segments", () => {
+    const raw = '[label](https://example.com/path(foo)\n"**title**") **강조**';
+    const segments = buildGroundingHighlight(raw, ["title", "강조**"]).segments;
+    const before = structuredClone(segments);
+    const shown = displayCoverLetterSegments(segments);
+    expect(shown.map(s => s.text).join("")).toBe(raw.slice(0, -6) + "강조");
+    expect(shown.filter(s => s.flagged).map(s => s.text)).toEqual(["title", "강조"]);
+    expect(segments).toEqual(before);
+  });
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);
