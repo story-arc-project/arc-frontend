@@ -99,8 +99,8 @@ describe("cover letter display", () => {
   ])("retains ambiguous incomplete links: %s", raw => expect(stripCoverLetterMarkdown(raw)).toBe(raw));
   it.each([
     ["`<?php` 구문 뒤 **강조**", "`<?php` 구문 뒤 강조"],
-    ["`[label](` 구문 뒤 **강조**", "`[label](` 구문 뒤 강조"],
-    ["`code\n<?php [label](`\n**강조**", "`code\n<?php [label](`\n강조"],
+    ["`[label](` 구문 뒤 **강조**", "`[label](` 구문 뒤 **강조**"],
+    ["`code\n<?php [label](`\n**강조**", "`code\n<?php [label](`\n**강조**"],
     ["<!-- <?php [label]( --> **강조**", "<!-- <?php [label]( --> 강조"],
     ["<pre>\n<?php [label](\n**literal**\n</pre>\n**강조**", "<pre>\n<?php [label](\n**literal**\n</pre>\n강조"],
   ])("does not expand openers inside established literal ranges: %s", (raw, shown) => expect(stripCoverLetterMarkdown(raw)).toBe(shown));
@@ -178,7 +178,9 @@ describe("cover letter display", () => {
     '[label](url "``")',
   ])("does not open code from an enclosing literal: %s", prefix => {
     const ticks = prefix.includes('``') ? '``' : '`';
-    expect(stripCoverLetterMarkdown(prefix + ' **ordinary** ' + ticks + '**code**' + ticks)).toBe(prefix + ' ordinary ' + ticks + '**code**' + ticks);
+    // Mixed bracket/backtick paragraphs intentionally retain ordinary emphasis too.
+    const ordinary = prefix.startsWith('[label]') ? '**ordinary**' : 'ordinary';
+    expect(stripCoverLetterMarkdown(prefix + ' **ordinary** ' + ticks + '**code**' + ticks)).toBe(prefix + ' ' + ordinary + ' ' + ticks + '**code**' + ticks);
   });
   it.each([
     '[ref]:\nhttps://example.com/**path**',
@@ -200,7 +202,7 @@ describe("cover letter display", () => {
     const segments = buildGroundingHighlight(raw, ['ordinary', 'code', 'path', 'title', 'claim']).segments;
     const before = structuredClone(segments);
     const shown = displayCoverLetterSegments(segments);
-    expect(shown.map(s => s.text).join('')).toBe(raw.replace('**ordinary**', 'ordinary').replace('**claim**', 'claim'));
+    expect(shown.map(s => s.text).join('')).toBe(raw.replace('**claim**', 'claim'));
     expect(shown.filter(s => s.flagged).map(s => s.text)).toEqual(['ordinary', 'code', 'path', 'title', 'claim']);
     expect(segments).toEqual(before);
   });
@@ -257,7 +259,8 @@ describe("cover letter display", () => {
   ])("recognizes balanced explicit references as source-order literals: %s", reference => {
     const definitions = '\n\n[ref]: https://example.com';
     expect(stripCoverLetterMarkdown(reference + definitions)).toBe(reference + definitions);
-    expect(stripCoverLetterMarkdown(reference + ' **ordinary** `**code**`' + definitions)).toBe(reference + ' ordinary `**code**`' + definitions);
+    expect(stripCoverLetterMarkdown(reference + ' **ordinary** `**code**`' + definitions)).toBe(reference + ' **ordinary** `**code**`' + definitions);
+    expect(stripCoverLetterMarkdown(reference + '\n\n**ordinary** `**code**`' + definitions)).toBe(reference + '\n\nordinary `**code**`' + definitions);
   });
   it("keeps single-newline code spans and projects bounded literal ranges", () => {
     expect(stripCoverLetterMarkdown('`first\n**code**` **ordinary**')).toBe('`first\n**code**` ordinary');
@@ -265,9 +268,42 @@ describe("cover letter display", () => {
     const segments = buildGroundingHighlight(raw, ['text', 'ordinary', 'code']).segments;
     const before = structuredClone(segments);
     const shown = displayCoverLetterSegments(segments);
-    expect(shown.map(s => s.text).join('')).toBe(raw.replace('**ordinary**', 'ordinary'));
+    expect(shown.map(s => s.text).join('')).toBe(raw);
     expect(shown.filter(s => s.flagged).map(s => s.text)).toEqual(['text', 'ordinary', 'code']);
     expect(segments).toEqual(before);
+  });
+  it.each([
+    '[label `]` **text**](https://example.com)',
+    '[label `]` **text**][ref]\n\n[ref]: https://example.com',
+  ])("preserves the user-approved bracket-plus-backtick paragraph: %s", raw => {
+    expect(stripCoverLetterMarkdown(raw)).toBe(raw);
+  });
+  it.each(['\n\n', '\n \t\n', '\r\n\r\n', '\r\n \t\r\n'])("vetoes only the suspicious paragraph across %j", boundary => {
+    const newline = boundary.startsWith('\r') ? '\r\n' : '\n';
+    const suspicious = ['## heading', '[label `]` **text**](url) **ordinary**', '- first', '- second'].join(newline);
+    const clean = ['## clean', '**outside**', '- one', '- two'].join(newline);
+    const shownClean = ['clean', 'outside', 'one', 'two'].join(newline);
+    expect(stripCoverLetterMarkdown(suspicious + boundary + clean)).toBe(suspicious + boundary + shownClean);
+  });
+  it("requires both characters within the same paragraph, retaining safe false positives", () => {
+    expect(stripCoverLetterMarkdown('[plain] **ordinary**')).toBe('[plain] ordinary');
+    expect(stripCoverLetterMarkdown('`code` **ordinary**')).toBe('`code` ordinary');
+    expect(stripCoverLetterMarkdown('[plain] **first**\n\n`code` **second**')).toBe('[plain] first\n\n`code` second');
+    const incomplete = '[unfinished\n**ordinary** `';
+    expect(stripCoverLetterMarkdown(incomplete)).toBe(incomplete);
+  });
+  it("vetoes removals before raw grounding projection without changing source counts or flags", () => {
+    const suspicious = '## heading\n[label `]` **text**](url) **ordinary**\n- one\n- two';
+    const raw = suspicious + '\r\n \t\r\n**outside**';
+    const rawLength = raw.length;
+    const grounding = buildGroundingHighlight(raw, ['heading', 'text', 'ordinary', 'outside']);
+    const before = structuredClone(grounding);
+    const shown = displayCoverLetterSegments(grounding.segments);
+    expect(shown.map(s => s.text).join('')).toBe(suspicious + '\r\n \t\r\noutside');
+    expect(shown.filter(s => s.flagged).map(s => s.text)).toEqual(['heading', 'text', 'ordinary', 'outside']);
+    expect(grounding).toEqual(before);
+    expect(grounding.segments.map(s => s.text).join('')).toBe(raw);
+    expect(grounding.segments.reduce((length, s) => length + s.text.length, 0)).toBe(rawLength);
   });
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";

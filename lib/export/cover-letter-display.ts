@@ -328,6 +328,20 @@ function removalMask(text: string): Uint8Array {
     run.push(item);
   }
   flush();
+
+  // User-approved preservation tradeoff: mixed bracket/backtick paragraphs stay
+  // byte-for-byte source text, including otherwise removable headers and lists.
+  // This final veto cannot change literal parsing or delete additional characters.
+  let paragraphStart = 0;
+  const preserveMixedParagraph = (end: number) => {
+    const paragraph = text.slice(paragraphStart, end);
+    if (paragraph.includes("[") && paragraph.includes("`")) removed.fill(0, paragraphStart, end);
+  };
+  for (const boundary of text.matchAll(/\r?\n[\t ]*\r?\n/g)) {
+    preserveMixedParagraph(boundary.index!);
+    paragraphStart = boundary.index! + boundary[0].length;
+  }
+  preserveMixedParagraph(text.length);
   return removed;
 }
 

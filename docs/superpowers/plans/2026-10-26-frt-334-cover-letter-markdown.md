@@ -26,6 +26,14 @@ After the five-wave Task1 cap, actual review at d7dfde9 reproduced two valid pre
 - RED exact reproductions and fixed boundary/control cases, GREEN focused suite, independent scoped review, required gates and UI comparison.
 - No dependency, production parser, API/storage/editor/grounding policy or feature-flag change. Any further preservation defect returns to scope/design adjudication; no automatic retry loop.
 
+### Task 1c: User-approved conservative paragraph preservation
+The user explicitly approved the recommended design after Task1b adjudication. This is one bounded preservation change, not another nested grammar repair.
+- [x] Add a final removal-mask veto for paragraphs containing both `[` and a backtick; preserve LF/CRLF whitespace-only blank boundaries and single-newline paragraphs.
+- [x] RED exact inline/reference examples and fixed controls; preserve same-paragraph ordinary emphasis/headers/lists intentionally, while separate paragraphs retain cleanup.
+- [x] Test unchanged raw segments/counts/grounding flags and document the accepted false-positive tradeoff in the spec.
+- [ ] One independent scoped review, required final gates and latest-head UI comparison. Any further defect returns to adjudication; no automatic retry loop.
+- No parser/dependency, API/storage/editor/counter/grounding-policy or feature-flag changes.
+
 ### Task 2: Validation and review delivery
 - [ ] Node20 lint/typecheck/unit/build through validate subagent.
 - [x] Storybook build/play with desktop1440/mobile390 captures of existing preview; feature flag remains disabled. Prepare local gallery and CI/remote verification route.
