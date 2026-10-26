@@ -9,15 +9,18 @@ const getLibrariesMock = vi.fn()
 const getLibraryExperiencesMock = vi.fn()
 const addExperienceToLibraryMock = vi.fn()
 const removeExperienceFromLibraryMock = vi.fn()
+const createLibraryMock = vi.fn()
+const updateLibraryMock = vi.fn()
+const deleteLibraryMock = vi.fn()
 
 vi.mock("@/lib/api/library-api", () => ({
   getLibraries: (...args: unknown[]) => getLibrariesMock(...args),
   getLibraryExperiences: (...args: unknown[]) => getLibraryExperiencesMock(...args),
   addExperienceToLibrary: (...args: unknown[]) => addExperienceToLibraryMock(...args),
   removeExperienceFromLibrary: (...args: unknown[]) => removeExperienceFromLibraryMock(...args),
-  createLibrary: vi.fn(),
-  updateLibrary: vi.fn(),
-  deleteLibrary: vi.fn(),
+  createLibrary: (...args: unknown[]) => createLibraryMock(...args),
+  updateLibrary: (...args: unknown[]) => updateLibraryMock(...args),
+  deleteLibrary: (...args: unknown[]) => deleteLibraryMock(...args),
 }))
 
 import { useLibraries } from "./useLibraries"
@@ -72,7 +75,7 @@ let pendingMembership: Map<string, Deferred<ExperienceListData>>
 let membershipQueue: Deferred<ExperienceListData>[]
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   pendingMembership = new Map()
   membershipQueue = []
   getLibrariesMock.mockResolvedValue(LIBRARY_DTOS)
@@ -84,6 +87,9 @@ beforeEach(() => {
   })
   addExperienceToLibraryMock.mockResolvedValue(undefined)
   removeExperienceFromLibraryMock.mockResolvedValue(undefined)
+  createLibraryMock.mockResolvedValue("lib-new")
+  updateLibraryMock.mockResolvedValue(undefined)
+  deleteLibraryMock.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -875,4 +881,243 @@ describe("useLibraries — 전체 재조회 이후 복구 상태", () => {
     expect(result.current.membershipErrorIds.has("lib-a")).toBe(false)
     expect(result.current.loadingMembershipIds.has("lib-a")).toBe(false)
   })
+})
+
+
+describe("useLibraries — acknowledged library CRUD", () => {
+  it.each(["create", "update", "delete"] as const)("%s success survives overlapping membership edits without another list request", async (action) => {
+    const { result } = await renderWithMembershipSettled()
+    const response = deferred<never>()
+    const api = action === "create" ? createLibraryMock : action === "update" ? updateLibraryMock : deleteLibraryMock
+    api.mockReturnValueOnce(response.promise)
+    let write!: Promise<void>
+    await act(async () => {
+      write = action === "create" ? result.current.createLibrary({ name: "New" })
+        : action === "update" ? result.current.updateLibrary("lib-b", { name: "Renamed", color: "red" })
+        : result.current.deleteLibrary("lib-b")
+      await result.current.addExperienceToLibrary("lib-a", "exp-2")
+      await result.current.removeExperienceFromLibrary("lib-a", "exp-1")
+    })
+    await act(async () => { response.resolve((action === "create" ? "lib-new" : undefined) as never); await write })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-2"])
+    expect(result.current.loadedMembershipIds.has("lib-a")).toBe(true)
+    if (action === "create") expect(result.current.libraries.find((l) => l.id === "lib-new")?.name).toBe("New")
+    if (action === "update") expect(result.current.libraries.find((l) => l.id === "lib-b")).toMatchObject({ name: "Renamed", color: "red" })
+    if (action === "delete") expect(result.current.libraries.some((l) => l.id === "lib-b")).toBe(false)
+    expect(getLibrariesMock).toHaveBeenCalledTimes(1)
+    expect(getLibraryExperiencesMock).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(["create", "update", "delete"] as const)("%s failure leaves acknowledged state unchanged", async (action) => {
+    const { result } = await renderWithMembershipSettled()
+    const api = action === "create" ? createLibraryMock : action === "update" ? updateLibraryMock : deleteLibraryMock
+    api.mockRejectedValueOnce(new Error("write failed"))
+    const before = result.current.libraries
+    await act(async () => {
+      const write = action === "create" ? result.current.createLibrary({ name: "New" })
+        : action === "update" ? result.current.updateLibrary("lib-b", { name: "Renamed" })
+        : result.current.deleteLibrary("lib-b")
+      await expect(write).rejects.toThrow("write failed")
+    })
+    expect(result.current.libraries).toBe(before)
+  })
+
+  it.each(["create", "update", "delete"] as const)("an older list response cannot undo %s success", async (action) => {
+    const { result } = await renderWithMembershipSettled()
+    const snapshot = deferred<LibraryDTO[]>()
+    getLibrariesMock.mockReturnValueOnce(snapshot.promise)
+    let refresh!: Promise<void>
+    await act(async () => { refresh = result.current.refetch() })
+    await act(async () => {
+      if (action === "create") await result.current.createLibrary({ name: "New" })
+      if (action === "update") await result.current.updateLibrary("lib-b", { name: "Renamed" })
+      if (action === "delete") await result.current.deleteLibrary("lib-b")
+    })
+    await act(async () => { snapshot.resolve(LIBRARY_DTOS); await refresh })
+    if (action === "create") expect(result.current.libraries.some((l) => l.id === "lib-new")).toBe(true)
+    if (action === "update") expect(result.current.libraries.find((l) => l.id === "lib-b")?.name).toBe("Renamed")
+    if (action === "delete") expect(result.current.libraries.some((l) => l.id === "lib-b")).toBe(false)
+    expect(result.current.isLoading).toBe(false)
+  })
+
+  it("same-library updates preserve user order and a failed later update preserves prior success", async () => {
+    const { result } = await renderWithMembershipSettled()
+    const first = deferred<void>()
+    const second = deferred<void>()
+    let calls = 0
+    updateLibraryMock.mockImplementation((id: string) => id === "lib-a" ? (++calls === 1 ? first.promise : second.promise) : Promise.resolve())
+    let writes!: Promise<void>[]
+    await act(async () => {
+      writes = [result.current.updateLibrary("lib-a", { name: "First" }), result.current.updateLibrary("lib-a", { name: "Second" }).catch(() => {})]
+      await result.current.updateLibrary("lib-b", { name: "Independent" })
+    })
+    expect(updateLibraryMock.mock.calls.map(([id]) => id)).toEqual(["lib-a", "lib-b"])
+    await act(async () => { first.resolve(); await writes[0] })
+    expect(result.current.libraries.find((l) => l.id === "lib-a")?.name).toBe("First")
+    await act(async () => { second.reject(new Error("later failed")); await writes[1] })
+    expect(result.current.libraries.find((l) => l.id === "lib-a")?.name).toBe("First")
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+  })
+
+  it("delete waits for an earlier update and late membership GET cannot resurrect it", async () => {
+    const { result } = await renderWithMembershipInFlight()
+    const initialMembership = pendingMembership.get("lib-a")!
+    const update = deferred<void>()
+    updateLibraryMock.mockReturnValueOnce(update.promise)
+    let writes!: Promise<void>[]
+    await act(async () => { writes = [result.current.updateLibrary("lib-a", { name: "Renamed" }), result.current.deleteLibrary("lib-a")] })
+    expect(deleteLibraryMock).not.toHaveBeenCalled()
+    await act(async () => { update.resolve(); await Promise.all(writes) })
+    await act(async () => { initialMembership.resolve(listData(["exp-1"])); await Promise.resolve() })
+    expect(result.current.libraries.some((l) => l.id === "lib-a")).toBe(false)
+    expect(result.current.loadedMembershipIds.has("lib-a")).toBe(false)
+    expect(result.current.loadingMembershipIds.has("lib-a")).toBe(false)
+  })
+
+  it("CRUD does not invalidate an overlapping failed membership recovery", async () => {
+    const { result } = await renderWithMembershipSettled()
+    membershipQueue.length = 0
+    addExperienceToLibraryMock.mockRejectedValueOnce(new Error("membership failed"))
+    let failed!: Promise<void>
+    await act(async () => { failed = result.current.addExperienceToLibrary("lib-a", "exp-2").catch(() => {}); await Promise.resolve() })
+    await settle()
+    await act(async () => { await result.current.updateLibrary("lib-b", { name: "Renamed" }) })
+    await act(async () => { membershipQueue[0].resolve(listData(["exp-1"])); await failed })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+    expect(result.current.libraries.find((l) => l.id === "lib-b")?.name).toBe("Renamed")
+  })
+})
+
+
+describe("useLibraries — new library readiness", () => {
+  it("a newly created manual library is immediately a loaded empty library", async () => {
+    const { result } = await renderWithMembershipSettled()
+    await act(async () => { await result.current.createLibrary({ name: "New" }) })
+    expect(result.current.loadedMembershipIds.has("lib-new")).toBe(true)
+    expect(membershipOf(result.current.libraries, "lib-new")).toEqual([])
+  })
+
+  it("a list that observes create before its response does not produce duplicate ids or lose membership", async () => {
+    const { result } = await renderWithMembershipSettled()
+    const created = deferred<string>()
+    createLibraryMock.mockReturnValueOnce(created.promise)
+    let write!: Promise<void>
+    await act(async () => { write = result.current.createLibrary({ name: "New" }) })
+    getLibrariesMock.mockResolvedValueOnce([...LIBRARY_DTOS, { id: "lib-new", name: "New", is_system: false }])
+    await act(async () => { await result.current.refetch() })
+    await act(async () => { pendingMembership.get("lib-new")!.resolve(listData(["server-member"])); await Promise.resolve() })
+    await act(async () => { created.resolve("lib-new"); await write })
+    expect(result.current.libraries.filter((l) => l.id === "lib-new")).toHaveLength(1)
+    expect(membershipOf(result.current.libraries, "lib-new")).toEqual(["server-member"])
+  })
+
+  it("a failed first metadata write does not prevent the queued successful write", async () => {
+    const { result } = await renderWithMembershipSettled()
+    const first = deferred<void>()
+    updateLibraryMock.mockReturnValueOnce(first.promise)
+    let writes!: Promise<void>[]
+    await act(async () => { writes = [result.current.updateLibrary("lib-a", { name: "Failed" }).catch(() => {}), result.current.updateLibrary("lib-a", { color: "blue" })] })
+    await act(async () => { first.reject(new Error("first failed")); await Promise.all(writes) })
+    expect(result.current.libraries.find((l) => l.id === "lib-a")).toMatchObject({ name: "A 라이브러리", color: "blue" })
+  })
+
+  it.each(["create", "update", "delete"] as const)("%s response after unmount does not change React state", async (action) => {
+    const { result, unmount } = await renderWithMembershipSettled()
+    const response = deferred<never>()
+    const api = action === "create" ? createLibraryMock : action === "update" ? updateLibraryMock : deleteLibraryMock
+    api.mockReturnValueOnce(response.promise)
+    let write!: Promise<void>
+    await act(async () => {
+      write = action === "create" ? result.current.createLibrary({ name: "New" })
+        : action === "update" ? result.current.updateLibrary("lib-b", { name: "Renamed" })
+        : result.current.deleteLibrary("lib-b")
+    })
+    const before = result.current.libraries
+    unmount()
+    response.resolve((action === "create" ? "lib-new" : undefined) as never)
+    await write
+    expect(result.current.libraries).toBe(before)
+  })
+})
+
+
+describe("useLibraries — list and membership request lifetimes", () => {
+  it("an invalidated list refresh does not discard membership GETs that still own the displayed libraries", async () => {
+    const { result } = await renderWithMembershipInFlight()
+    const initialA = pendingMembership.get("lib-a")!
+    const snapshot = deferred<LibraryDTO[]>()
+    getLibrariesMock.mockReturnValueOnce(snapshot.promise)
+    let refresh!: Promise<void>
+    await act(async () => { refresh = result.current.refetch() })
+    await act(async () => { await result.current.createLibrary({ name: "New" }) })
+    await act(async () => { snapshot.resolve(LIBRARY_DTOS); await refresh; initialA.resolve(listData(["exp-1"])); await Promise.resolve() })
+    expect(membershipOf(result.current.libraries, "lib-a")).toEqual(["exp-1"])
+  })
+
+  it("create waits for the initial list so it cannot hide pre-existing libraries", async () => {
+    const initial = deferred<LibraryDTO[]>()
+    getLibrariesMock.mockReturnValueOnce(initial.promise)
+    const { result } = renderHook(() => useLibraries())
+    let write!: Promise<void>
+    await act(async () => { write = result.current.createLibrary({ name: "New" }); await Promise.resolve() })
+    expect(createLibraryMock).not.toHaveBeenCalled()
+    await act(async () => { initial.resolve(LIBRARY_DTOS); await write })
+    expect(result.current.libraries.map((l) => l.id)).toEqual(["lib-all", "lib-a", "lib-b", "lib-new"])
+  })
+
+  it("initial list failure does not block creation or remove the list retry error", async () => {
+    const initial = deferred<LibraryDTO[]>()
+    getLibrariesMock.mockReturnValueOnce(initial.promise)
+    const { result } = renderHook(() => useLibraries())
+    let write!: Promise<void>
+    await act(async () => { write = result.current.createLibrary({ name: "New" }); initial.reject(new Error("initial list failed")); await write })
+    expect(result.current.libraries.some((l) => l.id === "lib-new")).toBe(true)
+    expect(result.current.error?.message).toBe("initial list failed")
+    expect(result.current.isLoading).toBe(false)
+    getLibrariesMock.mockResolvedValueOnce([...LIBRARY_DTOS, { id: "lib-new", name: "New", is_system: false }])
+    await act(async () => { await result.current.refetch() })
+    expect(result.current.error).toBeNull()
+    expect(result.current.libraries.map((l) => l.id)).toEqual(["lib-all", "lib-a", "lib-b", "lib-new"])
+  })
+})
+
+
+it("creation waits for an active initial-list retry rather than discarding it", async () => {
+  getLibrariesMock.mockRejectedValueOnce(new Error("initial failed"))
+  const { result } = renderHook(() => useLibraries())
+  await waitFor(() => { expect(result.current.error?.message).toBe("initial failed") })
+  const retry = deferred<LibraryDTO[]>()
+  getLibrariesMock.mockReturnValueOnce(retry.promise)
+  let refresh!: Promise<void>
+  let create!: Promise<void>
+  await act(async () => { refresh = result.current.refetch(); create = result.current.createLibrary({ name: "New" }); await Promise.resolve() })
+  expect(createLibraryMock).not.toHaveBeenCalled()
+  expect(result.current.isLoading).toBe(true)
+  await act(async () => { retry.resolve(LIBRARY_DTOS); await Promise.all([refresh, create]) })
+  expect(result.current.libraries.map((l) => l.id)).toEqual(["lib-all", "lib-a", "lib-b", "lib-new"])
+  expect(result.current.error).toBeNull()
+})
+
+
+it.each([false, true])("creation acknowledgment preserves an initial-list retry started while POST was pending (retry fails=%s)", async (retryFails) => {
+  getLibrariesMock.mockRejectedValueOnce(new Error("initial failed"))
+  const { result } = renderHook(() => useLibraries())
+  await waitFor(() => { expect(result.current.error?.message).toBe("initial failed") })
+  const post = deferred<string>()
+  createLibraryMock.mockReturnValueOnce(post.promise)
+  let create!: Promise<void>
+  await act(async () => { create = result.current.createLibrary({ name: "New" }); await Promise.resolve() })
+  const retry = deferred<LibraryDTO[]>()
+  getLibrariesMock.mockReturnValueOnce(retry.promise)
+  let refresh!: Promise<void>
+  await act(async () => { refresh = result.current.refetch(); post.resolve("lib-new"); await Promise.resolve() })
+  expect(result.current.isLoading).toBe(true)
+  await act(async () => {
+    if (retryFails) retry.reject(new Error("retry failed"))
+    else retry.resolve(LIBRARY_DTOS)
+    await Promise.all([refresh, create])
+  })
+  expect(result.current.libraries.map((l) => l.id)).toEqual(retryFails ? ["lib-all", "lib-new"] : ["lib-all", "lib-a", "lib-b", "lib-new"])
+  if (retryFails) expect(result.current.error?.message).toBe("retry failed")
+  else expect(result.current.error).toBeNull()
 })

@@ -49,6 +49,10 @@ export function useLibraries() {
   const [membershipErrorIds, setMembershipErrorIds] = useState<Set<string>>(() => new Set());
   const loadedMembershipRef = useRef<Set<string>>(new Set());
   const refetchVersionRef = useRef(0);
+  const listRequestVersionRef = useRef(0);
+  const latestListRequestRef = useRef<Promise<void> | null>(null);
+  const hasLoadedListRef = useRef(false);
+  const libraryWritesRef = useRef<Map<string, Promise<void>>>(new Map());
   // 멤버십 mutation 세대를 두 층위로 센다.
   // - 전역 카운터: 목록 재조회(refetch)는 "낙관적으로 바꾼 멤버십이 하나라도 있는가"만
   //   알면 되므로 라이브러리를 구분하지 않는다.
@@ -93,38 +97,46 @@ export function useLibraries() {
     return next;
   }, []);
 
-  const refetch = useCallback(async () => {
-    const version = ++refetchVersionRef.current;
-    const membershipVersion = membershipVersionRef.current;
-    setIsLoading(true);
-    setError(null);
+  const refetch = useCallback(() => {
+    const request = (async () => {
+      const listVersion = ++listRequestVersionRef.current;
+      const membershipVersion = membershipVersionRef.current;
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const libraryDTOs = await getLibraries();
-      if (!mountedRef.current || version !== refetchVersionRef.current || membershipVersion !== membershipVersionRef.current) return;
+      try {
+        const libraryDTOs = await getLibraries();
+        if (!mountedRef.current || listVersion !== listRequestVersionRef.current || membershipVersion !== membershipVersionRef.current) return;
 
-      const mappedLibraries = libraryDTOs
-        .map((library) => toLibrary(library))
-        .filter((library) => library.id !== ALL_LIBRARY_ID);
+        const mappedLibraries = libraryDTOs
+          .map((library) => toLibrary(library))
+          .filter((library) => library.id !== ALL_LIBRARY_ID);
 
-      loadedMembershipRef.current = new Set();
-      // This accepted generation starts a fresh membership load. An earlier
-      // recovery failure must not suppress the new GET's loaded marker.
-      recoveryNeededRef.current.clear();
-      setLoadedMembershipIds(new Set());
-      setMembershipErrorIds(new Set());
-      commitLibraries(() => [createAllLibrary(), ...mappedLibraries]);
-      mappedLibraries.forEach((library) => {
-        if (!library.filter) void loadLibraryMembershipRef.current(library.id);
-      });
-    } catch (err) {
-      if (!mountedRef.current || version !== refetchVersionRef.current) return;
-      setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
-    } finally {
-      if (mountedRef.current && version === refetchVersionRef.current) {
-        setIsLoading(false);
+        // Only an accepted list replaces membership ownership. Merely starting a
+        // list request must not invalidate GETs if CRUD later discards that list.
+        refetchVersionRef.current += 1;
+        hasLoadedListRef.current = true;
+        loadedMembershipRef.current = new Set();
+        // This accepted generation starts a fresh membership load. An earlier
+        // recovery failure must not suppress the new GET's loaded marker.
+        recoveryNeededRef.current.clear();
+        setLoadedMembershipIds(new Set());
+        setMembershipErrorIds(new Set());
+        commitLibraries(() => [createAllLibrary(), ...mappedLibraries]);
+        mappedLibraries.forEach((library) => {
+          if (!library.filter) void loadLibraryMembershipRef.current(library.id);
+        });
+      } catch (err) {
+        if (!mountedRef.current || listVersion !== listRequestVersionRef.current) return;
+        setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
+      } finally {
+        if (mountedRef.current && listVersion === listRequestVersionRef.current) {
+          setIsLoading(false);
+        }
       }
-    }
+    })();
+    latestListRequestRef.current = request;
+    return request;
   }, [commitLibraries]);
 
   useEffect(() => {
@@ -174,7 +186,7 @@ export function useLibraries() {
       } catch {
         // error state tracked via setMembershipErrorIds below
       } finally {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || !librariesRef.current.some((library) => library.id === libraryId)) return;
         // Always clear the loading indicator. If a mutation on *this* library
         // bumped its version while we were in flight, the local state is already
         // authoritative (the mutation patched it); leaving loadingMembershipIds
@@ -214,35 +226,6 @@ export function useLibraries() {
 
   loadLibraryMembershipRef.current = loadLibraryMembership;
 
-  // Mutation resolves as soon as the server acknowledges the write. The
-  // follow-up refetch runs best-effort in the background so a transient
-  // GET failure does not masquerade as a write failure — which would
-  // invite the user to retry and create duplicates (or repeat destructive
-  // deletes).
-  const createLibrary = useCallback(
-    async (payload: UseLibrariesMutationInput): Promise<void> => {
-      await apiCreateLibrary(payload);
-      void refetch();
-    },
-    [refetch],
-  );
-
-  const updateLibrary = useCallback(
-    async (id: string, payload: UseLibrariesUpdateInput): Promise<void> => {
-      await apiUpdateLibrary(id, payload);
-      void refetch();
-    },
-    [refetch],
-  );
-
-  const deleteLibrary = useCallback(
-    async (id: string): Promise<void> => {
-      await apiDeleteLibrary(id);
-      void refetch();
-    },
-    [refetch],
-  );
-
   const markMembershipLoaded = useCallback((libraryId: string) => {
     loadedMembershipRef.current.add(libraryId);
     setLoadedMembershipIds((prev) => {
@@ -258,6 +241,98 @@ export function useLibraries() {
       return next;
     });
   }, []);
+
+  // Acknowledged CRUD must not depend on a list GET: concurrent membership
+  // edits can invalidate that snapshot. Invalidate list snapshots separately so
+  // membership loads and FRT-235 recovery can finish against the same objects.
+  const invalidateListSnapshot = useCallback(() => {
+    listRequestVersionRef.current += 1;
+    setIsLoading(false);
+    if (hasLoadedListRef.current) setError(null);
+  }, []);
+
+  const enqueueLibraryWrite = useCallback(async (id: string, apply: () => Promise<void>): Promise<void> => {
+    const previous = libraryWritesRef.current.get(id);
+    const write = (async () => {
+      if (previous) await previous;
+      await apply();
+    })();
+    const settled = write.then(() => {}, () => {});
+    libraryWritesRef.current.set(id, settled);
+    try {
+      await write;
+    } finally {
+      if (libraryWritesRef.current.get(id) === settled) libraryWritesRef.current.delete(id);
+    }
+  }, []);
+
+  const createLibrary = useCallback(
+    async (payload: UseLibrariesMutationInput): Promise<void> => {
+      // The header can create while the initial list is loading. Wait for
+      // that snapshot (including failure) before invalidating older snapshots.
+      const waitForInitialList = async () => {
+        while (!hasLoadedListRef.current) {
+          const pendingList = latestListRequestRef.current;
+          await pendingList;
+          if (pendingList === latestListRequestRef.current) break;
+        }
+      };
+      await waitForInitialList();
+      const id = await apiCreateLibrary(payload);
+      // Retry may have started while POST was pending. Until a list has ever
+      // loaded, preserve that attempt too so existing libraries or retry errors
+      // cannot disappear when the acknowledged library is added locally.
+      await waitForInitialList();
+      if (!mountedRef.current) return;
+      invalidateListSnapshot();
+      const alreadyPresent = librariesRef.current.some((library) => library.id === id);
+      commitLibraries((prev) => prev.some((library) => library.id === id) ? prev : [...prev, {
+        id,
+        name: payload.name,
+        color: payload.color,
+        icon: payload.icon,
+        isSystem: payload.isSystem ?? false,
+        filter: payload.filter,
+        experienceIds: [],
+      }]);
+      // A fresh manual library has no members. If a concurrent list already
+      // observed it, preserve its existing load/error state and membership.
+      if (!alreadyPresent && !payload.filter) markMembershipLoaded(id);
+    },
+    [commitLibraries, invalidateListSnapshot, markMembershipLoaded],
+  );
+
+  const updateLibrary = useCallback(
+    (id: string, payload: UseLibrariesUpdateInput): Promise<void> => enqueueLibraryWrite(id, async () => {
+      await apiUpdateLibrary(id, payload);
+      if (!mountedRef.current) return;
+      invalidateListSnapshot();
+      // PATCH ignores omitted fields. Preserve both omitted metadata and the
+      // latest membership, including optimistic edits made while awaiting API.
+      const patch = Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined));
+      commitLibraries((prev) => prev.map((library) => library.id === id ? { ...library, ...patch } : library));
+    }),
+    [commitLibraries, enqueueLibraryWrite, invalidateListSnapshot],
+  );
+
+  const deleteLibrary = useCallback(
+    (id: string): Promise<void> => enqueueLibraryWrite(id, async () => {
+      await apiDeleteLibrary(id);
+      if (!mountedRef.current) return;
+      invalidateListSnapshot();
+      commitLibraries((prev) => prev.filter((library) => library.id !== id));
+      loadedMembershipRef.current.delete(id);
+      recoveryNeededRef.current.delete(id);
+      for (const setState of [setLoadedMembershipIds, setLoadingMembershipIds, setMembershipErrorIds]) {
+        setState((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    }),
+    [commitLibraries, enqueueLibraryWrite, invalidateListSnapshot],
+  );
 
   const pruneMembershipJournal = useCallback((libraryId: string) => {
     if ((activeRecoveriesRef.current.get(libraryId) ?? 0) > 0) return;
@@ -285,7 +360,8 @@ export function useLibraries() {
       try {
         const data = await getLibraryExperiences(libraryId);
         if (
-          !mountedRef.current || refetchVersion !== refetchVersionRef.current ||
+          !mountedRef.current || !librariesRef.current.some((library) => library.id === libraryId) ||
+          refetchVersion !== refetchVersionRef.current ||
           version < (appliedRecoveryVersionsRef.current.get(libraryId) ?? 0)
         ) return;
 
@@ -315,7 +391,8 @@ export function useLibraries() {
         }
       } catch {
         if (
-          !mountedRef.current || refetchVersion !== refetchVersionRef.current ||
+          !mountedRef.current || !librariesRef.current.some((library) => library.id === libraryId) ||
+          refetchVersion !== refetchVersionRef.current ||
           version !== recoveryVersionsRef.current.get(libraryId)
         ) return;
         recoveryNeededRef.current.add(libraryId);
@@ -360,7 +437,7 @@ export function useLibraries() {
   const mutateMembership = useCallback(
     async (libraryId: string, experienceId: string, present: boolean): Promise<void> => {
       // Read the synchronous mirror so duplicate clicks are complete no-ops.
-      if (!mountedRef.current || isMember(libraryId, experienceId) === present) return;
+      if (!mountedRef.current || !librariesRef.current.some((library) => library.id === libraryId) || isMember(libraryId, experienceId) === present) return;
       bumpMembershipVersion(libraryId);
       const mutation: MembershipMutation = {
         id: membershipVersionRef.current,
