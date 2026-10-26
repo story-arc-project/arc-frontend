@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -165,6 +165,7 @@ export default function DashboardPage() {
   useReportExperienceCount(expCount, expLoading || (!summary && !summaryError));
   const [retryKey, setRetryKey] = useState(0);
   const [tab, setTab] = useState<TabKey>("individual");
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [mounted, setMounted] = useState(false);
 
   // One-shot post-hydration flip so date-sensitive nodes render real time
@@ -486,15 +487,34 @@ export default function DashboardPage() {
               role="tablist"
               aria-label="분석 유형"
             >
-              {TABS.map((t) => (
+              {TABS.map((t, index) => (
                 <button
                   key={t.key}
                   id={`dash-tab-${t.key}`}
                   type="button"
                   role="tab"
+                  ref={(element) => { tabRefs.current[index] = element; }}
+                  tabIndex={tab === t.key ? 0 : -1}
                   aria-selected={tab === t.key}
-                  aria-controls={tab === t.key ? `dash-panel-${t.key}` : undefined}
+                  aria-controls={tab === t.key && recentMap ? `dash-panel-${t.key}` : undefined}
                   onClick={() => setTab(t.key)}
+                  onKeyDown={(event) => {
+                    let nextIndex: number;
+                    if (event.key === "ArrowRight") {
+                      nextIndex = (index + 1) % TABS.length;
+                    } else if (event.key === "ArrowLeft") {
+                      nextIndex = (index - 1 + TABS.length) % TABS.length;
+                    } else if (event.key === "Home") {
+                      nextIndex = 0;
+                    } else if (event.key === "End") {
+                      nextIndex = TABS.length - 1;
+                    } else {
+                      return;
+                    }
+                    event.preventDefault();
+                    setTab(TABS[nextIndex].key);
+                    tabRefs.current[nextIndex]?.focus();
+                  }}
                   className={[
                     "px-3 py-1.5 text-label transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-inset",
                     tab === t.key
