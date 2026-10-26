@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs";
-import { expect, fireEvent, within } from "storybook/test";
+import { expect, fireEvent, waitFor, within } from "storybook/test";
 
 import { AuthContext } from "@/contexts/AuthContext";
 import { DemoModeProvider } from "@/contexts/DemoModeContext";
@@ -45,7 +45,8 @@ export const Open: Story = {
     // The CI runner also exercises this state at desktop width, where the mobile toggle is CSS-hidden.
     // Native keyboard behavior and responsive visibility are covered on actual routes by Playwright.
     fireEvent.click(toggle);
-    await expect(toggle).toHaveAttribute("aria-label", "메뉴 닫기");
+    // fireEvent dispatches synchronously; React may commit on a later turn in the static build.
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-label", "메뉴 닫기"));
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     const nav = canvasElement.ownerDocument.getElementById(toggle.getAttribute("aria-controls")!);
     await expect(nav).not.toHaveAttribute("hidden");
