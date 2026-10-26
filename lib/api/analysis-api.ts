@@ -1791,6 +1791,7 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
 }
 
 export interface AnalysisHistoryResult {
+  /** 완료된 분석만 포함한다. 실행 중·실패 항목은 히스토리에 노출하지 않는다. */
   items: AnalysisSnapshot[];
   /**
    * 병합 소스 중 불러오지 못한 분석 유형. 전부 실패하면 throw 하므로 최대 2개다.
@@ -1801,7 +1802,8 @@ export interface AnalysisHistoryResult {
 }
 
 /**
- * `/analysis/history` 엔드포인트가 없으므로 세 목록을 병합해 반환한다.
+ * `/analysis/history` 엔드포인트가 없으므로 세 목록에서 완료된 분석만 병합해 반환한다.
+ * 개별 목록 API의 상태 범위는 유지하고, 히스토리에서만 완료 항목으로 제한한다.
  *
  * 일부 소스가 실패해도 나머지는 그대로 보여준다(회복력). 다만 그 회복이 무음이면 살아남은
  * 목록이 "전체 기록"인 얼굴을 하므로, 실패한 유형을 함께 돌려 화면이 말할 수 있게 한다.

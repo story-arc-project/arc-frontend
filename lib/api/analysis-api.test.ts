@@ -2580,3 +2580,40 @@ describe("FRT-137 — AI 출력의 커버리지·강점 판정 방어", () => {
     expect(strengths.strengths[0].title).toBe("기존 강점")
   })
 })
+
+// FRT-265: 히스토리는 상태가 섞인 원본 목록에서 완료 항목만 제공한다.
+describe("getAnalysisHistory — 완료 항목 계약 (FRT-265)", () => {
+  it.each([undefined, "all", "individual", "comprehensive", "keyword"])(
+    "유형 %s에서도 미완료 항목을 제외하고 정렬한다",
+    async (type) => {
+      const types = ["individual", "comprehensive", "keyword"] as const
+      apiMock.get.mockImplementation((url: string) => {
+        const source = types.find((value) => url === `/analysis/${value}`)
+        if (!source) throw new Error(`unexpected url: ${url}`)
+        return Promise.resolve(envelope([
+          { id: `${source}-older`, status: "success", created_at: "2026-07-01" },
+          { id: `${source}-newer`, status: "completed", created_at: "2026-07-02" },
+          ...["pending", "queued", "processing", "failed"].map((status) => ({
+            id: `${source}-${status}`, status, created_at: "2026-07-03",
+          })),
+        ])) as never
+      })
+      const selected = types.filter((value) => !type || type === "all" || value === type)
+      for (const sort of ["newest", "oldest"] as const) {
+        const { items, failedTypes } = await getAnalysisHistory({ type, sort })
+        const dates = sort === "newest" ? ["newer", "older"] : ["older", "newer"]
+        expect(items.map((item) => item.id)).toEqual(
+          dates.flatMap((date) => selected.map((value) => `${value}-${date}`)),
+        )
+        expect(items.every((item) => item.status === "completed")).toBe(true)
+        expect(failedTypes).toEqual([])
+      }
+    },
+  )
+
+  it("데모 히스토리 데이터도 완료 항목만 포함한다", async () => {
+    const { mockHistory } = await import("./mocks/analysis")
+    expect(mockHistory.length).toBeGreaterThan(0)
+    expect(mockHistory.every((item) => item.status === "completed")).toBe(true)
+  })
+})

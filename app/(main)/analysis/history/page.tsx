@@ -260,9 +260,8 @@ export default function HistoryPage() {
           </div>
         ) : (
           <div className="space-y-3" role="tabpanel" id={`history-panel-${filter}`} aria-labelledby={`history-tab-${filter}`}>
-            {items.map((item) => {
-              const isNavigable = item.status === "completed";
-              return (
+            {/* getAnalysisHistory는 완료된 분석만 반환한다. */}
+            {items.map((item) => (
               <div
                 key={item.id}
                 className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors"
@@ -279,17 +278,13 @@ export default function HistoryPage() {
                           onSave={(v) => handleRename(item.id, item.type, v)}
                           onCancel={() => setEditId(null)}
                         />
-                      ) : isNavigable ? (
+                      ) : (
                         <Link
                           href={`${basePath}${ANALYSIS_DETAIL_PATH[item.type]}/${item.id}`}
                           className="text-title text-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
                         >
                           {getDisplayTitle(item.title)}
                         </Link>
-                      ) : (
-                        <span className="text-title text-text-primary opacity-60 cursor-not-allowed">
-                          {getDisplayTitle(item.title)}
-                        </span>
                       )}
                     </div>
                     <p className="text-caption text-text-tertiary mt-1.5">
@@ -337,8 +332,7 @@ export default function HistoryPage() {
                   </div>
                 </div>
               </div>
-              );
-            })}
+            ))}
           </div>
         )}
 
