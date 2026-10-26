@@ -15,7 +15,7 @@ type MaybeIso = string | null | undefined;
 export type DateStyle = "default" | "compact" | "admin";
 
 /** Date-only values keep their day; offset-less ISO datetimes mean Korea wall time. */
-function parseDisplayDate(iso: string): Date {
+function parseDisplayDate(iso: string): { date: Date; timeZone: string } {
   const calendar = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/.exec(iso);
   if (calendar) {
     const [, year, month, day] = calendar;
@@ -24,23 +24,25 @@ function parseDisplayDate(iso: string): Date {
     const d = Number(day);
     const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
     const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    if (m < 1 || m > 12 || d < 1 || d > days[m - 1]) return new Date(NaN);
+    if (m < 1 || m > 12 || d < 1 || d > days[m - 1]) return { date: new Date(NaN), timeZone: "UTC" };
   }
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
   const wallTime = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
   const source = dateOnly.test(iso)
-    ? `${iso}T00:00:00+09:00`
-    : wallTime.test(iso) ? `${iso.replace(" ", "T")}+09:00` : iso;
-  return new Date(source);
+    ? `${iso}T00:00:00Z`
+    : wallTime.test(iso) ? `${iso.replace(" ", "T")}Z` : iso;
+  // Calendar/wall-time values are already Korea dates, not instants. A synthetic UTC
+  // date preserves their components even when historical Korea offsets differ.
+  return { date: new Date(source), timeZone: dateOnly.test(iso) || wallTime.test(iso) ? "UTC" : "Asia/Seoul" };
 }
 
 /** Korea date presentation. Empty values use an em dash; invalid values keep their source. */
 export function formatDate(iso: MaybeIso, style: DateStyle = "default"): string {
   if (!iso) return EMPTY;
-  const d = parseDisplayDate(iso);
+  const { date: d, timeZone } = parseDisplayDate(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const options: Intl.DateTimeFormatOptions = {
-    timeZone: "Asia/Seoul",
+    timeZone,
     year: "numeric",
     month: style === "default" ? "short" : "2-digit",
     day: style === "default" ? "numeric" : "2-digit",
