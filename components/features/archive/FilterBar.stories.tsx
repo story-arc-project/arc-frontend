@@ -8,6 +8,7 @@ import { emptyFilter, activeFilter } from "./__fixtures__/archive.fixtures"
 const meta: Meta<typeof FilterBar> = {
   title: "Features/Archive/FilterBar",
   component: FilterBar,
+  tags: ["frt276"],
   parameters: {
     layout: "padded",
   },
@@ -77,5 +78,20 @@ export const SearchAccessibleName: Story = {
     await expect(search).toHaveValue("")
     await expect(search).toHaveAccessibleName("경험 검색")
     await expect(args.onSearchChange).toHaveBeenLastCalledWith("")
+  },
+}
+
+export const FilterSelectionState: Story = {
+  args: {
+    filter: activeFilter,
+    isFilterActive: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "필터" }))
+    await expect(canvas.getByRole("button", { name: "완료", pressed: true })).toBeVisible()
+    await expect(canvas.getByRole("button", { name: "작성 중", pressed: false })).toBeVisible()
+    await expect(canvas.getByRole("button", { name: "인턴 및 업무 경력", pressed: true })).toBeVisible()
+    await expect(canvas.getByRole("button", { name: "동아리/교내 단체", pressed: false })).toBeVisible()
   },
 }
