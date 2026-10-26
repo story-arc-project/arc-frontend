@@ -30,6 +30,29 @@ function inlineLinkEnd(text: string, opening: number): number | undefined {
   return undefined;
 }
 
+/** Conservative literal boundary for declarations and processing instructions. */
+function declarationEnd(text: string, start: number): number {
+  if (text.startsWith("<![CDATA[", start)) {
+    const closing = text.indexOf("]]>", start + 9);
+    return closing === -1 ? text.length : closing + 3;
+  }
+  const terminator = text.startsWith("<?", start) ? "?>" : ">";
+  let quote: string | undefined;
+  let brackets = 0;
+  for (let i = start + 2; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === "[") brackets++;
+    if (ch === "]" && brackets > 0) brackets--;
+    if (brackets === 0 && text.startsWith(terminator, i)) return i + terminator.length;
+  }
+  return text.length;
+}
+
 /** Display-only removals indexed against the complete raw body, before grounding splits. */
 function removalMask(text: string): Uint8Array {
   const removed = new Uint8Array(text.length);
@@ -89,10 +112,14 @@ function removalMask(text: string): Uint8Array {
   // These literal constructs may span line and grounding boundaries.
   for (const link of text.matchAll(/\[[^\]]*\]\(/g)) {
     const end = inlineLinkEnd(text, link.index! + link[0].length - 1);
-    if (end !== undefined) protect(link.index!, end);
+    protect(link.index!, end ?? text.length);
   }
   for (const comment of text.matchAll(/<!--[\s\S]*?(?:-->|$)/g)) {
     protect(comment.index!, comment.index! + comment[0].length);
+  }
+
+  for (const declaration of text.matchAll(/<!\[CDATA\[|<\?|<![a-z]/gi)) {
+    protect(declaration.index!, declarationEnd(text, declaration.index!));
   }
 
   // Protect paired HTML contents across lines, including nested elements of the same name.

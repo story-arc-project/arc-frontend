@@ -86,6 +86,17 @@ describe("cover letter display", () => {
     expect(shown.filter(s => s.flagged).map(s => s.text)).toEqual(["title", "강조"]);
     expect(segments).toEqual(before);
   });
+  it.each([
+    '<![CDATA[**literal**]]>', '<![CDATA[\n## title\n**literal**\n]]>',
+    '<?pi **literal**?>', '<?pi\n**literal** >\n?>',
+    '<!DOCTYPE html PUBLIC "**literal**">', '<!DOCTYPE html "a>b **literal**">',
+  ])("preserves angle declarations with following emphasis: %s", raw => {
+    expect(stripCoverLetterMarkdown(raw + " **강조**")).toBe(raw + " 강조");
+  });
+  it.each([
+    '[**label**](https://example.com',
+    '[**label**](https://example.com/path(foo)\n"**title**"',
+  ])("retains ambiguous incomplete links: %s", raw => expect(stripCoverLetterMarkdown(raw)).toBe(raw));
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);
