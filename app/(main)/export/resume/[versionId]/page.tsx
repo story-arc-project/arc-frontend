@@ -7,7 +7,7 @@ import { InsufficientCreditsDialog } from "@/components/features/credits/Insuffi
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { use, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import "./print.css";
 import { Button } from "@/components/ui";
@@ -71,6 +71,9 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
   const [resume, setResume] = useState<ResumeVersion | null>(null);
   const [initial, setInitial] = useState<ResumeVersion | null>(null);
   const [error, setError] = useState<ApiError | Error | null>(null);
+  const panelId = useId();
+  const editorPanelId = `${panelId}-editor`;
+  const previewPanelId = `${panelId}-preview`;
   const [mobileTab, setMobileTab] = useState<MobileTab>("editor");
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -747,8 +750,10 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
         onExport={() => setExportOpen(true)}
       />
 
-      {/* Mobile tab switcher — 읽기 전용이면 고를 것이 없다(편집 패널이 없음). */}
+      {/* Mobile panel switcher — 읽기 전용이면 고를 것이 없다(편집 패널이 없음). */}
       <div
+        role="group"
+        aria-label="이력서 보기 선택"
         className={[
           "no-print sticky top-[calc(var(--gnb-h)+3.5rem)] z-30 border-b border-border bg-surface md:hidden",
           readOnly ? "hidden" : "flex",
@@ -763,6 +768,8 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
           <button
             key={t.key}
             type="button"
+            aria-pressed={mobileTab === t.key}
+            aria-controls={t.key === "editor" ? editorPanelId : previewPanelId}
             onClick={() => setMobileTab(t.key)}
             className={[
               "flex-1 py-2.5 text-body-sm transition-colors",
@@ -783,6 +790,8 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
             ⚠️ 이건 화면 배치일 뿐 **저장을 막는 장치가 아니다** — 봉인은 dirty=false 다. */}
         {!readOnly && (
           <aside
+            id={editorPanelId}
+            aria-label="이력서 편집"
             className={[
               "no-print flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto border-border bg-surface md:max-w-[40%] md:flex-none md:basis-2/5 md:border-r",
               mobileTab === "editor" ? "" : "hidden md:flex",
@@ -803,6 +812,8 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
         )}
 
         <main
+          id={previewPanelId}
+          aria-label="이력서 미리보기"
           className={[
             "flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto bg-surface-secondary",
             readOnly || mobileTab === "preview" ? "" : "hidden md:flex",

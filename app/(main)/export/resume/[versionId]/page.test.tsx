@@ -1850,3 +1850,40 @@ describe("FRT-137 — AI meta.format 불확실성", () => {
     },
   );
 });
+
+
+describe("FRT-153 mobile panel selection", () => {
+  it("relates mutually exclusive native toggles to named panels and supports keyboard selection", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    const group = screen.getByRole("group", { name: "이력서 보기 선택" });
+    const editor = within(group).getByRole("button", { name: "편집", pressed: true });
+    const preview = within(group).getByRole("button", { name: "미리보기", pressed: false });
+    const editorPanel = screen.getByRole("complementary", { name: "이력서 편집" });
+    const previewPanel = screen.getByRole("main", { name: "이력서 미리보기" });
+    expect(editorPanel.id).not.toBe("");
+    expect(previewPanel.id).not.toBe("");
+    expect(editor).toHaveAttribute("aria-controls", editorPanel.id);
+    expect(preview).toHaveAttribute("aria-controls", previewPanel.id);
+    expect(editorPanel.id).not.toBe(previewPanel.id);
+    expect(editor.tagName).toBe("BUTTON");
+    await user.click(preview);
+    expect(preview).toHaveAttribute("aria-pressed", "true");
+    expect(editor).toHaveAttribute("aria-pressed", "false");
+    await user.click(editor);
+    expect(editor).toHaveAttribute("aria-pressed", "true");
+    expect(preview).toHaveAttribute("aria-pressed", "false");
+    editor.focus();
+    await user.tab();
+    expect(preview).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(preview).toHaveAttribute("aria-pressed", "true");
+    await user.tab({ shift: true });
+    expect(editor).toHaveFocus();
+    await user.keyboard(" ");
+    expect(editor).toHaveAttribute("aria-pressed", "true");
+    expect(preview).toHaveAttribute("aria-pressed", "false");
+    await user.keyboard(" ");
+    expect(editor).toHaveAttribute("aria-pressed", "true");
+  });
+});
