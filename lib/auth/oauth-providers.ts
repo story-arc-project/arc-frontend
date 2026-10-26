@@ -1,4 +1,5 @@
 import { createOAuthState } from "./oauth-state";
+import { buildGoogleAuthUrl } from "./google-auth-url";
 
 /** 재인증 OAuth 를 지원하는 provider. 향후 "kakao" | "naver" 확장 지점. */
 export type OAuthProvider = "google";
@@ -23,20 +24,7 @@ const REGISTRY: Record<OAuthProvider, OAuthProviderConfig> = {
   google: {
     getClientId: () => process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
     callbackPath: "/callback/google",
-    // ⚠ app/(auth)/login/page.tsx 의 handleSocialLogin 과 동일 파라미터를 유지해야
-    //   공유 콜백(/callback/google)이 login·delete 두 흐름을 모두 처리할 수 있다.
-    buildAuthUrl: ({ clientId, redirectUri, state }) => {
-      const params = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: "code",
-        scope: "openid email profile",
-        access_type: "offline",
-        prompt: "select_account",
-        state,
-      });
-      return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-    },
+    buildAuthUrl: buildGoogleAuthUrl,
   },
 };
 

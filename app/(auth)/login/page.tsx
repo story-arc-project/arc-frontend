@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
+import { buildGoogleAuthUrl } from "@/lib/auth/google-auth-url";
 import { clearSignupHandoff, createSignupHandoff } from "@/lib/auth/signup-handoff";
 import { resolveCallbackUrl } from "@/lib/auth/callback-url";
 import { needsOnboarding } from "@/lib/auth/login-response";
@@ -102,16 +103,11 @@ function LoginForm() {
       return;
     }
     const redirectUri = `${window.location.origin}/callback/google`;
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: "code",
-      scope: "openid email profile",
-      access_type: "offline",
-      prompt: "select_account",
+    window.location.href = buildGoogleAuthUrl({
+      clientId,
+      redirectUri,
       state: createOAuthState(),
     });
-    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
   if (shouldRedirect) return null;
