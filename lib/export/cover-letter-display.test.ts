@@ -167,6 +167,12 @@ describe("cover letter display", () => {
     const raw = '<div title="<!--">\n<!-- </div> -->\n**literal**\n</div>\n**ordinary**';
     expect(stripCoverLetterMarkdown(raw)).toBe(raw.slice(0, -12) + 'ordinary');
   });
+  it.each([
+    '<!-- <span title=" -->\n<div>\n**literal**\n</div>\n" >\n**ordinary**',
+    "<!-- <span title=' -->\n<div>\n**literal**\n</div>\n' >\n**ordinary**",
+  ])("does not let comment-contained quoted tags hide following real tags: %s", raw => {
+    expect(stripCoverLetterMarkdown(raw)).toBe(raw.slice(0, -12) + 'ordinary');
+  });
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);
