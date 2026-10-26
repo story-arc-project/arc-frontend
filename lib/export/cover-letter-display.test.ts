@@ -97,6 +97,13 @@ describe("cover letter display", () => {
     '[**label**](https://example.com',
     '[**label**](https://example.com/path(foo)\n"**title**"',
   ])("retains ambiguous incomplete links: %s", raw => expect(stripCoverLetterMarkdown(raw)).toBe(raw));
+  it.each([
+    ["`<?php` 구문 뒤 **강조**", "`<?php` 구문 뒤 강조"],
+    ["`[label](` 구문 뒤 **강조**", "`[label](` 구문 뒤 강조"],
+    ["`code\n<?php [label](`\n**강조**", "`code\n<?php [label](`\n강조"],
+    ["<!-- <?php [label]( --> **강조**", "<!-- <?php [label]( --> 강조"],
+    ["<pre>\n<?php [label](\n**literal**\n</pre>\n**강조**", "<pre>\n<?php [label](\n**literal**\n</pre>\n강조"],
+  ])("does not expand openers inside established literal ranges: %s", (raw, shown) => expect(stripCoverLetterMarkdown(raw)).toBe(shown));
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);

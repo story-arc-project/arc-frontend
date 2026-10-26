@@ -58,6 +58,12 @@ function removalMask(text: string): Uint8Array {
   const removed = new Uint8Array(text.length);
   const protectedChars = new Uint8Array(text.length);
   const protect = (start: number, end: number) => protectedChars.fill(1, start, end);
+  // Line guards are conservative hints; literal spans establish actual containment.
+  const literalChars = new Uint8Array(text.length);
+  const protectLiteral = (start: number, end: number) => {
+    protect(start, end);
+    literalChars.fill(1, start, end);
+  };
   const remove = (start: number, end: number) => {
     if (!protectedChars.subarray(start, end).some(Boolean)) removed.fill(1, start, end);
   };
@@ -67,13 +73,14 @@ function removalMask(text: string): Uint8Array {
     const start = line.index!;
     const opening = line[0].match(/^ {0,3}(`{3,}|~{3,})/);
     if (fence) {
-      protect(start, start + line[0].length);
+      protectLiteral(start, start + line[0].length);
       if (new RegExp(`^ {0,3}${fence[0]}{${fence.length},}\\s*$`).test(line[0])) fence = undefined;
     } else if (opening) {
       fence = opening[1];
-      protect(start, start + line[0].length);
+      protectLiteral(start, start + line[0].length);
     } else if (/^ {0,3}(?:(?:\*[\t ]*){3,}|(?:-[\t ]*){3,}|(?:_[\t ]*){3,})\r?\n?$/.test(line[0]) || /^(?: {4}|\t)/.test(line[0]) || /<\/?[a-z][\w-]*(?:\s[^>]*|\/?)>/i.test(line[0])) {
       protect(start, start + line[0].length);
+      if (/^(?: {4}|\t)/.test(line[0])) protectLiteral(start, start + line[0].length);
     }
   }
   // Match maximal delimiter runs; shorter (or longer) internal runs are code content.
@@ -83,7 +90,7 @@ function removalMask(text: string): Uint8Array {
     if (protectedChars[opening.index!]) continue;
     const closing = ticks.findIndex((run, j) => j > i && run[0].length === opening[0].length);
     if (closing !== -1) {
-      protect(opening.index!, ticks[closing].index! + ticks[closing][0].length);
+      protectLiteral(opening.index!, ticks[closing].index! + ticks[closing][0].length);
       i = closing;
     }
   }
@@ -94,32 +101,34 @@ function removalMask(text: string): Uint8Array {
     const definition = line[0].match(/^ {0,3}\[([^\]]+)\]:[\t ]*\S/);
     if (definition) {
       references.add(normalizeReference(definition[1]));
-      protect(line.index!, line.index! + line[0].length);
+      protectLiteral(line.index!, line.index! + line[0].length);
     }
   }
   for (const link of text.matchAll(/\[([^\]]+)\](?:\[([^\]]*)\])?/g)) {
     // Explicit references are ambiguous enough to retain even without a definition.
     if (link[2] !== undefined || references.has(normalizeReference(link[1]))) {
-      protect(link.index!, link.index! + link[0].length);
+      protectLiteral(link.index!, link.index! + link[0].length);
     }
   }
 
   // Preserve autolinks by range, leaving adjacent ordinary prose transformable.
   for (const link of text.matchAll(/<(?:[a-z][a-z\d+.-]*:[^\s<>]*|[^\s<>@]+@[^\s<>@]+)>/gi)) {
-    protect(link.index!, link.index! + link[0].length);
+    protectLiteral(link.index!, link.index! + link[0].length);
   }
 
+  // Resolve enclosing ranges first, so nested incomplete openers cannot extend them.
+  const literalRanges: { start: number; end: number }[] = [];
   // These literal constructs may span line and grounding boundaries.
   for (const link of text.matchAll(/\[[^\]]*\]\(/g)) {
     const end = inlineLinkEnd(text, link.index! + link[0].length - 1);
-    protect(link.index!, end ?? text.length);
+    literalRanges.push({ start: link.index!, end: end ?? text.length });
   }
   for (const comment of text.matchAll(/<!--[\s\S]*?(?:-->|$)/g)) {
-    protect(comment.index!, comment.index! + comment[0].length);
+    literalRanges.push({ start: comment.index!, end: comment.index! + comment[0].length });
   }
 
   for (const declaration of text.matchAll(/<!\[CDATA\[|<\?|<![a-z]/gi)) {
-    protect(declaration.index!, declarationEnd(text, declaration.index!));
+    literalRanges.push({ start: declaration.index!, end: declarationEnd(text, declaration.index!) });
   }
 
   // Protect paired HTML contents across lines, including nested elements of the same name.
@@ -130,12 +139,16 @@ function removalMask(text: string): Uint8Array {
     if (tag[1]) {
       const opening = openTags.findLastIndex(item => item.name === name);
       if (opening !== -1) {
-        protect(openTags[opening].start, tag.index! + tag[0].length);
+        literalRanges.push({ start: openTags[opening].start, end: tag.index! + tag[0].length });
         openTags.splice(opening);
       }
     } else if (!voidTags.has(name) && !tag[0].endsWith("/>")) {
       openTags.push({ name, start: tag.index! });
     }
+  }
+
+  for (const range of literalRanges.sort((a, b) => a.start - b.start || b.end - a.end)) {
+    if (!literalChars[range.start]) protectLiteral(range.start, range.end);
   }
 
   const emphasis = /(\*\*|__)(\S(?:[\s\S]*?\S)?)\1/g;
