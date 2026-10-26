@@ -78,46 +78,63 @@ interface HtmlTagToken {
   selfClosing: boolean;
 }
 
-/** Attribute quotes, including entity text, keep internal > characters inside the tag. */
-function htmlTagTokens(
-  text: string,
-  literalChars: Uint8Array,
-  contexts: readonly { start: number; end: number }[],
-): { tags: HtmlTagToken[]; comments: { start: number; end: number }[] } {
-  const tags: HtmlTagToken[] = [];
-  const comments: { start: number; end: number }[] = [];
-  const commentChars = new Uint8Array(text.length);
-  const opener = /<!--|<(\/?)([a-z][\w-]*)(?=[\s/>])/gi;
-  let match: RegExpExecArray | null;
-  while ((match = opener.exec(text)) !== null) {
-    const start = match.index;
-    // Reject contained syntax before scanning its quotes or advancing past real tokens.
-    if (literalChars[start] || contexts.some(range =>
-      range.start < start && start < range.end && !literalChars[range.start] && !commentChars[range.start],
-    )) continue;
-    if (match[0] === "<!--") {
-      const closing = text.indexOf("-->", opener.lastIndex);
-      const end = closing === -1 ? text.length : closing + 3;
-      comments.push({ start, end });
-      commentChars.fill(1, start, end);
-      opener.lastIndex = end;
-      continue;
-    }
-    let quote: string | undefined;
-    for (let i = opener.lastIndex; i < text.length; i++) {
-      const ch = text[i];
-      if (quote) {
-        if (ch === quote) quote = undefined;
-      } else if (ch === '"' || ch === "'") {
-        quote = ch;
-      } else if (ch === ">") {
-        tags.push({ start, end: i + 1, name: match[2].toLowerCase(), closing: Boolean(match[1]), selfClosing: text[i - 1] === "/" });
-        opener.lastIndex = i + 1;
-        break;
-      }
+/** Read one complete tag without letting quoted attribute text create other tokens. */
+function htmlTagAt(text: string, start: number): HtmlTagToken | undefined {
+  const match = text.slice(start).match(/^<(\/?)([a-z][\w-]*)(?=[\s/>])/i);
+  if (!match) return undefined;
+  let quote: string | undefined;
+  for (let i = start + match[0].length; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote) quote = undefined;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === ">") {
+      return { start, end: i + 1, name: match[2].toLowerCase(), closing: Boolean(match[1]), selfClosing: text[i - 1] === "/" };
     }
   }
-  return { tags, comments };
+  return undefined;
+}
+
+/** A definition can continue with a destination and title, but never across a blank line. */
+function referenceDefinitionAt(text: string, start: number): { label: string; end: number } | undefined {
+  const indent = text.slice(start).match(/^ {0,3}(?=\[)/)?.[0];
+  if (indent === undefined) return undefined;
+  const opening = start + indent.length;
+  const labelEnd = inlineLabelEnd(text, opening);
+  if (labelEnd === undefined || text[labelEnd + 1] !== ":") return undefined;
+  const label = text.slice(opening + 1, labelEnd);
+  if (!label.trim() || /\r?\n[\t ]*\r?\n/.test(label)) return undefined;
+  let cursor = labelEnd + 2;
+  const whitespace = text.slice(cursor).match(/^[\t ]*(?:\r?\n[\t ]*)?/)![0];
+  cursor += whitespace.length;
+  if (cursor === text.length || /\s/.test(text[cursor])) return undefined;
+  if (text[cursor] === "<") {
+    const destination = text.slice(cursor).match(/^<[^<>\r\n]*>/);
+    if (!destination) return undefined;
+    cursor += destination[0].length;
+  } else {
+    const destination = text.slice(cursor).match(/^[^\s]+/)![0];
+    cursor += destination.length;
+  }
+  // Keep the destination line, as before; only a completed title extends that range.
+  const lineEnd = text.indexOf("\n", cursor);
+  let end = lineEnd === -1 ? text.length : lineEnd + 1;
+  const gap = text.slice(cursor).match(/^[\t ]*(?:\r?\n[\t ]*)?/)![0];
+  const titleStart = cursor + gap.length;
+  const quote = text[titleStart];
+  if (gap && (quote === '"' || quote === "'" || quote === "(")) {
+    const closing = quote === "(" ? ")" : quote;
+    for (let i = titleStart + 1; i < text.length; i++) {
+      if (/^\r?\n[\t ]*\r?\n/.test(text.slice(i))) break;
+      if (text[i] === "\\") { i++; continue; }
+      if (text[i] !== closing) continue;
+      const remainder = text.slice(i + 1).match(/^[\t ]*(?:\r?\n|$)/);
+      if (remainder) end = i + 1 + remainder[0].length;
+      break;
+    }
+  }
+  return { label, end };
 }
 
 /** Display-only removals indexed against the complete raw body, before grounding splits. */
@@ -150,89 +167,75 @@ function removalMask(text: string): Uint8Array {
       if (/^(?: {4}|\t)/.test(line[0])) protectLiteral(start, start + line[0].length);
     }
   }
-  // Match maximal delimiter runs; shorter (or longer) internal runs are code content.
-  const ticks = [...text.matchAll(/`+/g)];
-  for (let i = 0; i < ticks.length; i++) {
-    const opening = ticks[i];
-    if (protectedChars[opening.index!] || isEscaped(text, opening.index!)) continue;
-    const closing = ticks.findIndex((run, j) => j > i && run[0].length === opening[0].length);
-    if (closing !== -1) {
-      protectLiteral(opening.index!, ticks[closing].index! + ticks[closing][0].length);
-      i = closing;
-    }
-  }
-
   const normalizeReference = (label: string) => label.trim().replace(/\s+/g, " ").toLowerCase();
   const references = new Set<string>();
+  const definitions = new Map<number, { label: string; end: number }>();
   for (const line of lines) {
-    const definition = line[0].match(/^ {0,3}\[([^\]]+)\]:[\t ]*\S/);
+    const definition = referenceDefinitionAt(text, line.index!);
+    if (definition) definitions.set(line.index!, definition);
+  }
+
+  // One source-order scan establishes containment for all complete literals. A
+  // delimiter inside an accepted token cannot consume a later, genuine opener.
+  // Incomplete link/declaration fallbacks wait until paired HTML is established.
+  const pending: { start: number; end: number }[] = [];
+  const openTags: { name: string; start: number }[] = [];
+  const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+  const ticks = [...text.matchAll(/`+/g)];
+  for (let start = 0; start < text.length; start++) {
+    if (literalChars[start]) continue;
+    let end: number | undefined;
+    const definition = definitions.get(start);
     if (definition) {
-      references.add(normalizeReference(definition[1]));
-      protectLiteral(line.index!, line.index! + line[0].length);
+      references.add(normalizeReference(definition.label));
+      end = definition.end;
+    } else if (text[start] === "`" && text[start - 1] !== "`" && !isEscaped(text, start)) {
+      const opening = ticks.find(run => run.index === start)!;
+      const closing = ticks.find(run => run.index! > start && run[0].length === opening[0].length);
+      if (closing) end = closing.index! + closing[0].length;
+    } else if (text[start] === "[" && !isEscaped(text, start)) {
+      const labelEnd = inlineLabelEnd(text, start);
+      if (labelEnd !== undefined && text[labelEnd + 1] === "(") {
+        end = inlineLinkEnd(text, labelEnd + 1);
+        if (end === undefined) pending.push({ start, end: text.length });
+      }
+    } else if (text.startsWith("<!--", start)) {
+      const closing = text.indexOf("-->", start + 4);
+      end = closing === -1 ? text.length : closing + 3;
+    } else if (text[start] === "<" && /^(?:<!\[CDATA\[|<\?|<![a-z])/i.test(text.slice(start))) {
+      end = declarationEnd(text, start);
+      if (end === undefined) pending.push({ start, end: text.length });
+    } else if (text[start] === "<") {
+      const autolink = text.slice(start).match(/^<(?:[a-z][a-z\d+.-]*:[^\s<>]*|[^\s<>@]+@[^\s<>@]+)>/i);
+      const tag = autolink ? undefined : htmlTagAt(text, start);
+      if (autolink) end = start + autolink[0].length;
+      if (tag) {
+        end = tag.end;
+        if (tag.closing) {
+          const opening = openTags.findLastIndex(item => item.name === tag.name);
+          if (opening !== -1) {
+            protectLiteral(openTags[opening].start, tag.end);
+            openTags.splice(opening);
+          }
+        } else if (!voidTags.has(tag.name) && !tag.selfClosing) {
+          openTags.push({ name: tag.name, start });
+        }
+      }
     }
+    if (end !== undefined) {
+      protectLiteral(start, end);
+      start = end - 1;
+    }
+  }
+  for (const range of pending) {
+    if (!literalChars[range.start]) protectLiteral(range.start, range.end);
   }
   for (const link of text.matchAll(/\[([^\]]+)\](?:\[([^\]]*)\])?/g)) {
     // An immediate destination belongs to an inline link, even if a shortcut label exists.
     if (link[2] === undefined && text[link.index! + link[0].length] === "(") continue;
-    // Explicit references are ambiguous enough to retain even without a definition.
     if (link[2] !== undefined || references.has(normalizeReference(link[1]))) {
       protectLiteral(link.index!, link.index! + link[0].length);
     }
-  }
-
-  // Preserve autolinks by range, leaving adjacent ordinary prose transformable.
-  for (const link of text.matchAll(/<(?:[a-z][a-z\d+.-]*:[^\s<>]*|[^\s<>@]+@[^\s<>@]+)>/gi)) {
-    protectLiteral(link.index!, link.index! + link[0].length);
-  }
-
-  // Resolve enclosing ranges first, so nested incomplete openers cannot extend them.
-  const literalRanges: { start: number; end: number }[] = [];
-  const commentContexts: { start: number; end: number }[] = [];
-  // These literal constructs may span line and grounding boundaries.
-  for (let start = 0; start < text.length; start++) {
-    if (text[start] !== "[" || isEscaped(text, start) || literalChars[start]) continue;
-    const labelEnd = inlineLabelEnd(text, start);
-    if (labelEnd === undefined || text[labelEnd + 1] !== "(") continue;
-    const end = inlineLinkEnd(text, labelEnd + 1);
-    literalRanges.push({ start, end: end ?? text.length });
-    if (end !== undefined) commentContexts.push({ start, end });
-    start = labelEnd;
-  }
-  for (const declaration of text.matchAll(/<!\[CDATA\[|<\?|<![a-z]/gi)) {
-    const start = declaration.index!;
-    const end = declarationEnd(text, start);
-    literalRanges.push({ start, end: end ?? text.length });
-    if (end !== undefined) commentContexts.push({ start, end });
-  }
-
-  // Recognize tags and comments together: quoted tag attributes hide comment-like
-  // text, while an actual comment hides all of its tag-like text before token scanning.
-  const { tags, comments } = htmlTagTokens(text, literalChars, commentContexts);
-  const commentChars = new Uint8Array(text.length);
-  for (const comment of comments) {
-    commentChars.fill(1, comment.start, comment.end);
-    literalRanges.push(comment);
-  }
-
-  // Protect paired HTML contents across lines, including nested elements of the same name.
-  const openTags: { name: string; start: number }[] = [];
-  const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
-  for (const tag of tags) {
-    if (commentChars[tag.start] || literalChars[tag.start]) continue;
-    const name = tag.name;
-    if (tag.closing) {
-      const opening = openTags.findLastIndex(item => item.name === name);
-      if (opening !== -1) {
-        literalRanges.push({ start: openTags[opening].start, end: tag.end });
-        openTags.splice(opening);
-      }
-    } else if (!voidTags.has(name) && !tag.selfClosing) {
-      openTags.push({ name, start: tag.start });
-    }
-  }
-
-  for (const range of literalRanges.sort((a, b) => a.start - b.start || b.end - a.end)) {
-    if (!literalChars[range.start]) protectLiteral(range.start, range.end);
   }
 
   const emphasis = /(\*\*|__)(\S(?:[\s\S]*?\S)?)\1/g;

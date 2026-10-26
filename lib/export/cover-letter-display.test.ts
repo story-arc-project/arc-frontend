@@ -173,6 +173,46 @@ describe("cover letter display", () => {
   ])("does not let comment-contained quoted tags hide following real tags: %s", raw => {
     expect(stripCoverLetterMarkdown(raw)).toBe(raw.slice(0, -12) + 'ordinary');
   });
+  it.each([
+    '[label](url "`")', '<!-- ` -->', '<!DOCTYPE html "`">',
+    '[label](url "``")',
+  ])("does not open code from an enclosing literal: %s", prefix => {
+    const ticks = prefix.includes('``') ? '``' : '`';
+    expect(stripCoverLetterMarkdown(prefix + ' **ordinary** ' + ticks + '**code**' + ticks)).toBe(prefix + ' ordinary ' + ticks + '**code**' + ticks);
+  });
+  it.each([
+    '[ref]:\nhttps://example.com/**path**',
+    '[ref]: https://example.com\n"**title**"',
+    "[ref]:\nhttps://example.com/**path**\n'**title**\ncontinued'",
+    '[ref]: <https://example.com/**path**>\n("**title**")',
+  ])("preserves a full multiline reference definition: %s", definition => {
+    const raw = definition + '\n\n[link][ref]\n**ordinary**';
+    expect(stripCoverLetterMarkdown(raw)).toBe(definition + '\n\n[link][ref]\nordinary');
+  });
+  it.each([
+    ['[ref]:\n\n**ordinary**', '[ref]:\n\nordinary'],
+    ['[ref]: url\n\n"**ordinary**"', '[ref]: url\n\n"ordinary"'],
+    ['[ref]: url\n**ordinary**', '[ref]: url\nordinary'],
+    ['[ref]: url\n"unfinished\n\n**ordinary**', '[ref]: url\n"unfinished\n\nordinary'],
+  ])("respects reference continuation boundaries: %s", (raw, shown) => expect(stripCoverLetterMarkdown(raw)).toBe(shown));
+  it("projects enclosing literals and reference continuations across raw claims", () => {
+    const raw = '[label](url "`") **ordinary** `**code**`\n\n[ref]:\nhttps://example.com/**path**\n"**title**"\n\n**claim**';
+    const segments = buildGroundingHighlight(raw, ['ordinary', 'code', 'path', 'title', 'claim']).segments;
+    const before = structuredClone(segments);
+    const shown = displayCoverLetterSegments(segments);
+    expect(shown.map(s => s.text).join('')).toBe(raw.replace('**ordinary**', 'ordinary').replace('**claim**', 'claim'));
+    expect(shown.filter(s => s.flagged).map(s => s.text)).toEqual(['ordinary', 'code', 'path', 'title', 'claim']);
+    expect(segments).toEqual(before);
+  });
+  it.each([
+    '`[label](url "**literal**")`', '`<!-- **literal** -->`',
+    '[ref]: url "**title**\ncontinued"',
+    '[ref\\]]:\nurl\n"**title**"',
+    '[ref [nested]]: url\n"**title**"',
+    '[ref]:\r\n  <https://example.com/**path**>\r\n  "**title**"',
+  ])("preserves surrounding literal ownership and reference variants: %s", literal => {
+    expect(stripCoverLetterMarkdown(literal + '\n\n**ordinary**')).toBe(literal + '\n\nordinary');
+  });
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);
