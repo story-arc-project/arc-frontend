@@ -105,6 +105,8 @@ function removalMask(text: string): Uint8Array {
     }
   }
   for (const link of text.matchAll(/\[([^\]]+)\](?:\[([^\]]*)\])?/g)) {
+    // An immediate destination belongs to an inline link, even if a shortcut label exists.
+    if (link[2] === undefined && text[link.index! + link[0].length] === "(") continue;
     // Explicit references are ambiguous enough to retain even without a definition.
     if (link[2] !== undefined || references.has(normalizeReference(link[1]))) {
       protectLiteral(link.index!, link.index! + link[0].length);

@@ -104,6 +104,15 @@ describe("cover letter display", () => {
     ["<!-- <?php [label]( --> **강조**", "<!-- <?php [label]( --> 강조"],
     ["<pre>\n<?php [label](\n**literal**\n</pre>\n**강조**", "<pre>\n<?php [label](\n**literal**\n</pre>\n강조"],
   ])("does not expand openers inside established literal ranges: %s", (raw, shown) => expect(stripCoverLetterMarkdown(raw)).toBe(shown));
+  it.each([
+    '[label](https://example.com/**path**)\n\n[label]: https://example.com',
+    '[label](https://example.com/a(b)\n"**title**")\n\n[label]: https://example.com',
+    '[label](https://example.com/**path**\n\n[label]: https://example.com',
+  ])("gives inline links precedence over same-label shortcut references: %s", raw => expect(stripCoverLetterMarkdown(raw)).toBe(raw));
+  it("still cleans ordinary emphasis after an inline link with a reference label", () => {
+    const raw = '[label](https://example.com/**path**) **강조**\n\n[label]: https://example.com';
+    expect(stripCoverLetterMarkdown(raw)).toBe('[label](https://example.com/**path**) 강조\n\n[label]: https://example.com');
+  });
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);
