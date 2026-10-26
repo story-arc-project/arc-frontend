@@ -113,6 +113,31 @@ describe("cover letter display", () => {
     const raw = '[label](https://example.com/**path**) **강조**\n\n[label]: https://example.com';
     expect(stripCoverLetterMarkdown(raw)).toBe('[label](https://example.com/**path**) 강조\n\n[label]: https://example.com');
   });
+  it.each([
+    '[label [nested] **text**](https://example.com)',
+    '[label \\] **text**](https://example.com)',
+    '[label [nested] **text**](https://example.com',
+  ])("retains balanced or escaped link labels: %s", raw => {
+    expect(stripCoverLetterMarkdown(raw)).toBe(raw);
+  });
+  it("cleans outside balanced labels and keeps escaped opening brackets ordinary", () => {
+    expect(stripCoverLetterMarkdown('[label [nested] **text**](url) **강조**')).toBe('[label [nested] **text**](url) 강조');
+    expect(stripCoverLetterMarkdown('\\[label **text**](url) **강조**')).toBe('\\[label text](url) 강조');
+  });
+  it.each([
+    '<div>\n<!-- </div> -->\n**literal**\n</div>',
+    '<div>\n<!-- <div> -->\n**literal**\n</div>',
+  ])("ignores comment tags when pairing actual HTML: %s", raw => expect(stripCoverLetterMarkdown(raw + '\n**강조**')).toBe(raw + '\n강조'));
+  it("does not interpret a code-contained comment opener as an HTML comment", () => {
+    const raw = '`<!--`\n<div>\n**literal**\n</div>\n**강조**';
+    expect(stripCoverLetterMarkdown(raw)).toBe('`<!--`\n<div>\n**literal**\n</div>\n강조');
+  });
+  it.each([
+    ['\\` **ordinary** `**code**`', '\\` ordinary `**code**`'],
+    ['\\\\` **code** ` **ordinary**', '\\\\` **code** ` ordinary'],
+    ['\\`` **ordinary** ``**code**``', '\\`` ordinary ``**code**``'],
+    ['`**code**\\` **ordinary**', '`**code**\\` ordinary'],
+  ])("respects escaped opener parity and actual code closers: %s", (raw, shown) => expect(stripCoverLetterMarkdown(raw)).toBe(shown));
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);

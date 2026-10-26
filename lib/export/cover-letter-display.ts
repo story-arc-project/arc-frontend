@@ -1,5 +1,22 @@
 import type { GroundingSegment } from "./cover-letter-grounding";
 
+function isEscaped(text: string, index: number): boolean {
+  let slashes = 0;
+  for (let i = index - 1; i >= 0 && text[i] === "\\"; i--) slashes++;
+  return slashes % 2 === 1;
+}
+
+/** Labels can contain nested brackets and escaped closing brackets. */
+function inlineLabelEnd(text: string, opening: number): number | undefined {
+  let depth = 1;
+  for (let i = opening + 1; i < text.length; i++) {
+    if (text[i] === "\\") { i++; continue; }
+    if (text[i] === "[") depth++;
+    if (text[i] === "]" && --depth === 0) return i;
+  }
+  return undefined;
+}
+
 /** Find the outer close without treating URL parentheses or quoted title text as its end. */
 function inlineLinkEnd(text: string, opening: number): number | undefined {
   let depth = 1;
@@ -87,7 +104,7 @@ function removalMask(text: string): Uint8Array {
   const ticks = [...text.matchAll(/`+/g)];
   for (let i = 0; i < ticks.length; i++) {
     const opening = ticks[i];
-    if (protectedChars[opening.index!]) continue;
+    if (protectedChars[opening.index!] || isEscaped(text, opening.index!)) continue;
     const closing = ticks.findIndex((run, j) => j > i && run[0].length === opening[0].length);
     if (closing !== -1) {
       protectLiteral(opening.index!, ticks[closing].index! + ticks[closing][0].length);
@@ -121,12 +138,20 @@ function removalMask(text: string): Uint8Array {
   // Resolve enclosing ranges first, so nested incomplete openers cannot extend them.
   const literalRanges: { start: number; end: number }[] = [];
   // These literal constructs may span line and grounding boundaries.
-  for (const link of text.matchAll(/\[[^\]]*\]\(/g)) {
-    const end = inlineLinkEnd(text, link.index! + link[0].length - 1);
-    literalRanges.push({ start: link.index!, end: end ?? text.length });
+  for (let start = 0; start < text.length; start++) {
+    if (text[start] !== "[" || isEscaped(text, start) || literalChars[start]) continue;
+    const labelEnd = inlineLabelEnd(text, start);
+    if (labelEnd === undefined || text[labelEnd + 1] !== "(") continue;
+    const end = inlineLinkEnd(text, labelEnd + 1);
+    literalRanges.push({ start, end: end ?? text.length });
+    start = labelEnd;
   }
+  const commentChars = new Uint8Array(text.length);
   for (const comment of text.matchAll(/<!--[\s\S]*?(?:-->|$)/g)) {
-    literalRanges.push({ start: comment.index!, end: comment.index! + comment[0].length });
+    if (literalChars[comment.index!]) continue;
+    const end = comment.index! + comment[0].length;
+    commentChars.fill(1, comment.index!, end);
+    literalRanges.push({ start: comment.index!, end });
   }
 
   for (const declaration of text.matchAll(/<!\[CDATA\[|<\?|<![a-z]/gi)) {
@@ -137,6 +162,7 @@ function removalMask(text: string): Uint8Array {
   const openTags: { name: string; start: number }[] = [];
   const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
   for (const tag of text.matchAll(/<(\/?)([a-z][\w-]*)\b[^>]*>/gi)) {
+    if (commentChars[tag.index!] || literalChars[tag.index!]) continue;
     const name = tag[2].toLowerCase();
     if (tag[1]) {
       const opening = openTags.findLastIndex(item => item.name === name);
