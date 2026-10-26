@@ -8,6 +8,7 @@ import { Button, DatePicker, Input, toast } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { clearSignupHandoff, readSignupHandoff } from "@/lib/auth/signup-handoff";
 import { createOAuthState } from "@/lib/auth/oauth-state";
+import { buildGoogleAuthUrl } from "@/lib/auth/google-auth-url";
 import { api, ApiError } from "@/lib/api/client";
 import { capture, markSignupCompletedIfUnseen, useFlowExit } from "@/lib/analytics";
 import { useAuth } from "@/hooks/useAuth";
@@ -422,16 +423,11 @@ function SignupForm() {
     }
     capture("signup_method_selected", { method: "google" });
     const redirectUri = `${window.location.origin}/callback/google`;
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: "code",
-      scope: "openid email profile",
-      access_type: "offline",
-      prompt: "select_account",
+    window.location.href = buildGoogleAuthUrl({
+      clientId,
+      redirectUri,
       state: createOAuthState(),
     });
-    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
   async function handleFinish() {
