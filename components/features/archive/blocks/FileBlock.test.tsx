@@ -339,3 +339,70 @@ describe("FileBlock URL lifecycle", () => {
     expect(latestChange).toHaveBeenCalledWith(expect.objectContaining({ fileId: "file-1", description: "new", evidenceType: "updated" }))
   })
 })
+
+describe("FRT-202 readOnly legacy attachments", () => {
+  function legacy(overrides: Partial<FileBlockValue> = {}) {
+    return { ...emptyFileBlock, value: { ...emptyFileBlock.value, type: "file", fileName: "성적표.pdf", url: "https://files.example/%EC%84%B1%EC%A0%81%ED%91%9C.pdf?token=encoded%2Fvalue", description: "제출한 증빙", evidenceType: "성적표", ...overrides } } as Block
+  }
+
+  it.each([
+    ["application/pdf", "성적표.pdf 열기"],
+    ["text/plain", "성적표.pdf 다운로드"],
+    [undefined, "성적표.pdf 다운로드"],
+  ])("provides a safe link for MIME %s without fetching or editing", (mimeType, label) => {
+    const onChange = vi.fn()
+    const block = legacy({ mimeType })
+    render(<FileBlock block={block} readOnly onChange={onChange} />)
+    const link = screen.getByRole("link", { name: label })
+    expect(link).toHaveAttribute("href", (block.value as FileBlockValue).url)
+    expect(link).toHaveAttribute("target", "_blank")
+    expect(link).toHaveAttribute("rel", "noreferrer noopener")
+    expect(screen.getByText("제출한 증빙")).toBeVisible()
+    expect(screen.getByText("성적표")).toBeVisible()
+    expect(getFileUrl).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.queryByRole("button")).toBeNull()
+  })
+
+  it("renders the existing image preview for legacy image MIME", () => {
+    render(<FileBlock block={legacy({ fileName: "사진.png", mimeType: "image/png" })} readOnly onChange={vi.fn()} />)
+    expect(screen.getByRole("img", { name: "사진.png" })).toHaveAttribute("src", expect.stringContaining("https://files.example/"))
+    expect(getFileUrl).not.toHaveBeenCalled()
+  })
+
+  it.each([["video/mp4", "video"], ["audio/mpeg", "audio"]])("renders existing %s native controls", (mimeType, tag) => {
+    const view = render(<FileBlock block={legacy({ mimeType })} readOnly onChange={vi.fn()} />)
+    const media = view.container.querySelector(tag)
+    expect(media).toHaveAttribute("controls")
+    expect(media?.querySelector("source")).toHaveAttribute("src", expect.stringContaining("https://files.example/"))
+    expect(getFileUrl).not.toHaveBeenCalled()
+  })
+
+  it.each(["javascript:alert(1)", "data:text/html,<script>alert(1)</script>", "blob:https://files.example/id", "mailto:someone@example.com", "not a URL", "/relative.pdf", "", undefined])("preserves name fallback without rendering unsafe/missing URL %s", (url) => {
+    const view = render(<FileBlock block={legacy({ url, mimeType: "image/png" })} readOnly onChange={vi.fn()} />)
+    expect(screen.getByText("성적표.pdf")).toBeVisible()
+    expect(screen.queryByRole("link")).toBeNull()
+    expect(screen.queryByRole("img")).toBeNull()
+    expect(view.container.querySelector("audio, video")).toBeNull()
+    expect(getFileUrl).not.toHaveBeenCalled()
+  })
+
+  it("supports a URL-only attachment without a filename", () => {
+    render(<FileBlock block={legacy({ fileName: "", mimeType: undefined })} readOnly onChange={vi.fn()} />)
+    expect(screen.getByRole("link", { name: "다운로드" })).toHaveAttribute("href", expect.stringContaining("https://files.example/"))
+    expect(screen.getByText("파일")).toBeVisible()
+  })
+
+  it("preserves the empty placeholder", () => {
+    render(<FileBlock block={emptyFileBlock} readOnly onChange={vi.fn()} />)
+    expect(screen.getByText("—")).toBeVisible()
+    expect(screen.queryByRole("link")).toBeNull()
+  })
+
+  it("keeps legacy editable attachments in the file picker", () => {
+    render(<FileBlock block={legacy()} onChange={vi.fn()} />)
+    expect(screen.getByText("성적표.pdf · 교체하려면 클릭")).toBeVisible()
+    expect(screen.queryByRole("link")).toBeNull()
+    expect(getFileUrl).not.toHaveBeenCalled()
+  })
+})

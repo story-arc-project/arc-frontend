@@ -238,3 +238,59 @@ const retryState: Story = {
 
 export const DownloadRetry: Story = { ...retryState, args: { ...retryState.args, readOnly: false } }
 export const ReadOnlyDownloadRetry: Story = { ...retryState, args: { ...retryState.args, readOnly: true } }
+
+/** FRT-202: 저장된 URL만 있는 레거시도 기존 PDF 열기 동작을 제공한다. */
+export const ReadOnlyLegacyPdf: Story = {
+  args: {
+    block: {
+      ...fileBlock,
+      value: { type: "file", fileName: "성적표.pdf", mimeType: "application/pdf",
+        url: "https://files.example/%EC%84%B1%EC%A0%81%ED%91%9C.pdf?token=encoded%2Fvalue",
+        description: "기존에 첨부한 성적표", evidenceType: "성적표" },
+    },
+    readOnly: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const link = await canvas.findByRole("link", { name: "성적표.pdf 열기" })
+    expect(link).toHaveAttribute("href", "https://files.example/%EC%84%B1%EC%A0%81%ED%91%9C.pdf?token=encoded%2Fvalue")
+    expect(link).toHaveAttribute("rel", "noreferrer noopener")
+    expect(canvas.getByText("기존에 첨부한 성적표")).toBeVisible()
+    expect(canvas.queryByRole("button")).toBeNull()
+  },
+}
+
+/** MIME가 없으면 확장자를 추측하지 않고 일반 파일 다운로드를 제공한다. */
+export const ReadOnlyLegacyWithoutMime: Story = {
+  args: {
+    block: {
+      ...fileBlock,
+      value: { type: "file", fileName: "포트폴리오.pdf", url: "https://files.example/portfolio.pdf",
+        description: "파일 형식 정보 없이 저장된 첨부", evidenceType: "포트폴리오" },
+    },
+    readOnly: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    expect(await canvas.findByRole("link", { name: "포트폴리오.pdf 다운로드" })).toHaveAttribute("href", "https://files.example/portfolio.pdf")
+    expect(canvas.queryByText("PDF", { exact: true })).toBeNull()
+  },
+}
+
+/** 안전하지 않은 저장 URL은 이름만 있는 기존 폴백을 유지한다. */
+export const ReadOnlyLegacyUnsafeUrl: Story = {
+  args: {
+    block: {
+      ...fileBlock,
+      value: { type: "file", fileName: "검토 자료.png", mimeType: "image/png", url: "javascript:alert(1)",
+        description: "", evidenceType: "기타" },
+    },
+    readOnly: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    expect(await canvas.findByText("검토 자료.png")).toBeVisible()
+    expect(canvas.queryByRole("link")).toBeNull()
+    expect(canvas.queryByRole("img")).toBeNull()
+  },
+}
