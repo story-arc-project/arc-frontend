@@ -48,7 +48,14 @@ export default meta;
 
 type Story = StoryObj<typeof CoverLetterPreview>;
 
-export const 기본: Story = { args: { result: base }, play: async ({ canvasElement }) => { await expect(within(canvasElement).getByText(BODY)).toBeVisible(); } };
+/** Assert rendered prose exactly while checking accessibility warnings separately. */
+function visibleProse(canvasElement: HTMLElement): string | null | undefined {
+  const body = canvasElement.querySelector(".whitespace-pre-wrap")?.cloneNode(true) as HTMLElement | undefined;
+  body?.querySelectorAll(".sr-only").forEach(warning => warning.remove());
+  return body?.textContent;
+}
+
+export const 기본: Story = { args: { result: base }, play: async ({ canvasElement }) => { await expect(canvasElement.querySelector(".whitespace-pre-wrap")).toBeVisible(); await expect(visibleProse(canvasElement)).toBe(BODY); } };
 
 /** 근거 없는 주장이 본문 위에 물결 밑줄로 표시된다(색만으로 알리지 않는다). */
 export const 근거_하이라이트: Story = { args: { result: flagged } };
@@ -88,8 +95,11 @@ export const Markdown_표시: Story = {
   args: { result: markdown },
   play: async ({ canvasElement }) => {
     const body = canvasElement.querySelector(".whitespace-pre-wrap");
-    await expect(body).toHaveTextContent("나의 강점 검증한 성과를 냈습니다. 협업 경험도 있습니다. 분석 경험 개선 경험 문제 발견 해결 실행");
-    await expect(canvasElement.querySelector("mark")).toHaveTextContent("성과를 냈습니다");
+    await expect(body).toBeVisible();
+    await expect(visibleProse(canvasElement)).toBe("나의 강점\n검증한 성과를 냈습니다. 협업 경험도 있습니다.\n분석 경험\n개선 경험\n\n문제 발견\n해결 실행");
+    await expect(canvasElement.querySelector("mark")?.firstChild?.textContent).toBe("성과를 냈습니다");
+    await expect(canvasElement.querySelector("mark .sr-only")).toHaveTextContent("(근거를 찾지 못한 문장)");
+    await expect(canvasElement.querySelector("mark")).toHaveAttribute("title", "내 기록에서 근거를 찾지 못한 문장이에요");
     await expect(within(canvasElement).getByText(`${markdownBody.length}자 / 1,000자`)).toBeVisible();
   },
 };
@@ -103,5 +113,5 @@ export const Markdown_편집: Story = {
 const literal = "C# #데이터 user_name 3 * 4 = 12, -5, 2026-10-26, 1.5\n1. 단독 항목\n\\**보존** `**코드**`";
 export const 정상_문장부호: Story = {
   args: { result: { answers: [{ ...base.answers[0], cover_letter: literal }] } },
-  play: async ({ canvasElement }) => { await expect(within(canvasElement).getByText(literal)).toBeVisible(); },
+  play: async ({ canvasElement }) => { await expect(canvasElement.querySelector(".whitespace-pre-wrap")).toBeVisible(); await expect(visibleProse(canvasElement)).toBe(literal); },
 };

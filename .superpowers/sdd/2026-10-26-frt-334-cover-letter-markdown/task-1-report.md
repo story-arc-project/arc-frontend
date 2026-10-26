@@ -31,3 +31,13 @@ Added Markdown_표시 play verifying actual cleaned text, cross-delimiter flagge
 Pure display transformation leaves source strings and grounding objects untouched. Deliberately conservative: this is not a Markdown parser; mixed/single lists and syntax outside the agreed set remain literal. Links/HTML lines retain even surrounding emphasis to avoid accidentally changing syntax outside scope. No CSS layout changes. Root-generated next-env.d.ts left uncommitted. Root-owned docs and browser work left untouched.
 
 Commit: see git commit immediately following this report; only owned product/test/story files included with this report.
+
+## Review round 1
+
+Read /private/tmp/frt334-storybook-test.log: initial browser run had 3 play failures / 5 passes. Base and literal stories used normalized multiline getByText; Markdown also exposed retained underscores before Korean suffix and the sr-only warning included in textContent.
+
+Added regressions first. RED: four failures for __협업 경험__도, two spaced horizontal rules, and multiline backtick code span. __init__method stayed literal. Fixed underscore rule per clarified spec (opening boundary required, Korean suffix permitted; ASCII identifier suffix preserved), protected spaced horizontal-rule lines and multiline code spans.
+
+Story checks now compare exact body text (including original line breaks), cloning the rendered body and removing only .sr-only annotations. Markdown independently checks mark's precise first text node, accessible title and sr-only warning. This keeps visible-prose assertions strict while retaining accessibility assertions.
+
+GREEN: 46 focused tests passed, 3 files. Typecheck and targeted lint passed. Root owns rerunning actual Storybook browser play and captures. No flags changed.

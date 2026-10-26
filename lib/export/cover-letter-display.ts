@@ -19,11 +19,11 @@ function removalMask(text: string): Uint8Array {
     } else if (opening) {
       fence = opening[1];
       protect(start, start + line[0].length);
-    } else if (/^(?: {4}|\t)/.test(line[0]) || /\[[^\]]*\]\(|<[^>]+>/.test(line[0])) {
+    } else if (/^ {0,3}(?:(?:\*[\t ]*){3,}|(?:-[\t ]*){3,}|(?:_[\t ]*){3,})\r?\n?$/.test(line[0]) || /^(?: {4}|\t)/.test(line[0]) || /\[[^\]]*\]\(|<[^>]+>/.test(line[0])) {
       protect(start, start + line[0].length);
     }
   }
-  for (const m of text.matchAll(/(`+)[^`\n]*?\1/g)) protect(m.index!, m.index! + m[0].length);
+  for (const m of text.matchAll(/(`+)[^`]*?\1/g)) protect(m.index!, m.index! + m[0].length);
 
   for (const m of text.matchAll(/(\*\*|__)(\S(?:[\s\S]*?\S)?)\1/g)) {
     const start = m.index!;
@@ -33,7 +33,7 @@ function removalMask(text: string): Uint8Array {
     const after = text[end] ?? "";
     // Escaped, intraword, longer delimiter runs and arithmetic are intentionally literal.
     if (before === "\\" || text[end - 3] === "\\" || before === marker || after === marker || m[2].includes(marker + marker)) continue;
-    if (marker === "_" && (/[\p{L}\p{N}_]/u.test(before) || /[\p{L}\p{N}_]/u.test(after))) continue;
+    if (marker === "_" && (/[\p{L}\p{N}_]/u.test(before) || (/[\p{L}\p{N}_]/u.test(after) && !/[가-힣]/.test(after)))) continue;
     if (/^[\d\s.+\-*/=]+$/.test(m[2])) continue;
     if (protectedChars.subarray(start, end).some(Boolean)) continue;
     remove(start, start + 2);
