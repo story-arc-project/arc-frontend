@@ -243,6 +243,32 @@ describe("cover letter display", () => {
     expect(shown.filter(s => s.flagged).map(s => s.text)).toEqual(['literal', 'ordinary', 'code', 'portfolio']);
     expect(segments).toEqual(before);
   });
+  it.each(['\n\n', '\n \t\n', '\r\n\r\n', '\r\n \t\r\n'])("bounds code matching at paragraph breaks: %j", boundary => {
+    const raw = '`unfinished' + boundary + '**ordinary** `**code**`';
+    expect(stripCoverLetterMarkdown(raw)).toBe('`unfinished' + boundary + 'ordinary `**code**`');
+  });
+  it.each([
+    '[label [nested] **text**][ref]',
+    '[label \\] **text**][ref]',
+    '[label [nested] **text**][]',
+    '[label \\] **text**][]',
+    '[label [nested] **text**][missing]',
+    '[label \\] ` **text**][ref]',
+  ])("recognizes balanced explicit references as source-order literals: %s", reference => {
+    const definitions = '\n\n[ref]: https://example.com';
+    expect(stripCoverLetterMarkdown(reference + definitions)).toBe(reference + definitions);
+    expect(stripCoverLetterMarkdown(reference + ' **ordinary** `**code**`' + definitions)).toBe(reference + ' ordinary `**code**`' + definitions);
+  });
+  it("keeps single-newline code spans and projects bounded literal ranges", () => {
+    expect(stripCoverLetterMarkdown('`first\n**code**` **ordinary**')).toBe('`first\n**code**` ordinary');
+    const raw = '`unfinished\r\n \t\r\n[label [nested] **text**][ref] **ordinary** `**code**`\n\n[ref]: url';
+    const segments = buildGroundingHighlight(raw, ['text', 'ordinary', 'code']).segments;
+    const before = structuredClone(segments);
+    const shown = displayCoverLetterSegments(segments);
+    expect(shown.map(s => s.text).join('')).toBe(raw.replace('**ordinary**', 'ordinary'));
+    expect(shown.filter(s => s.flagged).map(s => s.text)).toEqual(['text', 'ordinary', 'code']);
+    expect(segments).toEqual(before);
+  });
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);

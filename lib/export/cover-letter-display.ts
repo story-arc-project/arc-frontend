@@ -231,12 +231,19 @@ function removalMask(text: string): Uint8Array {
     } else if (text[start] === "`" && text[start - 1] !== "`" && !isEscaped(text, start)) {
       const opening = ticks.find(run => run.index === start)!;
       const closing = ticks.find(run => run.index! > start && run[0].length === opening[0].length);
-      if (closing) end = closing.index! + closing[0].length;
+      // Single newlines are code content; a blank line cannot consume a later paragraph's opener.
+      if (closing && !/\r?\n[\t ]*\r?\n/.test(text.slice(start, closing.index!))) {
+        end = closing.index! + closing[0].length;
+      }
     } else if (text[start] === "[" && !isEscaped(text, start)) {
       const labelEnd = inlineLabelEnd(text, start);
       if (labelEnd !== undefined && text[labelEnd + 1] === "(") {
         end = inlineLinkEnd(text, labelEnd + 1);
         if (end === undefined) pending.push({ start, end: text.length });
+      } else if (labelEnd !== undefined && text[labelEnd + 1] === "[") {
+        // Full and collapsed references are opaque even without a known definition.
+        const referenceEnd = inlineLabelEnd(text, labelEnd + 1);
+        if (referenceEnd !== undefined) end = referenceEnd + 1;
       }
     } else if (text.startsWith("<!--", start)) {
       const closing = text.indexOf("-->", start + 4);
@@ -263,11 +270,14 @@ function removalMask(text: string): Uint8Array {
   for (const range of pending) {
     if (!literalChars[range.start]) protectLiteral(range.start, range.end);
   }
-  for (const link of text.matchAll(/\[([^\]]+)\](?:\[([^\]]*)\])?/g)) {
-    // An immediate destination belongs to an inline link, even if a shortcut label exists.
-    if (link[2] === undefined && text[link.index! + link[0].length] === "(") continue;
-    if (link[2] !== undefined || references.has(normalizeReference(link[1]))) {
-      protectLiteral(link.index!, link.index! + link[0].length);
+  // Shortcut references need definition knowledge from the completed source scan.
+  for (let start = 0; start < text.length; start++) {
+    if (text[start] !== "[" || literalChars[start] || isEscaped(text, start)) continue;
+    const labelEnd = inlineLabelEnd(text, start);
+    if (labelEnd === undefined || text[labelEnd + 1] === "(" || text[labelEnd + 1] === "[") continue;
+    if (references.has(normalizeReference(text.slice(start + 1, labelEnd)))) {
+      protectLiteral(start, labelEnd + 1);
+      start = labelEnd;
     }
   }
 

@@ -18,6 +18,14 @@ Own lib/export/cover-letter-display.ts (+ .test.ts), components/features/export/
 - [x] Add Storybook play cases: Markdown, normal punctuation, flagged Markdown, edited Markdown, empty and multi-answer.
 - [x] Run focused tests, record RED/GREEN evidence, self-review, commit.
 
+### Task 1b: Adjudicated literal-boundary contract repair
+After the five-wave Task1 cap, actual review at d7dfde9 reproduced two valid preservation defects. The coordinator ruled them load-bearing because code/link source preservation is an explicit spec invariant. Stop the previous automatic retry loop and perform this single bounded repair.
+- Own only the display utility and its tests, plus this plan record.
+- Bound inline-code matching to its paragraph, including LF/CRLF and whitespace-only blank boundaries; preserve single-newline code spans and resume at genuine later openers.
+- Reuse balanced/escaped label scanning for full/collapsed reference links, accepting explicit literal tokens in source order. Keep shortcut-definition knowledge and inline precedence intact.
+- RED exact reproductions and fixed boundary/control cases, GREEN focused suite, independent scoped review, required gates and UI comparison.
+- No dependency, production parser, API/storage/editor/grounding policy or feature-flag change. Any further preservation defect returns to scope/design adjudication; no automatic retry loop.
+
 ### Task 2: Validation and review delivery
 - [ ] Node20 lint/typecheck/unit/build through validate subagent.
 - [x] Storybook build/play with desktop1440/mobile390 captures of existing preview; feature flag remains disabled. Prepare local gallery and CI/remote verification route.
