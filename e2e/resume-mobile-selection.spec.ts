@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { API_ORIGIN } from "./fixtures/api-origin";
 import { resumeDetail } from "./fixtures/api-data";
-import { stubApi } from "./fixtures/stub-api";
+import { corsHeaders, stubApi } from "./fixtures/stub-api";
 
 for (const width of [390, 1440]) {
   test(`FRT-153 panel selection at ${width}px`, async ({ page }) => {
@@ -62,7 +62,10 @@ for (const width of [390, 1440]) {
     await page.route(`${API_ORIGIN}/export/resume/resume-e2e-1`, async (route) => {
       const body = structuredClone(resumeDetail());
       body.data.meta.language = "en";
-      await route.fulfill({ json: body });
+      await route.fulfill({
+        json: body,
+        headers: corsHeaders(route.request().headers().origin ?? "http://localhost:3000"),
+      });
     });
     await page.goto("/export/resume/resume-e2e-1");
     await expect(page.getByText("영문 이력서는 아직 편집할 수 없어요")).toBeVisible();
