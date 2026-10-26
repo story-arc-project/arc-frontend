@@ -48,6 +48,18 @@ describe("cover letter display", () => {
     expect(shown.filter(s => s.flagged).map(s => s.text)).toEqual(["수상 경력", "수상 경력", "다음 주장"]);
     expect(segments).toEqual(before);
   });
+  it.each([
+    "[a\n**link**\n](https://example.com)",
+    "<!--\n**literal**\n## literal\n- 하나\n- 둘\n-->",
+    "𐐀__value__", "café__value__", "__value__𐐀", "__value__́",
+    "**첫 문단\n\n다음 문단**", "**첫 문단\r\n \t\r\n다음 문단**",
+  ])("preserves cloud review literal case: %s", raw => expect(stripCoverLetterMarkdown(raw)).toBe(raw));
+  it.each([
+    ["`**` 기호로 **강조**합니다.", "`**` 기호로 강조합니다."],
+    ["\\**literal **강조**", "\\**literal 강조"],
+    ["** 미완성 **강조**", "** 미완성 강조"],
+    ["**첫 줄\n다음 줄**", "첫 줄\n다음 줄"],
+  ])("recovers valid emphasis after rejected candidates: %s", (raw, shown) => expect(stripCoverLetterMarkdown(raw)).toBe(shown));
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);

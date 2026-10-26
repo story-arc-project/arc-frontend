@@ -51,6 +51,14 @@ function removalMask(text: string): Uint8Array {
     }
   }
 
+  // These literal constructs may span line and grounding boundaries.
+  for (const link of text.matchAll(/\[[^\]]*\]\([\s\S]*?\)/g)) {
+    protect(link.index!, link.index! + link[0].length);
+  }
+  for (const comment of text.matchAll(/<!--[\s\S]*?(?:-->|$)/g)) {
+    protect(comment.index!, comment.index! + comment[0].length);
+  }
+
   // Protect paired HTML contents across lines, including nested elements of the same name.
   const openTags: { name: string; start: number }[] = [];
   const voidTags = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
@@ -67,19 +75,27 @@ function removalMask(text: string): Uint8Array {
     }
   }
 
-  for (const m of text.matchAll(/(\*\*|__)(\S(?:[\s\S]*?\S)?)\1/g)) {
-    const start = m.index!;
-    const end = start + m[0].length;
-    const marker = m[1][0];
-    const before = text[start - 1] ?? "";
-    const after = text[end] ?? "";
-    // Escaped, intraword, longer delimiter runs and arithmetic are intentionally literal.
-    if (before === "\\" || text[end - 3] === "\\" || before === marker || after === marker || m[2].includes(marker + marker)) continue;
-    if (marker === "_" && (/[\p{L}\p{N}_]/u.test(before) || (/[\p{L}\p{N}_]/u.test(after) && !/[가-힣]/.test(after)))) continue;
-    if (/^[\d\s.+\-*/=]+$/.test(m[2])) continue;
+  const emphasis = /(\*\*|__)(\S(?:[\s\S]*?\S)?)\1/g;
+  let candidate: RegExpExecArray | null;
+  while ((candidate = emphasis.exec(text)) !== null) {
+    const start = candidate.index;
+    const end = start + candidate[0].length;
+    const marker = candidate[1][0];
+    // On rejection, retry after this opener, rather than consuming a later valid opener.
+    emphasis.lastIndex = start + 2;
+    if (protectedChars[start] || protectedChars[start + 1]) continue;
+    const before = text.slice(0, start).match(/.$/u)?.[0] ?? "";
+    const afterCodePoint = text.codePointAt(end);
+    const after = afterCodePoint === undefined ? "" : String.fromCodePoint(afterCodePoint);
+    // Combining marks and supplementary letters belong to the surrounding word too.
+    const word = /[\p{L}\p{N}\p{M}_]/u;
+    if (before === "\\" || text[end - 3] === "\\" || before === marker || after === marker || candidate[2].includes(marker + marker)) continue;
+    if (marker === "_" && (word.test(before) || (word.test(after) && !/[가-힣]/.test(after)))) continue;
+    if (/^[\d\s.+\-*/=]+$/.test(candidate[2]) || /\r?\n[\t ]*\r?\n/.test(candidate[2])) continue;
     if (protectedChars.subarray(start, end).some(Boolean)) continue;
     remove(start, start + 2);
     remove(end - 2, end);
+    emphasis.lastIndex = end;
   }
 
   type Item = { start: number; prefix: string; indent: string; family: string; number?: number };
