@@ -349,9 +349,9 @@ describe("FRT-178 동아리 역할 태그 동기화", () => {
     await user.click(screen.getByRole("button", { name: /역할 이력 상세 기록/ }))
     await user.type(screen.getByLabelText("역할명"), "회장")
 
-    // ② '주요 활동 / 이벤트' 행의 칩 버튼을 연다(개조식 2종 → 칩 버튼도 2개).
+    // ② '주요 활동 / 이벤트' 첫 기록의 역할 선택을 연다.
     await user.click(screen.getAllByText("🏷️ 역할")[0])
-    expect(screen.getAllByRole("button", { name: "회장" }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장" }).length).toBeGreaterThan(0)
   })
 
   it("역할명을 고치면 이미 붙어 있는 태그가 따라 바뀐다", async () => {
@@ -363,14 +363,14 @@ describe("FRT-178 동아리 역할 태그 동기화", () => {
     await user.type(screen.getByLabelText("역할명"), "회장")
 
     await user.click(screen.getAllByText("🏷️ 역할")[0])
-    await user.click(screen.getAllByRole("button", { name: "회장" })[0])
-    expect(screen.getByRole("button", { name: "회장 역할 태그 해제" })).toBeInTheDocument()
+    await user.click(screen.getAllByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장" })[0])
+    expect(screen.getByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장 역할 태그 해제" })).toBeInTheDocument()
 
     // 이력에서 이름을 바꾸고 편집을 끝내면 붙어 있던 뱃지도 새 이름이 된다.
     await user.type(screen.getByLabelText("역할명"), "단")
     await user.tab()
-    expect(screen.getByRole("button", { name: "회장단 역할 태그 해제" })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "회장 역할 태그 해제" })).toBeNull()
+    expect(screen.getByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장단 역할 태그 해제" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장 역할 태그 해제" })).toBeNull()
   })
 
   it("역할명을 지우고 새로 써도 붙어 있던 태그를 잃지 않는다", async () => {
@@ -384,16 +384,16 @@ describe("FRT-178 동아리 역할 태그 동기화", () => {
     await user.type(screen.getByLabelText("역할명"), "회장")
 
     await user.click(screen.getAllByText("🏷️ 역할")[0])
-    await user.click(screen.getAllByRole("button", { name: "회장" })[0])
-    expect(screen.getByRole("button", { name: "회장 역할 태그 해제" })).toBeInTheDocument()
+    await user.click(screen.getAllByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장" })[0])
+    expect(screen.getByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장 역할 태그 해제" })).toBeInTheDocument()
 
     const input = screen.getByLabelText("역할명")
     await user.clear(input)
     await user.type(input, "부회장")
     await user.tab()
 
-    expect(screen.getByRole("button", { name: "부회장 역할 태그 해제" })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "회장 역할 태그 해제" })).toBeNull()
+    expect(screen.getByRole("button", { name: "1번째 기록 이 활동 때의 역할 부회장 역할 태그 해제" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장 역할 태그 해제" })).toBeNull()
   })
 
   it("활동을 프로젝트로 기록하면 연결 제목이 역할이 아니라 프로젝트명이다", async () => {
@@ -460,11 +460,11 @@ describe("FRT-178 동아리 역할 태그 동기화", () => {
     await user.click(screen.getByRole("button", { name: /역할 이력 상세 기록/ }))
     await user.type(screen.getByLabelText("역할명"), "회장")
     await user.click(screen.getAllByText("🏷️ 역할")[0])
-    await user.click(screen.getAllByRole("button", { name: "회장" })[0])
-    expect(screen.getByRole("button", { name: "회장 역할 태그 해제" })).toBeInTheDocument()
+    await user.click(screen.getAllByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장" })[0])
+    expect(screen.getByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장 역할 태그 해제" })).toBeInTheDocument()
 
     await user.click(screen.getByRole("button", { name: "회장 삭제" }))
-    expect(screen.queryByRole("button", { name: "회장 역할 태그 해제" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "1번째 기록 이 활동 때의 역할 회장 역할 태그 해제" })).toBeNull()
   })
 })
 
