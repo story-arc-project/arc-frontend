@@ -1,5 +1,7 @@
 "use client";
 
+import { PasswordInput } from "@/components/ui/password-input";
+
 import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -153,24 +155,14 @@ function LoginForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && pwInputRef.current?.focus()}
               />
-              <Input
+              <PasswordInput
                 ref={pwInputRef}
                 label="비밀번호"
-                type={showPw ? "text" : "password"}
+                visible={showPw}
+                onToggleVisibility={() => setShowPw((v) => !v)}
                 placeholder="비밀번호 입력"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="pr-14"
-                rightAddon={
-                  <button
-                    type="button"
-                    onClick={() => setShowPw((v) => !v)}
-                    className="text-caption text-text-tertiary
-                               hover:text-text-secondary transition-colors cursor-pointer select-none"
-                  >
-                    {showPw ? "숨기기" : "보기"}
-                  </button>
-                }
               />
               {PASSWORD_RESET_ENABLED && (
                 <div className="-mt-1 text-right">
