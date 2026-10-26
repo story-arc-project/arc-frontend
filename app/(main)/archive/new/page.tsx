@@ -13,6 +13,7 @@ import ExperienceFormV2, {
   type ExperienceFormV2Handle,
 } from "@/components/features/archive/ExperienceFormV2"
 import InputViewShell from "@/app/(main)/archive/_components/InputViewShell"
+import useTypeUrl from "./useTypeUrl"
 import type { ExperienceV2 } from "@/types/archive"
 
 export default function ArchiveNewPage() {
@@ -22,6 +23,7 @@ export default function ArchiveNewPage() {
   const savePending = useRef(false)
   const formRef = useRef<ExperienceFormV2Handle | null>(null)
   const [hasUnsaved, setHasUnsaved] = useState(false)
+  const typeUrl = useTypeUrl(hasUnsaved)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sections, setSections] = useState<{ id: string; label: string }[]>([])
@@ -99,6 +101,7 @@ export default function ArchiveNewPage() {
     <InputViewShell
       formRef={formRef}
       hasUnsaved={hasUnsaved}
+      onInternalPop={typeUrl.onInternalPop}
       backTo={backTo}
       saving={saving}
       sections={sections}
@@ -116,6 +119,8 @@ export default function ArchiveNewPage() {
       <ExperienceFormV2
         ref={formRef}
         mode="new"
+        selectedTypeId={typeUrl.selectedTypeId}
+        onTypeSelect={typeUrl.onTypeSelect}
         hideInlineActions
         onSave={handleSave}
         onCancel={() => router.push(backTo)}
