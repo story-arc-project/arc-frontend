@@ -11,6 +11,7 @@ import {
   nextClientId,
   SortableList,
 } from "./shared";
+import { useListEditor } from "./useListEditor";
 
 const 단체구분Options = 단체구분_OPTIONS;
 
@@ -20,21 +21,18 @@ interface Props {
 }
 
 export function ClubListEditor({ value, onChange }: Props) {
-  const updateItem = (id: number, patch: Partial<Club>) =>
-    onChange(value.map((v) => (v.id === id ? { ...v, ...patch } : v)));
-  const removeItem = (id: number) => onChange(value.filter((v) => v.id !== id));
-  const addItem = () =>
-    onChange([
-      ...value,
-      {
-        id: nextClientId(),
-        단체명: null,
-        구분: null,
-        기간_원문: null,
-        역할: null,
-        활동내용: [],
-      },
-    ]);
+  const { updateItem, removeItem, addItem } = useListEditor<Club>(
+    value,
+    onChange,
+    () => ({
+      id: nextClientId(),
+      단체명: null,
+      구분: null,
+      기간_원문: null,
+      역할: null,
+      활동내용: [],
+    }),
+  );
 
   return (
     <div className="flex flex-col gap-2">

@@ -11,6 +11,7 @@ import {
   nextClientId,
   SortableList,
 } from "./shared";
+import { useListEditor } from "./useListEditor";
 
 const 고용형태Options = 고용형태_OPTIONS;
 
@@ -20,25 +21,22 @@ interface Props {
 }
 
 export function CareerListEditor({ value, onChange }: Props) {
-  const updateItem = (id: number, patch: Partial<Career>) =>
-    onChange(value.map((v) => (v.id === id ? { ...v, ...patch } : v)));
-  const removeItem = (id: number) => onChange(value.filter((v) => v.id !== id));
-  const addItem = () =>
-    onChange([
-      ...value,
-      {
-        id: nextClientId(),
-        회사명: null,
-        부서: null,
-        직위: null,
-        고용형태: null,
-        입사년월: null,
-        퇴사년월: null,
-        재직중: false,
-        담당업무: [],
-        성과: [],
-      },
-    ]);
+  const { updateItem, removeItem, addItem } = useListEditor<Career>(
+    value,
+    onChange,
+    () => ({
+      id: nextClientId(),
+      회사명: null,
+      부서: null,
+      직위: null,
+      고용형태: null,
+      입사년월: null,
+      퇴사년월: null,
+      재직중: false,
+      담당업무: [],
+      성과: [],
+    }),
+  );
 
   return (
     <div className="flex flex-col gap-2">

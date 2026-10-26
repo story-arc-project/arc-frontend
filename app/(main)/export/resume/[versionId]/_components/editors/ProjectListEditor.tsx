@@ -11,6 +11,7 @@ import {
   SortableList,
   TagArrayEditor,
 } from "./shared";
+import { useListEditor } from "./useListEditor";
 
 interface Props {
   value: Project[];
@@ -18,25 +19,22 @@ interface Props {
 }
 
 export function ProjectListEditor({ value, onChange }: Props) {
-  const updateItem = (id: number, patch: Partial<Project>) =>
-    onChange(value.map((v) => (v.id === id ? { ...v, ...patch } : v)));
-  const removeItem = (id: number) => onChange(value.filter((v) => v.id !== id));
-  const addItem = () =>
-    onChange([
-      ...value,
-      {
-        id: nextClientId(),
-        프로젝트명: null,
-        소속기관: null,
-        기간_시작: null,
-        기간_종료: null,
-        기간_원문: null,
-        역할: null,
-        사용기술: [],
-        내용: [],
-        성과: [],
-      },
-    ]);
+  const { updateItem, removeItem, addItem } = useListEditor<Project>(
+    value,
+    onChange,
+    () => ({
+      id: nextClientId(),
+      프로젝트명: null,
+      소속기관: null,
+      기간_시작: null,
+      기간_종료: null,
+      기간_원문: null,
+      역할: null,
+      사용기술: [],
+      내용: [],
+      성과: [],
+    }),
+  );
 
   return (
     <div className="flex flex-col gap-2">

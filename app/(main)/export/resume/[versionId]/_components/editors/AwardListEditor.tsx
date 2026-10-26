@@ -10,6 +10,7 @@ import {
   nextClientId,
   SortableList,
 } from "./shared";
+import { useListEditor } from "./useListEditor";
 
 interface Props {
   value: Award[];
@@ -17,20 +18,17 @@ interface Props {
 }
 
 export function AwardListEditor({ value, onChange }: Props) {
-  const updateItem = (id: number, patch: Partial<Award>) =>
-    onChange(value.map((v) => (v.id === id ? { ...v, ...patch } : v)));
-  const removeItem = (id: number) => onChange(value.filter((v) => v.id !== id));
-  const addItem = () =>
-    onChange([
-      ...value,
-      {
-        id: nextClientId(),
-        수상명: null,
-        수여기관: null,
-        수상년월: null,
-        내용: null,
-      },
-    ]);
+  const { updateItem, removeItem, addItem } = useListEditor<Award>(
+    value,
+    onChange,
+    () => ({
+      id: nextClientId(),
+      수상명: null,
+      수여기관: null,
+      수상년월: null,
+      내용: null,
+    }),
+  );
 
   return (
     <div className="flex flex-col gap-2">

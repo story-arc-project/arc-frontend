@@ -17,6 +17,7 @@ import {
   nextClientId,
   SortableList,
 } from "./shared";
+import { useListEditor } from "./useListEditor";
 
 function GpaInput({
   value,
@@ -67,26 +68,23 @@ interface Props {
 }
 
 export function EducationListEditor({ value, onChange }: Props) {
-  const updateItem = (id: number, patch: Partial<Education>) =>
-    onChange(value.map((v) => (v.id === id ? { ...v, ...patch } : v)));
-  const removeItem = (id: number) => onChange(value.filter((v) => v.id !== id));
-  const addItem = () =>
-    onChange([
-      ...value,
-      {
-        id: nextClientId(),
-        학교명: null,
-        학과: null,
-        전공구분: null,
-        학위: null,
-        입학년월: null,
-        졸업년월: null,
-        졸업구분: null,
-        학점: null,
-        만점: null,
-        비고: null,
-      },
-    ]);
+  const { updateItem, removeItem, addItem } = useListEditor<Education>(
+    value,
+    onChange,
+    () => ({
+      id: nextClientId(),
+      학교명: null,
+      학과: null,
+      전공구분: null,
+      학위: null,
+      입학년월: null,
+      졸업년월: null,
+      졸업구분: null,
+      학점: null,
+      만점: null,
+      비고: null,
+    }),
+  );
 
   return (
     <div className="flex flex-col gap-2">
