@@ -15,7 +15,7 @@ for (const width of [390, 1440]) {
     if (width === 1440) {
       await expect(group).toBeHidden();
       await expect(preview).toBeVisible();
-      await page.screenshot({ path: "e2e/preview/out/frt153-desktop.png", fullPage: true });
+      await page.screenshot({ path: "e2e/preview/out/frt153-desktop.png", fullPage: true, animations: "disabled" });
       await page.setViewportSize({ width: 390, height: 844 });
     }
     await expect(group).toBeVisible();
@@ -27,7 +27,7 @@ for (const width of [390, 1440]) {
     await expect(editButton).toHaveAttribute("aria-controls", (await editor.getAttribute("id"))!);
     await expect(previewButton).toHaveAttribute("aria-controls", (await preview.getAttribute("id"))!);
     expect(await editor.getAttribute("id")).not.toBe(await preview.getAttribute("id"));
-    await page.screenshot({ path: `e2e/preview/out/frt153-mobile-editor-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `e2e/preview/out/frt153-mobile-editor-${width}.png`, fullPage: true, animations: "disabled" });
     await editButton.focus();
     await page.keyboard.press("Tab");
     await expect(previewButton).toBeFocused();
@@ -36,7 +36,7 @@ for (const width of [390, 1440]) {
     await expect(editButton).toHaveAttribute("aria-pressed", "false");
     await expect(preview).toBeVisible();
     await expect(editor).toBeHidden();
-    await page.screenshot({ path: `e2e/preview/out/frt153-mobile-preview-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `e2e/preview/out/frt153-mobile-preview-${width}.png`, fullPage: true, animations: "disabled" });
     await page.setViewportSize({ width: 1440, height: 900 });
     await expect(group).toBeHidden();
     await expect(editor).toBeVisible();
