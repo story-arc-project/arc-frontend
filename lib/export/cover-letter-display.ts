@@ -48,10 +48,10 @@ function inlineLinkEnd(text: string, opening: number): number | undefined {
 }
 
 /** Conservative literal boundary for declarations and processing instructions. */
-function declarationEnd(text: string, start: number): number {
+function declarationEnd(text: string, start: number): number | undefined {
   if (text.startsWith("<![CDATA[", start)) {
     const closing = text.indexOf("]]>", start + 9);
-    return closing === -1 ? text.length : closing + 3;
+    return closing === -1 ? undefined : closing + 3;
   }
   const terminator = text.startsWith("<?", start) ? "?>" : ">";
   let quote: string | undefined;
@@ -67,7 +67,7 @@ function declarationEnd(text: string, start: number): number {
     if (ch === "]" && brackets > 0) brackets--;
     if (brackets === 0 && text.startsWith(terminator, i)) return i + terminator.length;
   }
-  return text.length;
+  return undefined;
 }
 
 /** Display-only removals indexed against the complete raw body, before grounding splits. */
@@ -137,6 +137,7 @@ function removalMask(text: string): Uint8Array {
 
   // Resolve enclosing ranges first, so nested incomplete openers cannot extend them.
   const literalRanges: { start: number; end: number }[] = [];
+  const commentContexts: { start: number; end: number }[] = [];
   // These literal constructs may span line and grounding boundaries.
   for (let start = 0; start < text.length; start++) {
     if (text[start] !== "[" || isEscaped(text, start) || literalChars[start]) continue;
@@ -144,18 +145,32 @@ function removalMask(text: string): Uint8Array {
     if (labelEnd === undefined || text[labelEnd + 1] !== "(") continue;
     const end = inlineLinkEnd(text, labelEnd + 1);
     literalRanges.push({ start, end: end ?? text.length });
+    if (end !== undefined) commentContexts.push({ start, end });
     start = labelEnd;
   }
-  const commentChars = new Uint8Array(text.length);
-  for (const comment of text.matchAll(/<!--[\s\S]*?(?:-->|$)/g)) {
-    if (literalChars[comment.index!]) continue;
-    const end = comment.index! + comment[0].length;
-    commentChars.fill(1, comment.index!, end);
-    literalRanges.push({ start: comment.index!, end });
+  for (const declaration of text.matchAll(/<!\[CDATA\[|<\?|<![a-z]/gi)) {
+    const start = declaration.index!;
+    const end = declarationEnd(text, start);
+    literalRanges.push({ start, end: end ?? text.length });
+    if (end !== undefined) commentContexts.push({ start, end });
   }
 
-  for (const declaration of text.matchAll(/<!\[CDATA\[|<\?|<![a-z]/gi)) {
-    literalRanges.push({ start: declaration.index!, end: declarationEnd(text, declaration.index!) });
+  const commentChars = new Uint8Array(text.length);
+  let commentCursor = 0;
+  while (commentCursor < text.length) {
+    const start = text.indexOf("<!--", commentCursor);
+    if (start === -1) break;
+    commentCursor = start + 4;
+    // Complete link/declaration ranges establish semantic containment here,
+    // without applying EOF fallbacks that could mask a genuine enclosing HTML body.
+    if (literalChars[start] || commentContexts.some(range =>
+      range.start < start && start < range.end && !literalChars[range.start] && !commentChars[range.start],
+    )) continue;
+    const closing = text.indexOf("-->", commentCursor);
+    const end = closing === -1 ? text.length : closing + 3;
+    commentChars.fill(1, start, end);
+    literalRanges.push({ start, end });
+    commentCursor = end;
   }
 
   // Protect paired HTML contents across lines, including nested elements of the same name.

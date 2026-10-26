@@ -138,6 +138,25 @@ describe("cover letter display", () => {
     ['\\`` **ordinary** ``**code**``', '\\`` ordinary ``**code**``'],
     ['`**code**\\` **ordinary**', '`**code**\\` ordinary'],
   ])("respects escaped opener parity and actual code closers: %s", (raw, shown) => expect(stripCoverLetterMarkdown(raw)).toBe(shown));
+  it.each([
+    '[label](url "<!--")',
+    "[label](url '<!--')",
+    '<!DOCTYPE html "<!--">',
+    '<?pi "<!--"?>',
+  ])("does not let enclosed comment syntax change following HTML pairing: %s", prefix => {
+    const raw = prefix + '\n<div>\n**literal**\n</div>\n**ordinary**';
+    expect(stripCoverLetterMarkdown(raw)).toBe(prefix + '\n<div>\n**literal**\n</div>\nordinary');
+  });
+  it("still recognizes a real comment after a link-contained fake opener", () => {
+    const raw = '[label](url "<!--")\n<div>\n<!-- </div> -->\n**literal**\n</div>\n**ordinary**';
+    expect(stripCoverLetterMarkdown(raw)).toBe(raw.slice(0, -12) + 'ordinary');
+  });
+  it.each([
+    '<!-- <?php -->\n<div>\n<!-- </div> -->\n**literal**\n</div>\n**ordinary**',
+    '<pre>\n<?php [label](\n<!-- </pre> -->\n**literal**\n</pre>\n**ordinary**',
+  ])("keeps genuine comment masking despite earlier ambiguous openers: %s", raw => {
+    expect(stripCoverLetterMarkdown(raw)).toBe(raw.slice(0, -12) + 'ordinary');
+  });
   it("keeps multiline raw claim matching", () => {
     const raw = "**여러 줄\n주장입니다**";
     const shown = displayCoverLetterSegments(buildGroundingHighlight(raw, ["여러 줄 주장입니다"]).segments);
