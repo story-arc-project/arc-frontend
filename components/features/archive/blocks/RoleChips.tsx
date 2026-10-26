@@ -17,6 +17,8 @@ export function roleChipOptions(roles: string[], selected: string[]): string[] {
 
 interface RoleChipsProps {
   value: string[]
+  /** 반복 기록 셀의 현재 행·컬럼 맥락. 다른 소비자는 기존 이름을 유지한다. */
+  ariaLabel?: string
   onChange: (next: string[]) => void
   readOnly?: boolean
   /** 개조식 행 안처럼 라벨 없이 한 줄에 얹는 모드. 뱃지를 더 작게 그린다. */
@@ -28,7 +30,7 @@ interface RoleChipsProps {
  * RoleHistoryContext 를 통해 목록을 받는다. provider 밖(상세뷰·스토리북)에서는 읽기 전용.
  * ② 개조식 행과 ③ 반복 블록 셀이 이 컴포넌트를 공유한다.
  */
-export default function RoleChips({ value, onChange, readOnly, inline }: RoleChipsProps) {
+export default function RoleChips({ value, onChange, readOnly, inline, ariaLabel }: RoleChipsProps) {
   const ctx = useRoleHistory()
   const roles = ctx?.roles ?? []
   const selected = Array.isArray(value) ? value : []
@@ -82,7 +84,7 @@ export default function RoleChips({ value, onChange, readOnly, inline }: RoleChi
         고를 때마다 버튼이 오른쪽으로 이동하고 메뉴도 같이 튄다(FRT-323).
       */}
       <details ref={detailsRef} className="relative inline-block shrink-0">
-        <summary ref={summaryRef} className="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-caption text-text-tertiary transition-colors hover:border-brand hover:text-brand">
+        <summary ref={summaryRef} aria-label={ariaLabel} className="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-caption text-text-tertiary transition-colors hover:border-brand hover:text-brand">
           🏷️ 역할
         </summary>
         <div className="absolute left-0 top-full z-10 mt-1 min-w-40 rounded-lg border border-border bg-surface p-1 shadow-lg">
@@ -99,6 +101,7 @@ export default function RoleChips({ value, onChange, readOnly, inline }: RoleChi
                   type="button"
                   onClick={() => pick(role)}
                   aria-pressed={on}
+                  aria-label={ariaLabel ? `${ariaLabel} ${role}` : undefined}
                   className="flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-body-sm text-text-primary transition-colors hover:bg-surface-secondary"
                 >
                   <span className="w-3.5 shrink-0 text-brand">
@@ -130,7 +133,7 @@ export default function RoleChips({ value, onChange, readOnly, inline }: RoleChi
               type="button"
               onClick={() => toggle(role)}
               className="rounded-full p-0.5 leading-none transition-colors hover:bg-brand-light"
-              aria-label={`${role} 역할 태그 해제`}
+              aria-label={ariaLabel ? `${ariaLabel} ${role} 역할 태그 해제` : `${role} 역할 태그 해제`}
             >
               ×
             </button>

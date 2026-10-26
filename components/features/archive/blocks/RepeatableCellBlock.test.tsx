@@ -29,6 +29,7 @@ vi.mock("@/hooks/useFileUpload", () => ({
 import RepeatableCellBlock from "./RepeatableCellBlock"
 import { isBlockEmpty } from "@/lib/utils/block-utils"
 import { ProjectLinkProvider, type ProjectLinkContextValue } from "@/contexts/ProjectLinkContext"
+import { RoleHistoryProvider } from "@/contexts/RoleHistoryContext"
 import type { Block, BlockRow, RepeatableCellBlockValue } from "@/types/archive"
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 등록 필수.
@@ -421,7 +422,7 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
       />,
     )
 
-    await user.click(screen.getByRole("button", { name: "행 삭제" }))
+    await user.click(screen.getByRole("button", { name: "1번째 기록 행 삭제" }))
 
     expect(latest).toBeUndefined()
     expect(screen.getByLabelText("결과물 1 링크")).toBeInTheDocument()
@@ -441,7 +442,7 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
       />,
     )
 
-    await user.click(screen.getByRole("button", { name: "행 삭제" }))
+    await user.click(screen.getByRole("button", { name: "1번째 기록 행 삭제" }))
 
     expect(latest).toBeUndefined()
   })
@@ -508,7 +509,7 @@ describe("RepeatableCellBlock — 행에 나만의 항목 추가 (FRT-145)", () 
       />,
     )
 
-    await user.type(screen.getByLabelText("프로젝트명"), "B")
+    await user.type(screen.getByLabelText("1번째 기록 프로젝트명"), "B")
 
     expect(latest?.rows[0].extraFields).toHaveLength(1)
     expect(latest?.rows[0].extraFields?.[0].value).toBe("우수상")
@@ -594,9 +595,9 @@ describe("period 셀 (FRT-213)", () => {
   it("텍스트칸이 아니라 월 입력 2개와 '현재' 체크박스가 나온다", () => {
     render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { period: "" } }])} />)
 
-    expect(screen.getByLabelText("기간 시작")).toHaveAttribute("type", "month")
-    expect(screen.getByLabelText("기간 종료")).toHaveAttribute("type", "month")
-    expect(screen.getByRole("checkbox", { name: "기간 현재" })).toBeInTheDocument()
+    expect(screen.getByLabelText("1번째 기록 기간 시작")).toHaveAttribute("type", "month")
+    expect(screen.getByLabelText("1번째 기록 기간 종료")).toHaveAttribute("type", "month")
+    expect(screen.getByRole("checkbox", { name: "1번째 기록 기간 현재" })).toBeInTheDocument()
   })
 
   // 기간 컬럼이 여러 개거나 행이 여럿이면 체크박스가 전부 '현재'로만 읽혀
@@ -605,7 +606,7 @@ describe("period 셀 (FRT-213)", () => {
     render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { period: "" } }])} />)
 
     expect(screen.queryByRole("checkbox", { name: "현재" })).toBeNull()
-    expect(screen.getByRole("checkbox", { name: "기간 현재" })).toBeInTheDocument()
+    expect(screen.getByRole("checkbox", { name: "1번째 기록 기간 현재" })).toBeInTheDocument()
   })
 
   it("시작만 고르면 점 구분 문자열 한 토큰으로 저장된다", async () => {
@@ -618,7 +619,7 @@ describe("period 셀 (FRT-213)", () => {
       />,
     )
 
-    await user.type(screen.getByLabelText("기간 시작"), "2023-03")
+    await user.type(screen.getByLabelText("1번째 기록 기간 시작"), "2023-03")
 
     expect(seen.at(-1)?.rows[0].cells.period).toBe("2023.03")
   })
@@ -633,10 +634,10 @@ describe("period 셀 (FRT-213)", () => {
       />,
     )
 
-    await user.click(screen.getByRole("checkbox", { name: "기간 현재" }))
+    await user.click(screen.getByRole("checkbox", { name: "1번째 기록 기간 현재" }))
 
     expect(seen.at(-1)?.rows[0].cells.period).toBe("2023.03 ~ 현재")
-    expect(screen.getByLabelText("기간 종료")).toBeDisabled()
+    expect(screen.getByLabelText("1번째 기록 기간 종료")).toBeDisabled()
   })
 
   it("저장된 점 문자열을 월 입력에 되돌려 읽는다 — 새로고침 후 값이 사라지지 않는다", () => {
@@ -646,8 +647,8 @@ describe("period 셀 (FRT-213)", () => {
       />,
     )
 
-    expect(screen.getByLabelText("기간 시작")).toHaveValue("2023-03")
-    expect(screen.getByLabelText("기간 종료")).toHaveValue("2024-01")
+    expect(screen.getByLabelText("1번째 기록 기간 시작")).toHaveValue("2023-03")
+    expect(screen.getByLabelText("1번째 기록 기간 종료")).toHaveValue("2024-01")
   })
 
   it("조회 화면에는 저장된 문자열이 그대로 보인다", () => {
@@ -684,7 +685,7 @@ describe("알 수 없는 컬럼 유형 (FRT-213)", () => {
       />,
     )
 
-    const input = screen.getByLabelText("미래 유형")
+    const input = screen.getByLabelText("1번째 기록 미래 유형")
     expect(input).toHaveValue("기존 값")
 
     await user.type(input, "!")
@@ -825,7 +826,7 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
     const columns = [{ key: "c", label: "칸", blockType: "date" as const, variant: "month" as const }]
     render(<Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: "2024-03" } }])} />)
 
-    expect(screen.getByLabelText("칸")).toHaveAttribute("type", "month")
+    expect(screen.getByLabelText("1번째 기록 칸")).toHaveAttribute("type", "month")
     expect(screen.queryByText(/이전 값/)).toBeNull()
   })
 
@@ -846,7 +847,7 @@ describe("열 유형이 바뀌어도 값을 잃지 않는다 (FRT-213 회귀)", 
       <Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: { c: "2024-03-15" } }])} />,
     )
 
-    expect(screen.getByLabelText("칸")).toHaveAttribute("type", "date")
+    expect(screen.getByLabelText("1번째 기록 칸")).toHaveAttribute("type", "date")
     expect(screen.queryByText(/이전 값/)).toBeNull()
   })
 
@@ -1031,7 +1032,7 @@ describe("RepeatableCellBlock — 링크 열", () => {
     const user = userEvent.setup()
     render(<Harness block={linkBlock("")} />)
 
-    const input = screen.getByLabelText("링크", { selector: "input" })
+    const input = screen.getByLabelText("1번째 기록 링크", { selector: "input" })
     await user.type(input, "https://vimeo.com/123")
     await user.tab()
 
@@ -1044,7 +1045,7 @@ describe("RepeatableCellBlock — 링크 열", () => {
     const user = userEvent.setup()
     render(<Harness block={linkBlock("https://vimeo.com/123")} />)
 
-    await user.click(screen.getByLabelText("링크", { selector: "input" }))
+    await user.click(screen.getByLabelText("1번째 기록 링크", { selector: "input" }))
     await user.tab()
 
     expect(capture).not.toHaveBeenCalledWith("archive_attachment_added", expect.anything())
@@ -1067,8 +1068,97 @@ describe("입력 필드 배치 — 한 필드당 한 행 (FRT-315)", () => {
       <Harness block={makeBlockWithColumns(columns, [{ id: "r1", cells: {} }])} />,
     )
 
-    expect(screen.getByLabelText("저널 / 학회명")).toBeInTheDocument()
+    expect(screen.getByLabelText("1번째 기록 저널 / 학회명")).toBeInTheDocument()
     expect(container.querySelector('[class*="grid-cols-2"]')).toBeNull()
     expect(container.querySelector('[class*="col-span-2"]')).toBeNull()
+  })
+})
+
+
+describe("FRT-223 current row context", () => {
+  it("names all nine column types and nested controls by row and column", async () => {
+    const user = userEvent.setup()
+    const block = makeBlock(["a", "b"].map(id => ({ id, cells: { tags: ["기획"] } })))
+    block.value = { type: "repeatable-cell", rows: (block.value as RepeatableCellBlockValue).rows, columns: [
+      { key: "text", label: "이름", blockType: "text" },
+      { key: "textarea", label: "설명", blockType: "textarea" },
+      { key: "date", label: "날짜", blockType: "date" },
+      { key: "period", label: "기간", blockType: "period" },
+      { key: "link", label: "주소", blockType: "link" },
+      { key: "tags", label: "태그", blockType: "tags" },
+      { key: "checklist", label: "확인", blockType: "checklist", options: ["완료"] },
+      { key: "select", label: "상태", blockType: "single-select", options: ["진행"] },
+      { key: "file", label: "첨부", blockType: "file" },
+      { key: "role", label: "역할", blockType: "checklist", variant: "role-chip" },
+      { key: "free", label: "자유 목록", blockType: "checklist" },
+    ] }
+    render(<RoleHistoryProvider value={{ roles: ["기획"], renameRole: () => {}, removeRole: () => {} }}>
+      <Harness block={block} />
+    </RoleHistoryProvider>)
+    for (const row of [1, 2]) {
+      const prefix = `${row}번째 기록`
+      for (const column of ["이름", "설명", "날짜", "주소", "태그", "상태", "첨부", "자유 목록"]) {
+        expect(screen.getByLabelText(`${prefix} ${column}`, { selector: "input,textarea,select" })).toBeInTheDocument()
+      }
+      for (const part of ["시작", "종료", "현재"]) expect(screen.getByLabelText(`${prefix} 기간 ${part}`)).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: `${prefix} 첨부 파일 선택 (최대 50MB)` })).toBeInTheDocument()
+      await user.click(screen.getByRole("checkbox", { name: `${prefix} 확인 완료` }))
+      expect(screen.getByRole("checkbox", { name: `${prefix} 확인 완료` })).toBeChecked()
+      expect(screen.getByRole("button", { name: `${prefix} 태그 기획 삭제` })).toBeInTheDocument()
+      await user.click(screen.getByLabelText(`${prefix} 역할`))
+      await user.click(screen.getByRole("button", { name: `${prefix} 역할 기획` }))
+      expect(screen.getByRole("button", { name: `${prefix} 역할 기획 역할 태그 해제` })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: `${prefix} 행 삭제` })).toBeInTheDocument()
+    }
+  })
+
+  it("keeps uploaded same-name file actions tied to their rows", async () => {
+    const user = userEvent.setup()
+    const onValue = vi.fn()
+    const block = makeBlock([])
+    block.value = { type: "repeatable-cell", columns: [{ key: "file", label: "첨부", blockType: "file" }], rows: ["a", "b"].map(id => ({ id, cells: { file: { type: "file", fileId: id, fileName: "보고서.pdf" } } })) }
+    render(<Harness block={block} onValue={onValue} />)
+    for (const row of [1, 2]) expect(await screen.findByRole("link", { name: `${row}번째 기록 첨부 보고서.pdf 다운로드` })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "2번째 기록 첨부 보고서.pdf 첨부 삭제" }))
+    expect(onValue.mock.lastCall![0].rows[0].cells.file.fileId).toBe("a")
+    expect(onValue.mock.lastCall![0].rows[1].cells.file.fileId).toBe("")
+  })
+
+  it("renumbers after add and delete while preserving row ids and values", async () => {
+    const user = userEvent.setup()
+    const onValue = vi.fn()
+    render(<Harness block={makeBlock([{ id: "a", cells: { name: "A" } }, { id: "b", cells: { name: "B" } }])} onValue={onValue} />)
+    await user.click(screen.getByRole("button", { name: "행 추가" }))
+    await user.type(screen.getByLabelText("3번째 기록 프로젝트명"), "C")
+    const addedId = onValue.mock.lastCall![0].rows[2].id
+    await user.click(screen.getByRole("button", { name: "1번째 기록 행 삭제" }))
+    expect(screen.getByLabelText("1번째 기록 프로젝트명")).toHaveValue("B")
+    expect(screen.getByLabelText("2번째 기록 프로젝트명")).toHaveValue("C")
+    expect(onValue.mock.lastCall![0].rows.map((row: BlockRow) => row.id)).toEqual(["b", addedId])
+    expect(screen.queryByLabelText("3번째 기록 프로젝트명")).toBeNull()
+  })
+
+  it("derives names from parent order without mutating saved data", () => {
+    const a = { id: "a", cells: { name: "A" } }
+    const b = { id: "b", cells: { name: "B" } }
+    const onChange = vi.fn()
+    const { rerender } = render(<RepeatableCellBlock block={makeBlock([a, b])} onChange={onChange} />)
+    rerender(<RepeatableCellBlock block={makeBlock([b, a])} onChange={onChange} />)
+    expect(screen.getByLabelText("1번째 기록 프로젝트명")).toHaveValue("B")
+    expect(screen.getByLabelText("2번째 기록 프로젝트명")).toHaveValue("A")
+    expect(screen.getByLabelText("1번째 기록 프로젝트명").closest("[data-row-id]")).toHaveAttribute("data-row-id", "b")
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it("keeps the first row name as an empty display row materializes", async () => {
+    const user = userEvent.setup()
+    const onValue = vi.fn()
+    render(<Harness block={makeBlock([])} onValue={onValue} />)
+    expect(screen.getByLabelText("1번째 기록 프로젝트명")).toHaveValue("")
+    expect(onValue).not.toHaveBeenCalled()
+    await user.type(screen.getByLabelText("1번째 기록 프로젝트명"), "A")
+    expect(screen.getByLabelText("1번째 기록 프로젝트명")).toHaveValue("A")
+    expect(onValue.mock.lastCall![0].rows).toHaveLength(1)
+    expect(screen.getByRole("button", { name: "1번째 기록 행 삭제" })).toBeInTheDocument()
   })
 })
