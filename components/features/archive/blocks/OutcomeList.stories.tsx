@@ -59,7 +59,7 @@ export const Empty: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     // 빈 상태: 입력칸은 있지만 아직 데이터가 아니라 '0개 항목'이고 삭제·추가 버튼은 없다.
-    const input = canvas.getByPlaceholderText("예: 전국 케이스 경진대회 은상 수상")
+    const input = canvas.getByRole("textbox", { name: "단체 활동 / 성과 1행" })
     expect(canvas.getByText("0개 항목")).toBeInTheDocument()
     expect(canvas.queryByRole("button", { name: /삭제/ })).toBeNull()
     expect(canvas.queryByRole("button", { name: /추가/ })).toBeNull()
@@ -69,7 +69,7 @@ export const Empty: Story = {
     expect(canvas.getByText("1개 항목")).toBeInTheDocument()
     expect(canvas.getByRole("button", { name: /추가/ })).toBeInTheDocument()
     // 리마운트 없이 같은 인풋을 계속 쓴다(포커스·한글 IME 조합 보존).
-    expect(canvas.getByPlaceholderText("예: 전국 케이스 경진대회 은상 수상")).toBe(input)
+    expect(canvas.getByRole("textbox", { name: "단체 활동 / 성과 1행" })).toBe(input)
   },
 }
 
@@ -88,6 +88,11 @@ export const CountSitsBesideLabel: Story = {
 /** 값이 있는 상태 — 각 행이 `• 텍스트 + ×`. */
 export const WithItems: Story = {
   render: () => <Interactive initial={["전국 케이스 경진대회 은상 수상", "학회 저널 2호 공동 발간"]} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    expect(canvas.getByRole("textbox", { name: "단체 활동 / 성과 1행" })).toHaveValue("전국 케이스 경진대회 은상 수상")
+    expect(canvas.getByRole("textbox", { name: "단체 활동 / 성과 2행" })).toHaveValue("학회 저널 2호 공동 발간")
+  },
 }
 
 /** 상세뷰(readOnly) — 개조식 불릿 목록으로 렌더. */
@@ -161,16 +166,20 @@ export const AddTypeAndDelete: Story = {
     await userEvent.click(canvas.getByRole("button", { name: /추가/ }))
     let inputs = canvas.getAllByRole("textbox")
     expect(inputs).toHaveLength(2)
+    expect(canvas.getByRole("textbox", { name: "단체 활동 / 성과 2행" })).toHaveFocus()
 
     // 첫 행에 입력 후 Enter → 세 번째 행 추가
     await userEvent.type(inputs[0], "케이스 대회 은상")
     await userEvent.keyboard("{Enter}")
     inputs = canvas.getAllByRole("textbox")
     expect(inputs).toHaveLength(3)
+    expect(canvas.getByRole("textbox", { name: "단체 활동 / 성과 2행" })).toHaveFocus()
     expect((inputs[0] as HTMLInputElement).value).toBe("케이스 대회 은상")
 
     // 첫 행 삭제 → 두 행만 남음
     await userEvent.click(canvas.getByRole("button", { name: /케이스 대회 은상 삭제/ }))
     expect(canvas.getAllByRole("textbox")).toHaveLength(2)
+    expect(canvas.getByRole("textbox", { name: "단체 활동 / 성과 1행" })).toBe(inputs[1])
+    expect(canvas.getByRole("textbox", { name: "단체 활동 / 성과 2행" })).toBe(inputs[2])
   },
 }
