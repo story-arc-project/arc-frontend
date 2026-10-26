@@ -281,33 +281,29 @@ function CoverageBlock({ coverage }: { coverage: KeywordCoverage[] }) {
   if (coverage.length === 0) return null;
   return (
     <section className="space-y-3">
-      <h2 className="text-title text-text-primary">커버리지</h2>
+      <h2 className="text-title text-text-primary">키워드 관련 경험</h2>
+      <p className="text-body-sm text-text-secondary leading-relaxed">
+        전체 경험 중 이 키워드와 관련 있다고 분석된 경험 수예요. 관련성이 낮은 참고용 경험도 포함돼요.
+      </p>
       <div className="space-y-3">
         {coverage.map((c) => {
-          const pct = Math.max(0, Math.min(100, Math.round(c.coveragePercent)));
+          const hasValidCount =
+            Number.isSafeInteger(c.relatedCount) && c.relatedCount >= 0 &&
+            Number.isSafeInteger(c.totalCount) && c.totalCount > 0 && c.totalCount >= c.relatedCount &&
+            c.coveragePercent !== null && Number.isFinite(c.coveragePercent) &&
+            c.coveragePercent >= 0 && c.coveragePercent <= 100;
           return (
             <div
               key={c.keyword}
               className="bg-surface border border-border rounded-lg p-4 space-y-2"
             >
-              <div className="flex justify-between items-center">
+              <div className="flex flex-wrap justify-between items-center gap-x-3 gap-y-1">
                 <p className="text-body-sm font-medium text-text-primary">{c.keyword}</p>
-                <p className="text-caption text-text-tertiary">
-                  {c.relatedCount}/{c.totalCount} · {pct}%
-                </p>
-              </div>
-              <div
-                className="h-1.5 rounded-full bg-surface-tertiary overflow-hidden"
-                role="progressbar"
-                aria-label={`${c.keyword} 커버리지`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={pct}
-              >
-                <div
-                  className="h-full bg-brand transition-all"
-                  style={{ width: `${pct}%` }}
-                />
+                {hasValidCount && (
+                  <p className="text-caption text-text-tertiary">
+                    전체 {c.totalCount}개 중 {c.relatedCount}개
+                  </p>
+                )}
               </div>
               {(c.highCount > 0 || c.mediumCount > 0 || c.lowCount > 0) && (
                 <div className="flex flex-wrap gap-1.5 pt-0.5">

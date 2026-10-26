@@ -305,8 +305,8 @@ function ItemStrengthsSection({
   strengths: IndividualAnalysisResult["result"]["itemStrengths"];
 }) {
   const hasCards = strengths.strengths.length > 0;
-  // hasGenuineStrengths 는 판정에 넣지 않는다 — 방어 파싱의 기본값(false)이 아니라
-  // "서술이 하나라도 왔는가"로 그려야 구 레코드에서 빈 껍데기 섹션이 뜨지 않는다.
+  // 명시적 false의 긍정 서술은 매퍼가 제거한다. 여기서는 남은 사유·서술로 빈 섹션을 걸러
+  // 플래그가 없는 구 레코드의 강점 내용도 보존한다.
   const empty =
     !hasCards &&
     !strengths.oneLineVerdict &&
