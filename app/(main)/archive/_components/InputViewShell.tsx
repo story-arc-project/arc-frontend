@@ -23,6 +23,7 @@ interface InputViewShellProps {
   sections: { id: string; label: string }[]
   /** 좌측 레일에 표시할 작성 진행도(완료 카드 수/전체) */
   progress?: { done: number; total: number }
+  onInternalPop?: (event: PopStateEvent) => boolean
   children: ReactNode
 }
 
@@ -47,6 +48,7 @@ export default function InputViewShell({
   sections,
   progress,
   children,
+  onInternalPop,
 }: InputViewShellProps) {
   const router = useRouter()
   const [showGuardModal, setShowGuardModal] = useState(false)
@@ -54,6 +56,7 @@ export default function InputViewShell({
   // 새로고침·탭 닫기·주소창 이동(beforeunload) + 브라우저 Back(popstate) 가드.
   const { confirmLeave } = useUnsavedNavGuard({
     enabled: hasUnsaved,
+    onInternalPop,
     onAttemptLeave: () => setShowGuardModal(true),
     onLeave: () => router.replace(backTo),
   })

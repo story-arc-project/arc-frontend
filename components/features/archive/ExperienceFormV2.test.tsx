@@ -838,3 +838,62 @@ describe("FRT-301 경험 레벨 태그 입력 UX", () => {
     ).toBeTruthy()
   })
 })
+
+
+describe("FRT-336 URL-controlled type", () => {
+  it("renders the controlled direct-link type and retains input through selector/Forward", async () => {
+    const props = { mode: "new" as const, onSave: vi.fn(), onCancel: vi.fn(), onTypeSelect: vi.fn() }
+    const { rerender } = render(<ExperienceFormV2 {...props} selectedTypeId="career" />)
+    await userEvent.type(screen.getByRole("textbox", { name: "경험명" }), "보존할 인턴 경험")
+    rerender(<ExperienceFormV2 {...props} selectedTypeId={null} />)
+    expect(screen.queryByRole("textbox", { name: "경험명" })).not.toBeInTheDocument()
+    rerender(<ExperienceFormV2 {...props} selectedTypeId="career" />)
+    expect(screen.getByRole("textbox", { name: "경험명" })).toHaveValue("보존할 인턴 경험")
+  })
+  it("history changes between types keep each draft rather than discarding silently", async () => {
+    const props = { mode: "new" as const, onSave: vi.fn(), onCancel: vi.fn(), onTypeSelect: vi.fn() }
+    const { rerender } = render(<ExperienceFormV2 {...props} selectedTypeId="career" />)
+    await userEvent.type(screen.getByRole("textbox", { name: "경험명" }), "인턴 초안")
+    rerender(<ExperienceFormV2 {...props} selectedTypeId="award" />)
+    await userEvent.type(screen.getByRole("textbox", { name: "경험명" }), "수상 초안")
+    rerender(<ExperienceFormV2 {...props} selectedTypeId="career" />)
+    expect(screen.getByRole("textbox", { name: "경험명" })).toHaveValue("인턴 초안")
+    rerender(<ExperienceFormV2 {...props} selectedTypeId="award" />)
+    expect(screen.getByRole("textbox", { name: "경험명" })).toHaveValue("수상 초안")
+  })
+})
+
+
+it("FRT-336 explicit different-type choice keeps confirmation and clears old history snapshots", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false)
+  const onTypeSelect = vi.fn()
+  const props = { mode: "new" as const, onSave: vi.fn(), onCancel: vi.fn(), onTypeSelect }
+  const { rerender } = render(<ExperienceFormV2 {...props} selectedTypeId="career" />)
+  await userEvent.type(screen.getByRole("textbox", { name: "경험명" }), "버릴 인턴 초안")
+  await userEvent.click(screen.getByRole("button", { name: "유형 변경" }))
+  expect(confirm).toHaveBeenCalled()
+  expect(onTypeSelect).not.toHaveBeenCalled()
+  expect(screen.getByRole("textbox", { name: "경험명" })).toHaveValue("버릴 인턴 초안")
+  confirm.mockReturnValue(true)
+  await userEvent.click(screen.getByRole("button", { name: "유형 변경" }))
+  await userEvent.click(screen.getByRole("button", { name: "수상 경력" }))
+  expect(onTypeSelect).toHaveBeenCalledWith("award")
+  rerender(<ExperienceFormV2 {...props} selectedTypeId="award" />)
+  rerender(<ExperienceFormV2 {...props} selectedTypeId="career" />)
+  expect(screen.getByRole("textbox", { name: "경험명" })).toHaveValue("")
+})
+
+
+it("FRT-336 selecting the retained same type from the selector does not request discard", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false)
+  const onTypeSelect = vi.fn()
+  const props = { mode: "new" as const, onSave: vi.fn(), onCancel: vi.fn(), onTypeSelect }
+  const { rerender } = render(<ExperienceFormV2 {...props} selectedTypeId="career" />)
+  await userEvent.type(screen.getByRole("textbox", { name: "경험명" }), "보존 초안")
+  rerender(<ExperienceFormV2 {...props} selectedTypeId={null} />)
+  await userEvent.click(screen.getByRole("button", { name: "인턴 및 업무 경력" }))
+  expect(confirm).not.toHaveBeenCalled()
+  expect(onTypeSelect).toHaveBeenCalledWith("career")
+  rerender(<ExperienceFormV2 {...props} selectedTypeId="career" />)
+  expect(screen.getByRole("textbox", { name: "경험명" })).toHaveValue("보존 초안")
+})
