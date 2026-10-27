@@ -34,16 +34,18 @@ export function useExperiences() {
   // List snapshots and non-duplicate writes invalidate pending item hydration.
   // Duplicate hydrations do not invalidate one another: each adds a distinct copy.
   const snapshotRef = useRef(0);
-  const hasSnapshotRef = useRef(false);
+  const hasCurrentSnapshotRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!mountedRef.current) return;
     const request = ++requestRef.current;
+    // A pending full-list reconciliation is not satisfied by the displayed snapshot.
+    hasCurrentSnapshotRef.current = false;
     try {
       const data = await getExperiences();
       if (!mountedRef.current || request !== requestRef.current) return;
       snapshotRef.current += 1;
-      hasSnapshotRef.current = true;
+      hasCurrentSnapshotRef.current = true;
       setList({ count: data.count, contents: data.contents });
       setIsLoading(false);
     } catch (err) {
@@ -124,7 +126,7 @@ export function useExperiences() {
       const newId = await apiDuplicateExperience(id);
       if (!mountedRef.current || lifecycle !== lifecycleRef.current) return newId;
       // A successful write supersedes any GET started before it.
-      requestRef.current += 1;
+      const request = ++requestRef.current;
       const snapshot = snapshotRef.current;
       const ownsHydration = () => mountedRef.current
         && lifecycle === lifecycleRef.current
@@ -143,9 +145,10 @@ export function useExperiences() {
           if (prev.contents.some((e) => e.id === created.id)) return prev;
           return { count: prev.count + 1, contents: [created, ...prev.contents] };
         });
-        // If duplication superseded the initial load, recover the complete list
-        // rather than leaving only the hydrated copy and an incomplete count.
-        if (!hasSnapshotRef.current) await refetch();
+        // Replace an invalidated initial/mutation refresh: prepending a copy alone
+        // cannot reconcile deleted or updated records. A newer GET already owns
+        // reconciliation if it started while hydration was pending.
+        if (!hasCurrentSnapshotRef.current && request === requestRef.current) await refetch();
       } catch {
         if (!ownsHydration()) return newId;
         try {

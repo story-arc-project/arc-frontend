@@ -179,6 +179,35 @@ describe("useExperiences response ownership", () => {
     expect(result.current.count).toBe(2)
   })
 
+  it.each(["success", "error"])("reconciles a delete refresh superseded by duplication (%s)", async outcome => {
+    getExperiencesMock.mockResolvedValueOnce(listData(["deleted", "original"]))
+    const { result } = renderHook(() => useExperiences())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    const deletedList = deferred<ExperienceListData>()
+    const replacement = deferred<ExperienceListData>()
+    getExperiencesMock.mockReturnValueOnce(deletedList.promise).mockReturnValueOnce(replacement.promise)
+    duplicateExperienceMock.mockResolvedValue("copy")
+    getExperienceMock.mockResolvedValue(experience("copy"))
+    let deletion!: Promise<void>; let copy!: Promise<string>
+    await act(async () => { deletion = result.current.deleteExperience("deleted"); await Promise.resolve() })
+    await act(async () => { copy = result.current.duplicateExperience("original"); await Promise.resolve() })
+    // The old delete snapshot predates the duplicate and must be replaced,
+    // rather than dropping its reconciliation while only prepending the copy.
+    await act(async () => { deletedList.resolve(listData(["original"])); await deletion })
+    if (outcome === "success") {
+      await act(async () => { replacement.resolve(listData(["copy", "original"])); expect(await copy).toBe("copy") })
+      expect(ids(result.current)).toEqual(["copy", "original"])
+      expect(result.current.count).toBe(2)
+      expect(result.current.error).toBeNull()
+    } else {
+      expect(getExperiencesMock).toHaveBeenCalledTimes(3)
+      const failure = new Error("replacement failed")
+      await act(async () => { replacement.reject(failure); expect(await copy).toBe("copy") })
+      expect(result.current.error).toBe(failure)
+    }
+    expect(result.current.isLoading).toBe(false)
+  })
+
   it("preserves two concurrent duplicate hydrations", async () => {
     const { result } = renderHook(() => useExperiences())
     await waitFor(() => expect(result.current.isLoading).toBe(false))
