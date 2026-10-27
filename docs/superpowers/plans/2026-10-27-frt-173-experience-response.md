@@ -9,13 +9,14 @@
 
 ## Global Constraints
 - Only experience read validation and regression tests; preserve demo and mutation behavior.
+- Timestamp fields must be strings, including empty strings preserved for the existing em-dash display fallback; only id/user_id/type require nonempty strings.
 - No type whitelist, content normalization, UUID/date parsing or count/length equality.
 - ApiError(500) with clear Korean list/detail error messages.
 
 ## Review Focus
 - Null/primitive/missing envelope/data must reject explicitly.
 - Invalid count, nonarray contents and malformed entries must reject whole response.
-- Unknown type/extra fields/nested content retain object identity.
+- Unknown type/extra fields/nested content and empty timestamp strings retain list/detail object identity. Non-string timestamps reject.
 - Transport ApiError and demo bypass retain behavior.
 - Existing hook keeps last valid list on failed refetch and exposes error.
 

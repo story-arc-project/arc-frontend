@@ -15,9 +15,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isExperience(value: unknown): value is Experience {
   if (!isRecord(value)) return false;
-  return ["id", "user_id", "type", "created_at", "updated_at"].every(
+  return ["id", "user_id", "type"].every(
     (key) => typeof value[key] === "string" && value[key].length > 0,
-  ) && (value.importance === null || (
+  ) && typeof value.created_at === "string"
+    && typeof value.updated_at === "string"
+    && (value.importance === null || (
     typeof value.importance === "number" && Number.isInteger(value.importance)
   )) && isRecord(value.content);
 }

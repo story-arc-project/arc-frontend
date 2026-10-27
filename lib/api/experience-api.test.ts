@@ -60,8 +60,10 @@ const experience = {
 const invalidValues = [undefined, null, false, 1, "value", []]
 const invalidExperiences = [
   ...invalidValues,
-  ...["id", "user_id", "type", "created_at", "updated_at"].flatMap(key =>
+  ...["id", "user_id", "type"].flatMap(key =>
     [undefined, null, "", 12].map(value => ({ ...experience, [key]: value }))),
+  ...["created_at", "updated_at"].flatMap(key =>
+    [undefined, null, false, 12, [], {}].map(value => ({ ...experience, [key]: value }))),
   ...[undefined, "3", NaN, Infinity, -Infinity, 1.5].map(importance => ({ ...experience, importance })),
   ...invalidValues.map(content => ({ ...experience, content })),
 ]
@@ -98,6 +100,19 @@ describe("experience read response validation", () => {
     apiMock.get.mockResolvedValue({ data: entry })
     expect(await getExperience("exp-1")).toBe(entry)
     expect(apiMock.get).toHaveBeenLastCalledWith("/experiences/exp-1")
+  })
+
+  it.each([
+    { created_at: "", updated_at: experience.updated_at },
+    { created_at: experience.created_at, updated_at: "" },
+    { created_at: "", updated_at: "" },
+  ])("preserves empty timestamp strings for date-display fallback %j", async timestamps => {
+    const entry = { ...experience, ...timestamps }
+    const data = { count: 1, contents: [entry] }
+    apiMock.get.mockResolvedValue({ data })
+    expect(await getExperiences()).toBe(data)
+    apiMock.get.mockResolvedValue({ data: entry })
+    expect(await getExperience("exp-1")).toBe(entry)
   })
 
   it("accepts an empty list", async () => {
