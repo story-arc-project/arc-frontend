@@ -112,3 +112,27 @@ describe("ExperienceCard viewport menus", () => {
     expect(screen.queryByText("편집")).not.toBeInTheDocument()
   })
 })
+
+
+describe("ExperienceCard library indicators", () => {
+  const callbacks = { onClick: vi.fn(), onEdit: vi.fn(), onDuplicate: vi.fn(), onDelete: vi.fn() }
+  it("preserves membership filtering and input order, including filtered libraries", () => {
+    const libraries = [
+      { ...customLibrary, id: "first", name: "First", experienceIds: [careerExperience.id] },
+      { ...customLibrary, id: "system", name: "System", isSystem: true, experienceIds: [careerExperience.id] },
+      { ...customLibrary, id: "other", name: "Other", experienceIds: ["other"] },
+      { ...customLibrary, id: "filtered", name: "Filtered", filter: { typeIds: [careerExperience.typeId] }, experienceIds: [careerExperience.id] },
+    ]
+    const { container, rerender } = render(<ExperienceCard experience={careerExperience} selected={false} libraries={libraries} {...callbacks} />)
+    const badges = () => Array.from(container.querySelectorAll(".max-w-\\[80px\\]")).map(el => el.textContent)
+    expect(badges()).toEqual(["First", "Filtered"])
+    rerender(<ExperienceCard experience={{ ...careerExperience, id: "other" }} selected={false} libraries={libraries} {...callbacks} />)
+    expect(badges()).toEqual(["Other"])
+    rerender(<ExperienceCard experience={careerExperience} selected={false} libraries={[libraries[3]]} {...callbacks} />)
+    expect(badges()).toEqual(["Filtered"])
+  })
+  it.each([undefined, []])("omits indicators when libraries are %s", libraries => {
+    const { container } = render(<ExperienceCard experience={careerExperience} selected={false} libraries={libraries} {...callbacks} />)
+    expect(container.querySelector(".max-w-\\[80px\\]")).toBeNull()
+  })
+})
