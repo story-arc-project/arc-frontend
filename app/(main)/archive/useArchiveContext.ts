@@ -15,17 +15,37 @@ function readContext(query: string): ArchiveContext {
  * Next's history integration updates useSearchParams without a server request. */
 export function useArchiveContext(params: URLSearchParams, basePath: string) {
   const key = params.toString()
+  const queryLocation = `${basePath}/archive${key ? `?${key}` : ""}`
+  const liveLocation = typeof window === "undefined" ? queryLocation : window.location.pathname + window.location.search
+  const liveKey = typeof window === "undefined" ? key : new URLSearchParams(window.location.search).toString()
   const canonicalUrl = buildReturnTo(basePath, readContext(key), params.get("id") ?? undefined)
   const canonicalKey = new URL(canonicalUrl, "https://archive.invalid").searchParams.toString()
   const canonicalAcknowledgements = canonicalKey !== key ? [canonicalKey] : []
   const [snapshot, setSnapshot] = useState(() => ({
-    key, context: readContext(key), acknowledgements: canonicalAcknowledgements, external: true,
+    key, context: readContext(key), acknowledgements: canonicalAcknowledgements, location: canonicalUrl, external: true,
   }))
-  const acknowledgement = snapshot.acknowledgements.indexOf(key)
-  const external = snapshot.key !== key ? acknowledgement < 0 : snapshot.external
-  const context = snapshot.key === key || acknowledgement >= 0 ? snapshot.context : readContext(key)
-  if (snapshot.key !== key) {
-    setSnapshot({ key, context, external, acknowledgements: acknowledgement < 0 ? canonicalAcknowledgements : snapshot.acknowledgements.slice(acknowledgement + 1) })
+  // A matching queued query alone is not navigation identity: later external
+  // history may revisit that query. Only our still-current location can ack it.
+  const atOwnLocation = snapshot.location === liveLocation
+  const acknowledgement = atOwnLocation ? snapshot.acknowledgements.indexOf(key) : -1
+  // At that same physical location every changed subscription is an own
+  // notification, including a final A acknowledgement after a retired B→A.
+  const preserveDraft = atOwnLocation
+  // A previously superseded notification can already have this key when a
+  // real navigation reaches it. Compare the live location as well as the key;
+  // the anticipated canonical location is our pending normalization, not a
+  // second external navigation.
+  const locationChanged = !atOwnLocation && liveKey === key && snapshot.location !== canonicalUrl
+  const subscriptionChanged = snapshot.key !== key || locationChanged
+  const external = subscriptionChanged ? !preserveDraft : snapshot.external
+  const context = !subscriptionChanged || preserveDraft ? snapshot.context : readContext(key)
+  if (subscriptionChanged) {
+    setSnapshot({ key, context, external, location: external ? canonicalUrl : liveLocation, acknowledgements: acknowledgement < 0 ? canonicalAcknowledgements : snapshot.acknowledgements.slice(acknowledgement + 1) })
+  }
+  // Next can batch B→A and never change its subscribed A key. Retire that
+  // batch now; any delayed B notification is recognized by the live A URL.
+  if (snapshot.key === key && acknowledgement >= 0 && key === liveKey) {
+    setSnapshot({ ...snapshot, acknowledgements: snapshot.acknowledgements.slice(acknowledgement + 1) })
   }
   const latest = useRef({ context, key })
   const observedLocation = useRef(`${basePath}/archive${key ? `?${key}` : ""}`)
@@ -48,7 +68,7 @@ export function useArchiveContext(params: URLSearchParams, basePath: string) {
     latest.current = { ...latest.current, context: restored }
     // Treat the eventual subscription as an acknowledgement of the context we
     // already consumed, so subsequent user edits survive that delayed render.
-    setSnapshot(prev => ({ ...prev, context: restored, acknowledgements: [query], external: false }))
+    setSnapshot(prev => ({ ...prev, context: restored, acknowledgements: [query], location, external: false }))
   }, [])
   const write = useCallback((ctx: ArchiveContext, id?: string) => {
     const url = buildReturnTo(basePath, ctx, id)
@@ -57,7 +77,7 @@ export function useArchiveContext(params: URLSearchParams, basePath: string) {
       // The wrapper preserves the router-owned history state itself.
       observedLocation.current = url
       const query = new URL(url, window.location.origin).searchParams.toString()
-      setSnapshot(prev => ({ ...prev, acknowledgements: [...prev.acknowledgements, query] }))
+      setSnapshot(prev => ({ ...prev, acknowledgements: [...prev.acknowledgements, query], location: url }))
       window.history.replaceState(null, "", url)
     }
     return url

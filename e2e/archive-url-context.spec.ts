@@ -74,6 +74,34 @@ for (const width of [1440, 390]) test.describe(`FRT89 ${width}px`, () => {
     await expect(search(page)).toHaveValue("동아리");
     await expect(page.getByRole("combobox").filter({ visible: true })).toHaveValue("period");
   });
+  test("batched sort round trip retires stale acknowledgements before external history", async ({ page }) => {
+    await page.goto("/archive?q=first");
+    const sort = page.getByRole("combobox").filter({ visible: true });
+    await expect(search(page)).toHaveValue("first");
+    await expect(sort).toHaveValue("updated");
+    await page.evaluate(() => {
+      const select = [...document.querySelectorAll<HTMLSelectElement>("select")].find(el => el.offsetParent !== null)!;
+      for (const value of ["period", "updated"]) {
+        select.value = value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    await query(page, { q: "first", sort: null });
+    await expect(sort).toHaveValue("updated");
+    // A fresh task crosses the real Next native-history subscription after the
+    // batched own writes ended at the query already observed on initial render.
+    await page.evaluate(() => history.pushState(null, "", "/archive?q=first&sort=period"));
+    await query(page, { q: "first", sort: "period" });
+    await expect(sort).toHaveValue("period");
+    await expect(search(page)).toHaveValue("first");
+    await page.goBack();
+    await query(page, { q: "first", sort: null });
+    await expect(sort).toHaveValue("updated");
+    await page.goForward();
+    await query(page, { q: "first", sort: "period" });
+    await expect(sort).toHaveValue("period");
+    await expect(search(page)).toHaveValue("first");
+  });
   test("pending search preview flush, peer, Back/Forward and close", async ({ page }) => {
     await page.goto("/archive");
     await expect(card(page, first)).toBeVisible();
