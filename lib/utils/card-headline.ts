@@ -72,7 +72,8 @@ function inputText(block: Block, columnKey?: string): string {
 /** A card headline reads the same visible inputs as detail, without changing them. */
 export function buildCardHeadline(experience: ExperienceV2, template: TemplateV2 | null): string {
   const hidden = new Set(experience.hiddenKeys)
-  const definitions = template ? [template.commonCore, ...template.extensions].flatMap(s => s.blocks) : []
+  const sections = template ? [template.commonCore, ...template.extensions] : []
+  const definitions = sections.flatMap(s => s.blocks)
   const visible = (block: Block): boolean => {
     if (block.formHidden || (block.key && hidden.has(block.key)) || hidden.has(block.id)) return false
     if (block.label === "공개 설정" || block.label === "난이도") return false
@@ -118,10 +119,17 @@ export function buildCardHeadline(experience: ExperienceV2, template: TemplateV2
   }
   const customTextIds = new Set(visibleExperience.customBlocks.flatMap(b =>
     b.type === "group" ? b.children ?? [] : [b],
-  ).filter(b => !b.key && b.type === "text").map(b => b.id))
+  ).filter(b => {
+    if (b.type !== "text" || b.category === "basic" || b.category === "evidence") return false
+    // customBlocks also contains preserved template orphans. Use the owning
+    // template's section namespace (including removed fields), not key presence
+    // or a guessed custom-ID format, to keep those metadata fields out.
+    if (b.key && sections.some(s => b.key!.startsWith(`${s.id}.`) || s.blocks.some(d => d.key === b.key))) return false
+    return !sections.some(s => s.category === "basic" && s.blocks.some(d => d.label === b.label && d.type === b.type))
+  }).map(b => b.id))
   for (const block of blocks) {
-    // Template basic names and keyed legacy metadata aren't body prose. A
-    // genuinely user-authored custom text field is, just like a textarea.
+    // User custom prose remains eligible when save/load adds a stable key.
+    // Template basic names and preserved template metadata stay excluded.
     if (block.value.type !== "textarea" && block.value.type !== "repeatable-cell" && !customTextIds.has(block.id)) continue
     const body = inputText(block)
     if (body) return body.split(/(?<=[.!?。！？])\s+/u)[0]

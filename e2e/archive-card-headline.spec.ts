@@ -11,7 +11,7 @@ const cases = [
   { id: "award", type: "award", title: "전국 공모전", summary: "수상 요약", headline: "대상", fields: { "award-info.수상 훈격": { type: "text", text: "대상" } } },
   { id: "metric", title: "서비스 전환 개선", summary: "중복하지 않을 요약", headline: "전환율 20% 개선", fields: { "career-detail.나의 담당 업무 / 주요 성과": { type: "textarea", text: "전환율 20% 개선" } } },
   { id: "summary", title: "검색 품질 프로젝트", summary: "검색 품질 개선을 이끈 경험", headline: "검색 품질 개선을 이끈 경험" },
-  { id: "body", title: "사용자 조사", summary: "", headline: "사용자 인터뷰를 진행했어요.", custom: [{ key: "body", entryType: "field", type: "textarea", label: "본문", value: { type: "textarea", text: "사용자 인터뷰를 진행했어요. 다음 실험을 설계했어요." } }] },
+  { id: "body", title: "사용자 조사", summary: "", headline: "사용자 인터뷰를 진행했어요.", custom: [{ key: "body", entryType: "field", type: "text", label: "본문", value: { type: "text", text: "사용자 인터뷰를 진행했어요. 다음 실험을 설계했어요." } }] },
   { id: "empty", title: "새로운 경험", summary: "", headline: "지표를 추가하면 카드가 더 잘 보여요" },
   { id: "long", title: "장기 프로젝트 성과", summary: longHeadline, headline: longHeadline },
 ];

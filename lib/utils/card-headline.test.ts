@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { Block, ExperienceV2, TemplateV2 } from "@/types/archive"
 import { SYSTEM_TEMPLATES_V2, getTemplateForType } from "@/lib/constants/templates-v2"
 import { buildCardHeadline } from "./card-headline"
+import { toExperienceV2, toSavePayload } from "./experience-mapper"
 
 function experience(template: TemplateV2 | null = null, overrides: Partial<ExperienceV2> = {}): ExperienceV2 {
   return { id: "exp", userId: "user", typeId: template?.typeId ?? "career", title: "제목", summary: "", status: "complete", tags: [], coreBlocks: structuredClone(template?.commonCore.blocks ?? []), extensionBlocks: structuredClone(template?.extensions.flatMap(s => s.blocks) ?? []), customBlocks: [], hiddenKeys: [], createdAt: "", updatedAt: "", ...overrides }
@@ -126,6 +127,46 @@ describe("buildCardHeadline", () => {
     expect(buildCardHeadline(exp, template)).toBe("직접 적은 첫 문장입니다.")
     exp.customBlocks = []
     expect(buildCardHeadline(exp, template)).toBe("지표를 추가하면 카드가 더 잘 보여요")
+  })
+  it.each([false, true])("keeps custom text body after a real save/load roundtrip (section: %s)", section => {
+    const template = getTemplateForType("career")
+    const note: Block = { id: "custom-note", label: "메모", type: "text", value: { type: "text", text: "직접 적은 첫 문장입니다. 다음 문장입니다." } }
+    const exp = experience(template, { customBlocks: section
+      ? [{ id: "custom-section", type: "group", label: "내 기록", value: { type: "group" }, children: [note] }]
+      : [note] })
+    fill(exp, "career-info.회사명", "ARC")
+    expect(buildCardHeadline(exp, template)).toBe("직접 적은 첫 문장입니다.")
+    const loaded = toExperienceV2({ ...toSavePayload(exp), id: exp.id, user_id: exp.userId, importance: null, created_at: "", updated_at: "" })
+    const restored = section ? loaded.customBlocks[0].children![0] : loaded.customBlocks[0]
+    expect(restored.key).toBe(note.id)
+    expect(buildCardHeadline(loaded, template)).toBe("직접 적은 첫 문장입니다.")
+    loaded.summary = "요약이 본문보다 먼저"
+    expect(buildCardHeadline(loaded, template)).toBe("요약이 본문보다 먼저")
+  })
+  it("excludes template-owned and legacy basic metadata from custom text body", () => {
+    const template = getTemplateForType("career")
+    const metadata = (extra: Partial<Block>): Block => ({ id: "metadata", key: "saved-custom", label: "메모", type: "text", value: { type: "text", text: "메타데이터" }, ...extra })
+    for (const block of [
+      metadata({ key: "career-info.회사명" }),
+      metadata({ key: "career-info.이전 회사명" }),
+      metadata({ label: "회사명" }),
+      metadata({ category: "basic" }),
+      metadata({ label: "공개 설정" }),
+      metadata({ label: "난이도" }),
+      metadata({ formHidden: true }),
+    ]) {
+      expect(buildCardHeadline(experience(template, { customBlocks: [block] }), template)).toBe("지표를 추가하면 카드가 더 잘 보여요")
+    }
+  })
+  it("uses custom location and owning template rather than key spelling to admit prose", () => {
+    const template = getTemplateForType("career")
+    const note: Block = { id: "note", key: "user.note.with.dots", label: "메모", type: "text", value: { type: "text", text: "내가 적은 본문입니다." } }
+    expect(buildCardHeadline(experience(template, { customBlocks: [note] }), template)).toBe("내가 적은 본문입니다.")
+    expect(buildCardHeadline(experience(template, { extensionBlocks: [note] }), template)).toBe("지표를 추가하면 카드가 더 잘 보여요")
+    expect(buildCardHeadline(experience(template, { customBlocks: [note], hiddenKeys: [note.key!] }), template)).toBe("지표를 추가하면 카드가 더 잘 보여요")
+    const owner = structuredClone(template)
+    owner.extensions[0].id = "user"
+    expect(buildCardHeadline(experience(owner, { customBlocks: [note] }), owner)).toBe("지표를 추가하면 카드가 더 잘 보여요")
   })
   it("returns one normalized long value without mutation or fabricated metrics", () => {
     const template = getTemplateForType("career")
