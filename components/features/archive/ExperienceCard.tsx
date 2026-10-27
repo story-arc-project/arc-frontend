@@ -38,6 +38,7 @@ export default function ExperienceCard({
   const submenuRef = useRef<HTMLDivElement>(null)
   const submenuTriggerRef = useRef<HTMLButtonElement>(null)
   const typeInfo = EXPERIENCE_TYPE_MAP[experience.typeId]
+  const memberLibraries = (libraries ?? []).filter(l => !l.isSystem && l.experienceIds.includes(experience.id))
   const manualLibraries = useMemo(
     () => (libraries ?? []).filter(l => !l.isSystem && !l.filter),
     [libraries],
@@ -312,9 +313,9 @@ export default function ExperienceCard({
       )}
 
       {/* Library indicators */}
-      {libraries && libraries.filter(l => !l.isSystem && l.experienceIds.includes(experience.id)).length > 0 && (
+      {memberLibraries.length > 0 && (
         <div className="flex items-center gap-1.5 mt-2">
-          {libraries.filter(l => !l.isSystem && l.experienceIds.includes(experience.id)).map(lib => (
+          {memberLibraries.map(lib => (
             <span
               key={lib.id}
               className="flex items-center gap-1 bg-surface-secondary rounded-full px-2 py-0.5"
