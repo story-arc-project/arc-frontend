@@ -158,6 +158,17 @@ describe("buildCardHeadline", () => {
       expect(buildCardHeadline(experience(template, { customBlocks: [block] }), template)).toBe("지표를 추가하면 카드가 더 잘 보여요")
     }
   })
+  it.each([
+    ["lang-info.유효기간", "2026-03-10"],
+    ["lang-info.언어", "영어"],
+  ])("excludes preserved historical language metadata after mapping: %s", (key, text) => {
+    const template = getTemplateForType("language")
+    const loaded = toExperienceV2({ id: "old-language", user_id: "user", type: "language", importance: null,
+      content: { schema_version: 2, title: "어학", summary: "", fields: { [key]: { type: "text", text } } },
+      created_at: "", updated_at: "" })
+    expect(loaded.customBlocks.some(b => b.key === key && b.value.type === "text" && b.value.text === text)).toBe(true)
+    expect(buildCardHeadline(loaded, template)).toBe("지표를 추가하면 카드가 더 잘 보여요")
+  })
   it("uses custom location and owning template rather than key spelling to admit prose", () => {
     const template = getTemplateForType("career")
     const note: Block = { id: "note", key: "user.note.with.dots", label: "메모", type: "text", value: { type: "text", text: "내가 적은 본문입니다." } }

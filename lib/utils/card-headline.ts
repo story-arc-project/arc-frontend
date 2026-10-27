@@ -8,6 +8,11 @@ const EMPTY_HEADLINE = "지표를 추가하면 카드가 더 잘 보여요"
 // keep their own entries because existing records still use their templates.
 const LEGACY_LANGUAGE_SCORE_KEYS = ["lang-certificate.점수 / 등급", "lang-info.점수/등급"]
 const LEGACY_LANGUAGE_SCORE_LABELS = ["점수 / 등급", "점수/등급"]
+// FRT-210 replaced both language section IDs. The mapper intentionally keeps
+// incompatible old fields as custom orphans; they remain template-owned input.
+const HISTORICAL_SECTION_IDS: Partial<Record<ExperienceV2["typeId"], string[]>> = {
+  language: ["lang-info", "lang-usage"],
+}
 
 const REPRESENTATIVE_KEYS: Record<ExperienceV2["typeId"], string[]> = {
   education: ["edu-info.성적"],
@@ -125,6 +130,7 @@ export function buildCardHeadline(experience: ExperienceV2, template: TemplateV2
     // template's section namespace (including removed fields), not key presence
     // or a guessed custom-ID format, to keep those metadata fields out.
     if (b.key && sections.some(s => b.key!.startsWith(`${s.id}.`) || s.blocks.some(d => d.key === b.key))) return false
+    if (b.key && HISTORICAL_SECTION_IDS[experience.typeId]?.some(id => b.key!.startsWith(`${id}.`))) return false
     return !sections.some(s => s.category === "basic" && s.blocks.some(d => d.label === b.label && d.type === b.type))
   }).map(b => b.id))
   for (const block of blocks) {
