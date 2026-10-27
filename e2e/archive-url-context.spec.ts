@@ -181,6 +181,42 @@ for (const width of [1440, 390]) test.describe(`FRT89 ${width}px`, () => {
     await expect(card(page, second)).toBeVisible();
     await capture(page, "reset");
   });
+  test("retained duplicate completion preserves departed dashboard history entry", async ({ page }) => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let duplicateStarted = false;
+    await page.route(`${STUB_API_URL}/experiences/*/duplicate`, async route => {
+      if (route.request().method() !== "POST") return route.fallback();
+      duplicateStarted = true;
+      await gate;
+      // Continue through the existing stateful stub so duplicate ID/detail/list
+      // behavior is identical to the other CRUD browser regressions.
+      await route.fallback();
+    });
+    try {
+      await page.goto("/archive?q=캡스톤&sort=period");
+      await card(page, first).click();
+      await expect(detail(page, first)).toBeVisible();
+      await button(page, "복제").click();
+      await expect.poll(() => duplicateStarted).toBe(true);
+      if (width < 640) await button(page, "메뉴 열기").click();
+      await page.getByRole("link", { name: "대시보드", exact: true }).filter({ visible: true }).click();
+      await expect(page.getByRole("heading", { level: 1, name: /안녕하세요/ })).toBeVisible();
+      // Query state belongs to the destination and must never be consumed by
+      // the retained archive callback when the gated request later finishes.
+      await page.evaluate(() => history.replaceState(null, "", "/dashboard?q=destination&sort=completion"));
+      await expect(page).toHaveURL(/\/dashboard\?q=destination&sort=completion$/);
+      release();
+      await expect(page).toHaveURL(url => url.pathname === "/archive" && url.searchParams.get("id")?.startsWith("e2e-exp-new-") === true);
+      await query(page, { q: "캡스톤", sort: "period" });
+      await expect(detail(page, first)).toBeVisible();
+      await page.goBack();
+      await expect(page).toHaveURL(/\/dashboard\?q=destination&sort=completion$/);
+      await expect(page.getByRole("heading", { level: 1, name: /안녕하세요/ })).toBeVisible();
+    } finally {
+      release();
+    }
+  });
   test("library failure retains URL until retry; missing library fallback keeps filters", async ({ page }) => {
     let fail = true;
     await page.route(`${STUB_API_URL}/libraries/`, async route => {
