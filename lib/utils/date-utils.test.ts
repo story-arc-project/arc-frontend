@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { formatDate, formatDateTime, formatRelativeTime } from "@/lib/utils/date-utils"
 
 describe("formatDate / formatDateTime", () => {
-  // 출력은 ko-KR 로케일·실행 타임존에 의존하므로 연도 포함 정도만 관대하게 단언한다.
+  // formatDateTime remains host-local; formatDate has an exact Korea contract below.
   it("ISO 문자열을 비어 있지 않은 한국어 날짜 문자열로 변환한다", () => {
     const out = formatDate("2024-03-15T12:00:00Z")
     expect(out).toContain("2024")
@@ -85,5 +85,34 @@ describe("formatRelativeTime", () => {
   // new Date(null) → epoch 이므로 가드가 없으면 "20000일 전" 류의 값이 나온다.
   it("null 을 epoch 기준 상대시각으로 렌더하지 않는다", () => {
     expect(formatRelativeTime(null)).not.toContain("일 전")
+  })
+})
+
+
+describe("formatDate — Korea date contract (FRT-188)", () => {
+  it.each([
+    ["2026-03-14T20:00:00Z", "2026.03.15"],
+    ["2026-03-14T00:00:00Z", "2026.03.14"],
+    ["2026-03-14T23:30:00-08:00", "2026.03.15"],
+    ["2026-03-15T00:30:00+14:00", "2026.03.14"],
+    ["2026-03-14", "2026.03.14"],
+    ["1960-03-14", "1960.03.14"],
+    ["1960-03-14T00:00", "1960.03.14"],
+    ["2026-03-14T23:30:00", "2026.03.14"],
+    ["2024-02-29", "2024.02.29"],
+    ["2026-02-29", "2026-02-29"],
+    ["2026-02-30T20:00:00Z", "2026-02-30T20:00:00Z"],
+    ["2026-04-31", "2026-04-31"],
+    ["garbage", "garbage"],
+    ["", "—"],
+    [null, "—"],
+    [undefined, "—"],
+  ])("%s => %s", (input, expected) => {
+    expect(formatDate(input, "compact")).toBe(expected)
+  })
+
+  it("preserves default and admin punctuation with the same Korea day", () => {
+    expect(formatDate("2026-03-14T20:00:00Z")).toBe("2026년 3월 15일")
+    expect(formatDate("2026-03-14T20:00:00Z", "admin")).toBe("2026. 03. 15.")
   })
 })
