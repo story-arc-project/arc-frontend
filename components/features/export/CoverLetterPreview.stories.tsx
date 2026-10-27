@@ -1,3 +1,4 @@
+import { expect, within } from "storybook/test";
 import type { Meta, StoryObj } from "@storybook/nextjs";
 
 import { CoverLetterPreview } from "./CoverLetterPreview";
@@ -47,7 +48,14 @@ export default meta;
 
 type Story = StoryObj<typeof CoverLetterPreview>;
 
-export const 기본: Story = { args: { result: base } };
+/** Assert rendered prose exactly while checking accessibility warnings separately. */
+function visibleProse(canvasElement: HTMLElement): string | null | undefined {
+  const body = canvasElement.querySelector(".whitespace-pre-wrap")?.cloneNode(true) as HTMLElement | undefined;
+  body?.querySelectorAll(".sr-only").forEach(warning => warning.remove());
+  return body?.textContent;
+}
+
+export const 기본: Story = { args: { result: base }, play: async ({ canvasElement }) => { await expect(canvasElement.querySelector(".whitespace-pre-wrap")).toBeVisible(); await expect(visibleProse(canvasElement)).toBe(BODY); } };
 
 /** 근거 없는 주장이 본문 위에 물결 밑줄로 표시된다(색만으로 알리지 않는다). */
 export const 근거_하이라이트: Story = { args: { result: flagged } };
@@ -63,6 +71,7 @@ export const 편집_후_하이라이트_해제: Story = {
 };
 
 export const 문항_여러개: Story = {
+  play: async ({ canvasElement }) => { await expect(canvasElement.querySelectorAll("section")).toHaveLength(2); },
   args: {
     result: {
       answers: [
@@ -78,4 +87,31 @@ export const 문항_여러개: Story = {
   },
 };
 
-export const 빈_결과: Story = { args: { result: { answers: [] } } };
+export const 빈_결과: Story = { args: { result: { answers: [] } }, play: async ({ canvasElement }) => { await expect(within(canvasElement).getByText("보여줄 자기소개서 본문이 없어요.")).toBeVisible(); } };
+
+const markdownBody = "## 나의 강점 ##\n**검증한 성과**를 냈습니다. __협업 경험__도 있습니다.\n- 분석 경험\n- 개선 경험\n\n1. 문제 발견\n2. 해결 실행";
+const markdown: CoverLetterResult = { answers: [{ ...base.answers[0], cover_letter: markdownBody, grounding: { grounded: false, unsupported_claims: ["성과**를 냈습니다"], notes: "" } }] };
+export const Markdown_표시: Story = {
+  args: { result: markdown },
+  play: async ({ canvasElement }) => {
+    const body = canvasElement.querySelector(".whitespace-pre-wrap");
+    await expect(body).toBeVisible();
+    await expect(visibleProse(canvasElement)).toBe("나의 강점\n검증한 성과를 냈습니다. 협업 경험도 있습니다.\n분석 경험\n개선 경험\n\n문제 발견\n해결 실행");
+    await expect(canvasElement.querySelector("mark")?.firstChild?.textContent).toBe("성과를 냈습니다");
+    await expect(canvasElement.querySelector("mark .sr-only")).toHaveTextContent("(근거를 찾지 못한 문장)");
+    await expect(canvasElement.querySelector("mark")).toHaveAttribute("title", "내 기록에서 근거를 찾지 못한 문장이에요");
+    await expect(within(canvasElement).getByText(`${markdownBody.length}자 / 1,000자`)).toBeVisible();
+  },
+};
+export const Markdown_편집: Story = {
+  args: { original: markdown, result: { answers: [{ ...markdown.answers[0], cover_letter: "**성과**를 냈습니다. 수정했습니다." }] } },
+  play: async ({ canvasElement }) => {
+    await expect(canvasElement.querySelector("mark")).toBeNull();
+    await expect(within(canvasElement).getByText("성과를 냈습니다. 수정했습니다.")).toBeVisible();
+  },
+};
+const literal = "C# #데이터 user_name 3 * 4 = 12, -5, 2026-10-26, 1.5\n1. 단독 항목\n\\**보존** `**코드**`";
+export const 정상_문장부호: Story = {
+  args: { result: { answers: [{ ...base.answers[0], cover_letter: literal }] } },
+  play: async ({ canvasElement }) => { await expect(canvasElement.querySelector(".whitespace-pre-wrap")).toBeVisible(); await expect(visibleProse(canvasElement)).toBe(literal); },
+};
