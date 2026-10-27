@@ -194,6 +194,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={[
         "rounded-full px-2.5 py-1 text-caption transition-colors",
         active
