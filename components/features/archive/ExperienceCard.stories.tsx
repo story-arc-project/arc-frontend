@@ -46,10 +46,23 @@ export const Default: Story = {
     const card = cardRoot(canvasElement)
     await expect(getComputedStyle(card, "::before").content).toBe("none")
 
-    // 배지는 알약이다 — 카드가 좁아져도 라벨이 음절 중간에서 갈리면 안 된다
-    // ("인턴 및 업무 경·력"). 줄이 모자라면 알약이 통째로 다음 줄로 넘어간다.
+    // Metadata labels stay intact even when the card is narrow.
     const badge = within(card).getByText("인턴 및 업무 경력")
     await expect(getComputedStyle(badge).whiteSpace).toBe("nowrap")
+    const probe = canvasElement.ownerDocument.createElement("span")
+    probe.style.color = "var(--color-text-tertiary)"
+    card.append(probe)
+    const tertiary = getComputedStyle(probe).color
+    probe.style.color = "var(--color-text-disabled)"
+    const disabled = getComputedStyle(probe).color
+    probe.remove()
+    for (const metadata of card.querySelectorAll<HTMLElement>('[class*="text-text-disabled!"]')) {
+      await expect(getComputedStyle(metadata).color).toBe(disabled)
+    }
+    await expect(getComputedStyle(badge).color).toBe(tertiary)
+    await expect(getComputedStyle(within(card).getByText("완료", { exact: true })).color).toBe(tertiary)
+    await expect(getComputedStyle(within(card).getByText(customLibrary.name)).color).toBe(tertiary)
+    await expect(getComputedStyle(within(card).getByText(careerExperience.tags[0])).color).toBe(tertiary)
   },
 }
 
@@ -127,12 +140,18 @@ export const UncoloredLibraryUsesTokenFallback: Story = {
 }
 
 export const EmptyState: Story = {
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByText("지표를 추가하면 카드가 더 잘 보여요")).toBeVisible()
+  },
   args: {
     experience: {
       ...careerExperience,
       id: "exp-empty",
       title: "",
       summary: "",
+      coreBlocks: [],
+      extensionBlocks: [],
+      customBlocks: [],
       tags: [],
       importance: undefined,
     },
@@ -179,5 +198,63 @@ export const ViewportBoundedMenus: Story = {
     await expect(menu).toBeInTheDocument()
     await userEvent.keyboard("{Escape}")
     await expect(menu).not.toBeInTheDocument()
+  },
+}
+
+const headlineBase = {
+  ...careerExperience,
+  coreBlocks: [],
+  extensionBlocks: [],
+  customBlocks: [],
+  tags: [],
+  importance: undefined,
+}
+
+export const MetricBeforeSummary: Story = {
+  args: {
+    experience: { ...headlineBase, summary: "요약은 중복하지 않아요", extensionBlocks: [{
+      id: "headline-metric", key: "career-detail.나의 담당 업무 / 주요 성과", label: "나의 담당 업무 / 주요 성과",
+      type: "textarea", value: { type: "textarea", text: "전환율 20% 개선" },
+    }] }, selected: false,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const headline = canvas.getByText("전환율 20% 개선")
+    await expect(headline).toBeVisible()
+    await expect(Number(getComputedStyle(headline).fontWeight)).toBeGreaterThanOrEqual(500)
+    await expect(canvas.queryByText("요약은 중복하지 않아요")).not.toBeInTheDocument()
+  },
+}
+
+export const SummaryFallback: Story = {
+  args: { experience: { ...headlineBase, summary: "검색 품질 개선을 이끈 경험" }, selected: false },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getAllByText("검색 품질 개선을 이끈 경험")).toHaveLength(1)
+  },
+}
+
+export const BodyFallback: Story = {
+  args: { experience: { ...headlineBase, summary: "", customBlocks: [{
+    id: "headline-body", label: "본문", type: "textarea",
+    value: { type: "textarea", text: "사용자 인터뷰를 진행했어요. 다음 실험을 설계했어요." },
+  }] }, selected: false },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByText("사용자 인터뷰를 진행했어요.")).toBeVisible()
+    await expect(within(canvasElement).queryByText(/다음 실험/)).not.toBeInTheDocument()
+  },
+}
+
+export const LongHeadline: Story = {
+  args: { experience: { ...headlineBase, summary: "Achievement".repeat(30) }, selected: false },
+  decorators: [Story => <div style={{ width: 320, maxWidth: "100%" }}><Story /></div>],
+  play: async ({ canvasElement }) => {
+    const card = cardRoot(canvasElement)
+    const line = within(card).getByText("Achievement".repeat(30))
+    const style = getComputedStyle(line)
+    await expect(style.whiteSpace).toBe("nowrap")
+    await expect(style.textOverflow).toBe("ellipsis")
+    await expect(style.overflow).toBe("hidden")
+    await expect(line.scrollWidth).toBeGreaterThan(line.clientWidth)
+    await expect(line.getBoundingClientRect().right).toBeLessThanOrEqual(card.getBoundingClientRect().right)
   },
 }

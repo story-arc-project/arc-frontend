@@ -4,10 +4,10 @@ import { formatDate } from "@/lib/utils/date-utils"
 import { MoreHorizontal, ChevronRight } from "lucide-react"
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from "react"
 import { createPortal } from "react-dom"
-import { Badge } from "@/components/ui/badge"
 import ImportanceSelector from "./ImportanceSelector"
 import type { ExperienceV2, Library } from "@/types/archive"
-import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2"
+import { buildCardHeadline } from "@/lib/utils/card-headline"
+import { EXPERIENCE_TYPE_MAP, getTemplateForType } from "@/lib/constants/templates-v2"
 
 interface ExperienceCardProps {
   experience: ExperienceV2
@@ -37,7 +37,10 @@ export default function ExperienceCard({
   const menuRef = useRef<HTMLDivElement>(null)
   const submenuRef = useRef<HTMLDivElement>(null)
   const submenuTriggerRef = useRef<HTMLButtonElement>(null)
-  const typeInfo = EXPERIENCE_TYPE_MAP[experience.typeId]
+  const knownType = Object.hasOwn(EXPERIENCE_TYPE_MAP, experience.typeId)
+  const typeInfo = knownType ? EXPERIENCE_TYPE_MAP[experience.typeId] : undefined
+  const headline = buildCardHeadline(experience, knownType ? getTemplateForType(experience.typeId) : null)
+  const isGuidance = headline === "지표를 추가하면 카드가 더 잘 보여요"
   const memberLibraries = (libraries ?? []).filter(l => !l.isSystem && l.experienceIds.includes(experience.id))
   const manualLibraries = useMemo(
     () => (libraries ?? []).filter(l => !l.isSystem && !l.filter),
@@ -217,7 +220,7 @@ export default function ExperienceCard({
                             <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lib.color }} />
                           )}
                           <span className="truncate">{lib.name}</span>
-                          {isIn && <span className="text-caption text-brand ml-auto">✓</span>}
+                          {isIn && <span className="text-caption text-brand! ml-auto">✓</span>}
                         </button>
                       )
                     })}
@@ -263,19 +266,16 @@ export default function ExperienceCard({
           : "border-border hover:border-border-strong",
       ].join(" ")}
     >
-      {/* Top row: type badge + status */}
+      {/* Quiet metadata keeps the title and representative achievement prominent. */}
       <div className="flex items-center justify-between gap-2 mb-2">
-        {/* 좁아지면 배지가 눌려 라벨이 음절 중간에서 갈린다 — 알약은 통째로 다음 줄로 넘긴다. */}
+        {/* Keep type and status labels intact when metadata wraps. */}
         <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-          <Badge variant="brand" className="whitespace-nowrap">
+          <span className="text-caption text-text-tertiary! whitespace-nowrap">
             {typeInfo?.label ?? "경험"}
-          </Badge>
-          <Badge
-            variant={experience.status === "complete" ? "success" : "warning"}
-            className="whitespace-nowrap"
-          >
+          </span>
+          <span className="text-caption text-text-tertiary! whitespace-nowrap">
             {experience.status === "complete" ? "완료" : "작성 중"}
-          </Badge>
+          </span>
           {experience.importance !== undefined && (
             <ImportanceSelector
               value={experience.importance}
@@ -305,12 +305,13 @@ export default function ExperienceCard({
         {experience.title || "(제목 없음)"}
       </h3>
 
-      {/* Summary */}
-      {experience.summary && (
-        <p className="text-body-sm text-text-secondary line-clamp-2 mb-2">
-          {experience.summary}
+      {/* The utility selects one achievement or fallback; do not repeat the summary. */}
+      <div className="flex min-w-0 items-center gap-2 mb-2">
+        {!isGuidance && <span aria-hidden="true" className="w-1 h-1 shrink-0 rounded-full bg-brand" />}
+        <p className={`min-w-0 truncate text-body-sm tabular-nums ${isGuidance ? "text-text-tertiary" : "font-medium! text-text-secondary"}`}>
+          {headline}
         </p>
-      )}
+      </div>
 
       {/* Library indicators */}
       {memberLibraries.length > 0 && (
@@ -326,7 +327,7 @@ export default function ExperienceCard({
                   .join(" ")}
                 style={lib.color ? { backgroundColor: lib.color } : undefined}
               />
-              <span className="text-caption text-text-tertiary truncate max-w-[80px]">{lib.name}</span>
+              <span className="text-caption text-text-tertiary! truncate max-w-[80px]">{lib.name}</span>
             </span>
           ))}
         </div>
@@ -338,16 +339,16 @@ export default function ExperienceCard({
           {experience.tags.slice(0, 3).map(tag => (
             <span
               key={tag}
-              className="bg-surface-tertiary text-text-tertiary rounded-full px-2 py-0.5 text-caption truncate"
+              className="bg-surface-tertiary text-text-tertiary! rounded-full px-2 py-0.5 text-caption truncate"
             >
               {tag}
             </span>
           ))}
           {experience.tags.length > 3 && (
-            <span className="text-caption text-text-disabled">+{experience.tags.length - 3}</span>
+            <span className="text-caption text-text-disabled!">+{experience.tags.length - 3}</span>
           )}
         </div>
-        <span className="text-caption text-text-disabled shrink-0">{formatDate(experience.updatedAt, "compact")}</span>
+        <span className="text-caption text-text-disabled! shrink-0">{formatDate(experience.updatedAt, "compact")}</span>
       </div>
     </div>
   )
