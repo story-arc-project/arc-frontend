@@ -4888,3 +4888,23 @@ describe("내린 필드의 저장값 보존 (FRT-306)", () => {
     })
   })
 })
+
+
+describe("custom table save preservation (FRT-184)", () => {
+  it.each(["draft", "complete"] as const)("%s 저장 왕복은 빈 행·열과 숨긴 열의 값을 보존한다", status => {
+    const values: BlockValue[] = [
+      { type: "table", columns: ["항목", "내용"], rows: [["", ""], [" ", ""]] },
+      { type: "table", columns: ["현재 열"], rows: [["", "숨긴 열의 내용"]] },
+      { type: "future-table", data: "미지 값" } as unknown as BlockValue,
+    ]
+    const groups = values.map((value, i) => ({
+      ...createGroupBlock(`표 섹션 ${i}`),
+      children: [{ id: `table-${i}`, type: value.type, label: `표 ${i}`, value } as Block],
+    }))
+    const payload = toSavePayload(makeExperienceV2({ status, customBlocks: groups }))
+    const reloaded = toExperienceV2(makeExperience({ content: payload.content }))
+    expect(reloaded.customBlocks).toHaveLength(3)
+    expect(reloaded.customBlocks.map(b => b.children?.[0].value)).toEqual(values)
+    expect(groups.map(b => b.children[0].value)).toEqual(values)
+  })
+})

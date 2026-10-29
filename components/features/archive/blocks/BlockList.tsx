@@ -166,8 +166,8 @@ export default function BlockList({
               ...val,
               columns: newCols,
               // 열이 하나도 안 남으면 행도 함께 거둔다. 칸이 없어진 행은 이미 `[]` 라 담을
-              // 값이 없는데, `isBlockEmpty` 는 표를 **`rows.length` 로만** 판정하므로 껍데기
-              // 행이 남으면 빈 표가 상세뷰에 계속 그려지고 열을 다시 만들 때 빈 행이 되살아난다.
+              // 값이 없으므로 열을 다시 만들 때 빈 행이 되살아나지 않게 한다.
+              // 표시용 빈 판정은 셀 내용을 따로 확인한다(FRT-184).
               rows:
                 newCols.length === 0
                   ? []
