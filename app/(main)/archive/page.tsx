@@ -21,7 +21,7 @@ import { toExperienceV2 } from "@/lib/utils/experience-mapper"
 import { useLibraryFilter, matchesFilter } from "@/hooks/useLibraryFilter"
 import { ALL_LIBRARY_ID } from "@/lib/utils/library-mapper"
 import { useBasePath } from "@/lib/utils/use-base-path"
-import { parseArchiveContext, buildReturnTo } from "@/lib/utils/archive-context"
+import { useArchiveContext } from "./useArchiveContext"
 import { getPeerId, type PeerDirection } from "@/lib/utils/peer-nav"
 
 type MobileView = "list" | "panel"
@@ -77,15 +77,9 @@ export default function ArchivePage() {
     membershipErrorIds,
   } = useLibraries()
 
-  // FRT-82: 편집/새경험 라우트에서 복귀할 때 나가기 직전의 라이브러리·필터 컨텍스트를
-  // returnTo(URL)에 실어 보냈다가 마운트 시 1회 복원한다. 이후엔 사용자 조작이 정본이므로
-  // URL 변화를 추적하지 않는다(빈 deps 로 최초 마운트 시점의 searchParams 만 캡처).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const restoredContext = useMemo(() => parseArchiveContext(searchParams), [])
+  const { context: archiveContext, setSearch, updateFilter, setLibraryId: setActiveLibraryId, href: archiveHref } = useArchiveContext(searchParams, basePath)
+  const activeLibraryId = archiveContext.libraryId
 
-  const [activeLibraryId, setActiveLibraryId] = useState(
-    restoredContext?.libraryId ?? ALL_LIBRARY_ID,
-  )
   const [libraryActionError, setLibraryActionError] = useState<string | null>(null)
   const [experienceActionError, setExperienceActionError] = useState<string | null>(null)
 
@@ -165,12 +159,11 @@ export default function ArchivePage() {
     filter,
     filteredExperiences,
     isFilterActive,
-    setSearch,
     setSortBy,
     toggleTypeFilter,
     toggleStatusFilter,
     clearFilters,
-  } = useLibraryFilter(libraryExperiences, restoredContext?.filter)
+  } = useLibraryFilter(libraryExperiences, archiveContext.filter, updateFilter)
 
   // FRT-82: returnTo 로 복원한 activeLibraryId 가 (다른 기기/탭 삭제 등으로) 더는 존재하지
   // 않는 라이브러리를 가리키면 전체로 폴백한다. libraries 는 비동기 로드라 마운트 시점엔
@@ -184,7 +177,7 @@ export default function ArchivePage() {
     if (activeLibraryId !== ALL_LIBRARY_ID && !libraries.some(l => l.id === activeLibraryId)) {
       setActiveLibraryId(ALL_LIBRARY_ID)
     }
-  }, [isLibrariesLoading, librariesError, libraries, activeLibraryId])
+  }, [isLibrariesLoading, librariesError, libraries, activeLibraryId, setActiveLibraryId])
 
   // Sync ?id= when experiences are loaded (adjust state during render)
   const [syncedForParams, setSyncedForParams] = useState<string | null>(null)
@@ -251,9 +244,9 @@ export default function ArchivePage() {
       setMobileView("panel")
       // 클릭으로 고른 것은 연속 넘김이 아니다 — 직전 j/k 연타의 판정을 물려받지 않게 되돌린다.
       setIsRapidPeerNav(false)
-      router.push(`${basePath}/archive?id=${id}`, { scroll: false })
+      router.push(archiveHref(id), { scroll: false })
     },
-    [router, basePath]
+    [router, archiveHref]
   )
 
   // ── Peer navigation (FRT-86) ───────────────────────────────────────
@@ -287,9 +280,9 @@ export default function ArchivePage() {
       // push 가 아니라 replace — 카드 클릭(목록→상세)은 되돌아갈 지점이지만 peer 이동은
       // 같은 화면 안에서의 이동이다. push 면 ↓ 연타 한 번에 히스토리가 기록 수만큼 쌓여
       // 뒤로가기로 목록에 돌아가는 데 그만큼 눌러야 한다.
-      router.replace(`${basePath}/archive?id=${id}`, { scroll: false })
+      router.replace(archiveHref(id), { scroll: false })
     },
-    [filteredIds, selectedId, router, basePath],
+    [filteredIds, selectedId, router, archiveHref],
   )
 
   // 미리보기 닫기(데스크톱 ✕·ESC, 모바일 목록으로). 선택 해제 + ?id 제거 → 풀폭 복귀.
@@ -300,8 +293,8 @@ export default function ArchivePage() {
     setSyncedForParams(null)
     setMobileView("list")
     setIsRapidPeerNav(false)
-    router.push(`${basePath}/archive`, { scroll: false })
-  }, [router, basePath])
+    router.push(archiveHref(), { scroll: false })
+  }, [router, archiveHref])
 
   // 미리보기가 열린 동안의 키보드 조작: ESC 로 닫기, ↑/K·↓/J 로 이웃 기록 이동(FRT-86).
   // 세 동작이 같은 가드(입력 포커스·팝오버 양보)를 공유하므로 리스너 하나로 묶는다.
@@ -377,16 +370,16 @@ export default function ArchivePage() {
   // FRT-82: 나가기 직전의 라이브러리·필터 컨텍스트를 returnTo 로 인코딩해 입력 라우트에
   // 넘긴다. 입력 라우트는 이 값을 opaque 하게 backTo 로 되돌려주고, 복귀 시 리스트가 복원한다.
   const handleNewExperience = useCallback(() => {
-    const returnTo = buildReturnTo(basePath, { libraryId: activeLibraryId, filter })
+    const returnTo = archiveHref()
     router.push(`${basePath}/archive/new?returnTo=${encodeURIComponent(returnTo)}`)
-  }, [router, basePath, activeLibraryId, filter])
+  }, [router, basePath, archiveHref])
 
   const handleEditExperience = useCallback(
     (id: string) => {
-      const returnTo = buildReturnTo(basePath, { libraryId: activeLibraryId, filter }, id)
+      const returnTo = archiveHref(id)
       router.push(`${basePath}/archive/${id}/edit?returnTo=${encodeURIComponent(returnTo)}`)
     },
-    [router, basePath, activeLibraryId, filter]
+    [router, basePath, archiveHref]
   )
 
   // ── CRUD ──────────────────────────────────────────────────────────
@@ -409,13 +402,13 @@ export default function ArchivePage() {
         setExperienceActionError(null)
         setSelectedId(null)
         setMobileView("list")
-        router.push(`${basePath}/archive`, { scroll: false })
+        router.push(archiveHref(), { scroll: false })
       } catch (err) {
         const message = err instanceof Error ? err.message : "경험을 삭제하지 못했어요"
         setExperienceActionError(message)
       }
     },
-    [apiDelete, router, basePath]
+    [apiDelete, router, archiveHref]
   )
 
   // 삭제/복제는 미리보기에서만 트리거되며, 삭제는 ExperienceDetailV2 의 자체 확인
@@ -450,7 +443,7 @@ export default function ArchivePage() {
         setExperienceActionError(null)
         setSelectedId(newId)
         setMobileView("panel")
-        router.push(`${basePath}/archive?id=${newId}`, { scroll: false })
+        router.push(archiveHref(newId), { scroll: false })
       } catch (err) {
         if (!isAnalyticsEpochCurrent(epoch)) return
         const message = err instanceof Error ? err.message : "경험을 복제하지 못했어요"
@@ -459,7 +452,7 @@ export default function ArchivePage() {
         duplicatePending.current.delete(exp.id)
       }
     },
-    [apiDuplicate, router, basePath]
+    [apiDuplicate, router, archiveHref]
   )
 
   const handleDuplicate = useCallback(
@@ -472,7 +465,7 @@ export default function ArchivePage() {
   // ── Library management ────────────────────────────────────────────
   const handleSelectLibrary = useCallback((id: string) => {
     setActiveLibraryId(id)
-  }, [])
+  }, [setActiveLibraryId])
 
   const handleCreateLibrary = useCallback((name: string) => {
     runLibraryAction(
@@ -523,12 +516,11 @@ export default function ArchivePage() {
       "라이브러리를 삭제하지 못했어요",
       () => {
         if (activeLibraryIdRef.current === id) {
-          setActiveLibraryId(ALL_LIBRARY_ID)
-          clearFilters()
+          setActiveLibraryId(ALL_LIBRARY_ID, true)
         }
       },
     )
-  }, [clearFilters, deleteLibrary, libraries, runLibraryAction])
+  }, [setActiveLibraryId, deleteLibrary, libraries, runLibraryAction])
 
   const handleMoveToLibrary = useCallback((experienceId: string, libraryId: string) => {
     const library = libraries.find((item) => item.id === libraryId)
