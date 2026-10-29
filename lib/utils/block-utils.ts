@@ -547,7 +547,9 @@ export function isBlockEmpty(block: Block): boolean {
       // 행을 지우면 placeholder 리마운트로 포커스가 날아간다).
       return !Array.isArray(v.rows) || !v.rows.some(rowHasContent)
     case 'table':
-      return !Array.isArray(v.rows) || v.rows.length === 0
+      // 행 추가만으로 채워진 표가 되지는 않는다(FRT-184). 열 수로 자르지 않아야
+      // 현재 열 정의 밖에 남은 셀 내용도 보존된다. 행·셀 자체는 건드리지 않는다.
+      return !Array.isArray(v.rows) || !v.rows.some(row => Array.isArray(row) && row.some(isFilledText))
     case 'group':
       return (block.children ?? []).every(c => isBlockEmpty(c))
     default:
@@ -1493,6 +1495,9 @@ export function isValueOccupied(value: BlockValue | null | undefined): boolean {
   // ⚠️ **정규화와 같은 눈으로 봐야 한다.** 원소가 전부 깨진 배열은 길이만 보면 채워진 것
   // 같지만 정규화하면 빈 배열이 된다 — 그 사이에 레거시 원본은 이미 지워진다.
   const safe = normalizeBlockValue(value.type, value)
+  // 표의 빈 행도 기존 목적지를 차지한다. 표시 판정 변경으로 이관이 사용자가 만든
+  // 행·열 구성을 덮어쓰지 않도록 기존 점유 기준을 유지한다(FRT-184).
+  if (safe.type === 'table') return safe.rows.length > 0
   return !isBlockEmpty({ id: '', type: safe.type, label: '', value: safe })
 }
 
@@ -1513,6 +1518,9 @@ export function isBlockDiscardable(block: Block): boolean {
   if (block.type === 'group' || v?.type === 'group') {
     return (block.children ?? []).every(c => isBlockDiscardable(c))
   }
+  // 비어 보이는 표도 행이 있으면 기존처럼 보존한다(FRT-184). 이 경계가 없으면
+  // 완료 저장의 빈 그룹 정리가 사용자가 만든 표의 행·열까지 삭제한다.
+  if (v?.type === 'table' && Array.isArray(v.rows) && v.rows.length > 0) return false
   return isBlockEmpty(block) && !hasResidualValue(block)
 }
 

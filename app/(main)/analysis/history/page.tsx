@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import type { SetStateAction } from "react";
+import { useAnalysisListRequest } from "@/hooks/useAnalysisListRequest";
 import Link from "next/link";
 import { Trash2, Pencil, Check, X, RotateCcw } from "lucide-react";
 import type { AnalysisSnapshot, AnalysisType } from "@/types/analysis";
@@ -21,6 +23,9 @@ import PartialFailureNotice from "@/components/features/analysis/common/PartialF
 
 type FilterKey = "all" | AnalysisType;
 type SortKey = "newest" | "oldest";
+
+const loadList = ({ filter, sort }: { filter: FilterKey; sort: SortKey }) =>
+  getAnalysisHistory({ type: filter, sort });
 
 const NEW_PATH: Record<AnalysisType, string> = {
   individual: "/analysis/individual",
@@ -84,63 +89,30 @@ export default function HistoryPage() {
   // 재조회하면 되살아난다. 특히 '다시 분석'의 목적지(/new)는 데모에 미러링돼 있지도 않다(FRT-232).
   const basePath = useBasePath();
   const isDemo = basePath !== "";
-  const [items, setItems] = useState<AnalysisSnapshot[]>([]);
-  const [failedTypes, setFailedTypes] = useState<AnalysisType[]>([]);
-  const [error, setError] = useState(false);
-  // 고른 필터·정렬과 세대를 한 값으로 묶는다. 따로 두면 "선택은 바뀌었는데 세대는 그대로"가
-  // 가능해지고, 그러면 잠깐 다른 선택을 들렀다 돌아왔을 때 새 요청의 키가
-  // 이미 받아둔 답의 키와 같아진다.
-  const [request, setRequest] = useState<{
-    filter: FilterKey;
-    sort: SortKey;
-    seq: number;
-  }>({ filter: "all", sort: "newest", seq: 0 });
-  const { filter, sort } = request;
+  const {
+    selection: { filter, sort }, setSelection, result, setResult,
+    error, loading, retry: handleRetry,
+  } = useAnalysisListRequest(
+    { filter: "all" as FilterKey, sort: "newest" as SortKey },
+    { items: [] as AnalysisSnapshot[], failedTypes: [] as AnalysisType[] },
+    loadList,
+  );
+  const items = result.items;
+  // A total failure clears partial-source notices in the same render as the error.
+  const failedTypes = error ? [] : result.failedTypes;
+  const setItems = (next: SetStateAction<AnalysisSnapshot[]>) => setResult((previous) => ({
+    ...previous,
+    items: typeof next === "function" ? next(previous.items) : next,
+  }));
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<
     { id: string; type: AnalysisType } | null
   >(null);
 
-  // 화면이 지금 답해야 할 질문과, 실제로 답을 받아둔 질문. 둘이 다르면 그 자체가 로딩이다 —
-  // 별도 플래그를 두지 않으므로 "로딩만 꺼지고 목록은 옛것"인 어긋난 중간 상태가 아예 없다.
-  const [loadedKey, setLoadedKey] = useState<string | null>(null);
-  const requestKey = `${filter}:${sort}:${request.seq}`;
-  const loading = loadedKey !== requestKey;
-
-  // 필터와 정렬 두 축으로 재조회한다 — 둘 다 빠르게 바꿀 수 있고, 그때마다 이전 요청은
-  // 취소되지 않은 채 계속 날아온다. 늦게 도착한 답이 목록·에러·부분 실패 안내 중
-  // 무엇 하나라도 건드리면 화면이 지금의 선택과 어긋나므로, 응답 이후의 갱신은 전부 가드 안에 둔다.
-  useEffect(() => {
-    let ignore = false;
-    getAnalysisHistory({ type: filter, sort })
-      .then((data) => {
-        if (ignore) return;
-        setItems(data.items);
-        setFailedTypes(data.failedTypes);
-        setError(false);
-        setLoadedKey(requestKey);
-      })
-      .catch(() => {
-        if (ignore) return;
-        // 전멸(세 소스 모두 실패)만 여기로 온다 — 화면 전체가 에러로 바뀌므로
-        // 유형별 안내는 거둔다.
-        setFailedTypes([]);
-        setError(true);
-        setLoadedKey(requestKey);
-      });
-    return () => {
-      ignore = true;
-    };
-  }, [filter, sort, requestKey]);
-
-  // 이미 보고 있는 선택을 다시 고르는 건 아무 일도 아니다 — 같은 값을 돌려줘 재조회조차 만들지 않는다.
   const handleFilterChange = (next: FilterKey) =>
-    setRequest((r) => (r.filter === next ? r : { ...r, filter: next, seq: r.seq + 1 }));
-
+    setSelection((selection) => ({ ...selection, filter: next }));
   const handleSortChange = (next: SortKey) =>
-    setRequest((r) => (r.sort === next ? r : { ...r, sort: next, seq: r.seq + 1 }));
-
-  const handleRetry = () => setRequest((r) => ({ ...r, seq: r.seq + 1 }));
+    setSelection((selection) => ({ ...selection, sort: next }));
 
   const [renameError, setRenameError] = useState<string | null>(null);
 
@@ -260,9 +232,8 @@ export default function HistoryPage() {
           </div>
         ) : (
           <div className="space-y-3" role="tabpanel" id={`history-panel-${filter}`} aria-labelledby={`history-tab-${filter}`}>
-            {items.map((item) => {
-              const isNavigable = item.status === "completed";
-              return (
+            {/* getAnalysisHistory는 완료된 분석만 반환한다. */}
+            {items.map((item) => (
               <div
                 key={item.id}
                 className="bg-surface border border-border rounded-lg p-4 hover:border-brand transition-colors"
@@ -279,17 +250,13 @@ export default function HistoryPage() {
                           onSave={(v) => handleRename(item.id, item.type, v)}
                           onCancel={() => setEditId(null)}
                         />
-                      ) : isNavigable ? (
+                      ) : (
                         <Link
                           href={`${basePath}${ANALYSIS_DETAIL_PATH[item.type]}/${item.id}`}
                           className="text-title text-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:rounded-sm"
                         >
                           {getDisplayTitle(item.title)}
                         </Link>
-                      ) : (
-                        <span className="text-title text-text-primary opacity-60 cursor-not-allowed">
-                          {getDisplayTitle(item.title)}
-                        </span>
                       )}
                     </div>
                     <p className="text-caption text-text-tertiary mt-1.5">
@@ -337,8 +304,7 @@ export default function HistoryPage() {
                   </div>
                 </div>
               </div>
-              );
-            })}
+            ))}
           </div>
         )}
 

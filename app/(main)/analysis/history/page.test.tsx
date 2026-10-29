@@ -505,3 +505,21 @@ describe("데모 모드 — 둘러보기만 남긴다 (FRT-232)", () => {
     );
   });
 });
+
+// FRT-265: API가 보장하는 완료 항목은 일반·데모 모두 기존 상세 경로로 연결된다.
+describe("분석 기록 완료 항목 링크 (FRT-265)", () => {
+  it.each(["", "/demo"])("%s 히스토리의 세 유형 상세 경로를 보존한다", async (basePath) => {
+    mockUsePathname.mockReturnValue(`${basePath}/analysis/history`);
+    getHistory.mockResolvedValue({
+      items: [snap("i1", "individual"), snap("c1", "comprehensive"), snap("k1", "keyword")],
+      failedTypes: [],
+    });
+    render(<HistoryPage />);
+    await flush();
+    for (const [id, type] of [["i1", "individual"], ["c1", "comprehensive"], ["k1", "keyword"]]) {
+      expect(screen.getByRole("link", { name: `분석 ${id}` })).toHaveAttribute(
+        "href", `${basePath}/analysis/${type}/${id}`,
+      );
+    }
+  });
+});

@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 
+import { flushExitSignals } from "@/lib/analytics/exit-signal";
 import { useFlowExit } from "@/lib/analytics/use-flow-exit";
 
 // globals:false 라 testing-library 자동 cleanup 미등록 → 수동 unmount 로 리스너 해제.
@@ -233,4 +234,59 @@ describe("useFlowExit — 완료하지 못하고 떠났는가(FRT-107)", () => {
     expect(onExit).toHaveBeenCalledTimes(1);
     expect(onExit).toHaveBeenCalledWith(6);
   });
+});
+
+
+describe("FRT-331 session boundaries", () => {
+  it("finishes A and starts B even when both records are active", () => {
+    const onExit = vi.fn();
+    const { result, rerender, unmount } = renderHook(
+      ({ sessionKey }) => useFlowExit({ active: true, sessionKey, onExit }),
+      { initialProps: { sessionKey: "A" } },
+    );
+    vi.advanceTimersByTime(12_000);
+    rerender({ sessionKey: "B" });
+    expect(onExit).toHaveBeenCalledWith(12);
+    expect(result.current.elapsedSeconds()).toBe(0);
+    vi.advanceTimersByTime(2_000);
+    unmount();
+    settle();
+    expect(onExit.mock.calls).toEqual([[12], [2]]);
+  });
+
+  it("does not inherit completed A across a same-tick loading transition", () => {
+    const onExit = vi.fn();
+    const { result, rerender, unmount } = renderHook(
+      ({ sessionKey, active }) => useFlowExit({ active, sessionKey, onExit }),
+      { initialProps: { sessionKey: "A", active: true } },
+    );
+    act(() => result.current.markCompleted());
+    vi.advanceTimersByTime(12_000);
+    rerender({ sessionKey: "B", active: false });
+    rerender({ sessionKey: "B", active: true });
+    expect(result.current.elapsedSeconds()).toBe(0);
+    vi.advanceTimersByTime(2_000);
+    unmount();
+    settle();
+    expect(onExit.mock.calls).toEqual([[2]]);
+  });
+});
+
+
+it("flush after record switch closes only B and neither record fires again", () => {
+  const onExit = vi.fn();
+  const { rerender, unmount } = renderHook(
+    ({ sessionKey }) => useFlowExit({ active: true, sessionKey, onExit }),
+    { initialProps: { sessionKey: "A" } },
+  );
+  vi.advanceTimersByTime(12_000);
+  rerender({ sessionKey: "B" });
+  vi.advanceTimersByTime(2_000);
+  flushExitSignals();
+  expect(onExit.mock.calls).toEqual([[12], [2]]);
+  firePageHide();
+  unmount();
+  settle();
+  flushExitSignals();
+  expect(onExit.mock.calls).toEqual([[12], [2]]);
 });

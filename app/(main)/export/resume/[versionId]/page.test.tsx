@@ -1,4 +1,5 @@
-vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { account: { email: "test@example.com" } }, isLoading: false }) }));
+const account = vi.hoisted(() => ({ email: "test@example.com" }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { account: { email: account.email } }, isLoading: false }) }));
 import { Suspense } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -8,6 +9,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -163,6 +165,7 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  account.email = "test@example.com";
   // clearAllMocks 는 mockReturnValueOnce 큐를 비우지 않는다 — 경합 테스트가 남긴 큐가
   // 다음 테스트로 새면 "왜 이 응답이 오지"를 한참 쫓게 된다.
   mockGetResume.mockReset();
@@ -1742,5 +1745,145 @@ describe("FRT-326 - 아직 만들고 있는 이력서", () => {
 
     expect(screen.getByText("이력서를 찾을 수 없어요")).toBeTruthy();
     expect(screen.queryByText("아직 만들고 있어요")).toBeNull();
+  });
+});
+
+describe("FRT-325 request outcomes", () => {
+  it.each([
+    ["success", null, true, "success"],
+    ["malformed JSON", new ApiError(200, "private body"), true, "response_unreadable"],
+    ["missing ID", new ApiError(201, "private ID"), true, "response_unreadable"],
+    ["422", new ApiError(422, "private input"), false, "api_error"],
+    ["credits", new ApiError(402, "private credits", "INSUFFICIENT_CREDITS"), false, "api_error"],
+    ["5xx", new ApiError(503, "private server"), false, "api_error"],
+    ["abort", new DOMException("private abort", "AbortError"), null, "aborted"],
+    ["raw error", new TypeError("private network"), null, "network_or_unknown"],
+  ] as const)("records %s once", async (_label, error, accepted, request_result) => {
+    mockCreateResume.mockReset();
+    if (error) mockCreateResume.mockRejectedValueOnce(error);
+    else mockCreateResume.mockResolvedValueOnce({ id: "accepted-id" });
+    const user = userEvent.setup();
+    await renderLoaded();
+    await user.click(screen.getByRole("button", { name: "다시 만들기" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "다시 만들기 확인" })).getByRole("button", { name: "다시 만들기" }));
+    expect(mockCreateResume).toHaveBeenCalled();
+    await waitFor(() => expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(1));
+    expect(mockCapture).toHaveBeenCalledWith("export_requested", expect.objectContaining({ accepted, request_result }));
+    expect(mockCapture.mock.calls.filter(([name]) => name === "export_completed")).toHaveLength(0);
+    expect(JSON.stringify(mockCapture.mock.calls)).not.toContain("private");
+  });
+});
+
+describe("FRT-325 settlement lifecycle", () => {
+  it.each(["resolve", "reject"] as const)("ignores %s after unmount", async (outcome) => {
+    let resolve!: (value: { id: string }) => void;
+    let reject!: (error: Error) => void;
+    mockCreateResume.mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const view = await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "다시 만들기" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "다시 만들기 확인" })).getByRole("button", { name: "다시 만들기" }));
+    view.unmount();
+    await act(async () => {
+      if (outcome === "resolve") resolve({ id: "old" });
+      else reject(new Error("private stale error"));
+    });
+    expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(0);
+  });
+});
+
+describe("FRT-325 account attribution", () => {
+  it.each(["resolve", "reject"] as const)("ignores old-account %s", async (outcome) => {
+    let resolve!: (value: { id: string }) => void;
+    let reject!: (error: Error) => void;
+    mockCreateResume.mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const view = await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: "다시 만들기" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "다시 만들기 확인" })).getByRole("button", { name: "다시 만들기" }));
+    account.email = "new@example.com";
+    await act(async () => { view.rerender(<Suspense fallback={null}><ResumeDetailPage params={Promise.resolve({ versionId: "v1" })} /></Suspense>); });
+    await act(async () => {
+      if (outcome === "resolve") resolve({ id: "old" });
+      else reject(new Error("old account"));
+    });
+    expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(0);
+  });
+});
+
+it("keeps one accepted outcome when post-success UI throws", async () => {
+  mockCreateResume.mockResolvedValueOnce({ id: "new" });
+  mockPush.mockImplementationOnce(() => { throw new Error("router"); });
+  await renderLoaded();
+  fireEvent.click(screen.getByRole("button", { name: "다시 만들기" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "다시 만들기 확인" })).getByRole("button", { name: "다시 만들기" }));
+  await waitFor(() => expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(1));
+  expect(mockCapture).toHaveBeenCalledWith("export_requested", expect.objectContaining({ accepted: true, request_result: "success" }));
+});
+
+it("blocks duplicate clicks and reuses a response-loss retry key", async () => {
+  let reject!: (error: Error) => void;
+  mockCreateResume.mockImplementationOnce(() => new Promise((_yes, no) => { reject = no; }));
+  mockCreateResume.mockRejectedValueOnce(new TypeError("lost again"));
+  await renderLoaded();
+  fireEvent.click(screen.getByRole("button", { name: "다시 만들기" }));
+  const submit = within(screen.getByRole("dialog", { name: "다시 만들기 확인" })).getByRole("button", { name: "다시 만들기" });
+  fireEvent.click(submit);
+  fireEvent.click(submit);
+  expect(mockCreateResume).toHaveBeenCalledTimes(1);
+  await act(async () => { reject(new TypeError("lost")); });
+  fireEvent.click(within(screen.getByRole("dialog", { name: "다시 만들기 확인" })).getByRole("button", { name: "다시 만들기" }));
+  await waitFor(() => expect(mockCreateResume).toHaveBeenCalledTimes(2));
+  expect(mockCreateResume.mock.calls[1][1].idempotencyKey).toBe(mockCreateResume.mock.calls[0][1].idempotencyKey);
+  expect(mockCreateResume.mock.calls[1][0]).toEqual(mockCreateResume.mock.calls[0][0]);
+  await waitFor(() => expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(2));
+});
+
+describe("FRT-137 — AI meta.format 불확실성", () => {
+  it.each([undefined, null, "unexpected_format", { unexpected: true }, 42])(
+    "meta.format=%j 이어도 상세 편집기와 미리보기를 연다",
+    async (format) => {
+      const fixture = resumeFixture();
+      fixture.meta = { ...fixture.meta, format: format as never };
+      mockGetResume.mockResolvedValue(fixture);
+      await renderLoaded();
+      expect(screen.getByLabelText("이름")).toHaveValue("김서윤");
+      expect(screen.getByRole("article")).toHaveTextContent("김서윤");
+    },
+  );
+});
+
+
+describe("FRT-153 mobile panel selection", () => {
+  it("relates mutually exclusive native toggles to named panels and supports keyboard selection", async () => {
+    const user = userEvent.setup();
+    await renderLoaded();
+    const group = screen.getByRole("group", { name: "이력서 보기 선택" });
+    const editor = within(group).getByRole("button", { name: "편집", pressed: true });
+    const preview = within(group).getByRole("button", { name: "미리보기", pressed: false });
+    const editorPanel = screen.getByRole("complementary", { name: "이력서 편집" });
+    const previewPanel = screen.getByRole("main", { name: "이력서 미리보기" });
+    expect(editorPanel.id).not.toBe("");
+    expect(previewPanel.id).not.toBe("");
+    expect(editor).toHaveAttribute("aria-controls", editorPanel.id);
+    expect(preview).toHaveAttribute("aria-controls", previewPanel.id);
+    expect(editorPanel.id).not.toBe(previewPanel.id);
+    expect(editor.tagName).toBe("BUTTON");
+    await user.click(preview);
+    expect(preview).toHaveAttribute("aria-pressed", "true");
+    expect(editor).toHaveAttribute("aria-pressed", "false");
+    await user.click(editor);
+    expect(editor).toHaveAttribute("aria-pressed", "true");
+    expect(preview).toHaveAttribute("aria-pressed", "false");
+    editor.focus();
+    await user.tab();
+    expect(preview).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(preview).toHaveAttribute("aria-pressed", "true");
+    await user.tab({ shift: true });
+    expect(editor).toHaveFocus();
+    await user.keyboard(" ");
+    expect(editor).toHaveAttribute("aria-pressed", "true");
+    expect(preview).toHaveAttribute("aria-pressed", "false");
+    await user.keyboard(" ");
+    expect(editor).toHaveAttribute("aria-pressed", "true");
   });
 });

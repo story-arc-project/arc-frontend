@@ -136,13 +136,13 @@ export const EmptyStatePlaceholder: Story = {
     const nameInput = canvas.getByPlaceholderText("예: 소비자 행동 리서치")
     expect(nameInput).toBeInTheDocument()
     expect(canvas.getByText("0개 항목")).toBeInTheDocument()
-    expect(canvas.queryByRole("button", { name: "행 삭제" })).toBeNull()
+    expect(canvas.queryByRole("button", { name: "1번째 기록 행 삭제" })).toBeNull()
     expect(canvas.queryByRole("button", { name: /행 추가/ })).toBeNull()
 
     // 첫 입력으로 실체화 → 삭제·행 추가가 나타나고 항목 수가 1이 된다.
     await userEvent.type(nameInput, "소비자 행동 리서치")
     expect(canvas.getByText("1개 항목")).toBeInTheDocument()
-    expect(canvas.getByRole("button", { name: "행 삭제" })).toBeInTheDocument()
+    expect(canvas.getByRole("button", { name: "1번째 기록 행 삭제" })).toBeInTheDocument()
     expect(canvas.getByRole("button", { name: /행 추가/ })).toBeInTheDocument()
     // 리마운트 없이 같은 인풋을 계속 쓴다(포커스·한글 IME 조합 보존).
     expect(canvas.getByPlaceholderText("예: 소비자 행동 리서치")).toBe(nameInput)
@@ -174,7 +174,7 @@ export const PlaceholderMaterializesFromTags: Story = {
     expect(canvas.getByText("0개 항목")).toBeInTheDocument()
     await userEvent.type(canvas.getByPlaceholderText("입력 후 Enter"), "Python{enter}")
     expect(canvas.getByText("1개 항목")).toBeInTheDocument()
-    expect(canvas.getByRole("button", { name: "Python 삭제" })).toBeInTheDocument()
+    expect(canvas.getByRole("button", { name: "1번째 기록 사용 도구 Python 삭제" })).toBeInTheDocument()
   },
 }
 
@@ -249,13 +249,13 @@ export const PeriodColumn: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     // 저장된 점 구분 문자열이 월 입력으로 되돌아 읽힌다.
-    await expect(canvas.getByLabelText("기간 시작")).toHaveValue("2023-03")
-    await expect(canvas.getByLabelText("기간 종료")).toHaveValue("2023-12")
+    await expect(canvas.getByLabelText("1번째 기록 기간 시작")).toHaveValue("2023-03")
+    await expect(canvas.getByLabelText("1번째 기록 기간 종료")).toHaveValue("2023-12")
 
     // '현재'를 켜면 종료 입력이 잠긴다 — 진행 중인 경험을 표현할 수 있다.
     // 체크박스도 컬럼 이름을 달고 읽힌다(기간 컬럼이 여럿일 때 구분되도록).
-    await userEvent.click(canvas.getByRole("checkbox", { name: "기간 현재" }))
-    await expect(canvas.getByLabelText("기간 종료")).toBeDisabled()
+    await userEvent.click(canvas.getByRole("checkbox", { name: "1번째 기록 기간 현재" }))
+    await expect(canvas.getByLabelText("1번째 기록 기간 종료")).toBeDisabled()
   },
 }
 
@@ -303,7 +303,7 @@ export const FileColumn: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvas.getByText("발표자료.pdf")).toBeInTheDocument()
-    await expect(canvas.getByRole("button", { name: "발표자료.pdf 첨부 삭제" })).toBeInTheDocument()
+    await expect(canvas.getByRole("button", { name: "1번째 기록 결과물 발표자료.pdf 첨부 삭제" })).toBeInTheDocument()
     await expect(await canvas.findByRole("link", { name: /다운로드/ })).toBeInTheDocument()
   },
 }
@@ -359,7 +359,7 @@ export const FileColumnLongFileName: Story = {
     const canvas = within(canvasElement)
     // 파일명만 기다리면 너무 이르다 — `getFileUrl` 전에는 '다운로드'(고정폭)가 없는 좁은
     // 카드가 먼저 그려지고 이름은 두 상태에 다 있다. 가장 넓어지는 최종 상태를 재야 한다.
-    await canvas.findByRole("link", { name: `${longFileName} 다운로드` })
+    await canvas.findByRole("link", { name: `1번째 기록 결과물 ${longFileName} 다운로드` })
 
     const container = canvasElement.querySelector<HTMLElement>(
       '[data-testid="frt318-cell-container"]',
@@ -392,7 +392,7 @@ export const UnknownColumnType: Story = {
     const canvas = within(canvasElement)
     await expect(canvas.getByText(/아직 지원하지 않는 입력 유형/)).toBeInTheDocument()
     // 값은 잃지 않는다.
-    await expect(canvas.getByLabelText("미래 유형")).toHaveValue("이미 입력된 값")
+    await expect(canvas.getByLabelText("1번째 기록 미래 유형")).toHaveValue("이미 입력된 값")
   },
 }
 
@@ -423,7 +423,7 @@ export const TextareaGrowsWithContent: Story = {
   render: () => <Interactive initial={textareaBlock} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const box = canvas.getByLabelText("내가 한 일") as HTMLTextAreaElement
+    const box = canvas.getByLabelText("1번째 기록 내가 한 일") as HTMLTextAreaElement
     const before = box.getBoundingClientRect().height
 
     await userEvent.type(box, "첫 줄{enter}둘째 줄{enter}셋째 줄{enter}넷째 줄{enter}다섯째 줄")
@@ -440,7 +440,7 @@ export const TextareaShrinksBackToMinHeight: Story = {
   render: () => <Interactive initial={textareaBlock} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const box = canvas.getByLabelText("내가 한 일") as HTMLTextAreaElement
+    const box = canvas.getByLabelText("1번째 기록 내가 한 일") as HTMLTextAreaElement
     const before = box.getBoundingClientRect().height
 
     await userEvent.type(box, "첫 줄{enter}둘째 줄{enter}셋째 줄{enter}넷째 줄")
@@ -449,7 +449,30 @@ export const TextareaShrinksBackToMinHeight: Story = {
     await userEvent.clear(box)
 
     // 값이 비면 행이 다시 자리표시로 접힐 수 있어 같은 요소라고 가정하지 않는다.
-    const after = canvas.getByLabelText("내가 한 일") as HTMLTextAreaElement
+    const after = canvas.getByLabelText("1번째 기록 내가 한 일") as HTMLTextAreaElement
     await expect(after.getBoundingClientRect().height).toBe(before)
+  },
+}
+
+
+/** FRT-223: 현재 순서의 행 번호를 이름으로 읽고, 삭제 뒤 남은 값을 같은 이름으로 찾는다. */
+export const RowContext: Story = {
+  render: () => <Interactive initial={{ ...tableBlock, lockColumns: true, value: {
+    ...(tableBlock.value as RepeatableCellBlockValue),
+    rows: [
+      { id: "context-a", cells: { name: "첫 프로젝트", role: "기획" } },
+      { id: "context-b", cells: { name: "둘째 프로젝트", role: "개발" } },
+    ],
+  } }} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByRole("textbox", { name: "1번째 기록 이름" })).toHaveValue("첫 프로젝트")
+    await expect(canvas.getByRole("textbox", { name: "2번째 기록 이름" })).toHaveValue("둘째 프로젝트")
+    await userEvent.type(canvas.getByRole("textbox", { name: "2번째 기록 역할" }), " 담당")
+    await userEvent.click(canvas.getByRole("button", { name: "1번째 기록 행 삭제" }))
+    await expect(canvas.getByRole("textbox", { name: "1번째 기록 이름" })).toHaveValue("둘째 프로젝트")
+    await expect(canvas.getByRole("textbox", { name: "1번째 기록 역할" })).toHaveValue("개발 담당")
+    await userEvent.click(canvas.getByRole("button", { name: "행 추가" }))
+    await expect(canvas.getByRole("textbox", { name: "2번째 기록 이름" })).toHaveValue("")
   },
 }

@@ -92,20 +92,27 @@ function sortExperiences(experiences: ExperienceV2[], sortBy: SortBy): Experienc
 export function useLibraryFilter(
   experiences: ExperienceV2[],
   initialFilter?: LibraryFilter,
+  onFilterChange?: (update: (filter: LibraryFilter) => LibraryFilter) => void,
 ): UseLibraryFilterReturn {
-  // initialFilter 는 마운트 시 1회 복원용(FRT-82: 편집 라우트 왕복 후 필터 재구성).
-  // 이후 URL 변화를 추적하지 않으므로 lazy initializer 로 최초 값만 캡처한다.
-  const [filter, setFilter] = useState<LibraryFilter>(
+  // Existing consumers retain mount-only initialization; archive opts into
+  // controlled URL state by supplying onFilterChange.
+  const [localFilter, setLocalFilter] = useState<LibraryFilter>(
     () => initialFilter ?? { sortBy: "updated" },
   )
 
+  const filter = useMemo<LibraryFilter>(
+    () => onFilterChange ? initialFilter ?? { sortBy: "updated" } : localFilter,
+    [onFilterChange, initialFilter, localFilter],
+  )
+  const setFilter = onFilterChange ?? setLocalFilter
+
   const setSearch = useCallback((search: string) => {
     setFilter(prev => ({ ...prev, search: search || undefined }))
-  }, [])
+  }, [setFilter])
 
   const setSortBy = useCallback((sortBy: SortBy) => {
     setFilter(prev => ({ ...prev, sortBy }))
-  }, [])
+  }, [setFilter])
 
   const toggleTypeFilter = useCallback((typeId: ExperienceTypeId) => {
     setFilter(prev => {
@@ -115,7 +122,7 @@ export function useLibraryFilter(
         : [...current, typeId]
       return { ...prev, typeIds: next.length > 0 ? next : undefined }
     })
-  }, [])
+  }, [setFilter])
 
   const toggleStatusFilter = useCallback((status: ExperienceStatus) => {
     setFilter(prev => {
@@ -125,7 +132,7 @@ export function useLibraryFilter(
         : [...current, status]
       return { ...prev, statuses: next.length > 0 ? next : undefined }
     })
-  }, [])
+  }, [setFilter])
 
   const toggleTagFilter = useCallback((tag: string) => {
     setFilter(prev => {
@@ -135,11 +142,11 @@ export function useLibraryFilter(
         : [...current, tag]
       return { ...prev, tags: next.length > 0 ? next : undefined }
     })
-  }, [])
+  }, [setFilter])
 
   const clearFilters = useCallback(() => {
-    setFilter({ sortBy: "updated" })
-  }, [])
+    setFilter(() => ({ sortBy: "updated" }))
+  }, [setFilter])
 
   const filteredExperiences = useMemo(() => {
     const matched = experiences.filter(exp => matchesFilter(exp, filter))

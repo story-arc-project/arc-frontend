@@ -10,6 +10,7 @@ import {
   nextClientId,
   SortableList,
 } from "./shared";
+import { useListEditor } from "./useListEditor";
 
 const 자격구분Options = 자격구분_OPTIONS;
 
@@ -19,20 +20,17 @@ interface Props {
 }
 
 export function CertificationListEditor({ value, onChange }: Props) {
-  const updateItem = (id: number, patch: Partial<Certification>) =>
-    onChange(value.map((v) => (v.id === id ? { ...v, ...patch } : v)));
-  const removeItem = (id: number) => onChange(value.filter((v) => v.id !== id));
-  const addItem = () =>
-    onChange([
-      ...value,
-      {
-        id: nextClientId(),
-        자격증명: null,
-        발급기관: null,
-        취득년월: null,
-        자격구분: null,
-      },
-    ]);
+  const { updateItem, removeItem, addItem } = useListEditor<Certification>(
+    value,
+    onChange,
+    () => ({
+      id: nextClientId(),
+      자격증명: null,
+      발급기관: null,
+      취득년월: null,
+      자격구분: null,
+    }),
+  );
 
   return (
     <div className="flex flex-col gap-2">

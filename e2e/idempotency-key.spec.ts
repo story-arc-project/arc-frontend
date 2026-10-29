@@ -4,6 +4,17 @@ import { corsHeaders, stubApi } from "./fixtures/stub-api";
 
 type Attempt = { key: string | undefined; body: unknown };
 
+// These routes compile on demand after the smoke suite restarts Next with this
+// suite's feature flags. CI traces show navigation timing out before receiving
+// any document response. Keep compilation outside the 30s interaction budget.
+test.beforeAll(async ({ request }) => {
+  test.setTimeout(180_000);
+  for (const path of ["/analysis/keyword/new", "/export", "/export/resume/resume-e2e-1"]) {
+    const response = await request.get(path, { timeout: 120_000 });
+    await expect(response).toBeOK();
+  }
+});
+
 // Record the request before returning an uncertain result, as if the server had
 // accepted it but the client could not learn the outcome. Never touch a live API.
 async function uncertainGeneration(page: Page, path: string) {

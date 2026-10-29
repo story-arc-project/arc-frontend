@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
+import { useState } from "react"
+import { expect, fn, userEvent, within } from "storybook/test"
 
 import FilterBar from "./FilterBar"
 import { emptyFilter, activeFilter } from "./__fixtures__/archive.fixtures"
@@ -6,6 +8,7 @@ import { emptyFilter, activeFilter } from "./__fixtures__/archive.fixtures"
 const meta: Meta<typeof FilterBar> = {
   title: "Features/Archive/FilterBar",
   component: FilterBar,
+  tags: ["frt276"],
   parameters: {
     layout: "padded",
   },
@@ -42,5 +45,53 @@ export const NoSaveOption: Story = {
     filter: activeFilter,
     isFilterActive: true,
     onSaveAsLibrary: undefined,
+  },
+}
+
+export const SearchAccessibleName: Story = {
+  args: {
+    filter: emptyFilter,
+    isFilterActive: false,
+    onSearchChange: fn(),
+  },
+  render: function SearchAccessibleNameStory(args) {
+    const [search, setSearch] = useState("")
+    return <FilterBar {...args} filter={{ ...args.filter, search }} onSearchChange={value => {
+      setSearch(value)
+      args.onSearchChange(value)
+    }} />
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    const search = canvas.getByRole("textbox", { name: "경험 검색" })
+    await expect(search).toHaveValue("")
+    await userEvent.click(search)
+    await userEvent.type(search, "프로젝트")
+    await expect(search).toHaveAccessibleName("경험 검색")
+    await expect(search).toHaveValue("프로젝트")
+    await expect(args.onSearchChange).toHaveBeenLastCalledWith("프로젝트")
+    await userEvent.tab()
+    await expect(canvas.getByRole("combobox")).toHaveFocus()
+    await userEvent.tab({ shift: true })
+    await expect(search).toHaveFocus()
+    await userEvent.clear(search)
+    await expect(search).toHaveValue("")
+    await expect(search).toHaveAccessibleName("경험 검색")
+    await expect(args.onSearchChange).toHaveBeenLastCalledWith("")
+  },
+}
+
+export const FilterSelectionState: Story = {
+  args: {
+    filter: activeFilter,
+    isFilterActive: true,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole("button", { name: "필터" }))
+    await expect(canvas.getByRole("button", { name: "완료", pressed: true })).toBeVisible()
+    await expect(canvas.getByRole("button", { name: "작성 중", pressed: false })).toBeVisible()
+    await expect(canvas.getByRole("button", { name: "인턴 및 업무 경력", pressed: true })).toBeVisible()
+    await expect(canvas.getByRole("button", { name: "동아리/교내 단체", pressed: false })).toBeVisible()
   },
 }

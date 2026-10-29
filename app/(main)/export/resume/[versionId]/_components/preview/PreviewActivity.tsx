@@ -4,7 +4,7 @@ import type { Activity } from "@/types/resume";
 import type { ResumeSectionLabels } from "@/lib/export/resume-labels";
 import { formatPeriod, PreviewBullets, PreviewRow, PreviewSection } from "./PreviewSection";
 import { compactStrings } from "@/lib/export/resume-format";
-import { visibleUsableExperiences } from "@/lib/export/resume-visibility";
+import { visibleUsableActivities } from "@/lib/export/resume-activity";
 
 interface Props {
   labels: ResumeSectionLabels;
@@ -12,7 +12,7 @@ interface Props {
 }
 
 export function PreviewActivity({ data, labels }: Props) {
-  const items = visibleUsableExperiences(data);
+  const items = visibleUsableActivities(data);
   if (items.length === 0) return null;
 
   return (

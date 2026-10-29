@@ -30,11 +30,24 @@ export async function markOnceForUser(
     return true;
   }
 
-  try {
-    if (window.localStorage.getItem(key)) return false;
-    window.localStorage.setItem(key, "1");
-  } catch {
-    // 접근 불가(프라이빗 모드 등) — dedup 없이 발화(최선 노력).
+  const claim = (): boolean => {
+    try {
+      if (window.localStorage.getItem(key)) return false;
+      window.localStorage.setItem(key, "1");
+    } catch {
+      // Storage unavailable: best effort only, never block authentication.
+    }
+    return true;
+  };
+
+  // Same-origin tabs share an exclusive lock. Storage alone has no atomic
+  // read-and-set; this is still browser dedup, not a server lifetime fact.
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    try {
+      return await navigator.locks.request(key, claim);
+    } catch {
+      // Older/restricted browsers retain the existing best-effort behavior.
+    }
   }
-  return true;
+  return claim();
 }

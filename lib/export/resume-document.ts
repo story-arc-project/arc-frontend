@@ -16,6 +16,7 @@ import {
   resumeSectionLabels,
   type ResumeSectionLabels,
 } from "@/lib/export/resume-labels";
+import { visibleUsableActivities } from "@/lib/export/resume-activity";
 import { visibleExperiences } from "@/lib/export/resume-visibility";
 import {
   isEmptySection,
@@ -189,7 +190,7 @@ export function buildResumeDocument(resume: ResumeVersion): ResumeDocument {
 
     section(
       L.activity,
-      usableItems(visibleExperiences(resume.대외활동)).map((activity) =>
+      visibleUsableActivities(resume.대외활동).map((activity) =>
         withGroups(
           {
             title: text(activity.활동명),

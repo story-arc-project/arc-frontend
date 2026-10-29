@@ -49,6 +49,9 @@ import { RoleHistoryProvider, type RoleHistoryContextValue } from "@/contexts/Ro
 interface ExperienceFormV2Props {
   mode: "new" | "edit"
   initialExperience?: ExperienceV2
+  /** Optional URL-controlled type for the new route; undefined keeps standalone/edit behavior. */
+  selectedTypeId?: ExperienceTypeId | null
+  onTypeSelect?: (typeId: ExperienceTypeId) => void
   onSave: (experience: ExperienceV2) => void
   onCancel: () => void
   onUnsavedChange?: (hasUnsaved: boolean) => void
@@ -102,6 +105,8 @@ export interface ExperienceFormV2Handle {
 const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Props>(function ExperienceFormV2({
   mode,
   initialExperience,
+  selectedTypeId,
+  onTypeSelect,
   onSave,
   onCancel,
   onUnsavedChange,
@@ -110,9 +115,10 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   onProgressChange,
   onCompletionChange,
 }: ExperienceFormV2Props, ref) {
-  const [typeId, setTypeId] = useState<ExperienceTypeId | null>(
+  const [localTypeId, setTypeId] = useState<ExperienceTypeId | null>(
     initialExperience?.typeId ?? null
   )
+  const typeId = mode === "new" && selectedTypeId !== undefined ? selectedTypeId : localTypeId
   const [template, setTemplate] = useState<TemplateV2 | null>(null)
   const [coreBlocks, setCoreBlocks] = useState<Block[]>(
     initialExperience?.coreBlocks ?? []
@@ -163,8 +169,46 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
    */
   const conditionKeys = useMemo(() => conditionHiddenKeys(allBlocksFlat), [allBlocksFlat])
 
+  // URL history can temporarily show the selector or another type. Keep each mounted
+  // draft in memory; only an explicit page departure/refresh discards it.
+  const explicitTypeChangeRef = useRef(false)
+  const loadedTypeRef = useRef<ExperienceTypeId | null>(null)
+  const draftsRef = useRef(new Map<ExperienceTypeId, {
+    coreBlocks: Block[]
+    extensionSections: typeof extensionSections
+    customBlocks: Block[]
+    tags: string[]
+    importance: ImportanceLevel | undefined
+    hiddenKeys: string[]
+  }>())
+
   // Load template when type changes
   useEffect(() => {
+    if (mode === "new" && selectedTypeId !== undefined) {
+      const previous = loadedTypeRef.current
+      if (previous && !explicitTypeChangeRef.current) draftsRef.current.set(previous, { coreBlocks, extensionSections, customBlocks, tags, importance, hiddenKeys })
+      explicitTypeChangeRef.current = false
+      if (!typeId) {
+        setTemplate(null)
+        return
+      }
+      if (typeId === previous) {
+        setTemplate(getTemplateForType(typeId))
+        return
+      }
+      loadedTypeRef.current = typeId
+      const draft = draftsRef.current.get(typeId)
+      if (draft) {
+        setTemplate(getTemplateForType(typeId))
+        setCoreBlocks(draft.coreBlocks)
+        setExtensionSections(draft.extensionSections)
+        setCustomBlocks(draft.customBlocks)
+        setTags(draft.tags)
+        setImportance(draft.importance)
+        setHiddenKeys(draft.hiddenKeys)
+        return
+      }
+    }
     if (!typeId) return
     const tmpl = getTemplateForType(typeId)
     setTemplate(tmpl)
@@ -251,7 +295,16 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
     if (mode === "new" || !initialExperience) {
       const extensionBlocks = extensionSections.flatMap(s => s.blocks)
       const importanceChanged = importance !== initialExperience?.importance
+      const hasCachedData = [...draftsRef.current.entries()].some(([id, draft]) =>
+        id !== loadedTypeRef.current && (
+          hasBlockData(draft.coreBlocks) ||
+          draft.extensionSections.some(section => hasBlockData(section.blocks)) ||
+          draft.customBlocks.length > 0 || draft.tags.length > 0 ||
+          draft.hiddenKeys.length > 0 || draft.importance !== undefined
+        ),
+      )
       const hasData =
+        hasCachedData ||
         hasBlockData(coreBlocks) ||
         hasBlockData(extensionBlocks) ||
         customBlocks.length > 0 ||
@@ -286,14 +339,23 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   }, [coreBlocks, extensionSections, customBlocks, tags, importance, effectiveHiddenKeys, mode, template, initialExperience, onUnsavedChange])
 
   const handleTypeSelect = useCallback((id: ExperienceTypeId) => {
-    setTypeId(id)
+    if (mode === "new" && selectedTypeId !== undefined) {
+      if (loadedTypeRef.current && id !== loadedTypeRef.current) {
+        // Explicit type changes keep the existing confirmed-reset policy. Snapshots
+        // protect history navigation; they must not undo an intentional reset.
+        draftsRef.current.clear()
+        explicitTypeChangeRef.current = true
+      }
+      onTypeSelect?.(id)
+    } else setTypeId(id)
     setTypeError(false)
     // TypeSelector 는 edit 모드에서 disabled 이므로 이 콜백은 새 기록 작성 흐름에서만 도달한다.
     // 유형 선택 후 저장까지 못 간 drop-off 를 보기 위한 직전 선택 이벤트(FRT-19).
     capture("archive_type_selected", { experience_type: id })
-  }, [])
+  }, [mode, selectedTypeId, onTypeSelect])
 
-  const handleRequestTypeChange = useCallback((): boolean => {
+  const handleRequestTypeChange = useCallback((nextTypeId?: ExperienceTypeId): boolean => {
+    if (mode === "new" && selectedTypeId === null && nextTypeId === loadedTypeRef.current) return true
     const hasBlockData = (blocks: Block[]) => blocks.some(b => !isBlockEmpty(b))
     const extensionBlocks = extensionSections.flatMap(s => s.blocks)
     const hasData =
@@ -307,7 +369,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
       effectiveHiddenKeys.length > 0
     if (!hasData) return true
     return window.confirm("경험 유형을 바꾸면 입력한 내용이 초기화될 수 있어요. 계속할까요?")
-  }, [coreBlocks, extensionSections, customBlocks, tags, effectiveHiddenKeys])
+  }, [coreBlocks, extensionSections, customBlocks, tags, effectiveHiddenKeys, mode, selectedTypeId])
 
   // ── 선택 필드 숨김 (FRT-190) ──────────────────────────────────────
   // 안정키만 담는다 — 블록 인스턴스를 담으면 값이 바뀔 때마다 stale 참조가 된다.

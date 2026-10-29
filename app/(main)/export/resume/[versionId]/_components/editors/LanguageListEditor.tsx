@@ -9,6 +9,7 @@ import {
   nextClientId,
   SortableList,
 } from "./shared";
+import { useListEditor } from "./useListEditor";
 
 interface Props {
   value: LanguageItem[];
@@ -16,20 +17,17 @@ interface Props {
 }
 
 export function LanguageListEditor({ value, onChange }: Props) {
-  const updateItem = (id: number, patch: Partial<LanguageItem>) =>
-    onChange(value.map((v) => (v.id === id ? { ...v, ...patch } : v)));
-  const removeItem = (id: number) => onChange(value.filter((v) => v.id !== id));
-  const addItem = () =>
-    onChange([
-      ...value,
-      {
-        id: nextClientId(),
-        언어: null,
-        시험명: null,
-        점수등급: null,
-        취득년월: null,
-      },
-    ]);
+  const { updateItem, removeItem, addItem } = useListEditor<LanguageItem>(
+    value,
+    onChange,
+    () => ({
+      id: nextClientId(),
+      언어: null,
+      시험명: null,
+      점수등급: null,
+      취득년월: null,
+    }),
+  );
 
   return (
     <div className="flex flex-col gap-2">

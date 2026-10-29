@@ -34,11 +34,13 @@ interface OutcomeListProps {
 function AutoGrowInput({
   value,
   placeholder,
+  ariaLabel,
   onChange,
   onKeyDown,
 }: {
   value: string
   placeholder?: string
+  ariaLabel: string
   onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void
   onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => void
 }) {
@@ -57,6 +59,7 @@ function AutoGrowInput({
       rows={1}
       value={value}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       onChange={onChange}
       onKeyDown={onKeyDown}
       className="flex-1 resize-none overflow-hidden border-none bg-transparent py-0.5 text-body leading-6 text-text-primary placeholder:text-text-tertiary outline-none"
@@ -307,6 +310,7 @@ export default function OutcomeList({ block, readOnly, onChange, rowAction }: Ou
             <AutoGrowInput
               value={textOf(row)}
               placeholder={col?.placeholder}
+              ariaLabel={`${block.label} ${index + 1}행`}
               onChange={(e) => updateText(row.id, e.target.value)}
               onKeyDown={(e) => handleKeyDown(e, index, row)}
             />

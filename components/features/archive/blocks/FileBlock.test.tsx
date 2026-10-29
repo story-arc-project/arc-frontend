@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, cleanup, waitFor } from "@testing-library/react"
+import { render, screen, cleanup, waitFor, act, fireEvent } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 import FileBlock from "./FileBlock"
 import { uid } from "@/lib/utils/block-utils"
-import type { Block } from "@/types/archive"
+import type { Block, FileBlockValue } from "@/types/archive"
+import { getFileUrl } from "@/lib/api/files-api"
 import type { UploadedFile } from "@/lib/api/files-api"
+
+vi.mock("@/lib/api/files-api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/api/files-api")>(),
+  getFileUrl: vi.fn(),
+}))
 
 // FRT-113: 업로드 성공 시에만 첨부로 세는지 검증한다.
 vi.mock("@/lib/analytics", () => ({ capture: vi.fn() }))
@@ -23,10 +29,11 @@ vi.mock("@/hooks/useFileUpload", () => ({
   }),
 }))
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks() })
 beforeEach(() => {
   vi.mocked(capture).mockClear()
   start.mockReset()
+  vi.mocked(getFileUrl).mockReset().mockResolvedValue({ url: "https://files.example/fresh" })
 })
 
 const emptyFileBlock: Block = {
@@ -137,5 +144,265 @@ describe("FileBlock 증빙 유형 (FRT-179)", () => {
     render(<FileBlock block={emptyFileBlock} onChange={vi.fn()} />)
     expect(screen.queryByLabelText("증빙 유형")).toBeNull()
     expect(screen.getByPlaceholderText("증빙 유형 (성적표/상장 등)")).toBeTruthy()
+  })
+})
+
+const attachedBlock = (id = "A"): Block => ({
+  ...emptyFileBlock,
+  value: { type: "file", fileName: `${id}.pdf`, fileId: id, mimeType: "application/pdf",
+    url: "https://files.example/stale", description: "", evidenceType: "" },
+})
+async function flush() { await act(async () => {}) }
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+describe("FileBlock URL lifecycle", () => {
+  it.each([
+    ["valid TTL", 600_000, 540_000],
+    ["short TTL", 10_000, 30_000],
+    ["past TTL", -1, 30_000],
+    ["missing expiry", undefined, 300_000],
+    ["invalid expiry", "invalid", 300_000],
+  ])("refreshes %s with one bounded timer", async (_, ttl, delay) => {
+    vi.useFakeTimers()
+    const expiresAt = typeof ttl === "number" ? new Date(Date.now() + ttl).toISOString() : ttl
+    vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first", expiresAt })
+      .mockResolvedValue({ url: "https://files.example/second" })
+    render(<FileBlock block={attachedBlock()} onChange={vi.fn()} />)
+    await flush()
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/first")
+    await act(async () => { vi.advanceTimersByTime(delay - 1) })
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/first")
+    await act(async () => { vi.advanceTimersByTime(1) })
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/second")
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
+  it.each([
+    ["audio/mpeg", false], ["audio/mpeg", true],
+    ["video/mp4", false], ["video/mp4", true],
+  ])("renews %s preserving paused=%s and playback position", async (mimeType, paused) => {
+    vi.useFakeTimers()
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {})
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue()
+    vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first" })
+      .mockResolvedValue({ url: "https://files.example/refreshed" })
+    const block = attachedBlock()
+    const view = render(<FileBlock block={{ ...block, value: { ...block.value as FileBlockValue, mimeType } }} onChange={vi.fn()} />)
+    await flush()
+    const selector = mimeType.startsWith("audio") ? "audio" : "video"
+    const media = view.container.querySelector<HTMLMediaElement>(selector)!
+    Object.defineProperty(media, "currentSrc", { configurable: true, value: "https://files.example/first" })
+    fireEvent.loadedMetadata(media)
+    load.mockClear()
+    play.mockClear()
+    media.currentTime = 47
+    Object.defineProperty(media, "paused", { configurable: true, value: paused })
+    await act(async () => { vi.advanceTimersByTime(300_000) })
+    expect(view.container.querySelector(selector)).toBe(media)
+    expect(load).toHaveBeenCalledTimes(1)
+    // Native load resets time before the replacement source's metadata arrives.
+    media.currentTime = 0
+    fireEvent.loadedMetadata(media)
+    expect(media.currentTime).toBe(0)
+    expect(play).not.toHaveBeenCalled()
+    Object.defineProperty(media, "currentSrc", { configurable: true, value: "https://files.example/refreshed" })
+    fireEvent.loadedMetadata(media)
+    expect(media.currentTime).toBe(47)
+    expect(play).toHaveBeenCalledTimes(paused ? 0 : 1)
+    load.mockRestore()
+    play.mockRestore()
+  })
+
+  it.each(["switch", "unmount"])("ignores pending metadata after %s", async (action) => {
+    vi.useFakeTimers()
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {})
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue()
+    vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first" })
+      .mockResolvedValue({ url: "https://files.example/refreshed" })
+    const audioBlock = (id: string) => {
+      const block = attachedBlock(id)
+      return { ...block, value: { ...block.value as FileBlockValue, mimeType: "audio/mpeg" } }
+    }
+    const view = render(<FileBlock block={audioBlock("A")} onChange={vi.fn()} />)
+    await flush()
+    const oldMedia = view.container.querySelector("audio")!
+    Object.defineProperty(oldMedia, "currentSrc", { configurable: true, value: "https://files.example/first" })
+    fireEvent.loadedMetadata(oldMedia)
+    load.mockClear()
+    play.mockClear()
+    oldMedia.currentTime = 47
+    Object.defineProperty(oldMedia, "paused", { configurable: true, value: false })
+    await act(async () => { vi.advanceTimersByTime(300_000) })
+    expect(load).toHaveBeenCalledTimes(1)
+    oldMedia.currentTime = 0
+    if (action === "switch") {
+      view.rerender(<FileBlock block={audioBlock("B")} onChange={vi.fn()} />)
+      await flush()
+    } else view.unmount()
+    Object.defineProperty(oldMedia, "currentSrc", { configurable: true, value: "https://files.example/refreshed" })
+    fireEvent.loadedMetadata(oldMedia)
+    expect(oldMedia.currentTime).toBe(0)
+    expect(play).not.toHaveBeenCalled()
+    if (action === "switch") expect(view.container.querySelector("audio")?.currentTime).toBe(0)
+    load.mockRestore()
+    play.mockRestore()
+  })
+
+  it.each([false, true])("discards failed links and retries in readOnly=%s", async (readOnly) => {
+    vi.useFakeTimers()
+    vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first" })
+      .mockRejectedValueOnce(new Error("secret signed URL"))
+      .mockResolvedValue({ url: "https://files.example/recovered" })
+    render(<FileBlock block={attachedBlock()} readOnly={readOnly} onChange={vi.fn()} />)
+    await flush()
+    await act(async () => { vi.advanceTimersByTime(300_000) })
+    expect(screen.queryByRole("link")).toBeNull()
+    expect(screen.queryByText(/secret/)).toBeNull()
+    expect(vi.getTimerCount()).toBe(0)
+    fireEvent.click(screen.getByRole("button", { name: "다운로드 링크 다시 시도" }))
+    await flush()
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/recovered")
+    expect(screen.queryByRole("button", { name: "다운로드 링크 다시 시도" })).toBeNull()
+  })
+
+  it.each(["resolve", "reject"])("ignores late A %s after switching to B", async (outcome) => {
+    const pending = deferred<{ url: string }>()
+    vi.mocked(getFileUrl).mockReturnValueOnce(pending.promise).mockResolvedValue({ url: "https://files.example/B" })
+    const view = render(<FileBlock block={attachedBlock()} onChange={vi.fn()} />)
+    view.rerender(<FileBlock block={attachedBlock("B")} onChange={vi.fn()} />)
+    await flush()
+    await act(async () => { if (outcome === "resolve") pending.resolve({ url: "https://files.example/A" }); else pending.reject(new Error("A failed")) })
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/B")
+    expect(screen.queryByRole("button", { name: "다운로드 링크 다시 시도" })).toBeNull()
+  })
+
+  it("isolates errors to their file ID", async () => {
+    vi.mocked(getFileUrl).mockRejectedValueOnce(new Error("A failed")).mockResolvedValue({ url: "https://files.example/B" })
+    const view = render(<FileBlock block={attachedBlock()} onChange={vi.fn()} />)
+    await flush()
+    view.rerender(<FileBlock block={attachedBlock("B")} onChange={vi.fn()} />)
+    await flush()
+    expect(screen.queryByText(/failed/)).toBeNull()
+    expect(screen.queryByRole("button", { name: "다운로드 링크 다시 시도" })).toBeNull()
+  })
+
+  it.each(["delete", "unmount"])("invalidates pending refresh on %s", async (action) => {
+    vi.useFakeTimers()
+    const pending = deferred<{ url: string }>()
+    vi.mocked(getFileUrl).mockResolvedValueOnce({ url: "https://files.example/first" }).mockReturnValueOnce(pending.promise)
+    const view = render(<FileBlock block={attachedBlock()} onChange={vi.fn()} />)
+    await flush()
+    await act(async () => { vi.advanceTimersByTime(300_000) })
+    if (action === "unmount") view.unmount()
+    else fireEvent.click(screen.getByRole("button", { name: /삭제/ }))
+    await act(async () => { pending.resolve({ url: "https://files.example/late" }) })
+    expect(vi.getTimerCount()).toBe(0)
+    expect(screen.queryByRole("link", { name: /열기/ })?.getAttribute("href")).not.toBe("https://files.example/late")
+  })
+
+  it("does not apply an upload to a replacement file", async () => {
+    const pending = deferred<UploadedFile | null>()
+    start.mockReturnValue(pending.promise)
+    const onChange = vi.fn()
+    const view = render(<FileBlock block={emptyFileBlock} onChange={onChange} />)
+    await selectFile()
+    view.rerender(<FileBlock block={attachedBlock("B")} onChange={onChange} />)
+    await act(async () => { pending.resolve(uploaded) })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(capture).not.toHaveBeenCalled()
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://files.example/fresh")
+  })
+
+  it("keeps name-only demo rendering without fetching", async () => {
+    render(<FileBlock block={{ ...emptyFileBlock, value: { type: "file", fileName: "demo.pdf", description: "", evidenceType: "" } }} readOnly onChange={vi.fn()} />)
+    await flush()
+    expect(screen.getByText("demo.pdf")).toBeTruthy()
+    expect(screen.queryByRole("link")).toBeNull()
+    expect(getFileUrl).not.toHaveBeenCalled()
+  })
+
+  it("uses latest fields and callback when upload finishes", async () => {
+    const pending = deferred<UploadedFile | null>()
+    start.mockReturnValue(pending.promise)
+    const originalChange = vi.fn()
+    const latestChange = vi.fn()
+    const view = render(<FileBlock block={emptyFileBlock} onChange={originalChange} />)
+    await selectFile()
+    view.rerender(<FileBlock block={{ ...emptyFileBlock, value: { ...emptyFileBlock.value as FileBlockValue, description: "new", evidenceType: "updated" } }} onChange={latestChange} />)
+    await act(async () => { pending.resolve(uploaded) })
+    expect(originalChange).not.toHaveBeenCalled()
+    expect(latestChange).toHaveBeenCalledWith(expect.objectContaining({ fileId: "file-1", description: "new", evidenceType: "updated" }))
+  })
+})
+
+describe("FRT-202 readOnly legacy attachments", () => {
+  function legacy(overrides: Partial<FileBlockValue> = {}) {
+    return { ...emptyFileBlock, value: { ...emptyFileBlock.value, type: "file", fileName: "성적표.pdf", url: "https://files.example/%EC%84%B1%EC%A0%81%ED%91%9C.pdf?token=encoded%2Fvalue", description: "제출한 증빙", evidenceType: "성적표", ...overrides } } as Block
+  }
+
+  it.each([
+    ["application/pdf", "성적표.pdf 열기"],
+    ["text/plain", "성적표.pdf 다운로드"],
+    [undefined, "성적표.pdf 다운로드"],
+  ])("provides a safe link for MIME %s without fetching or editing", (mimeType, label) => {
+    const onChange = vi.fn()
+    const block = legacy({ mimeType })
+    render(<FileBlock block={block} readOnly onChange={onChange} />)
+    const link = screen.getByRole("link", { name: label })
+    expect(link).toHaveAttribute("href", (block.value as FileBlockValue).url)
+    expect(link).toHaveAttribute("target", "_blank")
+    expect(link).toHaveAttribute("rel", "noreferrer noopener")
+    expect(screen.getByText("제출한 증빙")).toBeVisible()
+    expect(screen.getByText("성적표")).toBeVisible()
+    expect(getFileUrl).not.toHaveBeenCalled()
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.queryByRole("button")).toBeNull()
+  })
+
+  it("renders the existing image preview for legacy image MIME", () => {
+    render(<FileBlock block={legacy({ fileName: "사진.png", mimeType: "image/png" })} readOnly onChange={vi.fn()} />)
+    expect(screen.getByRole("img", { name: "사진.png" })).toHaveAttribute("src", expect.stringContaining("https://files.example/"))
+    expect(getFileUrl).not.toHaveBeenCalled()
+  })
+
+  it.each([["video/mp4", "video"], ["audio/mpeg", "audio"]])("renders existing %s native controls", (mimeType, tag) => {
+    const view = render(<FileBlock block={legacy({ mimeType })} readOnly onChange={vi.fn()} />)
+    const media = view.container.querySelector(tag)
+    expect(media).toHaveAttribute("controls")
+    expect(media?.querySelector("source")).toHaveAttribute("src", expect.stringContaining("https://files.example/"))
+    expect(getFileUrl).not.toHaveBeenCalled()
+  })
+
+  it.each(["javascript:alert(1)", "data:text/html,<script>alert(1)</script>", "blob:https://files.example/id", "mailto:someone@example.com", "not a URL", "/relative.pdf", "", undefined])("preserves name fallback without rendering unsafe/missing URL %s", (url) => {
+    const view = render(<FileBlock block={legacy({ url, mimeType: "image/png" })} readOnly onChange={vi.fn()} />)
+    expect(screen.getByText("성적표.pdf")).toBeVisible()
+    expect(screen.queryByRole("link")).toBeNull()
+    expect(screen.queryByRole("img")).toBeNull()
+    expect(view.container.querySelector("audio, video")).toBeNull()
+    expect(getFileUrl).not.toHaveBeenCalled()
+  })
+
+  it("supports a URL-only attachment without a filename", () => {
+    render(<FileBlock block={legacy({ fileName: "", mimeType: undefined })} readOnly onChange={vi.fn()} />)
+    expect(screen.getByRole("link", { name: "다운로드" })).toHaveAttribute("href", expect.stringContaining("https://files.example/"))
+    expect(screen.getByText("파일")).toBeVisible()
+  })
+
+  it("preserves the empty placeholder", () => {
+    render(<FileBlock block={emptyFileBlock} readOnly onChange={vi.fn()} />)
+    expect(screen.getByText("—")).toBeVisible()
+    expect(screen.queryByRole("link")).toBeNull()
+  })
+
+  it("keeps legacy editable attachments in the file picker", () => {
+    render(<FileBlock block={legacy()} onChange={vi.fn()} />)
+    expect(screen.getByText("성적표.pdf · 교체하려면 클릭")).toBeVisible()
+    expect(screen.queryByRole("link")).toBeNull()
+    expect(getFileUrl).not.toHaveBeenCalled()
   })
 })

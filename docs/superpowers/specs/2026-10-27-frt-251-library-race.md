@@ -1,0 +1,7 @@
+# FRT-251 acknowledged library CRUD
+
+Successful library creation, metadata updates and deletion must appear without a page reload, even while unrelated memberships change. Failed writes leave the previous acknowledged state intact. Preserve FRT-235 membership journals and retry behavior, current deletion policy, and page-owned latest selection. Never delete real user data during verification.
+
+Use acknowledged local patches rather than depending on a list GET that may be discarded. Invalidate older list snapshots separately from membership/recovery GET generations. Only accepted list snapshots advance membership ownership. Creation waits for the first list attempt to settle, and a failed initial list retains its retry error after successful creation. New manual libraries are immediately marked as loaded empty; a concurrently observed ID is never appended twice. Queue metadata writes only per library so server and UI preserve invocation order; unrelated libraries remain independent. A list-retry/replay design was considered but adds network requests and can invalidate membership recovery, so is unnecessary here. Technical decisions are authorized autonomously; UI approval is still required before merge.
+
+Validate overlapping add/remove, CRUD failures, stale list responses, ordered same-library edits, late membership responses after delete and FRT-235 recovery. Browser checks cover latest selection and unchanged deletion policy.

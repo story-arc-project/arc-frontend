@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest"
-import { renderHook } from "@testing-library/react"
+import { describe, it, expect, vi } from "vitest"
+import { act, renderHook } from "@testing-library/react"
 import { useLibraryFilter, matchesFilter } from "./useLibraryFilter"
 import { toExperienceV2 } from "@/lib/utils/experience-mapper"
 import { TEMPLATE_VERSION } from "@/lib/constants/templates-v2"
@@ -233,4 +233,14 @@ describe("기간 정렬 — 코어 밖으로 옮겨간 시점 (FRT-291 리뷰)",
       "진짜가 오래된 쪽",
     ])
   })
+})
+
+
+it("supports URL-controlled filter changes after a rerender", () => {
+  const onChange = vi.fn()
+  const { result, rerender } = renderHook(({ filter }) => useLibraryFilter([], filter, onChange), { initialProps: { filter: { search: "first" } } })
+  rerender({ filter: { search: "back" } })
+  expect(result.current.filter.search).toBe("back")
+  act(() => result.current.setSortBy("period"))
+  expect(onChange.mock.calls[0][0]({ search: "back" })).toEqual({ search: "back", sortBy: "period" })
 })

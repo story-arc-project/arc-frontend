@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { capture } from "@/lib/analytics"
 import { getFileUrl, MAX_FILE_SIZE_BYTES } from "@/lib/api/files-api"
 import { useFileUpload } from "@/hooks/useFileUpload"
+import { isSafeHttpUrl } from "@/lib/utils/url-utils"
 import type { Block, FileBlockValue } from "@/types/archive"
 
 import AudioPreview from "./file/AudioPreview"
@@ -30,7 +31,54 @@ interface FileBlockProps {
   onChange: (value: FileBlockValue) => void
 }
 
-function pickPreview({
+// Keep the native element alive: replacing it on each signed URL renewal loses playback.
+function MediaPreview({ val, url, onDelete }: {
+  val: FileBlockValue
+  url: string
+  onDelete?: () => void
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const previousUrlRef = useRef(url)
+  const pendingPlaybackRef = useRef<{ time: number; paused: boolean } | null>(null)
+
+  useEffect(() => {
+    if (previousUrlRef.current === url) return
+    previousUrlRef.current = url
+    const media = containerRef.current?.querySelector("audio, video") as HTMLMediaElement | null
+    if (!media) return
+    // A second renewal can arrive before metadata; keep the original playback intent.
+    const playback = pendingPlaybackRef.current ?? { time: media.currentTime, paused: media.paused }
+    pendingPlaybackRef.current = playback
+    let cancelled = false
+    const restorePlayback = () => {
+      const source = media.querySelector("source")
+      if (cancelled || !source || media.currentSrc !== source.src) return
+      media.currentTime = playback.time
+      pendingPlaybackRef.current = null
+      media.removeEventListener("loadedmetadata", restorePlayback)
+      if (!playback.paused) void media.play().catch(() => {})
+    }
+    media.addEventListener("loadedmetadata", restorePlayback)
+    // Updating a nested source alone does not rerun the native resource selection.
+    media.load()
+    return () => {
+      cancelled = true
+      media.removeEventListener("loadedmetadata", restorePlayback)
+    }
+  }, [url])
+
+  return (
+    <div ref={containerRef}>
+      {val.mimeType?.startsWith("video/") ? (
+        <VideoPreview name={val.fileName} url={url} mimeType={val.mimeType} onDelete={onDelete} />
+      ) : (
+        <AudioPreview name={val.fileName} url={url} mimeType={val.mimeType ?? ""} size={val.size} onDelete={onDelete} />
+      )}
+    </div>
+  )
+}
+
+function FilePreview({
   val,
   resolvedUrl,
   onDelete,
@@ -39,7 +87,7 @@ function pickPreview({
   resolvedUrl?: string
   onDelete?: () => void
 }) {
-  const url = resolvedUrl ?? val.url
+  const url = resolvedUrl
   const mime = val.mimeType ?? ""
   const name = val.fileName
 
@@ -56,19 +104,8 @@ function pickPreview({
   if (mime.startsWith("image/")) {
     return <ImagePreview name={name} url={url} onDelete={onDelete} />
   }
-  if (mime.startsWith("video/")) {
-    return <VideoPreview name={name} url={url} mimeType={mime} onDelete={onDelete} />
-  }
-  if (mime.startsWith("audio/")) {
-    return (
-      <AudioPreview
-        name={name}
-        url={url}
-        mimeType={mime}
-        size={val.size}
-        onDelete={onDelete}
-      />
-    )
+  if (mime.startsWith("video/") || mime.startsWith("audio/")) {
+    return <MediaPreview key={`${val.fileId ?? ""}:${mime}`} val={val} url={url} onDelete={onDelete} />
   }
   if (mime === "application/pdf") {
     return <PdfCard name={name} size={val.size} url={url} onDelete={onDelete} />
@@ -86,8 +123,13 @@ function pickPreview({
 export default function FileBlock({ block, readOnly, onBusyChange, onChange }: FileBlockProps) {
   const val = block.value as FileBlockValue
   const { state, progress, error, start, cancel, reset } = useFileUpload()
-  const [fetched, setFetched] = useState<{ id: string; url: string } | null>(null)
-  const [urlError, setUrlError] = useState<string | null>(null)
+  const [fetched, setFetched] = useState<{ id: string; url?: string; failed?: boolean } | null>(null)
+  const [urlAttempt, setUrlAttempt] = useState(0)
+  const invalidateUrlRef = useRef<() => void>(() => {})
+  const latestRef = useRef({ val, onChange })
+  const uploadVersionRef = useRef(0)
+  useEffect(() => { latestRef.current = { val, onChange } })
+  useEffect(() => { uploadVersionRef.current += 1 }, [block.id, val.fileId])
   // 업로드가 끝나기 전에 이 블록이 사라졌는지 판정한다(아래 handleSelect 참고).
   const mountedRef = useRef(true)
 
@@ -106,44 +148,65 @@ export default function FileBlock({ block, readOnly, onBusyChange, onChange }: F
     return () => onBusyChange?.(false)
   }, [busy, onBusyChange])
 
-  const resolvedUrl =
-    fetched && fetched.id === val.fileId ? fetched.url : val.url
+  const currentUrl = fetched?.id === val.fileId ? fetched : null
+  const resolvedUrl = currentUrl ? currentUrl.url : val.url
+  const urlError = Boolean(val.fileId && currentUrl?.failed)
 
   useEffect(() => {
     const id = val.fileId
     if (!id) return
     let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const invalidate = () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+    invalidateUrlRef.current = invalidate
     getFileUrl(id)
       .then((info) => {
-        if (!cancelled) {
-          setFetched({ id, url: info.url })
-        }
-      })
-      .catch((err: unknown) => {
         if (cancelled) return
-        const message = err instanceof Error ? err.message : "파일 정보를 불러오지 못했어요."
-        setUrlError(message)
+        setFetched({ id, url: info.url })
+        const expiresAt = info.expiresAt ? Date.parse(info.expiresAt) : NaN
+        const delay = Number.isFinite(expiresAt)
+          ? Math.max(30_000, expiresAt - Date.now() - 60_000)
+          : 300_000
+        timer = setTimeout(() => setUrlAttempt(attempt => attempt + 1), delay)
       })
-    return () => {
-      cancelled = true
-    }
-  }, [val.fileId])
+      .catch(() => {
+        if (!cancelled) setFetched({ id, failed: true })
+      })
+    return invalidate
+  }, [val.fileId, urlAttempt])
+
+  const urlErrorNotice = urlError ? (
+    <div className="flex flex-col items-start gap-1" role="status">
+      <p className="text-body-sm text-error">파일 다운로드 링크를 불러오지 못했어요.</p>
+      <button
+        type="button"
+        className="min-h-11 text-body-sm text-brand underline underline-offset-4"
+        onClick={() => setUrlAttempt(attempt => attempt + 1)}
+      >
+        다운로드 링크 다시 시도
+      </button>
+    </div>
+  ) : null
 
   function update(field: keyof Omit<FileBlockValue, "type">, v: string) {
     onChange({ ...val, [field]: v })
   }
 
   async function handleSelect(file: File) {
+    const version = ++uploadVersionRef.current
     const uploaded = await start(file)
     if (!uploaded) return
     // useFileUpload 는 언마운트 뒤 완료된 업로드도 결과를 그대로 돌려준다. 이미 사라진 블록의
     // 업로드는 onChange 가 폼에 닿지 않아 첨부로 남지 않으므로, 계측도 하지 않는다(유령 첨부 방지).
-    if (!mountedRef.current) return
+    if (!mountedRef.current || version !== uploadVersionRef.current) return
     // 업로드가 확정된 시점에만 첨부로 센다(FRT-113) — 실패·취소는 첨부가 아니다.
     // 파일명·용량은 싣지 않는다(PII). 블록마다 발화하므로 이벤트 수 = 첨부 건수다.
     capture("archive_attachment_added", { attachment_type: "file" })
-    onChange({
-      ...val,
+    latestRef.current.onChange({
+      ...latestRef.current.val,
       fileName: uploaded.originalName || file.name,
       fileId: uploaded.id,
       mimeType: uploaded.mimeType,
@@ -151,10 +214,11 @@ export default function FileBlock({ block, readOnly, onBusyChange, onChange }: F
       url: uploaded.url,
     })
     setFetched(uploaded.url && uploaded.id ? { id: uploaded.id, url: uploaded.url } : null)
-    setUrlError(null)
   }
 
   function handleDelete() {
+    invalidateUrlRef.current()
+    uploadVersionRef.current += 1
     // 원격 삭제는 부모 저장 성공 후 서버의 고아 파일 정리 정책에 맡긴다.
     // 여기서 즉시 deleteFile 을 호출하면 사용자가 폼을 취소했을 때 원본이 먼저 사라져 복구할 수 없다.
     onChange({
@@ -164,7 +228,6 @@ export default function FileBlock({ block, readOnly, onBusyChange, onChange }: F
       evidenceType: val.evidenceType,
     })
     setFetched(null)
-    setUrlError(null)
     reset()
   }
 
@@ -180,12 +243,15 @@ export default function FileBlock({ block, readOnly, onBusyChange, onChange }: F
       : undefined
 
   if (readOnly) {
+    // Legacy attachments have no fileId to renew; only stored HTTP(S) URLs are viewable.
+    const hasLegacyUrl = !hasUploaded && Boolean(val.url && isSafeHttpUrl(val.url))
     return (
       <div className="flex flex-col gap-1 border-l-2 border-brand/30 pl-3.5">
         <span className="text-caption text-text-tertiary font-semibold tracking-wide">{block.label}</span>
-        {hasUploaded ? (
+        {hasUploaded || hasLegacyUrl ? (
           <div className="mt-1 flex flex-col gap-2">
-            {pickPreview({ val, resolvedUrl })}
+            <FilePreview val={val} resolvedUrl={resolvedUrl} />
+            {urlErrorNotice}
             {val.description && (
               <span className="text-body-sm text-text-secondary">{val.description}</span>
             )}
@@ -245,7 +311,7 @@ export default function FileBlock({ block, readOnly, onBusyChange, onChange }: F
           </div>
         </div>
       ) : hasUploaded ? (
-        pickPreview({ val, resolvedUrl, onDelete: handleDelete })
+        <FilePreview val={val} resolvedUrl={resolvedUrl} onDelete={handleDelete} />
       ) : (
         <label className="flex h-12 flex-1 cursor-pointer items-center gap-2 rounded-md border border-dashed border-border bg-surface px-4 transition-colors hover:border-brand">
           <Paperclip size={16} className="text-text-tertiary" />
@@ -269,9 +335,7 @@ export default function FileBlock({ block, readOnly, onBusyChange, onChange }: F
       {state === "error" && error && (
         <p className="text-body-sm text-error">{error}</p>
       )}
-      {urlError && !error && (
-        <p className="text-body-sm text-error">{urlError}</p>
-      )}
+      {urlErrorNotice}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Input

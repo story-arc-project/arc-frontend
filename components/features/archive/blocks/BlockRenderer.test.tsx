@@ -39,7 +39,7 @@ describe("outcome-list 라우팅 (FRT-213)", () => {
       />,
     )
 
-    expect(screen.getByLabelText("기간 시작")).toHaveAttribute("type", "month")
+    expect(screen.getByLabelText("1번째 기록 기간 시작")).toHaveAttribute("type", "month")
   })
 
   it("파일 컬럼이면 표형으로 폴백해 업로드 칸을 준다", () => {

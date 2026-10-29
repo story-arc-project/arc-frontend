@@ -1,12 +1,16 @@
 "use client";
 
+import { PasswordInput } from "@/components/ui/password-input";
+
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button, DatePicker, Input, toast } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
+import { clearSignupHandoff, readSignupHandoff } from "@/lib/auth/signup-handoff";
 import { createOAuthState } from "@/lib/auth/oauth-state";
+import { buildGoogleAuthUrl } from "@/lib/auth/google-auth-url";
 import { api, ApiError } from "@/lib/api/client";
 import { capture, markSignupCompletedIfUnseen, useFlowExit } from "@/lib/analytics";
 import { useAuth } from "@/hooks/useAuth";
@@ -47,7 +51,14 @@ function SignupForm() {
   const { shouldRedirect } = useRedirectIfAuthenticated({ allowOnboardingFlow: isOnOnboardingStep });
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
 
-  const [step, setStep] = useState<Step>("start");
+  const lastInitializedSearch = useRef<string | null>(null);
+  const [isUrlInitialized, setIsUrlInitialized] = useState(false);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
+  const [step, setStep] = useState<Step>(() => {
+    if (!stepParam || !STEP_ORDER.includes(stepParam) || stepParam === "verify" || stepParam === "password") return "start";
+    return CONSENT_ENABLED && stepParam !== "consent" && ONBOARDING_STEPS.includes(stepParam)
+      ? "consent" : stepParam;
+  });
   const [dir, setDir] = useState(1);
 
   // Auth fields
@@ -99,19 +110,39 @@ function SignupForm() {
   // **아직 그 화면에 대한 진술인지** 판정한다(재발송의 verifyFlowId 와 같은 장치).
   const stepFlowId = useRef(0);
 
-  // 로그인 페이지에서 리다이렉트된 경우 URL 파라미터로 상태 복원
+  // Email is never read from the URL. Only an opaque, tab-local verification flow can resume.
   useEffect(() => {
-    const stepParam = searchParams.get("step") as Step | null;
-    const emailParam = searchParams.get("email");
-    // URLSearchParams.get()은 이미 디코딩된 값을 반환하므로 decodeURIComponent 불필요
-    if (emailParam) setEmail(emailParam);
-    if (stepParam && STEP_ORDER.includes(stepParam)) {
-      // 동의 활성 시, URL로 후속 온보딩 스텝(profile/q1/q2)에 직접 진입하는 것(stale 링크·수동 URL)을
-      // consent 로 되돌려 동의 없이 프로필 단계로 들어가지 못하게 한다(서버 강제의 UX 보조).
-      // 정상 흐름은 consent 제출 후 goTo 로 진행하므로 영향받지 않는다.
+    const search = searchParams.toString();
+    if (lastInitializedSearch.current === search) return;
+    lastInitializedSearch.current = search;
+    setIsUrlInitialized(true);
+    const requestedStep = searchParams.get("step") as Step | null;
+    const legacyEmail = searchParams.has("email");
+    if (legacyEmail) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("email");
+      window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    }
+    const needsEmail = requestedStep === "verify" || requestedStep === "password";
+    const resumedEmail = !legacyEmail && requestedStep === "verify"
+      ? readSignupHandoff(searchParams.get("flow")) : null;
+    if (needsEmail && !resumedEmail) {
+      clearSignupHandoff();
+      setEmail("");
+      setStep("start");
+      setResumeNotice("가입 정보를 이어갈 수 없어요. 이메일을 다시 입력해주세요.");
+      window.history.replaceState(window.history.state, "", "/signup");
+      return;
+    }
+    if (resumedEmail) setEmail(resumedEmail);
+    else {
+      clearSignupHandoff();
+      setEmail("");
+    }
+    if (requestedStep && STEP_ORDER.includes(requestedStep)) {
       const bypassesConsent =
-        CONSENT_ENABLED && stepParam !== "consent" && ONBOARDING_STEPS.includes(stepParam);
-      setStep(bypassesConsent ? "consent" : stepParam);
+        CONSENT_ENABLED && requestedStep !== "consent" && ONBOARDING_STEPS.includes(requestedStep);
+      setStep(bypassesConsent ? "consent" : requestedStep);
     }
   }, [searchParams]);
 
@@ -121,6 +152,18 @@ function SignupForm() {
       goTo(FIRST_ONBOARDING_STEP);
     }
   }, [step, isAuthenticated, isAuthLoading]);
+
+  const lastSignupStepRef = useRef<Step | null>(null);
+  useEffect(() => {
+    if (!isUrlInitialized || isAuthLoading || shouldRedirect) return;
+    if (step !== "start" && step !== "password" && step !== "verify") {
+      lastSignupStepRef.current = null;
+      return;
+    }
+    if (lastSignupStepRef.current === step) return;
+    lastSignupStepRef.current = step;
+    capture("signup_step_viewed", { step, step_index: STEP_ORDER.indexOf(step) });
+  }, [step, isUrlInitialized, isAuthLoading, shouldRedirect]);
 
   const onboardingIndex = ONBOARDING_STEPS.indexOf(step);
   const isOnboarding = onboardingIndex >= 0;
@@ -194,6 +237,18 @@ function SignupForm() {
   }
 
   function goTo(next: Step, direction = 1) {
+    setResumeNotice(null);
+    if (step === "verify" && next !== "verify") {
+      clearSignupHandoff();
+      // Drop resumable context before changing the in-memory step. Reload starts safely.
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("flow") || url.searchParams.has("step")) {
+        url.searchParams.delete("flow");
+        url.searchParams.delete("step");
+        lastInitializedSearch.current = url.searchParams.toString();
+        window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+      }
+    }
     // 실패 문구는 그 스텝에서의 그 시도에 매인 진술이다. 스텝을 벗어나면 진술도 끝난다.
     // 남겨두면 「← 이전」으로 되돌아왔다 다시 들어올 때 요소가 리마운트되면서
     // role="alert" 가 **지난 실패를 다시 낭독한다** — 아직 아무것도 시도하지 않았는데도(FRT-282).
@@ -355,12 +410,14 @@ function SignupForm() {
 
   // 이메일로 계속(가입 경로 선택) — 소셜과 갈라 채널별 전환 차이를 본다.
   function handleEmailContinue() {
+    clearSignupHandoff();
     if (!email) return;
     capture("signup_method_selected", { method: "email" });
     goTo("password");
   }
 
   function handleSocial() {
+    clearSignupHandoff();
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) {
       setSocialError("Google 로그인을 사용할 수 없어요");
@@ -368,22 +425,18 @@ function SignupForm() {
     }
     capture("signup_method_selected", { method: "google" });
     const redirectUri = `${window.location.origin}/callback/google`;
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: "code",
-      scope: "openid email profile",
-      access_type: "offline",
-      prompt: "select_account",
+    window.location.href = buildGoogleAuthUrl({
+      clientId,
+      redirectUri,
       state: createOAuthState(),
     });
-    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
   async function handleFinish() {
     setIsLoading(true);
 
     try {
+      clearSignupHandoff();
       await api.post("/auth/onboarding", {
         name,
         birth,
@@ -399,7 +452,7 @@ function SignupForm() {
       }, { auth: false });
       // 온보딩 완료 확정 지점(성공 응답). DUPLICATE_ONBOARDING(이미 완료 재진입)은
       // 아래 catch 에서 별도 처리하며 중복 발화하지 않는다.
-      capture("onboarding_completed", {});
+      capture("onboarding_completed", {}, { atUnload: true });
       // 여기서부터 이 온보딩은 이탈이 아니다(FRT-107). 아래 하드 내비게이션이 pagehide 를
       // 부르므로, 이 표시가 먼저 서야 완료가 이탈로도 집계되지 않는다.
       markOnboardingCompleted();
@@ -439,12 +492,14 @@ function SignupForm() {
 
   return (
     <div className="w-full max-w-lg">
+      {resumeNotice && <p role="status" className="mb-4 text-body-sm text-text-secondary">{resumeNotice}</p>}
       {/* Back */}
       <div className="h-8 mb-3 flex items-center">
         {step !== "start" && !((isAuthenticated || isAuthLoading) && step === FIRST_ONBOARDING_STEP) && (
           <button
             type="button"
             onClick={goBack}
+            disabled={isAuthLoading}
             className="flex items-center gap-1 text-body-sm text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
           >
             ← 이전
@@ -538,23 +593,13 @@ function SignupForm() {
                 <p className="text-body text-text-secondary mb-8">8자 이상이면 충분해요</p>
 
                 <div className="flex flex-col gap-3">
-                  <Input
+                  <PasswordInput
                     label="비밀번호"
-                    type={showPw ? "text" : "password"}
+                    visible={showPw}
+                    onToggleVisibility={() => setShowPw((v) => !v)}
                     placeholder="영문+숫자 8자 이상"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pr-14"
-                    rightAddon={
-                      <button
-                        type="button"
-                        onClick={() => setShowPw((v) => !v)}
-                        className="text-caption text-text-tertiary
-                                   hover:text-text-secondary transition-colors cursor-pointer select-none"
-                      >
-                        {showPw ? "숨기기" : "보기"}
-                      </button>
-                    }
                   />
                   {password.length > 0 && (
                     <div className="flex gap-3">
@@ -574,24 +619,14 @@ function SignupForm() {
                       ))}
                     </div>
                   )}
-                  <Input
+                  <PasswordInput
                     label="비밀번호 확인"
-                    type={showConfirmPw ? "text" : "password"}
+                    visible={showConfirmPw}
+                    onToggleVisibility={() => setShowConfirmPw((v) => !v)}
                     placeholder="비밀번호를 다시 입력해주세요"
                     value={confirmPw}
                     onChange={(e) => setConfirmPw(e.target.value)}
                     error={confirmPw.length > 0 && !pwMatch ? "비밀번호가 일치하지 않아요" : undefined}
-                    className="pr-14"
-                    rightAddon={
-                      <button
-                        type="button"
-                        onClick={() => setShowConfirmPw((v) => !v)}
-                        className="text-caption text-text-tertiary
-                                   hover:text-text-secondary transition-colors cursor-pointer select-none"
-                      >
-                        {showConfirmPw ? "숨기기" : "보기"}
-                      </button>
-                    }
                   />
                   {/* 가입 실패는 「가입하기」에 포커스가 머문 채 비동기로 나타난다.
                       역할이 없으면 스크린리더에는 아무 일도 일어나지 않은 것과 같다(FRT-282).

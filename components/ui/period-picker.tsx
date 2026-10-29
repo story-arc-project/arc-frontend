@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   formatPeriodString,
   inferGranularity,
@@ -44,6 +44,11 @@ export function PeriodPicker({
   reserveTrailingSlot,
   onChange,
 }: PeriodPickerProps) {
+  const instanceId = useId();
+  const labelId = `${instanceId}-label`;
+  const hintId = hint ? `${instanceId}-hint` : undefined;
+  const startLabelId = `${instanceId}-start-label`;
+  const endLabelId = `${instanceId}-end-label`;
   const [start, setStart] = useState(() => parsePeriodString(value).start);
   const [end, setEnd] = useState(() => parsePeriodString(value).end);
   const [isCurrent, setIsCurrent] = useState(() => parsePeriodString(value).isCurrent);
@@ -67,13 +72,19 @@ export function PeriodPicker({
   const mode = granularity === "day" ? "date" : "month";
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div
+      role="group"
+      aria-labelledby={label ? labelId : undefined}
+      aria-label={label ? undefined : "기간"}
+      aria-describedby={hintId}
+      className="flex flex-col gap-1.5"
+    >
       <div className={`flex items-center justify-between gap-2${reserveTrailingSlot ? " pr-6" : ""}`}>
         {label ? (
-          <label className="text-field-label text-text-primary">
-            {label}
+          <span className="text-field-label text-text-primary">
+            <span id={labelId}>{label}</span>
             {required && <RequiredDot />}
-          </label>
+          </span>
         ) : (
           <span />
         )}
@@ -101,9 +112,14 @@ export function PeriodPicker({
           ))}
         </div>
       </div>
-      {hint ? <p className="text-caption text-text-tertiary">{hint}</p> : null}
+      {hint ? <p id={hintId} className="text-caption text-text-tertiary">{hint}</p> : null}
+      <span id={startLabelId} className="sr-only">시작일</span>
+      <span id={endLabelId} className="sr-only">종료일</span>
       <div className="flex items-center gap-2">
         <DatePicker
+          id={`${instanceId}-start`}
+          aria-labelledby={label ? `${labelId} ${startLabelId}` : startLabelId}
+          aria-describedby={hintId}
           mode={mode}
           value={start}
           onChange={(e) => setStart(e.target.value)}
@@ -111,6 +127,9 @@ export function PeriodPicker({
         />
         <span className="text-text-tertiary text-body flex-shrink-0">~</span>
         <DatePicker
+          id={`${instanceId}-end`}
+          aria-labelledby={label ? `${labelId} ${endLabelId}` : endLabelId}
+          aria-describedby={hintId}
           mode={mode}
           value={isCurrent ? "" : end}
           onChange={(e) => setEnd(e.target.value)}

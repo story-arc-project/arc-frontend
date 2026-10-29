@@ -6,11 +6,13 @@ import {
   DndContext,
   DragEndEvent,
   PointerSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
@@ -236,6 +238,7 @@ type UseSortableReturn = ReturnType<typeof useSortable>;
 
 export interface SortableHandle {
   setNodeRef: UseSortableReturn["setNodeRef"];
+  setActivatorNodeRef: UseSortableReturn["setActivatorNodeRef"];
   attributes: UseSortableReturn["attributes"];
   listeners: UseSortableReturn["listeners"];
   style: { transform: string | undefined; transition: string | undefined; opacity: number };
@@ -248,6 +251,7 @@ export function SortableList<T extends { id: number }>({
 }: SortableListProps<T>) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   const handleDragEnd = (e: DragEndEvent) => {
@@ -267,6 +271,17 @@ export function SortableList<T extends { id: number }>({
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragEnd={handleDragEnd}
+      accessibility={{
+        screenReaderInstructions: {
+          draggable: "순서를 변경하려면 Space 또는 Enter를 누르세요. 위아래 화살표로 이동하고 Space 또는 Enter로 완료하거나 Escape로 취소하세요.",
+        },
+        announcements: {
+          onDragStart: ({ active }) => `${items.findIndex(i => i.id === active.id) + 1}번째 항목의 순서 변경을 시작했습니다.`,
+          onDragOver: ({ over }) => over ? `${items.findIndex(i => i.id === over.id) + 1}번째 위치입니다.` : "이동할 위치가 없습니다.",
+          onDragEnd: ({ over }) => over ? `${items.findIndex(i => i.id === over.id) + 1}번째 위치로 순서 변경을 완료했습니다.` : "순서를 변경하지 않았습니다.",
+          onDragCancel: () => "순서 변경을 취소했습니다.",
+        },
+      }}
     >
       <SortableContext
         items={items.map((i) => i.id)}
@@ -295,6 +310,7 @@ function SortableWrapper({
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -308,6 +324,7 @@ function SortableWrapper({
 
   const handle: SortableHandle = {
     setNodeRef,
+    setActivatorNodeRef,
     attributes,
     listeners,
     style,
@@ -331,14 +348,16 @@ export function EditorCard({
   onDelete: () => void;
   children: ReactNode;
 }) {
+  const { setActivatorNodeRef, attributes, listeners } = handle;
   return (
     <div className="flex gap-2 rounded-md border border-border bg-surface p-3">
       <button
+        ref={setActivatorNodeRef}
         type="button"
         className="mt-0.5 cursor-grab touch-none text-text-tertiary active:cursor-grabbing shrink-0 p-1"
         aria-label="순서 변경"
-        {...handle.attributes}
-        {...handle.listeners}
+        {...attributes}
+        {...listeners}
       >
         <GripVertical size={14} />
       </button>

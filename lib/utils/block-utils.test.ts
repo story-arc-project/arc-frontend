@@ -132,6 +132,65 @@ describe("isBlockEmpty repeatable-cell (FRT-122)", () => {
   })
 })
 
+describe("custom table empty state and preservation (FRT-184)", () => {
+  const table = (rows: unknown, columns = ["항목", "내용"]): Block => ({
+    id: "custom-table", type: "table", label: "나만의 표",
+    value: { type: "table", columns, rows } as BlockValue,
+  })
+
+  it.each([
+    [], [[]], [["", ""]], [["  ", "\n\t"]], [["", ""], [" ", ""]],
+    [null, {}, 42, "잘못된 행"], [[null, 1, {}, false]],
+  ].map(rows => ({ rows })))("빈 행과 손상 입력은 상세에 그릴 내용이 없다: $rows", ({ rows }) => {
+    expect(isBlockEmpty(table(rows))).toBe(true)
+  })
+
+  it.each([
+    [["내용", ""]], [["", ""], ["", " 마지막 셀 "]],
+    [null, ["", "살아 있는 값"]], [["", "", "숨긴 열의 값"]],
+  ].map(rows => ({ rows })))("한 셀이라도 값이 있으면 상세에 남는다: $rows", ({ rows }) => {
+    expect(isBlockEmpty(table(rows))).toBe(false)
+  })
+
+  it.each([undefined, null, {}, 42, "잘못된 rows"])("행 배열이 손상돼도 예외 없이 비었다고 본다: %j", rows => {
+    expect(isBlockEmpty(table(rows))).toBe(true)
+  })
+
+  it("현재 열이 없어도 저장된 셀 내용을 숨기거나 버리지 않는다", () => {
+    const b = table([["예전 열의 값"]], [])
+    expect(isBlockEmpty(b)).toBe(false)
+    expect(isBlockDiscardable(b)).toBe(false)
+    expect(isValueOccupied(b.value)).toBe(true)
+  })
+
+  it("비어 보이는 표도 기존 행이 있으면 저장·이관 경계에서 지킨다", () => {
+    const b = table([["", ""], [" ", ""]])
+    const snapshot = structuredClone(b)
+    expect(isBlockEmpty(b)).toBe(true)
+    expect(isBlockDiscardable(b)).toBe(false)
+    expect(isValueOccupied(b.value)).toBe(true)
+    const group = createGroupBlock("표 섹션")
+    group.children = [b]
+    expect(isBlockEmpty(group)).toBe(true)
+    expect(isBlockDiscardable(group)).toBe(false)
+    expect(b).toEqual(snapshot)
+  })
+
+  it("열만 있고 행이 없는 표의 기존 보존 판정은 바꾸지 않는다", () => {
+    const b = table([])
+    expect(isBlockEmpty(b)).toBe(true)
+    expect(isBlockDiscardable(b)).toBe(true)
+    expect(isValueOccupied(b.value)).toBe(false)
+  })
+
+  it("알 수 없는 블록 값의 기존 보존 경계는 유지한다", () => {
+    const b = { ...table([]), value: { type: "future-table", rows: [["미지 값"]] } as unknown as BlockValue }
+    expect(isBlockEmpty(b)).toBe(true)
+    expect(isBlockDiscardable(b)).toBe(false)
+    expect(isValueOccupied(b.value)).toBe(true)
+  })
+})
+
 describe("validateRequiredBlocks", () => {
   it("required 이면서 비어 있는 블록만 에러 메시지를 모은다", () => {
     const required = createTextField("이름", { required: true })

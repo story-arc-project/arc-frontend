@@ -12,19 +12,46 @@ const EMPTY = "—";
 
 type MaybeIso = string | null | undefined;
 
-/**
- * Format ISO date string to Korean locale short date.
- * e.g. "2024. 3. 15." · 값 없음 → "—" · 파싱 불가 → 원문 그대로
- */
-export function formatDate(iso: MaybeIso): string {
+export type DateStyle = "default" | "compact" | "admin";
+
+/** Date-only values keep their day; offset-less ISO datetimes mean Korea wall time. */
+function parseDisplayDate(iso: string): { date: Date; timeZone: string } {
+  const calendar = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/.exec(iso);
+  if (calendar) {
+    const [, year, month, day] = calendar;
+    const y = Number(year);
+    const m = Number(month);
+    const d = Number(day);
+    const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+    const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if (m < 1 || m > 12 || d < 1 || d > days[m - 1]) return { date: new Date(NaN), timeZone: "UTC" };
+  }
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/;
+  const wallTime = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
+  const source = dateOnly.test(iso)
+    ? `${iso}T00:00:00Z`
+    : wallTime.test(iso) ? `${iso.replace(" ", "T")}Z` : iso;
+  // Calendar/wall-time values are already Korea dates, not instants. A synthetic UTC
+  // date preserves their components even when historical Korea offsets differ.
+  return { date: new Date(source), timeZone: dateOnly.test(iso) || wallTime.test(iso) ? "UTC" : "Asia/Seoul" };
+}
+
+/** Korea date presentation. Empty values use an em dash; invalid values keep their source. */
+export function formatDate(iso: MaybeIso, style: DateStyle = "default"): string {
   if (!iso) return EMPTY;
-  const d = new Date(iso);
+  const { date: d, timeZone } = parseDisplayDate(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("ko-KR", {
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone,
     year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+    month: style === "default" ? "short" : "2-digit",
+    day: style === "default" ? "numeric" : "2-digit",
+  };
+  if (style === "compact") {
+    const parts = new Intl.DateTimeFormat("ko-KR", options).formatToParts(d);
+    return ["year", "month", "day"].map((type) => parts.find((part) => part.type === type)?.value).join(".");
+  }
+  return d.toLocaleDateString("ko-KR", options);
 }
 
 /**

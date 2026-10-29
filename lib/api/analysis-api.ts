@@ -414,8 +414,22 @@ function mapIndividualStrength(dto: unknown, index: number): IndividualStrength 
 /** item_strengths 부재(구 레코드·진행중)에도 빈 구조를 돌려 화면이 안전히 건너뛴다. */
 function mapItemStrengths(dto: unknown): IndividualItemStrengths {
   const r = asRecord(dto);
+  const flag = r.hasGenuineStrengths ?? r.has_genuine_strengths;
+  // 명시적인 false 판정은 LLM이 함께 보낸 긍정 서술보다 우선한다.
+  // 플래그가 없는 구 레코드는 기존 서술을 보존한다.
+  if (flag === false) {
+    return {
+      hasGenuineStrengths: false,
+      oneLineVerdict: "",
+      noStrengthReason: asString(r.noStrengthReason ?? r.no_strength_reason),
+      summarizedStrengths: [],
+      strengths: [],
+      strongestAsset: "",
+      positioningTip: "",
+    };
+  }
   return {
-    hasGenuineStrengths: asBoolean(r.hasGenuineStrengths ?? r.has_genuine_strengths),
+    hasGenuineStrengths: asBoolean(flag),
     oneLineVerdict: asString(r.oneLineStrengthVerdict ?? r.one_line_strength_verdict),
     noStrengthReason: asString(r.noStrengthReason ?? r.no_strength_reason),
     summarizedStrengths: asStringArray(r.summarizedStrengths ?? r.summarized_strengths),
@@ -1029,11 +1043,19 @@ function mapKeywordDefinition(dto: unknown): KeywordDefinition {
 
 function mapKeywordCoverage(dto: unknown): KeywordCoverage {
   const r = asRecord(dto);
+  const related = r.relatedCount ?? r.related_count;
+  const total = r.totalCount ?? r.total_count;
+  const percent = r.coveragePercent ?? r.coverage_percent;
+  // 기본값 0으로 바꾸기 전에 원본 수치를 검증한다. 분모를 추정하거나 비율을 재계산하지 않는다.
+  const hasValidRatio =
+    typeof related === "number" && Number.isSafeInteger(related) && related >= 0 &&
+    typeof total === "number" && Number.isSafeInteger(total) && total > 0 && total >= related &&
+    typeof percent === "number" && Number.isFinite(percent) && percent >= 0 && percent <= 100;
   return {
     keyword: asString(r.keyword),
-    relatedCount: asNumber(r.relatedCount ?? r.related_count),
-    totalCount: asNumber(r.totalCount ?? r.total_count),
-    coveragePercent: asNumber(r.coveragePercent ?? r.coverage_percent),
+    relatedCount: asNumber(related),
+    totalCount: asNumber(total),
+    coveragePercent: hasValidRatio ? percent : null,
     highCount: asNumber(r.highCount ?? r.high_count),
     mediumCount: asNumber(r.mediumCount ?? r.medium_count),
     lowCount: asNumber(r.lowCount ?? r.low_count),
@@ -1769,6 +1791,7 @@ export async function getAnalysisHomeSummary(): Promise<AnalysisHomeSummary> {
 }
 
 export interface AnalysisHistoryResult {
+  /** 완료된 분석만 포함한다. 실행 중·실패 항목은 히스토리에 노출하지 않는다. */
   items: AnalysisSnapshot[];
   /**
    * 병합 소스 중 불러오지 못한 분석 유형. 전부 실패하면 throw 하므로 최대 2개다.
@@ -1779,7 +1802,8 @@ export interface AnalysisHistoryResult {
 }
 
 /**
- * `/analysis/history` 엔드포인트가 없으므로 세 목록을 병합해 반환한다.
+ * `/analysis/history` 엔드포인트가 없으므로 세 목록에서 완료된 분석만 병합해 반환한다.
+ * 개별 목록 API의 상태 범위는 유지하고, 히스토리에서만 완료 항목으로 제한한다.
  *
  * 일부 소스가 실패해도 나머지는 그대로 보여준다(회복력). 다만 그 회복이 무음이면 살아남은
  * 목록이 "전체 기록"인 얼굴을 하므로, 실패한 유형을 함께 돌려 화면이 말할 수 있게 한다.
