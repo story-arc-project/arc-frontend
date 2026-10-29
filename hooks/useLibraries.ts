@@ -53,6 +53,7 @@ export function useLibraries() {
   const latestListRequestRef = useRef<Promise<void> | null>(null);
   const hasLoadedListRef = useRef(false);
   const libraryWritesRef = useRef<Map<string, Promise<void>>>(new Map());
+  const deletedLibraryIdsRef = useRef<Set<string>>(new Set());
   // 멤버십 mutation 세대를 두 층위로 센다.
   // - 전역 카운터: 목록 재조회(refetch)는 "낙관적으로 바꾼 멤버십이 하나라도 있는가"만
   //   알면 되므로 라이브러리를 구분하지 않는다.
@@ -266,24 +267,27 @@ export function useLibraries() {
     }
   }, []);
 
+  // All acknowledged CRUD must preserve the latest attempt to discover the
+  // pre-existing list, including retries started while a write was pending.
+  const waitForInitialList = useCallback(async () => {
+    while (!hasLoadedListRef.current) {
+      const pendingList = latestListRequestRef.current;
+      await pendingList;
+      if (pendingList === latestListRequestRef.current) break;
+    }
+  }, []);
+
   const createLibrary = useCallback(
     async (payload: UseLibrariesMutationInput): Promise<void> => {
       // The header can create while the initial list is loading. Wait for
       // that snapshot (including failure) before invalidating older snapshots.
-      const waitForInitialList = async () => {
-        while (!hasLoadedListRef.current) {
-          const pendingList = latestListRequestRef.current;
-          await pendingList;
-          if (pendingList === latestListRequestRef.current) break;
-        }
-      };
       await waitForInitialList();
       const id = await apiCreateLibrary(payload);
       // Retry may have started while POST was pending. Until a list has ever
       // loaded, preserve that attempt too so existing libraries or retry errors
       // cannot disappear when the acknowledged library is added locally.
       await waitForInitialList();
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || deletedLibraryIdsRef.current.has(id)) return;
       invalidateListSnapshot();
       const alreadyPresent = librariesRef.current.some((library) => library.id === id);
       commitLibraries((prev) => prev.some((library) => library.id === id) ? prev : [...prev, {
@@ -299,12 +303,13 @@ export function useLibraries() {
       // observed it, preserve its existing load/error state and membership.
       if (!alreadyPresent && !payload.filter) markMembershipLoaded(id);
     },
-    [commitLibraries, invalidateListSnapshot, markMembershipLoaded],
+    [commitLibraries, invalidateListSnapshot, markMembershipLoaded, waitForInitialList],
   );
 
   const updateLibrary = useCallback(
     (id: string, payload: UseLibrariesUpdateInput): Promise<void> => enqueueLibraryWrite(id, async () => {
       await apiUpdateLibrary(id, payload);
+      await waitForInitialList();
       if (!mountedRef.current) return;
       invalidateListSnapshot();
       // PATCH ignores omitted fields. Preserve both omitted metadata and the
@@ -312,12 +317,17 @@ export function useLibraries() {
       const patch = Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined));
       commitLibraries((prev) => prev.map((library) => library.id === id ? { ...library, ...patch } : library));
     }),
-    [commitLibraries, enqueueLibraryWrite, invalidateListSnapshot],
+    [commitLibraries, enqueueLibraryWrite, invalidateListSnapshot, waitForInitialList],
   );
 
   const deleteLibrary = useCallback(
     (id: string): Promise<void> => enqueueLibraryWrite(id, async () => {
       await apiDeleteLibrary(id);
+      // A list can reveal a created ID before its POST acknowledgment arrives.
+      // Remember successful deletion before waiting so that late create cannot
+      // append the same server ID again, even during an initial-list retry.
+      deletedLibraryIdsRef.current.add(id);
+      await waitForInitialList();
       if (!mountedRef.current) return;
       invalidateListSnapshot();
       commitLibraries((prev) => prev.filter((library) => library.id !== id));
@@ -331,7 +341,7 @@ export function useLibraries() {
         });
       }
     }),
-    [commitLibraries, enqueueLibraryWrite, invalidateListSnapshot],
+    [commitLibraries, enqueueLibraryWrite, invalidateListSnapshot, waitForInitialList],
   );
 
   const pruneMembershipJournal = useCallback((libraryId: string) => {

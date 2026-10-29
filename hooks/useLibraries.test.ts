@@ -1121,3 +1121,63 @@ it.each([false, true])("creation acknowledgment preserves an initial-list retry 
   if (retryFails) expect(result.current.error?.message).toBe("retry failed")
   else expect(result.current.error).toBeNull()
 })
+
+
+describe("useLibraries — reviewed initial retry races", () => {
+  it.each([
+    { action: "update", retryFails: false, supersede: false },
+    { action: "update", retryFails: true, supersede: false },
+    { action: "delete", retryFails: false, supersede: false },
+    { action: "delete", retryFails: true, supersede: false },
+    { action: "update", retryFails: false, supersede: true },
+    { action: "delete", retryFails: true, supersede: true },
+  ] as const)("$action acknowledgment preserves initial retry (fails=$retryFails, superseded=$supersede)", async ({ action, retryFails, supersede }) => {
+    getLibrariesMock.mockRejectedValueOnce(new Error("initial failed"))
+    const { result } = renderHook(() => useLibraries())
+    await waitFor(() => { expect(result.current.error?.message).toBe("initial failed") })
+    await act(async () => { await result.current.createLibrary({ name: "New" }) })
+    const older = deferred<LibraryDTO[]>()
+    const latest = deferred<LibraryDTO[]>()
+    if (supersede) getLibrariesMock.mockReturnValueOnce(older.promise)
+    getLibrariesMock.mockReturnValueOnce(latest.promise)
+    let retries!: Promise<void>[]
+    let write!: Promise<void>
+    await act(async () => {
+      retries = [result.current.refetch()]
+      write = action === "update" ? result.current.updateLibrary("lib-new", { name: "Renamed" }) : result.current.deleteLibrary("lib-new")
+      await Promise.resolve()
+      if (supersede) retries.push(result.current.refetch())
+    })
+    if (supersede) await act(async () => { older.resolve(LIBRARY_DTOS); await retries[0] })
+    expect(result.current.isLoading).toBe(true)
+    await act(async () => {
+      if (retryFails) latest.reject(new Error("latest retry failed"))
+      else latest.resolve([...LIBRARY_DTOS, { id: "lib-new", name: "New", is_system: false }])
+      await Promise.all([...retries, write])
+    })
+    const ids = result.current.libraries.map((library) => library.id)
+    expect(ids).toEqual([
+      "lib-all", ...(retryFails ? [] : ["lib-a", "lib-b"]), ...(action === "update" ? ["lib-new"] : []),
+    ])
+    if (action === "update") expect(result.current.libraries.find((library) => library.id === "lib-new")?.name).toBe("Renamed")
+    if (retryFails) expect(result.current.error?.message).toBe("latest retry failed")
+    else expect(result.current.error).toBeNull()
+    expect(result.current.isLoading).toBe(false)
+  })
+
+  it("a delayed create acknowledgment cannot restore a library already observed and deleted", async () => {
+    getLibrariesMock.mockRejectedValueOnce(new Error("initial failed"))
+    const { result } = renderHook(() => useLibraries())
+    await waitFor(() => { expect(result.current.error?.message).toBe("initial failed") })
+    const post = deferred<string>()
+    createLibraryMock.mockReturnValueOnce(post.promise)
+    let create!: Promise<void>
+    await act(async () => { create = result.current.createLibrary({ name: "New" }); await Promise.resolve() })
+    getLibrariesMock.mockResolvedValueOnce([...LIBRARY_DTOS, { id: "lib-new", name: "New", is_system: false }])
+    await act(async () => { await result.current.refetch() })
+    await act(async () => { await result.current.deleteLibrary("lib-new") })
+    await act(async () => { post.resolve("lib-new"); await create })
+    expect(result.current.libraries.map((library) => library.id)).toEqual(["lib-all", "lib-a", "lib-b"])
+    expect(result.current.loadedMembershipIds.has("lib-new")).toBe(false)
+  })
+})
