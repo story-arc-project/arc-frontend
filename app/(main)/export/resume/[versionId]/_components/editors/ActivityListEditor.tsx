@@ -10,6 +10,7 @@ import {
   nextClientId,
   SortableList,
 } from "./shared";
+import { useListEditor } from "./useListEditor";
 
 interface Props {
   value: Activity[];
@@ -17,25 +18,22 @@ interface Props {
 }
 
 export function ActivityListEditor({ value, onChange }: Props) {
-  const updateItem = (id: number, patch: Partial<Activity>) =>
-    onChange(value.map((v) => (v.id === id ? { ...v, ...patch } : v)));
-  const removeItem = (id: number) => onChange(value.filter((v) => v.id !== id));
-  const addItem = () =>
-    onChange([
-      ...value,
-      {
-        id: nextClientId(),
-        활동명: null,
-        기관: null,
-        기간_시작: null,
-        기간_종료: null,
-        기간_원문: null,
-        진행중: false,
-        역할: null,
-        활동내용: [],
-        성과: [],
-      },
-    ]);
+  const { updateItem, removeItem, addItem } = useListEditor<Activity>(
+    value,
+    onChange,
+    () => ({
+      id: nextClientId(),
+      활동명: null,
+      기관: null,
+      기간_시작: null,
+      기간_종료: null,
+      기간_원문: null,
+      진행중: false,
+      역할: null,
+      활동내용: [],
+      성과: [],
+    }),
+  );
 
   return (
     <div className="flex flex-col gap-2">

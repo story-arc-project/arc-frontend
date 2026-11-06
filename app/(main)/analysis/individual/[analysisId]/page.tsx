@@ -29,6 +29,7 @@ export default function IndividualAnalysisDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
   const basePath = useBasePath();
   const [data, setData] = useState<IndividualAnalysisResult | null>(null);
+  const [loadedId, setLoadedId] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [unsupported, setUnsupported] = useState(false);
 
@@ -40,6 +41,7 @@ export default function IndividualAnalysisDetailPage() {
         setError(false);
         setUnsupported(false);
         setData(d);
+        setLoadedId(analysisId);
       })
       .catch((e) => {
         if (!active) return;
@@ -60,7 +62,7 @@ export default function IndividualAnalysisDetailPage() {
   // 없지만, 조회는 사람이 하므로 종합·키워드와 같은 축에서 비교할 수 있다.
   // ready 는 data 가 아니라 hasResultBody 다 — 대기·실패 안내 화면을 본 시간은 결과를
   // 본 시간이 아니다(comprehensive 와 같은 규칙).
-  useAnalysisViewed({ analysisType: "individual", analysisId, ready: !!data?.hasResultBody });
+  const viewObservation = useAnalysisViewed({ analysisType: "individual", analysisId, ready: loadedId === analysisId && !error && !unsupported && !!data?.hasResultBody });
 
   if (unsupported) {
     return <UnsupportedSchemaNotice basePath={basePath} fallbackHref="/analysis/individual" />;
@@ -84,7 +86,7 @@ export default function IndividualAnalysisDetailPage() {
     );
   }
 
-  if (!data) {
+  if (!data || loadedId !== analysisId) {
     return (
       <main className="px-4 py-8 sm:px-8">
         <div className="max-w-4xl mx-auto space-y-6" aria-busy="true">
@@ -146,7 +148,7 @@ export default function IndividualAnalysisDetailPage() {
               </Link>
             )}
           </header>
-          <BookmarkToggle analysisId={analysisId} isBookmarked={data.isBookmarked} />
+          <BookmarkToggle analysisId={analysisId} isBookmarked={data.isBookmarked} viewObservation={viewObservation} />
         </div>
 
         {result.missingInfoWarning && (
@@ -303,8 +305,8 @@ function ItemStrengthsSection({
   strengths: IndividualAnalysisResult["result"]["itemStrengths"];
 }) {
   const hasCards = strengths.strengths.length > 0;
-  // hasGenuineStrengths 는 판정에 넣지 않는다 — 방어 파싱의 기본값(false)이 아니라
-  // "서술이 하나라도 왔는가"로 그려야 구 레코드에서 빈 껍데기 섹션이 뜨지 않는다.
+  // 명시적 false의 긍정 서술은 매퍼가 제거한다. 여기서는 남은 사유·서술로 빈 섹션을 걸러
+  // 플래그가 없는 구 레코드의 강점 내용도 보존한다.
   const empty =
     !hasCards &&
     !strengths.oneLineVerdict &&

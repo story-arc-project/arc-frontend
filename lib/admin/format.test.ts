@@ -24,3 +24,10 @@ describe("formatAdminDate", () => {
     expect(formatAdminDate("어제")).toBe("어제");
   });
 });
+
+ it.each(["2026-02-29", "2026-04-31T00:00:00Z"])("preserves invalid calendar source %s", (source) => {
+  expect(formatAdminDate(source)).toBe(source);
+});
+ it("interprets offset-less datetime in Korea", () => {
+  expect(formatAdminDate("2026-03-14T23:30:00")).toBe("2026. 03. 14.");
+});

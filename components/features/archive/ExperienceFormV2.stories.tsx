@@ -1,3 +1,4 @@
+import { useState } from "react"
 import type { Meta, StoryObj } from "@storybook/nextjs"
 import { expect, userEvent, within } from "storybook/test"
 
@@ -5,7 +6,7 @@ import ExperienceFormV2 from "./ExperienceFormV2"
 import { careerExperience } from "./__fixtures__/archive.fixtures"
 import { getTemplateForType } from "@/lib/constants/templates-v2"
 import { cloneBlocks } from "@/lib/utils/block-utils"
-import type { ExperienceV2, ImportanceLevel } from "@/types/archive"
+import type { ExperienceTypeId, ExperienceV2, ImportanceLevel } from "@/types/archive"
 
 const meta: Meta<typeof ExperienceFormV2> = {
   title: "Features/Archive/ExperienceFormV2",
@@ -123,5 +124,27 @@ export const AwardTeamRoleKeepsValue: Story = {
 
     await userEvent.selectOptions(trigger, "개인 수상")
     expect(canvas.getByLabelText("팀에서 내가 맡은 역할")).toHaveValue("팀장")
+  },
+}
+
+
+/** URL-controller equivalent: hiding the form does not discard its same-type draft. */
+export const ControlledTypeHistory: Story = {
+  args: { mode: "new" },
+  render: function ControlledTypeHistory(args) {
+    const [type, setType] = useState<ExperienceTypeId | null>("career")
+    return <>
+      <button onClick={() => setType(null)}>선택 단계로</button>
+      <button onClick={() => setType("career")}>앞으로</button>
+      <ExperienceFormV2 {...args} selectedTypeId={type} onTypeSelect={setType} />
+    </>
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.type(await canvas.findByRole("textbox", { name: "경험명" }), "인턴 초안")
+    await userEvent.click(canvas.getByRole("button", { name: "선택 단계로" }))
+    expect(canvas.queryByRole("textbox", { name: "경험명" })).toBeNull()
+    await userEvent.click(canvas.getByRole("button", { name: "앞으로" }))
+    expect(await canvas.findByRole("textbox", { name: "경험명" })).toHaveValue("인턴 초안")
   },
 }

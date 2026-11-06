@@ -55,7 +55,7 @@ export default function SettingsPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-stretch">
         <div data-testid="settings-profile-column" className="lg:col-span-8">
-          <ProfileEditForm profile={profile} className="lg:h-full" />
+          <ProfileEditForm key={account?.email ?? "signed-out"} profile={profile} className="lg:h-full" />
         </div>
         <div
           data-testid="settings-account-column"

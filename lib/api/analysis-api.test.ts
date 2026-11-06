@@ -2510,3 +2510,110 @@ describe("idempotency retransmission", () => {
     expect(apiMock.post.mock.calls[1][2]).toEqual({ headers: { "Idempotency-Key": "stable-key" } })
   })
 })
+
+
+describe("FRT-137 — AI 출력의 커버리지·강점 판정 방어", () => {
+  it.each([
+    { related_count: 2, coverage_percent: 80 },
+    { related_count: 0, total_count: 0, coverage_percent: 0 },
+    { related_count: 4, total_count: 3, coverage_percent: 133 },
+    { related_count: -1, total_count: 3, coverage_percent: 20 },
+    { related_count: 1.5, total_count: 3, coverage_percent: 50 },
+    { related_count: 2, total_count: "5", coverage_percent: 40 },
+    { related_count: 2, total_count: Infinity, coverage_percent: 40 },
+    { related_count: 2, total_count: 5, coverage_percent: NaN },
+    { related_count: 2, total_count: 5, coverage_percent: -1 },
+    { related_count: 2, total_count: 5, coverage_percent: 101 },
+    { related_count: 2, total_count: 5 },
+    { total_count: 5, coverage_percent: 0 },
+  ])("분모·관련 개수·비율이 유효하지 않으면 비율을 미확인으로 내린다: %j", async (coverage) => {
+    apiMock.get.mockResolvedValue(envelope({
+      id: "kw-1", status: "completed",
+      result: { C_coverage: [{ keyword: "협업", high_count: 2, ...coverage }] },
+    }))
+    const res = await getKeywordResult("kw-1")
+    expect(res.coverage[0].coveragePercent).toBeNull()
+    expect(res.coverage[0].highCount).toBe(2)
+  })
+
+  it.each([
+    { related_count: 2, total_count: 5, coverage_percent: 37.5 },
+    { relatedCount: 2, totalCount: 5, coveragePercent: 37.5 },
+  ])("유효한 비율은 FE에서 재계산하지 않고 그대로 보존한다: %j", async (coverage) => {
+    apiMock.get.mockResolvedValue(envelope({
+      id: "kw-1", status: "completed", result: { C_coverage: [{ keyword: "협업", ...coverage }] },
+    }))
+    expect((await getKeywordResult("kw-1")).coverage[0].coveragePercent).toBe(37.5)
+  })
+
+  it.each([
+    { has_genuine_strengths: false },
+    { hasGenuineStrengths: false },
+  ])("명시적 강점 없음 판정이면 모순되는 긍정 필드를 무시한다: %j", async (flag) => {
+    apiMock.get.mockResolvedValue(envelope({
+      id: "ind-1", status: "completed", result: {
+        item_strengths: {
+          ...flag,
+          one_line_strength_verdict: "잘못 온 강점 요약",
+          summarized_strengths: ["잘못 온 한눈에"],
+          strengths: [{ title: "잘못 온 강점", analysis: "잘못 온 분석" }],
+          strongest_asset: "잘못 온 자산",
+          positioning_tip: "잘못 온 팁",
+          no_strength_reason: "판단할 근거가 부족합니다.",
+        },
+      },
+    }))
+    expect((await getIndividualAnalysisResult("ind-1")).result.itemStrengths).toEqual({
+      hasGenuineStrengths: false, oneLineVerdict: "", summarizedStrengths: [], strengths: [],
+      strongestAsset: "", positioningTip: "", noStrengthReason: "판단할 근거가 부족합니다.",
+    })
+  })
+
+  it("플래그가 없는 구 레코드의 강점 서술을 삭제하지 않는다", async () => {
+    apiMock.get.mockResolvedValue(envelope({
+      id: "ind-1", status: "completed", result: {
+        item_strengths: { one_line_strength_verdict: "기존 요약", strengths: [{ title: "기존 강점" }] },
+      },
+    }))
+    const strengths = (await getIndividualAnalysisResult("ind-1")).result.itemStrengths
+    expect(strengths.oneLineVerdict).toBe("기존 요약")
+    expect(strengths.strengths[0].title).toBe("기존 강점")
+  })
+})
+
+// FRT-265: 히스토리는 상태가 섞인 원본 목록에서 완료 항목만 제공한다.
+describe("getAnalysisHistory — 완료 항목 계약 (FRT-265)", () => {
+  it.each([undefined, "all", "individual", "comprehensive", "keyword"])(
+    "유형 %s에서도 미완료 항목을 제외하고 정렬한다",
+    async (type) => {
+      const types = ["individual", "comprehensive", "keyword"] as const
+      apiMock.get.mockImplementation((url: string) => {
+        const source = types.find((value) => url === `/analysis/${value}`)
+        if (!source) throw new Error(`unexpected url: ${url}`)
+        return Promise.resolve(envelope([
+          { id: `${source}-older`, status: "success", created_at: "2026-07-01" },
+          { id: `${source}-newer`, status: "completed", created_at: "2026-07-02" },
+          ...["pending", "queued", "processing", "failed"].map((status) => ({
+            id: `${source}-${status}`, status, created_at: "2026-07-03",
+          })),
+        ])) as never
+      })
+      const selected = types.filter((value) => !type || type === "all" || value === type)
+      for (const sort of ["newest", "oldest"] as const) {
+        const { items, failedTypes } = await getAnalysisHistory({ type, sort })
+        const dates = sort === "newest" ? ["newer", "older"] : ["older", "newer"]
+        expect(items.map((item) => item.id)).toEqual(
+          dates.flatMap((date) => selected.map((value) => `${value}-${date}`)),
+        )
+        expect(items.every((item) => item.status === "completed")).toBe(true)
+        expect(failedTypes).toEqual([])
+      }
+    },
+  )
+
+  it("데모 히스토리 데이터도 완료 항목만 포함한다", async () => {
+    const { mockHistory } = await import("./mocks/analysis")
+    expect(mockHistory.length).toBeGreaterThan(0)
+    expect(mockHistory.every((item) => item.status === "completed")).toBe(true)
+  })
+})

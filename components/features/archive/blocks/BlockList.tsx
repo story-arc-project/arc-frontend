@@ -6,12 +6,14 @@ import {
   DndContext,
   closestCenter,
   PointerSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   DragEndEvent,
 } from "@dnd-kit/core"
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable"
@@ -68,7 +70,8 @@ export default function BlockList({
   const [editingBlock, setEditingBlock] = useState<Block | null>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
   const handleBlockChange = useCallback(
@@ -163,8 +166,8 @@ export default function BlockList({
               ...val,
               columns: newCols,
               // 열이 하나도 안 남으면 행도 함께 거둔다. 칸이 없어진 행은 이미 `[]` 라 담을
-              // 값이 없는데, `isBlockEmpty` 는 표를 **`rows.length` 로만** 판정하므로 껍데기
-              // 행이 남으면 빈 표가 상세뷰에 계속 그려지고 열을 다시 만들 때 빈 행이 되살아난다.
+              // 값이 없으므로 열을 다시 만들 때 빈 행이 되살아나지 않게 한다.
+              // 표시용 빈 판정은 셀 내용을 따로 확인한다(FRT-184).
               rows:
                 newCols.length === 0
                   ? []
@@ -294,7 +297,22 @@ export default function BlockList({
   return (
     <div className="flex flex-col gap-4">
       {allowReorder ? (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+          accessibility={{
+            screenReaderInstructions: {
+              draggable: "순서를 변경하려면 Space 또는 Enter를 누르세요. 위아래 화살표로 이동하고 Space 또는 Enter로 완료하거나 Escape로 취소하세요.",
+            },
+            announcements: {
+              onDragStart: ({ active }) => `${blocks.find(b => b.id === active.id)?.label ?? "블록"} 순서 변경을 시작했습니다.`,
+              onDragOver: ({ over }) => over ? `${blocks.findIndex(b => b.id === over.id) + 1}번째 위치입니다.` : "이동할 위치가 없습니다.",
+              onDragEnd: ({ over }) => over ? `${blocks.findIndex(b => b.id === over.id) + 1}번째 위치로 순서 변경을 완료했습니다.` : "순서를 변경하지 않았습니다.",
+              onDragCancel: () => "순서 변경을 취소했습니다.",
+            },
+          }}
+        >
           <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
             {content}
           </SortableContext>
@@ -360,10 +378,11 @@ function SortableBlockItem({
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: block.id })
+  } = useSortable({ id: block.id, disabled: !allowReorder })
 
   // 첨부 업로드가 도는 동안에는 × 를 감춘다 — 그때 숨기면 블록이 언마운트되며 업로드가 abort 돼
   // 사용자가 방금 고른 파일이 사라진다. 값만 보는 `canHideBlock` 은 이 상태를 알 수 없다(FRT-190).
@@ -379,6 +398,7 @@ function SortableBlockItem({
     <div ref={setNodeRef} style={style} className="group relative flex gap-2">
       {allowReorder && (
         <button
+          ref={setActivatorNodeRef}
           type="button"
           className="mt-1 text-text-tertiary cursor-grab active:cursor-grabbing shrink-0"
           {...attributes}

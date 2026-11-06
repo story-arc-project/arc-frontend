@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+import { capture, getAnalyticsEpoch, isAnalyticsEpochCurrent } from "@/lib/analytics/client";
+import type { AnalysisViewObservation } from "@/lib/analytics/use-analysis-viewed";
 import { Star } from "lucide-react";
 import { addBookmark, removeBookmark } from "@/lib/api/analysis-api";
 import { useBasePath } from "@/lib/utils/use-base-path";
 
 interface BookmarkToggleProps {
   analysisId: string;
+  viewObservation?: AnalysisViewObservation;
   isBookmarked: boolean;
   onToggled?: (next: boolean) => void;
   size?: "sm" | "md";
@@ -18,34 +22,54 @@ export default function BookmarkToggle({
   analysisId,
   isBookmarked: initialBookmarked,
   onToggled,
+  viewObservation,
   size = "md",
 }: BookmarkToggleProps) {
   const [bookmarked, setBookmarked] = useState(initialBookmarked);
   const [busy, setBusy] = useState(false);
   const basePath = useBasePath();
+  const pathname = usePathname();
+  const requestSession = useMemo(() => ({ analysisId, pathname, busy: false, mounted: false, epoch: getAnalyticsEpoch() }), [analysisId, pathname]);
+  useEffect(() => {
+    requestSession.mounted = true;
+    setBusy(false);
+    return () => { requestSession.mounted = false; };
+  }, [requestSession]);
 
   // 부모 items 가 loadData 재호출로 갱신되면 서버 상태와 동기화한다.
   // (없으면 동일 key 인스턴스가 stale 상태를 유지 — FRT-55)
   useEffect(() => {
     setBookmarked(initialBookmarked);
-  }, [initialBookmarked]);
+  }, [initialBookmarked, analysisId]);
 
   async function handleToggle() {
-    if (busy) return;
+    if (requestSession.busy || !isAnalyticsEpochCurrent(requestSession.epoch)) return;
+    requestSession.busy = true;
     setBusy(true);
     const next = !bookmarked;
+    const view = document.visibilityState === "visible" && viewObservation?.analysis_id === analysisId && isAnalyticsEpochCurrent(viewObservation.epoch) ? viewObservation : undefined;
     try {
       if (next) {
         await addBookmark(analysisId);
       } else {
         await removeBookmark(analysisId);
       }
+      if (!requestSession.mounted || !isAnalyticsEpochCurrent(requestSession.epoch)) return;
+      capture("analysis_bookmark_changed", {
+        schema_version: 2,
+        source: "browser",
+        analysis_id: analysisId,
+        action: next ? "added" : "removed",
+        is_bookmarked: next,
+        ...(view ? { view_id: view.view_id, analysis_type: view.analysis_type } : {}),
+      });
       setBookmarked(next);
       onToggled?.(next);
     } catch {
       // silently revert — API error
     } finally {
-      setBusy(false);
+      requestSession.busy = false;
+      if (requestSession.mounted) setBusy(false);
     }
   }
 

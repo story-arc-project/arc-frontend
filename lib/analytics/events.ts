@@ -5,6 +5,7 @@
 // 가입→온보딩→기록→분석→export 를 PostHog 안에서 하나의 퍼널로 잇기 위해 완료 등뼈를
 // 이벤트로 emit 한다. 단순 총량 집계는 DB(고객정보 API 등)로 넘겨 중복 계측을 피한다.
 
+import type { ExportRequestResult } from "./export-request-result";
 import type { FunnelEventProps } from "./funnel-events";
 import type { DraftTier } from "@/lib/export/draft-storage";
 
@@ -66,6 +67,7 @@ export const ANALYTICS_EVENTS = {
   archiveEntryStarted: "archive_entry_started",
   // ── 직전 선택 (drop-off 관측: "선택했지만 완료 안 함") ─────────────
   signupMethodSelected: "signup_method_selected",
+  signupStepViewed: "signup_step_viewed",
   archiveTypeSelected: "archive_type_selected",
   analysisTargetSelected: "analysis_target_selected",
   // FRT-114. 실행 직전 최종 선택만 센다(analysis_target_selected 와 같은 결) — 체크박스
@@ -77,11 +79,13 @@ export const ANALYTICS_EVENTS = {
   signupCompleted: "signup_completed",
   onboardingCompleted: "onboarding_completed",
   recordCreated: "record_created",
+  recordSaved: "record_saved",
   firstRecordCreated: "first_record_created",
   analysisCompleted: "analysis_completed",
-  exportCompleted: "export_completed",
+  // FRT-325: browser request settlement; official completion/failure is server-only.
+  exportRequested: "export_requested",
   // ── 익스포트 이후 행동 (FRT-114) ───────────────────────────────────
-  // export_completed 까지만 보면 "만들어놓고 안 쓰는지"가 안 보인다. 결과물을 실제로
+  // 요청 이후 결과물을 실제로
   // 꺼내갔는지(다운로드), AI 초안을 얼마나 고쳐 쓰는지(편집·저장)를 여기서 잡는다.
   resumeDownloaded: "resume_downloaded",
   resumeEdited: "resume_edited",
@@ -112,6 +116,8 @@ export const ANALYTICS_EVENTS = {
   // 정의서의 individual_/comprehensive_/keyword_analysis_result_viewed 3종을 하나로 합치고
   // analysis_type 으로 가른다 — analysis_completed·analysis_target_selected 와 같은 결.
   analysisViewed: "analysis_viewed",
+  analysisResultViewed: "analysis_result_viewed",
+  analysisBookmarkChanged: "analysis_bookmark_changed",
   // ── 기술적 실패 판별 (FRT-107) ────────────────────────────────────
   // "눌렀는데 요청이 안 나갔다"를 보려면 **누른 사실**과 **서버가 받은 사실**이 둘 다
   // 있어야 하고, 그 차이가 곧 버그·네트워크 실패다(사용자 의도적 이탈과 갈린다).
@@ -121,10 +127,8 @@ export const ANALYTICS_EVENTS = {
   //          받은 사실 = 없다 → analysis_requested 를 만든다.
   //          (analysis_completed 로는 못 가른다. 그건 분석이 **끝났다**는 뜻이라
   //           "접수됐지만 아직 도는 중"과 "요청조차 못 갔다"가 한 덩어리가 된다.)
-  //  엑스포트: 받은 사실 = export_completed(이름과 달리 실체는 접수다) — 있다.
-  //          누른 사실 = 없다 → export_execute_button_clicked 를 만든다.
-  //          (resume_experience_selected 는 선택 UI 플래그가 꺼지면 아예 안 떠서
-  //           누름의 대역이 못 된다.)
+  //  엑스포트: export_requested 는 요청 결과를 accepted 삼상 값으로 구분한다.
+  //          공식 생성 완료·실패는 서버만 발행한다(FRT-325).
   analysisRequested: "analysis_requested",
   exportExecuteButtonClicked: "export_execute_button_clicked",
   // ── 자소서 이후 행동 (FRT-107) ────────────────────────────────────
@@ -144,8 +148,9 @@ export type AnalyticsEventName =
 
 // 이벤트별 속성 계약. PII 금지 — 비식별 퍼널 메타만 싣는다.
 export interface AnalyticsEventProps extends FunnelEventProps {
-  archive_entry_started: Record<string, never>;
+  archive_entry_started: { entry_attempt_id?: string; schema_version?: 2; source?: "browser" };
   signup_method_selected: { method: SignupMethod };
+  signup_step_viewed: { step: "start" | "password" | "verify"; step_index: number };
   archive_type_selected: { experience_type: string };
   analysis_target_selected:
     | { analysis_type: "comprehensive"; count: number }
@@ -162,6 +167,19 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // 없어서 잴 수가 없고, 0 을 넣으면 "즉시 저장했다"는 거짓이 된다(부재와 0 은 다른 사실).
   // archive_entry_abandoned 와 **같은 이름·같은 축**으로 싣는 것이 요점이다 — 끝낸 사람과
   // 포기한 사람을 나란히 놓고 "무엇이 달랐나"를 물을 수 있어야 한다.
+  record_saved: {
+    schema_version: 2;
+    source: "browser";
+    record_id: string;
+    entry_attempt_id: string;
+    elapsed_seconds?: number;
+    sections_done?: number;
+    sections_total?: number;
+    qualitative_fields_filled?: string[];
+    save_kind: "new" | "draft" | "draft_to_complete" | "complete_edit" | "duplicate";
+    experience_type: string;
+    status: RecordStatus;
+  };
   record_created: {
     experience_type: string;
     status: RecordStatus;
@@ -174,6 +192,10 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // archive_entry_started → record_created 미도달까지는 퍼널도 알지만,
   // **그 화면 어디에서** 멈췄는지는 이 이벤트에만 있다.
   archive_entry_abandoned: {
+    entry_attempt_id?: string;
+    record_id?: string;
+    schema_version?: 2;
+    source?: "browser";
     mode: ArchiveEntryMode;
     // 마지막으로 완료한 섹션 슬러그. 하나도 못 채웠으면 null — "시작도 못 했다"는
     // 유효한 답이라 부재로 뭉개지 않는다.
@@ -191,6 +213,10 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // 섹션 하나를 채운 시점. sections_done 이 "몇 개 했나"라면 section_index 는 "폼의 어디를
   // 하고 있나"다 — 둘이 벌어지면 사용자가 순서를 건너뛰며 채운다는 뜻이라 서로 못 대신한다.
   archive_section_completed: {
+    entry_attempt_id?: string;
+    record_id?: string;
+    schema_version?: 2;
+    source?: "browser";
     section_key: string;
     section_index: number;
     sections_done: number;
@@ -198,7 +224,7 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   };
   // 임시저장한 기록을 다시 열어 이어쓰기 시작한 시점. "재방문 의도가 있는 이탈"이 실제로
   // 회수되는지를 보는 유일한 신호다(draft 저장 자체는 record_created{status:"draft"} 가 센다).
-  archive_entry_resumed: { experience_type: string };
+  archive_entry_resumed: { experience_type: string; entry_attempt_id?: string; record_id?: string; schema_version?: 2; source?: "browser" };
   // 첨부 "여부"만 본다 — 파일명·URL 원문은 PII 위험이라 절대 싣지 않는다(타입으로 봉인).
   archive_attachment_added: { attachment_type: AttachmentType };
   first_record_created: { experience_type: string };
@@ -209,10 +235,25 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // 실패한 분석의 재시도 요청이 접수된 시점. 재시도 결과(성공/재실패)는
   // analysis_completed 와 status 로 따로 관측한다.
   analysis_retried: { analysis_type: AnalysisKind };
-  // 결과를 한 번 열어 본 사건. **매 조회마다** 발화하므로 조회 횟수는 이 이벤트를 세면 되고,
-  // 체류는 속성으로 함께 온다(정의서 권고 그대로 — 별도 카운터 이벤트를 만들지 않는다).
-  // view_duration_seconds 는 "처음 화면을 벗어나기까지 실제로 보인 시간"이다(useDwell).
-  // 0 은 유효한 값 — 열자마자 나간 조회가 가장 중요한 신호다.
+  // Foreground ready-result entry; server result version is deliberately absent.
+  analysis_result_viewed: {
+    schema_version: 2;
+    source: "browser";
+    analysis_type: ViewableAnalysisKind;
+    analysis_id: string;
+    view_id: string;
+    viewed_at: string;
+  };
+  analysis_bookmark_changed: {
+    schema_version: 2;
+    source: "browser";
+    analysis_id: string;
+    action: "added" | "removed";
+    is_bookmarked: boolean;
+    analysis_type?: ViewableAnalysisKind;
+    view_id?: string;
+  };
+  // Legacy exit/dwell observation; zero seconds is a valid short visit.
   analysis_viewed: {
     analysis_type: ViewableAnalysisKind;
     analysis_id: string;
@@ -230,15 +271,17 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // 화면엔 실패로 보여도 서버가 받은 것이라 접수로 센다.
   // 실패면 무조건 쏘도록 두면 첫 갈래가 영영 비고, 성공에만 쏘면 앞 두 갈래가 뭉개진다.
   analysis_requested: { analysis_type: AnalysisKind; accepted: boolean };
-  // 엑스포트 실행 버튼을 누른 시점(요청 함수를 부르기 **직전**). export_completed(실체는
-  // 접수)와의 차이가 같은 질문을 엑스포트에서 답한다.
+  // 엑스포트 실행 버튼을 누른 시점(요청 함수를 부르기 **직전**).
+  // export_requested 와 함께 누름과 요청 결과를 구분한다.
   export_execute_button_clicked: { export_type: ExportType };
   // experience_count — 사용자가 레쥬메에 넣기로 고른 경험 수(FRT-109). 선택 UI 가 꺼져 있으면
   // "고른" 개념 자체가 없으므로 싣지 않는다(0 이 아니라 부재).
   // 익스포트 종류마다 의미 있는 속성이 다르다 — 레쥬메는 언어(국문/영문), 자소서는 문항 수다.
   // 하나의 넓은 객체로 합치면 language 를 optional 로 풀어야 하고, 그러면 레쥬메 호출부가
   // 언어를 빠뜨려도 타입이 통과한다. 판별 유니온으로 각 종류의 필수 속성을 지킨다.
-  export_completed:
+  // FRT-325: 브라우저 요청 결과만 기록한다. accepted=null 은 접수 여부 불명이다.
+  // 본문·오류 원문·HTTP status·토큰·멱등키는 속성 계약에 포함하지 않는다.
+  export_requested: ExportRequestResult & (
     | {
         export_type: "resume";
         language: string;
@@ -251,13 +294,14 @@ export interface AnalyticsEventProps extends FunnelEventProps {
         // 사용자가 직접 넣은 문항 수(FRT-140). 0 이면 자유 형식 1건으로 생성된다 —
         // 0 과 부재가 다른 뜻이라 optional 이 아니라 필수다.
         question_count: number;
-      };
-  // FRT-114: 레쥬메에 넣을 경험을 고른 시점(생성 요청 직전). export_completed 의
+      }
+  );
+  // FRT-114: 레쥬메에 넣을 경험을 고른 시점(생성 요청 직전). export_requested 의
   // experience_count 와 겹쳐 보이지만 순증 가치가 둘 있다 — ① 어떤 **유형**을 "낼 만하다"고
-  // 판단하는지 ② 생성 요청이 실패해도 선택 사실이 남는다(export_completed 는 성공 시에만 뜬다).
+  // 판단하는지 ② 요청 결과와 별개로 선택 사실이 남는다.
   // experience_types 는 유형 id 목록(중복 제거)이다. 경험 제목·id 는 PII 위험이라 싣지 않는다.
   resume_experience_selected: { count: number; experience_types: string[] };
-  // 만든 레쥬메를 실제로 꺼내간 시점. language 는 export_completed 와 같은 결(국문/영문 중
+  // 만든 레쥬메를 실제로 꺼내간 시점. language 는 export_requested 와 같은 결(국문/영문 중
   // 무엇을 진짜로 받아가는가)이라 같은 이름·같은 타입으로 싣는다.
   resume_downloaded: { format: ResumeExportFormat; language: string };
   // AI 초안에 처음 손댄 시점. 버전 로드당 1회 — 키 입력마다 쏘면 이벤트가 폭증한다.
@@ -267,8 +311,7 @@ export interface AnalyticsEventProps extends FunnelEventProps {
   // 이유). 없으면 그 중복을 접을 수도, 서로 다른 레쥬메의 편집과 가를 수도 없다.
   // 경로에 이미 드러나는 서버 식별자라 새 노출면이 아니다.
   resume_edited: { section: string; version_id: string };
-  // 편집 저장 시도의 결말. outcome 없이 뭉치면 export_completed 가 "접수"를 "완료"로
-  // 보고하는 것과 같은 실수를 저장에서 반복한다.
+  // 편집 저장 시도의 결말. outcome 으로 저장 시도와 실제 보관 여부를 구분한다.
   // persisted — 편집이 **어디든**(서버든 로컬 임시저장이든) 남았는가. false 는 서버도
   // 로컬도 못 남긴 편집 유실이고, outcome 만으로는 그 최악의 경우가 보이지 않는다.
   resume_edit_saved: {

@@ -8,6 +8,7 @@ import { clearOAuthState, readOAuthState } from "@/lib/auth/oauth-state";
 import { deleteAccountWithSocial } from "@/lib/api/auth-api";
 import { DELETE_INTENT } from "@/lib/auth/oauth-providers";
 import { AuthSuccessResult } from "@/types/auth";
+import { clearSignupHandoff } from "@/lib/auth/signup-handoff";
 import { FIRST_ONBOARDING_STEP } from "@/app/(auth)/constants";
 
 export default function GoogleCallbackPage() {
@@ -26,6 +27,7 @@ function GoogleCallbackHandler() {
   useEffect(() => {
     if (called.current) return;
     called.current = true;
+    clearSignupHandoff();
 
     const code = searchParams.get("code");
     const error = searchParams.get("error");
@@ -84,7 +86,7 @@ function GoogleCallbackHandler() {
           if (await markSignupCompletedIfUnseen(result.data.user.email)) {
             capture("signup_completed", { method: "google" });
           }
-          router.push(`/signup?step=${FIRST_ONBOARDING_STEP}&email=${encodeURIComponent(result.data.user.email)}`);
+          router.push(`/signup?step=${FIRST_ONBOARDING_STEP}`);
         }
       })
       .catch((e) => {

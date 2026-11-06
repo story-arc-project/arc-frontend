@@ -457,3 +457,28 @@ describe("종합 분석 상세 — 긴 글 조판 (FRT-338)", () => {
     expect(await screen.findByText(DETAILED)).toHaveClass("whitespace-pre-line");
   });
 });
+
+describe("FRT-137 — 선택 학력과 응답 키 순서", () => {
+  it.each([
+    ["", "", ""],
+    ["학교만", "", "학교만"],
+    ["", "학과만", "학과만"],
+  ])("학교 %s / 학과 %s 는 존재하는 값만 표시한다", async (userSchool, userDepartment, expected) => {
+    getResult.mockResolvedValue(result({ hasResultBody: true, userSchool, userDepartment }));
+    const { container } = render(<ComprehensiveDetailPage />);
+    await screen.findByRole("heading", { name: "종합 분석 결과" });
+    const header = container.querySelector("header")!;
+    if (expected) expect(header.querySelector("p")).toHaveTextContent(expected);
+    else expect(header.querySelector("p")).toBeNull();
+    expect(header).not.toHaveTextContent("·");
+  });
+
+  it("보완점 키가 먼저 온 응답이어도 강점을 먼저 렌더한다", async () => {
+    const { strengthDiagnosis, criticalDiagnosis, ...rest } = result({ hasResultBody: true });
+    getResult.mockResolvedValue({ ...rest, criticalDiagnosis, strengthDiagnosis });
+    render(<ComprehensiveDetailPage />);
+    const strength = await screen.findByRole("heading", { name: "강점 진단" });
+    expect(strength.compareDocumentPosition(screen.getByRole("heading", { name: "보완 포인트" })))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+});

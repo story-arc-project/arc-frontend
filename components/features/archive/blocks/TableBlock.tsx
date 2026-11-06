@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useId, useState } from "react"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Block, TableBlockValue } from "@/types/archive"
@@ -13,6 +13,7 @@ interface TableBlockProps {
 }
 
 export default function TableBlock({ block, readOnly, onChange }: TableBlockProps) {
+  const labelId = useId()
   const val = block.value as TableBlockValue
   const [newCol, setNewCol] = useState("")
 
@@ -75,8 +76,8 @@ export default function TableBlock({ block, readOnly, onChange }: TableBlockProp
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <span className="text-field-label text-text-primary">{block.label}</span>
+    <div role="group" aria-labelledby={labelId} className="flex flex-col gap-3">
+      <span id={labelId} className="text-field-label text-text-primary">{block.label}</span>
 
       {val.columns.length === 0 ? (
         // 아래 '행 추가 / 열 추가' 줄과 같은 이유로 줄어들 수 있어야 한다 — `flex-1` 만으로는
@@ -119,6 +120,7 @@ export default function TableBlock({ block, readOnly, onChange }: TableBlockProp
                         <input
                           type="text"
                           className="h-8 w-full rounded border-0 bg-transparent px-2 text-body-sm text-text-primary focus:bg-surface-secondary focus:outline-none"
+                          aria-label={`${block.label} ${ri + 1}행 ${ci + 1}열 ${val.columns[ci]}`}
                           value={cell}
                           onChange={e => updateCell(ri, ci, e.target.value)}
                         />

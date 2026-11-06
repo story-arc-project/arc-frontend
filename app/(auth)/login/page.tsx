@@ -1,33 +1,20 @@
 "use client";
 
-import { FormEvent, Suspense, useRef, useState } from "react";
+import { PasswordInput } from "@/components/ui/password-input";
+
+import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Button, Input } from "@/components/ui";
 import { SocialLoginButtons } from "@/components/features/auth/SocialLoginButtons";
 import { createOAuthState } from "@/lib/auth/oauth-state";
+import { buildGoogleAuthUrl } from "@/lib/auth/google-auth-url";
+import { clearSignupHandoff, createSignupHandoff } from "@/lib/auth/signup-handoff";
+import { resolveCallbackUrl } from "@/lib/auth/callback-url";
 import { needsOnboarding } from "@/lib/auth/login-response";
 import { useRedirectIfAuthenticated } from "@/hooks/useRedirectIfAuthenticated";
 import { API_URL, SOCIAL_ERROR_MESSAGES, FIRST_ONBOARDING_STEP, PASSWORD_RESET_ENABLED, loginContainer, loginItem } from "../constants";
-
-// 오픈 리다이렉트 방지: 동일 출처 기준으로 정규화해 상대 경로만 허용한다.
-// 절대 URL(`https://evil.com`), 프로토콜 상대(`//evil.com`), 역슬래시 우회(`/\evil.com`),
-// 점 세그먼트 우회(`/.//evil.com` → 정규화 시 `//evil.com`)를 모두 차단한다.
-// (브라우저는 `\`를 `/`로 정규화하고 `//path`를 프로토콜 상대로 처리하므로 단순 문자열 검사로는 막을 수 없다.)
-function resolveCallbackUrl(raw: string): string {
-  const fallback = "/dashboard";
-  if (!raw.startsWith("/")) return fallback;
-  try {
-    const base = "http://localhost";
-    const url = new URL(raw, base);
-    // 정규화 후에도 `//`로 시작하면 location.assign이 프로토콜 상대로 해석하므로 차단한다.
-    if (url.origin !== base || url.pathname.startsWith("//")) return fallback;
-    return url.pathname + url.search + url.hash;
-  } catch {
-    return fallback;
-  }
-}
 
 export default function LoginPage() {
   return (
@@ -59,8 +46,11 @@ function LoginForm() {
     SOCIAL_ERROR_MESSAGES[errorParam] ?? null
   );
 
+  useEffect(() => { clearSignupHandoff(); }, []);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    clearSignupHandoff();
     setIsLoading(true);
     setError(null);
 
@@ -78,7 +68,9 @@ function LoginForm() {
         if (code === "ACCOUNT_LOCKED") {
           setError("계정이 잠겼어요. 잠시 후 다시 시도해주세요.");
         } else if (code === "EMAIL_NOT_VERIFIED") {
-          router.push(`/signup?step=verify&email=${encodeURIComponent(email)}`);
+          const destination = createSignupHandoff(email);
+          if (destination) router.push(destination);
+          else setError("이메일 인증을 이어갈 수 없어요. 브라우저 저장 공간을 허용한 뒤 다시 로그인해주세요.");
         } else {
           setError("이메일 또는 비밀번호가 올바르지 않아요.");
         }
@@ -91,7 +83,7 @@ function LoginForm() {
       const body = await loginRes.json().catch(() => null);
 
       if (needsOnboarding(body)) {
-        router.push(`/signup?step=${FIRST_ONBOARDING_STEP}&email=${encodeURIComponent(email)}`);
+        router.push(`/signup?step=${FIRST_ONBOARDING_STEP}`);
       } else {
         // 하드 내비게이션으로 AuthProvider를 재마운트해 로그인 직후 user를 다시 불러온다.
         // (클라이언트 push만으로는 루트 컨텍스트의 user가 null로 남아 GNB 계정 메뉴가 가려진다.)
@@ -106,22 +98,18 @@ function LoginForm() {
   }
 
   function handleSocialLogin() {
+    clearSignupHandoff();
     const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!clientId) {
       setSocialError("Google 로그인을 사용할 수 없어요");
       return;
     }
     const redirectUri = `${window.location.origin}/callback/google`;
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: "code",
-      scope: "openid email profile",
-      access_type: "offline",
-      prompt: "select_account",
+    window.location.href = buildGoogleAuthUrl({
+      clientId,
+      redirectUri,
       state: createOAuthState(),
     });
-    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
   if (shouldRedirect) return null;
@@ -167,24 +155,14 @@ function LoginForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && pwInputRef.current?.focus()}
               />
-              <Input
+              <PasswordInput
                 ref={pwInputRef}
                 label="비밀번호"
-                type={showPw ? "text" : "password"}
+                visible={showPw}
+                onToggleVisibility={() => setShowPw((v) => !v)}
                 placeholder="비밀번호 입력"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="pr-14"
-                rightAddon={
-                  <button
-                    type="button"
-                    onClick={() => setShowPw((v) => !v)}
-                    className="text-caption text-text-tertiary
-                               hover:text-text-secondary transition-colors cursor-pointer select-none"
-                  >
-                    {showPw ? "숨기기" : "보기"}
-                  </button>
-                }
               />
               {PASSWORD_RESET_ENABLED && (
                 <div className="-mt-1 text-right">

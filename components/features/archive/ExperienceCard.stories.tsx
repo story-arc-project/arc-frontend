@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
-import { expect, within } from "storybook/test"
+import { expect, within, userEvent } from "storybook/test"
 
 import ExperienceCard from "./ExperienceCard"
 import {
@@ -138,5 +138,46 @@ export const EmptyState: Story = {
     },
     selected: false,
     libraries: [],
+  },
+}
+
+
+/** A real browser measures both portal surfaces and reaches the final library. */
+export const ViewportBoundedMenus: Story = {
+  args: {
+    experience: careerExperience,
+    selected: false,
+    libraries: Array.from({ length: 40 }, (_, index) => ({
+      ...customLibrary,
+      id: `viewport-library-${index}`,
+      name: `Viewport library ${index + 1}`,
+      experienceIds: [],
+    })),
+  },
+  decorators: [Story => <div style={{ position: "fixed", bottom: 8, right: 8, width: "min(320px, calc(100vw - 16px))" }}><Story /></div>],
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body)
+    const view = canvasElement.ownerDocument.defaultView!
+    await userEvent.click(within(canvasElement).getByLabelText("더보기"))
+    const menu = body.getByText("편집").closest<HTMLElement>("[data-archive-popover]")!
+    const assertBounds = async (element: HTMLElement) => {
+      const bounds = element.getBoundingClientRect()
+      await expect(bounds.top).toBeGreaterThanOrEqual(7)
+      await expect(bounds.left).toBeGreaterThanOrEqual(7)
+      await expect(bounds.bottom).toBeLessThanOrEqual(view.innerHeight - 7)
+      await expect(bounds.right).toBeLessThanOrEqual(view.innerWidth - 7)
+    }
+    await assertBounds(menu)
+    await userEvent.hover(body.getByText("라이브러리 이동"))
+    const lastOption = body.getByRole("button", { name: "Viewport library 40" })
+    const submenu = lastOption.closest<HTMLElement>("[data-archive-popover]")!
+    await assertBounds(submenu)
+    submenu.scrollTop = submenu.scrollHeight
+    submenu.dispatchEvent(new Event("scroll"))
+    await expect(lastOption).toBeVisible()
+    await userEvent.click(lastOption)
+    await expect(menu).toBeInTheDocument()
+    await userEvent.keyboard("{Escape}")
+    await expect(menu).not.toBeInTheDocument()
   },
 }

@@ -18,8 +18,9 @@ vi.mock("./client", async () => {
 vi.mock("@/lib/demo/state", () => ({ isDemoMode: () => false }));
 
 import { api } from "./client";
-import { deleteLibrary, updateLibrary } from "./library-api";
+import { deleteLibrary, getLibraries, updateLibrary } from "./library-api";
 
+const mockGet = vi.mocked(api.get);
 const mockPut = vi.mocked(api.put);
 const mockPatch = vi.mocked(api.patch);
 const mockDelete = vi.mocked(api.delete);
@@ -65,5 +66,66 @@ describe("deleteLibrary", () => {
     await deleteLibrary("lib-1");
 
     expect(mockDelete).toHaveBeenCalledWith("/libraries/lib-1");
+  });
+});
+
+
+describe("getLibraries — response containers", () => {
+  const system = { id: "system-1", name: "All", is_system: true, color: null };
+  const custom = {
+    id: "custom-1", name: "Reading", is_system: false,
+    icon: "book", filter: { search: "notes" },
+  };
+  const response = (system: unknown, custom: unknown) => ({
+    data: { count: 2, contents: { system, custom } },
+  });
+
+  it("preserves system-first order, object identity, and optional fields", async () => {
+    mockGet.mockResolvedValueOnce(response([system], [custom]));
+    const result = await getLibraries();
+    expect(mockGet).toHaveBeenCalledWith("/libraries/");
+    expect(result).toEqual([system, custom]);
+    expect(result[0]).toBe(system);
+    expect(result[1]).toBe(custom);
+  });
+
+  it.each([
+    { system: [], custom: [], expected: [] },
+    { system: [], custom: [custom], expected: [custom] },
+    { system: [system], custom: [], expected: [system] },
+  ])("accepts empty buckets: $system / $custom", async (buckets) => {
+    mockGet.mockResolvedValueOnce(response(buckets.system, buckets.custom));
+    await expect(getLibraries()).resolves.toEqual(buckets.expected);
+  });
+
+  const invalidContainers = [undefined, null, "invalid", 1, true, []];
+  const invalidResponses = [
+    ...invalidContainers.map((value) => ({ label: `envelope ${JSON.stringify(value)}`, value })),
+    ...invalidContainers.map((value) => ({ label: `data ${JSON.stringify(value)}`, value: { data: value } })),
+    ...invalidContainers.map((value) => ({ label: `contents ${JSON.stringify(value)}`, value: { data: { contents: value } } })),
+    { label: "missing data", value: {} },
+    { label: "missing contents", value: { data: {} } },
+    { label: "missing both buckets", value: { data: { contents: {} } } },
+    ...[undefined, null, "abc", {}, 1, true].flatMap((value) => [
+      { label: `system ${JSON.stringify(value)}`, value: response(value, []) },
+      { label: `custom ${JSON.stringify(value)}`, value: response([], value) },
+    ]),
+    { label: "missing system", value: { data: { contents: { custom: [] } } } },
+    { label: "missing custom", value: { data: { contents: { system: [] } } } },
+  ];
+
+  it.each(invalidResponses)("rejects malformed $label with a controlled error", async ({ value }) => {
+    mockGet.mockResolvedValueOnce(value);
+    await expect(getLibraries()).rejects.toMatchObject({
+      name: "Error",
+      code: "INVALID_LIBRARY_RESPONSE",
+      message: "Invalid library response: expected data.contents.system and data.contents.custom arrays.",
+    });
+  });
+
+  it("preserves transport rejection identity", async () => {
+    const failure = new Error("Network unavailable");
+    mockGet.mockRejectedValueOnce(failure);
+    await expect(getLibraries()).rejects.toBe(failure);
   });
 });

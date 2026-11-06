@@ -466,6 +466,7 @@ function RowEditor({
   }, [busySignature])
   const busyHandler = (key: string) => busyHandlers.get(key)
   const uploading = busyKeys.size > 0
+  const rowLabel = `${index + 1}번째 기록`
 
   return (
     // data-row-id: FRT-76 '프로젝트로 연결' 스크롤 앵커(전역 유일 row.id 로 scrollIntoView).
@@ -486,7 +487,7 @@ function RowEditor({
             disabled={uploading}
             onClick={onRemove}
             className="text-text-tertiary hover:text-error transition-colors p-1 rounded disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-text-tertiary"
-            aria-label="행 삭제"
+            aria-label={`${rowLabel} 행 삭제`}
             title={uploading ? "파일을 올리는 중이에요. 잠시 후 지울 수 있어요." : undefined}
           >
             <Trash2 size={14} />
@@ -509,7 +510,7 @@ function RowEditor({
               <CellInput
                 column={col}
                 value={cellVal}
-                ariaLabel={col.label}
+                ariaLabel={`${rowLabel} ${col.label}`}
                 onBusyChange={busyHandler(`cell:${col.key}`)}
                 onChange={(v) => onCellChange(col.key, v)}
               />
@@ -1113,7 +1114,7 @@ function CellInput({
       // FRT-178: 역할 칩 컬럼은 옵션이 상수가 아니라 폼의 '역할 이력'에서 파생된다.
       // 자유 태그 입력으로 폴백하면 등록되지 않은 역할이 생겨 동기화가 성립하지 않는다.
       if (column.variant === "role-chip") {
-        return <RoleChips value={arrVal} onChange={onChange} />
+        return <RoleChips value={arrVal} onChange={onChange} ariaLabel={ariaLabel} />
       }
       const options = column.options ?? []
       if (options.length === 0) {
@@ -1128,6 +1129,7 @@ function CellInput({
               <label key={opt} className="flex items-center gap-1.5 text-body-sm text-text-primary cursor-pointer">
                 <input
                   type="checkbox"
+                  aria-label={ariaLabel ? `${ariaLabel} ${opt}` : undefined}
                   checked={checked}
                   onChange={() =>
                     onChange(checked ? arrVal.filter(v => v !== opt) : [...arrVal, opt])
@@ -1362,7 +1364,7 @@ function TagsCellInput({
                 type="button"
                 onClick={() => onChange(value.filter(v => v !== tag))}
                 className="rounded-full p-0.5 hover:bg-brand-light transition-colors text-brand-dark"
-                aria-label={`${tag} 삭제`}
+                aria-label={ariaLabel ? `${ariaLabel} ${tag} 삭제` : `${tag} 삭제`}
               >
                 ×
               </button>

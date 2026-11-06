@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { Profile } from "@/types/auth";
@@ -222,5 +222,157 @@ describe("ProfileEditForm — 저장 성공은 동기화 실패로 뒤집히지 
 
     expect(screen.getByRole("button", { name: "취업/인턴", pressed: true })).toBeInTheDocument();
     expect(saveButton().hasAttribute("disabled")).toBe(true);
+  });
+});
+
+
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+describe("ProfileEditForm — refetch 중 미저장 입력 보존(FRT-263)", () => {
+  it("저장 중 다른 필드에 입력한 값은 refetch 후 남고 다음 저장에 포함된다", async () => {
+    const save = deferred();
+    updateProfile.mockReturnValueOnce(save.promise);
+    const user = userEvent.setup();
+    const { rerender } = render(<ProfileEditForm profile={profile} />);
+    refetch.mockImplementationOnce(async () => {
+      rerender(<ProfileEditForm profile={{ ...profile, name: "저장한 이름" }} />);
+    });
+    await user.clear(screen.getByLabelText("이름"));
+    await user.type(screen.getByLabelText("이름"), "저장한 이름");
+    await user.click(saveButton());
+    await user.clear(screen.getByLabelText("학과"));
+    await user.type(screen.getByLabelText("학과"), "새 학과");
+    await act(async () => save.resolve());
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+    expect(screen.getByLabelText("학과")).toHaveValue("새 학과");
+    await user.click(saveButton());
+    expect(updateProfile).toHaveBeenNthCalledWith(2, { department: "새 학과" });
+  });
+
+  it("PATCH 중 같은 필드를 저장 전 값으로 되돌려도 제출 값과 다른 초안으로 남는다", async () => {
+    const save = deferred();
+    updateProfile.mockReturnValueOnce(save.promise);
+    const user = userEvent.setup();
+    const { rerender } = render(<ProfileEditForm profile={profile} />);
+    refetch.mockImplementationOnce(async () => {
+      rerender(<ProfileEditForm profile={{ ...profile, name: "제출 이름" }} />);
+    });
+    await user.clear(screen.getByLabelText("이름"));
+    await user.type(screen.getByLabelText("이름"), "제출 이름");
+    await user.click(saveButton());
+    await user.clear(screen.getByLabelText("이름"));
+    await user.type(screen.getByLabelText("이름"), profile.name);
+    await act(async () => save.resolve());
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+    expect(screen.getByLabelText("이름")).toHaveValue(profile.name);
+    await user.click(saveButton());
+    expect(updateProfile).toHaveBeenNthCalledWith(2, { name: profile.name });
+  });
+
+  it("GET 동기화를 기다리는 동안 고친 같은 필드와 칩도 보존한다", async () => {
+    const sync = deferred();
+    const user = userEvent.setup();
+    const { rerender } = render(<ProfileEditForm profile={profile} />);
+    refetch.mockImplementationOnce(async () => {
+      await sync.promise;
+      rerender(<ProfileEditForm profile={{ ...profile, name: "제출 이름" }} />);
+    });
+    await user.clear(screen.getByLabelText("이름"));
+    await user.type(screen.getByLabelText("이름"), "제출 이름");
+    await user.click(saveButton());
+    await waitFor(() => expect(refetch).toHaveBeenCalledOnce());
+    await user.clear(screen.getByLabelText("이름"));
+    await user.type(screen.getByLabelText("이름"), profile.name);
+    await user.click(screen.getByRole("button", { name: "디자인/UX" }));
+    await act(async () => sync.resolve());
+    await waitFor(() => expect(saveButton()).toBeEnabled());
+    expect(screen.getByLabelText("이름")).toHaveValue(profile.name);
+    expect(screen.getByRole("button", { name: "디자인/UX", pressed: true })).toBeInTheDocument();
+    await user.click(saveButton());
+    expect(updateProfile).toHaveBeenNthCalledWith(2, {
+      name: profile.name,
+      interest: ["개발/엔지니어링", "디자인/UX", LEGACY_INTEREST],
+    });
+  });
+
+  it("동일한 값의 새 profile 참조는 작성 중인 초안을 지우지 않는다", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ProfileEditForm profile={profile} />);
+    await user.type(screen.getByLabelText("학과"), " 추가");
+    rerender(<ProfileEditForm profile={{ ...profile, worry: [...profile.worry] }} />);
+    expect(screen.getByLabelText("학과")).toHaveValue(profile.department + " 추가");
+    expect(saveButton()).toBeEnabled();
+  });
+
+  it("서버 갱신은 손대지 않은 필드에만 적용하고 미저장 값은 유지한다", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ProfileEditForm profile={profile} />);
+    await user.type(screen.getByLabelText("학과"), " 추가");
+    rerender(<ProfileEditForm profile={{ ...profile, name: "서버 이름", department: "서버 학과" }} />);
+    expect(screen.getByLabelText("이름")).toHaveValue("서버 이름");
+    expect(screen.getByLabelText("학과")).toHaveValue(profile.department + " 추가");
+    await user.click(saveButton());
+    expect(updateProfile).toHaveBeenCalledWith({ department: profile.department + " 추가" });
+  });
+
+  it("PATCH 실패는 요청 후 추가 입력까지 보존하고 재시도할 수 있다", async () => {
+    const save = deferred();
+    updateProfile.mockReturnValueOnce(save.promise);
+    const user = userEvent.setup();
+    render(<ProfileEditForm profile={profile} />);
+    await user.type(screen.getByLabelText("이름"), " 수정");
+    await user.click(saveButton());
+    await user.type(screen.getByLabelText("학과"), " 추가");
+    await act(async () => save.reject(new Error("network")));
+    expect(screen.getByLabelText("학과")).toHaveValue(profile.department + " 추가");
+    expect(saveButton()).toBeEnabled();
+    expect(refetch).not.toHaveBeenCalled();
+    await user.click(saveButton());
+    expect(updateProfile).toHaveBeenNthCalledWith(2, {
+      name: profile.name + " 수정", department: profile.department + " 추가",
+    });
+  });
+
+  it("저장 중 중복 클릭은 한 번만 제출한다", async () => {
+    const save = deferred();
+    updateProfile.mockReturnValueOnce(save.promise);
+    const user = userEvent.setup();
+    render(<ProfileEditForm profile={profile} />);
+    await user.type(screen.getByLabelText("이름"), " 수정");
+    await user.dblClick(saveButton());
+    expect(updateProfile).toHaveBeenCalledOnce();
+    await act(async () => save.resolve());
+  });
+
+  it("저장 중 다른 페이지로 이동해도 성공 후 전역 프로필을 동기화한다", async () => {
+    const save = deferred();
+    updateProfile.mockReturnValueOnce(save.promise);
+    const user = userEvent.setup();
+    const { unmount } = render(<ProfileEditForm profile={profile} />);
+    await user.type(screen.getByLabelText("이름"), " 수정");
+    await user.click(saveButton());
+    unmount();
+    await act(async () => save.resolve());
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("계정 교체로 remount되면 이전 초안과 늦은 저장 응답이 새 폼을 건드리지 않는다", async () => {
+    const save = deferred();
+    updateProfile.mockReturnValueOnce(save.promise);
+    const user = userEvent.setup();
+    const { rerender } = render(<ProfileEditForm key="account-a" profile={profile} />);
+    await user.type(screen.getByLabelText("이름"), " 수정");
+    await user.click(saveButton());
+    rerender(<ProfileEditForm key="account-b" profile={{ ...profile, name: "다른 계정" }} />);
+    expect(screen.getByLabelText("이름")).toHaveValue("다른 계정");
+    await act(async () => save.resolve());
+    expect(refetch).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("이름")).toHaveValue("다른 계정");
+    expect(saveButton()).toBeDisabled();
   });
 });

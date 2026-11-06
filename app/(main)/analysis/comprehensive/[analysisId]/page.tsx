@@ -43,6 +43,7 @@ export default function ComprehensiveDetailPage() {
   const { analysisId } = useParams<{ analysisId: string }>();
   const basePath = useBasePath();
   const [data, setData] = useState<ComprehensiveAnalysisResult | null>(null);
+  const [loadedId, setLoadedId] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [unsupported, setUnsupported] = useState(false);
 
@@ -54,6 +55,7 @@ export default function ComprehensiveDetailPage() {
         setError(false);
         setUnsupported(false);
         setData(d);
+        setLoadedId(analysisId);
       })
       .catch((e) => {
         if (!active) return;
@@ -72,13 +74,13 @@ export default function ComprehensiveDetailPage() {
 
   // 이 결과를 얼마나 봤는가(FRT-107). 결과가 화면에 실제로 있는 동안만 잰다 —
   // 불러오는 중·실패 화면은 "본 것"이 아니다.
-  useAnalysisViewed({
+  const viewObservation = useAnalysisViewed({
     analysisType: "comprehensive",
     analysisId,
     // 응답이 왔다고 결과가 있는 건 아니다 — 대기·실패는 아래 AnalysisResultUnavailable
     // 안내가 뜬다. 그 화면을 본 시간을 결과 조회로 세면 view_duration 이 "결과를 못 본
     // 시간"과 뒤섞인다.
-    ready: !!data?.hasResultBody,
+    ready: loadedId === analysisId && !error && !unsupported && !!data?.hasResultBody,
   });
 
   if (unsupported) {
@@ -103,7 +105,7 @@ export default function ComprehensiveDetailPage() {
     );
   }
 
-  if (!data) {
+  if (!data || loadedId !== analysisId) {
     return (
       <main className="px-4 py-8 sm:px-8">
         <div className="max-w-4xl mx-auto space-y-6" aria-busy="true">
@@ -159,7 +161,7 @@ export default function ComprehensiveDetailPage() {
             <h1 className="text-heading-2 text-text-primary">종합 분석 결과</h1>
             {userTitle && <p className="text-body-sm text-text-tertiary">{userTitle}</p>}
           </header>
-          <BookmarkToggle analysisId={analysisId} isBookmarked={data.isBookmarked} />
+          <BookmarkToggle analysisId={analysisId} isBookmarked={data.isBookmarked} viewObservation={viewObservation} />
         </div>
 
         {data.missingInfoWarning && (

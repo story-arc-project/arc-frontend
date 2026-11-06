@@ -74,6 +74,11 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+vi.mock("@/lib/api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/client")>();
+  return { ...actual, api: { ...actual.api, post: vi.fn() } };
+});
+import { api } from "@/lib/api/client";
 import { capture } from "@/lib/analytics";
 import { FIRST_ONBOARDING_STEP } from "../constants";
 
@@ -85,6 +90,7 @@ const captureMock = vi.mocked(capture);
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  SEARCH_PARAMS.set("step", "profile");
 });
 
 beforeEach(() => {
@@ -188,5 +194,29 @@ describe("온보딩 스텝 계측 — 누구를 세는가(FRT-107)", () => {
       last_step: FIRST_ONBOARDING_STEP,
       elapsed_seconds: 7,
     });
+  });
+});
+
+// Removing unload delivery would strand completion in the batch queue during hard navigation.
+it("sends onboarding success immediately before hard navigation", async () => {
+  SEARCH_PARAMS.set("step", "q2");
+  vi.mocked(api.post).mockResolvedValueOnce({ status: 200, data: {} });
+  render(<SignupPage />);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "나중에 채울게요 →" }));
+  });
+  expect(captureMock).toHaveBeenCalledWith("onboarding_completed", {}, { atUnload: true });
+});
+
+describe("signup step observations", () => {
+  it("observes the initial signup step without collecting email", () => {
+    SEARCH_PARAMS.delete("step");
+    render(<SignupPage />);
+    expect(captureMock).toHaveBeenCalledWith("signup_step_viewed", { step: "start", step_index: 0 });
+  });
+
+  it("does not invent a signup start before a restored onboarding step", () => {
+    render(<SignupPage />);
+    expect(eventNames()).not.toContain("signup_step_viewed");
   });
 });

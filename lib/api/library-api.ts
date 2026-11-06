@@ -14,19 +14,26 @@ interface LibraryIdData {
   id: string;
 }
 
-interface LibraryListData {
-  count: number;
-  contents: {
-    system: LibraryDTO[];
-    custom: LibraryDTO[];
-  };
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function getLibraries(): Promise<LibraryDTO[]> {
   if (isDemoMode()) return demo.getLibraries();
-  const res = await api.get<ApiSuccessResponse<LibraryListData>>("/libraries/");
-  const { system, custom } = res.data.contents;
-  return [...system, ...custom];
+  const res = await api.get<unknown>("/libraries/");
+  const data = isRecord(res) ? res.data : undefined;
+  const contents = isRecord(data) ? data.contents : undefined;
+  if (
+    !isRecord(contents) ||
+    !Array.isArray(contents.system) ||
+    !Array.isArray(contents.custom)
+  ) {
+    throw Object.assign(
+      new Error("Invalid library response: expected data.contents.system and data.contents.custom arrays."),
+      { code: "INVALID_LIBRARY_RESPONSE" },
+    );
+  }
+  return [...contents.system, ...contents.custom] as LibraryDTO[];
 }
 
 export async function createLibrary(payload: {

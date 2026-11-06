@@ -281,3 +281,38 @@ describe("FileCellInput (FRT-213)", () => {
     expect(screen.getByRole("button", { name: /결과물/ })).toBeInTheDocument()
   })
 })
+
+
+describe("FRT-223 file action context", () => {
+  it("distinguishes uploaded files with identical names in two rows", async () => {
+    const user = userEvent.setup()
+    const onFirstChange = vi.fn()
+    const onSecondChange = vi.fn()
+    render(<>
+      <FileCellInput value={filled} ariaLabel="1번째 기록 첨부" onChange={onFirstChange} />
+      <FileCellInput value={{ ...filled, fileId: "file-2" }} ariaLabel="2번째 기록 첨부" onChange={onSecondChange} />
+    </>)
+    for (const row of [1, 2]) {
+      expect(await screen.findByRole("link", { name: `${row}번째 기록 첨부 결과보고서.pdf 다운로드` })).toHaveAttribute("href", "https://files.example/dl")
+    }
+    await user.click(screen.getByRole("button", { name: "2번째 기록 첨부 결과보고서.pdf 첨부 삭제" }))
+    expect(onFirstChange).not.toHaveBeenCalled()
+    expect(onSecondChange).toHaveBeenCalledWith({ type: "file", fileId: "", fileName: "" })
+  })
+
+  it("names the upload cancel action with its row and column", async () => {
+    uploadState = "uploading"
+    const user = userEvent.setup()
+    render(<FileCellInput value={undefined} ariaLabel="2번째 기록 첨부" onChange={() => {}} />)
+    await user.click(screen.getByRole("button", { name: "2번째 기록 첨부 업로드 취소" }))
+    expect(cancel).toHaveBeenCalledOnce()
+  })
+
+  it("keeps row and column context on failed download retry", async () => {
+    vi.mocked(getFileUrl).mockRejectedValueOnce(new Error("link failed"))
+    const user = userEvent.setup()
+    render(<FileCellInput value={filled} ariaLabel="2번째 기록 첨부" onChange={() => {}} />)
+    await user.click(await screen.findByRole("button", { name: "2번째 기록 첨부 다운로드 링크 다시 시도" }))
+    expect(await screen.findByRole("link", { name: "2번째 기록 첨부 결과보고서.pdf 다운로드" })).toBeInTheDocument()
+  })
+})

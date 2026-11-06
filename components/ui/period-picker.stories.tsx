@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { Meta, StoryObj } from "@storybook/nextjs";
+import { expect, within } from "storybook/test";
 
 import { PeriodPicker } from "./period-picker";
 
@@ -56,6 +57,12 @@ function WithInitialValueRender() {
 
 export const WithInitialValue: Story = {
   render: () => <WithInitialValueRender />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const group = canvas.getByRole("group", { name: "근무 기간" });
+    await expect(within(group).getByLabelText("근무 기간 시작일")).toHaveAttribute("type", "month");
+    await expect(within(group).getByLabelText("근무 기간 종료일")).toHaveAttribute("type", "month");
+  },
 };
 
 function CurrentlyWorkingRender() {
@@ -113,4 +120,9 @@ function DayGranularityCurrentRender() {
 
 export const DayGranularityCurrent: Story = {
   render: () => <DayGranularityCurrentRender />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByLabelText("프로젝트 기간 시작일")).toHaveAttribute("type", "date");
+    await expect(canvas.getByLabelText("프로젝트 기간 종료일")).toBeDisabled();
+  },
 };

@@ -103,3 +103,40 @@ describe("useUnsavedNavGuard", () => {
     expect(onAttemptLeave).not.toHaveBeenCalled()
   })
 })
+
+
+describe("same-page navigation opt-in", () => {
+  it("handles internal Back without rearming or opening a discard modal", () => {
+    const onAttemptLeave = vi.fn()
+    const onInternalPop = vi.fn(() => true)
+    renderHook(() => useUnsavedNavGuard({ enabled: true, onAttemptLeave, onLeave: vi.fn(), onInternalPop }))
+    pushSpy.mockClear()
+    firePopState()
+    expect(onInternalPop).toHaveBeenCalledTimes(1)
+    expect(pushSpy).not.toHaveBeenCalled()
+    expect(onAttemptLeave).not.toHaveBeenCalled()
+  })
+  it("still consumes internal sentinel history after dirty becomes clean", () => {
+    const onInternalPop = vi.fn(() => true)
+    const { rerender } = renderHook(({ enabled }) => useUnsavedNavGuard({ enabled, onAttemptLeave: vi.fn(), onLeave: vi.fn(), onInternalPop }), { initialProps: { enabled: true } })
+    rerender({ enabled: false })
+    firePopState()
+    expect(onInternalPop).toHaveBeenCalledTimes(1)
+  })
+})
+
+
+it("an unhandled pop still guards; confirmLeave bypass takes precedence over internal handling", () => {
+  const onAttemptLeave = vi.fn()
+  const onLeave = vi.fn()
+  const onInternalPop = vi.fn(() => false)
+  const { result } = renderHook(() => useUnsavedNavGuard({ enabled: true, onAttemptLeave, onLeave, onInternalPop }))
+  firePopState()
+  expect(onAttemptLeave).toHaveBeenCalledTimes(1)
+  onInternalPop.mockReturnValue(true)
+  onInternalPop.mockClear()
+  result.current.confirmLeave()
+  firePopState()
+  expect(onLeave).toHaveBeenCalledTimes(1)
+  expect(onInternalPop).not.toHaveBeenCalled()
+})

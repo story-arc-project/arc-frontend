@@ -28,58 +28,59 @@ export function useExperiences() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const mountedRef = useRef(true);
+  const mountedRef = useRef(false);
+  const lifecycleRef = useRef(0);
+  const requestRef = useRef(0);
+  // List snapshots and non-duplicate writes invalidate pending item hydration.
+  // Duplicate hydrations do not invalidate one another: each adds a distinct copy.
+  const snapshotRef = useRef(0);
+  const hasCurrentSnapshotRef = useRef(false);
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  const refetch = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+  const load = useCallback(async () => {
+    if (!mountedRef.current) return;
+    const request = ++requestRef.current;
+    // A pending full-list reconciliation is not satisfied by the displayed snapshot.
+    hasCurrentSnapshotRef.current = false;
     try {
       const data = await getExperiences();
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || request !== requestRef.current) return;
+      snapshotRef.current += 1;
+      hasCurrentSnapshotRef.current = true;
       setList({ count: data.count, contents: data.contents });
       setIsLoading(false);
     } catch (err) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || request !== requestRef.current) return;
       setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
       setIsLoading(false);
     }
   }, []);
 
+  const refetch = useCallback(async () => {
+    if (!mountedRef.current) return;
+    setIsLoading(true);
+    setError(null);
+    await load();
+  }, [load]);
+
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const data = await getExperiences();
-        if (cancelled) return;
-        setList({ count: data.count, contents: data.contents });
-        setIsLoading(false);
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err : new Error("알 수 없는 오류가 발생했어요."));
-        setIsLoading(false);
-      }
-    }
-
-    load();
-
+    mountedRef.current = true;
+    // load only commits state after its network await; initial loading is already true.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
     return () => {
-      cancelled = true;
+      mountedRef.current = false;
+      lifecycleRef.current += 1;
+      requestRef.current += 1;
+      snapshotRef.current += 1;
     };
-  }, []);
+  }, [load]);
 
   const createExperience = useCallback(
     async (payload: ExperienceSavePayload): Promise<string> => {
+      const lifecycle = lifecycleRef.current;
       const newId = await apiCreateExperience(payload);
+      if (!mountedRef.current || lifecycle !== lifecycleRef.current) return newId;
+      snapshotRef.current += 1;
       await refetch();
       return newId;
     },
@@ -88,7 +89,10 @@ export function useExperiences() {
 
   const updateExperience = useCallback(
     async (id: string, payload: ExperienceUpdatePayload): Promise<void> => {
+      const lifecycle = lifecycleRef.current;
       await apiUpdateExperience(id, payload);
+      if (!mountedRef.current || lifecycle !== lifecycleRef.current) return;
+      snapshotRef.current += 1;
       await refetch();
     },
     [refetch],
@@ -96,7 +100,10 @@ export function useExperiences() {
 
   const updateImportance = useCallback(
     async (id: string, importance: number | null): Promise<void> => {
+      const lifecycle = lifecycleRef.current;
       await apiUpdateExperienceImportance(id, importance);
+      if (!mountedRef.current || lifecycle !== lifecycleRef.current) return;
+      snapshotRef.current += 1;
       await refetch();
     },
     [refetch],
@@ -104,7 +111,10 @@ export function useExperiences() {
 
   const deleteExperience = useCallback(
     async (id: string): Promise<void> => {
+      const lifecycle = lifecycleRef.current;
       await apiDeleteExperience(id);
+      if (!mountedRef.current || lifecycle !== lifecycleRef.current) return;
+      snapshotRef.current += 1;
       await refetch();
     },
     [refetch],
@@ -112,19 +122,35 @@ export function useExperiences() {
 
   const duplicateExperience = useCallback(
     async (id: string): Promise<string> => {
+      const lifecycle = lifecycleRef.current;
       const newId = await apiDuplicateExperience(id);
+      if (!mountedRef.current || lifecycle !== lifecycleRef.current) return newId;
+      // A successful write supersedes any GET started before it.
+      const request = ++requestRef.current;
+      const snapshot = snapshotRef.current;
+      const ownsHydration = () => mountedRef.current
+        && lifecycle === lifecycleRef.current
+        && snapshot === snapshotRef.current;
+      setIsLoading(false);
+      setError(null);
       // POST succeeded — the server-side record exists. The follow-up fetch is
       // best-effort hydration so selection works before the list refresh; a
       // failure here must not make the caller think duplication failed and
       // retry, which would create multiple copies.
       try {
         const created = await getExperience(newId);
+        if (!ownsHydration()) return newId;
         setList((prev) => {
           // 새로고침이 먼저 실어 왔을 수 있다 — 그때는 목록도 개수도 건드리지 않는다.
           if (prev.contents.some((e) => e.id === created.id)) return prev;
           return { count: prev.count + 1, contents: [created, ...prev.contents] };
         });
+        // Replace an invalidated initial/mutation refresh: prepending a copy alone
+        // cannot reconcile deleted or updated records. A newer GET already owns
+        // reconciliation if it started while hydration was pending.
+        if (!hasCurrentSnapshotRef.current && request === requestRef.current) await refetch();
       } catch {
+        if (!ownsHydration()) return newId;
         try {
           await refetch();
         } catch {

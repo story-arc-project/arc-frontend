@@ -8,13 +8,14 @@
 //
 // 탭 전환(hidden)은 이탈로 치지 않는다. 체류시간과 갈리는 지점이다 — 탭을 옮겼다고 폼을
 // 포기한 건 아니고, 돌아와서 마저 쓰는 일이 흔하다.
-import { useCallback, useRef } from "react";
+import { useMemo } from "react";
 
 import { useExitSignal } from "./exit-signal";
 
 export interface FlowExitOptions {
   // 흐름이 시작됐는가. 데이터를 아직 못 불러온 화면을 이탈로 세지 않으려면 false 로 둔다.
   active: boolean;
+  sessionKey?: string;
   // 완료하지 못한 채 떠났을 때 1회. seconds 는 흐름 시작부터의 경과(숨어 있던 시간 포함) —
   // 체류가 아니라 "포기까지 얼마나 붙들고 있었나"라서 벽시계로 센다.
   onExit: (elapsedSeconds: number) => void;
@@ -28,30 +29,29 @@ export interface FlowExitResult {
   elapsedSeconds: () => number;
 }
 
-export function useFlowExit({ active, onExit }: FlowExitOptions): FlowExitResult {
-  // 완료 판정은 발화 시점에 읽혀야 한다 — state 로 두면 언마운트 클로저가 옛 값을 굳힌다.
-  const completedRef = useRef(false);
+// 별도 기록의 지연 콜백이 자기 완료 상태를 계속 참조하도록 독립 컨테이너를 만든다.
+function createFlowSession(key: string | undefined) {
+  let completed = false;
+  return {
+    key,
+    shouldFire: () => !completed,
+    reset: () => { completed = false; },
+    complete: () => { completed = true; },
+  };
+}
 
-  const shouldFire = useCallback(() => !completedRef.current, []);
-
-  // 흐름이 새로 시작되면 완료 표식도 함께 비운다. 안 비우면 한 번 저장한 인스턴스가
-  // 그 뒤 다루는 모든 흐름을 "이미 완료"로 봐서 이탈을 영영 안 쏜다 — 시계는 새로
-  // 잡히는데 판정만 옛것이 남는, 눈에 안 보이는 어긋남이다.
-  const handleStart = useCallback(() => {
-    completedRef.current = false;
-  }, []);
+export function useFlowExit({ active, sessionKey, onExit }: FlowExitOptions): FlowExitResult {
+  // 완료 상태도 기록에 귀속한다. 이전 기록의 지연 이탈은 이전 상태를 읽는다.
+  const session = useMemo(() => createFlowSession(sessionKey), [sessionKey]);
 
   const { elapsedSeconds } = useExitSignal({
     active,
+    sessionKey,
     onHidden: false,
-    shouldFire,
+    shouldFire: session.shouldFire,
     onFire: onExit,
-    onStart: handleStart,
+    onStart: session.reset,
   });
 
-  const markCompleted = useCallback(() => {
-    completedRef.current = true;
-  }, []);
-
-  return { markCompleted, elapsedSeconds };
+  return { markCompleted: session.complete, elapsedSeconds };
 }

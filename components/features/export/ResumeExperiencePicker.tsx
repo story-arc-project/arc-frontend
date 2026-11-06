@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDate } from "@/lib/utils/date-utils";
 import { Badge } from "@/components/ui/badge";
 import { EXPERIENCE_TYPE_MAP } from "@/lib/constants/templates-v2";
 import type { ExperienceV2 } from "@/types/archive";
@@ -17,11 +18,6 @@ interface ResumeExperiencePickerProps {
   onClearAll: () => void;
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")}`;
-}
 
 export function ResumeExperiencePicker({
   experiences,
@@ -73,7 +69,7 @@ export function ResumeExperiencePicker({
                     {typeLabel && (
                       <Badge className="shrink-0 whitespace-nowrap">{typeLabel}</Badge>
                     )}
-                    {formatDate(exp.updatedAt)}
+                    {formatDate(exp.updatedAt, "compact")}
                   </span>
                 </span>
               </label>

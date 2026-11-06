@@ -92,9 +92,18 @@ const NETWORK_MESSAGE = "네트워크 오류가 발생했어요. 잠시 후 다�
 
 /** step 파라미터는 마운트 직후 이펙트로 반영되므로 한 번 흘려보내야 해당 UI 가 뜬다. */
 async function renderStep(step: "start" | "password" | "verify") {
-  SEARCH_PARAMS.set("step", step);
+  SEARCH_PARAMS.set("step", step === "password" ? "start" : step);
+  SEARCH_PARAMS.delete("flow");
+  if (step === "verify") {
+    SEARCH_PARAMS.set("flow", "a11y-flow");
+    sessionStorage.setItem("arc:signup-handoff", JSON.stringify({ flow: "a11y-flow", email: "reader@example.test", createdAt: Date.now() }));
+  }
   render(<SignupPage />);
   await act(async () => {});
+  if (step === "password") {
+    await typeInto("이메일", "reader@example.test");
+    await clickButton("이메일로 계속하기");
+  }
 }
 
 async function clickButton(name: string | RegExp) {

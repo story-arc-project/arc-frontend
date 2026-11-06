@@ -204,9 +204,9 @@ test.describe("FRT-74 입력 뷰 미저장 이탈 가드", () => {
  * FRT-81 — 입력 라우트 미저장 상태 브라우저 Back 가드.
  *
  * App Router 에서 브라우저 Back 은 popstate(SPA 전환)라 beforeunload 가 발화하지 않는다.
- * useUnsavedNavGuard 의 history sentinel + popstate 리스너가 Back 을 가로채 "목록으로"와
- * 동일한 이탈 가드 모달을 띄우고, '취소' 시 URL·작성 내용을 보존하며 '나가기' 후에만
- * 실제로 목록으로 이동해야 한다.
+ * FRT-336: 첫 Back 은 URL 유형을 해제하고 입력을 보존한 채 유형 선택으로 돌아간다.
+ * 선택 화면에서 다시 Back 하면 history sentinel 가드가 이탈 모달을 띄우고, 취소 시
+ * 작성 내용을 보존하며 나가기 후에만 실제로 목록으로 이동해야 한다.
  */
 test.describe("FRT-81 입력 뷰 브라우저 Back 가드", () => {
   async function arrangeUnsavedNewForm(page: import("@playwright/test").Page) {
@@ -216,7 +216,6 @@ test.describe("FRT-81 입력 뷰 브라우저 Back 가드", () => {
       .first()
       .click();
     await page.waitForURL(/\/archive\/new/);
-    const lenBefore = await page.evaluate(() => window.history.length);
     await page.getByRole("button", { name: "대외활동", exact: true }).click();
     await page
       .getByRole("textbox", { name: "경험명" })
@@ -224,21 +223,26 @@ test.describe("FRT-81 입력 뷰 브라우저 Back 가드", () => {
     // 미저장 → useUnsavedNavGuard 가 history sentinel 을 push(arm)할 때까지 대기.
     // popstate 가드의 전제 조건이며, 입력 직후 즉시 Back 하는 레이스를 막는다(임의 sleep 대신
     // 기능에 직결된 조건 대기).
-    await page.waitForFunction(
-      (n) => window.history.length > n,
-      lenBefore,
-    );
+    await page.waitForFunction(() => Boolean(window.history.state?.__navGuardSentinel));
   }
 
-  test("미저장 입력 중 브라우저 Back → 가드 모달이 뜨고 '취소'하면 보존된다", async ({
+  test("미저장 입력 중 첫 Back은 유형 선택, 다음 Back의 이탈 취소 후 입력이 보존된다", async ({
     page,
   }) => {
     const stub = await stubApi(page, { authed: true, scenario: "data" });
     await arrangeUnsavedNewForm(page);
 
     await page.goBack();
+    await expect.poll(() => new URL(page.url()).searchParams.get("type")).toBeNull();
+    await expect(page.getByRole("button", { name: "대외활동", exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "저장하지 않고 나갈까요?" })).toBeHidden();
+    await page.goForward();
+    await expect(page.getByRole("textbox", { name: "경험명" })).toHaveValue("Back 가드 작성 중 경험");
+    await page.goBack();
+    await expect.poll(() => new URL(page.url()).searchParams.get("type")).toBeNull();
+    await page.goBack();
 
-    // beforeunload 가 아니라 popstate 가드가 모달을 띄운다. URL 은 입력 라우트 유지.
+    // 유형 선택에서 실제 이탈을 시도할 때만 popstate 가드가 모달을 띄운다.
     const guard = page.getByRole("dialog", { name: "저장하지 않고 나갈까요?" });
     await expect(guard).toBeVisible();
     await expect(page).toHaveURL(/\/archive\/new/);
@@ -246,6 +250,7 @@ test.describe("FRT-81 입력 뷰 브라우저 Back 가드", () => {
     await guard.getByRole("button", { name: "취소", exact: true }).click();
     await expect(guard).toBeHidden();
     await expect(page).toHaveURL(/\/archive\/new/);
+    await page.getByRole("button", { name: "대외활동", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "경험명" })).toHaveValue(
       "Back 가드 작성 중 경험",
     );
@@ -256,12 +261,15 @@ test.describe("FRT-81 입력 뷰 브라우저 Back 가드", () => {
     ).toHaveLength(0);
   });
 
-  test("미저장 입력 중 브라우저 Back → '나가기' 후에만 목록으로 이동한다", async ({
+  test("미저장 입력 중 유형 선택으로 Back 후 다시 Back → '나가기' 후에만 목록으로 이동한다", async ({
     page,
   }) => {
     const stub = await stubApi(page, { authed: true, scenario: "data" });
     await arrangeUnsavedNewForm(page);
 
+    await page.goBack();
+    await expect.poll(() => new URL(page.url()).searchParams.get("type")).toBeNull();
+    await expect(page.getByRole("button", { name: "대외활동", exact: true })).toBeVisible();
     await page.goBack();
     const guard = page.getByRole("dialog", { name: "저장하지 않고 나갈까요?" });
     await expect(guard).toBeVisible();

@@ -616,7 +616,8 @@ export interface KeywordCoverage {
   keyword: string;
   relatedCount: number;
   totalCount: number;
-  coveragePercent: number;
+  /** 유효한 분모·관련 개수·API 비율이 없으면 null — 0%와 구분한다. */
+  coveragePercent: number | null;
   // v4.1: relevance 등급별 개수(코드 재집계)
   highCount: number;
   mediumCount: number;

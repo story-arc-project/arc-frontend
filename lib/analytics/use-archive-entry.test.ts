@@ -1,5 +1,6 @@
+import { createElement, StrictMode, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, render, renderHook } from "@testing-library/react";
 
 import { capture } from "@/lib/analytics/client";
 import { useArchiveEntryAnalytics } from "@/lib/analytics/use-archive-entry";
@@ -54,6 +55,9 @@ describe("useArchiveEntryAnalytics — 입력 폼 이탈·진행(FRT-107)", () =
     expect(captureMock).toHaveBeenCalledWith(
       "archive_entry_abandoned",
       {
+        entry_attempt_id: expect.any(String),
+        schema_version: 2,
+        source: "browser",
         mode: "new",
         last_section: "detail",
         sections_done: 2,
@@ -162,14 +166,14 @@ describe("useArchiveEntryAnalytics — 입력 폼 이탈·진행(FRT-107)", () =
       (c) => c[0] === "archive_section_completed",
     );
     expect(sectionCalls).toHaveLength(2);
-    expect(sectionCalls[0][1]).toEqual({
+    expect(sectionCalls[0][1]).toMatchObject({
       section_key: "basic",
       section_index: 0,
       sections_done: 1,
       sections_total: 4,
     });
     // 순서를 건너뛰어 채운 자리 — sections_done 만으로는 안 보이는 사실이다.
-    expect(sectionCalls[1][1]).toEqual({
+    expect(sectionCalls[1][1]).toMatchObject({
       section_key: "repeat",
       section_index: 2,
       sections_done: 2,
@@ -203,7 +207,7 @@ describe("useArchiveEntryAnalytics — 입력 폼 이탈·진행(FRT-107)", () =
     );
     vi.advanceTimersByTime(30_000);
 
-    expect(result.current.progressProps()).toEqual({
+    expect(result.current.progressProps()).toMatchObject({
       elapsed_seconds: 30,
       sections_done: 2,
       sections_total: 4,
@@ -344,4 +348,74 @@ describe("useArchiveEntryAnalytics — 입력 폼 이탈·진행(FRT-107)", () =
     expect(abandoned).toHaveLength(1);
     expect(abandoned[0][1]).toMatchObject({ elapsed_seconds: 20, sections_done: 1 });
   });
+});
+
+
+// 자식 passive effect는 부모의 계측 effect보다 먼저 실행된다.
+function CompletionReporter({ report, value }: {
+  report: (value: FormCompletionSnapshot) => void;
+  value: FormCompletionSnapshot;
+}) {
+  useEffect(() => { report(value); }, [report, value]);
+  return null;
+}
+
+function SessionForm({ sessionKey, mode, saving, value }: {
+  sessionKey: string;
+  mode: "new" | "edit";
+  saving: boolean;
+  value: FormCompletionSnapshot;
+}) {
+  const analytics = useArchiveEntryAnalytics({ sessionKey, mode, saving, active: true });
+  return createElement(CompletionReporter, { report: analytics.handleCompletionChange, value });
+}
+
+describe("FRT-331 record-owned exit snapshots", () => {
+  it("keeps A snapshot, mode and saving when B reports before parent effects", () => {
+    const view = render(createElement(SessionForm, {
+      sessionKey: "A", mode: "edit", saving: false, value: snapshot(["basic"]),
+    }));
+    vi.advanceTimersByTime(12_000);
+    view.rerender(createElement(SessionForm, {
+      sessionKey: "B", mode: "new", saving: true,
+      value: snapshot(["basic", "detail"], ["detail.배운 점"]),
+    }));
+    const exits = captureMock.mock.calls.filter(([event]) => event === "archive_entry_abandoned");
+    expect(exits).toHaveLength(1);
+    expect(exits[0][1]).toMatchObject({
+      mode: "edit", last_section: "basic", sections_done: 1, sections_total: 4,
+      elapsed_seconds: 12, qualitative_fields_filled: [],
+    });
+    view.unmount();
+    settle();
+    expect(captureMock.mock.calls.filter(([event]) => event === "archive_entry_abandoned")).toHaveLength(1);
+  });
+
+  it("does not replace saving A with unsaved B and adds no StrictMode ghost", () => {
+    const view = render(createElement(StrictMode, null, createElement(SessionForm, {
+      sessionKey: "A", mode: "edit", saving: true, value: snapshot(["basic"]),
+    })));
+    settle();
+    vi.advanceTimersByTime(12_000);
+    view.rerender(createElement(StrictMode, null, createElement(SessionForm, {
+      sessionKey: "B", mode: "edit", saving: false, value: snapshot(["basic", "detail"]),
+    })));
+    settle();
+    expect(captureMock.mock.calls.filter(([event]) => event === "archive_entry_abandoned")).toHaveLength(0);
+    vi.advanceTimersByTime(2_000);
+    view.unmount();
+    settle();
+    const exits = captureMock.mock.calls.filter(([event]) => event === "archive_entry_abandoned");
+    expect(exits).toHaveLength(1);
+    expect(exits[0][1]).toMatchObject({ sections_done: 2, elapsed_seconds: 2 });
+  });
+});
+
+it("keeps the attempt ID across progress and creates a new ID on record switch", () => {
+  const view = renderHook(({ id }) => useArchiveEntryAnalytics({ mode: "edit", active: true, sessionKey: id }), { initialProps: { id: "A" } });
+  const first = view.result.current.entryAttemptId;
+  view.rerender({ id: "A" });
+  expect(view.result.current.entryAttemptId).toBe(first);
+  view.rerender({ id: "B" });
+  expect(view.result.current.entryAttemptId).not.toBe(first);
 });

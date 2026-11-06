@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Star, Copy, Trash2, Pencil, Search } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import type { Preset } from "@/types/archive"
@@ -24,6 +24,8 @@ export default function PresetManager({
   const [search, setSearch] = useState("")
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
+  // The first finish wins, including blur from the same editing render.
+  const renameHandledRef = useRef(false)
 
   const sorted = [...presets].sort((a, b) => {
     if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1
@@ -35,12 +37,15 @@ export default function PresetManager({
     : sorted
 
   function startRename(preset: Preset) {
+    renameHandledRef.current = false
     setEditingId(preset.id)
     setEditName(preset.name)
   }
 
-  function commitRename() {
-    if (editingId && editName.trim()) {
+  function finishRename(commit: boolean) {
+    if (renameHandledRef.current) return
+    renameHandledRef.current = true
+    if (commit && editingId && editName.trim()) {
       onRename(editingId, editName.trim())
     }
     setEditingId(null)
@@ -100,12 +105,12 @@ export default function PresetManager({
                     className="w-full h-6 bg-transparent border-b border-brand text-body-sm text-text-primary focus:outline-none"
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
-                    onBlur={commitRename}
+                    onBlur={() => finishRename(true)}
                     onKeyDown={e => {
                       // 조합 중 Enter 는 확정용, Escape 는 조합 취소용이므로 이름 편집을 끝내지 않는다.
                       if (isImeComposing(e)) return
-                      if (e.key === "Enter") commitRename()
-                      if (e.key === "Escape") setEditingId(null)
+                      if (e.key === "Enter") finishRename(true)
+                      if (e.key === "Escape") finishRename(false)
                     }}
                     autoFocus
                   />

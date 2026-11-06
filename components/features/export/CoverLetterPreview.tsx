@@ -1,5 +1,6 @@
 "use client";
 
+import { displayCoverLetterSegments, stripCoverLetterMarkdown } from "@/lib/export/cover-letter-display";
 import { buildGroundingHighlight } from "@/lib/export/cover-letter-grounding";
 import type { CoverLetterAnswer, CoverLetterResult } from "@/types/cover-letter";
 
@@ -72,7 +73,7 @@ function AnswerBlock({
             claims={answer.grounding.unsupported_claims}
           />
         ) : (
-          answer.cover_letter
+          stripCoverLetterMarkdown(answer.cover_letter)
         )}
       </div>
 
@@ -97,8 +98,8 @@ function HighlightedBody({
   text: string;
   claims: readonly string[];
 }) {
-  const { segments } = buildGroundingHighlight(text, claims);
-  if (segments.length === 0) return <>{text}</>;
+  const raw = buildGroundingHighlight(text, claims);
+  const segments = displayCoverLetterSegments(raw.segments);
 
   return (
     <>

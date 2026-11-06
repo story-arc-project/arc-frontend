@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { AnalysisHomeSummary, AnalysisSnapshot, AnalysisType } from "@/types/analysis";
 
 // FRT-169: 대시보드도 `getAnalysisHomeSummary` 를 소비한다. 부분 실패가 무음이던 시절엔
@@ -254,5 +255,72 @@ describe("최근 경험 — 유형 배지는 줄바꿈되지 않는다", () => {
     const section = screen.getByRole("heading", { name: "최근 경험" }).parentElement!;
 
     expect(within(section).getByText(LONG_TITLE)).toHaveClass("truncate");
+  });
+});
+
+describe("대시보드 — 분석 탭 키보드 탐색 (FRT-295)", () => {
+  it("좌우 순환과 Home/End가 선택·포커스·분석 결과를 함께 바꾼다", async () => {
+    const user = userEvent.setup();
+    getSummary.mockResolvedValue(summary());
+    render(<DashboardPage />);
+    await flush();
+    const tabs = screen.getAllByRole("tab");
+    const assertSelection = (index: number, result: string) => {
+      tabs.forEach((element, i) => {
+        expect(element).toHaveAttribute("tabindex", i === index ? "0" : "-1");
+        expect(element).toHaveAttribute("aria-selected", String(i === index));
+      });
+      expect(tabs[index]).toHaveFocus();
+      const panel = screen.getByRole("tabpanel");
+      expect(panel).toHaveAttribute("id", tabs[index].getAttribute("aria-controls"));
+      expect(panel).toHaveAttribute("aria-labelledby", tabs[index].id);
+      expect(within(panel).getByText(result)).toBeInTheDocument();
+    };
+    tabs[0].focus();
+    assertSelection(0, "분석 i1");
+    await user.keyboard("{ArrowRight}");
+    assertSelection(1, "분석 c1");
+    expect(screen.queryByText("분석 i1")).not.toBeInTheDocument();
+    await user.keyboard("{End}");
+    assertSelection(2, "분석 k1");
+    await user.keyboard("{ArrowRight}");
+    assertSelection(0, "분석 i1");
+    await user.keyboard("{ArrowLeft}");
+    assertSelection(2, "분석 k1");
+    await user.keyboard("{ArrowLeft}");
+    assertSelection(1, "분석 c1");
+    await user.keyboard("{Home}");
+    assertSelection(0, "분석 i1");
+    await user.click(tabs[2]);
+    assertSelection(2, "분석 k1");
+    await user.tab();
+    expect(within(screen.getByRole("tabpanel")).getByRole("link")).toHaveFocus();
+    await user.tab({ shift: true });
+    assertSelection(2, "분석 k1");
+    await user.keyboard("{ArrowDown}");
+    assertSelection(2, "분석 k1");
+    expect(getSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it("요약 로딩 중 바꾼 탭은 응답 후에도 선택과 포커스를 유지한다", async () => {
+    const user = userEvent.setup();
+    experiencesState.experiences = [{ id: "e1", type: "club", content: { title: "경험" }, updated_at: "2026-01-01T00:00:00Z" }];
+    experiencesState.count = 1;
+    let resolveSummary!: (value: AnalysisHomeSummary) => void;
+    getSummary.mockReturnValue(new Promise((resolve) => { resolveSummary = resolve; }));
+    render(<DashboardPage />);
+    await flush();
+    const first = screen.getByRole("tab", { name: "개별" });
+    first.focus();
+    await user.keyboard("{End}");
+    const keyword = screen.getByRole("tab", { name: "키워드" });
+    expect(keyword).toHaveFocus();
+    expect(keyword).toHaveAttribute("aria-selected", "true");
+    expect(keyword).not.toHaveAttribute("aria-controls");
+    await act(async () => { resolveSummary(summary()); });
+    expect(keyword).toHaveFocus();
+    expect(keyword).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("tabpanel", { name: "키워드" })).toHaveTextContent("분석 k1");
+    expect(getSummary).toHaveBeenCalledTimes(1);
   });
 });

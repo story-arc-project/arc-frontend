@@ -7,6 +7,8 @@ import { formatBytes } from "./formatBytes"
 
 interface GenericFileCardProps {
   name: string
+  /** 셀의 행·컬럼 맥락. 파일명과 동작 앞에 붙인다. */
+  ariaLabel?: string
   size?: number
   url?: string
   icon?: ReactNode
@@ -29,6 +31,7 @@ function getSafeDownloadHref(url?: string): string | null {
 
 export default function GenericFileCard({
   name,
+  ariaLabel,
   size,
   url,
   icon,
@@ -36,6 +39,7 @@ export default function GenericFileCard({
   onDelete,
   downloadLabel = "다운로드",
 }: GenericFileCardProps) {
+  const actionName = (action: string) => [ariaLabel, name, action].filter(Boolean).join(" ")
   const sizeLabel = formatBytes(size)
   const safeHref = getSafeDownloadHref(url)
 
@@ -63,7 +67,7 @@ export default function GenericFileCard({
           download={name || undefined}
           // 첨부가 여러 개면 '다운로드'로만 읽혀 어느 파일인지 알 수 없다. 파일명은 옆의
           // 별개 텍스트라 동작과 연결되지 않으므로, 동작의 이름 자체에 넣는다.
-          aria-label={name ? `${name} ${downloadLabel}` : undefined}
+          aria-label={ariaLabel || name ? actionName(downloadLabel) : undefined}
           className="flex h-9 shrink-0 items-center gap-1.5 rounded-sm px-3 text-body-sm text-text-secondary hover:bg-surface-tertiary"
         >
           <Download size={14} />
@@ -74,7 +78,7 @@ export default function GenericFileCard({
         <button
           type="button"
           onClick={onDelete}
-          aria-label={name ? `${name} 첨부 삭제` : "첨부 삭제"}
+          aria-label={actionName("첨부 삭제")}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-text-tertiary hover:bg-surface-tertiary hover:text-text-primary"
         >
           <X size={14} />

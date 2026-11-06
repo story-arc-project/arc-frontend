@@ -7,7 +7,7 @@ import { InsufficientCreditsDialog } from "@/components/features/credits/Insuffi
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { use, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import "./print.css";
 import { Button } from "@/components/ui";
@@ -19,6 +19,7 @@ import {
   ResumeNotReadyError,
   updateResume,
 } from "@/lib/api/export-api";
+import { observeExportRequest } from "@/lib/analytics/observe-export-request";
 import { capture, type ResumeSaveOutcome } from "@/lib/analytics";
 import { useBasePath } from "@/lib/utils/use-base-path";
 import { isEmptySection, type ResumeVersion } from "@/types/resume";
@@ -70,6 +71,9 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
   const [resume, setResume] = useState<ResumeVersion | null>(null);
   const [initial, setInitial] = useState<ResumeVersion | null>(null);
   const [error, setError] = useState<ApiError | Error | null>(null);
+  const panelId = useId();
+  const editorPanelId = `${panelId}-editor`;
+  const previewPanelId = `${panelId}-preview`;
   const [mobileTab, setMobileTab] = useState<MobileTab>("editor");
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -388,17 +392,18 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
     setRestoreRegenerateFocus(false);
     const handleCreditError = beginAttempt();
     setRegenerating(true);
-    // 이 경로도 아래에서 export_completed 를 쏜다. 누름을 여기서 안 잡으면 그 완료 하나가
-    // 짝 없이 총계에 얹혀, "눌렀는데 요청이 안 나갔다"를 재는 **누름 − 완료** 차이가
-    // 재생성 건수만큼 깎인다(FRT-107). 완료를 쏘는 자리마다 누름도 있어야 뺄셈이 성립한다.
+    // 유효 실행 클릭과 API 요청 결과는 별도로 관측한다(FRT-107/FRT-325).
     capture("export_execute_button_clicked", { export_type: "resume" });
     const attempt = begin({ versionId, language: resume.meta.language });
+    let requestSucceeded = false;
     try {
-      await createResume({ language: attempt.payload.language }, { idempotencyKey: attempt.key });
+      await observeExportRequest(
+        () => createResume({ language: attempt.payload.language }, { idempotencyKey: attempt.key }),
+        { export_type: "resume", language: attempt.payload.language },
+        () => handleCreditError.isCurrent(),
+      );
+      requestSucceeded = true;
       if (!handleCreditError.isCurrent()) return;
-      // '다시 만들기'도 새 레쥬메 버전이 만들어진 익스포트 완료다 — 모달 생성 경로만
-      // 잡으면 퍼널이 이 사용자를 미완료로 센다(FRT-19).
-      capture("export_completed", { export_type: "resume", language: resume.meta.language });
       // 재생성 확정 — dialog 약속대로 현재 편집/임시저장을 폐기한다. 기존 draft를
       // 지우고, 현재 편집을 initial로 확정해 dirty를 해소한다 → 이어질 언마운트
       // cleanup이 dirtyRef=false를 보고 draft를 되살리지 않는다.
@@ -411,10 +416,10 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
       router.push(`${basePath}/export`);
     } catch (err) {
       if (!handleCreditError.isCurrent()) return;
-      reject(attempt.key, err);
+      if (!requestSucceeded) reject(attempt.key, err);
       regeneratingRef.current = false;
       setRegenerating(false);
-      if (handleCreditError(err)) return;
+      if (!requestSucceeded && handleCreditError(err)) return;
       toast.error("다시 만들기에 실패했어요. 잠시 후 다시 시도해주세요.");
     }
   }, [resume, router, basePath, versionId, beginAttempt, begin, reject, canGenerate]);
@@ -745,8 +750,10 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
         onExport={() => setExportOpen(true)}
       />
 
-      {/* Mobile tab switcher — 읽기 전용이면 고를 것이 없다(편집 패널이 없음). */}
+      {/* Mobile panel switcher — 읽기 전용이면 고를 것이 없다(편집 패널이 없음). */}
       <div
+        role="group"
+        aria-label="이력서 보기 선택"
         className={[
           "no-print sticky top-[calc(var(--gnb-h)+3.5rem)] z-30 border-b border-border bg-surface md:hidden",
           readOnly ? "hidden" : "flex",
@@ -761,6 +768,8 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
           <button
             key={t.key}
             type="button"
+            aria-pressed={mobileTab === t.key}
+            aria-controls={t.key === "editor" ? editorPanelId : previewPanelId}
             onClick={() => setMobileTab(t.key)}
             className={[
               "flex-1 py-2.5 text-body-sm transition-colors",
@@ -781,6 +790,8 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
             ⚠️ 이건 화면 배치일 뿐 **저장을 막는 장치가 아니다** — 봉인은 dirty=false 다. */}
         {!readOnly && (
           <aside
+            id={editorPanelId}
+            aria-label="이력서 편집"
             className={[
               "no-print flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto border-border bg-surface md:max-w-[40%] md:flex-none md:basis-2/5 md:border-r",
               mobileTab === "editor" ? "" : "hidden md:flex",
@@ -801,6 +812,8 @@ function ResumeDetailContent({ params, canGenerate }: PageProps & { canGenerate:
         )}
 
         <main
+          id={previewPanelId}
+          aria-label="이력서 미리보기"
           className={[
             "flex flex-1 min-h-0 min-w-0 flex-col overflow-y-auto bg-surface-secondary",
             readOnly || mobileTab === "preview" ? "" : "hidden md:flex",

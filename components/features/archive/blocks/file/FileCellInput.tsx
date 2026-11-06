@@ -159,7 +159,7 @@ export default function FileCellInput({
       <button
         type="button"
         onClick={() => setUrlAttempt(n => n + 1)}
-        aria-label="다운로드 링크 다시 시도"
+        aria-label={ariaLabel ? `${ariaLabel} 다운로드 링크 다시 시도` : "다운로드 링크 다시 시도"}
         className="underline"
       >
         다시 시도
@@ -171,7 +171,7 @@ export default function FileCellInput({
     if (!hasUploaded) return <span className="text-body-sm text-text-disabled">—</span>
     return (
       <div className="flex flex-col gap-1">
-        <GenericFileCard name={val.fileName} size={val.size} url={resolvedUrl} />
+        <GenericFileCard name={val.fileName} size={val.size} url={resolvedUrl} ariaLabel={ariaLabel} />
         {urlFailNotice}
       </div>
     )
@@ -182,6 +182,7 @@ export default function FileCellInput({
       <div className="flex flex-col gap-1">
         <GenericFileCard
           name={val.fileName}
+          ariaLabel={ariaLabel}
           size={val.size}
           url={resolvedUrl}
           onDelete={handleDelete}
@@ -231,7 +232,7 @@ export default function FileCellInput({
           <button
             type="button"
             onClick={cancel}
-            aria-label="업로드 취소"
+            aria-label={ariaLabel ? `${ariaLabel} 업로드 취소` : "업로드 취소"}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm text-text-tertiary transition-colors hover:bg-surface-tertiary hover:text-text-primary"
           >
             <X size={14} />

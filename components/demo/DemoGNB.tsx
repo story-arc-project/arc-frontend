@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Menu, X } from "lucide-react";
 
 import { useDemoMode } from "@/contexts/DemoModeContext";
@@ -17,6 +17,7 @@ export function DemoGNB() {
   const pathname = usePathname();
   const { reopen } = useDemoMode();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const mobileNavId = useId();
 
   return (
     <header className="no-print fixed inset-x-0 top-0 z-50 h-[var(--gnb-h)] border-b border-border bg-surface/90 backdrop-blur-sm">
@@ -67,51 +68,55 @@ export function DemoGNB() {
         <button
           className="sm:hidden p-2 -mr-2 ml-auto text-text-secondary hover:text-text-primary transition-colors"
           onClick={() => setMobileOpen(!mobileOpen)}
-          aria-label="메뉴 열기"
+          aria-label={mobileOpen ? "메뉴 닫기" : "메뉴 열기"}
+          aria-expanded={mobileOpen}
+          aria-controls={mobileNavId}
         >
           {mobileOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
       </div>
 
       {/* Mobile dropdown */}
-      {mobileOpen && (
-        <nav className="sm:hidden border-t border-border bg-surface px-6 py-3 space-y-1">
-          {DEMO_NAV_ITEMS.map((item) => {
-            const isActive = pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMobileOpen(false)}
-                className={[
-                  "block px-3 py-2.5 rounded-md text-body-lg transition-colors duration-150",
-                  isActive
-                    ? "text-brand font-semibold bg-surface-brand"
-                    : "text-text-secondary hover:text-text-primary hover:bg-surface-tertiary",
-                ].join(" ")}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-          <div className="pt-2 flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => { setMobileOpen(false); reopen(); }}
-              className="block px-3 py-2.5 text-left text-body-lg text-text-secondary hover:text-text-primary transition-colors"
-            >
-              가이드 다시 보기
-            </button>
+      <nav
+        id={mobileNavId}
+        hidden={!mobileOpen}
+        className="sm:hidden border-t border-border bg-surface px-6 py-3 space-y-1"
+      >
+        {DEMO_NAV_ITEMS.map((item) => {
+          const isActive = pathname.startsWith(item.href);
+          return (
             <Link
-              href="/signup"
+              key={item.href}
+              href={item.href}
               onClick={() => setMobileOpen(false)}
-              className="block px-3 py-2.5 text-body-lg text-brand font-semibold"
+              className={[
+                "block px-3 py-2.5 rounded-md text-body-lg transition-colors duration-150",
+                isActive
+                  ? "text-brand font-semibold bg-surface-brand"
+                  : "text-text-secondary hover:text-text-primary hover:bg-surface-tertiary",
+              ].join(" ")}
             >
-              회원가입
+              {item.label}
             </Link>
-          </div>
-        </nav>
-      )}
+          );
+        })}
+        <div className="pt-2 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => { setMobileOpen(false); reopen(); }}
+            className="block px-3 py-2.5 text-left text-body-lg text-text-secondary hover:text-text-primary transition-colors"
+          >
+            가이드 다시 보기
+          </button>
+          <Link
+            href="/signup"
+            onClick={() => setMobileOpen(false)}
+            className="block px-3 py-2.5 text-body-lg text-brand font-semibold"
+          >
+            회원가입
+          </Link>
+        </div>
+      </nav>
     </header>
   );
 }

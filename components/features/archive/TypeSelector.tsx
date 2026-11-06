@@ -18,7 +18,7 @@ interface TypeSelectorProps {
   selectedId: ExperienceTypeId | null
   onSelect: (typeId: ExperienceTypeId) => void
   disabled?: boolean
-  onRequestChange?: () => boolean
+  onRequestChange?: (nextTypeId?: ExperienceTypeId) => boolean
 }
 
 type LucideIcon = React.ComponentType<{ size?: number; className?: string }>
@@ -96,7 +96,7 @@ export default function TypeSelector({ selectedId, onSelect, disabled, onRequest
   }
 
   const handleSelect = (id: ExperienceTypeId) => {
-    if (id !== selectedId && onRequestChange && !onRequestChange()) return
+    if (id !== selectedId && onRequestChange && !onRequestChange(id)) return
     onSelect(id)
     setExpanded(false)
   }

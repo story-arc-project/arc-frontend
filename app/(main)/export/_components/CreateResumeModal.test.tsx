@@ -1,7 +1,8 @@
-const auth = vi.hoisted(() => ({ signedIn: true, basePath: "" }));
-vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: auth.signedIn ? { account: { email: "test@example.com" } } : null, isLoading: false }) }));
+import { ApiError } from "@/lib/api/api-error";
+const auth = vi.hoisted(() => ({ signedIn: true, basePath: "", email: "test@example.com" }));
+vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: auth.signedIn ? { account: { email: auth.email } } : null, isLoading: false }) }));
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { Experience } from "@/types/experience";
@@ -73,6 +74,7 @@ afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();
   auth.signedIn = true;
+  auth.email = "test@example.com";
   auth.basePath = "";
   mockLoading = false;
   mockError = null;
@@ -179,7 +181,8 @@ describe("CreateResumeModal — 경험 선택 (플래그 on)", () => {
     await user.click(screen.getByRole("button", { name: "만들기" }));
 
     await waitFor(() => expect(mockCapture).toHaveBeenCalled());
-    expect(mockCapture).toHaveBeenCalledWith("export_completed", {
+    expect(mockCapture).toHaveBeenCalledWith("export_requested", {
+      accepted: true, request_result: "success",
       export_type: "resume",
       language: "ko",
       experience_count: 2,
@@ -298,7 +301,8 @@ describe("CreateResumeModal — 플래그 off (백엔드 미수용 봉인)", () 
     await user.click(screen.getByRole("button", { name: "만들기" }));
 
     await waitFor(() => expect(mockCapture).toHaveBeenCalled());
-    expect(mockCapture).toHaveBeenCalledWith("export_completed", {
+    expect(mockCapture).toHaveBeenCalledWith("export_requested", {
+      accepted: true, request_result: "success",
       export_type: "resume",
       language: "ko",
     });
@@ -368,4 +372,101 @@ it("allows demo generation without a signed-in account", async () => {
   renderModal(false);
   await user.click(screen.getByRole("button", { name: "만들기" }));
   expect(mockCreateResume).toHaveBeenCalledWith({ language: "ko" }, expect.objectContaining({ idempotencyKey: expect.any(String) }));
+});
+
+describe("FRT-325 request outcomes", () => {
+  it.each([
+    ["success", null, true, "success"],
+    ["malformed JSON", new ApiError(200, "private body"), true, "response_unreadable"],
+    ["missing ID", new ApiError(201, "private ID"), true, "response_unreadable"],
+    ["422", new ApiError(422, "private input"), false, "api_error"],
+    ["credits", new ApiError(402, "private credits", "INSUFFICIENT_CREDITS"), false, "api_error"],
+    ["5xx", new ApiError(503, "private server"), false, "api_error"],
+    ["abort", new DOMException("private abort", "AbortError"), null, "aborted"],
+    ["raw error", new TypeError("private network"), null, "network_or_unknown"],
+  ] as const)("records %s once", async (_label, error, accepted, request_result) => {
+    mockCreateResume.mockReset();
+    if (error) mockCreateResume.mockRejectedValueOnce(error);
+    else mockCreateResume.mockResolvedValueOnce({ id: "accepted-id" });
+    const user = userEvent.setup();
+    renderModal(false);
+    await user.click(screen.getByRole("button", { name: "만들기" }));
+    await waitFor(() => expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(1));
+    expect(mockCapture).toHaveBeenCalledWith("export_requested", expect.objectContaining({ accepted, request_result }));
+    expect(mockCapture.mock.calls.filter(([name]) => name === "export_completed")).toHaveLength(0);
+    expect(JSON.stringify(mockCapture.mock.calls)).not.toContain("private");
+  });
+});
+
+describe("FRT-325 settlement lifecycle", () => {
+  it.each(["resolve", "reject"] as const)("ignores %s after unmount", async (outcome) => {
+    let resolve!: (value: { id: string }) => void;
+    let reject!: (error: Error) => void;
+    mockCreateResume.mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const view = renderModal(false);
+    fireEvent.click(screen.getByRole("button", { name: "만들기" }));
+    view.unmount();
+    await act(async () => {
+      if (outcome === "resolve") resolve({ id: "old" });
+      else reject(new Error("private stale error"));
+    });
+    expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(0);
+  });
+  it("classifies its own timeout and clears the timer at API settlement", async () => {
+    vi.useFakeTimers();
+    try {
+      mockCreateResume.mockImplementationOnce((_payload, options) => new Promise((_yes, no) => {
+        options.signal.addEventListener("abort", () => no(new DOMException("timeout", "AbortError")));
+      }));
+      renderModal(false);
+      fireEvent.click(screen.getByRole("button", { name: "만들기" }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+      expect(mockCapture).toHaveBeenCalledWith("export_requested", expect.objectContaining({ accepted: null, request_result: "timeout" }));
+      expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(1);
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+describe("FRT-325 account attribution", () => {
+  it.each(["resolve", "reject"] as const)("ignores old-account %s", async (outcome) => {
+    let resolve!: (value: { id: string }) => void;
+    let reject!: (error: Error) => void;
+    mockCreateResume.mockImplementationOnce(() => new Promise((yes, no) => { resolve = yes; reject = no; }));
+    const view = renderModal(false);
+    fireEvent.click(screen.getByRole("button", { name: "만들기" }));
+    auth.email = "new@example.com";
+    view.rerender(<CreateResumeModal open onClose={() => {}} onCreated={() => {}} experienceSelectionEnabled={false} />);
+    await act(async () => {
+      if (outcome === "resolve") resolve({ id: "old" });
+      else reject(new Error("old account"));
+    });
+    expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(0);
+  });
+});
+
+it("keeps one accepted outcome when post-success UI throws", async () => {
+  mockCreateResume.mockResolvedValueOnce({ id: "new" });
+
+  render(<CreateResumeModal open onCreated={() => { throw new Error("callback"); }} onClose={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "만들기" }));
+  await waitFor(() => expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(1));
+  expect(mockCapture).toHaveBeenCalledWith("export_requested", expect.objectContaining({ accepted: true, request_result: "success" }));
+});
+
+it("blocks duplicate clicks and reuses a response-loss retry key", async () => {
+  let reject!: (error: Error) => void;
+  mockCreateResume.mockImplementationOnce(() => new Promise((_yes, no) => { reject = no; }));
+  mockCreateResume.mockRejectedValueOnce(new TypeError("lost again"));
+  renderModal(false);
+
+  const submit = screen.getByRole("button", { name: "만들기" });
+  fireEvent.click(submit);
+  fireEvent.click(submit);
+  expect(mockCreateResume).toHaveBeenCalledTimes(1);
+  await act(async () => { reject(new TypeError("lost")); });
+  fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+  await waitFor(() => expect(mockCreateResume).toHaveBeenCalledTimes(2));
+  expect(mockCreateResume.mock.calls[1][1].idempotencyKey).toBe(mockCreateResume.mock.calls[0][1].idempotencyKey);
+  expect(mockCreateResume.mock.calls[1][0]).toEqual(mockCreateResume.mock.calls[0][0]);
+  await waitFor(() => expect(mockCapture.mock.calls.filter(([name]) => name === "export_requested")).toHaveLength(2));
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { IndividualAnalysisResult } from "@/types/analysis";
 
 // FRT-134: 결과 본문이 안 온 상태로 상세에 진입했을 때 조용한 빈 화면이 뜨지 않는다.
@@ -10,8 +10,11 @@ vi.mock("@/lib/api/analysis-api", async (importOriginal) => {
   return { ...actual, getIndividualAnalysisResult: vi.fn() };
 });
 
+const route = vi.hoisted(() => ({ id: "ind-1", capture: vi.fn() }));
+vi.mock("@/lib/analytics/client", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/analytics/client")>(), capture: route.capture }));
+
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ analysisId: "ind-1" }),
+  useParams: () => ({ analysisId: route.id }),
   usePathname: () => "/analysis/individual/ind-1",
 }));
 
@@ -31,6 +34,7 @@ afterEach(cleanup);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  route.id = "ind-1";
 });
 
 function emptyBody(): IndividualAnalysisResult["result"] {
@@ -442,4 +446,17 @@ describe("개별 분석 상세 — 스키마 v1.2", () => {
     await screen.findByText("데이터 분석 인턴");
     expect(screen.queryByText("시너지 추천 활동")).not.toBeInTheDocument();
   });
+});
+
+it("does not observe reused route B until B body replaces loaded A", async () => {
+  getResult.mockResolvedValueOnce(result({}));
+  const { rerender } = render(<IndividualAnalysisDetailPage />);
+  await waitFor(() => expect(route.capture).toHaveBeenCalledWith("analysis_result_viewed", expect.objectContaining({ analysis_id: "ind-1" })));
+  let resolveB!: (value: IndividualAnalysisResult) => void;
+  getResult.mockReturnValueOnce(new Promise((resolve) => { resolveB = resolve; }));
+  route.id = "ind-2";
+  rerender(<IndividualAnalysisDetailPage />);
+  expect(route.capture.mock.calls.filter(([name]) => name === "analysis_result_viewed")).toHaveLength(1);
+  await act(async () => resolveB(result({ id: "ind-2" })));
+  expect(route.capture).toHaveBeenCalledWith("analysis_result_viewed", expect.objectContaining({ analysis_id: "ind-2" }));
 });

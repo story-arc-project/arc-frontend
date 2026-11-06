@@ -24,6 +24,8 @@ interface UseUnsavedNavGuardOptions {
   onAttemptLeave: () => void
   /** '나가기' 확정 시 실제 이동 — 보통 router.replace(backTo). */
   onLeave: () => void
+  /** A same-page URL transition which retains the mounted draft needs no discard modal. */
+  onInternalPop?: (event: PopStateEvent) => boolean
 }
 
 /**
@@ -59,29 +61,34 @@ export default function useUnsavedNavGuard({
   enabled,
   onAttemptLeave,
   onLeave,
+  onInternalPop,
 }: UseUnsavedNavGuardOptions) {
   const bypassRef = useRef(false)
   // 최신 콜백을 ref 로 유지 → 효과 의존성을 [enabled] 로 고정(재구독·이중 sentinel 방지).
   const onAttemptLeaveRef = useRef(onAttemptLeave)
   const onLeaveRef = useRef(onLeave)
+  const onInternalPopRef = useRef(onInternalPop)
   useEffect(() => {
     onAttemptLeaveRef.current = onAttemptLeave
     onLeaveRef.current = onLeave
+    onInternalPopRef.current = onInternalPop
   })
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled && !onInternalPopRef.current) return
 
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault()
       e.returnValue = ""
     }
-    const onPopState = () => {
+    const onPopState = (event: PopStateEvent) => {
       if (bypassRef.current) {
         bypassRef.current = false
         onLeaveRef.current()
         return
       }
+      if (onInternalPopRef.current?.(event)) return
+      if (!enabled) return
       // Back 이 sentinel 을 pop 했으므로 즉시 재-push 해 페이지에 머문다(net 1개 유지).
       armSentinel()
       onAttemptLeaveRef.current()
@@ -89,10 +96,10 @@ export default function useUnsavedNavGuard({
 
     // 멱등 arm: 살아있는 sentinel 이 최상단일 때만 건너뛴다(StrictMode 이중 마운트엔 1개만,
     // dirty→clean→Back→dirty 로 sentinel 이 소거됐으면 다시 push).
-    if (!isSentinel()) {
+    if (enabled && !isSentinel()) {
       armSentinel()
     }
-    window.addEventListener("beforeunload", onBeforeUnload)
+    if (enabled) window.addEventListener("beforeunload", onBeforeUnload)
     window.addEventListener("popstate", onPopState)
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload)
