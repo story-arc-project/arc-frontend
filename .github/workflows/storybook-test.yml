@@ -6,7 +6,8 @@ on:
 
 jobs:
   storybook-test:
-    runs-on: ubuntu-latest
+    # Playwright 1.60.0 supports Ubuntu 24.04; latest can move to an unsupported OS.
+    runs-on: ubuntu-24.04
     # build-storybook + 전체 스토리 마운트(Playwright)라 기본 CI 잡보다 길다.
     timeout-minutes: 15
 
