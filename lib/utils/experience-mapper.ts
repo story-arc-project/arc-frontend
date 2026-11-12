@@ -1355,7 +1355,12 @@ export function toSavePayload(exp: ExperienceV2): ExperienceSavePayload {
 
   for (const b of [...exp.coreBlocks, ...exp.extensionBlocks]) {
     if (isHeaderBlock(b)) continue // 헤더 소유(title/summary)는 content.title/summary 로 저장
-    if (b.key) fields[b.key] = b.value
+    // fields에는 블록 타입이 남지 않는다. 미지 타입의 원시/배열 값은 CustomEntry로 실어
+    // 다음 로드에도 소유 타입·키·라벨과 원본 페이로드를 함께 보존한다(FRT-290).
+    const opaquePayload = isFilledText(b.type) && !isKnownBlockType(b.type) &&
+      (!b.value || typeof b.value !== "object" || Array.isArray(b.value))
+    if (opaquePayload) custom.push(blockToCustomEntry(b))
+    else if (b.key) fields[b.key] = b.value
     else custom.push(blockToCustomEntry(b)) // 키 없는(사용자 추가) 블록은 custom 으로 보존
   }
   // 완료 저장 시 완전히 빈 사용자 섹션(group)은 정리한다. 초안은 보존(돌아와 채울 수 있게).

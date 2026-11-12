@@ -318,7 +318,7 @@ export function createRoleHistory(label: string, opts?: { guide?: string }): Blo
 
 /** `createRoleHistory` 블록에서 등록된 역할명을 순서대로 뽑는다(공백 제거·중복 제거). */
 export function roleNamesOf(block: Block): string[] {
-  if (block.value.type !== 'repeatable-cell') return []
+  if (block.value?.type !== 'repeatable-cell') return []
   const out: string[] = []
   for (const row of block.value.rows) {
     const name = cellText(row.cells['role']).trim()
@@ -339,7 +339,7 @@ export function mapRoleTags(block: Block, fn: (tags: string[]) => string[]): Blo
     const changed = children?.some((c, i) => c !== block.children?.[i])
     return changed ? { ...block, children } : block
   }
-  if (block.value.type !== 'repeatable-cell') return block
+  if (block.value?.type !== 'repeatable-cell') return block
 
   const roleCols = block.value.columns.filter(c => c.variant === 'role-chip').map(c => c.key)
   let touched = false
@@ -504,7 +504,7 @@ export function rowHasContent(row: BlockRow): boolean {
 export function artifactFilled(a: RowArtifact): boolean {
   if (!a || typeof a !== 'object') return false
   const file = a.file && typeof a.file === 'object' ? a.file : undefined
-  return isFilledText(a.url) || isFilledText(a.desc) || isFilledText(file?.fileId)
+  return isFilledText(a.url) || isFilledText(a.desc) || isOpaqueCell(a.file) || isFilledText(file?.fileId)
 }
 
 /** 빈 행 첨부 한 건. */
@@ -578,7 +578,8 @@ export function isFilledText(s: unknown): boolean {
  * 사용자가 쓴 글자가 **보이지도 고쳐지지도 않는 칸**이 된다 — 지키는 게 아니라 가두는 것이다.
  * 신호가 없을 때는 대체 신호(`block.type`)로 되살린다.
  *
- * ⚠️ 셀·부가 항목(`isOpaqueCell`)은 **일부러 이 술어를 쓰지 않는다.** 그 경로에는 되살릴
+ * ⚠️ 셀·부가 항목(`isOpaqueCell`)은 **일부러 이 술어를 쓰지 않는다.** 아는 블록 구조도
+ * 셀의 문자열·배열·파일 스키마와는 다르다. 그 경로에는 되살릴
  * 대체 신호(열 유형)가 인자로 오지 않아, 미지에서 빼는 순간 `repairCell` 이 곧장 `''` 로
  * 낮춘다. **복구 신호가 없는 자리에서 "신호 없음"은 보존이지 삭제가 아니다.**
  */
@@ -621,15 +622,18 @@ const isOptText = (x: unknown): boolean => x === undefined || typeof x === 'stri
 const isOptNumber = (x: unknown): boolean => x === undefined || typeof x === 'number'
 
 /**
- * 이 코드가 모르는 판별자를 든 셀 — **새 스키마가 쓴 잎 값**일 수 있다.
+ * 셀 컨트롤이 다룰 수 없는 구조 값 — 아는 블록 타입도 셀 스키마와는 다르다.
  *
  * ⚠️ **열 유형을 조건으로 걸지 않는다.** 한때는 열 유형까지 미지일 때만 지켰는데, 그러면
  * `text` 처럼 아는(또는 낡은) 열 밑의 새 스키마 값이 곧장 `''` 로 낮아져 **열었다 저장하는
  * 것만으로 영구히 사라진다.** 저장 경로는 열이 무엇이든 지키고, 그리기 위한 낮춤은 저장되지
  * 않는 렌더 관문(`lowerOpaqueLeaves`)이 맡는다.
  */
+const isStructuredValue = (c: unknown): c is Record<string, unknown> =>
+  isPlainObject(c) && typeof c.type === 'string'
+
 const isOpaqueCell = (c: unknown): boolean =>
-  isPlainObject(c) && typeof c.type === 'string' && !isKnownBlockType(c.type)
+  isStructuredValue(c) && c.type !== 'file'
 
 /**
  * 셀 하나가 이 코드가 그릴 수 있는 모양인가 (문자열 · 문자열 배열 · 파일 셀).
@@ -778,18 +782,17 @@ function isIntactExtraField(f: unknown): boolean {
     typeof f.blockType === 'string' &&
     // ⚠️ `RowExtraField.value` 는 **문자열·문자열 배열만**이다(파일 셀은 스키마 밖).
     // `isIntactCell` 로 물으면 파일 셀 객체가 통과해 읽기 렌더러가 객체를 그대로 그리다 죽는다.
-    (typeof f.value === 'string' || allStrings(f.value))
+    (typeof f.value === 'string' || allStrings(f.value) || isStructuredValue(f.value))
   )
 }
 
-/** 부가 항목 값은 문자열·문자열 배열로만 — 구조화 셀이 섞여 있으면 글자로 낮춘다. */
+/** 부가 항목의 구조 값은 저장에서 보존한다. 문자열로 낮추는 일은 렌더 관문만 맡는다. */
 function repairExtraValue(x: unknown): string | string[] {
   if (typeof x === 'string') return x
   if (Array.isArray(x)) return asStrings(x)
-  if (isPlainObject(x) && x.type === 'file') return asText(x.fileName)
   // ⚠️ 모르는 판별자는 **새 스키마가 쓴 잎**일 수 있다 — 저장 경로에서 낮추면 열었다 저장하는
   // 것만으로 사라진다. 그리기 위한 낮춤은 저장되지 않는 렌더 관문이 맡는다.
-  if (isOpaqueCell(x)) return x as unknown as string
+  if (isStructuredValue(x)) return x as unknown as string
   return ''
 }
 
@@ -826,7 +829,7 @@ function isIntactArtifact(a: unknown): boolean {
   if (a.desc !== undefined && typeof a.desc !== 'string') return false
   // 첨부 파일은 셀 파일과 **같은 모양**이라 같은 술어로 묻는다 — 여기서 기준이 갈리면
   // `artifactFilled`(fileId 로 판정)와 어긋나 "찼는데 못 그리는" 첨부가 생긴다.
-  if (a.file !== undefined && !isIntactCell(a.file)) return false
+  if (a.file !== undefined && !isIntactCell(a.file) && !isOpaqueCell(a.file)) return false
   return true
 }
 
@@ -1021,7 +1024,8 @@ export function normalizeBlockValue(
   const optionsOf = (raw: unknown): string[] =>
     Array.isArray(raw) ? asStrings(raw) : asStrings(opts?.options)
 
-  if (!isPlainObject(value)) return empty()
+  // 모르는 블록 이름은 객체 밖의 페이로드도 소유한다. 저장은 원형을 지킨다(FRT-290).
+  if (!isPlainObject(value)) return isOpaqueType(fallbackType) ? value as BlockValue : empty()
 
   /**
    * 값이 든 `type` 이 깨졌거나 이 코드가 모르는 것이면 **블록이 선언한 타입**을 신호로 쓴다.
@@ -1158,8 +1162,8 @@ function repairCondition(cond: Record<string, unknown> | undefined): Block['visi
   }
 }
 
-/** 블록 하나의 값을 보정한다. 값이 온전하면 **원본 블록 참조를 그대로** 돌려준다. */
-export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
+/** 값 보정 전에 타입 신호만 복구한다 — 정의 조회가 결측 목록을 먼저 굳히면 안 된다. */
+function recoverBlockType(block: Block): Block {
   // ⚠️ 블록 타입이 깨졌는데 **값이 신원을 알려 주면** 그걸로 되살린다 — 안 그러면 렌더러가
   // `block.type` 으로 분기해 아무것도 안 그리고, 저장은 깨진 타입을 계속 실어 나른다.
   // 모르는 *이름*의 타입은 새 스키마의 흔적이라 그대로 둔다(위 보존 규칙과 같은 경계).
@@ -1169,6 +1173,16 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
     const fromValue = (block.value as { type?: unknown } | null | undefined)?.type
     if (isKnownBlockType(fromValue)) block = { ...block, type: fromValue }
   }
+  return block
+}
+
+/** 블록 하나의 값을 보정한다. 값이 온전하면 **원본 블록 참조를 그대로** 돌려준다. */
+export function normalizeBlock(
+  block: Block,
+  defs?: BlockDefs,
+  defsOf?: (block: Block) => BlockDefs | undefined,
+): Block {
+  block = recoverBlockType(block)
   // 블록이 아는 정의를 함께 넘긴다 — 값에서 사라진 선택지·열을 되살릴 근거다.
   //
   // ⚠️ **결측 정의를 근거 없이 `[]` 로 굳히면 그 뒤로는 못 되살린다.** 보정은 배열이면 빈
@@ -1192,7 +1206,7 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
   const textual = new Set(['text', 'textarea'])
   if (
     isKnownBlockType(block.type) &&
-    isKnownBlockType(value.type) &&
+    isKnownBlockType(value?.type) &&
     value.type !== block.type &&
     textual.has(block.type) &&
     textual.has(value.type)
@@ -1203,7 +1217,7 @@ export function normalizeBlock(block: Block, defs?: BlockDefs): Block {
   // 재귀가 첫 프로퍼티 접근에서 죽는다. 배열 보정은 `normalizeBlocks` 와 같은 기준으로.
   const children = block.children === undefined ? undefined : normalizeBlocks(
     Array.isArray(block.children) ? block.children : [],
-    defs ? () => defs : undefined,
+    defsOf ?? (defs ? () => defs : undefined),
   )
   const childrenChanged = children !== block.children
 
@@ -1357,8 +1371,10 @@ function hasOpaqueLeaf(value: unknown): boolean {
     // 행 부가 항목도 센다 — 읽기 렌더러가 `f.value` 를 그대로 그리므로 더 위험하다.
     const extraHit =
       Array.isArray(r.extraFields) &&
-      r.extraFields.some(f => isPlainObject(f) && isOpaqueCell(f.value))
-    return cellHit || extraHit
+      r.extraFields.some(f => isPlainObject(f) && isStructuredValue(f.value))
+    const artifactHit = Array.isArray(r.artifacts) &&
+      r.artifacts.some(a => isPlainObject(a) && isOpaqueCell(a.file))
+    return cellHit || extraHit || artifactHit
   })
 }
 
@@ -1384,8 +1400,10 @@ function lowerOpaqueLeaves(block: Block): Block {
     if (!isPlainObject(r)) return r
     const cellHit = isPlainObject(r.cells) && Object.values(r.cells).some(isOpaqueCell)
     const extraHit =
-      Array.isArray(r.extraFields) && r.extraFields.some(f => isPlainObject(f) && isOpaqueCell(f.value))
-    if (!cellHit && !extraHit) return r
+      Array.isArray(r.extraFields) && r.extraFields.some(f => isPlainObject(f) && isStructuredValue(f.value))
+    const artifactHit = Array.isArray(r.artifacts) &&
+      r.artifacts.some(a => isPlainObject(a) && isOpaqueCell(a.file))
+    if (!cellHit && !extraHit && !artifactHit) return r
     changed = true
     return {
       ...r,
@@ -1402,7 +1420,14 @@ function lowerOpaqueLeaves(block: Block): Block {
       ...(extraHit
         ? {
             extraFields: (r.extraFields as unknown[]).map(f =>
-              isPlainObject(f) && isOpaqueCell(f.value) ? { ...f, value: '' } : f,
+              isPlainObject(f) && isStructuredValue(f.value) ? { ...f, value: '' } : f,
+            ),
+          }
+        : {}),
+      ...(artifactHit
+        ? {
+            artifacts: (r.artifacts as unknown[]).map(a =>
+              isPlainObject(a) && isOpaqueCell(a.file) ? { ...a, file: undefined } : a,
             ),
           }
         : {}),
@@ -1420,6 +1445,7 @@ function lowerOpaqueLeaves(block: Block): Block {
  * 모달에 그대로 넘겨 `.join()` 에서 화면이 통째로 죽었다.
  */
 export function isUnrenderableBlock(block: Block): boolean {
+  if (isOpaqueType(block.type)) return true
   const t = (block.value as { type?: unknown } | null | undefined)?.type
   // 이름이 있는 미지 판별자이거나, 아는 것끼리 어긋난 값 — 이 컨트롤이 다룰 수 있는 값이 아니다.
   // (빈 판별자는 여기 안 걸린다 — `normalizeBlock` 이 블록 타입으로 되살리므로 편집 가능하다.)
@@ -1448,7 +1474,8 @@ export function normalizeBlocks(
   // 함께 바뀌고 함께 지워진다(React key·드래그 식별자도 모호해진다). 행·열과 같은 규칙으로 간다.
   const ids = dedupeNames(kept.map(b => asIdText(b.id)), i => `${idScope}-${i}`)
   const out = kept.map((b, i) => {
-    const normalized = normalizeBlock(b, defsOf?.(b))
+    const recovered = recoverBlockType(b)
+    const normalized = normalizeBlock(recovered, defsOf?.(recovered), defsOf)
     return normalized.id === ids[i] ? normalized : { ...normalized, id: ids[i] }
   })
   return out.length === blocks.length && out.every((b, i) => b === blocks[i]) ? blocks : out
@@ -1464,8 +1491,8 @@ export function normalizeBlocks(
  */
 export function hasResidualValue(block: Block): boolean {
   const v = block.value
-  if (v.type === 'link') return [v.title, v.description, v.linkType].some(isFilledText)
-  if (v.type === 'file') return [v.description, v.evidenceType].some(isFilledText)
+  if (v?.type === 'link') return [v.title, v.description, v.linkType].some(isFilledText)
+  if (v?.type === 'file') return [v.description, v.evidenceType].some(isFilledText)
   return false
 }
 
@@ -1511,8 +1538,7 @@ export function isBlockDiscardable(block: Block): boolean {
   // ⚠️ **"모르는 문자열"과 "아예 없음"은 다르다.** 앞은 새 스키마의 흔적이라 지켜야 하지만,
   // 뒤는 그냥 손상이라 이관·개명이 덮어쓸 수 있어야 한다 — 목적지를 "차지됨"으로 오판하면
   // 레거시 원본이 지워진 채 아무것도 안 남는다.
-  if (typeof block.type === 'string' && !isKnownBlockType(block.type) && v && typeof v === 'object')
-    return false
+  if (isOpaqueType(block.type)) return false
   // 그룹은 **자식이 곧 내용**이다. 자식 하나가 못 버릴 값이면 섹션째 버려선 안 된다 —
   // 완료 저장의 빈 섹션 정리가 이 판정을 쓰므로, 여기서 참이면 그 값이 영구히 사라진다.
   if (block.type === 'group' || v?.type === 'group') {
@@ -1532,7 +1558,7 @@ export function isBlockDiscardable(block: Block): boolean {
  */
 export function isRequiredBlock(block: Block): boolean {
   if (block.required) return true
-  if (block.value.type === 'repeatable-cell') {
+  if (block.value?.type === 'repeatable-cell') {
     return block.value.columns.some(c => c.required)
   }
   return false

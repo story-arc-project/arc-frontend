@@ -1096,3 +1096,14 @@ describe("custom table progress (FRT-184)", () => {
     expect(block.value.rows).toEqual([[""], ["   "]])
   })
 })
+
+
+describe("FRT-290 미지 null 값의 카드 진행도", () => {
+  it.each([true, false])("필수 %s인 미지 블록도 카드 조립·진행도 계산에서 죽지 않는다", required => {
+    const block = { id: "future", key: "future.rating", type: "rating-v3", label: "미래", required, value: null } as unknown as Block
+    const cards = computeFormCards([block], []).cards
+    expect(cards).toHaveLength(1)
+    expect(isCardComplete(cards[0])).toBe(false)
+    expect(computeFormProgress(cards)).toEqual({ done: 0, total: 1 })
+  })
+})

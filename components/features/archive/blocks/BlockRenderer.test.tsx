@@ -257,3 +257,18 @@ describe("손상된 저장 값 렌더 (FRT-200)", () => {
     expect(screen.getByText(/2023\.01/)).toBeTruthy()
   })
 })
+
+
+describe("FRT-290 구조 셀 렌더 관문", () => {
+  it.each(["cells", "extraFields", "artifacts"])("%s의 아는 구조값은 입력 없이 안전하게 그린다", location => {
+    const value = { type: "date", date: "2026-08-12", fileId: 5 }
+    const row = { id: "r1", cells: { a: "기존 문장" },
+      ...(location === "cells" ? { cells: { a: value } } : {}),
+      ...(location === "extraFields" ? { extraFields: [{ key: "e1", label: "부가", blockType: "text", value }] } : {}),
+      ...(location === "artifacts" ? { artifacts: [{ id: "a1", desc: "원본 설명", file: value }] } : {}),
+    }
+    const block = { id: "b1", type: "repeatable-cell", label: "표", value: { type: "repeatable-cell", columns: [{ key: "a", label: "항목", blockType: "text" }], rows: [row] } } as unknown as Block
+    const { container } = render(<BlockRenderer block={block} onChange={() => {}} />)
+    expect(container.querySelector("input, textarea, select")).toBeNull()
+  })
+})

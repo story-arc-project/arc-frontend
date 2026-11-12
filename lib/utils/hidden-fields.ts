@@ -57,7 +57,7 @@ function hostsAttachment(block: Block): boolean {
   // 묻지 않는다.
   if (block.allowRowArtifacts === true) return true
   const v = block.value
-  if (v.type === "repeatable-cell") return v.columns.some(c => c.blockType === "file")
+  if (v?.type === "repeatable-cell") return v.columns.some(c => c.blockType === "file")
   return false
 }
 

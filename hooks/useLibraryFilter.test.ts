@@ -244,3 +244,20 @@ it("supports URL-controlled filter changes after a rerender", () => {
   act(() => result.current.setSortBy("period"))
   expect(onChange.mock.calls[0][0]({ search: "back" })).toEqual({ search: "back", sortBy: "period" })
 })
+
+
+describe("FRT-290 미지 null 기간 정렬", () => {
+  it("v1 코어의 미래 null 값이 있어도 목록 전체가 죽지 않는다", () => {
+    const raw = (id: string, content: Record<string, unknown>): Experience => ({
+      id, user_id: "u1", type: "career", importance: null, content,
+      created_at: "2024-01-01T00:00:00Z", updated_at: "2024-01-01T00:00:00Z",
+    })
+    const future = toExperienceV2(raw("future", { coreBlocks: [{
+      id: "future-period", key: "future.period", type: "rating-v3", label: "기간", value: null,
+    }] }))
+    const normal = toExperienceV2(raw("normal", {}))
+    expect(future.coreBlocks.find(b => b.label === "기간")?.value).toBeNull()
+    const { result } = renderHook(() => useLibraryFilter([future, normal], { sortBy: "period" }))
+    expect(result.current.filteredExperiences).toHaveLength(2)
+  })
+})

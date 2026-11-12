@@ -416,7 +416,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   const findProjectBlock = useCallback(
     (targetSectionId: string): { block: Block; value: RepeatableCellBlockValue } | null => {
       const section = extensionSections.find(s => s.id === targetSectionId)
-      const block = section?.blocks.find(b => b.value.type === "repeatable-cell")
+      const block = section?.blocks.find(b => b.value?.type === "repeatable-cell")
       if (!block) return null
       return { block, value: block.value as RepeatableCellBlockValue }
     },
@@ -434,7 +434,7 @@ const ExperienceFormV2 = forwardRef<ExperienceFormV2Handle, ExperienceFormV2Prop
   const incomingProjectLinks = useMemo(() => {
     const map = new Map<string, string>()
     for (const block of allBlocksFlat) {
-      if (block.variant !== "outcome-list" || block.value.type !== "repeatable-cell") continue
+      if (block.variant !== "outcome-list" || block.value?.type !== "repeatable-cell") continue
       for (const row of block.value.rows) {
         if (row.linkedProjectRowId) map.set(row.linkedProjectRowId, block.label)
       }

@@ -30,8 +30,8 @@ import { isBlockEmpty } from "@/lib/utils/block-utils"
 function triggerText(block: Block | undefined): string {
   if (!block) return ""
   const v = block.value
-  if (v.type === "single-select") return v.selected
-  if (v.type === "text" || v.type === "textarea") return v.text
+  if (v?.type === "single-select") return v.selected
+  if (v?.type === "text" || v?.type === "textarea") return v.text
   return ""
 }
 

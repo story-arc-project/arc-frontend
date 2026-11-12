@@ -245,3 +245,12 @@ describe("normalizeHiddenKeys", () => {
     expect(keys).toEqual(["a", "b"])
   })
 })
+
+
+describe("FRT-290 미지 null 값 숨김 판정", () => {
+  it("미지 null 페이로드를 그대로 보존해도 숨김 판정은 던지지 않는다", () => {
+    const future = { id: "future", key: "future.rating", type: "rating-v3", label: "미래", value: null } as unknown as Block
+    expect(() => canHideBlock(future)).not.toThrow()
+    expect(future.value).toBeNull()
+  })
+})

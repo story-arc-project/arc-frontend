@@ -240,7 +240,7 @@ function cellFilledForColumn(column: BlockColumnDef, cell: CellValue | undefined
 
 function isBlockFilledForProgress(block: Block): boolean {
   const v = block.value
-  if (v.type === "repeatable-cell") {
+  if (v?.type === "repeatable-cell") {
     if (v.rows.length === 0) return false
     const requiredCols = v.columns.filter(c => c.required)
     return v.rows.some(row =>
@@ -254,7 +254,7 @@ function isBlockFilledForProgress(block: Block): boolean {
   // 블록 층위 기간도 셀과 같은 부분 입력을 만든다 — `PeriodBlock` 이 `formatPeriodString` 을
   // 거치므로 종료를 먼저 고르면 start 가 빈 채로 저장되는데, `isBlockEmpty` 는 start·end 중
   // 하나만 있어도 '안 비었다'라서 그대로 완료가 된다. 여기서도 시작을 요구한다.
-  if (v.type === "period") return v.start.trim() !== ""
+  if (v?.type === "period") return v.start.trim() !== ""
   return !isBlockEmpty(block)
 }
 
