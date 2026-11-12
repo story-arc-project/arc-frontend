@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs"
-import { expect, userEvent, waitFor, within } from "storybook/test"
+import { expect, fn, userEvent, waitFor, within } from "storybook/test"
 
 import LibraryDropdown from "./LibraryDropdown"
 import {
@@ -134,5 +134,43 @@ export const SystemLibraryHasNoEditActions: Story = {
     const customRow = within(rowOf(customLibrary.name))
     await expect(customRow.getByRole("button", { name: "이름 변경" })).toBeVisible()
     await expect(customRow.getByRole("button", { name: "삭제" })).toBeVisible()
+  },
+}
+
+/** Screenshot-ready state: target name wraps instead of clipping on narrow screens. */
+export const DeleteConfirmation: Story = {
+  args: {
+    ...WithData.args,
+    libraries: [systemLibrary, { ...customLibrary, name: "오래 준비해 온 프로젝트와 커리어 경험을 모아 둔 라이브러리" }],
+    onDeleteLibrary: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { expanded: false }))
+    await userEvent.click(within(document.body).getByRole("button", { name: "삭제" }))
+    const dialog = await within(document.body).findByRole("dialog", { name: "라이브러리 삭제" })
+    await expect(within(dialog).getByText(args.libraries[1].name)).toBeVisible()
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "취소" })).toHaveFocus())
+    await expect(args.onDeleteLibrary).not.toHaveBeenCalled()
+  },
+}
+
+export const CancelThenConfirmDeletion: Story = {
+  args: { ...WithData.args, onDeleteLibrary: fn(), onSelectLibrary: fn() },
+  play: async ({ canvasElement, args }) => {
+    const trigger = within(canvasElement).getByRole("button", { expanded: false })
+    const body = within(document.body)
+    await userEvent.click(trigger)
+    const row = body.getByText(customLibrary.name).closest<HTMLElement>("[role='button']")!
+    await userEvent.click(within(row).getByRole("button", { name: "삭제" }))
+    await userEvent.click(within(body.getByRole("dialog")).getByRole("button", { name: "취소" }))
+    await expect(args.onDeleteLibrary).not.toHaveBeenCalled()
+    await expect(trigger).toHaveFocus()
+    await userEvent.click(trigger)
+    const target = body.getByText(customLibrary.name).closest<HTMLElement>("[role='button']")!
+    await userEvent.click(within(target).getByRole("button", { name: "삭제" }))
+    await userEvent.click(within(body.getByRole("dialog")).getByRole("button", { name: "삭제" }))
+    await expect(args.onDeleteLibrary).toHaveBeenCalledTimes(1)
+    await expect(args.onDeleteLibrary).toHaveBeenCalledWith(customLibrary.id)
+    await expect(args.onSelectLibrary).not.toHaveBeenCalled()
   },
 }

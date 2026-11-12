@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
+import { Button } from "@/components/ui/button"
+import { Dialog } from "@/components/ui/dialog"
 import { ChevronDown, FolderOpen, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react"
 import type { ExperienceV2, Library } from "@/types/archive"
 import { matchesFilter } from "@/hooks/useLibraryFilter"
@@ -48,6 +50,8 @@ export default function LibraryDropdown({
   className,
 }: LibraryDropdownProps) {
   const [open, setOpen] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const pendingDeleteRef = useRef<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState("")
   const [colorPickerId, setColorPickerId] = useState<string | null>(null)
@@ -161,6 +165,53 @@ export default function LibraryDropdown({
     setColorPickerId(lib.id)
   }
 
+  function cancelDelete() {
+    pendingDeleteRef.current = null
+    setPendingDeleteId(null)
+  }
+
+  const pendingDeleteLibrary = libraries.find(lib => lib.id === pendingDeleteId && !lib.isSystem)
+
+  // A refresh may remove or protect a target while its confirmation is open.
+  if (pendingDeleteId && !pendingDeleteLibrary) {
+    setPendingDeleteId(null)
+  }
+
+  // Responsive archive toolbars mount separate triggers. If the viewport
+  // changes during confirmation, restore to the counterpart that is visible.
+  useEffect(() => {
+    if (!pendingDeleteId) return
+    const trigger = triggerRef.current
+    return () => {
+      requestAnimationFrame(() => {
+        if (trigger?.getClientRects().length) return
+        const visibleTrigger = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-library-dropdown-trigger]"))
+          .find(trigger => trigger.getClientRects().length > 0)
+        visibleTrigger?.focus()
+      })
+    }
+  }, [pendingDeleteId])
+
+  function requestDelete(lib: Library) {
+    if (lib.isSystem) return
+    closeAll()
+    // Dialog records the active element on open. The row's trash button is
+    // about to unmount, so restore the persistent trigger before opening it.
+    triggerRef.current?.focus()
+    pendingDeleteRef.current = lib.id
+    setPendingDeleteId(lib.id)
+  }
+
+  function confirmDelete() {
+    const id = pendingDeleteRef.current
+    // Consume synchronously before calling out, including reentrant callbacks.
+    pendingDeleteRef.current = null
+    setPendingDeleteId(null)
+    if (id && libraries.some(lib => lib.id === id && !lib.isSystem)) {
+      onDeleteLibrary(id)
+    }
+  }
+
   function handleCreate() {
     const name = `라이브러리 ${libraries.filter(l => !l.isSystem).length + 1}`
     onCreateLibrary(name)
@@ -263,7 +314,7 @@ export default function LibraryDropdown({
                         </button>
                         <button
                           type="button"
-                          onClick={e => { e.stopPropagation(); onDeleteLibrary(lib.id) }}
+                          onClick={e => { e.stopPropagation(); requestDelete(lib) }}
                           className="p-0.5 text-text-tertiary hover:text-error rounded"
                           aria-label="삭제"
                         >
@@ -325,6 +376,7 @@ export default function LibraryDropdown({
     <>
       <button
         ref={triggerRef}
+        data-library-dropdown-trigger
         type="button"
         onClick={() => setOpen(o => !o)}
         aria-haspopup="menu"
@@ -341,6 +393,21 @@ export default function LibraryDropdown({
       </button>
       {popover}
       {colorPicker}
+      {typeof document !== "undefined" && createPortal(<Dialog
+        open={!!pendingDeleteLibrary}
+        onClose={cancelDelete}
+        ariaLabel="라이브러리 삭제"
+      >
+        <h2 className="text-heading-3 text-text-primary">라이브러리를 삭제할까요?</h2>
+        <p className="mt-3 text-body text-text-secondary break-words [overflow-wrap:anywhere]">
+          <strong className="font-semibold text-text-primary">{pendingDeleteLibrary?.name}</strong>
+          {" 라이브러리를 삭제하려면 아래 삭제 버튼을 눌러주세요."}
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="secondary" onClick={cancelDelete}>취소</Button>
+          <Button variant="destructive" onClick={confirmDelete}>삭제</Button>
+        </div>
+      </Dialog>, document.body)}
     </>
   )
 }

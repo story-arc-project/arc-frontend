@@ -71,7 +71,11 @@ for (const viewport of [{ name: "desktop", width: 1440, height: 900 }, { name: "
         await page.getByRole("button", { name: "전체", exact: true }).filter({ visible: true }).click();
         const row = page.getByRole("listitem").filter({ hasText: "변경 대상" });
         if (action === "create") await page.getByRole("button", { name: "라이브러리 추가", exact: true }).click();
-        else if (action === "delete") await row.getByRole("button", { name: "삭제", exact: true }).click();
+        else if (action === "delete") {
+          await row.getByRole("button", { name: "삭제", exact: true }).click();
+          await page.getByRole("dialog", { name: "라이브러리 삭제" }).getByRole("button", { name: "삭제", exact: true }).click();
+          await page.getByRole("button", { name: "전체", exact: true }).filter({ visible: true }).click();
+        }
         else {
           await row.getByRole("button", { name: "이름 변경", exact: true }).click();
           await page.locator("[data-archive-popover] input").fill("이름 반영 완료");
