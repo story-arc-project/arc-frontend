@@ -1,9 +1,9 @@
 "use client"
 
 import { Search, X, SlidersHorizontal, BookmarkPlus } from "lucide-react"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import type { LibraryFilter, SortBy, ExperienceTypeId, ExperienceStatus } from "@/types/archive"
-import { EXPERIENCE_TYPES, TYPE_CATEGORIES } from "@/lib/constants/templates-v2"
+import { ALL_EXPERIENCE_TYPES, EXPERIENCE_TYPES, TYPE_CATEGORIES } from "@/lib/constants/templates-v2"
 import { isImeComposing } from "@/lib/utils/keyboard"
 
 interface FilterBarProps {
@@ -35,6 +35,7 @@ export default function FilterBar({
   onSaveAsLibrary,
   className,
 }: FilterBarProps) {
+  const searchRef = useRef<HTMLInputElement>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [showSaveInput, setShowSaveInput] = useState(false)
   const [saveName, setSaveName] = useState("")
@@ -51,16 +52,63 @@ export default function FilterBar({
     <div className={["flex flex-col gap-3", className ?? ""].join(" ")}>
       {/* Search + sort row */}
       <div className="flex gap-2">
-        <div className="relative flex-1 min-w-0">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+        <div className="flex h-11 flex-1 min-w-0 items-center gap-2 rounded-md border border-border bg-surface-secondary pl-3 pr-1 focus-within:border-brand" data-archive-search>
+          <Search size={16} aria-hidden="true" className="shrink-0 text-text-tertiary" />
+          {((filter.typeIds?.length ?? 0) > 0 || (filter.statuses?.length ?? 0) > 0 || (filter.tags?.length ?? 0) > 0) && (
+            <div role="group" aria-label="적용된 필터" className="flex min-w-0 max-w-[45%] shrink items-center gap-1 overflow-x-auto overscroll-x-contain whitespace-nowrap">
+              {ALL_EXPERIENCE_TYPES.filter(type => filter.typeIds?.includes(type.id)).map(type => (
+                <button
+                  key={type.id}
+                  type="button"
+                  aria-label={`${type.label} 필터 해제`}
+                  onClick={() => { onToggleType(type.id); searchRef.current?.focus() }}
+                  className="flex shrink-0 items-center gap-1 rounded bg-surface-brand px-2 py-1 text-caption text-brand focus-visible:outline-2 focus-visible:outline-brand focus-visible:-outline-offset-2"
+                >
+                  {type.label}<X size={12} aria-hidden="true" />
+                </button>
+              ))}
+              {filter.tags?.map((tag, index) => (
+                <span key={`${tag}-${index}`} className="shrink-0 rounded bg-surface-brand px-2 py-1 text-caption text-brand">
+                  태그: {tag}
+                </span>
+              ))}
+              {(["draft", "complete"] as const).filter(status => filter.statuses?.includes(status)).map(status => {
+                const label = status === "draft" ? "작성 중" : "완료"
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    aria-label={`${label} 필터 해제`}
+                    onClick={() => { onToggleStatus(status); searchRef.current?.focus() }}
+                    className="flex shrink-0 items-center gap-1 rounded bg-surface-brand px-2 py-1 text-caption text-brand focus-visible:outline-2 focus-visible:outline-brand focus-visible:-outline-offset-2"
+                  >
+                    {label}<X size={12} aria-hidden="true" />
+                  </button>
+                )
+              })}
+            </div>
+          )}
           <input
+            ref={searchRef}
             type="text"
-            className="h-11 w-full rounded-md border border-border bg-surface-secondary pl-9 pr-3 text-body-sm text-text-primary placeholder:text-text-tertiary focus:border-brand focus:outline-none"
+            className="h-full w-0 min-w-16 flex-1 bg-transparent text-body-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
             aria-label="경험 검색"
             placeholder="경험 검색..."
             value={filter.search ?? ""}
             onChange={e => onSearchChange(e.target.value)}
           />
+          <div className="w-8 shrink-0">
+            {filter.search && (
+              <button
+                type="button"
+                aria-label="검색어 지우기"
+                onClick={() => { onSearchChange(""); searchRef.current?.focus() }}
+                className="flex h-9 w-8 items-center justify-center rounded text-text-tertiary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-brand"
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </div>
         <select
           value={filter.sortBy ?? "updated"}

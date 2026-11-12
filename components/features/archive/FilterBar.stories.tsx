@@ -71,6 +71,11 @@ export const SearchAccessibleName: Story = {
     await expect(search).toHaveValue("프로젝트")
     await expect(args.onSearchChange).toHaveBeenLastCalledWith("프로젝트")
     await userEvent.tab()
+    await expect(canvas.getByRole("button", { name: "검색어 지우기" })).toHaveFocus()
+    await userEvent.keyboard("{Enter}")
+    await expect(search).toHaveValue("")
+    await expect(search).toHaveFocus()
+    await userEvent.tab()
     await expect(canvas.getByRole("combobox")).toHaveFocus()
     await userEvent.tab({ shift: true })
     await expect(search).toHaveFocus()
@@ -93,5 +98,33 @@ export const FilterSelectionState: Story = {
     await expect(canvas.getByRole("button", { name: "작성 중", pressed: false })).toBeVisible()
     await expect(canvas.getByRole("button", { name: "인턴 및 업무 경력", pressed: true })).toBeVisible()
     await expect(canvas.getByRole("button", { name: "동아리/교내 단체", pressed: false })).toBeVisible()
+  },
+}
+
+export const TokensAndKeyboardClear: Story = {
+  args: { filter: activeFilter, isFilterActive: true, onToggleStatus: fn(), onToggleType: fn() },
+  render: function TokensStory(args) {
+    const [filter, setFilter] = useState({ ...args.filter, search: "프로젝트" })
+    return <div className="max-w-sm"><FilterBar {...args} filter={filter}
+      onSearchChange={search => setFilter(current => ({ ...current, search }))}
+      onToggleType={id => { args.onToggleType(id); setFilter(current => ({ ...current, typeIds: current.typeIds?.filter(value => value !== id) })) }}
+      onToggleStatus={status => { args.onToggleStatus(status); setFilter(current => ({ ...current, statuses: current.statuses?.filter(value => value !== status) })) }}
+    /></div>
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement)
+    const search = canvas.getByRole("textbox", { name: "경험 검색" })
+    const clear = canvas.getByRole("button", { name: "검색어 지우기" })
+    clear.focus()
+    await userEvent.keyboard(" ")
+    await expect(search).toHaveValue("")
+    await expect(search).toHaveFocus()
+    const token = canvas.getByRole("button", { name: "완료 필터 해제" })
+    token.focus()
+    await userEvent.keyboard("{Enter}")
+    await expect(args.onToggleStatus).toHaveBeenCalledWith("complete")
+    await expect(token).not.toBeInTheDocument()
+    await expect(search).toHaveFocus()
+    await expect(canvas.getByRole("button", { name: "인턴 및 업무 경력 필터 해제" })).toBeVisible()
   },
 }
