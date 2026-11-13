@@ -9,14 +9,16 @@ const getExperienceMock = vi.fn()
 const duplicateExperienceMock = vi.fn()
 const createExperienceMock = vi.fn()
 const deleteExperienceMock = vi.fn()
+const updateExperienceMock = vi.fn()
+const updateImportanceMock = vi.fn()
 
 vi.mock("@/lib/api/experience-api", () => ({
   getExperiences: (...args: unknown[]) => getExperiencesMock(...args),
   getExperience: (...args: unknown[]) => getExperienceMock(...args),
   duplicateExperience: (...args: unknown[]) => duplicateExperienceMock(...args),
   createExperience: (...args: unknown[]) => createExperienceMock(...args),
-  updateExperience: vi.fn(),
-  updateExperienceImportance: vi.fn(),
+  updateExperience: (...args: unknown[]) => updateExperienceMock(...args),
+  updateExperienceImportance: (...args: unknown[]) => updateImportanceMock(...args),
   deleteExperience: (...args: unknown[]) => deleteExperienceMock(...args),
 }))
 
@@ -260,5 +262,113 @@ describe("useExperiences response ownership", () => {
     await act(async () => { hydration.reject(new Error("late")); expect(await copy).toBe("copy") })
     expect(ids(result.current)).toEqual(["current"])
     expect(getExperiencesMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+
+// Writes must settle before their reconciliation GET; a failed write must never
+// refresh away the displayed list or be mistaken for a successful mutation.
+describe("useExperiences mutation contracts", () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    getExperiencesMock.mockResolvedValue(listData(["original"]))
+  })
+  afterEach(cleanup)
+
+  const payload = { type: "project" as const, content: { title: "changed" } }
+  const mutations = [
+    { name: "create", mock: createExperienceMock, args: [payload], run: (hook: ReturnType<typeof useExperiences>) => hook.createExperience(payload), returns: "created" },
+    { name: "update", mock: updateExperienceMock, args: ["original", payload], run: (hook: ReturnType<typeof useExperiences>) => hook.updateExperience("original", payload), returns: undefined },
+    { name: "importance", mock: updateImportanceMock, args: ["original", 5], run: (hook: ReturnType<typeof useExperiences>) => hook.updateImportance("original", 5), returns: undefined },
+    { name: "clear importance", mock: updateImportanceMock, args: ["original", null], run: (hook: ReturnType<typeof useExperiences>) => hook.updateImportance("original", null), returns: undefined },
+    { name: "delete", mock: deleteExperienceMock, args: ["original"], run: (hook: ReturnType<typeof useExperiences>) => hook.deleteExperience("original"), returns: undefined },
+  ]
+
+  it.each(mutations)("$name waits for write and refresh, then exposes the server snapshot", async mutation => {
+    const { result } = renderHook(() => useExperiences())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    const write = deferred<string>()
+    const refresh = deferred<ExperienceListData>()
+    mutation.mock.mockReturnValueOnce(write.promise)
+    getExperiencesMock.mockReturnValueOnce(refresh.promise)
+    let operation!: Promise<unknown>
+    let settled = false
+    act(() => { operation = mutation.run(result.current).then(value => { settled = true; return value }) })
+    expect(mutation.mock).toHaveBeenCalledExactlyOnceWith(...mutation.args)
+    expect(getExperiencesMock).toHaveBeenCalledTimes(1)
+    expect(result.current.experiences).toEqual([experience("original")])
+    await act(async () => { write.resolve("created"); await Promise.resolve() })
+    expect(getExperiencesMock).toHaveBeenCalledTimes(2)
+    expect(result.current.isLoading).toBe(true)
+    expect(settled).toBe(false)
+    // The count is authoritative server data, not derived from page length.
+    const snapshot = { count: 12, contents: [experience("server")] }
+    await act(async () => { refresh.resolve(snapshot); expect(await operation).toBe(mutation.returns) })
+    expect(result.current.experiences).toEqual(snapshot.contents)
+    expect(result.current.count).toBe(12)
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.error).toBeNull()
+  })
+
+  it.each(mutations)("$name rejects a failed write without refetching or altering the list", async mutation => {
+    const { result } = renderHook(() => useExperiences())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    const failure = new Error("write failed")
+    mutation.mock.mockRejectedValueOnce(failure)
+    await act(async () => { await expect(mutation.run(result.current)).rejects.toBe(failure) })
+    expect(getExperiencesMock).toHaveBeenCalledTimes(1)
+    expect(result.current.experiences).toEqual([experience("original")])
+    expect(result.current.count).toBe(1)
+    expect(result.current.error).toBeNull()
+    expect(result.current.isLoading).toBe(false)
+  })
+
+  it.each(mutations)("$name preserves successful write result when refresh fails and recovers on retry", async mutation => {
+    const { result } = renderHook(() => useExperiences())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    mutation.mock.mockResolvedValueOnce(mutation.returns)
+    const failure = new Error("read failed")
+    getExperiencesMock.mockRejectedValueOnce(failure)
+    await act(async () => { expect(await mutation.run(result.current)).toBe(mutation.returns) })
+    expect(result.current.error).toBe(failure)
+    expect(result.current.experiences).toEqual([experience("original")])
+    expect(result.current.count).toBe(1)
+    expect(result.current.isLoading).toBe(false)
+    const retry = deferred<ExperienceListData>()
+    getExperiencesMock.mockReturnValueOnce(retry.promise)
+    let read!: Promise<void>
+    act(() => { read = result.current.refetch() })
+    expect(result.current.error).toBeNull()
+    expect(result.current.isLoading).toBe(true)
+    await act(async () => { retry.resolve(listData([])); await read })
+    expect(result.current.experiences).toEqual([])
+    expect(result.current.count).toBe(0)
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.error).toBeNull()
+    expect(mutation.mock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(mutations.filter(mutation => mutation.name !== "create"))("$name skips refresh when its write settles after unmount", async mutation => {
+    const { result, unmount } = renderHook(() => useExperiences())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    const write = deferred<string>()
+    mutation.mock.mockReturnValueOnce(write.promise)
+    let operation!: Promise<unknown>
+    act(() => { operation = mutation.run(result.current) })
+    unmount()
+    await act(async () => { write.resolve("created"); expect(await operation).toBe(mutation.returns) })
+    expect(getExperiencesMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("normalizes a non-Error initial failure and retries successfully", async () => {
+    getExperiencesMock.mockRejectedValueOnce("offline")
+    const { result } = renderHook(() => useExperiences())
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.error).toEqual(new Error("알 수 없는 오류가 발생했어요."))
+    expect(result.current.count).toBe(0)
+    await act(async () => { await result.current.refetch() })
+    expect(result.current.error).toBeNull()
+    expect(result.current.experiences).toEqual([experience("original")])
+    expect(result.current.count).toBe(1)
   })
 })
