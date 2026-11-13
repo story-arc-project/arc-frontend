@@ -26,6 +26,7 @@ import {
   rowHasContent,
   isBlockDiscardable,
   isBlockEmpty,
+  isRequiredBlock,
   isUnrenderableBlock,
   isValueOccupied,
   normalizeBlock,
@@ -1145,7 +1146,7 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
   })
 
   /** `RowExtraField.value` 는 문자열·문자열 배열만이다 — 파일 셀 객체는 그대로 그려지면 죽는다. */
-  it("행 부가 항목에 파일 셀 객체가 들어 있으면 글자로 바꾼다", () => {
+  it("행 부가 항목의 파일 구조는 저장에서 보존한다 (FRT-290)", () => {
     const out = normalizeBlockValue("repeatable-cell", {
       type: "repeatable-cell",
       columns: [],
@@ -1165,7 +1166,7 @@ describe("normalizeBlockValue — 잎까지 (FRT-200)", () => {
       ],
     }) as unknown as { rows: { extraFields: { value: unknown }[] }[] }
     const value = out.rows[0].extraFields[0].value
-    expect(typeof value === "string" || Array.isArray(value)).toBe(true)
+    expect(value).toEqual({ type: "file", fileId: "f1", fileName: "증빙.pdf" })
   })
 
   /** 행 부가 항목도 `value` 만이 아니라 라벨까지 — 편집 모드가 `label.trim()` 을 부른다. */
@@ -1840,5 +1841,99 @@ describe("깨진 블록 정의 — 배열이 아니면 템플릿으로 되살린
     } as unknown as Block
     const out = normalizeBlock(block, { options: ["가", "나"] })
     expect((out.value as { options: string[] }).options).toEqual([])
+  })
+})
+
+
+describe("FRT-290 보존 경계", () => {
+  it.each([0, 5, false, "미래 값", [1, { score: 5 }], null])("미지 블록의 원시 페이로드 %j를 보존하고 잠근다", value => {
+    const block = { id: "future", label: "미래", type: "rating-v3", value } as unknown as Block
+    expect(normalizeBlockValue(block.type, value)).toBe(value)
+    expect(normalizeBlocks([block])[0].value).toBe(value)
+    expect(isUnrenderableBlock(block)).toBe(true)
+    expect(isBlockDiscardable(block)).toBe(false)
+    expect(() => normalizeBlockForRender(block)).not.toThrow()
+  })
+
+  it.each(["date", "text", "period", "repeatable-cell", "future-cell", ""])("%s 구조 셀은 보정되는 행과 정상 행 모두에서 보존·잠금된다", type => {
+    const cell = { type, date: "2026-08-12", text: "원본", extension: [1, 2] }
+    for (const id of ["r1", 5]) {
+      const block = { id: "b1", type: "repeatable-cell", label: "표", value: {
+        type: "repeatable-cell", columns: [{ key: "a", label: "항목", blockType: "text" }],
+        rows: [{ id, cells: { a: cell }, extraFields: [{ key: "e", label: "부가", blockType: "text", value: cell }] }],
+      } } as unknown as Block
+      const stored = normalizeBlock(block)
+      const row = (stored.value as { rows: Array<{ cells: Record<string, unknown>; extraFields: Array<{ value: unknown }> }> }).rows[0]
+      expect(row.cells.a).toBe(cell)
+      expect(row.extraFields[0].value).toBe(cell)
+      expect(isUnrenderableBlock(stored)).toBe(true)
+      const rendered = normalizeBlockForRender(stored)
+      expect((rendered.value as typeof stored.value & { rows: Array<{ cells: Record<string, unknown>; extraFields: Array<{ value: unknown }> }> }).rows[0]).toMatchObject({ cells: { a: "" }, extraFields: [{ value: "" }] })
+      expect(normalizeBlock(stored)).toBe(stored)
+    }
+  })
+
+  it("타입 복구 뒤 블록별 정의를 조회하며 중첩 자식에도 자기 정의를 준다", () => {
+    const leaf = (id: string): Block => ({
+      id, key: id, type: null, label: id,
+      value: { type: "checklist", checked: [id] },
+    } as unknown as Block)
+    const blocks = [leaf("top"), {
+      ...createGroupBlock("묶음"),
+      children: [leaf("child"), {
+        ...createGroupBlock("중첩"), children: [leaf("deep")],
+      }],
+    }]
+    const out = normalizeBlocks(blocks, b => b.type === "checklist" ? { options: [b.id] } : undefined)
+    const leaves = [out[0], out[1].children![0], out[1].children![1].children![0]]
+    for (const b of leaves) {
+      expect(b.value).toMatchObject({
+        type: "checklist", options: [b.id], checked: [b.id],
+      })
+    }
+  })
+})
+
+
+describe("FRT-290 공용 셀 보정의 부가 경로", () => {
+  it("부가 항목의 파일 구조도 렌더에서만 낮추고 원본은 보존한다", () => {
+    const file = { type: "file", fileId: "f1", fileName: "원본.pdf", extension: [1] }
+    const block = { id: "b1", type: "repeatable-cell", label: "표", value: {
+      type: "repeatable-cell", columns: [], rows: [{ id: "r1", cells: {}, extraFields: [{ key: "e1", label: "부가", blockType: "text", value: file }] }],
+    } } as unknown as Block
+    const stored = normalizeBlock(block)
+    expect((stored.value as { rows: Array<{ extraFields: Array<{ value: unknown }> }> }).rows[0].extraFields[0].value).toBe(file)
+    expect(isUnrenderableBlock(stored)).toBe(true)
+    expect((normalizeBlockForRender(stored).value as { rows: Array<{ extraFields: Array<{ value: unknown }> }> }).rows[0].extraFields[0].value).toBe("")
+  })
+  it("첨부 파일 자리의 아는 구조값도 원본 보존하고 잠근다", () => {
+    const file = { type: "date", date: "2026-08-12", fileId: 5 }
+    const block = { id: "b1", type: "repeatable-cell", label: "표", value: {
+      type: "repeatable-cell", columns: [], rows: [{ id: "r1", cells: {}, artifacts: [{ id: "a1", desc: "원본 설명", file }] }],
+    } } as unknown as Block
+    const stored = normalizeBlock(block)
+    expect((stored.value as { rows: Array<{ artifacts: Array<{ file: unknown }> }> }).rows[0].artifacts[0].file).toBe(file)
+    expect(isUnrenderableBlock(stored)).toBe(true)
+    expect((normalizeBlockForRender(stored).value as { rows: Array<{ artifacts: Array<{ file: unknown }> }> }).rows[0].artifacts[0].file).toBeUndefined()
+  })
+})
+
+
+describe("FRT-290 보존값의 소비 경계", () => {
+  it("미지 null 값도 필수·역할 판정이 던지지 않고 그대로 통과한다", () => {
+    const block = normalizeBlock({ id: "future", type: "rating-v3", label: "미래", value: null } as unknown as Block)
+    expect(isRequiredBlock(block)).toBe(false)
+    expect(roleNamesOf(block)).toEqual([])
+    expect(mapRoleTags(block, tags => tags)).toBe(block)
+  })
+  it("불투명 파일만 담은 첨부도 행과 그룹의 삭제 판정에서 내용으로 센다", () => {
+    const file = { type: "date", date: "2026-08-12" }
+    const artifact = { id: "a1", file } as unknown as Parameters<typeof artifactFilled>[0]
+    expect(artifactFilled(artifact)).toBe(true)
+    const row = { id: "r1", cells: {}, artifacts: [artifact] }
+    expect(rowHasContent(row)).toBe(true)
+    const block = normalizeBlock({ id: "b1", type: "repeatable-cell", label: "표", value: { type: "repeatable-cell", columns: [], rows: [row] } } as Block)
+    expect(isBlockDiscardable(block)).toBe(false)
+    expect(isBlockDiscardable({ ...createGroupBlock("묶음"), children: [block] })).toBe(false)
   })
 })

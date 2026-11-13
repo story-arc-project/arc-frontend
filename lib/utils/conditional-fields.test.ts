@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import type { Block } from "@/types/archive"
 import { createTextField, createSelectField, createDateField } from "@/lib/utils/block-utils"
-import { isConditionMet, partitionByCondition } from "@/lib/utils/conditional-fields"
+import { isConditionMet, partitionByCondition, conditionHiddenKeys } from "@/lib/utils/conditional-fields"
 
 /** 안정키를 붙인 블록 — 템플릿의 withSectionKeys 결과를 흉내낸다. */
 function keyed(block: Block, key: string): Block {
@@ -166,5 +166,16 @@ describe("partitionByCondition", () => {
     const { visible, hidden } = partitionByCondition([role], [trigger, role])
     expect(visible).toHaveLength(1)
     expect(hidden).toEqual([])
+  })
+})
+
+
+describe("FRT-290 미지 null 조건 트리거", () => {
+  it("보존된 null 미래 값은 조건을 미충족으로 읽고 원본은 지킨다", () => {
+    const trigger = { id: "future", key: "future.null", type: "rating-v3", label: "미래", value: null } as unknown as Block
+    const target = { ...textBlock("조건부", "", { key: "future.null" }), key: "target" }
+    expect(isConditionMet(target, [trigger, target])).toBe(false)
+    expect(conditionHiddenKeys([trigger, target])).toEqual(["target"])
+    expect(trigger.value).toBeNull()
   })
 })

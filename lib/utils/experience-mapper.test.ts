@@ -4908,3 +4908,69 @@ describe("custom table save preservation (FRT-184)", () => {
     expect(groups.map(b => b.children[0].value)).toEqual(values)
   })
 })
+
+
+describe("FRT-290 저장 왕복", () => {
+  it.each([0, 5, false, "미래 값", [1, { score: 5 }], null])("v1/v2·세 블록 배열의 미지 페이로드 %j를 두 번 열고 저장해도 보존한다", value => {
+    for (const bucket of ["coreBlocks", "extensionBlocks", "customBlocks"]) {
+      const legacy = makeExperience({ content: { [bucket]: [{
+        id: "future", key: "future.rating", label: "미래 평점", type: "rating-v3", value,
+      }] } })
+      let loaded = toExperienceV2(legacy)
+      for (let cycle = 0; cycle < 2; cycle++) {
+        const block = [...loaded.coreBlocks, ...loaded.extensionBlocks, ...loaded.customBlocks]
+          .find(b => b.label === "미래 평점")
+        expect(block?.value).toEqual(value)
+        expect(block?.type).toBe("rating-v3")
+        expect(isUnrenderableBlock(block!)).toBe(true)
+        loaded = toExperienceV2(makeExperience({ content: toSavePayload(loaded).content }))
+      }
+    }
+    const v2 = toExperienceV2(makeExperience({ content: makeV2Content({}, [{ entryType: "section", key: "s1", label: "묶음", children: [{ entryType: "field", key: "future.rating", label: "미래 평점", type: "rating-v3", value }] }]) }))
+    v2.status = "complete"
+    const saved = toSavePayload(v2).content as { custom: Array<{ children: Array<{ value: unknown }> }> }
+    expect(saved.custom[0].children[0].value).toEqual(value)
+  })
+})
+
+
+describe("FRT-290 실제 매퍼의 정의·구조 셀", () => {
+  it("깨진 v1 블록 타입을 복구한 뒤 안정키로 템플릿 열을 되찾는다", () => {
+    const tmpl = getTemplateForType("career")
+    const template = [...tmpl.commonCore.blocks, ...tmpl.extensions.flatMap(s => s.blocks)].find(b => b.type === "repeatable-cell")!
+    expect(template).toBeDefined()
+    const loaded = toExperienceV2(makeExperience({ content: { extensionBlocks: [{ id: "broken", key: template.key, type: null, label: "옛 라벨", value: { type: "repeatable-cell", rows: [{ id: "r1", cells: { any: "값" } }] } }] } as unknown as Experience["content"] }))
+    const block = [...loaded.coreBlocks, ...loaded.extensionBlocks, ...loaded.customBlocks].find(b => b.key === template.key)!
+    expect(block).toBeDefined()
+    expect((block.value as RepeatableCellBlockValue).columns).toEqual((template.value as RepeatableCellBlockValue).columns)
+    expect((block.value as RepeatableCellBlockValue).rows[0].cells.any).toBe("값")
+  })
+
+  it("v2 구조 셀·부가 항목·첨부는 두 번의 저장 왕복에서도 원형으로 남는다", () => {
+    const structured = { type: "date", date: "2026-08-12", extension: { score: 5 } }
+    const file = { type: "file", fileId: "f1", fileName: "원본.pdf", extension: [1] }
+    const value = { type: "repeatable-cell", columns: [{ key: "a", label: "항목", blockType: "text" }], rows: [{ id: 5, cells: { a: structured }, extraFields: [{ key: "e1", label: "부가", blockType: "text", value: file }], artifacts: [{ id: "a1", desc: "설명", file: structured }] }] }
+    let loaded = toExperienceV2(makeExperience({ content: makeV2Content({}, [{ entryType: "field", key: "c1", type: "repeatable-cell", label: "내 표", value }]) }))
+    for (let cycle = 0; cycle < 2; cycle++) {
+      const block = loaded.customBlocks.find(b => b.key === "c1")!
+      expect(isUnrenderableBlock(block)).toBe(true)
+      const row = (block.value as unknown as { rows: Array<{ cells: Record<string, unknown>; extraFields: Array<{ value: unknown }>; artifacts: Array<{ file: unknown }> }> }).rows[0]
+      expect(row.cells.a).toEqual(structured)
+      expect(row.extraFields[0].value).toEqual(file)
+      expect(row.artifacts[0].file).toEqual(structured)
+      loaded = toExperienceV2(makeExperience({ content: toSavePayload(loaded).content }))
+    }
+  })
+})
+
+
+describe("FRT-290 불투명 첨부만 있는 완료 섹션", () => {
+  it("화면에 못 그리는 첨부도 빈 그룹으로 지우지 않는다", () => {
+    const file = { type: "date", date: "2026-08-12" }
+    const value = { type: "repeatable-cell", columns: [], rows: [{ id: "r1", cells: {}, artifacts: [{ id: "a1", file }] }] }
+    const loaded = toExperienceV2(makeExperience({ content: makeV2Content({}, [{ entryType: "section", key: "s1", label: "묶음", children: [{ entryType: "field", key: "c1", type: "repeatable-cell", label: "내 표", value }] }]) }))
+    loaded.status = "complete"
+    const custom = (toSavePayload(loaded).content as { custom: Array<{ key: string; children: Array<{ value: unknown }> }> }).custom
+    expect(custom.find(s => s.key === "s1")?.children[0].value).toEqual(value)
+  })
+})

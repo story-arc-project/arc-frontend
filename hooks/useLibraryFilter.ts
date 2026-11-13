@@ -59,11 +59,11 @@ export function matchesFilter(exp: ExperienceV2, filter: LibraryFilter): boolean
  */
 function periodStart(exp: ExperienceV2): string {
   const core = exp.coreBlocks.find(bl => bl.label === "기간")
-  if (core?.value.type === "period" && core.value.start) return core.value.start
+  if (core?.value?.type === "period" && core.value.start) return core.value.start
 
   const group = equivalentLabels("기간")
   for (const bl of exp.extensionBlocks) {
-    if (bl.value.type === "period" && bl.value.start && group.includes(bl.label)) {
+    if (bl.value?.type === "period" && bl.value.start && group.includes(bl.label)) {
       return bl.value.start
     }
   }
