@@ -12,7 +12,8 @@ on:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    # Playwright 1.60.0 supports Ubuntu 24.04; latest can move to an unsupported OS.
+    runs-on: ubuntu-24.04
     # dev 서버 콜드 컴파일 + 스모크 25케이스(CI: workers=1, retries=2)라 기본 잡보다 길다.
     timeout-minutes: 20
 

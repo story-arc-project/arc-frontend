@@ -1537,18 +1537,3 @@ export function isRequiredBlock(block: Block): boolean {
   }
   return false
 }
-
-export function validateRequiredBlocks(blocks: Block[]): string[] {
-  const errors: string[] = []
-  for (const block of blocks) {
-    if (block.type === 'group') {
-      // Groups have no required flag; validate only their children
-      errors.push(...validateRequiredBlocks(block.children ?? []))
-      continue
-    }
-    if (block.required && isBlockEmpty(block)) {
-      errors.push(`"${block.label}" 항목을 입력해주세요.`)
-    }
-  }
-  return errors
-}

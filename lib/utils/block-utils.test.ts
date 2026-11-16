@@ -32,7 +32,6 @@ import {
   normalizeBlockForRender,
   normalizeBlockValue,
   normalizeBlocks,
-  validateRequiredBlocks,
 } from "@/lib/utils/block-utils"
 import type { Block, BlockRow, BlockValue, CellValue, FileCellValue } from "@/types/archive"
 
@@ -191,22 +190,6 @@ describe("custom table empty state and preservation (FRT-184)", () => {
   })
 })
 
-describe("validateRequiredBlocks", () => {
-  it("required 이면서 비어 있는 블록만 에러 메시지를 모은다", () => {
-    const required = createTextField("이름", { required: true })
-    const optionalEmpty = createTextField("별명")
-    const requiredFilled = createTextField("학교", { required: true })
-    if (requiredFilled.value.type === "text") requiredFilled.value.text = "OO대"
-
-    const errors = validateRequiredBlocks([required, optionalEmpty, requiredFilled])
-    expect(errors).toEqual(['"이름" 항목을 입력해주세요.'])
-  })
-
-  it("문제가 없으면 빈 배열을 반환한다", () => {
-    expect(validateRequiredBlocks([createTextField("별명")])).toEqual([])
-  })
-})
-
 describe("cloneBlock", () => {
   it("새 id 를 부여하고 값은 깊은 복제한다", () => {
     const original = createTextField("t")
@@ -274,24 +257,6 @@ describe("group block", () => {
 
     const [cloned] = cloneBlocks([g])
     expect(cloned.children![0].id).not.toBe(origChildId)
-  })
-
-  it("validateRequiredBlocks: group 자식의 required 빈 블록도 에러를 낸다", () => {
-    const g = createGroupBlock("g")
-    const req = createTextField("이름", { required: true })
-    g.children = [req]
-
-    const errors = validateRequiredBlocks([g])
-    expect(errors).toEqual(['"이름" 항목을 입력해주세요.'])
-  })
-
-  it("validateRequiredBlocks: group 자식이 채워져 있으면 에러 없음", () => {
-    const g = createGroupBlock("g")
-    const req = createTextField("이름", { required: true })
-    if (req.value.type === "text") req.value.text = "홍길동"
-    g.children = [req]
-
-    expect(validateRequiredBlocks([g])).toEqual([])
   })
 })
 
